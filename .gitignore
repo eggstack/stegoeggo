@@ -1,0 +1,15 @@
+/target/
+.DS_Store
+
+# Test artifacts
+test_input.png
+test_output/
+testfinal/
+testimages/
+testimagesbackup/
+wallpapertest_poisoned.png
+*_protected.png
+*_protected.jpg
+*_protected.webp
+target/
+*/target/
