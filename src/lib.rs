@@ -31,14 +31,14 @@
 //! # JPEG-in/JPEG-out Fast Path
 //!
 //! When using `process_image_bytes` with JPEG input and JPEG output, the library
-//! takes a byte-only fast path that bypasses pixel manipulation entirely. Only
-//! DCT coefficient steganography and metadata injection are applied. This preserves
-//! image quality by avoiding decode/encode cycles, but **all protection levels
-//! (Standard, Enhanced, Strong) produce identical output in this mode** since the
-//! noise perturbation layer operates on pixels, not DCT coefficients.
+//! takes a byte-only fast path that operates directly on DCT coefficients, avoiding
+//! decode/encode cycles. This path applies DCT steganography (F5 embedding) and
+//! metadata injection. For progressive JPEGs, the progressive encoding is preserved.
 //!
-//! For format conversion (e.g., JPEG input → PNG output), the full protection
-//! pipeline including noise perturbation is applied.
+//! Pixel-level noise perturbation is skipped in this mode because it requires
+//! decoding to pixels and re-encoding, which would introduce additional lossy
+//! compression artifacts. For format conversion (e.g., JPEG input → PNG output),
+//! the full protection pipeline including noise perturbation is applied.
 //!
 //! # Security Considerations
 //!
@@ -208,10 +208,10 @@ impl ProtectionPipeline {
         level: ProtectionLevel,
         ctx: &ProtectionContext,
     ) -> Result<Cow<'a, DynamicImage>> {
-        Self::validate_dimensions(img, ctx.max_dimension)?;
+        Self::validate_dimensions(img, ctx.max_dimension())?;
 
         let mut ctx_with_level = ctx.clone();
-        ctx_with_level.protection_level = Some(level);
+        ctx_with_level.set_protection_level(level);
         let ctx = &ctx_with_level;
 
         match level {
@@ -236,12 +236,12 @@ impl ProtectionPipeline {
         protector: MultiProtector,
     ) -> Result<DynamicImage> {
         let output_format = ctx
-            .output_format
-            .or(ctx.input_format)
+            .output_format()
+            .or(ctx.input_format())
             .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
 
         let final_bytes = self.apply_protector_pipeline(img, ctx, protector, output_format)?;
-        image::load_from_memory(&final_bytes).map_err(|e| Error::ImageDecode(e.to_string()))
+        Ok(image::load_from_memory(&final_bytes)?)
     }
 
     /// Shared pipeline: perturb → stego → encode → metadata injection.
@@ -260,8 +260,8 @@ impl ProtectionPipeline {
             let jpeg_bytes = crate::util::image::encode_image_with_options(
                 &processed,
                 Some(output_format),
-                ctx.progressive_jpeg,
-                ctx.jpeg_quality,
+                ctx.progressive_jpeg(),
+                ctx.jpeg_quality(),
             )?;
             let with_stego = self.steganography.apply_dct_stego_bytes(&jpeg_bytes, ctx)?;
             return self.metadata_trap.inject_bytes(&with_stego, ctx);
@@ -272,8 +272,8 @@ impl ProtectionPipeline {
         let encoded = crate::util::image::encode_image_with_options(
             &with_stego,
             Some(output_format),
-            ctx.progressive_jpeg,
-            ctx.jpeg_quality,
+            ctx.progressive_jpeg(),
+            ctx.jpeg_quality(),
         )?;
         self.metadata_trap.inject_bytes(&encoded, ctx)
     }
@@ -289,7 +289,7 @@ impl ProtectionPipeline {
         ctx: &ProtectionContext,
     ) -> Result<Vec<u8>> {
         let mut ctx_with_level = ctx.clone();
-        ctx_with_level.protection_level = Some(level);
+        ctx_with_level.set_protection_level(level);
 
         match level {
             ProtectionLevel::Disabled => Ok(img_bytes.to_vec()),
@@ -320,19 +320,17 @@ impl ProtectionPipeline {
         let ctx_with_level = ctx.clone();
 
         let input_format = ctx
-            .input_format
+            .input_format()
             .or_else(|| crate::types::ImageOutputFormat::from_magic_bytes(img_bytes))
             .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
 
         let output_format = ctx
-            .output_format
-            .or(ctx.input_format)
+            .output_format()
+            .or(ctx.input_format())
             .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
 
-        // JPEG-in, JPEG-out: byte-only path (DCT stego + metadata, no pixel manipulation).
-        // This preserves quality and avoids decode/encode cycles.
-        // NOTE: All protection levels (Standard/Enhanced/Strong) produce identical
-        // output here since noise perturbation operates on pixels, not DCT coefficients.
+        // JPEG-in, JPEG-out: byte-only path (DCT stego + metadata, no pixel decode).
+        // This preserves quality and avoids lossy re-encode cycles.
         if input_format == crate::types::ImageOutputFormat::Jpeg
             && output_format == crate::types::ImageOutputFormat::Jpeg
         {
@@ -417,12 +415,13 @@ pub fn process_image_bytes(
     level: ProtectionLevel,
     ctx: &ProtectionContext,
 ) -> Result<Vec<u8>> {
-    let format = ImageOutputFormat::from_magic_bytes(img_bytes).unwrap_or(DEFAULT_OUTPUT_FORMAT);
+    let format = ImageOutputFormat::from_magic_bytes(img_bytes)
+        .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
 
     let ctx_with_format = {
         let mut ctx = ctx.clone();
-        if ctx.input_format.is_none() {
-            ctx.input_format = Some(format);
+        if ctx.input_format().is_none() {
+            ctx.set_input_format(format);
         }
         ctx
     };
@@ -433,14 +432,28 @@ pub fn process_image_bytes(
 /// Verify that image bytes contain a protection signature.
 ///
 /// Checks metadata seeds, DCT stego (for JPEG), and LSB stego (for PNG/WebP).
-/// Returns `Some(true)` if verified, `Some(false)` if checked but invalid, `None`
-/// if no protection data was found.
+///
+/// # Returns
+///
+/// - `Some(true)` — protection data found and verification passed
+/// - `Some(false)` — protection data found but verification failed (corrupted or wrong key)
+/// - `None` — no protection data found in the image
 ///
 /// # Arguments
 ///
 /// * `img_bytes` - Raw image bytes (PNG, JPEG, or WebP)
 /// * `mac_key` - Optional MAC key for HMAC-SHA256 verification. Pass empty slice
 ///   for checksum-only verification.
+///
+/// # Example
+///
+/// ```ignore
+/// match cloakrs::verify_image_bytes(&img_bytes, &mac_key) {
+///     Some(true) => println!("Protected and verified"),
+///     Some(false) => println!("Protected but verification failed"),
+///     None => println!("No protection found"),
+/// }
+/// ```
 pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> Option<bool> {
     let stego = SteganographyProtector::new();
     stego.verify_payload_from_bytes_with_key(img_bytes, mac_key)
@@ -587,7 +600,7 @@ mod tests {
             process_image_bytes(&input_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
         assert!(!protected_bytes.is_empty());
-        assert!(protected_bytes.len() != input_bytes.len() || ctx.intensity == 0.0);
+        assert!(protected_bytes.len() != input_bytes.len() || ctx.intensity() == 0.0);
     }
 
     #[test]

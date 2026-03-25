@@ -36,7 +36,7 @@ impl Protector for NoiseProtector {
         img: &'a DynamicImage,
         ctx: &ProtectionContext,
     ) -> Result<Cow<'a, DynamicImage>> {
-        if ctx.intensity <= 0.0 {
+        if ctx.intensity() <= 0.0 {
             return Ok(Cow::Borrowed(img));
         }
 
@@ -44,16 +44,16 @@ impl Protector for NoiseProtector {
         let result = if let Some(mac_key) = ctx.mac_key() {
             apply_perturbation_single_pass_keyed(
                 &rgba,
-                ctx.seed,
-                ctx.intensity,
+                ctx.seed(),
+                ctx.intensity(),
                 self.intensity_multiplier,
                 mac_key,
             )
         } else {
             apply_perturbation_single_pass(
                 &rgba,
-                ctx.seed,
-                ctx.intensity,
+                ctx.seed(),
+                ctx.intensity(),
                 self.intensity_multiplier,
             )
         };

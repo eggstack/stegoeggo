@@ -273,31 +273,20 @@ impl ProtectionConfig {
 /// Cheap to clone (heavy fields are in `Arc<ProtectionConfig>`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtectionContext {
-    pub intensity: f32,
-    pub seed: u64,
-    pub input_format: Option<ImageOutputFormat>,
-    pub output_format: Option<ImageOutputFormat>,
-    pub protection_level: Option<ProtectionLevel>,
-    pub dmi_value: Option<DmiValue>,
-    pub max_dimension: Option<u32>,
-    /// Whether to inject metadata (seed, DMI).
-    /// If None, defaults to true for Standard+ levels, false for Light.
-    pub inject_metadata: Option<bool>,
-    /// Whether to inject legal claims (copyright, artist, etc.).
-    /// Only enable if you own the content. Defaults to false.
-    pub inject_legal_claims: Option<bool>,
-    /// Stego embedding redundancy (1-5). Higher = more robust for verification,
-    /// lower = faster processing. Default is 2.
-    pub stego_redundancy: usize,
-    /// JPEG encoding quality (1-100). Default is 90.
-    pub jpeg_quality: u8,
-    /// Whether to use progressive JPEG encoding for web delivery optimization.
-    /// Progressive JPEGs render faster on slow connections. Default is false.
-    pub progressive_jpeg: bool,
-    /// Shared heavy configuration (legal metadata, MAC key).
-    /// Created once via `ProtectionConfig::new()`, reused across requests.
+    intensity: f32,
+    seed: u64,
+    input_format: Option<ImageOutputFormat>,
+    output_format: Option<ImageOutputFormat>,
+    protection_level: Option<ProtectionLevel>,
+    dmi_value: Option<DmiValue>,
+    max_dimension: Option<u32>,
+    inject_metadata: Option<bool>,
+    inject_legal_claims: Option<bool>,
+    stego_redundancy: usize,
+    jpeg_quality: u8,
+    progressive_jpeg: bool,
     #[serde(skip)]
-    pub config: Option<Arc<ProtectionConfig>>,
+    config: Option<Arc<ProtectionConfig>>,
 }
 
 impl Default for ProtectionContext {
@@ -329,7 +318,17 @@ impl ProtectionContext {
         Self {
             intensity: intensity.clamp(0.0, 1.0),
             seed,
-            ..Self::default()
+            input_format: None,
+            output_format: None,
+            protection_level: None,
+            dmi_value: None,
+            max_dimension: None,
+            inject_metadata: None,
+            inject_legal_claims: None,
+            stego_redundancy: 2,
+            jpeg_quality: 90,
+            progressive_jpeg: false,
+            config: None,
         }
     }
 
@@ -457,18 +456,88 @@ impl ProtectionContext {
         self.progressive_jpeg = progressive;
         self
     }
+
+    /// Get the intensity value.
+    pub fn intensity(&self) -> f32 {
+        self.intensity
+    }
+
+    /// Get the seed value.
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    /// Get the input format hint.
+    pub fn input_format(&self) -> Option<ImageOutputFormat> {
+        self.input_format
+    }
+
+    /// Get the output format.
+    pub fn output_format(&self) -> Option<ImageOutputFormat> {
+        self.output_format
+    }
+
+    /// Get the protection level.
+    pub fn protection_level(&self) -> Option<ProtectionLevel> {
+        self.protection_level
+    }
+
+    /// Get the DMI value.
+    pub fn dmi_value(&self) -> Option<DmiValue> {
+        self.dmi_value
+    }
+
+    /// Get the maximum dimension limit.
+    pub fn max_dimension(&self) -> Option<u32> {
+        self.max_dimension
+    }
+
+    /// Get whether metadata injection is enabled.
+    pub fn inject_metadata(&self) -> Option<bool> {
+        self.inject_metadata
+    }
+
+    /// Get whether legal claim injection is enabled.
+    pub fn inject_legal_claims(&self) -> Option<bool> {
+        self.inject_legal_claims
+    }
+
+    /// Get the stego embedding redundancy.
+    pub fn stego_redundancy(&self) -> usize {
+        self.stego_redundancy
+    }
+
+    /// Get the JPEG encoding quality.
+    pub fn jpeg_quality(&self) -> u8 {
+        self.jpeg_quality
+    }
+
+    /// Get whether progressive JPEG encoding is enabled.
+    pub fn progressive_jpeg(&self) -> bool {
+        self.progressive_jpeg
+    }
+
+    /// Set the input format hint (non-consuming).
+    pub fn set_input_format(&mut self, format: ImageOutputFormat) {
+        self.input_format = Some(format);
+    }
+
+    /// Set the protection level (non-consuming, crate-internal).
+    pub(crate) fn set_protection_level(&mut self, level: ProtectionLevel) {
+        self.protection_level = Some(level);
+    }
 }
 
 /// Precomputed protected variant for fast CDN edge deployment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtectedVariant {
-    pub variant_id: uuid::Uuid,
-    pub original_hash: String,
-    pub protection_level: ProtectionLevel,
-    pub perturbation_data: Vec<u8>,
-    pub intensity: f32,
-    pub width: u32,
-    pub height: u32,
+    variant_id: uuid::Uuid,
+    original_hash: String,
+    protection_level: ProtectionLevel,
+    perturbation_data: Vec<u8>,
+    intensity: f32,
+    width: u32,
+    height: u32,
 }
 
 impl ProtectedVariant {
@@ -506,5 +575,33 @@ impl ProtectedVariant {
             self.protection_level.as_str(),
             intensity_rounded
         )
+    }
+
+    pub fn variant_id(&self) -> uuid::Uuid {
+        self.variant_id
+    }
+
+    pub fn original_hash(&self) -> &str {
+        &self.original_hash
+    }
+
+    pub fn protection_level(&self) -> ProtectionLevel {
+        self.protection_level
+    }
+
+    pub fn perturbation_data(&self) -> &[u8] {
+        &self.perturbation_data
+    }
+
+    pub fn intensity(&self) -> f32 {
+        self.intensity
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
     }
 }

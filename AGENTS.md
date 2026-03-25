@@ -48,13 +48,16 @@ src/
 - `ProtectionContext::new(intensity: f32, seed: u64)` — intensity clamped to [0.0, 1.0]
 - `ProtectedVariant::new(hash, level, perturbation_data, intensity, width, height)` — no target model parameter
 - `ProtectionConfig` — shared heavy config (MAC key, legal metadata) wrapped in `Arc`
+- `StegoPayload` — extracted stego data with `protection_level()`, `seed()`, `intensity()`, `version()` getters
+- All struct fields on `ProtectionContext`, `ProtectedVariant`, and `StegoPayload` are private — use getter methods (e.g., `ctx.intensity()`, `ctx.seed()`, `variant.perturbation_data()`)
+- `ProtectionContext` has `set_input_format()` (public) and `set_protection_level()` (crate-internal) for non-builder mutation
 
 ## Build & Test Commands
 
 ```bash
 cargo check                              # Compilation
 cargo test                               # All tests (27 unit + 20 basic + 51 integration)
-cargo test --all-features                # Includes async tests (9 tests)
+cargo test --all-features                # Includes async tests (9 tests) — 107 total
 cargo clippy --all-targets -- -D warnings # Lint check
 cargo fmt --check                        # Format check
 cargo bench                              # Criterion benchmarks
@@ -68,6 +71,7 @@ cargo bench                              # Criterion benchmarks
 - `pub(crate)` for internal modules (e.g., `jpeg_transcoder`)
 - `LazyLock` static singletons for default pipelines
 - `Arc<ProtectionConfig>` for shared heavy fields
+- Private fields with getter methods on `ProtectionContext`, `ProtectedVariant`, `StegoPayload`
 
 ## Things to Watch Out For
 
@@ -77,4 +81,3 @@ cargo bench                              # Criterion benchmarks
 - **JPEG transcoder modules**: `header.rs` and `entropy.rs` have `#![allow(dead_code)]` for JPEG spec reference types (color spaces, standard Huffman tables) — keep these
 - **ISCC module** (`src/util/iscc.rs`): Critical component for content identification, exported from `lib.rs`
 - **No `TargetModel`**: This concept was removed. `ProtectionContext::new` takes `(intensity, seed)` only
-- **Pre-existing uncommitted changes**: The working tree has modifications from a v0.2.0 refactor beyond this session's changes — check `git diff` before committing

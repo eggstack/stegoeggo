@@ -224,7 +224,7 @@ fn process_single_file(
     };
 
     let mut ctx = ctx_base.clone();
-    ctx.input_format = Some(detected_format);
+    ctx.set_input_format(detected_format);
 
     let output_bytes = process_image_bytes(&input_bytes, protection_level, &ctx)?;
 
@@ -333,13 +333,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if metadata_seed.is_none() {
                 println!("Protected: Yes");
                 if let Some(payload) = stego.extract_payload(&img) {
-                    let level_str = ProtectionLevel::from_byte(payload.protection_level)
+                    let level_str = ProtectionLevel::from_byte(payload.protection_level())
                         .map(|l: ProtectionLevel| l.as_str())
                         .unwrap_or("Unknown");
-                    println!("Level: {} (id: {})", level_str, payload.protection_level);
-                    println!("Seed: {}", payload.seed);
-                    println!("Intensity: {:.2}", payload.intensity);
-                    println!("Version: {}", payload.version);
+                    println!("Level: {} (id: {})", level_str, payload.protection_level());
+                    println!("Seed: {}", payload.seed());
+                    println!("Intensity: {:.2}", payload.intensity());
+                    println!("Version: {}", payload.version());
                 }
             }
         } else {
@@ -392,16 +392,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.verbose {
         println!("Protection level: {:?}", protection_level);
-        println!("Intensity: {}", ctx.intensity);
-        println!("Seed: {}", ctx.seed);
-        println!("Stego redundancy: {}", ctx.stego_redundancy);
-        if let Some(ref format) = ctx.output_format {
+        println!("Intensity: {}", ctx.intensity());
+        println!("Seed: {}", ctx.seed());
+        println!("Stego redundancy: {}", ctx.stego_redundancy());
+        if let Some(ref format) = ctx.output_format() {
             println!("Output format: {:?}", format);
         }
-        println!("JPEG quality: {}", ctx.jpeg_quality);
-        println!("Progressive JPEG: {}", ctx.progressive_jpeg);
-        println!("Inject metadata: {:?}", ctx.inject_metadata);
-        println!("Inject legal claims: {:?}", ctx.inject_legal_claims);
+        println!("JPEG quality: {}", ctx.jpeg_quality());
+        println!("Progressive JPEG: {}", ctx.progressive_jpeg());
+        println!("Inject metadata: {:?}", ctx.inject_metadata());
+        println!("Inject legal claims: {:?}", ctx.inject_legal_claims());
         println!(
             "MAC key: {}",
             if ctx.mac_key().is_some() {
@@ -410,7 +410,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "none"
             }
         );
-        if let Some(ref dmi) = ctx.dmi_value {
+        if let Some(ref dmi) = ctx.dmi_value() {
             let dmi_val: DmiValue = *dmi;
             println!("DMI: {}", dmi_val.as_str());
         }

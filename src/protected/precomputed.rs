@@ -75,11 +75,11 @@ impl PrecomputedProtector {
         ctx: &ProtectionContext,
         original_hash: &str,
     ) -> Result<Option<ProtectedVariant>> {
-        let intensity_rounded = (ctx.intensity * 10000.0).round() / 10000.0;
+        let intensity_rounded = (ctx.intensity() * 10000.0).round() / 10000.0;
         let key = format!(
             "{}_{}_{}",
             original_hash,
-            ctx.protection_level
+            ctx.protection_level()
                 .unwrap_or(ProtectionLevel::Strong)
                 .as_str(),
             intensity_rounded
@@ -117,14 +117,14 @@ impl PrecomputedProtector {
         img: &DynamicImage,
         ctx: &ProtectionContext,
     ) -> Result<Vec<u8>> {
-        let mut rng = XorShiftRng::new(ctx.seed);
+        let mut rng = XorShiftRng::new(ctx.seed());
 
         let rgba = img.to_rgba8();
         let (width, height) = rgba.dimensions();
 
         let mut perturbation = Vec::with_capacity((width * height * 4) as usize);
 
-        let intensity = ctx.intensity;
+        let intensity = ctx.intensity();
 
         for _y in 0..height {
             for _x in 0..width {
@@ -154,14 +154,17 @@ impl PrecomputedProtector {
         let img_rgba = img.to_rgba8();
         let (width, height) = img_rgba.dimensions();
 
-        if variant.width != width || variant.height != height {
+        if variant.width() != width || variant.height() != height {
             return Err(Error::InvalidVariant(format!(
                 "Dimension mismatch: expected {}x{}, got {}x{}",
-                variant.width, variant.height, width, height
+                variant.width(),
+                variant.height(),
+                width,
+                height
             )));
         }
 
-        let perturbation = &variant.perturbation_data;
+        let perturbation = variant.perturbation_data();
 
         if perturbation.len() != (width * height * 4) as usize {
             return Err(Error::InvalidVariant(

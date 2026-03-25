@@ -533,12 +533,12 @@ impl Protector for MetadataTrapProtector {
         ctx: &ProtectionContext,
     ) -> Result<Cow<'a, DynamicImage>> {
         let metadata = self.generate_poison_metadata(
-            ctx.dmi_value,
-            ctx.protection_level,
-            Some(ctx.seed),
+            ctx.dmi_value(),
+            ctx.protection_level(),
+            Some(ctx.seed()),
             ctx.legal_metadata(),
-            ctx.inject_metadata,
-            ctx.inject_legal_claims,
+            ctx.inject_metadata(),
+            ctx.inject_legal_claims(),
         );
 
         if metadata.is_empty() {
@@ -546,25 +546,24 @@ impl Protector for MetadataTrapProtector {
         }
 
         let format = ctx
-            .input_format
+            .input_format()
             .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
 
         let encoded = encode_image(img, format.to_image_format())?;
 
         let with_metadata = match format {
             ImageOutputFormat::Png => {
-                self.inject_text_chunks_png(&encoded, &metadata, ctx.dmi_value)?
+                self.inject_text_chunks_png(&encoded, &metadata, ctx.dmi_value())?
             }
             ImageOutputFormat::Jpeg => {
-                self.inject_text_chunks_jpeg(&encoded, &metadata, ctx.dmi_value)?
+                self.inject_text_chunks_jpeg(&encoded, &metadata, ctx.dmi_value())?
             }
             ImageOutputFormat::WebP => {
-                self.inject_text_chunks_webp(&encoded, &metadata, ctx.dmi_value)?
+                self.inject_text_chunks_webp(&encoded, &metadata, ctx.dmi_value())?
             }
         };
 
-        let result_img = image::load_from_memory(&with_metadata)
-            .map_err(|e| Error::ImageDecode(e.to_string()))?;
+        let result_img = image::load_from_memory(&with_metadata)?;
 
         Ok(Cow::Owned(result_img))
     }
@@ -746,32 +745,35 @@ impl MetadataTrapProtector {
 
     pub fn inject_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
         let metadata = self.generate_poison_metadata(
-            ctx.dmi_value,
-            ctx.protection_level,
-            Some(ctx.seed),
+            ctx.dmi_value(),
+            ctx.protection_level(),
+            Some(ctx.seed()),
             ctx.legal_metadata(),
-            ctx.inject_metadata,
-            ctx.inject_legal_claims,
+            ctx.inject_metadata(),
+            ctx.inject_legal_claims(),
         );
 
         if metadata.is_empty() {
             return Ok(img_bytes.to_vec());
         }
 
-        let format = ctx.output_format.or(ctx.input_format).unwrap_or_else(|| {
-            ImageOutputFormat::from_magic_bytes(img_bytes)
-                .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT)
-        });
+        let format = ctx
+            .output_format()
+            .or(ctx.input_format())
+            .unwrap_or_else(|| {
+                ImageOutputFormat::from_magic_bytes(img_bytes)
+                    .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT)
+            });
 
         let with_metadata = match format {
             ImageOutputFormat::Png => {
-                self.inject_text_chunks_png(img_bytes, &metadata, ctx.dmi_value)?
+                self.inject_text_chunks_png(img_bytes, &metadata, ctx.dmi_value())?
             }
             ImageOutputFormat::Jpeg => {
-                self.inject_text_chunks_jpeg(img_bytes, &metadata, ctx.dmi_value)?
+                self.inject_text_chunks_jpeg(img_bytes, &metadata, ctx.dmi_value())?
             }
             ImageOutputFormat::WebP => {
-                self.inject_text_chunks_webp(img_bytes, &metadata, ctx.dmi_value)?
+                self.inject_text_chunks_webp(img_bytes, &metadata, ctx.dmi_value())?
             }
         };
 

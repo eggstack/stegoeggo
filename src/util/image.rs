@@ -465,7 +465,7 @@ pub fn encode_image_with_options(
 }
 
 pub fn load_image_from_bytes(bytes: &[u8]) -> Result<DynamicImage> {
-    image::load_from_memory(bytes).map_err(|e| Error::ImageDecode(e.to_string()))
+    Ok(image::load_from_memory(bytes)?)
 }
 
 pub fn apply_perturbation(img: &RgbaImage, perturbation: &[u8], divisor: i16) -> Result<RgbaImage> {

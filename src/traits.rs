@@ -25,15 +25,14 @@ pub trait Protector: Send + Sync {
             return Ok(img_bytes.to_vec());
         }
 
-        let format = ctx.input_format.unwrap_or_else(|| {
+        let format = ctx.input_format().unwrap_or_else(|| {
             ImageOutputFormat::from_magic_bytes(img_bytes).unwrap_or(DEFAULT_OUTPUT_FORMAT)
         });
 
-        let img = image::load_from_memory(img_bytes)
-            .map_err(|e| crate::error::Error::ImageDecode(e.to_string()))?;
+        let img = image::load_from_memory(img_bytes)?;
         let processed = self.apply(&img, ctx)?;
 
-        let quality = ctx.jpeg_quality;
+        let quality = ctx.jpeg_quality();
 
         let mut bytes = Vec::new();
         match format {

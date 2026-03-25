@@ -63,8 +63,8 @@ mod basic {
     #[test]
     fn test_protection_context() {
         let ctx = ProtectionContext::new(0.5, 123);
-        assert_eq!(ctx.intensity, 0.5);
-        assert_eq!(ctx.seed, 123);
+        assert_eq!(ctx.intensity(), 0.5);
+        assert_eq!(ctx.seed(), 123);
     }
 }
 

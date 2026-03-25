@@ -48,14 +48,14 @@ impl SteganographyProtector {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
         }
 
-        let seed = ctx.seed;
+        let seed = ctx.seed();
 
         // Try to decode DCT coefficients (works for baseline JPEG)
         match JpegTranscoder::decode_coefficients(jpeg_bytes) {
             Ok((mut header, mut coefficients)) => {
                 // Baseline JPEG: full F5 DCT stego + seed in Q-tables
                 let payload = self.generate_payload(ctx);
-                let redundancy = ctx.stego_redundancy.max(1);
+                let redundancy = ctx.stego_redundancy().max(1);
 
                 let available_coeffs: usize = coefficients
                     .values()
@@ -64,7 +64,14 @@ impl SteganographyProtector {
                     .sum();
 
                 if available_coeffs >= payload.len() * 8 {
-                    for r in [1, redundancy.min(2), redundancy].iter().copied() {
+                    let attempts: &[usize] = if redundancy <= 1 {
+                        &[1]
+                    } else if redundancy <= 2 {
+                        &[1, 2]
+                    } else {
+                        &[1, 2, redundancy]
+                    };
+                    for &r in attempts {
                         if DctStegoF5::with_redundancy(r)
                             .embed_f5(&mut coefficients, &payload, seed)
                             .is_ok()
@@ -503,13 +510,13 @@ impl SteganographyProtector {
 
         payload.push(1);
 
-        let level_byte = ctx.protection_level.map(|l| l.to_byte()).unwrap_or(2);
+        let level_byte = ctx.protection_level().map(|l| l.to_byte()).unwrap_or(2);
 
         payload.push(level_byte);
 
-        payload.extend_from_slice(&ctx.seed.to_le_bytes());
+        payload.extend_from_slice(&ctx.seed().to_le_bytes());
 
-        let intensity_val = (ctx.intensity * 100.0) as u16;
+        let intensity_val = (ctx.intensity() * 100.0) as u16;
         payload.extend_from_slice(&intensity_val.to_le_bytes());
 
         let now = std::time::SystemTime::now()
@@ -875,20 +882,20 @@ impl SteganographyProtector {
         let rgba = img.to_rgba8();
 
         let format = ctx
-            .input_format
+            .input_format()
             .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
 
-        let redundancy = ctx.stego_redundancy;
+        let redundancy = ctx.stego_redundancy();
 
         let processed = match format {
             crate::types::ImageOutputFormat::Png => {
-                self.embed_lsb(&rgba, &payload, ctx.seed, redundancy)
+                self.embed_lsb(&rgba, &payload, ctx.seed(), redundancy)
             }
             crate::types::ImageOutputFormat::Jpeg => {
-                self.embed_jpeg_stego(&rgba, &payload, ctx.seed, redundancy)
+                self.embed_jpeg_stego(&rgba, &payload, ctx.seed(), redundancy)
             }
             crate::types::ImageOutputFormat::WebP => {
-                self.embed_lsb(&rgba, &payload, ctx.seed, redundancy)
+                self.embed_lsb(&rgba, &payload, ctx.seed(), redundancy)
             }
         };
 
@@ -912,7 +919,7 @@ impl Protector for SteganographyProtector {
     }
 
     fn apply_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
-        let format = ctx.input_format.unwrap_or_else(|| {
+        let format = ctx.input_format().unwrap_or_else(|| {
             crate::types::ImageOutputFormat::from_magic_bytes(img_bytes)
                 .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT)
         });
@@ -921,8 +928,7 @@ impl Protector for SteganographyProtector {
             return self.apply_dct_stego_bytes(img_bytes, ctx);
         }
 
-        let img = image::load_from_memory(img_bytes)
-            .map_err(|e| crate::error::Error::ImageDecode(e.to_string()))?;
+        let img = image::load_from_memory(img_bytes)?;
 
         let processed = self.apply_to_image_owned(&img, ctx);
 
@@ -950,8 +956,26 @@ impl Protector for SteganographyProtector {
 
 #[derive(Debug, Clone)]
 pub struct StegoPayload {
-    pub protection_level: u8,
-    pub seed: u64,
-    pub intensity: f32,
-    pub version: u8,
+    protection_level: u8,
+    seed: u64,
+    intensity: f32,
+    version: u8,
+}
+
+impl StegoPayload {
+    pub fn protection_level(&self) -> u8 {
+        self.protection_level
+    }
+
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    pub fn intensity(&self) -> f32 {
+        self.intensity
+    }
+
+    pub fn version(&self) -> u8 {
+        self.version
+    }
 }

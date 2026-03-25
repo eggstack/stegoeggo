@@ -113,9 +113,9 @@ mod round_trip {
 
         assert!(payload.is_some(), "Should extract payload");
         let payload = payload.unwrap();
-        assert_eq!(payload.seed, seed, "Seed should match");
+        assert_eq!(payload.seed(), seed, "Seed should match");
         assert!(
-            (payload.intensity - intensity).abs() < 0.01,
+            (payload.intensity() - intensity).abs() < 0.01,
             "Intensity should match"
         );
     }
@@ -507,7 +507,7 @@ mod steganography {
             "Should extract payload with correct MAC key"
         );
         let payload = payload.unwrap();
-        assert_eq!(payload.seed, 42);
+        assert_eq!(payload.seed(), 42);
     }
 
     #[test]
@@ -527,7 +527,7 @@ mod steganography {
 
         assert!(payload.is_some(), "Should extract payload with known seed");
         let payload = payload.unwrap();
-        assert_eq!(payload.seed, seed);
+        assert_eq!(payload.seed(), seed);
     }
 }
 
@@ -900,9 +900,9 @@ mod pipeline {
     fn test_protection_context_defaults() {
         let ctx = ProtectionContext::default();
 
-        assert_eq!(ctx.intensity, 0.5);
-        assert_ne!(ctx.seed, 0, "Default seed should be non-zero");
-        assert!(ctx.input_format.is_none());
+        assert_eq!(ctx.intensity(), 0.5);
+        assert_ne!(ctx.seed(), 0, "Default seed should be non-zero");
+        assert!(ctx.input_format().is_none());
     }
 
     #[test]
@@ -913,12 +913,12 @@ mod pipeline {
             .with_jpeg_quality(85)
             .with_progressive_jpeg(true);
 
-        assert_eq!(ctx.seed, 12345);
-        assert_eq!(ctx.intensity, 0.8);
-        assert_eq!(ctx.output_format, Some(ImageOutputFormat::Png));
-        assert_eq!(ctx.stego_redundancy, 3);
-        assert_eq!(ctx.jpeg_quality, 85);
-        assert!(ctx.progressive_jpeg);
+        assert_eq!(ctx.seed(), 12345);
+        assert_eq!(ctx.intensity(), 0.8);
+        assert_eq!(ctx.output_format(), Some(ImageOutputFormat::Png));
+        assert_eq!(ctx.stego_redundancy(), 3);
+        assert_eq!(ctx.jpeg_quality(), 85);
+        assert!(ctx.progressive_jpeg());
     }
 }
 

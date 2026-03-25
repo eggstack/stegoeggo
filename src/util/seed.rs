@@ -4,10 +4,15 @@
 /// avoiding predictable patterns when two calls share the same second.
 /// Returns a non-zero u64.
 ///
+/// # Security
+///
 /// **Not cryptographically secure.** The output is deterministic given the
 /// system clock. If seed unpredictability is required (e.g., adversarial
 /// settings where an attacker knows the approximate request time), use a
 /// CSPRNG like `getrandom` instead.
+///
+/// This is suitable for determinism within a single request (reproducible
+/// protection from a known seed), not for generating secret keys or nonces.
 pub fn generate_random_seed() -> u64 {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
