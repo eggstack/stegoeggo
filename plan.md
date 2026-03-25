@@ -356,3 +356,205 @@ Ordered by implementation priority.
 - `apply_multi_protector_bytes` had silent PNG default and unnecessary context clone
 - Async API docs were inaccurate about rayon double-pooling
 - `#[serde(skip)]` on config field is now documented by a test
+
+---
+
+## Deferred Item Detailed Plans
+
+### Deferred #13: Deduplicate noise generation in serial/parallel paths
+
+**File:** `src/util/image.rs`
+
+#### Current State
+
+Both `apply_perturbation_single_pass_keyed_serial` (lines 307-362) and
+`apply_perturbation_single_pass_keyed_par` (lines 202-265) independently
+perform the same setup:
+
+```rust
+// Repeated in both functions (approx lines 220-234 and 324-333)
+let noise_gen = if mac_key.is_empty() {
+    NoiseGenerator::new(seed)
+} else {
+    NoiseGenerator::with_mac_key(seed, mac_key)
+};
+let spatial_seed = noise_gen.derive_keyed_seed(0x12345678);
+let mut spatial_rng = XorShiftRng::new(spatial_seed);
+
+let variation_min = 0.98f32;
+let variation_range_size = 0.04f32;
+```
+
+The parallel path collects `y_variations` into a `Vec<f32>` (lines 230-234)
+so rayon chunks can index it. The serial path computes each `y_variation`
+on the fly (line 336-337).
+
+#### Proposed Plan
+
+**Step 1: Create a shared `PerturbationRuntime` struct**
+
+```rust
+/// Pre-computed runtime state shared between serial and parallel paths.
+/// Holds per-row variation factors and the shared perturbation parameters.
+struct PerturbationRuntime {
+    params: PerturbationParams,
+    y_variations: Vec<f32>,
+}
+
+impl PerturbationRuntime {
+    fn new(
+        seed: u64,
+        intensity: f32,
+        intensity_multiplier: f32,
+        mac_key: &[u8],
+        width: u32,
+        height: usize,
+    ) -> Self {
+        let params = PerturbationParams::new(seed, intensity, intensity_multiplier, mac_key, width);
+
+        let noise_gen = if mac_key.is_empty() {
+            NoiseGenerator::new(seed)
+        } else {
+            NoiseGenerator::with_mac_key(seed, mac_key)
+        };
+        let spatial_seed = noise_gen.derive_keyed_seed(0x12345678);
+        let mut spatial_rng = XorShiftRng::new(spatial_seed);
+
+        let variation_min = 0.98f32;
+        let variation_range_size = 0.04f32;
+        let y_variations: Vec<f32> = (0..height)
+            .map(|_| {
+                variation_min
+                    + (spatial_rng.next_u64() as f32 / u64::MAX as f32)
+                        * variation_range_size
+            })
+            .collect();
+
+        Self { params, y_variations }
+    }
+
+    fn y_variation(&self, y: usize) -> f32 {
+        self.y_variations[y]
+    }
+}
+```
+
+**Step 2: Refactor both paths to use `PerturbationRuntime`**
+
+Both `_serial` and `_par` functions call `PerturbationRuntime::new()` once,
+then use `runtime.params.perturb_pixel(...)` and `runtime.y_variation(y)`
+inside the loop.
+
+**Step 3: Inline constants**
+
+The magic numbers `0.98` and `0.04` should become named constants:
+
+```rust
+const VARIATION_MIN: f32 = 0.98;
+const VARIATION_RANGE: f32 = 0.04;
+const SPATIAL_SEED_TAG: u64 = 0x12345678;
+```
+
+**Step 4: Add regression test**
+
+Add a test that calls both serial and parallel paths on the same image with
+the same seed and asserts identical output (when pixel count triggers parallel
+path, mock or temporarily lower the threshold for the test, or test with a
+large enough image).
+
+#### Risk Assessment
+
+- **Risk:** Low. The refactor only changes internal setup; the loop logic is
+  untouched. `PerturbationParams` already handles the core parameters.
+- **Verification:** Run full test suite. Compare serial vs parallel output on
+  the same image/seed/intensity — they must be bit-identical since both use
+  the same `y_variations` vector.
+- **Estimate:** ~1 hour including tests.
+
+---
+
+### Deferred #16: Make parallel threshold configurable / auto-tuned
+
+**File:** `src/util/image.rs`
+**Line:** 507
+
+#### Current State
+
+```rust
+pub const PARALLEL_THRESHOLD_PIXELS: usize = 256 * 256;
+```
+
+Used in 6 locations across `image.rs` and `precomputed.rs`:
+- `apply_perturbation_single_pass_keyed` (line 288): choose serial vs par
+- `apply_perturbation_par` (line 521): fall back to serial below threshold
+- `apply_perturbation_single_pass_keyed_par` (called via `apply_perturbation_single_pass_keyed`)
+- `PrecomputedProtector::apply` (line 180, 214): choose serial vs par
+
+#### Proposed Plan
+
+**Option A: Auto-tune via `rayon::current_num_threads()` (recommended)**
+
+Replace the const with a function that scales the threshold by core count:
+
+```rust
+/// Returns the pixel count threshold at which parallelism is worthwhile.
+/// Scales with rayon's thread pool size to avoid unnecessary parallel
+/// overhead on few-core machines or over-parallelization on many cores.
+///
+/// Heuristic: base threshold for 4 cores, linearly scaled.
+pub fn parallel_threshold() -> usize {
+    let cores = rayon::current_num_threads().max(1);
+    // Base: 64*64 = 4096 per core. At 4 cores = 64*64*4 = 256*256 = 65536.
+    // At 1 core: 64*64 = 4096. At 16 cores: 64*64*16 = 256*512 = 131072.
+    cores * 64 * 64
+}
+```
+
+Keep the old `PARALLEL_THRESHOLD_PIXELS` as a deprecated constant that calls
+the function (or remove it and update all call sites).
+
+**Changes required:**
+1. Add `parallel_threshold()` function in `image.rs`
+2. Replace all 6 usages of `PARALLEL_THRESHOLD_PIXELS` with `parallel_threshold()`
+3. Remove or deprecate the const
+4. Add a test verifying the function returns a sane value (non-zero, reasonable range)
+
+**Option B: Configurable via `ProtectionContext`**
+
+Add a field to `ProtectionContext`:
+
+```rust
+// In types.rs
+parallel_threshold: Option<usize>,  // None = auto-tune
+```
+
+With builder method:
+
+```rust
+#[must_use]
+pub fn with_parallel_threshold(mut self, threshold: usize) -> Self {
+    self.parallel_threshold = Some(threshold);
+    self
+}
+```
+
+Then pass `ctx.parallel_threshold.unwrap_or_else(parallel_threshold)` at
+each usage site.
+
+**Trade-offs:**
+- Option A is zero-API-surface, backward-compatible, and covers 95% of cases.
+- Option B adds builder surface for the remaining 5% (custom hardware tuning).
+- Recommend A first; add B only if production profiling shows the heuristic
+  is wrong for a specific deployment.
+
+#### Risk Assessment
+
+- **Risk:** Medium — changes the parallelization behavior for all images.
+  On single-core machines, more images will use serial path (correct).
+  On many-core machines, more images will use parallel (correct, but
+  rayon overhead on small images could be a regression).
+- **Mitigation:** The function should have a minimum floor (e.g., `max(cores, 1) * 64 * 64`)
+  to ensure at least 4096 pixels before parallelism kicks in.
+- **Verification:** Benchmark with `cargo bench` before/after. Test with
+  `rayon::ThreadPoolBuilder::new().num_threads(1)` to verify single-core path.
+- **Estimate:** ~2 hours including benchmarks and edge-case testing.
