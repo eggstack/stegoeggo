@@ -102,3 +102,30 @@ impl VariantLoader for NoOpLoader {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn noop_loader_returns_none() {
+        let loader = NoOpLoader;
+        let result = loader.load_variant("any_key").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn noop_store_returns_ok() {
+        let loader = NoOpLoader;
+        let variant = crate::types::ProtectedVariant::new(
+            "hash".to_string(),
+            crate::types::ProtectionLevel::Strong,
+            vec![],
+            0.5,
+            10,
+            10,
+        );
+        let result = loader.store_variant(&variant);
+        assert!(result.is_ok());
+    }
+}

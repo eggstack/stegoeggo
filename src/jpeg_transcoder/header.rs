@@ -195,7 +195,10 @@ impl JpegHeader {
             }
 
             if pos + 1 >= data.len() {
-                return Err(TranscoderError::InvalidFormat("Truncated marker".into()));
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "Truncated marker at byte offset {}",
+                    pos
+                )));
             }
 
             let marker = data[pos + 1];
@@ -225,9 +228,10 @@ impl JpegHeader {
 
             // Get segment length
             if pos + 3 >= data.len() {
-                return Err(TranscoderError::InvalidFormat(
-                    "Truncated segment length".into(),
-                ));
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "Truncated segment length at byte offset {}",
+                    pos
+                )));
             }
 
             let segment_len = ((data[pos + 2] as usize) << 8) | (data[pos + 3] as usize);

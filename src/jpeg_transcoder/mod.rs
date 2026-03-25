@@ -128,6 +128,11 @@ impl JpegTranscoder {
 
             if table.precision == 8 {
                 for &val in &table.values {
+                    debug_assert!(
+                        val <= 255,
+                        "Quantization value exceeds 8-bit range: {}",
+                        val
+                    );
                     output.push(val as u8);
                 }
             } else {
@@ -264,7 +269,11 @@ mod scan_utils {
                 return None;
             }
             let seg_len = ((data[pos + 2] as usize) << 8) | (data[pos + 3] as usize);
-            pos += 2 + seg_len;
+            let next_pos = pos.checked_add(2).and_then(|p| p.checked_add(seg_len))?;
+            if next_pos > data.len() {
+                return None;
+            }
+            pos = next_pos;
         }
         None
     }
@@ -275,4 +284,39 @@ pub fn is_progressive_jpeg(jpeg_data: &[u8]) -> bool {
     JpegHeader::parse(jpeg_data)
         .map(|h| h.is_progressive)
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_progressive_non_jpeg_returns_false() {
+        assert!(!is_progressive_jpeg(&[]));
+        assert!(!is_progressive_jpeg(&[0x89, 0x50, 0x4E, 0x47]));
+        assert!(!is_progressive_jpeg(&[0xFF, 0xD8]));
+    }
+
+    #[test]
+    fn get_scan_data_start_empty_returns_none() {
+        assert!(scan_utils::get_scan_data_start(&[]).is_none());
+    }
+
+    #[test]
+    fn get_scan_data_start_truncated_returns_none() {
+        // SOI + partial marker
+        assert!(scan_utils::get_scan_data_start(&[0xFF, 0xD8, 0xFF]).is_none());
+    }
+
+    #[test]
+    fn assemble_jpeg_with_debug_assert() {
+        // Verify the assemble path produces valid output with debug assertions
+        let header = JpegHeader::default();
+        let scan_data = Vec::new();
+        let result = JpegTranscoder::assemble_jpeg(&header, &scan_data);
+        assert!(result.is_ok());
+        let bytes = result.unwrap();
+        assert!(bytes.starts_with(&[0xFF, 0xD8]));
+        assert!(bytes.ends_with(&[0xFF, 0xD9]));
+    }
 }

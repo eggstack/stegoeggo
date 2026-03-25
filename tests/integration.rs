@@ -1051,3 +1051,116 @@ mod edge_case_tests {
         assert!(result.is_err(), "Random bytes should return error");
     }
 }
+
+mod verify_tests {
+    use super::*;
+    use cloakrs::verify_image_bytes;
+
+    #[test]
+    fn test_verify_image_bytes_sync() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.5, 42);
+
+        let protected_bytes =
+            process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        let result = verify_image_bytes(&protected_bytes, &[]);
+        assert_eq!(result, Some(true), "Protected image should verify");
+    }
+
+    #[test]
+    fn test_verify_image_bytes_unprotected() {
+        let img = create_test_image(32, 32);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let result = verify_image_bytes(&png_bytes, &[]);
+        assert!(
+            result.is_none() || result == Some(false),
+            "Unprotected image should not verify"
+        );
+    }
+}
+
+mod serde_tests {
+    use super::*;
+
+    #[test]
+    fn test_config_skipped_in_serde_roundtrip() {
+        use cloakrs::ProtectionConfig;
+        use std::sync::Arc;
+
+        let config = Arc::new(
+            ProtectionConfig::new()
+                .with_mac_key(b"secret".to_vec())
+                .with_legal_metadata(cloakrs::LegalMetadata::new().with_copyright_holder("Test")),
+        );
+        let ctx = ProtectionContext::new(0.7, 12345).with_config(config);
+
+        let json = serde_json::to_string(&ctx).unwrap();
+        let restored: ProtectionContext = serde_json::from_str(&json).unwrap();
+
+        // Config is #[serde(skip)] — should be None after roundtrip
+        assert_eq!(restored.seed(), 12345);
+        assert_eq!(restored.intensity(), 0.7);
+        assert!(
+            restored.mac_key().is_none(),
+            "MAC key should be lost after serde roundtrip"
+        );
+    }
+}
+
+mod webp_tests {
+    use super::*;
+
+    #[test]
+    fn test_webp_pipeline_end_to_end() {
+        let img = create_test_image(32, 32);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::WebP);
+
+        let protected_bytes =
+            process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        // Output should be valid WebP
+        assert!(protected_bytes.len() >= 12, "WebP output too short");
+        assert_eq!(&protected_bytes[0..4], b"RIFF", "Should start with RIFF");
+        assert_eq!(&protected_bytes[8..12], b"WEBP", "Should contain WEBP");
+
+        // Should be loadable
+        let protected_img = image::load_from_memory(&protected_bytes);
+        assert!(protected_img.is_ok(), "WebP should be loadable");
+    }
+}
+
+mod error_variant_tests {
+    use super::*;
+    use cloakrs::Error;
+
+    #[test]
+    fn test_invalid_format_error_variant() {
+        let garbage = vec![0xAB; 64];
+        let ctx = create_test_context();
+        let result = process_image_bytes(&garbage, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err());
+        assert!(
+            matches!(result.unwrap_err(), Error::InvalidFormat(_)),
+            "Should return InvalidFormat error"
+        );
+    }
+
+    #[test]
+    fn test_empty_bytes_error() {
+        let ctx = create_test_context();
+        let result = process_image_bytes(&[], ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err());
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                Error::InvalidFormat(_) | Error::Image(_)
+            ),
+            "Should return InvalidFormat or Image error for empty input"
+        );
+    }
+}

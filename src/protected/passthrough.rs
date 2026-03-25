@@ -47,3 +47,44 @@ impl Protector for PassthroughProtector {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn name_is_passthrough() {
+        let p = PassthroughProtector::new();
+        assert_eq!(p.name(), "passthrough");
+    }
+
+    #[test]
+    fn protection_level_is_disabled() {
+        let p = PassthroughProtector::new();
+        assert_eq!(p.protection_level(), ProtectionLevel::Disabled);
+    }
+
+    #[test]
+    fn estimated_latency_is_zero() {
+        let p = PassthroughProtector::new();
+        assert_eq!(p.estimated_latency_ms(), 0);
+    }
+
+    #[test]
+    fn does_not_modify_pixels() {
+        let p = PassthroughProtector::new();
+        assert!(!p.modifies_pixels());
+    }
+
+    #[test]
+    fn apply_returns_borrowed() {
+        let p = PassthroughProtector::new();
+        let img = image::DynamicImage::new_rgb8(4, 4);
+        let ctx = ProtectionContext::new(0.5, 42);
+        let result = p.apply(&img, &ctx).unwrap();
+        match result {
+            std::borrow::Cow::Borrowed(_) => {}
+            _ => panic!("PassthroughProtector::apply should return Cow::Borrowed"),
+        }
+    }
+}

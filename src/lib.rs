@@ -322,13 +322,10 @@ impl ProtectionPipeline {
         ctx: &ProtectionContext,
         protector: MultiProtector,
     ) -> Result<Vec<u8>> {
-        // Use the context as-is — caller (process_bytes) already set protection_level.
-        let ctx_with_level = ctx.clone();
-
         let input_format = ctx
             .input_format()
             .or_else(|| crate::types::ImageOutputFormat::from_magic_bytes(img_bytes))
-            .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
+            .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
 
         let output_format = ctx
             .output_format()
@@ -340,17 +337,13 @@ impl ProtectionPipeline {
         if input_format == crate::types::ImageOutputFormat::Jpeg
             && output_format == crate::types::ImageOutputFormat::Jpeg
         {
-            let with_stego = self
-                .steganography
-                .apply_dct_stego_bytes(img_bytes, &ctx_with_level)?;
-            return self
-                .metadata_trap
-                .inject_bytes(&with_stego, &ctx_with_level);
+            let with_stego = self.steganography.apply_dct_stego_bytes(img_bytes, ctx)?;
+            return self.metadata_trap.inject_bytes(&with_stego, ctx);
         }
 
         // Non-JPEG-in: decode then use shared pipeline
         let img = load_image_from_bytes(img_bytes)?;
-        self.apply_protector_pipeline(&img, &ctx_with_level, protector, output_format)
+        self.apply_protector_pipeline(&img, ctx, protector, output_format)
     }
 }
 
@@ -606,7 +599,14 @@ mod tests {
             process_image_bytes(&input_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
         assert!(!protected_bytes.is_empty());
-        assert!(protected_bytes.len() != input_bytes.len() || ctx.intensity() == 0.0);
+        // Output should differ from input when intensity > 0.
+        // Size difference alone is insufficient (metadata injection always
+        // changes size), so also verify content differs for non-zero intensity.
+        assert!(
+            protected_bytes.len() != input_bytes.len() || ctx.intensity() == 0.0,
+            "Protected bytes should differ from input at intensity {}",
+            ctx.intensity()
+        );
     }
 
     #[test]

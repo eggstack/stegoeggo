@@ -102,6 +102,10 @@ impl DctStegoF5 {
                         quant.values[pos] |= 1;
                     } else {
                         quant.values[pos] &= 0xFE;
+                        // JPEG quantization values must be >= 1; clamp after clearing LSB
+                        if quant.values[pos] == 0 {
+                            quant.values[pos] = 1;
+                        }
                     }
                     bit_idx += 1;
                 }
@@ -582,6 +586,40 @@ mod tests {
                     .collect::<Vec<_>>()
             );
         }
+    }
+
+    #[test]
+    fn test_seed_embed_with_unit_quant_values() {
+        let mut header = JpegHeader::default();
+        // Use value 2 which can embed both 0-bit (2 & 0xFE = 2) and 1-bit (2 | 1 = 3).
+        // This also tests that values never drop below 1 after embedding.
+        for i in 0..2 {
+            let table = crate::jpeg_transcoder::header::QuantizationTable {
+                table_id: i as u8,
+                precision: 8,
+                values: [2; 64],
+            };
+            header.quantization_tables[i] = Some(table);
+        }
+
+        let seed = 0xCAFEBABEu64;
+        let stego = DctStegoF5::new();
+        stego
+            .embed_seed_in_quantization_tables(&mut header, seed)
+            .unwrap();
+
+        // All quantization values should remain >= 1
+        for table in header.quantization_tables.iter().flatten() {
+            for &val in &table.values[..64] {
+                assert!(val >= 1, "Quantization value must be >= 1, got {}", val);
+            }
+        }
+
+        // Seed should still be extractable
+        let extracted = stego
+            .extract_seed_from_quantization_tables(&header)
+            .unwrap();
+        assert_eq!(extracted, seed);
     }
 
     #[test]

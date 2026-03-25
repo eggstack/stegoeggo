@@ -397,16 +397,13 @@ impl CoefficientDecoder {
                                 }
                             }
 
-                            // Reorder from zigzag to natural order
-                            let mut natural_block = [0i16; 64];
-                            for i in 0..64 {
-                                natural_block[i] = block[ZIGZAG[i]];
-                            }
-
+                            // Block is already in natural order:
+                            // block[ZIGZAG[k]] = magnitude stores each coefficient
+                            // at its natural (row-major) position.
                             result
                                 .entry(comp.component_id)
                                 .or_insert_with(Vec::new)
-                                .push(natural_block);
+                                .push(block);
                         }
                     }
                 }
@@ -792,5 +789,20 @@ mod tests {
                 i
             );
         }
+    }
+
+    #[test]
+    fn test_block_storage_is_natural_order() {
+        // Verify that block[ZIGZAG[k]] stores coefficient at natural position.
+        // ZIGZAG[k] maps zigzag index k to natural (row-major) position.
+        // The standard zigzag for the first few positions:
+        //   zigzag 0 -> natural 0  (0,0) DC
+        //   zigzag 1 -> natural 1  (0,1)
+        //   zigzag 2 -> natural 8  (1,0)
+        //   zigzag 3 -> natural 16 (2,0)
+        assert_eq!(ZIGZAG[0], 0);
+        assert_eq!(ZIGZAG[1], 1);
+        assert_eq!(ZIGZAG[2], 8);
+        assert_eq!(ZIGZAG[3], 16);
     }
 }

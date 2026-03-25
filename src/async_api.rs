@@ -100,8 +100,11 @@ pub async fn process_image_bytes_async(
 
 /// Process multiple images asynchronously and in parallel.
 ///
-/// Spawns each image on a separate blocking thread. Avoids double-pooling
-/// by not using rayon internally — tokio's blocking pool handles parallelism.
+/// Spawns each image on a separate tokio blocking thread. Note: the
+/// synchronous protection functions use rayon internally for per-image
+/// parallelism, so there is thread pool overlap — tokio blocking pool
+/// threads each run rayon's thread pool. Under heavy load this may cause
+/// contention; monitor thread counts if processing many large images concurrently.
 #[must_use = "the protected images should be saved or used"]
 pub async fn process_images_parallel_async(
     images: Vec<DynamicImage>,
@@ -125,8 +128,11 @@ pub async fn process_images_parallel_async(
 
 /// Process multiple image bytes asynchronously and in parallel.
 ///
-/// Spawns each image on a separate blocking thread. Avoids double-pooling
-/// by not using rayon internally — tokio's blocking pool handles parallelism.
+/// Spawns each image on a separate tokio blocking thread. Note: the
+/// synchronous protection functions use rayon internally for per-image
+/// parallelism, so there is thread pool overlap — tokio blocking pool
+/// threads each run rayon's thread pool. Under heavy load this may cause
+/// contention; monitor thread counts if processing many large images concurrently.
 #[must_use = "the protected image bytes should be saved or used"]
 pub async fn process_images_bytes_parallel_async(
     images: Vec<Vec<u8>>,

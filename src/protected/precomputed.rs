@@ -31,6 +31,12 @@ impl PrecomputedProtector {
         }
     }
 
+    /// Register a single variant in the in-memory cache and persist it
+    /// to the loader if configured.
+    ///
+    /// Two-phase design: the loader I/O (persist) runs without the write
+    /// lock held, then the write lock is acquired only for the fast
+    /// in-memory insert. Holding the lock during I/O would block readers.
     pub fn register_variant(&self, variant: ProtectedVariant) -> Result<()> {
         let key = variant.cache_key();
 
@@ -203,22 +209,26 @@ impl Protector for PrecomputedProtector {
         let (width, height) = img_rgba.dimensions();
         let perturbation = self.generate_perturbation_data(width, height, ctx)?;
 
-        let variant = crate::types::ProtectedVariant::new(
-            original_hash,
-            crate::types::ProtectionLevel::Strong,
-            perturbation.clone(),
-            ctx.intensity(),
-            width,
-            height,
-        );
-        let _ = self.register_variant(variant);
-
+        // Apply perturbation before building the variant to avoid cloning.
         let total_pixels = (width * height) as usize;
         let output = if total_pixels >= PARALLEL_THRESHOLD_PIXELS {
             apply_perturbation_par(&img_rgba, &perturbation, 4)?
         } else {
             apply_perturbation(&img_rgba, &perturbation, 4)?
         };
+
+        let variant = crate::types::ProtectedVariant::new(
+            original_hash,
+            crate::types::ProtectionLevel::Strong,
+            perturbation,
+            ctx.intensity(),
+            width,
+            height,
+        );
+        let _ = self.register_variant(variant);
+        // Registration failure is silently ignored by design: caching is
+        // best-effort. The perturbation is still applied even if the
+        // VariantLoader cannot persist it.
 
         Ok(Cow::Owned(DynamicImage::ImageRgba8(output)))
     }

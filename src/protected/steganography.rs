@@ -21,6 +21,9 @@ const MIN_PAYLOAD_SIZE: usize = 26;
 /// Bit length of the minimum payload.
 const MIN_PAYLOAD_BITS: usize = MIN_PAYLOAD_SIZE * 8;
 
+/// Common test/dev seeds tried when metadata seed is unavailable.
+const FALLBACK_SEEDS: &[u64] = &[42, 0, 1, 12345, 99999, 123456789];
+
 #[inline(always)]
 fn splitmix64(x: u64) -> u64 {
     let mut z = x.wrapping_add(SPLITMIX64_SEED);
@@ -236,7 +239,7 @@ impl SteganographyProtector {
 
         // LSB fallback: try known seeds via DynamicImage
         if let Ok(img) = image::load_from_memory(img_bytes) {
-            for seed in [42u64, 0, 1, 12345, 99999, 123456789] {
+            for &seed in FALLBACK_SEEDS {
                 if self.verify_payload_with_seed(&img, seed) {
                     return Some(true);
                 }
@@ -325,7 +328,7 @@ impl SteganographyProtector {
         }
 
         // Fallback: try common seeds (metadata stripped during DynamicImage re-encoding)
-        for seed in [42u64, 0, 1, 12345, 99999, 123456789] {
+        for &seed in FALLBACK_SEEDS {
             if let Some(payload) = self.extract_payload_with_seed_and_key(img, seed, mac_key) {
                 return Some(payload);
             }
