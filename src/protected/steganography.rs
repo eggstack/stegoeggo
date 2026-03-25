@@ -12,6 +12,7 @@ use hmac::{Hmac, Mac};
 use image::{DynamicImage, Rgba, RgbaImage};
 use sha2::Sha256;
 use std::borrow::Cow;
+use subtle::ConstantTimeEq;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -448,7 +449,7 @@ impl SteganographyProtector {
 
     fn verify_payload_mac(payload_without_mac: &[u8], mac_key: &[u8], expected_mac: &[u8]) -> bool {
         let computed_mac = Self::compute_payload_mac(payload_without_mac, mac_key);
-        computed_mac == expected_mac
+        computed_mac.ct_eq(expected_mac).into()
     }
 
     /// # Security
@@ -765,10 +766,16 @@ impl SteganographyProtector {
                             embedded += 1;
 
                             if embedded >= bits_per_pass {
-                                return output;
+                                break;
                             }
                         }
                     }
+                    if embedded >= bits_per_pass {
+                        break;
+                    }
+                }
+                if embedded >= bits_per_pass {
+                    break;
                 }
             }
         }
@@ -1586,6 +1593,25 @@ mod tests {
 
         let result = protector.embed_jpeg_stego(&tiny, &payload, 42, 1);
         assert_eq!(result, tiny);
+    }
+
+    #[test]
+    fn jpeg_stego_redundancy_3_embeds_all_passes() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+        let payload = protector.generate_payload(&ctx);
+
+        let embedded = protector.embed_jpeg_stego(&img, &payload, 42, 3);
+
+        // Verify extraction works with redundancy=3
+        let payload_bits = SteganographyProtector::bytes_to_bits(&payload);
+        let expected_bits = payload_bits.len();
+        let extracted = protector.extract_jpeg_stego(&embedded, expected_bits, 42);
+        assert!(
+            extracted.is_some(),
+            "Should extract payload with redundancy=3"
+        );
     }
 
     #[test]

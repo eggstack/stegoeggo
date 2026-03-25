@@ -526,6 +526,11 @@ impl Default for MetadataTrapProtector {
 }
 
 impl Protector for MetadataTrapProtector {
+    /// Apply metadata trap protection to the image.
+    ///
+    /// **Warning:** This method re-encodes the image and re-decodes it to
+    /// produce a `DynamicImage`, which strips injected PNG/JPEG text chunks.
+    /// If metadata must survive in the byte stream, use `apply_bytes()` instead.
     fn apply<'a>(
         &self,
         img: &'a DynamicImage,

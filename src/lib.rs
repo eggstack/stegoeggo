@@ -202,6 +202,12 @@ impl ProtectionPipeline {
         }
     }
 
+    /// Process an image with the specified protection level.
+    ///
+    /// The `intensity` field of `ctx` controls only the perturbation stage
+    /// (noise/Enhanced/Precomputed). Steganography and metadata injection
+    /// run regardless of intensity. Setting `intensity` to 0.0 disables
+    /// pixel perturbation but stego and metadata layers remain active.
     pub fn process<'a>(
         &'a self,
         img: &'a DynamicImage,

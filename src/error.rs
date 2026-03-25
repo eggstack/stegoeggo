@@ -34,6 +34,9 @@ pub enum Error {
     #[error("Configuration error: {0}")]
     Config(String),
 
+    /// Wraps `image::ImageError` directly. Prefer `ImageDecode`/`ImageEncode`
+    /// for application-level context; this variant is used when the error
+    /// originates from `image` crate internals without additional wrapping.
     #[error("Image error: {0}")]
     Image(#[from] ImageError),
 

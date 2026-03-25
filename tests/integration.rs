@@ -985,3 +985,69 @@ mod utilities {
         assert!(iscc.is_some(), "ISCC should be computed from bytes");
     }
 }
+
+mod edge_case_tests {
+    use super::*;
+
+    #[test]
+    fn test_truncated_png_bytes() {
+        let img = create_test_image(32, 32);
+        let png_bytes = image_to_png_bytes(&img);
+        let truncated = &png_bytes[..png_bytes.len() / 2];
+
+        let ctx = create_test_context();
+        let result = process_image_bytes(truncated, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err(), "Truncated PNG should return error");
+    }
+
+    #[test]
+    fn test_truncated_jpeg_bytes() {
+        let img = create_test_image(32, 32);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 85);
+        let truncated = &jpeg_bytes[..jpeg_bytes.len() / 2];
+
+        let ctx = create_test_context();
+        let result = process_image_bytes(truncated, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err(), "Truncated JPEG should return error");
+    }
+
+    #[test]
+    fn test_empty_bytes() {
+        let ctx = create_test_context();
+        let result = process_image_bytes(&[], ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err(), "Empty input should return error");
+    }
+
+    #[test]
+    fn test_tiny_image_1x1() {
+        let img = create_test_image(1, 1);
+        let ctx = create_test_context();
+        let result = process_image(img, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_ok(), "1x1 image should process successfully");
+    }
+
+    #[test]
+    fn test_tiny_image_2x2() {
+        let img = create_test_image(2, 2);
+        let ctx = create_test_context();
+        let result = process_image(img, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_ok(), "2x2 image should process successfully");
+    }
+
+    #[test]
+    fn test_unsupported_format_random_bytes() {
+        // Pure random data without any valid image magic bytes
+        let garbage = vec![0xAB; 64];
+        let ctx = create_test_context();
+        let result = process_image_bytes(&garbage, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err(), "Random bytes should return error");
+    }
+
+    #[test]
+    fn test_invalid_bytes_random_data() {
+        let garbage = vec![0xAB; 64];
+        let ctx = create_test_context();
+        let result = process_image_bytes(&garbage, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err(), "Random bytes should return error");
+    }
+}

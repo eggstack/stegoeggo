@@ -114,13 +114,11 @@ impl PrecomputedProtector {
 
     pub fn generate_perturbation_data(
         &self,
-        img: &DynamicImage,
+        width: u32,
+        height: u32,
         ctx: &ProtectionContext,
     ) -> Result<Vec<u8>> {
         let mut rng = XorShiftRng::new(ctx.seed());
-
-        let rgba = img.to_rgba8();
-        let (width, height) = rgba.dimensions();
 
         let mut perturbation = Vec::with_capacity((width * height * 4) as usize);
 
@@ -201,10 +199,20 @@ impl Protector for PrecomputedProtector {
             return Ok(Cow::Owned(result));
         }
 
-        let perturbation = self.generate_perturbation_data(img, ctx)?;
-
         let img_rgba = img.to_rgba8();
         let (width, height) = img_rgba.dimensions();
+        let perturbation = self.generate_perturbation_data(width, height, ctx)?;
+
+        let variant = crate::types::ProtectedVariant::new(
+            original_hash,
+            crate::types::ProtectionLevel::Strong,
+            perturbation.clone(),
+            ctx.intensity(),
+            width,
+            height,
+        );
+        let _ = self.register_variant(variant);
+
         let total_pixels = (width * height) as usize;
         let output = if total_pixels >= PARALLEL_THRESHOLD_PIXELS {
             apply_perturbation_par(&img_rgba, &perturbation, 4)?
@@ -225,5 +233,44 @@ impl Protector for PrecomputedProtector {
 
     fn estimated_latency_ms(&self) -> u32 {
         2
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_image(w: u32, h: u32) -> DynamicImage {
+        DynamicImage::ImageRgba8(image::RgbaImage::from_fn(w, h, |x, y| {
+            image::Rgba([x as u8, y as u8, 128, 255])
+        }))
+    }
+
+    #[test]
+    fn generate_perturbation_data_correct_size() {
+        let protector = PrecomputedProtector::new();
+        let ctx = ProtectionContext::new(0.5, 42);
+        let data = protector.generate_perturbation_data(8, 8, &ctx).unwrap();
+        assert_eq!(data.len(), 8 * 8 * 4);
+    }
+
+    #[test]
+    fn dimension_mismatch_returns_error() {
+        let protector = PrecomputedProtector::new();
+        let img = make_test_image(8, 8);
+        let ctx = ProtectionContext::new(0.5, 42);
+        let hash = crate::util::image::compute_image_hash(&img);
+        let perturbation = protector.generate_perturbation_data(16, 16, &ctx).unwrap();
+        let variant = crate::types::ProtectedVariant::new(
+            hash,
+            crate::types::ProtectionLevel::Strong,
+            perturbation,
+            0.5,
+            16,
+            16,
+        );
+        protector.register_variant(variant).unwrap();
+        let result = protector.apply(&img, &ctx);
+        assert!(result.is_err());
     }
 }

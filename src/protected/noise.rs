@@ -73,3 +73,46 @@ impl Protector for NoiseProtector {
         3
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_image(w: u32, h: u32) -> DynamicImage {
+        DynamicImage::ImageRgba8(image::RgbaImage::from_fn(w, h, |x, y| {
+            image::Rgba([x as u8, y as u8, 128, 255])
+        }))
+    }
+
+    #[test]
+    fn intensity_zero_returns_borrowed() {
+        let img = make_test_image(8, 8);
+        let ctx = ProtectionContext::new(0.0, 42);
+        let protector = NoiseProtector::new();
+        match protector.apply(&img, &ctx).unwrap() {
+            Cow::Borrowed(_) => {}
+            Cow::Owned(_) => panic!("Expected Borrowed for intensity=0"),
+        }
+    }
+
+    #[test]
+    fn noise_modifies_pixels() {
+        let img = make_test_image(16, 16);
+        let ctx = ProtectionContext::new(0.5, 42);
+        let protector = NoiseProtector::new();
+        let result = protector.apply(&img, &ctx).unwrap();
+        let result_rgba = result.to_rgba8();
+        let original_rgba = img.to_rgba8();
+        assert_ne!(result_rgba, original_rgba, "Noise should modify pixels");
+    }
+
+    #[test]
+    fn noise_stays_in_range() {
+        let img = make_test_image(16, 16);
+        let ctx = ProtectionContext::new(1.0, 42);
+        let protector = NoiseProtector::new();
+        let result = protector.apply(&img, &ctx).unwrap();
+        let _rgba = result.to_rgba8();
+        // u8 is always in 0..=255 by definition; just verify it succeeds
+    }
+}

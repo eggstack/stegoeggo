@@ -73,6 +73,31 @@ struct HuffmanDecoder {
     values: Vec<u8>,
 }
 
+struct HuffmanEncoderTable {
+    entries: [(u16, u8); 256],
+}
+
+impl HuffmanEncoderTable {
+    fn build(table: &super::HuffmanTable) -> Self {
+        let mut entries = [(0u16, 0u8); 256];
+        let counts = &table.counts;
+        let values = &table.values;
+        let mut code: u16 = 0;
+        let mut value_idx = 0;
+        for (len, &count) in counts.iter().enumerate() {
+            for _ in 0..count {
+                if value_idx < values.len() {
+                    entries[values[value_idx] as usize] = (code, (len + 1) as u8);
+                }
+                code += 1;
+                value_idx += 1;
+            }
+            code <<= 1;
+        }
+        Self { entries }
+    }
+}
+
 impl HuffmanDecoder {
     fn from_table(counts: &[u16; 16], values: &[u8]) -> Self {
         let mut min_code = [0i32; 16];
@@ -264,26 +289,43 @@ impl CoefficientDecoder {
         // Initialize DC predictors
         let mut dc_predictors: HashMap<u8, i16> = HashMap::new();
 
+        // Pre-build Huffman decoders once (tables are constant for the entire image)
+        let mut dc_decoders: [Option<HuffmanDecoder>; 4] = [None, None, None, None];
+        let mut ac_decoders: [Option<HuffmanDecoder>; 4] = [None, None, None, None];
+
+        for comp in &self.header.components {
+            let dc_id = comp.dc_table_id as usize;
+            if dc_decoders[dc_id].is_none() {
+                let table = self
+                    .header
+                    .get_dc_huffman_table(comp.dc_table_id)
+                    .or_else(|| self.header.get_dc_huffman_table(0))
+                    .ok_or_else(|| TranscoderError::HuffmanDecode("Missing DC table".into()))?;
+                dc_decoders[dc_id] = Some(HuffmanDecoder::from_table(&table.counts, &table.values));
+            }
+
+            let ac_id = comp.ac_table_id as usize;
+            if ac_decoders[ac_id].is_none() {
+                let table = self
+                    .header
+                    .get_ac_huffman_table(comp.ac_table_id)
+                    .or_else(|| self.header.get_ac_huffman_table(0))
+                    .ok_or_else(|| TranscoderError::HuffmanDecode("Missing AC table".into()))?;
+                ac_decoders[ac_id] = Some(HuffmanDecoder::from_table(&table.counts, &table.values));
+            }
+        }
+
         // Process each MCU
         for mcu_y in 0..mcu_height {
             for mcu_x in 0..mcus_per_row {
                 // Process each component
                 for comp in &self.header.components {
-                    // Get Huffman tables
-                    let dc_table = self
-                        .header
-                        .get_dc_huffman_table(comp.dc_table_id)
-                        .or_else(|| self.header.get_dc_huffman_table(0))
-                        .ok_or_else(|| TranscoderError::HuffmanDecode("Missing DC table".into()))?;
-
-                    let ac_table = self
-                        .header
-                        .get_ac_huffman_table(comp.ac_table_id)
-                        .or_else(|| self.header.get_ac_huffman_table(0))
-                        .ok_or_else(|| TranscoderError::HuffmanDecode("Missing AC table".into()))?;
-
-                    let dc_decoder = HuffmanDecoder::from_table(&dc_table.counts, &dc_table.values);
-                    let ac_decoder = HuffmanDecoder::from_table(&ac_table.counts, &ac_table.values);
+                    let dc_decoder = dc_decoders[comp.dc_table_id as usize]
+                        .as_ref()
+                        .expect("DC decoder pre-built above");
+                    let ac_decoder = ac_decoders[comp.ac_table_id as usize]
+                        .as_ref()
+                        .expect("AC decoder pre-built above");
 
                     // Number of blocks for this component in the MCU
                     for by in 0..comp.v_sampling {
@@ -486,22 +528,43 @@ impl CoefficientEncoder {
         // Initialize DC predictors
         let mut dc_predictors: HashMap<u8, i16> = HashMap::new();
 
+        // Pre-build Huffman encode tables once
+        let mut dc_enc_tables: [Option<HuffmanEncoderTable>; 4] = [None, None, None, None];
+        let mut ac_enc_tables: [Option<HuffmanEncoderTable>; 4] = [None, None, None, None];
+
+        for comp in &self.header.components {
+            let dc_id = comp.dc_table_id as usize;
+            if dc_enc_tables[dc_id].is_none() {
+                let table = self
+                    .header
+                    .get_dc_huffman_table(comp.dc_table_id)
+                    .or_else(|| self.header.get_dc_huffman_table(0))
+                    .ok_or_else(|| TranscoderError::HuffmanEncode("Missing DC table".into()))?;
+                dc_enc_tables[dc_id] = Some(HuffmanEncoderTable::build(table));
+            }
+
+            let ac_id = comp.ac_table_id as usize;
+            if ac_enc_tables[ac_id].is_none() {
+                let table = self
+                    .header
+                    .get_ac_huffman_table(comp.ac_table_id)
+                    .or_else(|| self.header.get_ac_huffman_table(0))
+                    .ok_or_else(|| TranscoderError::HuffmanEncode("Missing AC table".into()))?;
+                ac_enc_tables[ac_id] = Some(HuffmanEncoderTable::build(table));
+            }
+        }
+
         // Process each MCU
         for mcu_y in 0..mcu_height {
             for mcu_x in 0..mcus_per_row {
                 // Process each component
                 for comp in &self.header.components {
-                    let dc_table = self
-                        .header
-                        .get_dc_huffman_table(comp.dc_table_id)
-                        .or_else(|| self.header.get_dc_huffman_table(0))
-                        .ok_or_else(|| TranscoderError::HuffmanEncode("Missing DC table".into()))?;
-
-                    let ac_table = self
-                        .header
-                        .get_ac_huffman_table(comp.ac_table_id)
-                        .or_else(|| self.header.get_ac_huffman_table(0))
-                        .ok_or_else(|| TranscoderError::HuffmanEncode("Missing AC table".into()))?;
+                    let dc_enc = dc_enc_tables[comp.dc_table_id as usize]
+                        .as_ref()
+                        .expect("DC encoder table pre-built above");
+                    let ac_enc = ac_enc_tables[comp.ac_table_id as usize]
+                        .as_ref()
+                        .expect("AC encoder table pre-built above");
 
                     // Get blocks for this component
                     let comp_blocks = coefficients.get(&comp.component_id);
@@ -530,10 +593,10 @@ impl CoefficientEncoder {
                             let diff = diff_i32 as i16;
                             *dc_predictor = block[0];
 
-                            self.encode_dc_coefficient(&mut bit_writer, diff, dc_table)?;
+                            self.encode_dc_coefficient(&mut bit_writer, diff, dc_enc)?;
 
                             // Encode AC coefficients
-                            self.encode_ac_coefficients(&mut bit_writer, block, ac_table)?;
+                            self.encode_ac_coefficients(&mut bit_writer, block, ac_enc)?;
                         }
                     }
                 }
@@ -547,7 +610,7 @@ impl CoefficientEncoder {
         &self,
         writer: &mut BitWriter,
         diff: i16,
-        table: &super::HuffmanTable,
+        table: &HuffmanEncoderTable,
     ) -> Result<()> {
         if diff == 0 {
             // Size 0
@@ -589,7 +652,7 @@ impl CoefficientEncoder {
         &self,
         writer: &mut BitWriter,
         block: &[i16; 64],
-        table: &super::HuffmanTable,
+        table: &HuffmanEncoderTable,
     ) -> Result<()> {
         let mut k = 1;
 
@@ -691,33 +754,18 @@ impl CoefficientEncoder {
     fn write_huffman_code(
         &self,
         writer: &mut BitWriter,
-        table: &super::HuffmanTable,
+        table: &HuffmanEncoderTable,
         symbol: u8,
     ) -> Result<()> {
-        // Build code lookup
-        let counts = &table.counts;
-        let values = &table.values;
-
-        let mut code: u16 = 0;
-        let mut value_idx = 0;
-
-        for (len, &count) in counts.iter().enumerate() {
-            for _ in 0..count {
-                if value_idx < values.len() && values[value_idx] == symbol {
-                    writer.write_bits(code, len as u8 + 1);
-                    return Ok(());
-                }
-                code += 1;
-                value_idx += 1;
-            }
-            code <<= 1;
+        let (code, length) = table.entries[symbol as usize];
+        if length == 0 {
+            return Err(TranscoderError::HuffmanEncode(format!(
+                "Symbol 0x{:02X} not found in Huffman table",
+                symbol
+            )));
         }
-
-        // Symbol not found - corrupt Huffman table or invalid input
-        Err(TranscoderError::HuffmanEncode(format!(
-            "Symbol 0x{:02X} not found in Huffman table",
-            symbol
-        )))
+        writer.write_bits(code, length);
+        Ok(())
     }
 }
 

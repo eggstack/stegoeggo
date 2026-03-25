@@ -226,6 +226,35 @@ fn benchmark_memory_usage(c: &mut Criterion) {
     group.finish();
 }
 
+fn benchmark_jpeg_fast_path(c: &mut Criterion) {
+    let img = create_test_image(512, 512);
+
+    let mut jpeg_bytes = Vec::new();
+    {
+        use image::ImageEncoder;
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_bytes, 85);
+        encoder
+            .write_image(&img.to_rgb8(), 512, 512, image::ExtendedColorType::Rgb8)
+            .unwrap();
+    }
+
+    let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
+
+    let mut group = c.benchmark_group("jpeg_fast_path_512x512");
+
+    for level in [ProtectionLevel::Standard, ProtectionLevel::Enhanced] {
+        group.bench_with_input(
+            BenchmarkId::new("jpeg_in_out", level.as_str()),
+            &level,
+            |b, &level| {
+                b.iter(|| process_image_bytes(black_box(&jpeg_bytes), level, black_box(&ctx)));
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     benchmark_pipeline_sizes,
@@ -233,6 +262,7 @@ criterion_group!(
     benchmark_bytes_processing,
     benchmark_format_preservation,
     benchmark_allocations,
-    benchmark_memory_usage
+    benchmark_memory_usage,
+    benchmark_jpeg_fast_path,
 );
 criterion_main!(benches);

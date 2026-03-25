@@ -310,6 +310,13 @@ pub struct ProtectionContext {
     config: Option<Arc<ProtectionConfig>>,
 }
 
+/// # Security
+///
+/// The default seed is generated from the system clock via
+/// `generate_random_seed()` and is **not cryptographically secure**.
+/// An attacker who knows the approximate request time can predict the seed.
+/// Use `ProtectionContext::new(intensity, seed)` with a CSPRNG-generated
+/// seed if unpredictability is required.
 impl Default for ProtectionContext {
     fn default() -> Self {
         let seed = crate::util::seed::generate_random_seed();
@@ -624,5 +631,38 @@ impl ProtectedVariant {
 
     pub fn height(&self) -> u32 {
         self.height
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builder_chain() {
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_stego_redundancy(3);
+        assert_eq!(ctx.intensity(), 0.5);
+        assert_eq!(ctx.seed(), 42);
+        assert_eq!(ctx.stego_redundancy(), 3);
+    }
+
+    #[test]
+    fn intensity_clamped() {
+        let ctx = ProtectionContext::new(2.0, 42);
+        assert_eq!(ctx.intensity(), 1.0);
+
+        let ctx = ProtectionContext::new(-1.0, 42);
+        assert_eq!(ctx.intensity(), 0.0);
+    }
+
+    #[test]
+    fn seed_roundtrip_through_serde() {
+        let ctx = ProtectionContext::new(0.7, 12345);
+        let json = serde_json::to_string(&ctx).unwrap();
+        let restored: ProtectionContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.seed(), 12345);
+        assert_eq!(restored.intensity(), 0.7);
     }
 }

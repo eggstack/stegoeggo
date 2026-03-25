@@ -28,6 +28,10 @@ const SEED_MAGIC: &[u8] = b"SEED";
 /// F5-specific Xorshift64 PRNG for coefficient shuffling.
 /// Uses a different algorithm than the general-purpose `XorShiftRng` in `util/image.rs`.
 /// Changing this algorithm would break compatibility with existing steganographic data.
+///
+/// **WARNING:** Do NOT interchange with the general-purpose `XorShiftRng` — they produce
+/// different sequences for the same seed and are each paired with their respective
+/// embed/extract code paths.
 struct F5XorShiftRng(u64);
 
 impl F5XorShiftRng {

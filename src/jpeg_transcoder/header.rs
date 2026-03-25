@@ -119,6 +119,10 @@ impl JpegHeader {
         // Simple approach: find the last SOI-EOI pair in the file
         // This handles files with embedded thumbnails
 
+        if data.len() < 2 {
+            return Err(TranscoderError::InvalidFormat("Input too short".into()));
+        }
+
         // Find all SOI positions
         let soi_positions: Vec<usize> = (0..data.len() - 1)
             .filter(|&i| data[i] == 0xFF && data[i + 1] == 0xD8)
@@ -157,6 +161,11 @@ impl JpegHeader {
         let mut largest_height = 0usize;
 
         // Find largest SOF between start_pos and end_pos
+        if end_pos < 10 {
+            return Err(TranscoderError::InvalidFormat(
+                "JPEG too short for SOF".into(),
+            ));
+        }
         let mut search_pos = start_pos;
         while search_pos < end_pos - 10 {
             if data[search_pos] == 0xFF
@@ -224,7 +233,9 @@ impl JpegHeader {
             let segment_len = ((data[pos + 2] as usize) << 8) | (data[pos + 3] as usize);
 
             let segment_data_start = pos + 4;
-            let segment_data_end = (pos + 2 + segment_len).min(data.len());
+            let segment_data_end = (pos + 2 + segment_len)
+                .min(data.len())
+                .max(segment_data_start);
 
             let segment_data = &data[segment_data_start..segment_data_end];
 
@@ -471,5 +482,28 @@ impl JpegHeader {
         self.huffman_tables_ac
             .get(id as usize)
             .and_then(|t| t.as_ref())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_empty_input_returns_error() {
+        let result = JpegHeader::parse(&[]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_single_byte_returns_error() {
+        let result = JpegHeader::parse(&[0xFF]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_tiny_data_returns_error() {
+        let result = JpegHeader::parse(&[0xFF, 0xD8]);
+        assert!(result.is_err());
     }
 }

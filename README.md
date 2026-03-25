@@ -252,7 +252,7 @@ use cloakrs::{process_image_bytes, ProtectionContext, ProtectionLevel, ImageOutp
 
 // Optimized context for WAF edge deployment
 let ctx = ProtectionContext::new(0.5, seed)
-    .with_output_format(ImageOutputFormat::Png)      // or Jpeg for smaller files
+    .with_format(ImageOutputFormat::Png)      // or Jpeg for smaller files
     .with_stego_redundancy(2)                        // 1-5, lower = faster
     .with_jpeg_quality(85)                         // 1-100, lower = faster
     .with_progressive_jpeg(true);                   // Progressive rendering for web
@@ -284,7 +284,6 @@ Options:
   -o, --output <OUTPUT>    Output directory (batch) or file (single)
   -V, --verify             Verify if image contains protection signature
   -l, --level <LEVEL>      Protection level: disabled, light, standard, enhanced, strong
-  -t, --target <TARGET>   Target AI model: sd15, sd21, sdxl, dalle, midjourney
   -i, --intensity <FLOAT> Protection intensity 0.0-1.0 (default: 0.5)
   -s, --seed <SEED>        Seed for reproducible results
   -f, --format <FORMAT>   Output format: png, jpg, webp
@@ -307,8 +306,8 @@ Options:
 # Basic protection with default settings
 cloakrs photo.jpg -o photo_protected.png
 
-# Strong protection with custom target model
-cloakrs art.png -o art_protected.png --level strong --target sdxl
+# Strong protection
+cloakrs art.png -o art_protected.png --level strong
 
 # With custom intensity and seed
 cloakrs image.jpg -o output.png -i 0.8 -s 12345
@@ -413,7 +412,7 @@ Offset  Size  Field
 For CDN/WAF edge deployment:
 
 1. Precompute perturbations for known images
-2. Store variants with cache keys (hash + target + level + intensity)
+2. Store variants with cache keys (hash + level + intensity)
 3. At edge, look up variant and apply instantly
 4. Achieves sub-10ms latency for cached content
 
@@ -446,7 +445,7 @@ use std::collections::HashMap;
 
 // 1. Load original images (typically at upload time)
 let original = image::open("original.png")?;
-let hash = cloakrs::util::image::compute_image_hash(&original);
+let hash = cloakrs::compute_image_hash(&original);
 
 // 2. Generate perturbation data
 let pipeline = ProtectionPipeline::new();
@@ -581,7 +580,7 @@ The library computes ISCC (Immutable Self-Certifying Constituent Content) identi
 ```rust
 use cloakrs::{compute_iscc, Iscc};
 
-let img = DynamicImage::open("image.png")?;
+let img = image::open("image.png")?;
 let iscc = compute_iscc(&img);
 
 println!("Content Code: {}", iscc.content);

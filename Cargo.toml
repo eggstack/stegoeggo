@@ -31,6 +31,7 @@ hex = "0.4"
 base58 = "0.2"
 crc32fast = "1.4"
 rayon = "1.10"
+subtle = "2"
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 
 [dev-dependencies]

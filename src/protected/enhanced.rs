@@ -44,3 +44,30 @@ impl Protector for EnhancedProtector {
         5
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protected::noise::NoiseProtector;
+
+    fn make_test_image(w: u32, h: u32) -> DynamicImage {
+        DynamicImage::ImageRgba8(image::RgbaImage::from_fn(w, h, |x, y| {
+            image::Rgba([x as u8, y as u8, 128, 255])
+        }))
+    }
+
+    #[test]
+    fn enhanced_differs_from_standard() {
+        let img = make_test_image(32, 32);
+        let ctx = ProtectionContext::new(0.5, 42);
+
+        let standard = NoiseProtector::new().apply(&img, &ctx).unwrap();
+        let enhanced = EnhancedProtector::new().apply(&img, &ctx).unwrap();
+
+        assert_ne!(
+            standard.to_rgba8(),
+            enhanced.to_rgba8(),
+            "Enhanced should produce different output than standard"
+        );
+    }
+}

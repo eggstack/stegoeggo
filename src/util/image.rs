@@ -32,6 +32,10 @@ fn fast_sin(angle: f32) -> f32 {
 
 /// General-purpose XorShift64 PRNG for noise generation and pixel selection.
 /// Not interchangeable with the F5-specific PRNG in `jpeg_transcoder/stego_f5.rs`.
+///
+/// **WARNING:** These two PRNG implementations use different algorithms. Do NOT
+/// swap one for the other — they produce different sequences for the same seed
+/// and are each paired with their respective embed/extract code paths.
 pub struct XorShiftRng {
     state: u64,
 }

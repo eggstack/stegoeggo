@@ -31,3 +31,14 @@ pub fn generate_random_seed() -> u64 {
         x
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generate_random_seed_returns_nonzero() {
+        let seed = generate_random_seed();
+        assert_ne!(seed, 0);
+    }
+}
