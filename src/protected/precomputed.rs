@@ -75,12 +75,14 @@ impl PrecomputedProtector {
         ctx: &ProtectionContext,
         original_hash: &str,
     ) -> Result<Option<ProtectedVariant>> {
+        let intensity_rounded = (ctx.intensity * 10000.0).round() / 10000.0;
         let key = format!(
-            "{}_{}_{}_{}",
+            "{}_{}_{}",
             original_hash,
-            ctx.target.as_str(),
-            ProtectionLevel::Strong.as_str(),
-            ctx.intensity
+            ctx.protection_level
+                .unwrap_or(ProtectionLevel::Strong)
+                .as_str(),
+            intensity_rounded
         );
 
         // Check in-memory cache first

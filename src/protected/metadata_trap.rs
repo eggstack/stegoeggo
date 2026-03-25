@@ -186,7 +186,7 @@ impl MetadataTrapProtector {
     /// Includes proper record/entry header structure for maximum compatibility.
     fn generate_iptc_iim_dmi(dmi: DmiValue) -> Vec<u8> {
         let dmi_str = format!("DMI: {}", dmi.as_str());
-        let mut data = vec![0x1C, 0x02, 0x78, 0x78];
+        let mut data = vec![0x1C, 0x02, 0x78];
         data.extend_from_slice(&(dmi_str.len() as u16).to_be_bytes());
         data.extend_from_slice(dmi_str.as_bytes());
         if dmi_str.len() % 2 != 0 {
@@ -314,6 +314,12 @@ impl MetadataTrapProtector {
             if marker == 0x00 {
                 pos += 1;
                 continue;
+            }
+
+            if pos + 4 > jpeg_data.len() {
+                // Truncated JPEG — emit what we have
+                output.extend_from_slice(&jpeg_data[pos..]);
+                break;
             }
 
             let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;

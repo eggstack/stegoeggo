@@ -25,10 +25,12 @@ use std::collections::HashMap;
 /// Seed embedding magic (stored in quantization tables)
 const SEED_MAGIC: &[u8] = b"SEED";
 
-/// Xorshift64 PRNG for coefficient shuffling
-struct XorShiftRng(u64);
+/// F5-specific Xorshift64 PRNG for coefficient shuffling.
+/// Uses a different algorithm than the general-purpose `XorShiftRng` in `util/image.rs`.
+/// Changing this algorithm would break compatibility with existing steganographic data.
+struct F5XorShiftRng(u64);
 
-impl XorShiftRng {
+impl F5XorShiftRng {
     fn new(seed: u64) -> Self {
         Self(if seed == 0 { 1 } else { seed })
     }
@@ -210,7 +212,7 @@ impl DctStegoF5 {
         positions.sort_unstable();
 
         // Shuffle positions using seeded PRNG for pseudo-random ordering
-        let mut rng = XorShiftRng::new(seed);
+        let mut rng = F5XorShiftRng::new(seed);
         for i in (1..positions.len()).rev() {
             let j = rng.gen_range(i + 1);
             positions.swap(i, j);
@@ -326,7 +328,7 @@ impl DctStegoF5 {
         positions.sort_unstable();
 
         // Shuffle with same seed
-        let mut rng = XorShiftRng::new(seed);
+        let mut rng = F5XorShiftRng::new(seed);
         for i in (1..positions.len()).rev() {
             let j = rng.gen_range(i + 1);
             positions.swap(i, j);
@@ -361,19 +363,6 @@ impl DctStegoF5 {
         }
 
         bits
-    }
-
-    /// Verify DCT stego in JPEG bytes
-    #[allow(dead_code)]
-    pub fn verify_dct_stego_bytes(&self, jpeg_bytes: &[u8]) -> Result<bool> {
-        let header = match super::JpegHeader::parse(jpeg_bytes) {
-            Ok(h) => h,
-            Err(_) => return Ok(false),
-        };
-
-        Ok(self
-            .extract_seed_from_quantization_tables(&header)
-            .is_some())
     }
 }
 

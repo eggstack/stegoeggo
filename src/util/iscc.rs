@@ -80,22 +80,22 @@ fn compute_dct_2d(pixels: &[u8]) -> Vec<f64> {
         .collect();
 
     let mut temp = vec![0.0; 1024];
-    for v in 0..32 {
+    for y in 0..32 {
         for u in 0..32 {
             let mut sum = 0.0;
             for x in 0..32 {
-                sum += input[x] * cos_table[u * 32 + x];
+                sum += input[y * 32 + x] * cos_table[u * 32 + x];
             }
-            temp[v * 32 + u] = alpha[u] * sum;
+            temp[y * 32 + u] = alpha[u] * sum;
         }
     }
 
     let mut result = vec![0.0; 1024];
-    for u in 0..32 {
-        for v in 0..32 {
+    for v in 0..32 {
+        for u in 0..32 {
             let mut sum = 0.0;
             for y in 0..32 {
-                sum += temp[v * 32 + y] * cos_table[v * 32 + y];
+                sum += temp[y * 32 + u] * cos_table[v * 32 + y];
             }
             result[v * 32 + u] = alpha[v] * sum;
         }

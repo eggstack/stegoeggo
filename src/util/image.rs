@@ -30,6 +30,8 @@ fn fast_sin(angle: f32) -> f32 {
     SIN_TABLE[index]
 }
 
+/// General-purpose XorShift64 PRNG for noise generation and pixel selection.
+/// Not interchangeable with the F5-specific PRNG in `jpeg_transcoder/stego_f5.rs`.
 pub struct XorShiftRng {
     state: u64,
 }
@@ -54,12 +56,15 @@ impl XorShiftRng {
 
     #[inline]
     pub fn gen_f32(&mut self) -> f32 {
-        (self.next_u64() & 0xFFFFFF) as f32 / 16777216.0 * 2.0 - 1.0
+        // Use top 24 bits for full f32 mantissa precision
+        (self.next_u64() >> 40) as f32 / 16777216.0 * 2.0 - 1.0
     }
 
     #[inline]
     pub fn gen_range(&mut self, range: std::ops::Range<f32>) -> f32 {
-        range.start + (self.next_u64() as f32 / u64::MAX as f32) * (range.end - range.start)
+        // Use top 24 bits for full f32 mantissa precision
+        let t = (self.next_u64() >> 40) as f32 / 16777216.0;
+        range.start + t * (range.end - range.start)
     }
 
     #[inline]
@@ -108,6 +113,86 @@ impl NoiseGenerator {
     }
 }
 
+/// Pre-computed parameters shared between serial and parallel perturbation paths.
+struct PerturbationParams {
+    intensity: f32,
+    blocks_x: usize,
+    keyed_seed_base: u64,
+    inv_pattern_scale: f32,
+    intensity_factor: f32,
+    phase_offset: f32,
+}
+
+impl PerturbationParams {
+    fn new(
+        seed: u64,
+        intensity: f32,
+        intensity_multiplier: f32,
+        mac_key: &[u8],
+        width: u32,
+    ) -> Self {
+        let noise_gen = if mac_key.is_empty() {
+            NoiseGenerator::new(seed)
+        } else {
+            NoiseGenerator::with_mac_key(seed, mac_key)
+        };
+        let frequency_seed = noise_gen.derive_keyed_seed(0xDEADBEEF);
+        let mut frequency_rng = XorShiftRng::new(frequency_seed);
+
+        let pattern_scale = ((frequency_rng.next_u64() % 8) as f32) + 8.0;
+        let two_pi = std::f32::consts::TAU;
+
+        Self {
+            intensity,
+            blocks_x: width.div_ceil(4) as usize,
+            keyed_seed_base: noise_gen.derive_keyed_seed(0),
+            inv_pattern_scale: two_pi / pattern_scale,
+            intensity_factor: intensity * intensity_multiplier,
+            phase_offset: (frequency_rng.next_u64() as f32 / u64::MAX as f32) * two_pi,
+        }
+    }
+
+    /// Compute the perturbed RGB values for a single pixel.
+    #[inline(always)]
+    fn perturb_pixel(
+        &self,
+        x: usize,
+        y: usize,
+        y_phase: f32,
+        y_variation: f32,
+        orig: (i32, i32, i32),
+    ) -> (u8, u8, u8) {
+        let (orig_r, orig_g, orig_b) = orig;
+        let block_idx = (y / 4) * self.blocks_x + (x / 4);
+        let keyed_seed = self.keyed_seed_base.wrapping_add(block_idx as u64);
+
+        let mut block_rng = XorShiftRng::new(keyed_seed);
+        let noise_r =
+            (block_rng.gen_f32() * self.intensity * 64.0 + 128.0).clamp(0.0, 255.0) as i16;
+        let noise_g =
+            (block_rng.gen_f32() * self.intensity * 64.0 + 128.0).clamp(0.0, 255.0) as i16;
+        let noise_b =
+            (block_rng.gen_f32() * self.intensity * 64.0 + 128.0).clamp(0.0, 255.0) as i16;
+
+        let blended_r = (orig_r + i32::from(noise_r - 128) / 4).clamp(0, 255) as u8;
+        let blended_g = (orig_g + i32::from(noise_g - 128) / 4).clamp(0, 255) as u8;
+        let blended_b = (orig_b + i32::from(noise_b - 128) / 4).clamp(0, 255) as u8;
+
+        let varied_r = ((blended_r as f32) * y_variation).clamp(0.0, 255.0) as u8;
+        let varied_g = ((blended_g as f32) * y_variation).clamp(0.0, 255.0) as u8;
+        let varied_b = ((blended_b as f32) * y_variation).clamp(0.0, 255.0) as u8;
+
+        let phase = x as f32 * self.inv_pattern_scale + y_phase + self.phase_offset;
+        let perturbation = (fast_sin(phase) * self.intensity_factor) as i16;
+
+        (
+            (i16::from(varied_r) + perturbation).clamp(0, 255) as u8,
+            (i16::from(varied_g) + perturbation).clamp(0, 255) as u8,
+            (i16::from(varied_b) + perturbation).clamp(0, 255) as u8,
+        )
+    }
+}
+
 /// Parallel version of single-pass perturbation for large images.
 /// Pre-computes per-row spatial seed values then parallelizes across rows.
 pub fn apply_perturbation_single_pass_keyed_par(
@@ -125,18 +210,17 @@ pub fn apply_perturbation_single_pass_keyed_par(
     let total_pixels = width_usize * height_usize;
     let mut output_raw = vec![0u8; total_pixels * 4];
 
+    let params = PerturbationParams::new(seed, intensity, intensity_multiplier, mac_key, width);
+
+    // Pre-compute per-row y_variations
     let noise_gen = if mac_key.is_empty() {
         NoiseGenerator::new(seed)
     } else {
         NoiseGenerator::with_mac_key(seed, mac_key)
     };
     let spatial_seed = noise_gen.derive_keyed_seed(0x12345678);
-    let frequency_seed = noise_gen.derive_keyed_seed(0xDEADBEEF);
-
     let mut spatial_rng = XorShiftRng::new(spatial_seed);
-    let mut frequency_rng = XorShiftRng::new(frequency_seed);
 
-    // Pre-compute per-row y_variations
     let variation_min = 0.98f32;
     let variation_range_size = 0.04f32;
     let y_variations: Vec<f32> = (0..height_usize)
@@ -145,58 +229,27 @@ pub fn apply_perturbation_single_pass_keyed_par(
         })
         .collect();
 
-    let pattern_scale = ((frequency_rng.next_u64() % 8) as f32) + 8.0;
-    let intensity_factor = intensity * intensity_multiplier;
-    let two_pi = std::f32::consts::TAU;
-    let inv_pattern_scale = two_pi / pattern_scale;
-    let phase_offset = (frequency_rng.next_u64() as f32 / u64::MAX as f32) * two_pi;
-
-    let blocks_x = width.div_ceil(4);
-    let keyed_seed_base = noise_gen.derive_keyed_seed(0);
-
     // Process rows in parallel
     output_raw
         .par_chunks_mut(width_usize * 4)
         .enumerate()
         .for_each(|(y, row)| {
             let y_variation = y_variations[y];
-            let y_phase = y as f32 * inv_pattern_scale;
+            let y_phase = y as f32 * params.inv_pattern_scale;
 
             for x in 0..width_usize {
-                let block_x = x / 4;
-                let block_y = y / 4;
-                let block_idx = block_y * blocks_x as usize + block_x;
-
-                let keyed_seed = keyed_seed_base.wrapping_add(block_idx as u64);
-
-                let mut block_rng = XorShiftRng::new(keyed_seed);
-                let noise_r =
-                    (block_rng.gen_f32() * intensity * 64.0 + 128.0).clamp(0.0, 255.0) as i16;
-                let noise_g =
-                    (block_rng.gen_f32() * intensity * 64.0 + 128.0).clamp(0.0, 255.0) as i16;
-                let noise_b =
-                    (block_rng.gen_f32() * intensity * 64.0 + 128.0).clamp(0.0, 255.0) as i16;
-
-                let idx = x * 4;
                 let orig_r = img_raw[(y * width_usize + x) * 4] as i32;
                 let orig_g = img_raw[(y * width_usize + x) * 4 + 1] as i32;
                 let orig_b = img_raw[(y * width_usize + x) * 4 + 2] as i32;
                 let orig_a = img_raw[(y * width_usize + x) * 4 + 3];
 
-                let blended_r = (orig_r + i32::from(noise_r - 128) / 4).clamp(0, 255) as u8;
-                let blended_g = (orig_g + i32::from(noise_g - 128) / 4).clamp(0, 255) as u8;
-                let blended_b = (orig_b + i32::from(noise_b - 128) / 4).clamp(0, 255) as u8;
+                let (r, g, b) =
+                    params.perturb_pixel(x, y, y_phase, y_variation, (orig_r, orig_g, orig_b));
 
-                let varied_r = ((blended_r as f32) * y_variation).clamp(0.0, 255.0) as u8;
-                let varied_g = ((blended_g as f32) * y_variation).clamp(0.0, 255.0) as u8;
-                let varied_b = ((blended_b as f32) * y_variation).clamp(0.0, 255.0) as u8;
-
-                let phase = x as f32 * inv_pattern_scale + y_phase + phase_offset;
-                let perturbation = (fast_sin(phase) * intensity_factor) as i16;
-
-                row[idx] = (i16::from(varied_r) + perturbation).clamp(0, 255) as u8;
-                row[idx + 1] = (i16::from(varied_g) + perturbation).clamp(0, 255) as u8;
-                row[idx + 2] = (i16::from(varied_b) + perturbation).clamp(0, 255) as u8;
+                let idx = x * 4;
+                row[idx] = r;
+                row[idx + 1] = g;
+                row[idx + 2] = b;
                 row[idx + 3] = orig_a;
             }
         });
@@ -262,68 +315,38 @@ fn apply_perturbation_single_pass_keyed_serial(
     let total_pixels = width_usize * height_usize;
     let mut output_raw = vec![0u8; total_pixels * 4];
 
+    let params = PerturbationParams::new(seed, intensity, intensity_multiplier, mac_key, width);
+
     let noise_gen = if mac_key.is_empty() {
         NoiseGenerator::new(seed)
     } else {
         NoiseGenerator::with_mac_key(seed, mac_key)
     };
     let spatial_seed = noise_gen.derive_keyed_seed(0x12345678);
-    let frequency_seed = noise_gen.derive_keyed_seed(0xDEADBEEF);
-
     let mut spatial_rng = XorShiftRng::new(spatial_seed);
-    let mut frequency_rng = XorShiftRng::new(frequency_seed);
 
     let variation_min = 0.98f32;
     let variation_range_size = 0.04f32;
 
-    let pattern_scale = ((frequency_rng.next_u64() % 8) as f32) + 8.0;
-    let intensity_factor = intensity * intensity_multiplier;
-    let two_pi = std::f32::consts::TAU;
-    let inv_pattern_scale = two_pi / pattern_scale;
-    let phase_offset = (frequency_rng.next_u64() as f32 / u64::MAX as f32) * two_pi;
-
-    let blocks_x = width.div_ceil(4);
-    let keyed_seed_base = noise_gen.derive_keyed_seed(0);
-
     for y in 0..height_usize {
         let y_variation = variation_min
             + (spatial_rng.next_u64() as f32 / u64::MAX as f32) * variation_range_size;
-
-        let y_phase = y as f32 * inv_pattern_scale;
+        let y_phase = y as f32 * params.inv_pattern_scale;
         let row_offset = y * width_usize * 4;
 
         for x in 0..width_usize {
-            let block_x = x / 4;
-            let block_y = y / 4;
-            let block_idx = block_y * blocks_x as usize + block_x;
-
-            let keyed_seed = keyed_seed_base.wrapping_add(block_idx as u64);
-
-            let mut block_rng = XorShiftRng::new(keyed_seed);
-            let noise_r = (block_rng.gen_f32() * intensity * 64.0 + 128.0).clamp(0.0, 255.0) as i16;
-            let noise_g = (block_rng.gen_f32() * intensity * 64.0 + 128.0).clamp(0.0, 255.0) as i16;
-            let noise_b = (block_rng.gen_f32() * intensity * 64.0 + 128.0).clamp(0.0, 255.0) as i16;
-
             let idx = row_offset + x * 4;
             let orig_r = img_raw[idx] as i32;
             let orig_g = img_raw[idx + 1] as i32;
             let orig_b = img_raw[idx + 2] as i32;
             let orig_a = img_raw[idx + 3];
 
-            let blended_r = (orig_r + i32::from(noise_r - 128) / 4).clamp(0, 255) as u8;
-            let blended_g = (orig_g + i32::from(noise_g - 128) / 4).clamp(0, 255) as u8;
-            let blended_b = (orig_b + i32::from(noise_b - 128) / 4).clamp(0, 255) as u8;
+            let (r, g, b) =
+                params.perturb_pixel(x, y, y_phase, y_variation, (orig_r, orig_g, orig_b));
 
-            let varied_r = ((blended_r as f32) * y_variation).clamp(0.0, 255.0) as u8;
-            let varied_g = ((blended_g as f32) * y_variation).clamp(0.0, 255.0) as u8;
-            let varied_b = ((blended_b as f32) * y_variation).clamp(0.0, 255.0) as u8;
-
-            let phase = x as f32 * inv_pattern_scale + y_phase + phase_offset;
-            let perturbation = (fast_sin(phase) * intensity_factor) as i16;
-
-            output_raw[idx] = (i16::from(varied_r) + perturbation).clamp(0, 255) as u8;
-            output_raw[idx + 1] = (i16::from(varied_g) + perturbation).clamp(0, 255) as u8;
-            output_raw[idx + 2] = (i16::from(varied_b) + perturbation).clamp(0, 255) as u8;
+            output_raw[idx] = r;
+            output_raw[idx + 1] = g;
+            output_raw[idx + 2] = b;
             output_raw[idx + 3] = orig_a;
         }
     }

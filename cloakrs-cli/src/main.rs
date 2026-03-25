@@ -1,8 +1,8 @@
 use clap::{Parser, ValueEnum};
 use cloakrs::Error;
 use cloakrs::{
-    process_image_bytes, DmiValue, ImageOutputFormat, MetadataTrapProtector, ProtectionContext,
-    ProtectionLevel, SteganographyProtector, TargetModel, DEFAULT_OUTPUT_FORMAT,
+    generate_random_seed, process_image_bytes, DmiValue, ImageOutputFormat, MetadataTrapProtector,
+    ProtectionContext, ProtectionLevel, SteganographyProtector, DEFAULT_OUTPUT_FORMAT,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,18 +21,11 @@ struct Args {
     )]
     output: Option<PathBuf>,
 
-    #[arg(
-        short = 'V',
-        long,
-        help = "Verify if image contains protection signature"
-    )]
+    #[arg(long, help = "Verify if image contains protection signature")]
     verify: bool,
 
     #[arg(short, long, default_value = "standard", help = "Protection level")]
     level: ProtectionLevelArg,
-
-    #[arg(short, long, help = "Target AI model")]
-    target: Option<TargetModelArg>,
 
     #[arg(
         short,
@@ -119,19 +112,6 @@ enum ProtectionLevelArg {
 }
 
 #[derive(Debug, Clone, ValueEnum)]
-enum TargetModelArg {
-    #[clap(name = "sd15")]
-    StableDiffusion15,
-    #[clap(name = "sd21")]
-    StableDiffusion21,
-    #[clap(name = "sdxl")]
-    StableDiffusionXL,
-    #[clap(name = "dalle")]
-    DallE,
-    Midjourney,
-}
-
-#[derive(Debug, Clone, ValueEnum)]
 enum OutputFormatArg {
     Png,
     Jpg,
@@ -153,7 +133,7 @@ enum DmiArg {
 impl DmiArg {
     /// Convert CLI DMI arg to library DMI value.
     /// Returns `None` for `Auto`, meaning the caller should auto-select based on protection level.
-    fn to_dmi_value(self) -> Option<DmiValue> {
+    fn into_dmi_value(self) -> Option<DmiValue> {
         match self {
             DmiArg::Auto => None,
             DmiArg::Unspecified => Some(DmiValue::Unspecified),
@@ -175,18 +155,6 @@ impl From<ProtectionLevelArg> for ProtectionLevel {
             ProtectionLevelArg::Standard => ProtectionLevel::Standard,
             ProtectionLevelArg::Enhanced => ProtectionLevel::Enhanced,
             ProtectionLevelArg::Strong => ProtectionLevel::Strong,
-        }
-    }
-}
-
-impl From<TargetModelArg> for TargetModel {
-    fn from(arg: TargetModelArg) -> Self {
-        match arg {
-            TargetModelArg::StableDiffusion15 => TargetModel::StableDiffusion15,
-            TargetModelArg::StableDiffusion21 => TargetModel::StableDiffusion21,
-            TargetModelArg::StableDiffusionXL => TargetModel::StableDiffusionXL,
-            TargetModelArg::DallE => TargetModel::DallE,
-            TargetModelArg::Midjourney => TargetModel::Midjourney,
         }
     }
 }
@@ -223,10 +191,7 @@ fn collect_input_files(inputs: &[PathBuf]) -> Vec<PathBuf> {
 fn is_image_file(path: &Path) -> bool {
     if let Some(ext) = path.extension() {
         let ext = ext.to_string_lossy().to_lowercase();
-        matches!(
-            ext.as_str(),
-            "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "tiff" | "tif"
-        )
+        matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp")
     } else {
         false
     }
@@ -384,15 +349,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let target = args.target.map(TargetModel::from).unwrap_or_default();
-
-    let seed = args.seed.unwrap_or_else(|| {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-    });
+    let seed = args.seed.unwrap_or_else(generate_random_seed);
 
     let mac_key = args
         .key
@@ -400,16 +357,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|k| hex::decode(k).map_err(|e| format!("Invalid hex key '{}': {}", k, e)))
         .transpose()?;
 
-    let output_format = args.format.map(|f| match f {
-        OutputFormatArg::Png => ImageOutputFormat::Png,
-        OutputFormatArg::Jpg => ImageOutputFormat::Jpeg,
-        OutputFormatArg::WebP => ImageOutputFormat::WebP,
-    });
+    let output_format = args.format.map(ImageOutputFormat::from);
 
     let protection_level = ProtectionLevel::from(args.level);
 
     let dmi_value = args.dmi.and_then(|d| {
-        d.to_dmi_value().or_else(|| {
+        d.into_dmi_value().or({
             // Auto-select DMI based on protection level
             Some(match protection_level {
                 ProtectionLevel::Disabled | ProtectionLevel::Light => DmiValue::Unspecified,
@@ -418,7 +371,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     });
 
-    let mut ctx = ProtectionContext::new(target, args.intensity.clamp(0.0, 1.0), seed)
+    let mut ctx = ProtectionContext::new(args.intensity.clamp(0.0, 1.0), seed)
         .with_format(output_format.unwrap_or(cloakrs::ImageOutputFormat::Png))
         .with_stego_redundancy(args.stego_redundancy.clamp(1, 5))
         .with_jpeg_quality(args.jpeg_quality.clamp(1, 100))
@@ -439,7 +392,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.verbose {
         println!("Protection level: {:?}", protection_level);
-        println!("Target model: {}", ctx.target.as_str());
         println!("Intensity: {}", ctx.intensity);
         println!("Seed: {}", ctx.seed);
         println!("Stego redundancy: {}", ctx.stego_redundancy);
@@ -471,10 +423,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         use rayon::prelude::*;
 
         if args.jobs > 1 {
-            rayon::ThreadPoolBuilder::new()
+            if let Err(e) = rayon::ThreadPoolBuilder::new()
                 .num_threads(args.jobs)
                 .build_global()
-                .unwrap_or(());
+            {
+                if args.verbose {
+                    eprintln!(
+                        "Warning: Could not set thread count to {}: {}",
+                        args.jobs, e
+                    );
+                }
+            }
         }
 
         let output_dir = args
@@ -549,6 +508,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "\nCompleted: {} succeeded, {} failed",
                 success_count, failed_count
             );
+        }
+
+        if failed_count > 0 {
+            return Err(format!("{} file(s) failed to process", failed_count).into());
         }
     } else {
         let input_path = &input_files[0];

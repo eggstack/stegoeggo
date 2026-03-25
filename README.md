@@ -161,43 +161,20 @@ let level = ProtectionLevel::Enhanced; // Stronger noise
 let level = ProtectionLevel::Strong;    // Precomputed for speed
 ```
 
-### Target Model Optimization
-
-Optimize perturbations for specific AI models:
-
-```rust
-use cloakrs::{ProtectionContext, TargetModel, ProtectionLevel};
-
-// Target Stable Diffusion XL (default)
-let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 42);
-
-// Target Stable Diffusion 2.1
-let ctx = ProtectionContext::new(TargetModel::StableDiffusion21, 0.5, 123);
-
-// Target DALL-E
-let ctx = ProtectionContext::new(TargetModel::DallE, 0.5, 123);
-
-// Target Midjourney
-let ctx = ProtectionContext::new(TargetModel::Midjourney, 0.7, 456);
-
-// Target a custom model name
-let ctx = ProtectionContext::new(TargetModel::Custom("my-model".to_string()), 0.5, 789);
-```
-
 ### Cryptographic Key Support
 
 Provide a hex key for keyed perturbations that make output unique and non-reproducible without the key:
 
 ```rust
-use cloakrs::{ProtectionContext, TargetModel, ProtectionLevel};
+use cloakrs::{ProtectionContext, ProtectionLevel};
 
 // With MAC key - perturbations are cryptographically keyed
 let key = vec![0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78];
-let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 42)
+let ctx = ProtectionContext::new(0.8, 42)
     .with_mac_key(key);
 
 // Without key - same seed produces same output
-let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 42);
+let ctx = ProtectionContext::new(0.8, 42);
 ```
 
 The MAC key affects:
@@ -232,17 +209,17 @@ Control individual protection components:
 use cloakrs::{ProtectionContext, ProtectionLevel};
 
 // Minimal - stego only, no metadata
-let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
+let ctx = ProtectionContext::new(0.5, 42)
     .with_metadata_injection(false);
 
 // Full - metadata + legal claims (for owned content)
-let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
+let ctx = ProtectionContext::new(0.5, 42)
     .with_legal_claims(true)
     .with_legal_metadata(LegalMetadata::new()
         .with_copyright_holder("My Company"));
 
 // Limit maximum image dimension for processing
-let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
+let ctx = ProtectionContext::new(0.5, 42)
     .with_max_dimension(2048);
 ```
 
@@ -271,10 +248,10 @@ Available values:
 For CDN/WAF edge deployment with sub-10ms latency requirements:
 
 ```rust
-use cloakrs::{process_image_bytes, ProtectionContext, ProtectionLevel, ImageOutputFormat, TargetModel};
+use cloakrs::{process_image_bytes, ProtectionContext, ProtectionLevel, ImageOutputFormat};
 
 // Optimized context for WAF edge deployment
-let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, seed)
+let ctx = ProtectionContext::new(0.5, seed)
     .with_output_format(ImageOutputFormat::Png)      // or Jpeg for smaller files
     .with_stego_redundancy(2)                        // 1-5, lower = faster
     .with_jpeg_quality(85)                         // 1-100, lower = faster
@@ -462,7 +439,7 @@ For CDN/WAF edge deployment:
 ```rust
 use cloakrs::{
     ProtectionPipeline, ProtectionContext, ProtectedVariant, 
-    ProtectionLevel, TargetModel
+    ProtectionLevel
 };
 use image::DynamicImage;
 use std::collections::HashMap;
@@ -473,11 +450,7 @@ let hash = cloakrs::util::image::compute_image_hash(&original);
 
 // 2. Generate perturbation data
 let pipeline = ProtectionPipeline::new();
-let ctx = ProtectionContext::new(
-    TargetModel::StableDiffusionXL, 
-    0.5, 
-    42
-);
+let ctx = ProtectionContext::new(0.5, 42);
 
 // 3. Register precomputed variant
 let (width, height) = original.dimensions();
@@ -487,7 +460,6 @@ let perturbation = precomputed.generate_perturbation_data(&original, &ctx)?;
 
 let variant = ProtectedVariant::new(
     hash,
-    TargetModel::StableDiffusionXL,
     ProtectionLevel::Strong,
     perturbation,
     0.5,

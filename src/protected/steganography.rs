@@ -15,6 +15,11 @@ use std::borrow::Cow;
 
 type HmacSha256 = Hmac<Sha256>;
 
+/// Minimum stego payload size: 24 bytes header + 2 bytes checksum/MAC.
+const MIN_PAYLOAD_SIZE: usize = 26;
+/// Bit length of the minimum payload.
+const MIN_PAYLOAD_BITS: usize = MIN_PAYLOAD_SIZE * 8;
+
 #[inline(always)]
 fn splitmix64(x: u64) -> u64 {
     let mut z = x.wrapping_add(SPLITMIX64_SEED);
@@ -163,19 +168,24 @@ impl SteganographyProtector {
         Ok(output)
     }
 
-    fn extract_with_redundancy(&self, img: &RgbaImage, seed: u64) -> Option<Vec<u8>> {
+    fn extract_with_redundancy(
+        &self,
+        img: &RgbaImage,
+        seed: u64,
+        mac_key: &[u8],
+    ) -> Option<Vec<u8>> {
         for pass in 0..5 {
             let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
 
             if let Some(payload) = self.extract_lsb(img, 256, offset_seed) {
-                if Self::verify_checksum(&payload) {
+                if Self::verify_payload_integrity(&payload, mac_key) {
                     return Some(payload);
                 }
             }
         }
 
         if let Some(jpeg_payload) = self.extract_jpeg_stego(img, 256, seed) {
-            if Self::verify_checksum(&jpeg_payload) {
+            if Self::verify_payload_integrity(&jpeg_payload, mac_key) {
                 return Some(jpeg_payload);
             }
         }
@@ -253,7 +263,7 @@ impl SteganographyProtector {
     pub fn verify_payload_with_seed(&self, img: &DynamicImage, seed: u64) -> bool {
         let rgba = img.to_rgba8();
 
-        if let Some(payload) = self.extract_with_redundancy(&rgba, seed) {
+        if let Some(payload) = self.extract_with_redundancy(&rgba, seed, &[]) {
             if Self::verify_checksum(&payload) {
                 let embedded_seed = u64::from_le_bytes([
                     payload[2], payload[3], payload[4], payload[5], payload[6], payload[7],
@@ -268,7 +278,7 @@ impl SteganographyProtector {
         if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
             if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image(&encoded) {
                 if metadata_seed != seed {
-                    if let Some(payload) = self.extract_with_redundancy(&rgba, metadata_seed) {
+                    if let Some(payload) = self.extract_with_redundancy(&rgba, metadata_seed, &[]) {
                         if Self::verify_checksum(&payload) {
                             let embedded_seed = u64::from_le_bytes([
                                 payload[2], payload[3], payload[4], payload[5], payload[6],
@@ -316,17 +326,8 @@ impl SteganographyProtector {
         None
     }
 
-    fn extract_payload_with_seed_and_key(
-        &self,
-        img: &DynamicImage,
-        seed: u64,
-        mac_key: &[u8],
-    ) -> Option<StegoPayload> {
-        let rgba = img.to_rgba8();
-
-        let payload = self.extract_with_redundancy(&rgba, seed)?;
-
-        if !Self::verify_payload_integrity(&payload, mac_key) {
+    fn parse_stego_payload(payload: &[u8]) -> Option<StegoPayload> {
+        if payload.len() < MIN_PAYLOAD_SIZE {
             return None;
         }
 
@@ -353,38 +354,24 @@ impl SteganographyProtector {
         })
     }
 
+    fn extract_payload_with_seed_and_key(
+        &self,
+        img: &DynamicImage,
+        seed: u64,
+        mac_key: &[u8],
+    ) -> Option<StegoPayload> {
+        let rgba = img.to_rgba8();
+        let payload = self.extract_with_redundancy(&rgba, seed, mac_key)?;
+        if !Self::verify_payload_integrity(&payload, mac_key) {
+            return None;
+        }
+        Self::parse_stego_payload(&payload)
+    }
+
     pub fn extract_payload_with_seed(&self, img: &DynamicImage, seed: u64) -> Option<StegoPayload> {
         let rgba = img.to_rgba8();
-
-        if let Some(payload) = self.extract_with_redundancy(&rgba, seed) {
-            if payload.len() < 25 {
-                return None;
-            }
-
-            let version = payload[0];
-            if version != 1 {
-                return None;
-            }
-
-            let protection_level = payload[1];
-
-            let extracted_seed = u64::from_le_bytes([
-                payload[2], payload[3], payload[4], payload[5], payload[6], payload[7], payload[8],
-                payload[9],
-            ]);
-
-            let intensity_raw = u16::from_le_bytes([payload[10], payload[11]]);
-            let intensity = intensity_raw as f32 / 100.0;
-
-            return Some(StegoPayload {
-                protection_level,
-                seed: extracted_seed,
-                intensity,
-                version,
-            });
-        }
-
-        None
+        let payload = self.extract_with_redundancy(&rgba, seed, &[])?;
+        Self::parse_stego_payload(&payload)
     }
 
     fn verify_dct_stego(&self, jpeg_bytes: &[u8], mac_key: &[u8]) -> Option<bool> {
@@ -394,27 +381,36 @@ impl SteganographyProtector {
 
         // Try baseline JPEG DCT extraction
         if let Ok((header, coefficients)) = JpegTranscoder::decode_coefficients(jpeg_bytes) {
-            let stego_f5 = DctStegoF5::new();
-
-            if let Some(extracted_seed) = stego_f5.extract_seed_from_quantization_tables(&header) {
+            if let Some(extracted_seed) =
+                DctStegoF5::new().extract_seed_from_quantization_tables(&header)
+            {
                 let bits_needed = 256;
-                let extracted = stego_f5.extract_f5(&coefficients, bits_needed, extracted_seed);
 
-                if extracted.len() >= 25 * 8 {
-                    let bits_to_check = extracted.len().min(200);
-                    let payload_bytes: Vec<u8> = extracted[..bits_to_check]
-                        .chunks(8)
-                        .map(|chunk| {
-                            let mut byte = 0u8;
-                            for (i, &bit) in chunk.iter().enumerate() {
-                                byte |= bit << i;
-                            }
-                            byte
-                        })
-                        .collect();
+                // Try the same redundancy values the embedder falls back to:
+                // [1, min(2, r), r]. Since we don't know r, try all valid
+                // redundancies. Do NOT break on bit-count match — only break
+                // when integrity verification succeeds.
+                for redundancy in 1..=5 {
+                    let stego_f5 = DctStegoF5::with_redundancy(redundancy);
+                    let total_bits = bits_needed * redundancy;
+                    let extracted = stego_f5.extract_f5(&coefficients, total_bits, extracted_seed);
 
-                    if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                        return Some(true);
+                    if extracted.len() >= MIN_PAYLOAD_BITS {
+                        let bits_to_check = extracted.len().min(208);
+                        let payload_bytes: Vec<u8> = extracted[..bits_to_check]
+                            .chunks(8)
+                            .map(|chunk| {
+                                let mut byte = 0u8;
+                                for (i, &bit) in chunk.iter().enumerate() {
+                                    byte |= bit << i;
+                                }
+                                byte
+                            })
+                            .collect();
+
+                        if Self::verify_payload_integrity(&payload_bytes, mac_key) {
+                            return Some(true);
+                        }
                     }
                 }
             }
@@ -455,17 +451,23 @@ impl SteganographyProtector {
     /// (see `verify_payload_integrity`), this provides only minimal integrity
     /// checking suitable for accidental corruption detection, not adversarial
     /// settings.
-    fn compute_checksum(data: &[u8]) -> u8 {
-        data.iter().fold(0u8, |acc, &b| acc.wrapping_add(b))
+    fn compute_checksum(data: &[u8]) -> [u8; 2] {
+        let lo = data.iter().fold(0u8, |acc, &b| acc.wrapping_add(b));
+        let hi = data.iter().fold(0u8, |acc, &b| acc.wrapping_add(b ^ 0xAA));
+        [lo, hi]
     }
 
     /// # Security
     ///
-    /// Returns `true` if the simple additive checksum is valid. This does NOT
+    /// Returns `true` if the 16-bit additive checksum is valid. This does NOT
     /// provide cryptographic assurance. Use `verify_payload_integrity` with a
     /// non-empty `mac_key` for HMAC-based verification.
     fn verify_checksum(payload: &[u8]) -> bool {
-        payload.len() >= 25 && payload[24] == Self::compute_checksum(&payload[..24])
+        if payload.len() < MIN_PAYLOAD_SIZE {
+            return false;
+        }
+        let expected = Self::compute_checksum(&payload[..24]);
+        payload[24] == expected[0] && payload[25] == expected[1]
     }
 
     fn verify_payload_integrity(payload: &[u8], mac_key: &[u8]) -> bool {
@@ -487,8 +489,8 @@ impl SteganographyProtector {
     /// - Timestamp (8 bytes)
     ///
     /// This is followed by either:
-    /// - HMAC-SHA256 of the first 24 bytes (if mac_key is set), OR
-    /// - Simple additive checksum (if no mac_key)
+    /// - HMAC-SHA256 of the first 24 bytes (8 bytes, if mac_key is set), OR
+    /// - 16-bit additive checksum (2 bytes, if no mac_key)
     ///
     /// Note: The simple checksum is intentional for this library's use case.
     /// This library is designed for **legal deterrence**, not cryptographic security.
@@ -526,9 +528,11 @@ impl SteganographyProtector {
             let mac = Self::compute_payload_mac(&payload, key);
             payload.extend_from_slice(&mac);
         } else {
-            // Intentional: Simple additive checksum for this visibility-focused design.
+            // Intentional: 16-bit additive checksum for this visibility-focused design.
             // See docstring above for rationale.
-            payload.push(Self::compute_checksum(&payload));
+            let checksum = Self::compute_checksum(&payload);
+            payload.push(checksum[0]);
+            payload.push(checksum[1]);
         }
 
         while payload.len() < 32 {
@@ -843,9 +847,9 @@ impl SteganographyProtector {
                 bits.push(bit);
             }
 
-            if bits.len() >= 25 * 8 {
+            if bits.len() >= MIN_PAYLOAD_BITS {
                 let bytes = Self::bits_to_bytes(&bits);
-                if bytes.len() >= 25 {
+                if bytes.len() >= MIN_PAYLOAD_SIZE {
                     all_candidates.push(bytes);
                 }
             }
@@ -858,7 +862,7 @@ impl SteganographyProtector {
         }
 
         for candidate in &all_candidates {
-            if candidate.len() >= 25 {
+            if candidate.len() >= MIN_PAYLOAD_SIZE {
                 return Some(candidate.clone());
             }
         }

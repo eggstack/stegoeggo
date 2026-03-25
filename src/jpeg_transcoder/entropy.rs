@@ -2,6 +2,7 @@
 //!
 //! Handles Huffman entropy decoding of DCT coefficients from JPEG scan data
 //! and encoding coefficients back to JPEG format.
+#![allow(dead_code)] // Standard JPEG Huffman tables and lookup constants for reference
 
 use super::{JpegHeader, Result, TranscoderError};
 use std::collections::HashMap;
@@ -48,7 +49,6 @@ pub const STD_CHROMINANCE_DC: ([u8; 16], &[u8]) = (
     [0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
     &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
 );
-
 pub const STD_CHROMINANCE_AC: ([u8; 16], &[u8]) = (
     [0, 2, 1, 2, 4, 4, 3, 4, 7, 5, 4, 4, 0, 1, 2, 119],
     &[
@@ -597,7 +597,7 @@ impl CoefficientEncoder {
             let value = block[k];
 
             if value == 0 {
-                // Count zeros
+                // Count consecutive zeros
                 let mut zero_count = 0;
                 while k < 64 && block[k] == 0 {
                     zero_count += 1;
@@ -605,25 +605,22 @@ impl CoefficientEncoder {
                 }
 
                 if k >= 64 {
-                    // EOB - end of block
+                    // All remaining coefficients are zero — EOB
                     self.write_huffman_code(writer, table, 0x00)?;
                     break;
                 }
 
-                // Handle runs of 16 or more zeros
+                // Handle runs of 16 or more zeros with ZRL markers
                 while zero_count >= 16 {
                     self.write_huffman_code(writer, table, 0xF0)?; // ZRL (16 zeros)
                     zero_count -= 16;
                 }
 
-                // Now at non-zero value
+                // Encode the non-zero value that terminated the zero run
                 let non_zero_value = block[k];
                 let size = self.magnitude_size(non_zero_value.unsigned_abs());
-
-                // Clamp to max encodable size (standard Huffman tables support up to 10)
                 let encodable_size = size.min(10);
                 let clamped_value = if size > 10 {
-                    // Clamp magnitude to max representable value for this size
                     let max_val = ((1i32 << 10) - 1) as i16;
                     if non_zero_value > 0 {
                         max_val
@@ -637,16 +634,41 @@ impl CoefficientEncoder {
                 let rs = (zero_count << 4) | encodable_size;
                 self.write_huffman_code(writer, table, rs)?;
 
-                // Write magnitude bits
                 if clamped_value > 0 {
                     writer.write_bits(clamped_value as u16, encodable_size);
                 } else {
                     let magnitude = ((clamped_value as i32) - 1).unsigned_abs() as u16;
                     writer.write_bits(magnitude, encodable_size);
                 }
-            }
 
-            k += 1;
+                k += 1;
+            } else {
+                // Non-zero coefficient not preceded by zeros — encode with run=0
+                let size = self.magnitude_size(value.unsigned_abs());
+                let encodable_size = size.min(10);
+                let clamped_value = if size > 10 {
+                    let max_val = ((1i32 << 10) - 1) as i16;
+                    if value > 0 {
+                        max_val
+                    } else {
+                        -max_val
+                    }
+                } else {
+                    value
+                };
+
+                let rs = encodable_size; // run=0, size=encodable_size
+                self.write_huffman_code(writer, table, rs)?;
+
+                if clamped_value > 0 {
+                    writer.write_bits(clamped_value as u16, encodable_size);
+                } else {
+                    let magnitude = ((clamped_value as i32) - 1).unsigned_abs() as u16;
+                    writer.write_bits(magnitude, encodable_size);
+                }
+
+                k += 1;
+            }
         }
 
         Ok(())

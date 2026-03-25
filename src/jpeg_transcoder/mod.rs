@@ -3,9 +3,7 @@
 //! This module provides JPEG transcoding capabilities that preserve DCT coefficients,
 //! allowing steganographic embedding that survives re-encoding.
 
-#[allow(dead_code)]
 pub mod entropy;
-#[allow(dead_code)]
 pub mod header;
 pub mod stego_f5;
 
@@ -34,10 +32,6 @@ pub enum TranscoderError {
 
     #[error("Embedding failed: {0}")]
     EmbeddingFailed(String),
-
-    #[error("Extraction failed: {0}")]
-    #[allow(dead_code)]
-    ExtractionFailed(String),
 }
 
 pub type Result<T> = std::result::Result<T, TranscoderError>;
@@ -232,19 +226,45 @@ impl JpegTranscoder {
 
 mod scan_utils {
     pub fn get_scan_data_start(data: &[u8]) -> Option<usize> {
-        // Find SOS marker - skip to after SOI first
-        let mut pos = 2;
-        while pos + 1 < data.len() {
-            if data[pos] == 0xFF && data[pos + 1] == 0xDA && pos + 3 < data.len() {
+        // Properly walk JPEG markers to find SOS (0xFFDA).
+        // Skips marker segments using their declared lengths to avoid
+        // false positives from 0xFF bytes in entropy-coded data.
+        let mut pos = 2; // skip SOI
+        while pos + 4 <= data.len() {
+            if data[pos] != 0xFF {
+                pos += 1;
+                continue;
+            }
+
+            let marker = data[pos + 1];
+
+            // SOS marker found — scan data starts after the SOS segment header
+            if marker == 0xDA {
                 let len = ((data[pos + 2] as usize) << 8) | (data[pos + 3] as usize);
                 return Some(pos + 2 + len);
             }
-            // Skip 0xFF bytes to avoid false positives
-            if data[pos] == 0xFF {
-                pos += 2;
-            } else {
-                pos += 1;
+
+            // Standalone markers (no length field): RSTm (0xD0-0xD7), SOI (0xD8), EOI (0xD9)
+            if marker == 0xD9 {
+                return None; // EOI before SOS — no scan data
             }
+            if (0xD0..=0xD7).contains(&marker) || marker == 0xD8 {
+                pos += 2;
+                continue;
+            }
+
+            // Stuffed byte (0xFF 0x00) in entropy data — skip the pair
+            if marker == 0x00 {
+                pos += 2;
+                continue;
+            }
+
+            // All other markers have a 2-byte length field after the marker byte
+            if pos + 4 > data.len() {
+                return None;
+            }
+            let seg_len = ((data[pos + 2] as usize) << 8) | (data[pos + 3] as usize);
+            pos += 2 + seg_len;
         }
         None
     }
@@ -252,35 +272,7 @@ mod scan_utils {
 
 /// Check if JPEG is progressive
 pub fn is_progressive_jpeg(jpeg_data: &[u8]) -> bool {
-    if !jpeg_data.starts_with(&[0xFF, 0xD8]) {
-        return false;
-    }
-
-    let mut pos = 2;
-    while pos + 1 < jpeg_data.len() {
-        if jpeg_data[pos] != 0xFF {
-            pos += 1;
-            continue;
-        }
-
-        let marker = jpeg_data[pos + 1];
-
-        // SOF2 = Progressive JPEG
-        if marker == 0xC2 {
-            return true;
-        }
-
-        if marker == 0xD9 || marker == 0xDA {
-            break;
-        }
-
-        if pos + 3 >= jpeg_data.len() {
-            break;
-        }
-
-        let len = ((jpeg_data[pos + 2] as usize) << 8) | (jpeg_data[pos + 3] as usize);
-        pos += 2 + len;
-    }
-
-    false
+    JpegHeader::parse(jpeg_data)
+        .map(|h| h.is_progressive)
+        .unwrap_or(false)
 }

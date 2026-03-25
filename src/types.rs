@@ -96,33 +96,6 @@ impl ProtectionLevel {
     }
 }
 
-/// Target AI model for protection optimization.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, Default)]
-#[non_exhaustive]
-pub enum TargetModel {
-    #[default]
-    StableDiffusion15,
-    StableDiffusion21,
-    StableDiffusionXL,
-    #[serde(rename = "DALL_E")]
-    DallE,
-    Midjourney,
-    Custom(String),
-}
-
-impl TargetModel {
-    pub fn as_str(&self) -> &str {
-        match self {
-            TargetModel::StableDiffusion15 => "sd15",
-            TargetModel::StableDiffusion21 => "sd21",
-            TargetModel::StableDiffusionXL => "sdxl",
-            TargetModel::DallE => "dalle",
-            TargetModel::Midjourney => "midjourney",
-            TargetModel::Custom(s) => s.as_str(),
-        }
-    }
-}
-
 /// Image output format for encoding protected images.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[non_exhaustive]
@@ -295,12 +268,11 @@ impl ProtectionConfig {
     }
 }
 
-/// Context for protection operations containing target model, intensity, and configuration.
+/// Context for protection operations containing intensity and configuration.
 ///
 /// Cheap to clone (heavy fields are in `Arc<ProtectionConfig>`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtectionContext {
-    pub target: TargetModel,
     pub intensity: f32,
     pub seed: u64,
     pub input_format: Option<ImageOutputFormat>,
@@ -330,12 +302,8 @@ pub struct ProtectionContext {
 
 impl Default for ProtectionContext {
     fn default() -> Self {
-        let seed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() ^ d.subsec_nanos() as u64)
-            .unwrap_or(42);
+        let seed = crate::util::seed::generate_random_seed();
         Self {
-            target: TargetModel::default(),
             intensity: 0.5,
             seed,
             input_format: None,
@@ -354,12 +322,11 @@ impl Default for ProtectionContext {
 }
 
 impl ProtectionContext {
-    /// Create a new ProtectionContext with the specified target model, intensity, and seed.
+    /// Create a new ProtectionContext with the specified intensity and seed.
     ///
     /// Intensity is clamped to the range [0.0, 1.0].
-    pub fn new(target: TargetModel, intensity: f32, seed: u64) -> Self {
+    pub fn new(intensity: f32, seed: u64) -> Self {
         Self {
-            target,
             intensity: intensity.clamp(0.0, 1.0),
             seed,
             ..Self::default()
@@ -497,7 +464,6 @@ impl ProtectionContext {
 pub struct ProtectedVariant {
     pub variant_id: uuid::Uuid,
     pub original_hash: String,
-    pub target_model: String,
     pub protection_level: ProtectionLevel,
     pub perturbation_data: Vec<u8>,
     pub intensity: f32,
@@ -512,7 +478,6 @@ impl ProtectedVariant {
     /// The `perturbation_data` contains the precomputed adversarial perturbations.
     pub fn new(
         original_hash: String,
-        target_model: TargetModel,
         protection_level: ProtectionLevel,
         perturbation_data: Vec<u8>,
         intensity: f32,
@@ -522,7 +487,6 @@ impl ProtectedVariant {
         Self {
             variant_id: uuid::Uuid::new_v4(),
             original_hash,
-            target_model: target_model.as_str().to_string(),
             protection_level,
             perturbation_data,
             intensity,
@@ -531,14 +495,16 @@ impl ProtectedVariant {
         }
     }
 
-    /// Generate a cache key for this variant based on hash, model, level, and intensity.
+    /// Generate a cache key for this variant based on hash, level, and intensity.
     pub fn cache_key(&self) -> String {
+        // Round intensity to 4 decimal places to avoid f32 representation mismatches
+        // (e.g., 0.1 + 0.2 formatting as "0.30000001").
+        let intensity_rounded = (self.intensity * 10000.0).round() / 10000.0;
         format!(
-            "{}_{}_{}_{}",
+            "{}_{}_{}",
             self.original_hash,
-            self.target_model,
             self.protection_level.as_str(),
-            self.intensity
+            intensity_rounded
         )
     }
 }

@@ -1,6 +1,5 @@
 use cloakrs::{
     process_image_bytes, ImageOutputFormat, ProtectionContext, ProtectionLevel, ProtectionPipeline,
-    TargetModel,
 };
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::DynamicImage;
@@ -148,8 +147,7 @@ fn benchmark_format_preservation(c: &mut Criterion) {
     }
 
     let ctx_png = ProtectionContext::default();
-    let ctx_jpeg = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
-        .with_format(ImageOutputFormat::Jpeg);
+    let ctx_jpeg = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
 
     let mut group = c.benchmark_group("format_preservation");
 

@@ -1,7 +1,7 @@
 use cloakrs::{
     process_image, process_image_bytes, EnhancedProtector, MetadataTrapProtector, NoiseProtector,
     PassthroughProtector, PrecomputedProtector, ProtectionContext, ProtectionLevel,
-    ProtectionPipeline, Protector, TargetModel,
+    ProtectionPipeline, Protector,
 };
 use image::DynamicImage;
 
@@ -10,7 +10,7 @@ fn create_test_image() -> DynamicImage {
 }
 
 fn create_test_context() -> ProtectionContext {
-    ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
+    ProtectionContext::new(0.5, 42)
 }
 
 mod basic {
@@ -62,8 +62,7 @@ mod basic {
 
     #[test]
     fn test_protection_context() {
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 123);
-        assert_eq!(ctx.target, TargetModel::StableDiffusionXL);
+        let ctx = ProtectionContext::new(0.5, 123);
         assert_eq!(ctx.intensity, 0.5);
         assert_eq!(ctx.seed, 123);
     }
@@ -126,7 +125,7 @@ mod protectors {
     fn test_noise_actually_changes_image() {
         let poisoner = NoiseProtector::new();
         let img = create_test_image();
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 12345);
+        let ctx = ProtectionContext::new(0.8, 12345);
 
         let result = poisoner.apply(&img, &ctx).unwrap();
 
@@ -158,7 +157,7 @@ mod protectors {
     fn test_enhanced_actually_changes_image() {
         let poisoner = EnhancedProtector::new();
         let img = create_test_image();
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 12345);
+        let ctx = ProtectionContext::new(0.8, 12345);
 
         let result = poisoner.apply(&img, &ctx).unwrap();
 
@@ -190,7 +189,7 @@ mod protectors {
     fn test_precomputed_generates_perturbation() {
         let poisoner = PrecomputedProtector::new();
         let img = create_test_image();
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 999);
+        let ctx = ProtectionContext::new(0.5, 999);
 
         let result = poisoner.apply(&img, &ctx).unwrap();
 
@@ -247,7 +246,7 @@ mod integration {
         let result = process_image_bytes(
             &buffer,
             ProtectionLevel::Standard,
-            &ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 42),
+            &ProtectionContext::new(0.8, 42),
         )
         .unwrap();
 
@@ -313,8 +312,7 @@ mod integration {
                 .unwrap();
         }
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 12345)
-            .with_format(ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.8, 12345).with_format(ImageOutputFormat::Png);
 
         let result = process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
@@ -343,7 +341,7 @@ mod integration {
                 .unwrap();
         }
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 12345)
+        let ctx = ProtectionContext::new(0.8, 12345)
             .with_format(ImageOutputFormat::Jpeg)
             .with_dmi(DmiValue::ProhibitedGenAiMlTraining);
 
@@ -373,8 +371,7 @@ mod integration {
                 .unwrap();
         }
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 12345)
-            .with_format(ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.8, 12345).with_format(ImageOutputFormat::Png);
 
         let result = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
 

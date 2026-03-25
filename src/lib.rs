@@ -28,6 +28,18 @@
 //! Verification priority for JPEG: metadata seed extraction > DCT quantization table
 //! seed > DCT coefficient extraction > pixel-based extraction.
 //!
+//! # JPEG-in/JPEG-out Fast Path
+//!
+//! When using `process_image_bytes` with JPEG input and JPEG output, the library
+//! takes a byte-only fast path that bypasses pixel manipulation entirely. Only
+//! DCT coefficient steganography and metadata injection are applied. This preserves
+//! image quality by avoiding decode/encode cycles, but **all protection levels
+//! (Standard, Enhanced, Strong) produce identical output in this mode** since the
+//! noise perturbation layer operates on pixels, not DCT coefficients.
+//!
+//! For format conversion (e.g., JPEG input → PNG output), the full protection
+//! pipeline including noise perturbation is applied.
+//!
 //! # Security Considerations
 //!
 //! **Without a MAC key**, steganographic payload verification uses a trivial
@@ -53,9 +65,9 @@
 //! # WAF-Optimized Usage
 //!
 //! ```ignore
-//! use cloakrs::{process_image_bytes, ProtectionContext, ProtectionLevel, ImageOutputFormat, TargetModel};
+//! use cloakrs::{process_image_bytes, ProtectionContext, ProtectionLevel, ImageOutputFormat};
 //!
-//! let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
+//! let ctx = ProtectionContext::new(0.5, 42)
 //!     .with_format(ImageOutputFormat::Png)
 //!     .with_stego_redundancy(2)      // Lower = faster
 //!     .with_jpeg_quality(85)        // Lower = smaller files
@@ -89,10 +101,13 @@ pub(crate) mod jpeg_transcoder;
 pub(crate) mod protected;
 pub(crate) mod util;
 
+#[cfg(feature = "async")]
+pub mod async_api;
+
 pub use error::{Error, Result};
 pub use types::{
     DmiValue, ImageOutputFormat, LegalMetadata, ProtectedVariant, ProtectionConfig,
-    ProtectionContext, ProtectionLevel, TargetModel, DEFAULT_OUTPUT_FORMAT,
+    ProtectionContext, ProtectionLevel, DEFAULT_OUTPUT_FORMAT,
 };
 
 pub use traits::{NoOpLoader, Protector, VariantLoader};
@@ -112,6 +127,13 @@ pub use util::image::{
 };
 
 pub use util::iscc::{compute_iscc, compute_iscc_from_bytes, Iscc};
+pub use util::seed::generate_random_seed;
+
+#[cfg(feature = "async")]
+pub use async_api::{
+    process_image_async, process_image_bytes_async, process_images_bytes_parallel_async,
+    process_images_parallel_async, verify_image_bytes_async,
+};
 
 use image::DynamicImage;
 use image::GenericImageView;
@@ -126,16 +148,6 @@ enum MultiProtector {
     Noise,
     Enhanced,
     Precomputed,
-}
-
-impl MultiProtector {
-    fn to_protection_level(self) -> ProtectionLevel {
-        match self {
-            MultiProtector::Noise => ProtectionLevel::Standard,
-            MultiProtector::Enhanced => ProtectionLevel::Enhanced,
-            MultiProtector::Precomputed => ProtectionLevel::Strong,
-        }
-    }
 }
 
 /// Main pipeline for applying protection to images.
@@ -197,6 +209,10 @@ impl ProtectionPipeline {
         ctx: &ProtectionContext,
     ) -> Result<Cow<'a, DynamicImage>> {
         Self::validate_dimensions(img, ctx.max_dimension)?;
+
+        let mut ctx_with_level = ctx.clone();
+        ctx_with_level.protection_level = Some(level);
+        let ctx = &ctx_with_level;
 
         match level {
             ProtectionLevel::Disabled => self.passthrough.apply(img, ctx),
@@ -300,8 +316,8 @@ impl ProtectionPipeline {
         ctx: &ProtectionContext,
         protector: MultiProtector,
     ) -> Result<Vec<u8>> {
-        let mut ctx_with_level = ctx.clone();
-        ctx_with_level.protection_level = Some(protector.to_protection_level());
+        // Use the context as-is — caller (process_bytes) already set protection_level.
+        let ctx_with_level = ctx.clone();
 
         let input_format = ctx
             .input_format
@@ -315,6 +331,8 @@ impl ProtectionPipeline {
 
         // JPEG-in, JPEG-out: byte-only path (DCT stego + metadata, no pixel manipulation).
         // This preserves quality and avoids decode/encode cycles.
+        // NOTE: All protection levels (Standard/Enhanced/Strong) produce identical
+        // output here since noise perturbation operates on pixels, not DCT coefficients.
         if input_format == crate::types::ImageOutputFormat::Jpeg
             && output_format == crate::types::ImageOutputFormat::Jpeg
         {
@@ -341,6 +359,7 @@ impl Default for ProtectionPipeline {
 /// Process an image with the specified protection level.
 ///
 /// Takes an owned DynamicImage and returns a processed image.
+#[must_use = "the protected image should be saved or used"]
 pub fn process_image(
     img: DynamicImage,
     level: ProtectionLevel,
@@ -355,21 +374,7 @@ pub fn process_image(
 ///
 /// Takes a slice of images and returns a vector of processed images.
 /// Uses Rayon for parallel processing.
-///
-/// # Example
-///
-/// ```ignore
-/// use cloakrs::{process_images_parallel, ProtectionContext, ProtectionLevel};
-/// use image::DynamicImage;
-///
-/// // In real usage, load actual images:
-/// // let images: Vec<DynamicImage> = vec![
-/// //     image::open("image1.png")?,
-/// //     image::open("image2.png")?,
-/// // ];
-/// // let ctx = ProtectionContext::default();
-/// // let results = process_images_parallel(&images, ProtectionLevel::Standard, &ctx).unwrap();
-/// ```
+#[must_use = "the protected images should be saved or used"]
 pub fn process_images_parallel(
     images: &[DynamicImage],
     level: ProtectionLevel,
@@ -389,21 +394,7 @@ pub fn process_images_parallel(
 /// Process multiple images in parallel (bytes variant).
 ///
 /// Takes a slice of image bytes and returns a vector of processed image bytes.
-/// Note: In a real application, you would load actual image files.
-///
-/// # Example
-///
-/// ```ignore
-/// use cloakrs::{process_images_bytes_parallel, ProtectionContext, ProtectionLevel};
-///
-/// // In real usage, load actual image files:
-/// // let images: Vec<Vec<u8>> = vec![
-/// //     std::fs::read("image1.png")?,
-/// //     std::fs::read("image2.png")?,
-/// // ];
-/// // let ctx = ProtectionContext::default();
-/// // let results = process_images_bytes_parallel(&images, ProtectionLevel::Standard, &ctx).unwrap();
-/// ```
+#[must_use = "the protected image bytes should be saved or used"]
 pub fn process_images_bytes_parallel(
     images: &[Vec<u8>],
     level: ProtectionLevel,
@@ -420,6 +411,7 @@ pub fn process_images_bytes_parallel(
 ///
 /// Automatically detects the input format from magic bytes and preserves
 /// the output format. Returns the protected image as bytes.
+#[must_use = "the protected image bytes should be saved or used"]
 pub fn process_image_bytes(
     img_bytes: &[u8],
     level: ProtectionLevel,
@@ -436,6 +428,22 @@ pub fn process_image_bytes(
     };
 
     DEFAULT_PIPELINE.process_bytes(img_bytes, level, &ctx_with_format)
+}
+
+/// Verify that image bytes contain a protection signature.
+///
+/// Checks metadata seeds, DCT stego (for JPEG), and LSB stego (for PNG/WebP).
+/// Returns `Some(true)` if verified, `Some(false)` if checked but invalid, `None`
+/// if no protection data was found.
+///
+/// # Arguments
+///
+/// * `img_bytes` - Raw image bytes (PNG, JPEG, or WebP)
+/// * `mac_key` - Optional MAC key for HMAC-SHA256 verification. Pass empty slice
+///   for checksum-only verification.
+pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> Option<bool> {
+    let stego = SteganographyProtector::new();
+    stego.verify_payload_from_bytes_with_key(img_bytes, mac_key)
 }
 
 #[cfg(test)]

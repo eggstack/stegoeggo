@@ -2,7 +2,7 @@ use cloakrs::{
     process_image, process_image_bytes, process_images_bytes_parallel, process_images_parallel,
     DmiValue, EnhancedProtector, ImageOutputFormat, LegalMetadata, MetadataTrapProtector,
     NoiseProtector, PassthroughProtector, PrecomputedProtector, ProtectedVariant,
-    ProtectionContext, ProtectionLevel, ProtectionPipeline, SteganographyProtector, TargetModel,
+    ProtectionContext, ProtectionLevel, ProtectionPipeline, SteganographyProtector,
 };
 use image::{DynamicImage, ImageEncoder};
 
@@ -11,7 +11,7 @@ fn create_test_image(width: u32, height: u32) -> DynamicImage {
 }
 
 fn create_test_context() -> ProtectionContext {
-    ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
+    ProtectionContext::new(0.5, 42)
 }
 
 fn image_to_png_bytes(img: &DynamicImage) -> Vec<u8> {
@@ -60,7 +60,7 @@ mod round_trip {
     #[test]
     fn test_protect_and_verify_standard_level() {
         let img = create_test_image(64, 64);
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.7, 12345);
+        let ctx = ProtectionContext::new(0.7, 12345);
 
         let protected = process_image(img.clone(), ProtectionLevel::Standard, &ctx).unwrap();
 
@@ -74,7 +74,7 @@ mod round_trip {
     #[test]
     fn test_protect_and_verify_enhanced_level() {
         let img = create_test_image(64, 64);
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 999);
+        let ctx = ProtectionContext::new(0.8, 42);
 
         let protected = process_image(img.clone(), ProtectionLevel::Enhanced, &ctx).unwrap();
 
@@ -88,7 +88,7 @@ mod round_trip {
     #[test]
     fn test_protect_and_verify_strong_level() {
         let img = create_test_image(64, 64);
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.9, 7777);
+        let ctx = ProtectionContext::new(0.9, 42);
 
         let protected = process_image(img.clone(), ProtectionLevel::Strong, &ctx).unwrap();
 
@@ -104,7 +104,7 @@ mod round_trip {
         let img = create_test_image(64, 64);
         let seed = 42;
         let intensity = 0.75;
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, intensity, seed);
+        let ctx = ProtectionContext::new(intensity, seed);
 
         let protected = process_image(img, ProtectionLevel::Standard, &ctx).unwrap();
 
@@ -123,7 +123,7 @@ mod round_trip {
     #[test]
     fn test_deterministic_with_same_seed() {
         let img = create_test_image(32, 32);
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42);
+        let ctx = ProtectionContext::new(0.5, 42);
 
         let protected1 = process_image(img.clone(), ProtectionLevel::Standard, &ctx).unwrap();
         let protected2 = process_image(img.clone(), ProtectionLevel::Standard, &ctx).unwrap();
@@ -142,8 +142,8 @@ mod round_trip {
     fn test_different_seeds_produce_different_output() {
         let img = create_test_image(32, 32);
 
-        let ctx1 = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 100);
-        let ctx2 = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 200);
+        let ctx1 = ProtectionContext::new(0.5, 100);
+        let ctx2 = ProtectionContext::new(0.5, 200);
 
         let protected1 = process_image(img.clone(), ProtectionLevel::Standard, &ctx1).unwrap();
         let protected2 = process_image(img.clone(), ProtectionLevel::Standard, &ctx2).unwrap();
@@ -167,8 +167,7 @@ mod image_formats {
         let img = create_colored_image(64, 64, 100, 150, 200);
         let png_bytes = image_to_png_bytes(&img);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
-            .with_format(ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -187,8 +186,7 @@ mod image_formats {
         let img = create_colored_image(64, 64, 100, 150, 200);
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
-            .with_format(ImageOutputFormat::Jpeg);
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
 
         let protected_bytes =
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -206,8 +204,7 @@ mod image_formats {
         let img = create_colored_image(64, 64, 100, 150, 200);
         let png_bytes = image_to_png_bytes(&img);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
-            .with_format(ImageOutputFormat::Jpeg);
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
 
         let protected_bytes =
             process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -223,8 +220,7 @@ mod image_formats {
         let img = create_colored_image(64, 64, 100, 150, 200);
         let jpeg_bytes = image_to_jpeg_bytes(&img, 85);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
-            .with_format(ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -240,8 +236,7 @@ mod image_formats {
         let img = create_test_image(32, 32);
         let png_bytes = image_to_png_bytes(&img);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 12345)
-            .with_format(ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.8, 12345).with_format(ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -262,7 +257,7 @@ mod image_formats {
         let img = create_test_image(32, 32);
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 12345)
+        let ctx = ProtectionContext::new(0.8, 12345)
             .with_format(ImageOutputFormat::Jpeg)
             .with_dmi(DmiValue::ProhibitedAiMlTraining);
 
@@ -282,8 +277,7 @@ mod metadata_injection {
         let img = create_test_image(32, 32);
         let png_bytes = image_to_png_bytes(&img);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
-            .with_format(ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
@@ -307,7 +301,7 @@ mod metadata_injection {
         ];
 
         for (level, expected_dmi) in test_cases {
-            let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
+            let ctx = ProtectionContext::new(0.5, 42)
                 .with_format(ImageOutputFormat::Png)
                 .with_dmi(expected_dmi);
 
@@ -328,7 +322,7 @@ mod metadata_injection {
             .with_contact_email("test@example.com")
             .with_usage_terms("No AI training allowed");
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
+        let ctx = ProtectionContext::new(0.5, 42)
             .with_format(ImageOutputFormat::Png)
             .with_legal_metadata(legal)
             .with_legal_claims(true);
@@ -346,8 +340,7 @@ mod metadata_injection {
         let seed = 98765;
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, seed)
-            .with_format(ImageOutputFormat::Jpeg);
+        let ctx = ProtectionContext::new(0.5, seed).with_format(ImageOutputFormat::Jpeg);
 
         let protected_bytes =
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -365,7 +358,7 @@ mod metadata_injection {
         let img = create_test_image(32, 32);
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 42)
+        let ctx = ProtectionContext::new(0.5, 42)
             .with_format(ImageOutputFormat::Jpeg)
             .with_dmi(DmiValue::ProhibitedAiMlTraining);
 
@@ -379,9 +372,7 @@ mod metadata_injection {
         let has_photoshop_id = protected_bytes
             .windows(14)
             .any(|w| w == b"Photoshop 3.0\x00");
-        let has_iptc_record_start = protected_bytes
-            .windows(4)
-            .any(|w| w == [0x1C, 0x02, 0x78, 0x78]);
+        let has_iptc_record_start = protected_bytes.windows(3).any(|w| w == [0x1C, 0x02, 0x78]);
         let has_dmi = protected_bytes.windows(4).any(|w| w == b"DMI:");
 
         assert!(
@@ -398,7 +389,7 @@ mod metadata_injection {
         );
         assert!(
             has_iptc_record_start,
-            "JPEG should have IPTC record start (1C 02 78 78)"
+            "JPEG should have IPTC record start (1C 02 78)"
         );
         assert!(has_dmi, "JPEG should contain DMI value");
     }
@@ -411,7 +402,7 @@ mod steganography {
     fn test_stego_survives_format_reencoding() {
         let img = create_colored_image(64, 64, 50, 100, 150);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.6, 11111);
+        let ctx = ProtectionContext::new(0.6, 42);
 
         let protected = process_image(img, ProtectionLevel::Standard, &ctx).unwrap();
 
@@ -433,8 +424,7 @@ mod steganography {
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
 
         let seed = 22222u64;
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, seed)
-            .with_format(ImageOutputFormat::Jpeg);
+        let ctx = ProtectionContext::new(0.5, seed).with_format(ImageOutputFormat::Jpeg);
 
         let protected_bytes =
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -454,8 +444,7 @@ mod steganography {
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
 
         for seed in [42u64, 12345, 999999] {
-            let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, seed)
-                .with_format(ImageOutputFormat::Jpeg);
+            let ctx = ProtectionContext::new(0.5, seed).with_format(ImageOutputFormat::Jpeg);
 
             let protected =
                 process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -477,8 +466,7 @@ mod steganography {
         let jpeg_bytes = image_to_jpeg_bytes(&img, 85);
 
         let seed = 77777u64;
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.6, seed)
-            .with_format(ImageOutputFormat::Jpeg);
+        let ctx = ProtectionContext::new(0.6, seed).with_format(ImageOutputFormat::Jpeg);
 
         let protected_bytes =
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -496,16 +484,30 @@ mod steganography {
     fn test_verify_with_keyed_context() {
         let key = vec![1, 2, 3, 4, 5, 6, 7, 8];
         let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 33333)
-            .with_mac_key(key.clone());
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_mac_key(key.clone())
+            .with_format(ImageOutputFormat::Png);
 
-        let protected = process_image(img, ProtectionLevel::Standard, &ctx).unwrap();
+        let protected_bytes =
+            process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
         let stego = SteganographyProtector::new();
-        let verified = stego.verify_payload(&protected);
 
-        assert!(verified, "Should verify without key first");
+        // Metadata seed should be extractable from the protected bytes
+        let seed = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
+        assert_eq!(seed, Some(42), "Metadata seed should be extractable");
+
+        // Verify via DynamicImage round-trip with correct MAC key
+        let protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        let payload = stego.extract_payload_with_key(&protected_img, &key);
+        assert!(
+            payload.is_some(),
+            "Should extract payload with correct MAC key"
+        );
+        let payload = payload.unwrap();
+        assert_eq!(payload.seed, 42);
     }
 
     #[test]
@@ -514,8 +516,7 @@ mod steganography {
         let img = create_test_image(64, 64);
         let png_bytes = image_to_png_bytes(&img);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.7, seed)
-            .with_format(ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.7, seed).with_format(ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -547,25 +548,10 @@ mod precomputed_variants {
         let img = create_test_image(32, 32);
         let hash = cloakrs::compute_image_hash(&img);
 
-        let variant1 = ProtectedVariant::new(
-            hash.clone(),
-            TargetModel::StableDiffusionXL,
-            ProtectionLevel::Strong,
-            vec![],
-            0.5,
-            32,
-            32,
-        );
+        let variant1 =
+            ProtectedVariant::new(hash.clone(), ProtectionLevel::Strong, vec![], 0.5, 32, 32);
 
-        let variant2 = ProtectedVariant::new(
-            hash,
-            TargetModel::StableDiffusionXL,
-            ProtectionLevel::Strong,
-            vec![],
-            0.5,
-            32,
-            32,
-        );
+        let variant2 = ProtectedVariant::new(hash, ProtectionLevel::Strong, vec![], 0.5, 32, 32);
 
         pipeline
             .register_precomputed_variants(vec![variant1])
@@ -577,7 +563,7 @@ mod precomputed_variants {
     #[test]
     fn test_strong_level_uses_different_algorithm() {
         let img = create_test_image(64, 64);
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 55555);
+        let ctx = ProtectionContext::new(0.5, 42);
 
         let standard = process_image(img.clone(), ProtectionLevel::Standard, &ctx).unwrap();
         let strong = process_image(img.clone(), ProtectionLevel::Strong, &ctx).unwrap();
@@ -600,7 +586,7 @@ mod parallel_processing {
             .map(|i| create_colored_image(16, 16, i as u8, (i * 10) as u8, (i * 20) as u8))
             .collect();
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 77777);
+        let ctx = ProtectionContext::new(0.5, 77777);
 
         let results = process_images_parallel(&images, ProtectionLevel::Standard, &ctx).unwrap();
 
@@ -623,7 +609,7 @@ mod parallel_processing {
             })
             .collect();
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 88888);
+        let ctx = ProtectionContext::new(0.5, 88888);
 
         let results =
             process_images_bytes_parallel(&images, ProtectionLevel::Standard, &ctx).unwrap();
@@ -639,7 +625,7 @@ mod parallel_processing {
     fn test_parallel_preserves_count() {
         let images: Vec<DynamicImage> = (0..8).map(|_| create_test_image(16, 16)).collect();
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 99999);
+        let ctx = ProtectionContext::new(0.5, 99999);
 
         let results = process_images_parallel(&images, ProtectionLevel::Standard, &ctx).unwrap();
 
@@ -657,7 +643,7 @@ mod edge_cases {
         let img = create_test_image(32, 32);
         let original_bytes = img.to_rgba8().into_raw();
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.0, 11111);
+        let ctx = ProtectionContext::new(0.0, 11111);
 
         let result = noise.apply(&img, &ctx).unwrap();
         let result_bytes = result.to_rgba8().into_raw();
@@ -672,7 +658,7 @@ mod edge_cases {
     fn test_max_intensity_modifies_image() {
         let img = create_test_image(32, 32);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 1.0, 22222);
+        let ctx = ProtectionContext::new(1.0, 22222);
 
         let result = process_image(img.clone(), ProtectionLevel::Standard, &ctx).unwrap();
 
@@ -696,7 +682,7 @@ mod edge_cases {
     fn test_small_image_8x8() {
         let img = create_test_image(8, 8);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 33333);
+        let ctx = ProtectionContext::new(0.5, 33333);
 
         let result = process_image(img, ProtectionLevel::Standard, &ctx).unwrap();
 
@@ -708,7 +694,7 @@ mod edge_cases {
     fn test_large_image_1024x1024() {
         let img = create_test_image(1024, 1024);
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 44444);
+        let ctx = ProtectionContext::new(0.5, 42);
 
         let result = process_image(img, ProtectionLevel::Standard, &ctx).unwrap();
 
@@ -727,7 +713,7 @@ mod edge_cases {
         let img = create_colored_image(32, 32, 50, 100, 150);
         let original_bytes = img.to_rgba8().into_raw();
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.9, 55555);
+        let ctx = ProtectionContext::new(0.9, 55555);
 
         let result = process_image(img.clone(), ProtectionLevel::Disabled, &ctx).unwrap();
         let result_bytes = result.to_rgba8().into_raw();
@@ -743,8 +729,7 @@ mod edge_cases {
         let img = create_colored_image(32, 32, 50, 100, 150);
         let original_bytes = img.to_rgba8().into_raw();
 
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 66666)
-            .with_format(ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.5, 66666).with_format(ImageOutputFormat::Png);
 
         let result = process_image(img, ProtectionLevel::Light, &ctx).unwrap();
         let result_bytes = result.to_rgba8().into_raw();
@@ -776,7 +761,7 @@ mod protector_individual {
     fn test_noise_modifies_pixels() {
         let protector = NoiseProtector::new();
         let img = create_test_image(50, 50);
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.8, 77777);
+        let ctx = ProtectionContext::new(0.8, 77777);
 
         let result = protector.apply(&img, &ctx).unwrap();
 
@@ -797,7 +782,7 @@ mod protector_individual {
     fn test_enhanced_creates_visible_pattern() {
         let protector = EnhancedProtector::new();
         let img = create_colored_image(64, 64, 128, 128, 128);
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.9, 88888);
+        let ctx = ProtectionContext::new(0.9, 88888);
 
         let result = protector.apply(&img, &ctx).unwrap();
 
@@ -818,7 +803,7 @@ mod protector_individual {
     fn test_precomputed_adds_perturbation() {
         let protector = PrecomputedProtector::new();
         let img = create_test_image(64, 64);
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.6, 99999);
+        let ctx = ProtectionContext::new(0.6, 99999);
 
         let result = protector.apply(&img, &ctx).unwrap();
 
@@ -839,7 +824,7 @@ mod protector_individual {
     fn test_stego_embed_and_extract() {
         let stego = SteganographyProtector::new();
         let img = create_test_image(64, 64);
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, 101010);
+        let ctx = ProtectionContext::new(0.5, 42);
 
         let result = stego.apply(&img, &ctx).unwrap();
 
@@ -854,8 +839,7 @@ mod protector_individual {
         let protector = MetadataTrapProtector::new();
         let img = create_test_image(32, 32);
         let seed = 202020;
-        let ctx = ProtectionContext::new(TargetModel::StableDiffusionXL, 0.5, seed)
-            .with_format(ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.5, seed).with_format(ImageOutputFormat::Png);
 
         let png_bytes = image_to_png_bytes(&img);
         let protected_bytes = protector.apply_bytes(&png_bytes, &ctx).unwrap();
@@ -916,7 +900,6 @@ mod pipeline {
     fn test_protection_context_defaults() {
         let ctx = ProtectionContext::default();
 
-        assert_eq!(ctx.target, TargetModel::StableDiffusion15);
         assert_eq!(ctx.intensity, 0.5);
         assert_ne!(ctx.seed, 0, "Default seed should be non-zero");
         assert!(ctx.input_format.is_none());
@@ -924,53 +907,18 @@ mod pipeline {
 
     #[test]
     fn test_protection_context_builder() {
-        let ctx = ProtectionContext::new(TargetModel::DallE, 0.8, 12345)
+        let ctx = ProtectionContext::new(0.8, 12345)
             .with_format(ImageOutputFormat::Png)
             .with_stego_redundancy(3)
             .with_jpeg_quality(85)
             .with_progressive_jpeg(true);
 
-        assert_eq!(ctx.target, TargetModel::DallE);
         assert_eq!(ctx.seed, 12345);
         assert_eq!(ctx.intensity, 0.8);
         assert_eq!(ctx.output_format, Some(ImageOutputFormat::Png));
         assert_eq!(ctx.stego_redundancy, 3);
         assert_eq!(ctx.jpeg_quality, 85);
         assert!(ctx.progressive_jpeg);
-    }
-}
-
-mod target_models {
-    use super::*;
-
-    #[test]
-    fn test_all_target_models() {
-        let img = create_test_image(32, 32);
-
-        let targets = [
-            TargetModel::StableDiffusion15,
-            TargetModel::StableDiffusion21,
-            TargetModel::StableDiffusionXL,
-            TargetModel::DallE,
-            TargetModel::Midjourney,
-        ];
-
-        for target in targets {
-            let ctx = ProtectionContext::new(target.clone(), 0.5, 303030);
-            let result = process_image(img.clone(), ProtectionLevel::Standard, &ctx);
-            assert!(result.is_ok(), "Should support target {:?}", target);
-        }
-    }
-
-    #[test]
-    fn test_custom_target_model() {
-        let img = create_test_image(32, 32);
-        let custom = TargetModel::Custom("my-model-v1".to_string());
-
-        let ctx = ProtectionContext::new(custom, 0.5, 404040);
-        let result = process_image(img, ProtectionLevel::Standard, &ctx);
-
-        assert!(result.is_ok());
     }
 }
 

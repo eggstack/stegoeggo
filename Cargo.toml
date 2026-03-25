@@ -13,6 +13,10 @@ readme = "README.md"
 keywords = ["image", "steganography", "anti-scraping", "ai-safety", "watermark"]
 categories = ["graphics", "multimedia::images"]
 
+[features]
+default = []
+async = ["tokio"]
+
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 jpeg-encoder = "0.7"
@@ -27,9 +31,16 @@ hex = "0.4"
 base58 = "0.2"
 crc32fast = "1.4"
 rayon = "1.10"
+tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+tokio = { version = "1", features = ["macros"] }
+
+[[test]]
+name = "async_integration"
+path = "tests/async_integration.rs"
+required-features = ["async"]
 
 [[bench]]
 name = "bench"

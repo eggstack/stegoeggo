@@ -2,6 +2,7 @@
 //!
 //! Parses JPEG file headers to extract quantization tables, Huffman tables,
 //! and other metadata needed for transcoding.
+#![allow(dead_code)] // JPEG spec reference types (color spaces, coding processes, lookup methods)
 
 use super::{Result, TranscoderError};
 
@@ -300,6 +301,12 @@ impl JpegHeader {
         while pos + 64 < data.len() {
             let table_info = data[pos];
             let table_id = table_info & 0x0F;
+            if table_id >= 4 {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "DQT table_id {} out of range (0-3)",
+                    table_id
+                )));
+            }
             let precision = if (table_info & 0xF0) != 0 { 16 } else { 8 };
 
             let mut values = [0u16; 64];
@@ -310,6 +317,12 @@ impl JpegHeader {
                 }
                 pos += 65;
             } else {
+                // 16-bit precision needs 128 bytes of table data
+                if pos + 128 >= data.len() {
+                    return Err(TranscoderError::InvalidFormat(
+                        "Truncated 16-bit DQT segment".into(),
+                    ));
+                }
                 for i in 0..64 {
                     values[i] =
                         ((data[pos + 1 + i * 2] as u16) << 8) | (data[pos + 2 + i * 2] as u16);
@@ -329,7 +342,7 @@ impl JpegHeader {
     }
 
     fn parse_sof(&mut self, data: &[u8]) -> Result<()> {
-        if data.len() < 3 {
+        if data.len() < 6 {
             return Err(TranscoderError::InvalidFormat(
                 "SOF segment too short".into(),
             ));
@@ -374,6 +387,13 @@ impl JpegHeader {
             let table_class = (table_info >> 4) & 0x0F;
             let table_id = table_info & 0x0F;
 
+            if table_id >= 4 {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "DHT table_id {} out of range (0-3)",
+                    table_id
+                )));
+            }
+
             let mut counts = [0u16; 16];
             let mut total = 0u16;
             for i in 0..16 {
@@ -382,7 +402,12 @@ impl JpegHeader {
             }
 
             let values_start = pos + 17;
-            let values_end = (values_start + total as usize).min(data.len());
+            let values_end = values_start + total as usize;
+            if values_end > data.len() {
+                return Err(TranscoderError::InvalidFormat(
+                    "Truncated DHT segment: not enough value bytes".into(),
+                ));
+            }
             let values = data[values_start..values_end].to_vec();
 
             let table = HuffmanTable {

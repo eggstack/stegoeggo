@@ -57,6 +57,10 @@ pub enum Error {
 
     #[error("Cryptographic error: {0}")]
     Crypto(String),
+
+    #[cfg(feature = "async")]
+    #[error("Blocking task failed: {0}")]
+    Task(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

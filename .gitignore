@@ -1,5 +1,7 @@
 /target/
-.DS_Store
+target/
+*/target/
+**/.DS_Store
 
 # Test artifacts
 test_input.png
@@ -11,5 +13,3 @@ wallpapertest_poisoned.png
 *_protected.png
 *_protected.jpg
 *_protected.webp
-target/
-*/target/
