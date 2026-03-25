@@ -117,7 +117,13 @@ impl NoiseGenerator {
     }
 }
 
+const VARIATION_MIN: f32 = 0.98;
+const VARIATION_RANGE: f32 = 0.04;
+const SPATIAL_SEED_TAG: u64 = 0x12345678;
+
 /// Pre-computed parameters shared between serial and parallel perturbation paths.
+/// Retains the `NoiseGenerator` so callers can derive additional seeds (e.g. spatial)
+/// without recomputing HMAC.
 struct PerturbationParams {
     intensity: f32,
     blocks_x: usize,
@@ -125,6 +131,7 @@ struct PerturbationParams {
     inv_pattern_scale: f32,
     intensity_factor: f32,
     phase_offset: f32,
+    noise_gen: NoiseGenerator,
 }
 
 impl PerturbationParams {
@@ -153,7 +160,12 @@ impl PerturbationParams {
             inv_pattern_scale: two_pi / pattern_scale,
             intensity_factor: intensity * intensity_multiplier,
             phase_offset: (frequency_rng.next_u64() as f32 / u64::MAX as f32) * two_pi,
+            noise_gen,
         }
+    }
+
+    fn derive_spatial_seed(&self) -> u64 {
+        self.noise_gen.derive_keyed_seed(SPATIAL_SEED_TAG)
     }
 
     /// Compute the perturbed RGB values for a single pixel.
@@ -197,6 +209,40 @@ impl PerturbationParams {
     }
 }
 
+/// Pre-computed runtime state shared between serial and parallel perturbation paths.
+/// Holds per-row variation factors and the shared perturbation parameters.
+struct PerturbationRuntime {
+    params: PerturbationParams,
+    y_variations: Vec<f32>,
+}
+
+impl PerturbationRuntime {
+    fn new(
+        seed: u64,
+        intensity: f32,
+        intensity_multiplier: f32,
+        mac_key: &[u8],
+        width: u32,
+        height: usize,
+    ) -> Self {
+        let params = PerturbationParams::new(seed, intensity, intensity_multiplier, mac_key, width);
+
+        let spatial_seed = params.derive_spatial_seed();
+        let mut spatial_rng = XorShiftRng::new(spatial_seed);
+
+        let y_variations: Vec<f32> = (0..height)
+            .map(|_| {
+                VARIATION_MIN + (spatial_rng.next_u64() as f32 / u64::MAX as f32) * VARIATION_RANGE
+            })
+            .collect();
+
+        Self {
+            params,
+            y_variations,
+        }
+    }
+}
+
 /// Parallel version of single-pass perturbation for large images.
 /// Pre-computes per-row spatial seed values then parallelizes across rows.
 pub fn apply_perturbation_single_pass_keyed_par(
@@ -214,32 +260,21 @@ pub fn apply_perturbation_single_pass_keyed_par(
     let total_pixels = width_usize * height_usize;
     let mut output_raw = vec![0u8; total_pixels * 4];
 
-    let params = PerturbationParams::new(seed, intensity, intensity_multiplier, mac_key, width);
+    let runtime = PerturbationRuntime::new(
+        seed,
+        intensity,
+        intensity_multiplier,
+        mac_key,
+        width,
+        height_usize,
+    );
 
-    // Pre-compute per-row y_variations
-    let noise_gen = if mac_key.is_empty() {
-        NoiseGenerator::new(seed)
-    } else {
-        NoiseGenerator::with_mac_key(seed, mac_key)
-    };
-    let spatial_seed = noise_gen.derive_keyed_seed(0x12345678);
-    let mut spatial_rng = XorShiftRng::new(spatial_seed);
-
-    let variation_min = 0.98f32;
-    let variation_range_size = 0.04f32;
-    let y_variations: Vec<f32> = (0..height_usize)
-        .map(|_| {
-            variation_min + (spatial_rng.next_u64() as f32 / u64::MAX as f32) * variation_range_size
-        })
-        .collect();
-
-    // Process rows in parallel
     output_raw
         .par_chunks_mut(width_usize * 4)
         .enumerate()
         .for_each(|(y, row)| {
-            let y_variation = y_variations[y];
-            let y_phase = y as f32 * params.inv_pattern_scale;
+            let y_variation = runtime.y_variations[y];
+            let y_phase = y as f32 * runtime.params.inv_pattern_scale;
 
             for x in 0..width_usize {
                 let orig_r = img_raw[(y * width_usize + x) * 4] as i32;
@@ -247,8 +282,13 @@ pub fn apply_perturbation_single_pass_keyed_par(
                 let orig_b = img_raw[(y * width_usize + x) * 4 + 2] as i32;
                 let orig_a = img_raw[(y * width_usize + x) * 4 + 3];
 
-                let (r, g, b) =
-                    params.perturb_pixel(x, y, y_phase, y_variation, (orig_r, orig_g, orig_b));
+                let (r, g, b) = runtime.params.perturb_pixel(
+                    x,
+                    y,
+                    y_phase,
+                    y_variation,
+                    (orig_r, orig_g, orig_b),
+                );
 
                 let idx = x * 4;
                 row[idx] = r;
@@ -285,7 +325,7 @@ pub fn apply_perturbation_single_pass_keyed(
     let (width, height) = img.dimensions();
     let total_pixels = (width as usize) * (height as usize);
 
-    if total_pixels >= PARALLEL_THRESHOLD_PIXELS {
+    if total_pixels >= parallel_threshold() {
         apply_perturbation_single_pass_keyed_par(
             img,
             seed,
@@ -319,23 +359,18 @@ fn apply_perturbation_single_pass_keyed_serial(
     let total_pixels = width_usize * height_usize;
     let mut output_raw = vec![0u8; total_pixels * 4];
 
-    let params = PerturbationParams::new(seed, intensity, intensity_multiplier, mac_key, width);
-
-    let noise_gen = if mac_key.is_empty() {
-        NoiseGenerator::new(seed)
-    } else {
-        NoiseGenerator::with_mac_key(seed, mac_key)
-    };
-    let spatial_seed = noise_gen.derive_keyed_seed(0x12345678);
-    let mut spatial_rng = XorShiftRng::new(spatial_seed);
-
-    let variation_min = 0.98f32;
-    let variation_range_size = 0.04f32;
+    let runtime = PerturbationRuntime::new(
+        seed,
+        intensity,
+        intensity_multiplier,
+        mac_key,
+        width,
+        height_usize,
+    );
 
     for y in 0..height_usize {
-        let y_variation = variation_min
-            + (spatial_rng.next_u64() as f32 / u64::MAX as f32) * variation_range_size;
-        let y_phase = y as f32 * params.inv_pattern_scale;
+        let y_variation = runtime.y_variations[y];
+        let y_phase = y as f32 * runtime.params.inv_pattern_scale;
         let row_offset = y * width_usize * 4;
 
         for x in 0..width_usize {
@@ -346,7 +381,9 @@ fn apply_perturbation_single_pass_keyed_serial(
             let orig_a = img_raw[idx + 3];
 
             let (r, g, b) =
-                params.perturb_pixel(x, y, y_phase, y_variation, (orig_r, orig_g, orig_b));
+                runtime
+                    .params
+                    .perturb_pixel(x, y, y_phase, y_variation, (orig_r, orig_g, orig_b));
 
             output_raw[idx] = r;
             output_raw[idx + 1] = g;
@@ -504,7 +541,13 @@ pub fn apply_perturbation(img: &RgbaImage, perturbation: &[u8], divisor: i16) ->
         .ok_or_else(|| Error::ImageDecode("Failed to create image".to_string()))
 }
 
-pub const PARALLEL_THRESHOLD_PIXELS: usize = 256 * 256;
+/// Returns the pixel count threshold at which parallelism is worthwhile.
+/// Scales with rayon's thread pool size to avoid unnecessary parallel
+/// overhead on few-core machines or over-parallelization on many cores.
+pub fn parallel_threshold() -> usize {
+    let cores = rayon::current_num_threads().max(1);
+    cores * 64 * 64
+}
 
 pub fn apply_perturbation_par(
     img: &RgbaImage,
@@ -518,7 +561,7 @@ pub fn apply_perturbation_par(
         return Err(Error::ImageDecode("Perturbation size mismatch".to_string()));
     }
 
-    if total_pixels < PARALLEL_THRESHOLD_PIXELS {
+    if total_pixels < parallel_threshold() {
         return apply_perturbation(img, perturbation, divisor);
     }
 
@@ -605,5 +648,24 @@ mod tests {
 
         assert_eq!(result.width(), 4);
         assert_eq!(result.height(), 4);
+    }
+
+    #[test]
+    fn test_parallel_threshold_sane() {
+        let threshold = parallel_threshold();
+        assert!(threshold > 0);
+        assert!(threshold <= 16 * 64 * 64);
+    }
+
+    #[test]
+    fn test_serial_parallel_identical_output() {
+        let img = RgbaImage::from_fn(32, 32, |x, y| {
+            image::Rgba([(x * 7) as u8, (y * 11) as u8, 128, 255])
+        });
+
+        let serial = apply_perturbation_single_pass_keyed_serial(&img, 42, 0.5, 1.0, &[]);
+        let par = apply_perturbation_single_pass_keyed_par(&img, 42, 0.5, 1.0, &[]);
+
+        assert_eq!(serial.to_rgba8(), par.to_rgba8());
     }
 }

@@ -6,7 +6,7 @@ This plan addresses issues identified during a comprehensive code review of the 
 Items from three review passes were merged and deduplicated into this single plan.
 Ordered by implementation priority.
 
-**Status:** All Critical, Moderate, and Minor issues resolved (except #13 and #16, deferred as low priority). All test gaps filled. See "Completion Summary" at end.
+**Status:** All Critical, Moderate, Minor, and Test issues resolved (24 of 24). All deferred items now implemented.
 
 ---
 
@@ -179,7 +179,7 @@ Ordered by implementation priority.
 
 ## Minor Issues
 
-### 13. Deduplicate noise generation in serial/parallel paths — ⏸️ DEFERRED
+### 13. Deduplicate noise generation in serial/parallel paths — ✅ DONE
 
 **File:** `src/util/image.rs`
 
@@ -219,7 +219,7 @@ Ordered by implementation priority.
 
 ---
 
-### 16. Parallel threshold hardcoded — ⏸️ DEFERRED
+### 16. Parallel threshold auto-tuned — ✅ DONE
 
 **File:** `src/util/image.rs`
 **Line:** 507
@@ -338,17 +338,17 @@ Ordered by implementation priority.
 
 ## Completion Summary
 
-**Completed:** 22 of 24 items
-**Deferred:** #13 (noise dedup), #16 (parallel threshold) — both low priority
+**Completed:** 24 of 24 items
+**Deferred:** None — items #13 and #16 implemented in final pass
 
 | Category | Status |
 |----------|--------|
 | Critical (#1-2) | ✅ Done |
 | Moderate (#3-12) | ✅ Done |
-| Minor (#13-16) | ✅ 2/4 done, 2 deferred |
+| Minor (#13-16) | ✅ Done |
 | Tests (#17-24) | ✅ Done |
 
-**Test growth:** ~245 → 259 tests (+14 new tests)
+**Test growth:** ~245 → 261 tests (+16 new tests)
 
 **Key learnings documented in AGENTS.md:**
 - Entropy decoder reorder loop was identity operation on AC coefficients (ZIGZAG maps zigzag→natural)

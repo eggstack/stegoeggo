@@ -2,7 +2,7 @@ use crate::error::{Error, Result};
 use crate::traits::{Protector, VariantLoader};
 use crate::types::{ProtectedVariant, ProtectionContext, ProtectionLevel};
 use crate::util::image::{
-    apply_perturbation, apply_perturbation_par, XorShiftRng, PARALLEL_THRESHOLD_PIXELS,
+    apply_perturbation, apply_perturbation_par, parallel_threshold, XorShiftRng,
 };
 use image::DynamicImage;
 use std::borrow::Cow;
@@ -177,7 +177,7 @@ impl PrecomputedProtector {
         }
 
         let total_pixels = (width * height) as usize;
-        let output = if total_pixels >= PARALLEL_THRESHOLD_PIXELS {
+        let output = if total_pixels >= parallel_threshold() {
             apply_perturbation_par(&img_rgba, perturbation, 4)?
         } else {
             apply_perturbation(&img_rgba, perturbation, 4)?
@@ -211,7 +211,7 @@ impl Protector for PrecomputedProtector {
 
         // Apply perturbation before building the variant to avoid cloning.
         let total_pixels = (width * height) as usize;
-        let output = if total_pixels >= PARALLEL_THRESHOLD_PIXELS {
+        let output = if total_pixels >= parallel_threshold() {
             apply_perturbation_par(&img_rgba, &perturbation, 4)?
         } else {
             apply_perturbation(&img_rgba, &perturbation, 4)?
