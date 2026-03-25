@@ -117,26 +117,25 @@ impl MetadataTrapProtector {
 
     fn add_legal_metadata(metadata: &mut Vec<(Vec<u8>, Vec<u8>)>, legal: Option<&LegalMetadata>) {
         let copyright = legal
-            .and_then(|l| l.copyright_holder.as_ref())
+            .and_then(|l| l.copyright_holder())
             .map(|h| format!("Copyright (c) {}", h))
             .unwrap_or_else(|| "All Rights Reserved".to_string());
 
         metadata.push((b"Copyright".to_vec(), copyright.as_bytes().to_vec()));
 
         if let Some(legal) = legal {
-            if let Some(ref email) = legal.contact_email {
+            if let Some(email) = legal.contact_email() {
                 metadata.push((b"Contact".to_vec(), email.as_bytes().to_vec()));
             }
-            if let Some(ref url) = legal.license_url {
+            if let Some(url) = legal.license_url() {
                 metadata.push((b"License".to_vec(), url.as_bytes().to_vec()));
             }
             let terms = legal
-                .usage_terms
-                .as_deref()
+                .usage_terms()
                 .unwrap_or("All Rights Reserved. No AI training.");
             metadata.push((b"UsageTerms".to_vec(), terms.as_bytes().to_vec()));
 
-            if let Some(ref date) = legal.creation_date {
+            if let Some(date) = legal.creation_date() {
                 metadata.push((b"DateCreated".to_vec(), date.as_bytes().to_vec()));
             } else {
                 let now = current_date_iso();
@@ -778,5 +777,520 @@ impl MetadataTrapProtector {
         };
 
         Ok(with_metadata)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::Protector;
+    use crate::types::ProtectionLevel;
+    use image::DynamicImage;
+
+    fn make_test_image() -> DynamicImage {
+        DynamicImage::ImageRgba8(image::ImageBuffer::from_fn(64, 64, |x, y| {
+            image::Rgba([(x * 3) as u8, (y * 5) as u8, ((x + y) * 7) as u8, 255])
+        }))
+    }
+
+    fn encode_png(img: &DynamicImage) -> Vec<u8> {
+        crate::util::image::encode_image(img, image::ImageFormat::Png).unwrap()
+    }
+
+    fn encode_jpeg(img: &DynamicImage) -> Vec<u8> {
+        crate::util::image::encode_image(img, image::ImageFormat::Jpeg).unwrap()
+    }
+
+    fn encode_webp(img: &DynamicImage) -> Vec<u8> {
+        crate::util::image::encode_image(img, image::ImageFormat::WebP).unwrap()
+    }
+
+    // ── Date computation ──────────────────────────────────────────────
+
+    #[test]
+    fn is_leap_year_divisible_by_400() {
+        assert!(is_leap_year(2000));
+    }
+
+    #[test]
+    fn is_leap_year_divisible_by_100_not_400() {
+        assert!(!is_leap_year(1900));
+    }
+
+    #[test]
+    fn is_leap_year_divisible_by_4_not_100() {
+        assert!(is_leap_year(2024));
+    }
+
+    #[test]
+    fn is_leap_year_not_divisible_by_4() {
+        assert!(!is_leap_year(2023));
+    }
+
+    #[test]
+    fn current_date_iso_format() {
+        let date = current_date_iso();
+        assert_eq!(date.len(), 10);
+        assert_eq!(date.as_bytes()[4], b'-');
+        assert_eq!(date.as_bytes()[7], b'-');
+    }
+
+    // ── Metadata generation ───────────────────────────────────────────
+
+    #[test]
+    fn generate_poison_metadata_with_seed() {
+        let protector = MetadataTrapProtector::new();
+        let metadata = protector.generate_poison_metadata(
+            None,
+            Some(ProtectionLevel::Standard),
+            Some(42),
+            None,
+            None,
+            None,
+        );
+        let seed_entry = metadata.iter().find(|(k, _)| k == b"X-Protection-Seed");
+        assert!(seed_entry.is_some());
+        assert_eq!(seed_entry.unwrap().1, b"42");
+    }
+
+    #[test]
+    fn generate_poison_metadata_dmi_auto_mapping() {
+        let protector = MetadataTrapProtector::new();
+
+        let light = protector.generate_poison_metadata(
+            None,
+            Some(ProtectionLevel::Light),
+            None,
+            None,
+            None,
+            None,
+        );
+        let dmi = light.iter().find(|(k, _)| k == b"DMI-PROHIBITED");
+        assert_eq!(dmi.unwrap().1, b"Prohibited");
+
+        let standard = protector.generate_poison_metadata(
+            None,
+            Some(ProtectionLevel::Standard),
+            None,
+            None,
+            None,
+            None,
+        );
+        let dmi = standard.iter().find(|(k, _)| k == b"DMI-PROHIBITED");
+        assert_eq!(dmi.unwrap().1, b"ProhibitedAiMlTraining");
+
+        let enhanced = protector.generate_poison_metadata(
+            None,
+            Some(ProtectionLevel::Enhanced),
+            None,
+            None,
+            None,
+            None,
+        );
+        let dmi = enhanced.iter().find(|(k, _)| k == b"DMI-PROHIBITED");
+        assert_eq!(dmi.unwrap().1, b"ProhibitedGenAiMlTraining");
+
+        let strong = protector.generate_poison_metadata(
+            None,
+            Some(ProtectionLevel::Strong),
+            None,
+            None,
+            None,
+            None,
+        );
+        let dmi = strong.iter().find(|(k, _)| k == b"DMI-PROHIBITED");
+        assert_eq!(dmi.unwrap().1, b"Prohibited");
+    }
+
+    #[test]
+    fn generate_poison_metadata_disabled_skips_injection() {
+        let protector = MetadataTrapProtector::new();
+        let metadata = protector.generate_poison_metadata(
+            None,
+            Some(ProtectionLevel::Disabled),
+            Some(42),
+            None,
+            None,
+            None,
+        );
+        assert!(metadata.is_empty());
+    }
+
+    #[test]
+    fn generate_poison_metadata_explicit_dmi_overrides_auto() {
+        let protector = MetadataTrapProtector::new();
+        let metadata = protector.generate_poison_metadata(
+            Some(DmiValue::Allowed),
+            Some(ProtectionLevel::Strong),
+            None,
+            None,
+            None,
+            None,
+        );
+        // DMI entry is present with the explicit value "Allowed"
+        let dmi = metadata.iter().find(|(k, _)| k == b"DMI-PROHIBITED");
+        assert!(dmi.is_some());
+        assert_eq!(dmi.unwrap().1, b"Allowed");
+    }
+
+    #[test]
+    fn generate_poison_metadata_legal_claims() {
+        let protector = MetadataTrapProtector::new();
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("Test Corp")
+            .with_contact_email("legal@test.com");
+        let metadata = protector.generate_poison_metadata(
+            None,
+            Some(ProtectionLevel::Standard),
+            None,
+            Some(&legal),
+            None,
+            Some(true),
+        );
+        let copyright = metadata.iter().find(|(k, _)| k == b"Copyright");
+        assert!(copyright.is_some());
+        let copyright_str = String::from_utf8_lossy(&copyright.unwrap().1);
+        assert!(copyright_str.contains("Test Corp"));
+
+        let contact = metadata.iter().find(|(k, _)| k == b"Contact");
+        assert_eq!(contact.unwrap().1, b"legal@test.com");
+    }
+
+    // ── PNG injection + extraction ────────────────────────────────────
+
+    #[test]
+    fn png_inject_produces_valid_png() {
+        let protector = MetadataTrapProtector::new();
+        let png = encode_png(&make_test_image());
+        let metadata = vec![(b"Test-Key".to_vec(), b"Test-Value".to_vec())];
+        let result = protector
+            .inject_text_chunks_png(&png, &metadata, None)
+            .unwrap();
+        assert!(result.starts_with(&[0x89, 0x50, 0x4E, 0x47]));
+        assert!(result.len() > png.len());
+    }
+
+    #[test]
+    fn png_inject_empty_metadata_returns_original() {
+        let protector = MetadataTrapProtector::new();
+        let png = encode_png(&make_test_image());
+        let result = protector.inject_text_chunks_png(&png, &[], None).unwrap();
+        assert_eq!(result, png);
+    }
+
+    #[test]
+    fn png_inject_invalid_signature_errors() {
+        let protector = MetadataTrapProtector::new();
+        let result = protector.inject_text_chunks_png(
+            b"NOTAPNG",
+            &[(b"key".to_vec(), b"val".to_vec())],
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn png_seed_roundtrip() {
+        let protector = MetadataTrapProtector::new();
+        let png = encode_png(&make_test_image());
+        let metadata = vec![];
+        let result = protector
+            .inject_text_chunks_png(&png, &metadata, None)
+            .unwrap();
+        let extracted = MetadataTrapProtector::extract_seed_from_png(&result);
+        assert!(extracted.is_none());
+
+        // Now with seed in metadata
+        let metadata_with_seed = vec![
+            (b"X-Protection-Seed".to_vec(), b"12345".to_vec()),
+            (b"Other".to_vec(), b"Value".to_vec()),
+        ];
+        let result = protector
+            .inject_text_chunks_png(&png, &metadata_with_seed, None)
+            .unwrap();
+        let extracted = MetadataTrapProtector::extract_seed_from_png(&result);
+        assert_eq!(extracted, Some(12345));
+    }
+
+    #[test]
+    fn png_dmi_injects_xmp_chunk() {
+        let protector = MetadataTrapProtector::new();
+        let png = encode_png(&make_test_image());
+        let result = protector
+            .inject_text_chunks_png(&png, &[], Some(DmiValue::ProhibitedAiMlTraining))
+            .unwrap();
+        // XMP is injected as iTXt chunk with "XML:com.adobe.xmp" keyword
+        assert!(result.len() > png.len());
+    }
+
+    // ── JPEG injection + extraction ───────────────────────────────────
+
+    #[test]
+    fn jpeg_inject_produces_valid_jpeg() {
+        let protector = MetadataTrapProtector::new();
+        let jpeg = encode_jpeg(&make_test_image());
+        let metadata = vec![(b"Test-Key".to_vec(), b"Test-Value".to_vec())];
+        let result = protector
+            .inject_text_chunks_jpeg(&jpeg, &metadata, None)
+            .unwrap();
+        assert!(result.starts_with(&[0xFF, 0xD8]));
+        assert!(result.ends_with(&[0xFF, 0xD9]));
+    }
+
+    #[test]
+    fn jpeg_seed_roundtrip() {
+        let protector = MetadataTrapProtector::new();
+        let jpeg = encode_jpeg(&make_test_image());
+        let metadata = vec![(b"X-Protection-Seed".to_vec(), b"54321".to_vec())];
+        let result = protector
+            .inject_text_chunks_jpeg(&jpeg, &metadata, None)
+            .unwrap();
+        let extracted = MetadataTrapProtector::extract_seed_from_jpeg(&result);
+        assert_eq!(extracted, Some(54321));
+    }
+
+    #[test]
+    fn jpeg_inject_contains_markers() {
+        let protector = MetadataTrapProtector::new();
+        let jpeg = encode_jpeg(&make_test_image());
+        let metadata = vec![(b"Test".to_vec(), b"Val".to_vec())];
+        let result = protector
+            .inject_text_chunks_jpeg(&jpeg, &metadata, None)
+            .unwrap();
+
+        // Should contain COM marker (0xFFFE)
+        assert!(result.windows(2).any(|w| w == [0xFF, 0xFE]));
+    }
+
+    #[test]
+    fn jpeg_invalid_input_errors() {
+        let protector = MetadataTrapProtector::new();
+        let result = protector.inject_text_chunks_jpeg(
+            b"NOTJPEG",
+            &[(b"key".to_vec(), b"val".to_vec())],
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    // ── WebP injection + extraction ───────────────────────────────────
+
+    #[test]
+    fn webp_inject_produces_valid_webp() {
+        let protector = MetadataTrapProtector::new();
+        let webp = encode_webp(&make_test_image());
+        let metadata = vec![(b"Test-Key".to_vec(), b"Test-Value".to_vec())];
+        let result = protector
+            .inject_text_chunks_webp(&webp, &metadata, None)
+            .unwrap();
+        assert!(result.starts_with(b"RIFF"));
+        assert!(&result[8..12] == b"WEBP");
+    }
+
+    #[test]
+    fn webp_seed_roundtrip() {
+        let protector = MetadataTrapProtector::new();
+        let webp = encode_webp(&make_test_image());
+        let metadata = vec![(b"X-Protection-Seed".to_vec(), b"99999".to_vec())];
+        let result = protector
+            .inject_text_chunks_webp(&webp, &metadata, None)
+            .unwrap();
+        let extracted = MetadataTrapProtector::extract_seed_from_webp(&result);
+        assert_eq!(extracted, Some(99999));
+    }
+
+    #[test]
+    fn webp_invalid_input_errors() {
+        let protector = MetadataTrapProtector::new();
+        let result = protector.inject_text_chunks_webp(
+            b"NOTWEBP",
+            &[(b"key".to_vec(), b"val".to_vec())],
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    // ── Seed extraction dispatch ──────────────────────────────────────
+
+    #[test]
+    fn extract_seed_dispatches_png() {
+        let protector = MetadataTrapProtector::new();
+        let png = encode_png(&make_test_image());
+        let metadata = vec![(b"X-Protection-Seed".to_vec(), b"100".to_vec())];
+        let injected = protector
+            .inject_text_chunks_png(&png, &metadata, None)
+            .unwrap();
+        assert_eq!(
+            MetadataTrapProtector::extract_seed_from_image(&injected),
+            Some(100)
+        );
+    }
+
+    #[test]
+    fn extract_seed_dispatches_jpeg() {
+        let protector = MetadataTrapProtector::new();
+        let jpeg = encode_jpeg(&make_test_image());
+        let metadata = vec![(b"X-Protection-Seed".to_vec(), b"200".to_vec())];
+        let injected = protector
+            .inject_text_chunks_jpeg(&jpeg, &metadata, None)
+            .unwrap();
+        assert_eq!(
+            MetadataTrapProtector::extract_seed_from_image(&injected),
+            Some(200)
+        );
+    }
+
+    #[test]
+    fn extract_seed_dispatches_webp() {
+        let protector = MetadataTrapProtector::new();
+        let webp = encode_webp(&make_test_image());
+        let metadata = vec![(b"X-Protection-Seed".to_vec(), b"300".to_vec())];
+        let injected = protector
+            .inject_text_chunks_webp(&webp, &metadata, None)
+            .unwrap();
+        assert_eq!(
+            MetadataTrapProtector::extract_seed_from_image(&injected),
+            Some(300)
+        );
+    }
+
+    #[test]
+    fn extract_seed_unknown_format_returns_none() {
+        assert_eq!(
+            MetadataTrapProtector::extract_seed_from_image(b"GARBAGE"),
+            None
+        );
+    }
+
+    #[test]
+    fn extract_seed_too_short_returns_none() {
+        assert_eq!(
+            MetadataTrapProtector::extract_seed_from_image(&[0; 4]),
+            None
+        );
+    }
+
+    // ── Protector trait ───────────────────────────────────────────────
+
+    #[test]
+    fn protector_name() {
+        let p = MetadataTrapProtector::new();
+        assert_eq!(p.name(), "metadata_trap");
+    }
+
+    #[test]
+    fn protector_level() {
+        let p = MetadataTrapProtector::new();
+        assert_eq!(p.protection_level(), ProtectionLevel::Light);
+    }
+
+    #[test]
+    fn protector_modifies_pixels() {
+        let p = MetadataTrapProtector::new();
+        // Default is true; MetadataTrapProtector doesn't override.
+        // apply() re-encodes the image which may alter pixel data.
+        assert!(p.modifies_pixels());
+    }
+
+    #[test]
+    fn protector_is_enabled() {
+        let p = MetadataTrapProtector::new();
+        assert!(p.is_enabled());
+    }
+
+    #[test]
+    fn protector_apply_preserves_dimensions() {
+        let p = MetadataTrapProtector::new();
+        let img = make_test_image();
+        let ctx = ProtectionContext::new(0.5, 42);
+        let (w, h) = (img.width(), img.height());
+        let result = p.apply(&img, &ctx).unwrap();
+        assert_eq!(result.width(), w);
+        assert_eq!(result.height(), h);
+    }
+
+    #[test]
+    fn protector_apply_bytes_preserves_metadata() {
+        let p = MetadataTrapProtector::new();
+        let img = make_test_image();
+        let png = encode_png(&img);
+        let ctx = ProtectionContext::new(0.5, 42);
+        let result = p.apply_bytes(&png, &ctx).unwrap();
+
+        // Metadata should be preserved in byte output
+        let extracted = MetadataTrapProtector::extract_seed_from_image(&result);
+        assert_eq!(extracted, Some(42));
+    }
+
+    #[test]
+    fn protector_apply_bytes_disabled_returns_original() {
+        let p = MetadataTrapProtector::new();
+        let img = make_test_image();
+        let png = encode_png(&img);
+        // Pass inject_metadata=false to skip metadata injection
+        let ctx = ProtectionContext::new(0.5, 42).with_metadata_injection(false);
+        let result = p.apply_bytes(&png, &ctx).unwrap();
+        assert_eq!(result, png);
+    }
+
+    // ── Legal metadata injection ──────────────────────────────────────
+
+    #[test]
+    fn legal_metadata_all_fields() {
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("Author")
+            .with_contact_email("a@b.com")
+            .with_license_url("https://example.com/license")
+            .with_usage_terms("No AI")
+            .with_creation_date("2024-01-01");
+        let mut metadata = Vec::new();
+        MetadataTrapProtector::add_legal_metadata(&mut metadata, Some(&legal));
+
+        let keys: Vec<&[u8]> = metadata.iter().map(|(k, _)| k.as_slice()).collect();
+        assert!(keys.iter().any(|k| *k == b"Copyright"));
+        assert!(keys.iter().any(|k| *k == b"Contact"));
+        assert!(keys.iter().any(|k| *k == b"License"));
+        assert!(keys.iter().any(|k| *k == b"UsageTerms"));
+        assert!(keys.iter().any(|k| *k == b"DateCreated"));
+    }
+
+    #[test]
+    fn legal_metadata_partial_fields() {
+        let legal = LegalMetadata::new().with_copyright_holder("Author");
+        let mut metadata = Vec::new();
+        MetadataTrapProtector::add_legal_metadata(&mut metadata, Some(&legal));
+
+        let copyright = metadata.iter().find(|(k, _)| k == b"Copyright").unwrap();
+        assert!(String::from_utf8_lossy(&copyright.1).contains("Author"));
+
+        // Contact should not be present
+        assert!(!metadata.iter().any(|(k, _)| k == b"Contact"));
+    }
+
+    #[test]
+    fn legal_metadata_none_uses_defaults() {
+        let mut metadata = Vec::new();
+        MetadataTrapProtector::add_legal_metadata(&mut metadata, None);
+
+        let copyright = metadata.iter().find(|(k, _)| k == b"Copyright").unwrap();
+        assert_eq!(copyright.1, b"All Rights Reserved");
+    }
+
+    // ── Edge cases ────────────────────────────────────────────────────
+
+    #[test]
+    fn inject_empty_metadata_jpeg() {
+        let protector = MetadataTrapProtector::new();
+        let jpeg = encode_jpeg(&make_test_image());
+        let result = protector.inject_text_chunks_jpeg(&jpeg, &[], None).unwrap();
+        assert_eq!(result, jpeg);
+    }
+
+    #[test]
+    fn inject_empty_metadata_webp() {
+        let protector = MetadataTrapProtector::new();
+        let webp = encode_webp(&make_test_image());
+        let result = protector.inject_text_chunks_webp(&webp, &[], None).unwrap();
+        assert_eq!(result, webp);
     }
 }

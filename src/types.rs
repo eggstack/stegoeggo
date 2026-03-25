@@ -169,25 +169,46 @@ impl ImageOutputFormat {
 /// This information is embedded in the image for legal discovery and proof of intent.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LegalMetadata {
-    /// Copyright holder name
-    pub copyright_holder: Option<String>,
-    /// Contact email for takedown requests / DMCA
-    pub contact_email: Option<String>,
-    /// URL to license terms or usage policy
-    pub license_url: Option<String>,
-    /// Explicit usage rights statement
-    pub usage_terms: Option<String>,
-    /// Creation date (ISO 8601 format)
-    pub creation_date: Option<String>,
-    /// IPTC Other Constraints - detailed reason for AI/ML opt-out
-    pub ai_constraints: Option<String>,
-    /// Web Statement of Rights
-    pub web_statement_of_rights: Option<String>,
+    copyright_holder: Option<String>,
+    contact_email: Option<String>,
+    license_url: Option<String>,
+    usage_terms: Option<String>,
+    creation_date: Option<String>,
+    ai_constraints: Option<String>,
+    web_statement_of_rights: Option<String>,
 }
 
 impl LegalMetadata {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn copyright_holder(&self) -> Option<&str> {
+        self.copyright_holder.as_deref()
+    }
+
+    pub fn contact_email(&self) -> Option<&str> {
+        self.contact_email.as_deref()
+    }
+
+    pub fn license_url(&self) -> Option<&str> {
+        self.license_url.as_deref()
+    }
+
+    pub fn usage_terms(&self) -> Option<&str> {
+        self.usage_terms.as_deref()
+    }
+
+    pub fn creation_date(&self) -> Option<&str> {
+        self.creation_date.as_deref()
+    }
+
+    pub fn ai_constraints(&self) -> Option<&str> {
+        self.ai_constraints.as_deref()
+    }
+
+    pub fn web_statement_of_rights(&self) -> Option<&str> {
+        self.web_statement_of_rights.as_deref()
     }
 
     #[must_use]

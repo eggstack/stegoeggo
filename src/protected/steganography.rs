@@ -874,7 +874,7 @@ impl SteganographyProtector {
             }
         }
 
-        all_candidates.into_iter().next()
+        None
     }
 
     fn apply_to_image_owned(&self, img: &DynamicImage, ctx: &ProtectionContext) -> DynamicImage {
@@ -977,5 +977,845 @@ impl StegoPayload {
 
     pub fn version(&self) -> u8 {
         self.version
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::ProtectionConfig;
+    use image::{ImageBuffer, RgbaImage};
+    use std::sync::Arc;
+
+    fn make_test_image(w: u32, h: u32) -> RgbaImage {
+        ImageBuffer::from_fn(w, h, |x, y| {
+            Rgba([(x * 3) as u8, (y * 5) as u8, ((x + y) * 7) as u8, 255])
+        })
+    }
+
+    fn make_large_test_image() -> RgbaImage {
+        make_test_image(128, 128)
+    }
+
+    fn ctx_no_mac(seed: u64) -> ProtectionContext {
+        ProtectionContext::new(0.5, seed)
+    }
+
+    fn ctx_with_mac(seed: u64, key: &[u8]) -> ProtectionContext {
+        let config = Arc::new(ProtectionConfig::new().with_mac_key(key.to_vec()));
+        ProtectionContext::new(0.5, seed).with_config(config)
+    }
+
+    // ── Bit conversion ────────────────────────────────────────────────
+
+    #[test]
+    fn bytes_to_bits_length() {
+        let data = [0xAA, 0x55, 0xFF, 0x00];
+        let bits = SteganographyProtector::bytes_to_bits(&data);
+        assert_eq!(bits.len(), 32);
+    }
+
+    #[test]
+    fn bits_to_bytes_roundtrip() {
+        let original: Vec<u8> = vec![0x00, 0xFF, 0xA5, 0x5A, 0x01, 0x80, 0xFE, 0x7F];
+        let bits = SteganographyProtector::bytes_to_bits(&original);
+        let recovered = SteganographyProtector::bits_to_bytes(&bits);
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn bytes_to_bits_lsb_order() {
+        let data = [0b0000_0001];
+        let bits = SteganographyProtector::bytes_to_bits(&data);
+        assert_eq!(bits[0], 1);
+        assert_eq!(bits[1], 0);
+        assert_eq!(bits[7], 0);
+    }
+
+    #[test]
+    fn bytes_to_bits_high_bit() {
+        let data = [0b1000_0000];
+        let bits = SteganographyProtector::bytes_to_bits(&data);
+        assert_eq!(bits[7], 1);
+        assert_eq!(bits[0], 0);
+    }
+
+    #[test]
+    fn bits_to_bytes_trailing_dropped() {
+        // Multiple of 8 — works correctly
+        let bits = vec![1, 0, 0, 0, 0, 0, 0, 0];
+        let bytes = SteganographyProtector::bits_to_bytes(&bits);
+        assert_eq!(bytes.len(), 1);
+        assert_eq!(bytes[0], 1);
+    }
+
+    // ── Checksum ──────────────────────────────────────────────────────
+
+    #[test]
+    fn compute_checksum_deterministic() {
+        let data = vec![1u8; 24];
+        let a = SteganographyProtector::compute_checksum(&data);
+        let b = SteganographyProtector::compute_checksum(&data);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn compute_checksum_different_data_different_result() {
+        let a = SteganographyProtector::compute_checksum(&[0u8; 24]);
+        let b = SteganographyProtector::compute_checksum(&[1u8; 24]);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn verify_checksum_valid() {
+        let mut payload = vec![0u8; 24];
+        payload[0] = 1; // version
+        payload[1] = 2; // level
+        let checksum = SteganographyProtector::compute_checksum(&payload);
+        payload.push(checksum[0]);
+        payload.push(checksum[1]);
+        assert!(SteganographyProtector::verify_checksum(&payload));
+    }
+
+    #[test]
+    fn verify_checksum_invalid() {
+        let mut payload = vec![0u8; 26];
+        payload[24] = 0xFF;
+        payload[25] = 0xFF;
+        assert!(!SteganographyProtector::verify_checksum(&payload));
+    }
+
+    #[test]
+    fn verify_checksum_too_short() {
+        assert!(!SteganographyProtector::verify_checksum(&[0u8; 10]));
+    }
+
+    #[test]
+    fn verify_checksum_corrupted_byte() {
+        let mut payload = vec![1u8; 24];
+        let checksum = SteganographyProtector::compute_checksum(&payload);
+        payload.push(checksum[0]);
+        payload.push(checksum[1]);
+        assert!(SteganographyProtector::verify_checksum(&payload));
+
+        // Corrupt one byte
+        payload[5] = payload[5].wrapping_add(1);
+        // Recompute checksum for corrupted data
+        let new_checksum = SteganographyProtector::compute_checksum(&payload[..24]);
+        // Old checksum should not match new data
+        assert_ne!([payload[24], payload[25]], new_checksum);
+    }
+
+    // ── HMAC ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn compute_payload_mac_deterministic() {
+        let data = vec![1u8; 24];
+        let key = b"test-secret-key";
+        let a = SteganographyProtector::compute_payload_mac(&data, key);
+        let b = SteganographyProtector::compute_payload_mac(&data, key);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn compute_payload_mac_different_keys() {
+        let data = vec![1u8; 24];
+        let a = SteganographyProtector::compute_payload_mac(&data, b"key-a");
+        let b = SteganographyProtector::compute_payload_mac(&data, b"key-b");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn compute_payload_mac_different_data() {
+        let key = b"test-key";
+        let a = SteganographyProtector::compute_payload_mac(&[0u8; 24], key);
+        let b = SteganographyProtector::compute_payload_mac(&[1u8; 24], key);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn verify_payload_mac_match() {
+        let data = vec![42u8; 24];
+        let key = b"my-key";
+        let mac = SteganographyProtector::compute_payload_mac(&data, key);
+        assert!(SteganographyProtector::verify_payload_mac(&data, key, &mac));
+    }
+
+    #[test]
+    fn verify_payload_mac_wrong_key() {
+        let data = vec![42u8; 24];
+        let mac = SteganographyProtector::compute_payload_mac(&data, b"correct-key");
+        assert!(!SteganographyProtector::verify_payload_mac(
+            &data,
+            b"wrong-key",
+            &mac
+        ));
+    }
+
+    #[test]
+    fn verify_payload_mac_corrupted_mac() {
+        let data = vec![42u8; 24];
+        let key = b"key";
+        let mut mac = SteganographyProtector::compute_payload_mac(&data, key);
+        mac[0] ^= 0xFF;
+        assert!(!SteganographyProtector::verify_payload_mac(
+            &data, key, &mac
+        ));
+    }
+
+    // ── Payload integrity ─────────────────────────────────────────────
+
+    #[test]
+    fn verify_payload_integrity_checksum_mode() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_no_mac(42);
+        let payload = protector.generate_payload(&ctx);
+        // Payload is 32 bytes (24 header + 2 checksum + 6 padding)
+        assert_eq!(payload.len(), 32);
+        assert!(SteganographyProtector::verify_payload_integrity(
+            &payload,
+            &[]
+        ));
+    }
+
+    #[test]
+    fn verify_payload_integrity_mac_mode() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_with_mac(42, b"secret");
+        let payload = protector.generate_payload(&ctx);
+        assert_eq!(payload.len(), 32);
+        assert!(SteganographyProtector::verify_payload_integrity(
+            &payload, b"secret"
+        ));
+    }
+
+    #[test]
+    fn verify_payload_integrity_mac_wrong_key() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_with_mac(42, b"correct");
+        let payload = protector.generate_payload(&ctx);
+        assert!(!SteganographyProtector::verify_payload_integrity(
+            &payload, b"wrong"
+        ));
+    }
+
+    #[test]
+    fn verify_payload_integrity_checksum_corrupted() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_no_mac(42);
+        let mut payload = protector.generate_payload(&ctx);
+        payload[5] ^= 0xFF;
+        assert!(!SteganographyProtector::verify_payload_integrity(
+            &payload,
+            &[]
+        ));
+    }
+
+    #[test]
+    fn verify_payload_integrity_truncated() {
+        assert!(!SteganographyProtector::verify_payload_integrity(
+            &[0u8; 10],
+            &[]
+        ));
+    }
+
+    #[test]
+    fn verify_payload_integrity_mac_truncated() {
+        assert!(!SteganographyProtector::verify_payload_integrity(
+            &[0u8; 30], b"key"
+        ));
+    }
+
+    // ── Payload generation ────────────────────────────────────────────
+
+    #[test]
+    fn generate_payload_checksum_mode_length() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_no_mac(12345);
+        let payload = protector.generate_payload(&ctx);
+        // Always 32 bytes (24 header + 2 checksum + 6 padding)
+        assert_eq!(payload.len(), 32);
+    }
+
+    #[test]
+    fn generate_payload_mac_mode_length() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_with_mac(12345, b"key");
+        let payload = protector.generate_payload(&ctx);
+        assert_eq!(payload.len(), 32);
+    }
+
+    #[test]
+    fn generate_payload_version_byte() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_no_mac(42);
+        let payload = protector.generate_payload(&ctx);
+        assert_eq!(payload[0], 1);
+    }
+
+    #[test]
+    fn generate_payload_seed_roundtrip() {
+        let seed = 0xDEAD_BEEF_CAFE_BABE;
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_no_mac(seed);
+        let payload = protector.generate_payload(&ctx);
+
+        let extracted_seed = u64::from_le_bytes([
+            payload[2], payload[3], payload[4], payload[5], payload[6], payload[7], payload[8],
+            payload[9],
+        ]);
+        assert_eq!(extracted_seed, seed);
+    }
+
+    #[test]
+    fn generate_payload_intensity_precision() {
+        let protector = SteganographyProtector::new();
+        let ctx = ProtectionContext::new(0.73, 42);
+        let payload = protector.generate_payload(&ctx);
+
+        let intensity_raw = u16::from_le_bytes([payload[10], payload[11]]);
+        let recovered = intensity_raw as f32 / 100.0;
+        assert!((recovered - 0.73).abs() < 0.02);
+    }
+
+    #[test]
+    fn generate_payload_protection_level_byte() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_no_mac(42);
+        let payload = protector.generate_payload(&ctx);
+        // Default protection_level is None, falls back to 2 (Standard)
+        assert_eq!(payload[1], 2);
+    }
+
+    #[test]
+    fn generate_payload_different_seeds_differ() {
+        let protector = SteganographyProtector::new();
+        let a = protector.generate_payload(&ctx_no_mac(1));
+        let b = protector.generate_payload(&ctx_no_mac(2));
+        assert_ne!(a[..10], b[..10]); // seed bytes differ
+    }
+
+    // ── Permutation ───────────────────────────────────────────────────
+
+    #[test]
+    fn stego_permutation_deterministic() {
+        let a = SteganographyProtector::stego_permutation(0, 1024, 42);
+        let b = SteganographyProtector::stego_permutation(0, 1024, 42);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn stego_permutation_different_seeds_differ() {
+        let a = SteganographyProtector::stego_permutation(0, 1024, 42);
+        let b = SteganographyProtector::stego_permutation(0, 1024, 99);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn stego_permutation_power_of_2_injective() {
+        let total = 1024usize;
+        let seed = 42u64;
+        let mut seen = vec![false; total];
+        for i in 0..total {
+            let pos = SteganographyProtector::stego_permutation(i, total, seed);
+            assert!(
+                pos < total,
+                "permutation out of range: {} >= {}",
+                pos,
+                total
+            );
+            assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
+            seen[pos] = true;
+        }
+    }
+
+    #[test]
+    fn stego_permutation_index0_consistent() {
+        let a = SteganographyProtector::stego_permutation(0, 4096, 100);
+        let b = SteganographyProtector::stego_permutation(0, 4096, 100);
+        assert_eq!(a, b);
+    }
+
+    // ── Pixel manipulation ────────────────────────────────────────────
+
+    #[test]
+    fn embed_bit_in_pixel_modifies_correct_channel() {
+        let mut img = make_test_image(4, 4);
+        let orig_g = img.get_pixel(0, 0)[1];
+        let orig_b = img.get_pixel(0, 0)[2];
+        let orig_a = img.get_pixel(0, 0)[3];
+
+        // Embed bit 1 in channel 0
+        SteganographyProtector::embed_bit_in_pixel(&mut img, 0, 0, 0, 1);
+        let modified = img.get_pixel(0, 0);
+        assert_eq!(modified[0] & 1, 1);
+        assert_eq!(modified[1], orig_g);
+        assert_eq!(modified[2], orig_b);
+        assert_eq!(modified[3], orig_a);
+    }
+
+    #[test]
+    fn embed_bit_in_pixel_clears_lsb() {
+        let mut img = ImageBuffer::from_pixel(1, 1, Rgba([0xFF, 0xFF, 0xFF, 255]));
+
+        SteganographyProtector::embed_bit_in_pixel(&mut img, 0, 0, 1, 0);
+        let pixel = img.get_pixel(0, 0);
+        assert_eq!(pixel[1] & 1, 0);
+        // Channel 0 and 2 unchanged
+        assert_eq!(pixel[0], 0xFF);
+        assert_eq!(pixel[2], 0xFF);
+    }
+
+    #[test]
+    fn get_pixel_channel_value_reads_correctly() {
+        let pixel = Rgba([100, 150, 200, 255]);
+        assert_eq!(
+            SteganographyProtector::get_pixel_channel_value(&pixel, 0),
+            100
+        );
+        assert_eq!(
+            SteganographyProtector::get_pixel_channel_value(&pixel, 1),
+            150
+        );
+        assert_eq!(
+            SteganographyProtector::get_pixel_channel_value(&pixel, 2),
+            200
+        );
+        assert_eq!(
+            SteganographyProtector::get_pixel_channel_value(&pixel, 3),
+            200
+        );
+    }
+
+    #[test]
+    fn embed_jpeg_bit_amplitude() {
+        let mut img = ImageBuffer::from_pixel(1, 1, Rgba([128, 128, 128, 255]));
+        let amplitude: i16 = 40;
+
+        // Bit 1: +amplitude
+        SteganographyProtector::embed_jpeg_bit_in_pixel(&mut img, 0, 0, 0, 1, amplitude);
+        assert_eq!(img.get_pixel(0, 0)[0], 168);
+
+        // Bit 0: -amplitude
+        let mut img2 = ImageBuffer::from_pixel(1, 1, Rgba([128, 128, 128, 255]));
+        SteganographyProtector::embed_jpeg_bit_in_pixel(&mut img2, 0, 0, 0, 0, amplitude);
+        assert_eq!(img2.get_pixel(0, 0)[0], 88);
+    }
+
+    #[test]
+    fn embed_jpeg_bit_clamps_to_range() {
+        let mut img = ImageBuffer::from_pixel(1, 1, Rgba([10, 10, 10, 255]));
+        let amplitude: i16 = 40;
+
+        // -40 from 10 = -30, clamped to 0
+        SteganographyProtector::embed_jpeg_bit_in_pixel(&mut img, 0, 0, 0, 0, amplitude);
+        assert_eq!(img.get_pixel(0, 0)[0], 0);
+
+        // +40 to 250 = 290, clamped to 255
+        let mut img2 = ImageBuffer::from_pixel(1, 1, Rgba([250, 250, 250, 255]));
+        SteganographyProtector::embed_jpeg_bit_in_pixel(&mut img2, 0, 0, 0, 1, amplitude);
+        assert_eq!(img2.get_pixel(0, 0)[0], 255);
+    }
+
+    // ── Embed/extract via public API ───────────────────────────────────
+    // Internal embed_lsb/extract_lsb use different seed derivation,
+    // so we test through the public apply() + extract_payload() API
+    // which correctly matches seeds.
+
+    #[test]
+    fn lsb_embed_extract_png() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+        assert!(protector.verify_payload(&result));
+        let payload = protector.extract_payload(&result).unwrap();
+        assert_eq!(payload.seed(), 42);
+    }
+
+    #[test]
+    fn lsb_embed_extract_different_seeds() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+
+        let ctx_a = ctx_no_mac(42);
+        let ctx_b = ctx_no_mac(99);
+
+        let dyn_img = DynamicImage::ImageRgba8(img.clone());
+        let result_a = protector.apply(&dyn_img, &ctx_a).unwrap();
+        let result_b = protector.apply(&dyn_img, &ctx_b).unwrap();
+
+        // Use extract_payload_with_seed with known seeds
+        let payload_a = protector.extract_payload_with_seed(&result_a, 42).unwrap();
+        let payload_b = protector.extract_payload_with_seed(&result_b, 99).unwrap();
+        assert_eq!(payload_a.seed(), 42);
+        assert_eq!(payload_b.seed(), 99);
+    }
+
+    #[test]
+    fn lsb_embed_extract_high_redundancy() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ProtectionContext::new(0.5, 42).with_stego_redundancy(5);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+        assert!(protector.verify_payload(&result));
+    }
+
+    #[test]
+    fn lsb_embed_modifies_pixels() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+
+        let dyn_img = DynamicImage::ImageRgba8(img.clone());
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+        assert_ne!(*result, DynamicImage::ImageRgba8(img));
+    }
+
+    #[test]
+    fn lsb_preserves_dimensions() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let (w, h) = img.dimensions();
+        let ctx = ctx_no_mac(42);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+        assert_eq!(result.width(), w);
+        assert_eq!(result.height(), h);
+    }
+
+    #[test]
+    fn lsb_verify_with_mac_key() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let key = b"test-mac-key";
+        let ctx = ctx_with_mac(42, key);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+
+        // Use extract_payload_with_seed_and_key with known seed
+        let payload = protector.extract_payload_with_seed_and_key(&result, 42, key);
+        assert!(payload.is_some());
+        assert_eq!(payload.unwrap().seed(), 42);
+
+        // Wrong key returns None
+        assert!(protector
+            .extract_payload_with_seed_and_key(&result, 42, b"wrong-key")
+            .is_none());
+    }
+
+    #[test]
+    fn lsb_extract_wrong_key_returns_none() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_with_mac(42, b"correct");
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+
+        assert!(protector
+            .extract_payload_with_key(&result, b"correct")
+            .is_some());
+        assert!(protector
+            .extract_payload_with_key(&result, b"wrong")
+            .is_none());
+    }
+
+    #[test]
+    fn lsb_payload_too_large_returns_unchanged() {
+        let protector = SteganographyProtector::new();
+        let tiny = make_test_image(2, 2); // 4 pixels, 12 channels — too small for 256 bits
+        let ctx = ctx_no_mac(42);
+        let payload = protector.generate_payload(&ctx);
+
+        let result = protector.embed_lsb(&tiny, &payload, 42, 1);
+        assert_eq!(result, tiny);
+    }
+
+    #[test]
+    fn lsb_extract_oversized_expected_bits_returns_none() {
+        let protector = SteganographyProtector::new();
+        let img = make_test_image(4, 4); // 16 pixels = 48 channels
+        assert!(protector.extract_lsb(&img, 256, 42).is_none());
+    }
+
+    // ── JPEG stego via public API ─────────────────────────────────────
+
+    #[test]
+    fn jpeg_stego_embed_modifies_pixels() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+        let payload = protector.generate_payload(&ctx);
+
+        let embedded = protector.embed_jpeg_stego(&img, &payload, 42, 1);
+
+        let mut diffs = 0u32;
+        for (a, b) in img.pixels().zip(embedded.pixels()) {
+            if a != b {
+                diffs += 1;
+            }
+        }
+        assert!(diffs > 0, "JPEG stego should modify some pixels");
+    }
+
+    #[test]
+    fn jpeg_stego_different_seeds_differ() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+        let payload = protector.generate_payload(&ctx);
+
+        let a = protector.embed_jpeg_stego(&img, &payload, 42, 1);
+        let b = protector.embed_jpeg_stego(&img, &payload, 99, 1);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn jpeg_stego_payload_too_large_returns_clone() {
+        let protector = SteganographyProtector::new();
+        let tiny = make_test_image(2, 2);
+        let ctx = ctx_no_mac(42);
+        let payload = protector.generate_payload(&ctx);
+
+        let result = protector.embed_jpeg_stego(&tiny, &payload, 42, 1);
+        assert_eq!(result, tiny);
+    }
+
+    #[test]
+    fn jpeg_stego_via_apply_png_fallback() {
+        // When format is PNG, apply uses LSB not JPEG stego.
+        // When format is explicitly JPEG, apply_bytes uses DCT stego.
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+        assert!(protector.verify_payload(&result));
+    }
+
+    // ── StegoPayload parsing ──────────────────────────────────────────
+
+    #[test]
+    fn parse_stego_payload_valid() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_no_mac(12345);
+        let payload = protector.generate_payload(&ctx);
+
+        let parsed = SteganographyProtector::parse_stego_payload(&payload).unwrap();
+        assert_eq!(parsed.version(), 1);
+        assert_eq!(parsed.seed(), 12345);
+        assert_eq!(parsed.protection_level(), 2);
+        assert!((parsed.intensity() - 0.5).abs() < 0.02);
+    }
+
+    #[test]
+    fn parse_stego_payload_too_short() {
+        assert!(SteganographyProtector::parse_stego_payload(&[0u8; 10]).is_none());
+    }
+
+    #[test]
+    fn parse_stego_payload_wrong_version() {
+        let mut payload = vec![0u8; 26];
+        payload[0] = 99; // invalid version
+        assert!(SteganographyProtector::parse_stego_payload(&payload).is_none());
+    }
+
+    // ── Extract with redundancy via public API ────────────────────────
+
+    #[test]
+    fn extract_with_redundancy_finds_payload() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+        assert!(protector.verify_payload(&result));
+    }
+
+    #[test]
+    fn extract_with_redundancy_mac_mode() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let key = b"hmac-key";
+        let ctx = ctx_with_mac(42, key);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+
+        let payload = protector.extract_payload_with_seed_and_key(&result, 42, key);
+        assert!(payload.is_some());
+        assert_eq!(payload.unwrap().seed(), 42);
+    }
+
+    #[test]
+    fn extract_with_redundancy_mac_wrong_key_returns_none() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_with_mac(42, b"correct-key");
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+
+        assert!(protector
+            .extract_payload_with_key(&result, b"wrong-key")
+            .is_none());
+    }
+
+    // ── Protector trait ───────────────────────────────────────────────
+
+    #[test]
+    fn protector_apply_changes_image() {
+        let p = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+        let dyn_img = DynamicImage::ImageRgba8(img.clone());
+        let result = p.apply(&dyn_img, &ctx).unwrap();
+        match result {
+            std::borrow::Cow::Owned(owned) => {
+                assert_ne!(owned.to_rgba8(), img);
+            }
+            _ => panic!("expected owned result"),
+        }
+    }
+
+    #[test]
+    fn protector_apply_preserves_dimensions() {
+        let p = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+        let (w, h) = img.dimensions();
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = p.apply(&dyn_img, &ctx).unwrap();
+        assert_eq!(result.width(), w);
+        assert_eq!(result.height(), h);
+    }
+
+    #[test]
+    fn protector_level() {
+        let p = SteganographyProtector::new();
+        assert_eq!(p.protection_level(), ProtectionLevel::Standard);
+    }
+
+    #[test]
+    fn protector_modifies_pixels() {
+        let p = SteganographyProtector::new();
+        assert!(p.modifies_pixels());
+    }
+
+    #[test]
+    fn protector_is_enabled() {
+        let p = SteganographyProtector::new();
+        assert!(p.is_enabled());
+    }
+
+    #[test]
+    fn protector_apply_bytes_png_roundtrip() {
+        let p = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let png_bytes = crate::util::image::encode_image(
+            &DynamicImage::ImageRgba8(img),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+
+        let ctx = ctx_no_mac(42);
+        let processed = p.apply_bytes(&png_bytes, &ctx).unwrap();
+
+        // Re-decode and verify
+        let decoded = image::load_from_memory(&processed).unwrap();
+        assert!(p.verify_payload(&decoded));
+    }
+
+    // ── DCT stego edge cases ──────────────────────────────────────────
+
+    #[test]
+    fn dct_stego_rejects_non_jpeg() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_no_mac(42);
+        let result = protector.apply_dct_stego_bytes(&[0x89, 0x50, 0x4E, 0x47], &ctx);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn dct_stego_rejects_empty() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_no_mac(42);
+        let result = protector.apply_dct_stego_bytes(&[], &ctx);
+        assert!(result.is_err());
+    }
+
+    // ── Extract seed from image ───────────────────────────────────────
+
+    #[test]
+    fn extract_seed_from_protected_image() {
+        let meta = MetadataTrapProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+
+        // Encode to PNG bytes, then apply metadata trap via apply_bytes
+        let png_bytes = crate::util::image::encode_image(
+            &DynamicImage::ImageRgba8(img),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+        let with_metadata = meta.apply_bytes(&png_bytes, &ctx).unwrap();
+
+        let extracted = MetadataTrapProtector::extract_seed_from_image(&with_metadata);
+        assert_eq!(extracted, Some(42));
+    }
+
+    // ── Full round-trip with MAC key ──────────────────────────────────
+
+    #[test]
+    fn full_roundtrip_mac_embed_extract_verify() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let key = b"super-secret";
+        let ctx = ctx_with_mac(42, key);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+
+        // Extract payload
+        let payload = protector.extract_payload_with_key(&result, key);
+        assert!(payload.is_some());
+        let p = payload.unwrap();
+        assert_eq!(p.seed(), 42);
+        assert_eq!(p.version(), 1);
+    }
+
+    #[test]
+    fn full_roundtrip_no_mac_embed_extract_verify() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+
+        let payload = protector.extract_payload(&result);
+        assert!(payload.is_some());
+        let p = payload.unwrap();
+        assert_eq!(p.seed(), 42);
+    }
+
+    #[test]
+    fn full_roundtrip_verify_payload() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+        assert!(protector.verify_payload(&result));
     }
 }

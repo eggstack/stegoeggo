@@ -440,8 +440,8 @@ impl JpegHeader {
         }
 
         for i in 0..num_components {
-            let component_id = data[2 + i * 2];
-            let table_info = data[3 + i * 2];
+            let component_id = data[1 + i * 2];
+            let table_info = data[2 + i * 2];
 
             // Update components with their Huffman table assignments
             if let Some(comp) = self
