@@ -52,6 +52,9 @@ pub enum Error {
     #[error("Invalid image format: {0}")]
     InvalidFormat(String),
 
+    #[error("Image data was truncated: {0}")]
+    ImageTruncated(String),
+
     #[error("Image dimensions error: {0}")]
     Dimensions(String),
 
