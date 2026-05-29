@@ -12,7 +12,7 @@ General-purpose XorShift64 PRNG for noise and pixel selection.
 pub struct XorShiftRng { state: u64 }
 ```
 
-- `new(seed: u64)` — Initializes with seed XOR'd with `XORSHIFT_SEED_OFFSET`
+- `new(seed: u64)` — Initializes with seed using `wrapping_add(XORSHIFT_SEED_OFFSET)` (not XOR)
 - `next_u64()` — Returns random u64
 - `gen_f32()` — Returns random f32 in `[-1.0, 1.0)`
 - `gen_range(range: Range<f32>)` — Returns f32 in given range
@@ -57,7 +57,7 @@ pub fn apply_perturbation_single_pass(img: &RgbaImage, seed: u64, intensity: f32
 pub fn apply_perturbation_single_pass_keyed(img: &RgbaImage, seed: u64, intensity: f32, intensity_multiplier: f32, mac_key: &[u8]) -> DynamicImage
 ```
 
-- Uses `parallel_threshold()` to decide: if pixels > threshold, uses parallel path
+- Uses `parallel_threshold()` to decide: if `total_pixels >= parallel_threshold()`, uses parallel path
 - Returns perturbed image as `DynamicImage`
 
 ### Parallel path

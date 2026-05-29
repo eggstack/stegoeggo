@@ -19,6 +19,17 @@ pub struct NoiseProtector {
 3. Call `apply_perturbation_single_pass[_keyed]` from `util::image`
 4. Return modified image as `Cow::Owned`
 
+### XorShiftRng
+
+The PRNG uses `wrapping_add` to mix the seed with `XORSHIFT_SEED_OFFSET` (not XOR):
+```rust
+pub fn new(seed: u64) -> Self {
+    Self { state: seed.wrapping_add(XORSHIFT_SEED_OFFSET) }
+}
+```
+
+The `next_u64()` algorithm uses xorshift with rotations of 12, 25, 27 (distinct from F5XorShiftRng).
+
 ### Intensity Scaling
 
 The raw `intensity` (0.0–1.0) is multiplied by 10.0 (Standard) or 12.0 (Enhanced) before being used to scale noise amplitude. This gives Standard and Enhanced different noise characteristics even at the same intensity value.

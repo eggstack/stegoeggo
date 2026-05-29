@@ -41,7 +41,8 @@ cloakrs [OPTIONS] <INPUT>...
 
 When multiple inputs are provided:
 - Uses rayon-based parallel processing with `-j` jobs
-- Preserves directory structure in output
+- Flat output to `-o` directory or current directory (does not preserve directory structure)
+- Filename collision handling: `{stem}_protected_{n}.{ext}` for duplicate stems
 - Progress reporting with verbose mode
 - Rayon thread pool initialization fails silently if already initialized
 

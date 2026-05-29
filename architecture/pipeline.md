@@ -11,18 +11,20 @@ The main struct. Holds `Arc`-wrapped protectors for all five levels.
 ```rust
 pub struct ProtectionPipeline {
     passthrough: Arc<PassthroughProtector>,
-    noise: Arc<NoiseProtector>,
-    enhanced: Arc<EnhancedProtector>,
-    precomputed: Arc<PrecomputedProtector>,
+    noise: Arc<NoiseProtector>,           // Standard level
+    enhanced: Arc<EnhancedProtector>,    // Enhanced level
+    precomputed: Arc<PrecomputedProtector>, // Strong level
     metadata_trap: Arc<MetadataTrapProtector>,
     steganography: Arc<SteganographyProtector>,
 }
 ```
 
+All five protector types are flat fields (not nested under a `Protected/` subgroup).
+
 ### Key Methods
 
 - `process(&img, level, &ctx) -> Cow<DynamicImage>` — Pixel-level processing (validates dimensions)
-- `process_bytes(&img_bytes, level, &ctx) -> Vec<u8>` — Byte-level processing (no dimension validation)
+- `process_bytes(&img_bytes, level, &ctx) -> Vec<u8>` — Byte-level processing (validates dimensions for JPEG via header parse, and for non-JPEG via validate_dimensions after decode)
 - `register_precomputed_variants(variants)` — Register precomputed perturbations for CDN
 
 ### Pipeline Flow (Standard/Enhanced/Strong)
@@ -57,7 +59,7 @@ Free functions that use a `LazyLock<ProtectionPipeline>` singleton:
 - `process_image_bytes(bytes, level, &ctx)` — Single image, byte path. Auto-detects input format from magic bytes and sets `input_format` on context if not already set.
 - `process_images_parallel(images, level, &ctx)` — Rayon parallel batch
 - `process_images_bytes_parallel(images, level, &ctx)` — Parallel batch, byte path
-- `verify_image_bytes(bytes, mac_key) -> Option<bool>` — Free function (not a pipeline method). Checks metadata seed extraction, then falls back to LSB stego payload extraction. No DCT stego verification. No HMAC key handling in the verify path.
+- `verify_image_bytes(bytes, mac_key) -> Option<bool>` — Free function (not a pipeline method). Checks DCT stego first, then metadata seed extraction, then falls back to LSB stego payload extraction. Uses HMAC key via `verify_payload_integrity`.
 
 ## Dimension Validation
 
@@ -68,7 +70,7 @@ Free functions that use a `LazyLock<ProtectionPipeline>` singleton:
 - `ImageOutputFormat::from_magic_bytes(bytes)` — Detects format from magic bytes
 - `ImageOutputFormat::from_extension(path)` — Detects from file extension
 - The pipeline checks if input and output are both JPEG to decide on the fast path
-- If output format cannot be determined, returns `Error::InvalidFormat` (previously defaulted to PNG)
+- If input format cannot be determined, returns `Error::InvalidFormat`
 
 ## Module Interactions
 

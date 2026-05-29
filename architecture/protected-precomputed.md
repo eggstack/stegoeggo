@@ -8,9 +8,11 @@ CDN/WAF edge deployment protector for the `Strong` protection level. Pre-generat
 
 ```
 PrecomputedProtector
-├── In-memory cache: RwLock<HashMap<String, ProtectedVariant>>
+├── In-memory cache: RwLock<LruCache<String, ProtectedVariant>>  // LRU eviction, capacity 100
 └── Optional persistent storage: Box<dyn VariantLoader>
 ```
+
+The cache uses `LruCache` with bounded capacity (100 entries by default, configurable via `with_capacity()`). LRU eviction occurs when capacity is exceeded during insert.
 
 ## How It Works
 
@@ -45,8 +47,6 @@ pub fn register_variant(&self, variant: ProtectedVariant) -> Result<()> {
 ```
 
 This design avoids holding locks during I/O operations.
-
-> **Warning:** The in-memory cache (`RwLock<HashMap<String, ProtectedVariant>>`) has no eviction policy, size limit, or TTL. Under sustained load, the cache will grow without bound.
 
 ## Key Functions
 

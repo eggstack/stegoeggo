@@ -52,7 +52,7 @@ pub enum DmiValue {
 }
 ```
 
-Auto-mapped from `ProtectionLevel`: Light→Prohibited, Standard→ProhibitedAiMlTraining, Enhanced→ProhibitedGenAiMlTraining, Strong→Prohibited.
+Auto-mapped from `ProtectionLevel` via helper in `metadata_trap.rs`: Light→Prohibited, Standard→ProhibitedAiMlTraining, Enhanced→ProhibitedGenAiMlTraining, Strong→Prohibited. No `impl From<ProtectionLevel> for DmiValue>` exists — use the helper function directly.
 
 ## ProtectionContext
 
@@ -89,7 +89,7 @@ All `with_*` methods return `Self` with `#[must_use]`. Example:
 ```rust
 ctx.with_intensity(0.8)
    .with_seed(42)
-   .with_output_format(ImageOutputFormat::Jpeg)
+   .with_format(ImageOutputFormat::Jpeg)  // Use with_format(), not with_output_format()
    .with_stego_redundancy(3)
 ```
 
@@ -108,7 +108,7 @@ pub struct ProtectionConfig {
 
 Builder-pattern struct for legal/copyright metadata:
 
-Fields: `copyright_holder`, `contact_email`, `license_url`, `usage_terms`, `creation_date`, `ai_training_constraints`, `web_statement_of_rights`.
+Fields: `copyright_holder`, `contact_email`, `license_url`, `usage_terms`, `creation_date`, `ai_constraints`, `web_statement_of_rights`.
 
 ## ProtectedVariant
 
@@ -118,6 +118,7 @@ Precomputed perturbation storage for CDN/WAF:
 pub struct ProtectedVariant {
     variant_id: uuid::Uuid,
     original_hash: String,
+    protection_level: ProtectionLevel,  // Added in code but missing from docs
     perturbation_data: Vec<u8>,
     intensity: f32,
     width: u32,
@@ -126,7 +127,7 @@ pub struct ProtectedVariant {
 ```
 
 - `cache_key()` — Returns `{hash}_{level}_{intensity}` for CDN caching
-- `new(hash, level, perturbation_data, intensity, width, height)` — No target model parameter
+- `new(original_hash, protection_level, perturbation_data, intensity, width, height)`
 
 ## StegoPayload
 

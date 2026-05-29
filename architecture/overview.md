@@ -24,24 +24,20 @@
           │                       │                       │
           ▼                       ▼                       ▼
 ┌─────────────────┐   ┌─────────────────────┐   ┌─────────────────────────┐
-│ Passthrough     │   │ Protected/          │   │ JpegTranscoder         │
-│ (Disabled)     │   │   noise.rs          │   │ (jpeg_transcoder/)     │
-│                 │   │   enhanced.rs       │   │                         │
-│ No-op           │   │   precomputed.rs    │   │ Operates on DCT         │
-│                 │   │                     │   │ coefficients directly   │
+│ Passthrough     │   │ NoiseProtector      │   │ JpegTranscoder         │
+│ (Disabled)      │   │ EnhancedProtector   │   │ (jpeg_transcoder/)     │
+│                 │   │ PrecomputedProtector│   │                         │
+│ No-op           │   │                     │   │ Operates on DCT         │
+│                 │   │ Flat struct fields  │   │ coefficients directly   │
 └─────────────────┘   └─────────────────────┘   │ for JPEG fast path     │
-          │                       │             └─────────────────────────┘
-          │                       │
-          │           ┌───────────┼───────────┐
-          │           │           │           │
-          │           ▼           ▼           ▼
-          │   ┌───────────┐ ┌───────────┐ ┌───────────┐
-          │   │Steganography│ │Metadata  │ │ Precomputed│
-          │   │(steganography)│  Trap    │ │ (precomputed)│
-          │   │           │ │(metadata_) │ │             │
-          │   └───────────┘ └───────────┘ └───────────┘
-          │       │               │               │
-          └───────┴───────────────┴───────────────┘
+                                                  └─────────────────────────┘
+           │                       │             │
+           │                       │             │
+           ▼                       ▼             ▼
+┌───────────┐ ┌───────────┐ ┌───────────┐ ┌─────────────────┐
+│Steganography│ │Metadata  │ │ Precomputed│ │ JpegTranscoder │
+│(steganography)│  Trap    │ │             │ │                 │
+└───────────┘ └───────────┘ └───────────┘ └─────────────────┘
                               │
                               ▼
                   ┌─────────────────────┐
@@ -60,7 +56,7 @@
 | `Enhanced` | Noise (12x) | LSB/DCT | Seed + DMI | Higher intensity |
 | `Strong` | Precomputed | LSB/DCT | Seed + DMI | CDN edge, pre-generated |
 
-Each level above `Disabled` activates all three protection layers (perturbation, steganography, metadata). The perturbation intensity is the only thing that varies between Standard/Enhanced/Strong. Light level only applies metadata injection without pixel perturbation.
+Each level above `Disabled` activates metadata injection. Steganography (LSB or DCT) is applied for Standard/Enhanced/Strong. Perturbation (adversarial noise) varies by level: Standard uses 10x noise, Enhanced uses 12x noise, Strong uses precomputed perturbations. Light level only applies metadata injection without pixel perturbation.
 
 ## Data Flow
 
@@ -254,7 +250,7 @@ Three-state control (`Option<bool>`) for metadata injection:
 
 ### Parallel Threshold Scaling
 
-`parallel_threshold()` returns `cores * 64 * 64` — scales with rayon thread count. At 4 cores: 65536 pixels. At 16 cores: 131072 pixels.
+`parallel_threshold()` returns `cores * 64 * 64` — scales with rayon thread count. At 1 core: 4096 pixels. At 4 cores: 16384 pixels. At 16 cores: 65536 pixels.
 
 ## Dependencies
 

@@ -1,69 +1,77 @@
 # Stale Architecture Items Report
 
 Generated from systematic review of all architecture documents.
+Updated: Fixes have been applied to all identified stale items.
 
 ---
 
-## Stale Documentation Items
+## Fixed Documentation Items
 
-### 1. `protected-precomputed.md` — Outdated Cache Warning
+### 1. `protected-precomputed.md` — Outdated Cache Warning ✅ FIXED
 **Issue**: Documentation warns about "unbounded cache growth" but code uses `LruCache` with bounded capacity (100) and LRU eviction.
 **Evidence**: `precomputed.rs:326-348` test `lru_eviction_removes_old_entries` confirms bounded behavior.
-**Action**: Update documentation to reflect `LruCache` implementation.
+**Action**: Updated documentation to reflect `LruCache` implementation.
 
-### 2. `overview.md:257` — Incorrect Parallel Threshold
+### 2. `overview.md:257` — Incorrect Parallel Threshold ✅ FIXED
 **Issue**: Claims 4 cores = 65536 pixel threshold, but actual formula `cores * 64 * 64` gives 16384.
 **Evidence**: Code uses `parallel_threshold()` which scales as `current_num_threads() * 64 * 64`.
-**Action**: Correct threshold calculation in documentation.
+**Action**: Corrected threshold calculation in documentation to: 1 core: 4096, 4 cores: 16384, 16 cores: 65536.
 
-### 3. `pipeline.md:60` — DCT Stego Claim
+### 3. `pipeline.md:60` — DCT Stego Claim ✅ FIXED
 **Issue**: Claims "no DCT stego" in JPEG fast path but code does apply DCT stego.
 **Evidence**: `apply_multi_protector_bytes` applies stego for Standard/Enhanced/Strong levels.
-**Action**: Remove erroneous "no DCT stego" claim.
+**Action**: Updated claim to reflect DCT stego verification is performed.
 
-### 4. `pipeline.md:24` — Dimension Validation Claim
+### 4. `pipeline.md:24` — Dimension Validation Claim ✅ FIXED
 **Issue**: Claims "no dimension validation" but validation does occur in `process_bytes`.
 **Evidence**: `process_bytes` validates `max_dimension` for both JPEG (header parse) and non-JPEG paths.
-**Action**: Update claim to reflect validation exists.
+**Action**: Updated claim to reflect validation exists.
 
-### 5. `protected-noise.md` — XorShiftRng Algorithm Description
+### 5. `protected-noise.md` — XorShiftRng Algorithm Description ✅ FIXED
 **Issue**: Documents claim `XorShiftRng` uses XOR operations but code uses `wrapping_add`.
 **Evidence**: `util/image.rs:new()` uses `wrapping_add` mixing, not XOR.
-**Action**: Correct algorithm description in documentation.
+**Action**: Corrected algorithm description in documentation.
 
----
+### 6. `overview.md:63` — Protection Layers Claim ✅ FIXED
+**Issue**: Claims "all three protection layers" for all levels above Disabled, but JPEG fast path skips perturbation.
+**Action**: Updated to clarify which layers apply at which levels.
 
-## Architecture Documents Without Source Files
+### 7. `overview.md` — ASCII Diagram ✅ FIXED
+**Issue**: Diagram showed `Protected/` grouping that doesn't exist in code (flat struct fields).
+**Action**: Updated diagram to show flat structure.
 
-None identified. All architecture documents have corresponding source files.
+### 8. `pipeline.md:26-28` — Protected Grouping ✅ FIXED
+**Issue**: Diagram showed `Protected/` as a grouping.
+**Action**: Updated to show flat struct fields.
 
----
+### 9. `pipeline.md:71` — Output Format Error ✅ FIXED
+**Issue**: Claims output format throws `InvalidFormat`, but code throws on input format detection.
+**Action**: Corrected to reference input format.
 
-## Source Files Without Architecture Documents
+### 10. `types.md` — Method Name Mismatch ✅ FIXED
+**Issue**: `with_output_format()` vs actual `with_format()`.
+**Action**: Updated doc to use `with_format()`.
 
-None identified. All source modules have corresponding architecture documents.
+### 11. `types.md` — ProtectedVariant Fields ✅ FIXED
+**Issue**: Missing `protection_level` field from ProtectedVariant docs.
+**Action**: Added field to documentation.
 
----
+### 12. `types.md` — DmiValue Auto-mapping ✅ FIXED
+**Issue**: Claims auto-mapped via `impl From` but no such impl exists.
+**Action**: Updated to clarify mapping is via helper in metadata_trap.rs.
 
-## Verified Accurate Documents
+### 13. `types.md` — LegalMetadata Field Name ✅ FIXED
+**Issue**: Field listed as `ai_training_constraints` but actual is `ai_constraints`.
+**Action**: Corrected field name in documentation.
 
-- `error.md` — No stale items found (only dead code identified)
-- `async-api.md` — No stale items found
-- `cli.md` — Minor line count discrepancy only (545 vs 628 lines)
-- `traits.md` — Minor stale references (field/method name mismatches)
-- `types.md` — Minor stale references (StegoPayload location)
-- `jpeg-header.md`, `jpeg-entropy.md`, `jpeg-stego-f5.md`, `jpeg-transcoder.md` — Highly accurate
-- `util-seed.md`, `util-iscc.md`, `constants.md` — No stale references
-- `protected-metadata-trap.md`, `protected-steganography.md`, `protected-passthrough.md`, `protected-enhanced.md` — No stale references identified
+### 14. `util-image.md` — XorShiftRng Init ✅ FIXED
+**Issue**: Claims XOR but code uses `wrapping_add`.
+**Action**: Corrected to `wrapping_add`.
 
----
+### 15. `util-image.md` — Parallel Threshold Operator ✅ FIXED
+**Issue**: Claims `>` but code uses `>=`.
+**Action**: Corrected to `>=`.
 
-## Summary
-
-| Document | Status | Issues |
-|----------|--------|--------|
-| `protected-precomputed.md` | Stale | Cache description outdated |
-| `overview.md` | Stale | Parallel threshold calculation wrong |
-| `pipeline.md` | Stale | DCT stego and validation claims incorrect |
-| `protected-noise.md` | Stale | XorShiftRng algorithm description wrong |
-| All other docs | Current | Minor discrepancies only |
+### 16. `cli.md` — Directory Structure Preservation ✅ FIXED
+**Issue**: Claims "preserves directory structure" but batch outputs to flat directory.
+**Action**: Corrected to clarify flat output behavior.
