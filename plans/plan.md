@@ -1,6 +1,6 @@
 # Cloakrs Bug Fix & Improvement Plan
 
-## Status: In Progress
+## Status: Complete
 
 Architecture documentation fixes are **complete** (2026-05-29). This plan tracks the remaining code-level bugs and improvements identified during the documentation review.
 
@@ -9,6 +9,8 @@ Architecture documentation fixes are **complete** (2026-05-29). This plan tracks
 ## Wave 1: Independent Bug Fixes (Parallelizable)
 
 All five items below touch different files with no interdependencies. They can be implemented in parallel by separate agents.
+
+**Status: All 5 tasks completed (2026-05-29)**
 
 ---
 
@@ -28,6 +30,8 @@ All five items below touch different files with no interdependencies. They can b
 **Key detail**: The `validate_dimensions` method (line 179) takes a `&DynamicImage`. For the JPEG fast path, either parse the header for dimensions or accept the tradeoff and document it. The header parser at `jpeg_transcoder::header::parse()` returns `JpegHeader` which contains width/height.
 
 **Verification**: `cargo test` passes. New test confirms dimension validation on byte path. Existing tests unaffected.
+
+**✅ Completed**: Commit `321f825`. Added `validate_jpeg_dimensions_from_bytes()` for JPEG fast path and `validate_dimensions()` on non-JPEG path. Test `test_max_dimension_validation_process_bytes` verifies 1000×1000 PNG with max_dimension=512.
 
 ---
 
@@ -50,6 +54,8 @@ All five items below touch different files with no interdependencies. They can b
 
 **Verification**: `cargo test` passes. New test confirms eviction behavior. Memory usage bounded under load.
 
+**✅ Completed**: Commit `14121aa`. Added `lru` 0.12 crate, `PRECOMPUTED_CACHE_CAPACITY = 100` constant, `with_capacity()` constructor. Uses `peek()` for reads (no LRU promotion on reads). Test `lru_eviction_removes_old_entries` inserts 5 entries into capacity-3 cache.
+
 ---
 
 ### Task 3: Fix Seed Embedding Silent Failure for Unit Quantization Values
@@ -69,6 +75,8 @@ All five items below touch different files with no interdependencies. They can b
 **Key detail**: The existing test `test_seed_embed_with_unit_quant_values` (line 592) uses `[2; 64]` — it deliberately avoids the edge case. The AGENTS.md already notes "Use quantization values >= 2 for reliable seed embedding" but the code doesn't enforce this.
 
 **Verification**: `cargo test` passes. New test confirms error/warning on all-1 tables. No regressions on existing tests.
+
+**✅ Completed**: Commit `ef5c249`. Added precondition check in `embed_seed_in_quantization_tables()` that returns `TranscoderError::EmbeddingFailed` if any quantization value < 2. Removed unreachable clamping code. Test `test_seed_embed_all_ones_quant_returns_error`.
 
 ---
 
@@ -95,6 +103,8 @@ The behavior is correct but underdocumented. Callers may not realize that omitti
 
 **Verification**: `cargo doc` generates clean documentation. `cargo test` passes (no code changes, only doc comments).
 
+**✅ Completed**: Commit `c296213`. Doc comments on fields, builders (`with_metadata_injection`, `with_legal_claims`), and getters (`inject_metadata`, `inject_legal_claims`) in `types.rs`. Three-state semantics clearly explained.
+
 ---
 
 ### Task 5: Fix CLI Batch Mode Filename Collisions
@@ -115,6 +125,8 @@ The behavior is correct but underdocumented. Callers may not realize that omitti
 **Key detail**: The `process_single_file` function is called per-file in the batch loop. The collision state (the set of seen output paths) needs to be threaded through the loop, not per-function. The loop at line 451 should maintain the set and pass it to `process_single_file`, or `process_single_file` should return the output path and the loop handles collision.
 
 **Verification**: `cargo test` passes (CLI tests if any). Manual test: create two JPEGs with same stem, run CLI batch, confirm both outputs exist.
+
+**✅ Completed**: Commit `237fe23`. Added `override_output: Option<PathBuf>` parameter to `process_single_file()`. Both serial and parallel batch paths maintain `HashMap<PathBuf, usize>` for collision detection. Duplicate stems get `_protected_1`, `_protected_2`, etc.
 
 ---
 
@@ -138,3 +150,13 @@ cargo fmt --check
 ```
 
 Then update AGENTS.md to reflect any new conventions or gotchas discovered during implementation.
+
+### Results
+
+All 5 tasks completed via parallel sub-agents in separate worktrees. Merged to master on 2026-05-29.
+
+- 264 tests pass (168 unit + 20 basic + 63 integration + 9 async)
+- Clippy clean
+- Format clean
+- AGENTS.md updated with new conventions
+- AGENTS.override.md updated with implementation notes

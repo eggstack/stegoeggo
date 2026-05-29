@@ -80,8 +80,8 @@ fn get_scan_data_start(...) -> Option<usize>
 4. **`is_enabled()` is dead code** — defined in trait, never called by pipeline. `PassthroughProtector` returns `true` (not `false`).
 5. **Stego seed derivation** — embed/extract functions internally derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)`. Match seeds when calling directly.
 6. **`subtle` crate** — use `ConstantTimeEq::ct_eq()` for HMAC verification, not `==`
-7. **PrecomputedProtector cache** — unbounded `RwLock<HashMap>`, no eviction. Design for external eviction strategy.
-8. **F5 seed embedding** — quantization values of 1 become 0 after LSB clear, clamped back to 1. Use values >= 2 for reliable embedding.
+7. **PrecomputedProtector cache** — `RwLock<LruCache>` with default capacity 100 entries. Configurable via `with_capacity()`. LRU eviction on insert when capacity exceeded. `peek()` used for reads (no LRU promotion).
+8. **F5 seed embedding** — Precondition check fails if any quantization value < 2. Values of 1 cannot represent 0-bits reliably. Use values >= 2.
 9. **ISCC is not standard-compliant** — uses custom component codes (`0x12`, `0x33`), not interoperable with other ISCC implementations.
 
 ## Build & Test

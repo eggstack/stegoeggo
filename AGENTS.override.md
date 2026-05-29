@@ -31,3 +31,20 @@ All 5 tasks are fully independent (different files, no shared state). Assign to 
 ### Architecture Docs
 
 All 21 files in `architecture/` have been verified against source code. No cross-references to plan files exist in architecture docs. The `architecture/protected-precomputed.md` file already documents the unbounded cache warning.
+
+## Implementation Complete (2026-05-29)
+
+All 5 tasks from `plans/plan.md` Wave 1 are implemented and merged to master.
+
+| Task | Status | Commit | Notes |
+|------|--------|--------|-------|
+| Dimension validation in `process_bytes` | **Done** | `321f825` | Adds `validate_jpeg_dimensions_from_bytes()` + validation on non-JPEG path. Test covers 1000×1000 PNG with max_dimension=512. |
+| LRU eviction for PrecomputedProtector | **Done** | `14121aa` | `lru` 0.12 crate, default capacity 100, `with_capacity()` constructor. `peek()` for reads (no LRU promotion). |
+| Seed embedding unit quant error | **Done** | `ef5c249` | Precondition check in `embed_seed_in_quantization_tables()` fails if any value < 2. Removed now-unreachable clamping code. |
+| `Option<bool>` documentation | **Done** | `c296213` | Doc comments on fields, builders, and getters in `types.rs`. Three-state semantics clearly explained. |
+| CLI batch filename collisions | **Done** | `237fe23` | `override_output: Option<PathBuf>` parameter + `HashMap<PathBuf, usize>` collision tracking in both serial and parallel paths. |
+
+### Full Test Suite Results (post-merge)
+- 168 unit + 20 basic + 63 integration + 9 async = **264 tests pass**
+- `cargo clippy --all-targets -- -D warnings`: clean
+- `cargo fmt --check`: clean
