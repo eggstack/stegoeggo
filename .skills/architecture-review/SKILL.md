@@ -71,3 +71,17 @@ Systematic workflow for verifying architecture documents against the cloakrs cod
 - `Option<bool>` fields have ambiguous `None` vs `false` semantics — document this explicitly
 - The JPEG transcoder has two separate PRNG implementations (`XorShiftRng` vs `F5XorShiftRng`) — never interchange
 - ISCC implementation is NOT standard-compliant — uses custom component codes
+
+## Verified Discrepancies (do not re-report these)
+
+These have been fixed in documentation — if the code hasn't changed, these are now correctly documented:
+
+- **`XorShiftRng::new`** uses `wrapping_add`, not XOR — use `seed.wrapping_add(XORSHIFT_SEED_OFFSET)`
+- **`parallel_threshold()`** scales as `cores * 64 * 64` — 1c:4096, 4c:16384, 16c:65536
+- **`verify_image_bytes`** DOES perform DCT stego verification — contrary to old docs
+- **CLI batch** does NOT preserve directory structure — outputs flat to `-o` dir
+- **PrecomputedProtector cache** uses `LruCache` with bounded capacity (100) — not unbounded HashMap
+- **`ProtectedVariant`** has 7 fields including `protection_level` (not 6)
+- **`LegalMetadata`** field is `ai_constraints` (not `ai_training_constraints`)
+- **`ProtectionContext::with_format()`** (not `with_output_format()`)
+- **DmiValue mapping** is via helper in `metadata_trap.rs` — no `impl From<ProtectionLevel> for DmiValue`
