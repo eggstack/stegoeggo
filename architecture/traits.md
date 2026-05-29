@@ -8,8 +8,8 @@ Defines the core trait contracts that all protectors and storage backends implem
 
 ```rust
 pub trait Protector: Send + Sync {
-    fn apply(&self, img: &DynamicImage, ctx: &ProtectionContext) -> Cow<DynamicImage>;
-    fn apply_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Vec<u8>;
+    fn apply(&self, img: &DynamicImage, ctx: &ProtectionContext) -> Result<Cow<DynamicImage>>;
+    fn apply_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>>;
     fn name(&self) -> &str;
     fn protection_level(&self) -> ProtectionLevel;
     fn estimated_latency_ms(&self) -> u32;
@@ -19,8 +19,8 @@ pub trait Protector: Send + Sync {
 
 ### Methods
 
-- **`apply`** — Core protection method. Returns `Cow::Borrowed(img)` when no modification needed (avoids cloning). Returns `Cow::Owned(DynamicImage)` when pixels are modified.
-- **`apply_bytes`** — Byte-level processing. Default implementation decodes bytes → calls `apply` → re-encodes. Overrides exist for JPEG fast path and metadata injection.
+- **`apply`** — Core protection method. Returns `Result<Cow<DynamicImage>>`. Returns `Cow::Borrowed(img)` when no modification needed (avoids cloning). Returns `Cow::Owned(DynamicImage)` when pixels are modified.
+- **`apply_bytes`** — Byte-level processing. Returns `Result<Vec<u8>>`. Default implementation decodes bytes → calls `apply` → re-encodes. Overrides exist for JPEG fast path and metadata injection.
 - **`name`** — Human-readable name for logging/debugging.
 - **`protection_level`** — Which `ProtectionLevel` this protector handles.
 - **`estimated_latency_ms`** — Expected processing time for performance budgets.

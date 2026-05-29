@@ -20,7 +20,7 @@ The `EnhancedProtector` is a thin wrapper that delegates all `Protector` methods
 
 ```rust
 impl Protector for EnhancedProtector {
-    fn apply(&self, img: &DynamicImage, ctx: &ProtectionContext) -> Cow<DynamicImage> {
+    fn apply(&self, img: &DynamicImage, ctx: &ProtectionContext) -> Result<Cow<DynamicImage>> {
         self.inner.apply(img, ctx)
     }
 
