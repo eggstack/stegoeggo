@@ -69,27 +69,42 @@ impl DctStegoF5 {
         }
     }
 
-    /// Embed seed in quantization tables (survives JPEG re-encoding)
-    /// Embeds 12 bytes: 4 bytes magic + 8 bytes seed (u64)
+    /// Embed seed in quantization tables (survives JPEG re-encoding).
+    ///
+    /// Embeds 12 bytes: 4 bytes magic + 8 bytes seed (u64).
+    ///
+    /// All quantization values in the first 2 tables must be >= 2. Values of 1
+    /// cannot represent a 0-bit (`1 & 0xFE = 0`, which is invalid and gets
+    /// clamped back to 1), so embedding would silently fail for any 0-bit.
     pub fn embed_seed_in_quantization_tables(
         &self,
         header: &mut JpegHeader,
         seed: u64,
     ) -> Result<()> {
+        for table_idx in 0..2 {
+            if let Some(ref quant) = header.quantization_tables[table_idx] {
+                for (pos, &val) in quant.values.iter().enumerate().take(64) {
+                    if val < 2 {
+                        return Err(TranscoderError::EmbeddingFailed(format!(
+                            "Quantization table {} value at position {} is {} \
+                             (must be >= 2 for reliable seed embedding)",
+                            table_idx, pos, val
+                        )));
+                    }
+                }
+            }
+        }
+
         let mut payload = Vec::new();
-        payload.extend_from_slice(SEED_MAGIC); // 4 bytes
+        payload.extend_from_slice(SEED_MAGIC);
 
-        // Encode seed as 8 bytes (u64)
-        payload.extend_from_slice(&seed.to_le_bytes()); // 8 bytes
+        payload.extend_from_slice(&seed.to_le_bytes());
 
-        // Convert to bits
         let bits: Vec<u8> = payload
             .iter()
             .flat_map(|&b| (0..8).map(move |i| (b >> i) & 1))
             .collect();
 
-        // Total: 12 bytes = 96 bits
-        // Embed in first 2 quantization tables (128 bits capacity)
         let mut bit_idx = 0;
         for table_idx in 0..2 {
             if let Some(ref mut quant) = header.quantization_tables[table_idx] {
@@ -97,15 +112,10 @@ impl DctStegoF5 {
                     if bit_idx >= bits.len() {
                         break;
                     }
-                    // Embed in LSB
                     if bits[bit_idx] == 1 {
                         quant.values[pos] |= 1;
                     } else {
                         quant.values[pos] &= 0xFE;
-                        // JPEG quantization values must be >= 1; clamp after clearing LSB
-                        if quant.values[pos] == 0 {
-                            quant.values[pos] = 1;
-                        }
                     }
                     bit_idx += 1;
                 }
@@ -620,6 +630,23 @@ mod tests {
             .extract_seed_from_quantization_tables(&header)
             .unwrap();
         assert_eq!(extracted, seed);
+    }
+
+    #[test]
+    fn test_seed_embed_all_ones_quant_returns_error() {
+        let mut header = JpegHeader::default();
+        for i in 0..2 {
+            let table = crate::jpeg_transcoder::header::QuantizationTable {
+                table_id: i as u8,
+                precision: 8,
+                values: [1; 64],
+            };
+            header.quantization_tables[i] = Some(table);
+        }
+
+        let stego = DctStegoF5::new();
+        let result = stego.embed_seed_in_quantization_tables(&mut header, 0xCAFEBABEu64);
+        assert!(result.is_err());
     }
 
     #[test]
