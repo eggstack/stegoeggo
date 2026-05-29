@@ -33,7 +33,7 @@ When no explicit DMI value is set, the protector auto-maps from `ProtectionLevel
 - Light → `Prohibited`
 - Standard → `ProhibitedAiMlTraining`
 - Enhanced → `ProhibitedGenAiMlTraining`
-- Strong → `Prohibited`
+- Strong → `Prohibited` (same as Light — DMI strength does not increase with protection level)
 
 ### Legal Metadata
 

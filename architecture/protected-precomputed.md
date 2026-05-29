@@ -30,24 +30,28 @@ PrecomputedProtector
 ### Registration (Two-Phase)
 
 ```rust
-pub fn register_variant(&self, variant: ProtectedVariant) {
+pub fn register_variant(&self, variant: ProtectedVariant) -> Result<()> {
+    let key = variant.cache_key();
     // Phase 1: Persist to loader without holding lock
     if let Some(ref loader) = self.loader {
-        let _ = loader.store_variant(&variant);  // Best-effort
+        loader.store_variant(&variant)?;  // Propagates errors
     }
 
     // Phase 2: Insert into in-memory cache with write lock
-    let mut cache = self.cache.write().unwrap();
-    cache.insert(key, variant);
+    let mut variants = self.variants.write().map_err(...)?;
+    variants.insert(key, variant);
+    Ok(())
 }
 ```
 
 This design avoids holding locks during I/O operations.
 
+> **Warning:** The in-memory cache (`RwLock<HashMap<String, ProtectedVariant>>`) has no eviction policy, size limit, or TTL. Under sustained load, the cache will grow without bound.
+
 ## Key Functions
 
 ```rust
-pub fn generate_perturbation_data(width: u32, height: u32, ctx: &ProtectionContext) -> Vec<u8>
+pub fn generate_perturbation_data(&self, width: u32, height: u32, ctx: &ProtectionContext) -> Result<Vec<u8>>
 ```
 
 Creates an RGBA perturbation buffer (4 bytes per pixel) without applying it to an image. The buffer can be stored and applied later.
@@ -60,10 +64,9 @@ Batch registration for multiple variants.
 
 ### Apply Behavior
 
-- `apply()` returns `Cow::Borrowed` when intensity is 0.0
 - On cache miss: generates, auto-registers (best-effort), applies, returns `Cow::Owned`
 - On cache hit: applies precomputed data, returns `Cow::Owned`
-- Registration failure is silently ignored (best-effort caching)
+- Registration failure is silently ignored (best-effort caching) via `let _ = self.register_variant(variant)`
 
 ## ProtectedVariant Storage
 
@@ -74,7 +77,7 @@ Each variant contains:
 - `intensity` — The intensity used to generate the perturbation
 - `width`, `height` — Image dimensions
 
-Cache key format: `{uuid}_{hash}_{intensity}`
+Cache key format: `{hash}_{level}_{intensity}`
 
 ## Module Interactions
 
