@@ -542,6 +542,11 @@ pub fn apply_perturbation(img: &RgbaImage, perturbation: &[u8], divisor: i16) ->
         return Err(Error::ImageDecode("Perturbation size mismatch".to_string()));
     }
 
+    debug_assert!(
+        divisor != 0,
+        "divisor must not be zero in apply_perturbation"
+    );
+
     let img_raw = img.as_raw();
     let mut output_raw = vec![0u8; img_raw.len()];
 
@@ -594,6 +599,11 @@ pub fn apply_perturbation_par(
     if total_pixels < parallel_threshold() {
         return apply_perturbation(img, perturbation, divisor);
     }
+
+    debug_assert!(
+        divisor != 0,
+        "divisor must not be zero in apply_perturbation"
+    );
 
     let img_raw = img.as_raw();
 
