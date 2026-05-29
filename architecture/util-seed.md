@@ -10,12 +10,22 @@ Pseudo-random seed generation from system time.
 pub fn generate_random_seed() -> u64
 ```
 
-Uses `SystemTime::now()` as entropy source, mixed with `splitmix64` algorithm:
+Uses `SystemTime::now()` as entropy source. Extracts seconds and nanoseconds separately, combines them with golden-ratio-based mixing, then applies splitmix64-style bit mixing:
 
 ```rust
-let time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
-splitmix64(time)
+let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+let s = now.as_secs();
+let ns = now.subsec_nanos() as u64;
+let mut x = s ^ (ns.wrapping_mul(0x9E3779B97F4A7C15));
+x ^= x >> 30;
+x = x.wrapping_mul(0xBF58476D1CE4E5B9);
+x ^= x >> 27;
+x = x.wrapping_mul(0x94D049BB133111EB);
+x ^= x >> 31;
+if x == 0 { 42 } else { x }
 ```
+
+Uses `unwrap_or_default()` (does NOT panic on pre-UNIX-epoch clocks). Guarantees non-zero output (returns `42` if mixing produces zero).
 
 ## Security Warning
 
