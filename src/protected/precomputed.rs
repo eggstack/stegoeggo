@@ -1,12 +1,14 @@
 use crate::error::{Error, Result};
+use crate::protected::constants::PRECOMPUTED_CACHE_CAPACITY;
 use crate::traits::{Protector, VariantLoader};
 use crate::types::{ProtectedVariant, ProtectionContext, ProtectionLevel};
 use crate::util::image::{
     apply_perturbation, apply_perturbation_par, parallel_threshold, XorShiftRng,
 };
 use image::DynamicImage;
+use lru::LruCache;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::RwLock;
 
 /// Precomputed perturbation protector for CDN/WAF edge deployment.
@@ -34,25 +36,35 @@ use std::sync::RwLock;
 /// let protected = precomputed.apply(&img, &ctx)?;
 /// ```
 pub struct PrecomputedProtector {
-    variants: RwLock<HashMap<String, ProtectedVariant>>,
+    variants: RwLock<LruCache<String, ProtectedVariant>>,
     loader: Option<Box<dyn VariantLoader>>,
 }
 
 impl PrecomputedProtector {
-    /// Create a new precomputed protector with in-memory cache only.
     pub fn new() -> Self {
         Self {
-            variants: RwLock::new(HashMap::new()),
+            variants: RwLock::new(LruCache::new(
+                NonZeroUsize::new(PRECOMPUTED_CACHE_CAPACITY).unwrap(),
+            )),
             loader: None,
         }
     }
 
-    /// Create a PrecomputedProtector backed by a `VariantLoader`.
-    /// Variants will be looked up from the loader on cache miss.
     pub fn with_loader(loader: Box<dyn VariantLoader>) -> Self {
         Self {
-            variants: RwLock::new(HashMap::new()),
+            variants: RwLock::new(LruCache::new(
+                NonZeroUsize::new(PRECOMPUTED_CACHE_CAPACITY).unwrap(),
+            )),
             loader: Some(loader),
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            variants: RwLock::new(LruCache::new(
+                NonZeroUsize::new(capacity).unwrap(),
+            )),
+            loader: None,
         }
     }
 
@@ -65,7 +77,6 @@ impl PrecomputedProtector {
     pub fn register_variant(&self, variant: ProtectedVariant) -> Result<()> {
         let key = variant.cache_key();
 
-        // Persist to loader if configured
         if let Some(ref loader) = self.loader {
             loader.store_variant(&variant)?;
         }
@@ -74,7 +85,7 @@ impl PrecomputedProtector {
             .variants
             .write()
             .map_err(|e| Error::Config(format!("Lock error: {}", e)))?;
-        variants.insert(key, variant);
+        variants.put(key, variant);
         Ok(())
     }
 
@@ -83,24 +94,21 @@ impl PrecomputedProtector {
     /// Persists all variants to the loader (if configured) before acquiring
     /// the write lock, then inserts all entries atomically.
     pub fn register_variants(&self, variants: Vec<ProtectedVariant>) -> Result<()> {
-        // Persist to loader first (no lock held — loader may do I/O)
         if let Some(ref loader) = self.loader {
             for variant in &variants {
                 loader.store_variant(variant)?;
             }
         }
 
-        // Collect keys before acquiring lock
         let entries: Vec<(String, ProtectedVariant)> =
             variants.into_iter().map(|v| (v.cache_key(), v)).collect();
 
-        // Single write lock, no I/O inside
         let mut write_guard = self
             .variants
             .write()
             .map_err(|e| Error::Config(format!("Lock error: {}", e)))?;
         for (key, variant) in entries {
-            write_guard.insert(key, variant);
+            write_guard.put(key, variant);
         }
         Ok(())
     }
@@ -120,26 +128,23 @@ impl PrecomputedProtector {
             intensity_rounded
         );
 
-        // Check in-memory cache first
         {
             let variants = self
                 .variants
                 .read()
                 .map_err(|e| Error::Config(format!("Lock error: {}", e)))?;
-            if let Some(v) = variants.get(&key) {
+            if let Some(v) = variants.peek(&key) {
                 return Ok(Some(v.clone()));
             }
         }
 
-        // Fall back to loader
         if let Some(ref loader) = self.loader {
             if let Some(variant) = loader.load_variant(&key)? {
-                // Populate in-memory cache
                 let mut variants = self
                     .variants
                     .write()
                     .map_err(|e| Error::Config(format!("Lock error: {}", e)))?;
-                variants.insert(key, variant.clone());
+                variants.put(key, variant.clone());
                 return Ok(Some(variant));
             }
         }
@@ -318,5 +323,29 @@ mod tests {
         protector.register_variant(variant).unwrap();
         let result = protector.apply(&img, &ctx);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn lru_eviction_removes_old_entries() {
+        let protector = PrecomputedProtector::with_capacity(3);
+
+        for w in 4..9u32 {
+            let img = make_test_image(w, w);
+            let hash = crate::util::image::compute_image_hash(&img);
+            let ctx = ProtectionContext::new(0.5, w as u64);
+            let perturbation = protector.generate_perturbation_data(w, w, &ctx).unwrap();
+            let variant = crate::types::ProtectedVariant::new(
+                hash,
+                crate::types::ProtectionLevel::Strong,
+                perturbation,
+                0.5,
+                w,
+                w,
+            );
+            protector.register_variant(variant).unwrap();
+        }
+
+        let variants = protector.variants.read().unwrap();
+        assert_eq!(variants.len(), 3);
     }
 }
