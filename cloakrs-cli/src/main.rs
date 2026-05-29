@@ -204,6 +204,7 @@ fn process_single_file(
     ctx_base: &ProtectionContext,
     protection_level: ProtectionLevel,
     verbose: bool,
+    override_output: Option<PathBuf>,
 ) -> Result<PathBuf, Error> {
     let input_bytes = fs::read(input_path).map_err(Error::Io)?;
 
@@ -228,22 +229,30 @@ fn process_single_file(
 
     let output_bytes = process_image_bytes(&input_bytes, protection_level, &ctx)?;
 
-    let stem = input_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("output");
-    let ext = output_fmt.extension();
-    let filename = format!("{}_protected.{}", stem, ext);
-
-    let output_path = if let Some(ref dir) = output_dir {
-        let out_path = dir.join(&filename);
-        fs::create_dir_all(dir)?;
-        fs::write(&out_path, &output_bytes)?;
-        out_path
+    let output_path = if let Some(override_path) = override_output {
+        if let Some(parent) = override_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&override_path, &output_bytes)?;
+        override_path
     } else {
-        let output_path = PathBuf::from(filename);
-        fs::write(&output_path, &output_bytes)?;
-        output_path
+        let stem = input_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
+        let ext = output_fmt.extension();
+        let filename = format!("{}_protected.{}", stem, ext);
+
+        if let Some(ref dir) = output_dir {
+            let out_path = dir.join(&filename);
+            fs::create_dir_all(dir)?;
+            fs::write(&out_path, &output_bytes)?;
+            out_path
+        } else {
+            let output_path = PathBuf::from(filename);
+            fs::write(&output_path, &output_bytes)?;
+            output_path
+        }
     };
 
     Ok(output_path)
@@ -448,11 +457,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
+        use std::collections::HashMap;
+
         let results: Vec<Result<(PathBuf, PathBuf), String>> = if args.jobs > 1 {
+            let seen_paths: std::sync::Mutex<HashMap<PathBuf, usize>> =
+                std::sync::Mutex::new(HashMap::new());
+
             input_files
                 .par_iter()
                 .with_max_len(1)
                 .map(|input_path| {
+                    let stem = input_path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("output")
+                        .to_string();
+                    let ext = output_format
+                        .as_ref()
+                        .map(|f| f.extension().to_string())
+                        .unwrap_or_else(|| {
+                            ImageOutputFormat::from_magic_bytes(
+                                &fs::read(input_path).unwrap_or_default(),
+                            )
+                            .unwrap_or(DEFAULT_OUTPUT_FORMAT)
+                            .extension()
+                            .to_string()
+                        });
+
+                    let mut seen = seen_paths.lock().unwrap();
+                    let count = seen.entry(PathBuf::from(&stem)).or_insert(0);
+                    let override_output = if *count > 0 {
+                        let out_path = if let Some(ref dir) = output_dir {
+                            dir.join(format!("{}_protected_{}.{}", stem, count, ext))
+                        } else {
+                            PathBuf::from(format!("{}_protected_{}.{}", stem, count, ext))
+                        };
+                        *count += 1;
+                        Some(out_path)
+                    } else {
+                        *count = 1;
+                        None
+                    };
+                    drop(seen);
+
                     process_single_file(
                         input_path,
                         &output_dir,
@@ -460,15 +507,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &ctx,
                         protection_level,
                         args.verbose,
+                        override_output,
                     )
                     .map(|output| (input_path.clone(), output))
                     .map_err(|e| e.to_string())
                 })
                 .collect()
         } else {
+            let mut seen: HashMap<PathBuf, usize> = HashMap::new();
+
             input_files
                 .iter()
                 .map(|input_path| {
+                    let stem = input_path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("output")
+                        .to_string();
+                    let ext = output_format
+                        .as_ref()
+                        .map(|f| f.extension().to_string())
+                        .unwrap_or_else(|| {
+                            ImageOutputFormat::from_magic_bytes(
+                                &fs::read(input_path).unwrap_or_default(),
+                            )
+                            .unwrap_or(DEFAULT_OUTPUT_FORMAT)
+                            .extension()
+                            .to_string()
+                        });
+
+                    let count = seen.entry(PathBuf::from(&stem)).or_insert(0);
+                    let override_output = if *count > 0 {
+                        let out_path = if let Some(ref dir) = output_dir {
+                            dir.join(format!("{}_protected_{}.{}", stem, count, ext))
+                        } else {
+                            PathBuf::from(format!("{}_protected_{}.{}", stem, count, ext))
+                        };
+                        *count += 1;
+                        Some(out_path)
+                    } else {
+                        *count = 1;
+                        None
+                    };
+
                     process_single_file(
                         input_path,
                         &output_dir,
@@ -476,6 +557,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &ctx,
                         protection_level,
                         args.verbose,
+                        override_output,
                     )
                     .map(|output| (input_path.clone(), output))
                     .map_err(|e| e.to_string())
@@ -531,6 +613,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &ctx,
             protection_level,
             args.verbose,
+            None,
         )?;
 
         if args.verbose {
