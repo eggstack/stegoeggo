@@ -52,6 +52,10 @@ src/
 - All struct fields on `ProtectionContext`, `ProtectedVariant`, and `StegoPayload` are private — use getter methods (e.g., `ctx.intensity()`, `ctx.seed()`, `variant.perturbation_data()`)
 - `ProtectionContext` has `set_input_format()` (public) and `set_protection_level()` (crate-internal) for non-builder mutation
 
+## Architecture Documentation
+
+Architecture docs live in `architecture/`. A consolidated fix plan is at `plans/plan.md` — it tracks all documentation discrepancies between docs and code, organized into 5 waves for parallel execution. The individual review files in `plans/` (core-framework.md, jpeg-transcoder.md, protection-strategies.md, utilities-integration.md, stale-items.md, review-summary.md) are source material for the consolidated plan.
+
 ## Build & Test Commands
 
 ```bash
@@ -76,11 +80,11 @@ cargo bench                              # Criterion benchmarks
 ## Things to Watch Out For
 
 - **`.gitignore`**: `.DS_Store` files exist on disk but are excluded by git
-- **Stego payload format**: 24-byte header + 2-byte checksum (or 8-byte HMAC), always padded to 32 bytes total (even in checksum mode). Use `MIN_PAYLOAD_SIZE` and `MIN_PAYLOAD_BITS` constants in `steganography.rs`
-- **`generate_random_seed()`**: Not cryptographically secure — uses SystemTime + splitmix64. Document this if changed
+- **Stego payload format**: 24-byte header + 2-byte checksum (or 8-byte HMAC), always padded to 32 bytes total (even in checksum mode). Use `MIN_PAYLOAD_SIZE` (=26) and `MIN_PAYLOAD_BITS` (=208) constants in `steganography.rs`
+- **`generate_random_seed()`**: Not cryptographically secure — uses SystemTime + splitmix64 mixing (`seed.rs:16-33`). Uses `unwrap_or_default()` (does NOT panic on pre-UNIX-epoch clocks). Guarantees non-zero output (`if x == 0 { 42 }`)
 - **`ProtectionContext::default()`**: Calls `generate_random_seed()` — the seed is predictable. Doc comment on the `Default` impl warns about this. Users needing cryptographic seeds should use `ProtectionContext::new(intensity, seed)` with a CSPRNG
 - **JPEG transcoder modules**: `header.rs` and `entropy.rs` have `#![allow(dead_code)]` for JPEG spec reference types (color spaces, standard Huffman tables) — keep these
-- **ISCC module** (`src/util/iscc.rs`): Critical component for content identification, exported from `lib.rs`
+- **ISCC module** (`src/util/iscc.rs`): Content identification, exported from `lib.rs`. NOT ISCC-standard compliant — uses custom component codes (`0x12`, `0x33`) and non-standard DCT hash. Produces ISCC-like identifiers that are not interoperable with other ISCC implementations
 - **No `TargetModel`**: This concept was removed. `ProtectionContext::new` takes `(intensity, seed)` only
 - **Steganography seed derivation**: `embed_lsb` and `embed_jpeg_stego` internally derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)` before using `stego_permutation`. When calling internal embed/extract functions directly (outside of `apply()`), ensure seeds match. The public API (`apply()` + `extract_payload()`) handles this correctly
 - **XorShiftRng — two separate implementations**: `src/util/image.rs` has `XorShiftRng` (general-purpose noise/pixel selection) and `src/jpeg_transcoder/stego_f5.rs` has `F5XorShiftRng` (DCT coefficient shuffling). They use different algorithms and produce different sequences for the same seed. Do NOT interchange them — each is paired with their respective embed/extract code paths
@@ -89,7 +93,7 @@ cargo bench                              # Criterion benchmarks
 - **JPEG pixel stego redundancy**: `embed_jpeg_stego` (`steganography.rs`) supports `redundancy > 1` — the embedding loop uses `break` to exit inner loops after each pass completes, allowing the outer `for pass` loop to continue. Extraction always runs 5 passes with majority voting
 - **HuffmanDecoder/HuffmanEncoderTable caching**: In `entropy.rs`, Huffman decoders and encoder lookup tables are pre-built once before the MCU loop. `HuffmanEncoderTable` uses a `[(u16, u8); 256]` array for O(1) symbol→(code,length) lookup. These are internal types — do not rebuild per-MCU
 - **JPEG header parser bounds**: `header.rs:parse()` has guards for `data.len() < 2` (empty input) and `end_pos < 10` (too short for SOF). Segment data end uses `.max(segment_data_start)` to prevent inverted slice ranges when `segment_len` is malformed. Parse errors now include byte offset for debugging
-- **PrecomputedProtector auto-caching**: `apply()` auto-registers generated perturbations via `register_variant` on cache miss. The perturbation is no longer cloned — it is moved into the variant after use. Registration failure is silently ignored (best-effort caching). The `register_variant` method has a doc comment explaining the two-phase design (persist without lock, then insert with write lock)
+- **PrecomputedProtector auto-caching**: `apply()` auto-registers generated perturbations via `register_variant` on cache miss. The perturbation is no longer cloned — it is moved into the variant after use. Registration failure is silently ignored (best-effort caching). The `register_variant` method has a doc comment explaining the two-phase design (persist without lock, then insert with write lock). NOTE: The cache (`RwLock<HashMap>`) has no eviction policy, size limit, or TTL — unbounded growth under sustained load
 - **`subtle` crate for constant-time comparison**: `verify_payload_mac` in `steganography.rs` uses `subtle::ConstantTimeEq::ct_eq()` instead of `==` to prevent timing attacks on HMAC verification
 - **Pipeline intensity semantics**: `intensity` controls only the perturbation stage (noise/Enhanced/Precomputed). Steganography and metadata injection run regardless of intensity value. This is by design — they are orthogonal protection layers
 - **F5 no-zero variant correctness**: `stego_f5.rs` implements a no-zero F5 variant that increments |coef| when |coef|=1 and LSB mismatches, avoiding detectable zero creation. The embed/extract position alignment is preserved because no coefficient is ever zeroed out. The implementation is correct
@@ -105,6 +109,5 @@ cargo bench                              # Criterion benchmarks
 - **JPEG quantization debug assertion**: `assemble_jpeg` has a `debug_assert!` for 8-bit quantization values exceeding 255
 - **`inject_metadata` / `inject_legal_claims` are `Option<bool>`**: Default is `None`, not `true`/`false`. The `None` semantics (use level default) vs explicit `false` (disable) are not well-documented. `with_metadata_injection(false)` and not calling it at all have different effects
 - **`process_bytes` skips dimension validation**: `process()` validates dimensions against `max_dimension` (lib.rs:217) but `process_bytes()` does not (lib.rs:318). Large images can bypass the check via the byte path
-- **ISCC is not ISCC-standard compliant**: `src/util/iscc.rs` uses custom component codes (`0x12`, `0x33`) and a non-standard DCT hash algorithm. It produces ISCC-like identifiers that are not interoperable with other ISCC implementations
-- **`is_enabled()` is dead code**: Defined in the `Protector` trait with default `true`. `PassthroughProtector` overrides it to return `true` (not `false` as some docs claim). The pipeline never calls `is_enabled()` — it uses direct `match level` dispatch
+- **`is_enabled()` is dead code**: Defined in the `Protector` trait with default `true`. `PassthroughProtector` overrides it to return `true`. The pipeline never calls `is_enabled()` — it uses direct `match level` dispatch
 - **`ProtectedVariant::cache_key()` format**: Returns `{hash}_{level}_{intensity}` (not `{uuid}_{hash}_{intensity}`). The UUID (`variant_id`) is generated but not included in the cache key
