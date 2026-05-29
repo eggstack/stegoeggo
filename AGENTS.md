@@ -54,7 +54,7 @@ src/
 
 ## Architecture Documentation
 
-Architecture docs live in `architecture/`. A consolidated fix plan is at `plans/plan.md` — it tracks all documentation discrepancies between docs and code, organized into 5 waves for parallel execution. The individual review files in `plans/` (core-framework.md, jpeg-transcoder.md, protection-strategies.md, utilities-integration.md, stale-items.md, review-summary.md) are source material for the consolidated plan.
+Architecture docs live in `architecture/`. A consolidated fix plan is at `plans/plan.md` — it tracks all documentation discrepancies between docs and code, organized into 5 waves for parallel execution via sub-agents.
 
 ## Build & Test Commands
 
@@ -111,3 +111,7 @@ cargo bench                              # Criterion benchmarks
 - **`process_bytes` skips dimension validation**: `process()` validates dimensions against `max_dimension` (lib.rs:217) but `process_bytes()` does not (lib.rs:318). Large images can bypass the check via the byte path
 - **`is_enabled()` is dead code**: Defined in the `Protector` trait with default `true`. `PassthroughProtector` overrides it to return `true`. The pipeline never calls `is_enabled()` — it uses direct `match level` dispatch
 - **`ProtectedVariant::cache_key()` format**: Returns `{hash}_{level}_{intensity}` (not `{uuid}_{hash}_{intensity}`). The UUID (`variant_id`) is generated but not included in the cache key
+- **Pipeline flow order (JPEG output)**: For JPEG output, the pipeline applies perturbation → encode → DCT stego → metadata (encode happens before stego). For non-JPEG output: perturbation → pixel stego → encode → metadata. The JPEG→JPEG fast path (`apply_multi_protector_bytes`) bypasses perturbation entirely and only applies DCT stego + metadata
+- **CLI file path**: The CLI binary lives at `cloakrs-cli/src/main.rs`, not `src/bin/cloakrs/main.rs`
+- **MIN_PAYLOAD_SIZE vs actual payload size**: `MIN_PAYLOAD_SIZE` (=26) is the minimum valid payload for parsing (24-byte header + 2-byte checksum). `generate_payload()` always produces 32 bytes (padded with zeros). These are different numbers — the constant is a parsing threshold, not the output size
+- **`register_variant` error handling**: The `register_variant()` method returns `Result<()>` and propagates loader errors with `?`. However, `PrecomputedProtector::apply()` calls `let _ = self.register_variant(variant)` — silently discarding errors. The cache is best-effort; registration failure is not fatal
