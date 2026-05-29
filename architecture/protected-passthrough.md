@@ -1,0 +1,35 @@
+# Passthrough Protector
+
+**Source:** `src/protected/passthrough.rs` (~94 lines)
+
+No-op protector for the `Disabled` protection level.
+
+## Implementation
+
+```rust
+pub struct PassthroughProtector;
+
+impl Protector for PassthroughProtector {
+    fn apply(&self, img: &DynamicImage, _ctx: &ProtectionContext) -> Cow<DynamicImage> {
+        Cow::Borrowed(img)  // No modification
+    }
+
+    fn name(&self) -> &str { "passthrough" }
+    fn protection_level(&self) -> ProtectionLevel { ProtectionLevel::Disabled }
+    fn estimated_latency_ms(&self) -> f64 { 0.0 }
+    fn is_enabled(&self) -> bool { false }
+    fn modifies_pixels(&self) -> bool { false }
+}
+```
+
+## Design Notes
+
+- `is_enabled()` returns `false` — the pipeline skips this protector entirely
+- `modifies_pixels()` returns `false` — used by pipeline to decide optimization paths
+- `apply()` returns `Cow::Borrowed` — zero allocation, zero copy
+- `apply_bytes()` uses default implementation (decode → apply → re-encode), but since `apply` is a no-op, the bytes pass through unchanged
+
+## Module Interactions
+
+- **lib.rs**: Selected when `ProtectionLevel::Disabled` is requested
+- **traits.rs**: Implements `Protector` trait
