@@ -7,6 +7,21 @@
 use image::ImageError;
 use thiserror::Error;
 
+use crate::jpeg_transcoder::TranscoderError;
+
+impl From<TranscoderError> for Error {
+    fn from(e: TranscoderError) -> Self {
+        match e {
+            TranscoderError::InvalidFormat(s) => Error::InvalidFormat(s),
+            TranscoderError::Unsupported(s) => Error::InvalidFormat(s),
+            TranscoderError::HuffmanDecode(s) => Error::ImageDecode(s),
+            TranscoderError::HuffmanEncode(s) => Error::ImageEncode(s),
+            TranscoderError::Io(e) => Error::Io(e),
+            TranscoderError::EmbeddingFailed(s) => Error::Steganography(s),
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
@@ -43,9 +58,6 @@ pub enum Error {
     #[error("Steganography error: {0}")]
     Steganography(String),
 
-    #[error("JPEG transcoding error: {0}")]
-    JpegTranscode(String),
-
     #[error("Hash computation error: {0}")]
     HashError(String),
 
@@ -54,9 +66,6 @@ pub enum Error {
 
     #[error("Image data was truncated: {0}")]
     ImageTruncated(String),
-
-    #[error("Image dimensions error: {0}")]
-    Dimensions(String),
 
     #[error("Payload verification failed: {0}")]
     PayloadVerification(String),

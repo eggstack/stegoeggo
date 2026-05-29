@@ -18,10 +18,9 @@ pub enum Error {
     Config(String),
     Image(String),
     Steganography(String),
-    JpegTranscode(String),
     HashError(String),
     InvalidFormat(String),
-    Dimensions(String),
+    ImageTruncated(String),
     PayloadVerification(String),
     Crypto(String),
     #[cfg(feature = "async")]
@@ -33,20 +32,19 @@ pub enum Error {
 
 | Variant | Source | Description |
 |---------|--------|-------------|
-| `ImageDecode` | `image` crate | Failed to decode image bytes |
-| `ImageEncode` | `image`/`jpeg-encoder` | Failed to encode image |
+| `ImageDecode` | `image` crate / `jpeg_transcoder` | Failed to decode image bytes or Huffman data |
+| `ImageEncode` | `image`/`jpeg_transcoder` | Failed to encode image |
 | `Io` | `std::io` | File I/O errors |
 | `Serialization` | `serde_json` | JSON serialization/deserialization failures |
 | `VariantNotFound` | `PrecomputedProtector` | Requested variant not in cache or loader |
 | `InvalidVariant` | `PrecomputedProtector` | Variant data is corrupted or incompatible |
 | `Metadata` | `MetadataTrapProtector` | Metadata injection/extraction failures |
 | `Config` | `ProtectionContext` | Invalid configuration values |
-| `Image` | General | Image processing errors (dimensions, format, etc.) |
+| `Image` | General / `jpeg_transcoder` | Image processing errors (unsupported features, etc.) |
 | `Steganography` | `SteganographyProtector` | Stego embed/extract failures |
-| `JpegTranscode` | `jpeg_transcoder` | JPEG coefficient decode/encode failures |
 | `HashError` | `util::image` | SHA-256 hashing failures |
-| `InvalidFormat` | Pipeline | Input format cannot be determined |
-| `Dimensions` | Pipeline | Image dimensions exceed limits |
+| `InvalidFormat` | Pipeline / `jpeg_transcoder` | Input format cannot be determined |
+| `ImageTruncated` | Pipeline | Image data was truncated |
 | `PayloadVerification` | `SteganographyProtector` | HMAC/checksum verification failed |
 | `Crypto` | `SteganographyProtector` | Cryptographic operation failures |
 | `Task` | `async_api` | Tokio task join errors (async feature only) |

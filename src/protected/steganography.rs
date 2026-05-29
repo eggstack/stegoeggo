@@ -119,22 +119,16 @@ impl SteganographyProtector {
                     }
                 }
 
-                DctStegoF5::new()
-                    .embed_seed_in_quantization_tables(&mut header, seed)
-                    .map_err(|e| Error::Steganography(format!("Seed embed failed: {}", e)))?;
+                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
 
-                JpegTranscoder::encode_coefficients(&header, &coefficients)
-                    .map_err(|e| Error::ImageEncode(format!("DCT encode failed: {}", e)))
+                Ok(JpegTranscoder::encode_coefficients(&header, &coefficients)?)
             }
             Err(_) => {
                 // Progressive JPEG or other unsupported format: seed in Q-tables only.
                 // Parse header, embed seed, reassemble without touching DCT coefficients.
-                let mut header = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)
-                    .map_err(|e| Error::Steganography(format!("Header parse failed: {}", e)))?;
+                let mut header = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
 
-                DctStegoF5::new()
-                    .embed_seed_in_quantization_tables(&mut header, seed)
-                    .map_err(|e| Error::Steganography(format!("Seed embed failed: {}", e)))?;
+                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
 
                 // Reassemble: replace Q-tables in original byte stream
                 Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)
