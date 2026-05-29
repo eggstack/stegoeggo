@@ -206,6 +206,11 @@ impl SteganographyProtector {
 
             let segment_len =
                 u16::from_be_bytes([jpeg_bytes[pos + 2], jpeg_bytes[pos + 3]]) as usize;
+            if pos + 2 + segment_len > jpeg_bytes.len() {
+                return Err(Error::Steganography(
+                    "Malformed JPEG segment length exceeds buffer".into(),
+                ));
+            }
             output.extend_from_slice(&jpeg_bytes[pos..pos + 2 + segment_len]);
             pos += 2 + segment_len;
         }
@@ -837,6 +842,10 @@ impl SteganographyProtector {
                 if embedded >= bits_per_pass {
                     break;
                 }
+            }
+            #[allow(unused_assignments)]
+            {
+                embedded = 0;
             }
         }
 
