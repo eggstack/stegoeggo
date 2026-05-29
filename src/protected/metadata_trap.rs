@@ -3,7 +3,6 @@ use crate::traits::Protector;
 use crate::types::{
     DmiValue, ImageOutputFormat, LegalMetadata, ProtectionContext, ProtectionLevel,
 };
-use crate::util::image::encode_image;
 use crc32fast::Hasher as Crc32Hasher;
 use image::DynamicImage;
 use std::borrow::Cow;
@@ -60,9 +59,18 @@ fn current_date_iso() -> String {
     format!("{:04}-{:02}-{:02}", year, month + 1, day)
 }
 
+/// Metadata injection protector for the Light protection level.
+///
+/// Injects anti-scraping markers into image headers: tEXt/iTXt chunks for PNG,
+/// COM/XMP markers for JPEG, and EXIF/XML for WebP. Also embeds the protection
+/// seed in metadata for later extraction.
+///
+/// When used through the pipeline at `Light` level, operates on bytes (encode,
+/// inject metadata, decode) so that metadata survives in the byte output.
 pub struct MetadataTrapProtector;
 
 impl MetadataTrapProtector {
+    /// Create a new metadata trap protector.
     pub fn new() -> Self {
         Self
     }
@@ -526,53 +534,19 @@ impl Default for MetadataTrapProtector {
 }
 
 impl Protector for MetadataTrapProtector {
-    /// Apply metadata trap protection to the image.
+    /// Metadata injection operates at the byte level (PNG tEXt chunks,
+    /// JPEG COM/APP markers, WebP META chunks). The `DynamicImage` API
+    /// cannot preserve this metadata through encode/decode cycles.
     ///
-    /// # Warning
-    ///
-    /// This method re-encodes the image and re-decodes it via
-    /// `image::load_from_memory()`, which **strips injected PNG/JPEG text
-    /// chunks**. If metadata must survive in the byte stream (e.g., for
-    /// seed extraction), callers MUST use `apply_bytes()` instead.
+    /// This method returns the image unchanged. Use [`apply_bytes`] to
+    /// obtain output bytes with injected metadata, or use the pipeline's
+    /// byte-level paths (`process_bytes` / `apply_light_bytes`).
     fn apply<'a>(
         &self,
         img: &'a DynamicImage,
-        ctx: &ProtectionContext,
+        _ctx: &ProtectionContext,
     ) -> Result<Cow<'a, DynamicImage>> {
-        let metadata = self.generate_poison_metadata(
-            ctx.dmi_value(),
-            ctx.protection_level(),
-            Some(ctx.seed()),
-            ctx.legal_metadata(),
-            ctx.inject_metadata(),
-            ctx.inject_legal_claims(),
-        );
-
-        if metadata.is_empty() {
-            return Ok(Cow::Borrowed(img));
-        }
-
-        let format = ctx
-            .input_format()
-            .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
-
-        let encoded = encode_image(img, format.to_image_format())?;
-
-        let with_metadata = match format {
-            ImageOutputFormat::Png => {
-                self.inject_text_chunks_png(&encoded, &metadata, ctx.dmi_value())?
-            }
-            ImageOutputFormat::Jpeg => {
-                self.inject_text_chunks_jpeg(&encoded, &metadata, ctx.dmi_value())?
-            }
-            ImageOutputFormat::WebP => {
-                self.inject_text_chunks_webp(&encoded, &metadata, ctx.dmi_value())?
-            }
-        };
-
-        let result_img = image::load_from_memory(&with_metadata)?;
-
-        Ok(Cow::Owned(result_img))
+        Ok(Cow::Borrowed(img))
     }
 
     fn apply_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
@@ -593,6 +567,11 @@ impl Protector for MetadataTrapProtector {
 }
 
 impl MetadataTrapProtector {
+    /// Extract the protection seed from image metadata.
+    ///
+    /// Parses PNG tEXt/iTXt chunks, JPEG COM/XMP markers, or WebP metadata
+    /// looking for the `X-Protection-Seed` key. Returns `None` if no seed is found
+    /// or the image format is unrecognized.
     pub fn extract_seed_from_image(img_bytes: &[u8]) -> Option<u64> {
         if img_bytes.len() < 8 {
             return None;

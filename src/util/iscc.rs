@@ -2,12 +2,21 @@ use digest::Digest;
 use image::DynamicImage;
 use sha2::Sha256;
 
+/// ISCC (Immutable Self-Certifying Constituent Content) identifier.
+///
+/// Computed from an image's perceptual and data characteristics.
+/// See the [ISCC specification](https://iscc-project.github.io/) for details.
 #[derive(Debug, Clone)]
 pub struct Iscc {
+    /// Optional metadata code (not set by default).
     pub meta: Option<String>,
+    /// Content-derived identifier (DCT-based perceptual hash of normalized image).
     pub content: String,
+    /// Data-derived identifier (SHA-256 hash of raw image bytes).
     pub data: String,
+    /// Per-file instance identifier (same as `data`).
     pub instance: String,
+    /// Full ISCC URI (e.g., `ISCC:...`).
     pub full: String,
 }
 
@@ -165,10 +174,14 @@ fn encode_iscc_component(header: u8, digest: &[u8]) -> String {
     component.to_base58()
 }
 
+/// Compute an ISCC identifier from a `DynamicImage`.
 pub fn compute_iscc(img: &DynamicImage) -> Iscc {
     Iscc::from_image(img)
 }
 
+/// Compute an ISCC identifier from raw image bytes.
+///
+/// Returns `None` if the bytes cannot be decoded as an image.
 pub fn compute_iscc_from_bytes(bytes: &[u8]) -> Option<Iscc> {
     let img = image::load_from_memory(bytes).ok()?;
     Some(Iscc::from_image(&img))

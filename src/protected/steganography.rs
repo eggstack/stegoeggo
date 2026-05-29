@@ -32,17 +32,51 @@ fn splitmix64(x: u64) -> u64 {
     z ^ (z >> 31)
 }
 
+/// Steganographic protection: embeds hidden payloads in image pixels or DCT coefficients.
+///
+/// For PNG/WebP images, uses LSB (Least Significant Bit) embedding with pseudo-random
+/// pixel selection. For JPEG images, uses F5-style DCT coefficient embedding and
+/// quantization table seed storage.
+///
+/// The embedded payload contains protection metadata (level, seed, intensity, timestamp)
+/// and is verified via checksum or HMAC-SHA256 when a MAC key is configured.
+///
+/// # Extraction
+///
+/// Use [`extract_payload`](Self::extract_payload) or
+/// [`extract_payload_with_key`](Self::extract_payload_with_key) to recover the
+/// embedded metadata. For quick checks, use [`verify_payload`](Self::verify_payload).
+///
+/// # JPEG Behavior
+///
+/// When called through [`apply_bytes`](crate::traits::Protector::apply_bytes) on JPEG
+/// input, the protector uses [`apply_dct_stego_bytes`](Self::apply_dct_stego_bytes) which
+/// embeds the seed in quantization tables (survives re-encoding) and applies F5 DCT
+/// coefficient embedding for baseline JPEGs.
 pub struct SteganographyProtector;
 
 impl SteganographyProtector {
+    /// Create a new steganography protector.
     pub fn new() -> Self {
         Self
     }
 
+    /// Verify that an image contains a valid protection payload.
+    ///
+    /// Returns `true` if a payload is found and its checksum or HMAC is valid.
+    /// For HMAC verification, use [`verify_payload_with_key`](Self::verify_payload_with_key).
     pub fn verify_payload(&self, img: &DynamicImage) -> bool {
         self.verify_payload_with_key(img, &[]).unwrap_or(false)
     }
 
+    /// Apply DCT-based steganography to JPEG bytes.
+    ///
+    /// For baseline JPEGs, performs full F5 embedding in DCT coefficients and stores
+    /// the seed in quantization tables. For progressive JPEGs (which cannot be decoded
+    /// to DCT coefficients), falls back to seed-in-quantization-tables only.
+    ///
+    /// This is the JPEG fast path — it avoids pixel decode/encode cycles and preserves
+    /// quality. Used internally by the pipeline for JPEG-in/JPEG-out flows.
     pub fn apply_dct_stego_bytes(
         &self,
         jpeg_bytes: &[u8],
@@ -204,6 +238,10 @@ impl SteganographyProtector {
         None
     }
 
+    /// Verify protection using a MAC key for HMAC-SHA256 validation.
+    ///
+    /// Returns `Some(true)` if the payload is found and HMAC is valid, `Some(false)` if
+    /// found but HMAC doesn't match, or `None` if no payload is found.
     pub fn verify_payload_with_key(&self, img: &DynamicImage, mac_key: &[u8]) -> Option<bool> {
         // Encode once, delegate to bytes-aware method to avoid double-encoding.
         if let Ok(png_bytes) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
@@ -249,6 +287,10 @@ impl SteganographyProtector {
         None
     }
 
+    /// Verify protection from raw image bytes using a known seed.
+    ///
+    /// For JPEG bytes, checks both DCT quantization table seed and pixel-based stego.
+    /// Falls back to metadata seed extraction if the provided seed doesn't match.
     pub fn verify_payload_from_bytes(&self, img_bytes: &[u8], seed: u64) -> bool {
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
             // Try to extract seed from Q-tables (works for both baseline and progressive)
@@ -271,6 +313,10 @@ impl SteganographyProtector {
         false
     }
 
+    /// Verify protection using a known seed.
+    ///
+    /// Extracts the LSB payload with the given seed and checks both the checksum
+    /// and the embedded seed value. Also tries metadata-extracted seeds as fallback.
     pub fn verify_payload_with_seed(&self, img: &DynamicImage, seed: u64) -> bool {
         let rgba = img.to_rgba8();
 
@@ -307,10 +353,19 @@ impl SteganographyProtector {
         false
     }
 
+    /// Extract the steganographic payload from a protected image.
+    ///
+    /// Tries metadata-extracted seed first, then falls back to common test seeds.
+    /// Returns `None` if no valid payload is found.
     pub fn extract_payload(&self, img: &DynamicImage) -> Option<StegoPayload> {
         self.extract_payload_with_key(img, &[])
     }
 
+    /// Extract the steganographic payload with HMAC verification.
+    ///
+    /// Like [`extract_payload`](Self::extract_payload), but verifies the payload's
+    /// HMAC-SHA256 against the provided MAC key. Returns `None` if no valid payload
+    /// is found or the MAC doesn't match.
     pub fn extract_payload_with_key(
         &self,
         img: &DynamicImage,
@@ -365,7 +420,8 @@ impl SteganographyProtector {
         })
     }
 
-    fn extract_payload_with_seed_and_key(
+    /// Extract the steganographic payload using a known seed and MAC key.
+    pub fn extract_payload_with_seed_and_key(
         &self,
         img: &DynamicImage,
         seed: u64,
@@ -379,6 +435,7 @@ impl SteganographyProtector {
         Self::parse_stego_payload(&payload)
     }
 
+    /// Extract the steganographic payload using a known seed (checksum mode).
     pub fn extract_payload_with_seed(&self, img: &DynamicImage, seed: u64) -> Option<StegoPayload> {
         let rgba = img.to_rgba8();
         let payload = self.extract_with_redundancy(&rgba, seed, &[])?;
@@ -964,6 +1021,10 @@ impl Protector for SteganographyProtector {
     }
 }
 
+/// Extracted steganographic payload containing protection metadata.
+///
+/// Returned by [`SteganographyProtector::extract_payload`] and related methods.
+/// All fields are private — use getter methods to access values.
 #[derive(Debug, Clone)]
 pub struct StegoPayload {
     protection_level: u8,
@@ -973,18 +1034,22 @@ pub struct StegoPayload {
 }
 
 impl StegoPayload {
+    /// The protection level byte (0=Disabled, 1=Light, 2=Standard, 3=Enhanced, 4=Strong).
     pub fn protection_level(&self) -> u8 {
         self.protection_level
     }
 
+    /// The seed used when the protection was applied.
     pub fn seed(&self) -> u64 {
         self.seed
     }
 
+    /// The perturbation intensity (0.0–1.0).
     pub fn intensity(&self) -> f32 {
         self.intensity
     }
 
+    /// The payload format version (currently 1).
     pub fn version(&self) -> u8 {
         self.version
     }

@@ -41,6 +41,13 @@ cloakrs = "0.2"
 image = "0.25"  # Required for DynamicImage
 ```
 
+For async support (Tokio-based WAF/CDN deployments):
+
+```toml
+[dependencies]
+cloakrs = { version = "0.2", features = ["async"] }
+```
+
 ### As a CLI Tool
 
 Build the binary from source:
@@ -177,13 +184,17 @@ let ctx = ProtectionContext::new(0.8, 42)
 let ctx = ProtectionContext::new(0.8, 42);
 ```
 
+> **Note:** `ProtectionContext::default()` uses `generate_random_seed()`, which is **not cryptographically secure** — the seed is predictable from the system clock. For reproducible protection, always pass an explicit seed via `ProtectionContext::new(intensity, seed)`. For adversarial settings, pair with a MAC key.
+
 The MAC key affects:
 - Noise pattern generation
 - Steganography payload verification (HMAC instead of simple checksum)
 
 ### Legal Metadata Injection
 
-Inject real legal metadata (copyright, contact info, usage terms). **Only use for content you own:**
+Inject real legal metadata (copyright, contact info, usage terms). **Only use for content you own.**
+
+Both `with_legal_metadata(...)` (provides the content) and `with_legal_claims(true)` (enables injection) are required — metadata will not be injected without both:
 
 ```rust
 use cloakrs::{ProtectionContext, LegalMetadata, ProtectionLevel};
@@ -438,25 +449,24 @@ For CDN/WAF edge deployment:
 ```rust
 use cloakrs::{
     ProtectionPipeline, ProtectionContext, ProtectedVariant, 
-    ProtectionLevel
+    ProtectionLevel, PrecomputedProtector,
 };
 use image::DynamicImage;
-use std::collections::HashMap;
 
 // 1. Load original images (typically at upload time)
 let original = image::open("original.png")?;
 let hash = cloakrs::compute_image_hash(&original);
 
 // 2. Generate perturbation data
-let pipeline = ProtectionPipeline::new();
 let ctx = ProtectionContext::new(0.5, 42);
 
-// 3. Register precomputed variant
+// Create a PrecomputedProtector to generate and register variants
+let precomputed = PrecomputedProtector::new();
 let (width, height) = original.dimensions();
-let precomputed = pipeline.precomputed.clone();
 
-let perturbation = precomputed.generate_perturbation_data(&original, &ctx)?;
+let perturbation = precomputed.generate_perturbation_data(width, height, &ctx)?;
 
+// 3. Register precomputed variant
 let variant = ProtectedVariant::new(
     hash,
     ProtectionLevel::Strong,
@@ -484,11 +494,12 @@ use cloakrs::{ProtectionPipeline, ProtectionContext, ProtectionLevel, ProtectedV
 // Load variant from storage (Redis, database, etc.)
 let variant: ProtectedVariant = serde_json::from_str(&stored_json)?;
 
-// Register the variant
+// Register the variant on a pipeline
 let pipeline = ProtectionPipeline::new();
 pipeline.register_precomputed_variants(vec![variant])?;
 
 // Now requests hit the fast path
+let ctx = ProtectionContext::new(0.5, seed);
 let img = image::open(requested_image)?;
 let protected = pipeline.process(&img, ProtectionLevel::Strong, &ctx)?;
 ```
@@ -510,9 +521,10 @@ if stego.verify_payload(&img) {
     
     // Extract payload details
     if let Some(payload) = stego.extract_payload(&img) {
-        println!("Protection level: {}", payload.protection_level);
-        println!("Seed: {}", payload.seed);
-        println!("Intensity: {}", payload.intensity);
+        println!("Protection level: {}", payload.protection_level());
+        println!("Seed: {}", payload.seed());
+        println!("Intensity: {:.2}", payload.intensity());
+        println!("Version: {}", payload.version());
     }
 }
 
@@ -585,8 +597,16 @@ let iscc = compute_iscc(&img);
 
 println!("Content Code: {}", iscc.content);
 println!("Data Code: {}", iscc.data);
+println!("Instance Code: {}", iscc.instance);
 println!("Full ISCC: {}", iscc.full);
 ```
+
+The `Iscc` struct fields:
+- `meta` — optional metadata code (not set by default)
+- `content` — content-derived identifier (DCT-based perceptual hash)
+- `data` — data-derived identifier (raw file hash)
+- `instance` — identical to `data` (per-file identifier)
+- `full` — full ISCC URI (e.g., `ISCC:...`)
 
 ### Error Handling
 

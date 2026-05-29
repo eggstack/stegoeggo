@@ -13,13 +13,23 @@ use image::DynamicImage;
 use image::ImageEncoder;
 use std::borrow::Cow;
 
+/// Strategy trait for image protection.
+///
+/// All protection strategies implement this trait. The pipeline selects
+/// the appropriate protector based on the requested [`ProtectionLevel`].
 pub trait Protector: Send + Sync {
+    /// Apply protection to an image, returning either the original (borrowed)
+    /// or a new owned image.
     fn apply<'a>(
         &self,
         img: &'a DynamicImage,
         ctx: &ProtectionContext,
     ) -> Result<Cow<'a, DynamicImage>>;
 
+    /// Apply protection to raw image bytes.
+    ///
+    /// Default implementation decodes, calls [`apply`](Self::apply), and re-encodes.
+    /// Override for byte-level optimizations (e.g., JPEG DCT fast path).
     fn apply_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
         if !self.modifies_pixels() {
             return Ok(img_bytes.to_vec());
@@ -68,12 +78,16 @@ pub trait Protector: Send + Sync {
         Ok(bytes)
     }
 
+    /// Human-readable name for this protector (e.g., "noise", "steganography").
     fn name(&self) -> &'static str;
 
+    /// The protection level this protector implements.
     fn protection_level(&self) -> ProtectionLevel;
 
+    /// Estimated latency in milliseconds for this protector.
     fn estimated_latency_ms(&self) -> u32;
 
+    /// Whether this protector is currently active.
     fn is_enabled(&self) -> bool {
         true
     }
@@ -85,12 +99,21 @@ pub trait Protector: Send + Sync {
     }
 }
 
+/// Trait for persistent storage of precomputed protection variants.
+///
+/// Implement this to back [`PrecomputedProtector`](crate::PrecomputedProtector)
+/// with Redis, a database, filesystem, or any other storage backend.
 pub trait VariantLoader: Send + Sync {
+    /// Load a variant by its cache key. Returns `None` if not found.
     fn load_variant(&self, key: &str) -> Result<Option<crate::types::ProtectedVariant>>;
 
+    /// Persist a variant for later retrieval.
     fn store_variant(&self, variant: &crate::types::ProtectedVariant) -> Result<()>;
 }
 
+/// No-op variant loader that always returns `None` and discards stores.
+///
+/// Used as the default when no persistent storage is configured.
 pub struct NoOpLoader;
 
 impl VariantLoader for NoOpLoader {

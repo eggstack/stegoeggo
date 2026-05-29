@@ -9,12 +9,37 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+/// Precomputed perturbation protector for CDN/WAF edge deployment.
+///
+/// Stores pre-generated perturbation data keyed by `(hash, level, intensity)`,
+/// avoiding the cost of noise generation at request time. On cache miss, generates
+/// the perturbation on-the-fly and auto-registers it for future requests.
+///
+/// Can be backed by a [`VariantLoader`](crate::traits::VariantLoader) for persistent
+/// storage (Redis, database, filesystem).
+///
+/// # Usage
+///
+/// ```ignore
+/// let precomputed = PrecomputedProtector::new();
+///
+/// // Generate perturbation data for an image
+/// let perturbation = precomputed.generate_perturbation_data(width, height, &ctx)?;
+///
+/// // Register for later lookup
+/// let variant = ProtectedVariant::new(hash, ProtectionLevel::Strong, perturbation, 0.5, width, height);
+/// precomputed.register_variant(variant)?;
+///
+/// // At request time, apply() auto-looks up the variant
+/// let protected = precomputed.apply(&img, &ctx)?;
+/// ```
 pub struct PrecomputedProtector {
     variants: RwLock<HashMap<String, ProtectedVariant>>,
     loader: Option<Box<dyn VariantLoader>>,
 }
 
 impl PrecomputedProtector {
+    /// Create a new precomputed protector with in-memory cache only.
     pub fn new() -> Self {
         Self {
             variants: RwLock::new(HashMap::new()),
@@ -53,6 +78,10 @@ impl PrecomputedProtector {
         Ok(())
     }
 
+    /// Register multiple variants in a single batch.
+    ///
+    /// Persists all variants to the loader (if configured) before acquiring
+    /// the write lock, then inserts all entries atomically.
     pub fn register_variants(&self, variants: Vec<ProtectedVariant>) -> Result<()> {
         // Persist to loader first (no lock held — loader may do I/O)
         if let Some(ref loader) = self.loader {
@@ -118,6 +147,13 @@ impl PrecomputedProtector {
         Ok(None)
     }
 
+    /// Generate perturbation data for a given image dimensions and context.
+    ///
+    /// Returns a `Vec<u8>` of length `width * height * 4` (RGBA), where each
+    /// pixel's perturbation is stored as `[R, G, B, A]` with A=128.
+    ///
+    /// The data is deterministic for a given `(width, height, seed, intensity)`
+    /// combination, allowing precomputation at upload time and lookup at serve time.
     pub fn generate_perturbation_data(
         &self,
         width: u32,

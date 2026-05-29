@@ -222,7 +222,7 @@ impl ProtectionPipeline {
 
         match level {
             ProtectionLevel::Disabled => self.passthrough.apply(img, ctx),
-            ProtectionLevel::Light => self.metadata_trap.apply(img, ctx),
+            ProtectionLevel::Light => self.apply_light_bytes(img, ctx).map(Cow::Owned),
             ProtectionLevel::Standard => self
                 .apply_multi_protector(img, ctx, MultiProtector::Noise)
                 .map(Cow::Owned),
@@ -284,10 +284,37 @@ impl ProtectionPipeline {
         self.metadata_trap.inject_bytes(&encoded, ctx)
     }
 
+    /// Light level: metadata injection only, no perturbation or steganography.
+    /// Encodes to bytes, injects metadata, then decodes back to `DynamicImage`.
+    /// Metadata survives in the byte-level output; pixel content is unchanged.
+    fn apply_light_bytes(
+        &self,
+        img: &DynamicImage,
+        ctx: &ProtectionContext,
+    ) -> Result<DynamicImage> {
+        let output_format = ctx
+            .output_format()
+            .or(ctx.input_format())
+            .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
+
+        let encoded = crate::util::image::encode_image(img, output_format.to_image_format())?;
+        let with_metadata = self.metadata_trap.inject_bytes(&encoded, ctx)?;
+        Ok(image::load_from_memory(&with_metadata)?)
+    }
+
+    /// Register precomputed variants for fast lookup during `process` calls.
+    ///
+    /// Delegates to the internal [`PrecomputedProtector`]'s batch registration.
+    /// Variants are keyed by `(hash, level, intensity)` for cache lookup.
     pub fn register_precomputed_variants(&self, variants: Vec<ProtectedVariant>) -> Result<()> {
         self.precomputed.register_variants(variants)
     }
 
+    /// Process image bytes with the specified protection level.
+    ///
+    /// For JPEG-in/JPEG-out, uses the byte-only fast path (DCT stego + metadata,
+    /// no pixel decode). For other formats, decodes to pixels, applies the full
+    /// pipeline, and re-encodes.
     pub fn process_bytes(
         &self,
         img_bytes: &[u8],

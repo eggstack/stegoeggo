@@ -279,7 +279,10 @@ mod scan_utils {
     }
 }
 
-/// Check if JPEG is progressive
+/// Check if JPEG bytes represent a progressive-encoded image.
+///
+/// Parses the JPEG header to detect progressive mode. Returns `false`
+/// for invalid or non-JPEG input.
 pub fn is_progressive_jpeg(jpeg_data: &[u8]) -> bool {
     JpegHeader::parse(jpeg_data)
         .map(|h| h.is_progressive)

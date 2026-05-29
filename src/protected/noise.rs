@@ -6,17 +6,28 @@ use crate::util::image::{apply_perturbation_single_pass, apply_perturbation_sing
 use image::DynamicImage;
 use std::borrow::Cow;
 
+/// Adversarial noise protector for the Standard protection level.
+///
+/// Applies block-based noise patterns, spatial brightness variations, and
+/// frequency-domain perturbation to disrupt AI model training. Noise is
+/// seeded and deterministic for a given `(seed, intensity)` pair.
+///
+/// Supports optional MAC-keyed noise generation where the perturbation
+/// pattern is cryptographically derived from both the seed and MAC key.
 pub struct NoiseProtector {
     intensity_multiplier: f32,
 }
 
 impl NoiseProtector {
+    /// Create a new noise protector with the default intensity multiplier.
     pub fn new() -> Self {
         Self {
             intensity_multiplier: NOISE_INTENSITY_MULTIPLIER,
         }
     }
 
+    /// Create a noise protector with an enhanced intensity multiplier (12.0).
+    /// Used internally by [`EnhancedProtector`](crate::EnhancedProtector).
     pub fn enhanced() -> Self {
         Self {
             intensity_multiplier: 12.0,

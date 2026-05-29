@@ -81,6 +81,11 @@ impl XorShiftRng {
     }
 }
 
+/// Noise generation engine for adversarial perturbation.
+///
+/// Pre-computes the HMAC key (if configured) and spatial seed once,
+/// then reuses them across multiple perturbation passes. Shared
+/// between serial and parallel perturbation paths.
 pub struct NoiseGenerator {
     seed: u64,
     mac_key: Option<Arc<[u8]>>,
@@ -398,6 +403,10 @@ fn apply_perturbation_single_pass_keyed_serial(
     )
 }
 
+/// Compute a SHA-256 hash of an image's raw RGBA pixel data.
+///
+/// Returns the hex-encoded hash string. Used for cache key generation
+/// in precomputed variant lookup.
 pub fn compute_image_hash(img: &DynamicImage) -> String {
     let rgba = img.to_rgba8();
     let bytes = rgba.into_raw();
@@ -409,6 +418,9 @@ pub fn compute_image_hash(img: &DynamicImage) -> String {
     hex::encode(result)
 }
 
+/// Detect the image format from magic bytes.
+///
+/// Returns the `image::ImageFormat` if recognized (PNG, JPEG, or WebP), or `None`.
 pub fn detect_image_format(bytes: &[u8]) -> Option<ImageFormat> {
     use crate::types::ImageOutputFormat;
     ImageOutputFormat::from_magic_bytes(bytes).map(|fmt| match fmt {
@@ -418,6 +430,10 @@ pub fn detect_image_format(bytes: &[u8]) -> Option<ImageFormat> {
     })
 }
 
+/// Encode an image to bytes in the given format with default quality (90).
+///
+/// For JPEG, uses [`jpeg_encoder`](jpeg_encoder) at quality 90.
+/// For PNG and WebP, uses lossless encoding.
 pub fn encode_image(img: &DynamicImage, format: ImageFormat) -> Result<Vec<u8>> {
     encode_image_with_quality(img, format, 90)
 }
@@ -476,7 +492,10 @@ pub fn encode_image_with_quality(
     Ok(buffer)
 }
 
-/// High-level encoding: dispatches by format, supports progressive JPEG.
+/// Encode an image with format selection, progressive JPEG support, and quality control.
+///
+/// When `format` is `None`, defaults to [`DEFAULT_OUTPUT_FORMAT`](crate::types::DEFAULT_OUTPUT_FORMAT).
+/// Progressive and quality options only affect JPEG output.
 pub fn encode_image_with_options(
     img: &DynamicImage,
     format: Option<crate::types::ImageOutputFormat>,
@@ -505,10 +524,17 @@ pub fn encode_image_with_options(
     }
 }
 
+/// Load a `DynamicImage` from raw bytes.
+///
+/// Delegates to `image::load_from_memory` with automatic format detection.
 pub fn load_image_from_bytes(bytes: &[u8]) -> Result<DynamicImage> {
     Ok(image::load_from_memory(bytes)?)
 }
 
+/// Apply a precomputed RGBA perturbation to an image (serial).
+///
+/// The `perturbation` buffer must be `width * height * 4` bytes (RGBA per pixel).
+/// Each channel is adjusted by `(perturbation - 128) / divisor`, clamped to [0, 255].
 pub fn apply_perturbation(img: &RgbaImage, perturbation: &[u8], divisor: i16) -> Result<RgbaImage> {
     let (width, height) = img.dimensions();
 
@@ -544,6 +570,10 @@ pub fn apply_perturbation(img: &RgbaImage, perturbation: &[u8], divisor: i16) ->
 /// Returns the pixel count threshold at which parallelism is worthwhile.
 /// Scales with rayon's thread pool size to avoid unnecessary parallel
 /// overhead on few-core machines or over-parallelization on many cores.
+/// Returns the pixel count threshold above which parallel processing is used.
+///
+/// Scales with `rayon::current_num_threads()` — returns `cores * 64 * 64`.
+/// At 4 cores: 256x256 = 65536. At 1 core: 4096.
 pub fn parallel_threshold() -> usize {
     let cores = rayon::current_num_threads().max(1);
     cores * 64 * 64

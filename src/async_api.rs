@@ -100,58 +100,36 @@ pub async fn process_image_bytes_async(
 
 /// Process multiple images asynchronously and in parallel.
 ///
-/// Spawns each image on a separate tokio blocking thread. Note: the
-/// synchronous protection functions use rayon internally for per-image
-/// parallelism, so there is thread pool overlap — tokio blocking pool
-/// threads each run rayon's thread pool. Under heavy load this may cause
-/// contention; monitor thread counts if processing many large images concurrently.
+/// Runs the entire batch on a single blocking thread. The synchronous
+/// `process_images_parallel` uses rayon internally for per-image
+/// parallelism, avoiding per-image `spawn_blocking` calls that would
+/// cause thread pool overlap and contention.
 #[must_use = "the protected images should be saved or used"]
 pub async fn process_images_parallel_async(
     images: Vec<DynamicImage>,
     level: ProtectionLevel,
     ctx: ProtectionContext,
 ) -> Result<Vec<DynamicImage>> {
-    let handles: Vec<_> = images
-        .into_iter()
-        .map(|img| {
-            let ctx = ctx.clone();
-            tokio::task::spawn_blocking(move || crate::process_image(img, level, &ctx))
-        })
-        .collect();
-
-    let mut results = Vec::with_capacity(handles.len());
-    for handle in handles {
-        results.push(handle.await.map_err(join_err)??);
-    }
-    Ok(results)
+    tokio::task::spawn_blocking(move || crate::process_images_parallel(&images, level, &ctx))
+        .await
+        .map_err(join_err)?
 }
 
 /// Process multiple image bytes asynchronously and in parallel.
 ///
-/// Spawns each image on a separate tokio blocking thread. Note: the
-/// synchronous protection functions use rayon internally for per-image
-/// parallelism, so there is thread pool overlap — tokio blocking pool
-/// threads each run rayon's thread pool. Under heavy load this may cause
-/// contention; monitor thread counts if processing many large images concurrently.
+/// Runs the entire batch on a single blocking thread. The synchronous
+/// `process_images_bytes_parallel` uses rayon internally for per-image
+/// parallelism, avoiding per-image `spawn_blocking` calls that would
+/// cause thread pool overlap and contention.
 #[must_use = "the protected image bytes should be saved or used"]
 pub async fn process_images_bytes_parallel_async(
     images: Vec<Vec<u8>>,
     level: ProtectionLevel,
     ctx: ProtectionContext,
 ) -> Result<Vec<Vec<u8>>> {
-    let handles: Vec<_> = images
-        .into_iter()
-        .map(|img_bytes| {
-            let ctx = ctx.clone();
-            tokio::task::spawn_blocking(move || crate::process_image_bytes(&img_bytes, level, &ctx))
-        })
-        .collect();
-
-    let mut results = Vec::with_capacity(handles.len());
-    for handle in handles {
-        results.push(handle.await.map_err(join_err)??);
-    }
-    Ok(results)
+    tokio::task::spawn_blocking(move || crate::process_images_bytes_parallel(&images, level, &ctx))
+        .await
+        .map_err(join_err)?
 }
 
 /// Verify image bytes asynchronously.

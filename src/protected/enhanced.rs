@@ -5,11 +5,17 @@ use crate::types::{ProtectionContext, ProtectionLevel};
 use image::DynamicImage;
 use std::borrow::Cow;
 
+/// Enhanced adversarial noise protector for the Enhanced protection level.
+///
+/// Uses a higher intensity multiplier (12.0 vs the standard default) via
+/// [`NoiseProtector::enhanced`], producing stronger perturbations that are
+/// more disruptive to AI model training but may introduce visible artifacts.
 pub struct EnhancedProtector {
     inner: NoiseProtector,
 }
 
 impl EnhancedProtector {
+    /// Create a new enhanced protector with 12x intensity multiplier.
     pub fn new() -> Self {
         Self {
             inner: NoiseProtector::enhanced(),

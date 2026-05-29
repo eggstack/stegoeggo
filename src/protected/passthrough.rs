@@ -4,6 +4,10 @@ use crate::types::{ProtectionContext, ProtectionLevel};
 use image::DynamicImage;
 use std::borrow::Cow;
 
+/// No-op protector for the Disabled protection level.
+///
+/// Returns the input image unchanged. Used when no protection is desired
+/// (e.g., whitelisted clients, testing, or as a pipeline placeholder).
 pub struct PassthroughProtector;
 
 impl PassthroughProtector {
