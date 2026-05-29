@@ -301,7 +301,26 @@ pub struct ProtectionContext {
     protection_level: Option<ProtectionLevel>,
     dmi_value: Option<DmiValue>,
     max_dimension: Option<u32>,
+    /// Three-state control for metadata injection (seed, DMI values).
+    ///
+    /// - `None` (default): use level-based defaults — metadata is injected for
+    ///   all protection levels except `Disabled`.
+    /// - `Some(true)`: force-enable metadata injection, overriding the level default.
+    /// - `Some(false)`: force-disable metadata injection, overriding the level default.
+    ///
+    /// Omitting `with_metadata_injection()` (leaving this `None`) differs from
+    /// calling `.with_metadata_injection(false)` for non-`Disabled` levels:
+    /// the former injects metadata; the latter suppresses it.
     inject_metadata: Option<bool>,
+    /// Three-state control for legal claim injection (copyright, artist).
+    ///
+    /// - `None` (default): never inject legal claims (level default is off).
+    /// - `Some(true)`: force-enable legal claim injection.
+    /// - `Some(false)`: force-disable legal claim injection (same as `None`).
+    ///
+    /// Legal claims require `LegalMetadata` to be set via
+    /// [`with_legal_metadata`](ProtectionContext::with_legal_metadata).
+    /// WARNING: Only enable for content you own. May create legal liability otherwise.
     inject_legal_claims: Option<bool>,
     stego_redundancy: usize,
     jpeg_quality: u8,
@@ -433,15 +452,38 @@ impl ProtectionContext {
         self
     }
 
-    /// Enable metadata injection (seed, DMI). This is the default for Standard+ levels.
+    /// Override the level-based default for metadata injection.
+    ///
+    /// When `enable` is `true`, metadata (seed, DMI values) is injected
+    /// regardless of protection level. When `enable` is `false`, metadata
+    /// injection is suppressed even for levels that would normally inject it.
+    ///
+    /// If this method is **not** called, the default behavior depends on the
+    /// protection level: metadata is injected for all levels except `Disabled`.
+    /// This means `.with_metadata_injection(true)` on a `Standard` context is
+    /// a no-op (metadata was already on), while `.with_metadata_injection(false)`
+    /// suppresses it — a meaningful behavioral difference.
     #[must_use]
     pub fn with_metadata_injection(mut self, enable: bool) -> Self {
         self.inject_metadata = Some(enable);
         self
     }
 
-    /// Enable legal claim injection (copyright, artist).
-    /// WARNING: Only enable for content you own. May create legal liability otherwise.
+    /// Override the default for legal claim injection.
+    ///
+    /// When `enable` is `true`, legal claims (copyright, artist) are injected
+    /// into the image metadata. When `enable` is `false`, legal claim injection
+    /// is disabled (same as the default).
+    ///
+    /// Legal claims require [`LegalMetadata`] to be set via
+    /// [`with_legal_metadata`](ProtectionContext::with_legal_metadata).
+    ///
+    /// If this method is **not** called, legal claims are never injected
+    /// regardless of protection level.
+    ///
+    /// # Warning
+    ///
+    /// Only enable for content you own. May create legal liability otherwise.
     #[must_use]
     pub fn with_legal_claims(mut self, enable: bool) -> Self {
         self.inject_legal_claims = Some(enable);
@@ -521,11 +563,20 @@ impl ProtectionContext {
     }
 
     /// Get whether metadata injection is enabled.
+    ///
+    /// Returns the caller's explicit override, if any. `None` means the
+    /// pipeline will apply the level-based default (inject unless `Disabled`).
+    /// The pipeline resolves this by calling
+    /// `inject_metadata.unwrap_or(!matches!(level, Disabled))`.
     pub fn inject_metadata(&self) -> Option<bool> {
         self.inject_metadata
     }
 
     /// Get whether legal claim injection is enabled.
+    ///
+    /// Returns the caller's explicit override, if any. `None` means the
+    /// pipeline will **not** inject legal claims (default is off).
+    /// The pipeline resolves this by calling `inject_legal_claims.unwrap_or(false)`.
     pub fn inject_legal_claims(&self) -> Option<bool> {
         self.inject_legal_claims
     }
