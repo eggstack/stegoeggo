@@ -2,7 +2,7 @@
 
 **Source:** `src/protected/noise.rs` (~129 lines)
 
-Standard adversarial noise protector for the `Standard` protection level.
+Standard adversarial noise protector for the `Standard` protection level. Estimated latency: 3ms.
 
 ## Implementation
 

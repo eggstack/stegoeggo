@@ -2,7 +2,7 @@
 
 **Source:** `src/protected/enhanced.rs` (~79 lines)
 
-Higher-intensity noise protector for the `Enhanced` protection level.
+Higher-intensity noise protector for the `Enhanced` protection level. Estimated latency: 5ms.
 
 ## Implementation
 
@@ -37,7 +37,7 @@ Although `EnhancedProtector` delegates to `NoiseProtector`, it exists as a separ
 
 1. **Pipeline routing** — `ProtectionPipeline` needs distinct protector instances per level
 2. **Different protection level** — `protection_level()` returns `Enhanced`, not `Standard`
-3. **Different latency estimate** — `estimated_latency_ms()` returns ~7.0 vs ~5.0
+3. **Different latency estimate** — `estimated_latency_ms()` returns 5 vs 3
 4. **Semantic clarity** — Clearly separates Standard from Enhanced in the codebase
 
 ## Module Interactions
