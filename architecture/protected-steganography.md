@@ -13,11 +13,11 @@ Offset  Size  Field
 2       8     Seed (u64, little-endian)
 10      2     Intensity (u16, scaled f32)
 12      8     Timestamp (u64, seconds since epoch)
-20      4     Reserved (zeroed)
-24      8     HMAC-SHA256 (with key) or additive checksum (without key)
+20      2     Additive checksum (without MAC key)
+20      8     HMAC-SHA256 first 8 bytes (with MAC key)
 ```
 
-Always padded to 32 bytes (`MIN_PAYLOAD_SIZE`). `MIN_PAYLOAD_BITS = 256`.
+Checksum is 2 bytes (first 16-bit additive checksum). HMAC is 8 bytes (first 8 bytes of HMAC-SHA256). Always padded to 32 bytes. `MIN_PAYLOAD_SIZE = 26` (24-byte header + 2-byte checksum), `MIN_PAYLOAD_BITS = 208`.
 
 ## StegoPayload (Extracted)
 
@@ -66,11 +66,11 @@ pub fn apply_dct_stego_bytes(jpeg_bytes: &[u8], ctx: &ProtectionContext) -> Resu
 ## Extraction & Verification
 
 ```rust
-pub fn extract_payload(img: &DynamicImage, ctx: &ProtectionContext) -> Option<StegoPayload>
-pub fn verify_payload(img: &DynamicImage, ctx: &ProtectionContext) -> bool
-pub fn verify_payload_with_key(img: &DynamicImage, ctx: &ProtectionContext, key: &[u8]) -> Option<bool>
-pub fn verify_payload_from_bytes(bytes: &[u8], ctx: &ProtectionContext) -> bool
-pub fn verify_payload_from_bytes_with_key(bytes: &[u8], ctx: &ProtectionContext, key: &[u8]) -> Option<bool>
+pub fn extract_payload(&self, img: &DynamicImage) -> Option<StegoPayload>
+pub fn verify_payload(&self, img: &DynamicImage) -> bool
+pub fn verify_payload_with_key(&self, img: &DynamicImage, mac_key: &[u8]) -> Option<bool>
+pub fn verify_payload_from_bytes(&self, img_bytes: &[u8], seed: u64) -> bool
+pub fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8]) -> Option<bool>
 ```
 
 ### Verification Flow

@@ -14,7 +14,7 @@ pub struct JpegTranscoder;
 impl JpegTranscoder {
     pub fn decode_coefficients(jpeg_data: &[u8]) -> Result<(JpegHeader, Coefficients)>
     pub fn encode_coefficients(header: &JpegHeader, coefficients: &Coefficients) -> Result<Vec<u8>>
-    pub fn assemble_jpeg(header: &JpegHeader, scan_data: &[u8]) -> Vec<u8>
+    fn assemble_jpeg(header: &JpegHeader, scan_data: &[u8]) -> Result<Vec<u8>>
 }
 ```
 
@@ -32,12 +32,12 @@ impl JpegTranscoder {
 
 ### Assemble
 
-`assemble_jpeg` combines header bytes + scan data bytes. Has `debug_assert!` for 8-bit quantization values exceeding 255.
+`assemble_jpeg` combines header bytes + scan data bytes. Returns `Result<Vec<u8>>`. Has `debug_assert!` for 8-bit quantization values exceeding 255.
 
 ## Coefficients Type
 
 ```rust
-pub type Coefficients = HashMap<u8, Vec<[i64; 64]>>;
+pub type Coefficients = HashMap<u8, Vec<[i16; 64]>>;
 ```
 
 Component ID → list of 8×8 blocks (64 DCT coefficients each). Stored in natural (row-major) order.
@@ -45,7 +45,7 @@ Component ID → list of 8×8 blocks (64 DCT coefficients each). Stored in natur
 ## Scan Data Utilities
 
 ```rust
-pub fn get_scan_data_start(data: &[u8]) -> Result<usize>
+pub fn get_scan_data_start(data: &[u8]) -> Option<usize>
 ```
 
 Finds the SOS (Start of Scan) marker position. Uses `checked_add` to prevent integer overflow with malformed segment lengths. Advances past all non-scan markers (APP, DQT, DHT, COM, etc.).
@@ -62,9 +62,12 @@ Checks if the JPEG uses progressive coding (SOF2 marker). Used to decide between
 
 ```rust
 pub enum TranscoderError {
-    InvalidData(String),
-    UnsupportedFeature(String),
-    EncodingError(String),
+    InvalidFormat(String),
+    Unsupported(String),
+    HuffmanDecode(String),
+    HuffmanEncode(String),
+    Io(std::io::Error),
+    EmbeddingFailed(String),
 }
 ```
 
