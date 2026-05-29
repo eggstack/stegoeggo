@@ -44,10 +44,10 @@ Data Mining Inhibitor enum for IPTC metadata:
 pub enum DmiValue {
     Unspecified,
     Allowed,
-    Prohibited,
     ProhibitedAiMlTraining,
     ProhibitedGenAiMlTraining,
     ProhibitedExceptSearchEngineIndexing,
+    Prohibited,
     ProhibitedSeeConstraints,
 }
 ```

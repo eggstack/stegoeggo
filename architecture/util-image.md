@@ -18,8 +18,6 @@ pub struct XorShiftRng { state: u64 }
 - `gen_range(range: Range<f32>)` — Returns f32 in given range
 - `gen_range_usize(range: Range<usize>)` — Returns usize in given range
 
-**WARNING:** This is NOT the same as `F5XorShiftRng` in `stego_f5.rs`. They use different algorithms and produce different sequences for the same seed. Do NOT interchange them.
-
 ## NoiseGenerator
 
 HMAC-SHA256-based keyed seed derivation for deterministic noise.

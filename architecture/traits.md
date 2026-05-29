@@ -13,7 +13,6 @@ pub trait Protector: Send + Sync {
     fn name(&self) -> &str;
     fn protection_level(&self) -> ProtectionLevel;
     fn estimated_latency_ms(&self) -> u32;
-    fn is_enabled(&self) -> bool;
     fn modifies_pixels(&self) -> bool;
 }
 ```
@@ -25,7 +24,6 @@ pub trait Protector: Send + Sync {
 - **`name`** — Human-readable name for logging/debugging.
 - **`protection_level`** — Which `ProtectionLevel` this protector handles.
 - **`estimated_latency_ms`** — Expected processing time for performance budgets.
-- **`is_enabled`** — Whether this protector is active (default: `true`). Dead code — the pipeline never calls it.
 - **`modifies_pixels`** — Whether this protector changes pixel data (metadata-only protectors return false).
 
 ### Implementations

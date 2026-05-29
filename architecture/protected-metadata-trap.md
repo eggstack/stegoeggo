@@ -19,12 +19,12 @@ Seven variants mapped to IPTC XMP property names:
 | DmiValue | IPTC Property |
 |----------|---------------|
 | `Unspecified` | Not injected |
-| `Allowed` | `Iptc4xmpExt:DMI_Allowed` |
-| `Prohibited` | `Iptc4xmpExt:DMI_Prohibited` |
-| `ProhibitedAiMlTraining` | `Iptc4xmpExt:DMI_ProhibitedAiMlTraining` |
-| `ProhibitedGenAiMlTraining` | `Iptc4xmpExt:DMI_ProhibitedGenAiMlTraining` |
-| `ProhibitedScraping` | `Iptc4xmpExt:DMI_ProhibitedScraping` |
-| `ProhibitedAnyProcessing` | `Iptc4xmpExt:DMI_ProhibitedAnyProcessing` |
+| `Allowed` | `Iptc4xmpExt:DMI-Allowed` |
+| `Prohibited` | `Iptc4xmpExt:DMI-Prohibited` |
+| `ProhibitedAiMlTraining` | `Iptc4xmpExt:DMI-Prohibited` |
+| `ProhibitedGenAiMlTraining` | `Iptc4xmpExt:DMI-Prohibited` |
+| `ProhibitedExceptSearchEngineIndexing` | `Iptc4xmpExt:DMI-Prohibited` |
+| `ProhibitedSeeConstraints` | `Iptc4xmpExt:DMI-Prohibited` |
 
 ### DMI Auto-Mapping
 
