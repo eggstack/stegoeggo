@@ -4,6 +4,23 @@
 
 Systematically review all 21 architecture documents against the actual codebase to verify claims, identify discrepancies, surface bugs/improvements, and produce actionable improvement plans. Each module group is reviewed by a dedicated subagent that writes its findings to `plans/`.
 
+## Status: COMPLETE (In Iterative Improvement)
+
+All 3 phases have been executed:
+- **Phase 1**: 4 parallel module group reviews — completed
+- **Phase 2**: Stale item pruning — completed
+- **Phase 3**: Summary & consolidation — completed
+
+Review outputs in `plans/`:
+- `plans/core-framework.md` — 175 lines, 8 discrepancies, 2 potential bugs
+- `plans/protection-strategies.md` — 277 lines, 10 discrepancies, cross-cutting findings
+- `plans/jpeg-transcoder.md` — 144 lines, 11 discrepancies, progressive JPEG edge cases
+- `plans/utilities-integration.md` — 202 lines, 17 discrepancies, ISCC non-compliance noted
+- `plans/stale-items.md` — 80 lines, 64 stale items (38 dead refs, 17 superseded, 2 incomplete, 6 duplicates, 5 outdated cross-refs)
+- `plans/review-summary.md` — 174 lines, executive summary with 25 prioritized action items
+
+Key findings: 83 discrepancies total, 15 potential bugs, 50+ stale items. Most critical: DmiValue variant names wrong, `mac_key` type wrong, steganography method signatures completely wrong, util-image.md severely outdated.
+
 ## Scope
 
 All files in `architecture/` **except** `review_plan.md` itself (this file). The 21 documents are organized into 4 module groups for parallel subagent review.
@@ -13,10 +30,12 @@ All files in `architecture/` **except** `review_plan.md` itself (this file). The
 ```
 architecture/           # Source architecture documents (read-only during review)
 plans/                  # Output: one improvement plan per module group
-  core-framework.md     # Subagent 1 output
-  protection-strategies.md  # Subagent 2 output
-  jpeg-transcoder.md    # Subagent 3 output
-  utilities-integration.md   # Subagent 4 output
+  core-framework.md     # Subagent 1 output ✓
+  protection-strategies.md  # Subagent 2 output ✓
+  jpeg-transcoder.md    # Subagent 3 output ✓
+  utilities-integration.md   # Subagent 4 output ✓
+  stale-items.md        # Phase 2 output ✓
+  review-summary.md     # Phase 3 output ✓
 ```
 
 ---
@@ -320,3 +339,11 @@ After Phase 2 completes, produce a final summary:
 - The review is read-only — no code changes, only findings written to `plans/`
 - Subagents may discover that architecture docs are accurate — that is a valid finding (document "Verified" claims)
 - If a subagent finds a potential bug, it should describe the issue and location but NOT propose a fix (this is a review plan, not an execution plan)
+
+## Execution History
+
+- Phase 1: All 4 subagents ran in parallel (no branch conflicts — read-only review writing to separate files)
+- Phase 2: Stale item pruning completed — 64 stale items found across 5 categories
+- Phase 3: Summary consolidated — 25 prioritized action items (P0/P1/P2)
+- Key divergence: util-image.md was found to be severely outdated (nearly every function signature wrong), suggesting it was written for an earlier API version and never updated
+- Note: `protected-noise.md` claims `NOISE_INTENSITY_MULTIPLIER` is referenced in `util/seed.rs` — verified this is false (only in `constants.rs` and `noise.rs`). Similarly, `protected-metadata-trap.md` claims `STEGO_OFFSET_SEED_1` is used in metadata_trap.rs — verified false (only in `steganography.rs`)
