@@ -285,12 +285,9 @@ impl JpegHeader {
                 0xFE => {
                     // Skip comments
                 }
-                // Restart interval
-                0xDD => {
-                    if segment_data.len() >= 2 {
-                        header.restart_interval =
-                            ((segment_data[0] as u16) << 8) | (segment_data[1] as u16);
-                    }
+                0xDD if segment_data.len() >= 2 => {
+                    header.restart_interval =
+                        ((segment_data[0] as u16) << 8) | (segment_data[1] as u16);
                 }
                 _ => {
                     // Unknown marker - skip
