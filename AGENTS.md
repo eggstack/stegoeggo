@@ -14,7 +14,7 @@
 - **Strategy pattern** via `Protector` trait (`src/traits.rs`) with five protection levels: Disabled, Light, Standard, Enhanced, Strong
 - **Pipeline** (`src/lib.rs`): `ProtectionPipeline` orchestrates multiple protectors based on `ProtectionLevel`
 - **JPEG fast path**: When input/output are both JPEG, operates directly on DCT coefficients via custom transcoder (`src/jpeg_transcoder/`), bypassing pixel decode/encode
-- **Cow returns**: `Protector::apply` returns `Cow<'a, DynamicImage>` to avoid unnecessary cloning
+- **Cow returns**: `Protector::apply` returns `Result<Cow<'a, DynamicImage>>` to avoid unnecessary cloning
 
 ## Module Layout
 
@@ -54,7 +54,7 @@ src/
 
 ## Architecture Documentation
 
-Architecture docs live in `architecture/`. A consolidated fix plan is at `plans/plan.md` — it tracks all documentation discrepancies between docs and code, organized into 5 waves for parallel execution via sub-agents.
+Architecture docs live in `architecture/` (21 files). All docs have been verified against source code. Known open bugs are tracked in `plans/plan.md`.
 
 ## Build & Test Commands
 
