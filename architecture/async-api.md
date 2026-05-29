@@ -7,11 +7,11 @@ Behind the `async` feature flag. Provides tokio-based async wrappers using `spaw
 ## Functions
 
 ```rust
-pub async fn process_image_async(img: DynamicImage, level: ProtectionLevel, ctx: ProtectionContext) -> Cow<'static, DynamicImage>
-pub async fn process_image_bytes_async(img_bytes: Vec<u8>, level: ProtectionLevel, ctx: ProtectionContext) -> Vec<u8>
-pub async fn process_images_parallel_async(images: Vec<DynamicImage>, level: ProtectionLevel, ctx: ProtectionContext) -> Vec<Cow<'static, DynamicImage>>
-pub async fn process_images_bytes_parallel_async(images: Vec<Vec<u8>>, level: ProtectionLevel, ctx: ProtectionContext) -> Vec<Vec<u8>>
-pub async fn verify_image_bytes_async(img_bytes: Vec<u8>, mac_key: Vec<u8>) -> Option<bool>
+pub async fn process_image_async(img: DynamicImage, level: ProtectionLevel, ctx: ProtectionContext) -> Result<DynamicImage>
+pub async fn process_image_bytes_async(img_bytes: Vec<u8>, level: ProtectionLevel, ctx: ProtectionContext) -> Result<Vec<u8>>
+pub async fn process_images_parallel_async(images: Vec<DynamicImage>, level: ProtectionLevel, ctx: ProtectionContext) -> Result<Vec<DynamicImage>>
+pub async fn process_images_bytes_parallel_async(images: Vec<Vec<u8>>, level: ProtectionLevel, ctx: ProtectionContext) -> Result<Vec<Vec<u8>>>
+pub async fn verify_image_bytes_async(img_bytes: Vec<u8>, mac_key: Vec<u8>) -> Result<Option<bool>>
 ```
 
 ## Design Decisions
