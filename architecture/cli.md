@@ -28,7 +28,7 @@ cloakrs [OPTIONS] <INPUT>...
 | | `--metadata` | Inject metadata (None = use level default) | None |
 | | `--legal-claims` | Inject legal claims | false |
 | `-k` | `--key` | Hex cryptographic key | none |
-| `-j` | `--jobs` | Parallel jobs | num_cpus |
+| `-j` | `--jobs` | Parallel jobs | 1 |
 
 ## Input Handling
 

@@ -41,7 +41,7 @@ Pre-built lookup table for O(1) symbol → (code, length) mapping:
 
 ```rust
 struct HuffmanEncoderTable {
-    symbols: [(u16, u8); 256],  // code, bit length
+    entries: [(u16, u8); 256],  // code, bit length
 }
 ```
 
