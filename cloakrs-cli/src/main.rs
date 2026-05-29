@@ -197,6 +197,42 @@ fn is_image_file(path: &Path) -> bool {
     }
 }
 
+fn compute_output_path(
+    input_path: &Path,
+    output_dir: &Option<PathBuf>,
+    output_format: &Option<ImageOutputFormat>,
+    seen: &mut HashMap<PathBuf, usize>,
+) -> Option<PathBuf> {
+    let stem = input_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output")
+        .to_string();
+    let ext = output_format
+        .as_ref()
+        .map(|f| f.extension().to_string())
+        .unwrap_or_else(|| {
+            ImageOutputFormat::from_magic_bytes(&fs::read(input_path).unwrap_or_default())
+                .unwrap_or(DEFAULT_OUTPUT_FORMAT)
+                .extension()
+                .to_string()
+        });
+
+    let count = seen.entry(PathBuf::from(&stem)).or_insert(0);
+    if *count > 0 {
+        let out_path = if let Some(ref dir) = output_dir {
+            dir.join(format!("{}_protected_{}.{}", stem, count, ext))
+        } else {
+            PathBuf::from(format!("{}_protected_{}.{}", stem, count, ext))
+        };
+        *count += 1;
+        Some(out_path)
+    } else {
+        *count = 1;
+        None
+    }
+}
+
 fn process_single_file(
     input_path: &PathBuf,
     output_dir: &Option<PathBuf>,
@@ -459,7 +495,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         use std::collections::HashMap;
 
-        let results: Vec<Result<(PathBuf, PathBuf), String>> = if args.jobs > 1 {
+        let results: Vec<Result<(PathBuf, PathBuf), (PathBuf, String)>> = if args.jobs > 1 {
             let seen_paths: std::sync::Mutex<HashMap<PathBuf, usize>> =
                 std::sync::Mutex::new(HashMap::new());
 
@@ -467,37 +503,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .par_iter()
                 .with_max_len(1)
                 .map(|input_path| {
-                    let stem = input_path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("output")
-                        .to_string();
-                    let ext = output_format
-                        .as_ref()
-                        .map(|f| f.extension().to_string())
-                        .unwrap_or_else(|| {
-                            ImageOutputFormat::from_magic_bytes(
-                                &fs::read(input_path).unwrap_or_default(),
-                            )
-                            .unwrap_or(DEFAULT_OUTPUT_FORMAT)
-                            .extension()
-                            .to_string()
-                        });
-
                     let mut seen = seen_paths.lock().unwrap();
-                    let count = seen.entry(PathBuf::from(&stem)).or_insert(0);
-                    let override_output = if *count > 0 {
-                        let out_path = if let Some(ref dir) = output_dir {
-                            dir.join(format!("{}_protected_{}.{}", stem, count, ext))
-                        } else {
-                            PathBuf::from(format!("{}_protected_{}.{}", stem, count, ext))
-                        };
-                        *count += 1;
-                        Some(out_path)
-                    } else {
-                        *count = 1;
-                        None
-                    };
+                    let override_output =
+                        compute_output_path(input_path, &output_dir, &output_format, &mut seen);
                     drop(seen);
 
                     process_single_file(
@@ -510,7 +518,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         override_output,
                     )
                     .map(|output| (input_path.clone(), output))
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| (input_path.clone(), e.to_string()))
                 })
                 .collect()
         } else {
@@ -519,36 +527,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             input_files
                 .iter()
                 .map(|input_path| {
-                    let stem = input_path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("output")
-                        .to_string();
-                    let ext = output_format
-                        .as_ref()
-                        .map(|f| f.extension().to_string())
-                        .unwrap_or_else(|| {
-                            ImageOutputFormat::from_magic_bytes(
-                                &fs::read(input_path).unwrap_or_default(),
-                            )
-                            .unwrap_or(DEFAULT_OUTPUT_FORMAT)
-                            .extension()
-                            .to_string()
-                        });
-
-                    let count = seen.entry(PathBuf::from(&stem)).or_insert(0);
-                    let override_output = if *count > 0 {
-                        let out_path = if let Some(ref dir) = output_dir {
-                            dir.join(format!("{}_protected_{}.{}", stem, count, ext))
-                        } else {
-                            PathBuf::from(format!("{}_protected_{}.{}", stem, count, ext))
-                        };
-                        *count += 1;
-                        Some(out_path)
-                    } else {
-                        *count = 1;
-                        None
-                    };
+                    let override_output =
+                        compute_output_path(input_path, &output_dir, &output_format, &mut seen);
 
                     process_single_file(
                         input_path,
@@ -560,13 +540,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         override_output,
                     )
                     .map(|output| (input_path.clone(), output))
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| (input_path.clone(), e.to_string()))
                 })
                 .collect()
         };
 
         let mut success_count = 0;
-        let mut failed_count = 0;
+        let mut failed_files: Vec<PathBuf> = Vec::new();
 
         for result in results {
             match result {
@@ -578,22 +558,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("{}", output_path.display());
                     }
                 }
-                Err(e) => {
-                    failed_count += 1;
-                    eprintln!("Error: {}", e);
+                Err((path, msg)) => {
+                    failed_files.push(path);
+                    eprintln!("Error: {}", msg);
                 }
             }
         }
 
-        if args.verbose || failed_count > 0 {
+        if args.verbose || !failed_files.is_empty() {
             println!(
                 "\nCompleted: {} succeeded, {} failed",
-                success_count, failed_count
+                success_count,
+                failed_files.len()
             );
         }
 
-        if failed_count > 0 {
-            return Err(format!("{} file(s) failed to process", failed_count).into());
+        if !failed_files.is_empty() {
+            return Err(format!(
+                "{} file(s) failed to process: {}",
+                failed_files.len(),
+                failed_files
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+            .into());
         }
     } else {
         let input_path = &input_files[0];
