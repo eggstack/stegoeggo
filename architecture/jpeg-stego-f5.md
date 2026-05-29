@@ -15,8 +15,8 @@ Static methods for F5 coefficient manipulation.
 ## Seed Embedding in Quantization Tables
 
 ```rust
-pub fn embed_seed_in_quantization_tables(header: &mut JpegHeader, seed: u64) -> bool
-pub fn extract_seed_from_quantization_tables(header: &JpegHeader) -> Option<u64>
+pub fn embed_seed_in_quantization_tables(&self, header: &mut JpegHeader, seed: u64) -> Result<()>
+pub fn extract_seed_from_quantization_tables(&self, header: &JpegHeader) -> Option<u64>
 ```
 
 Embeds 12 bytes in quantization table LSBs:
@@ -32,8 +32,8 @@ Clears quantization table LSBs with `&= 0xFE`. A quantization value of 1 becomes
 ## F5 Embedding
 
 ```rust
-pub fn embed_f5(coefficients: &mut Coefficients, payload: &[u8], seed: u64) -> Result<()>
-pub fn extract_f5(coefficients: &Coefficients, expected_bits: usize, seed: u64) -> Result<Vec<u8>>
+pub fn embed_f5(coefficients: &mut Coefficients, payload: &[u8], seed: u64) -> Result<usize>
+pub fn extract_f5(coefficients: &Coefficients, expected_bits: usize, seed: u64) -> Vec<u8>
 ```
 
 ### F5 Algorithm
@@ -52,12 +52,14 @@ When |coef|==1 and LSB mismatches:
 
 This avoids detectable zero creation. The embed/extract position alignment is preserved because no coefficient is ever zeroed out.
 
-### Majority Voting
+### Redundancy and Majority Voting
 
-Extraction runs 5 passes with majority voting:
-- Each pass uses different seed derivation
-- For each bit position, take the majority value across passes
+F5 extraction handles redundancy-based majority voting in a single pass (not multiple passes):
+- Embedding repeats bits `redundancy` times before writing to coefficients
+- Extraction reads all repeated bits and takes the majority value per bit position
 - Robust against noise and perturbation
+
+Note: The 5-pass extraction logic with multiple seed derivations is in `steganography.rs` (`extract_with_redundancy`), not in F5 extraction.
 
 ## F5XorShiftRng
 
