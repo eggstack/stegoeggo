@@ -343,10 +343,7 @@ impl ProtectionPipeline {
         }
     }
 
-    fn validate_jpeg_dimensions_from_bytes(
-        img_bytes: &[u8],
-        max_dim: Option<u32>,
-    ) -> Result<()> {
+    fn validate_jpeg_dimensions_from_bytes(img_bytes: &[u8], max_dim: Option<u32>) -> Result<()> {
         if let Some(max) = max_dim {
             let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)
                 .map_err(|e| Error::ImageDecode(format!("Failed to parse JPEG header: {}", e)))?;

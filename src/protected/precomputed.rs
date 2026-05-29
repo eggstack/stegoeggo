@@ -61,9 +61,7 @@ impl PrecomputedProtector {
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            variants: RwLock::new(LruCache::new(
-                NonZeroUsize::new(capacity).unwrap(),
-            )),
+            variants: RwLock::new(LruCache::new(NonZeroUsize::new(capacity).unwrap())),
             loader: None,
         }
     }
