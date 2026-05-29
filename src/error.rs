@@ -79,3 +79,156 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_image_decode_display() {
+        let err = Error::ImageDecode("failed to decode PNG".to_string());
+        let s = err.to_string();
+        assert!(s.contains("Image decoding error"));
+        assert!(s.contains("failed to decode PNG"));
+    }
+
+    #[test]
+    fn error_image_encode_display() {
+        let err = Error::ImageEncode("encoding failed".to_string());
+        let s = err.to_string();
+        assert!(s.contains("Image encoding error"));
+        assert!(s.contains("encoding failed"));
+    }
+
+    #[test]
+    fn error_io_display() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let err: Error = io_err.into();
+        let s = err.to_string();
+        assert!(s.contains("IO error"));
+    }
+
+    #[test]
+    fn error_serialization_display() {
+        let json_err = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
+        let err: Error = json_err.into();
+        let s = err.to_string();
+        assert!(s.contains("Serialization error"));
+    }
+
+    #[test]
+    fn error_variant_not_found_display() {
+        let err = Error::VariantNotFound("variant-abc".to_string());
+        let s = err.to_string();
+        assert!(s.contains("Variant not found"));
+        assert!(s.contains("variant-abc"));
+    }
+
+    #[test]
+    fn error_invalid_variant_display() {
+        let err = Error::InvalidVariant("corrupted data".to_string());
+        let s = err.to_string();
+        assert!(s.contains("Invalid variant format"));
+        assert!(s.contains("corrupted data"));
+    }
+
+    #[test]
+    fn error_metadata_display() {
+        let err = Error::Metadata("missing required field".to_string());
+        let s = err.to_string();
+        assert!(s.contains("Metadata error"));
+        assert!(s.contains("missing required field"));
+    }
+
+    #[test]
+    fn error_config_display() {
+        let err = Error::Config("invalid key size".to_string());
+        let s = err.to_string();
+        assert!(s.contains("Configuration error"));
+        assert!(s.contains("invalid key size"));
+    }
+
+    #[test]
+    fn error_steganography_display() {
+        let err = Error::Steganography("embedding failed".to_string());
+        let s = err.to_string();
+        assert!(s.contains("Steganography error"));
+        assert!(s.contains("embedding failed"));
+    }
+
+    #[test]
+    fn error_hash_error_display() {
+        let err = Error::HashError("invalid hash".to_string());
+        let s = err.to_string();
+        assert!(s.contains("Hash computation error"));
+        assert!(s.contains("invalid hash"));
+    }
+
+    #[test]
+    fn error_invalid_format_display() {
+        let err = Error::InvalidFormat("unknown format".to_string());
+        let s = err.to_string();
+        assert!(s.contains("Invalid image format"));
+        assert!(s.contains("unknown format"));
+    }
+
+    #[test]
+    fn error_image_truncated_display() {
+        let err = Error::ImageTruncated("unexpected EOF".to_string());
+        let s = err.to_string();
+        assert!(s.contains("Image data was truncated"));
+        assert!(s.contains("unexpected EOF"));
+    }
+
+    #[test]
+    fn error_payload_verification_display() {
+        let err = Error::PayloadVerification("checksum mismatch".to_string());
+        let s = err.to_string();
+        assert!(s.contains("Payload verification failed"));
+        assert!(s.contains("checksum mismatch"));
+    }
+
+    #[test]
+    fn error_crypto_display() {
+        let err = Error::Crypto("key derivation failed".to_string());
+        let s = err.to_string();
+        assert!(s.contains("Cryptographic error"));
+        assert!(s.contains("key derivation failed"));
+    }
+
+    #[test]
+    fn error_from_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
+        let err: Error = io_err.into();
+        match err {
+            Error::Io(e) => assert_eq!(e.kind(), std::io::ErrorKind::PermissionDenied),
+            _ => panic!("Expected Error::Io"),
+        }
+    }
+
+    #[test]
+    fn error_from_serde_json() {
+        let json_err = serde_json::from_str::<serde_json::Value>("not json").unwrap_err();
+        let err: Error = json_err.into();
+        match err {
+            Error::Serialization(_) => {}
+            _ => panic!("Expected Error::Serialization"),
+        }
+    }
+
+    #[test]
+    fn error_all_variants_constructible() {
+        let _ = Error::ImageDecode("test".to_string());
+        let _ = Error::ImageEncode("test".to_string());
+        let _ = Error::VariantNotFound("test".to_string());
+        let _ = Error::InvalidVariant("test".to_string());
+        let _ = Error::Metadata("test".to_string());
+        let _ = Error::Config("test".to_string());
+        let _ = Error::Steganography("test".to_string());
+        let _ = Error::HashError("test".to_string());
+        let _ = Error::InvalidFormat("test".to_string());
+        let _ = Error::ImageTruncated("test".to_string());
+        let _ = Error::PayloadVerification("test".to_string());
+        let _ = Error::Crypto("test".to_string());
+    }
+}
