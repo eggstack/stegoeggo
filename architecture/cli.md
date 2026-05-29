@@ -14,7 +14,7 @@ cloakrs [OPTIONS] <INPUT>...
 
 | Flag | Long | Description | Default |
 |------|------|-------------|---------|
-| `-o` | `--output` | Output file (single) or directory (batch) | stdin/stdout |
+| `-o` | `--output` | Output directory (for batch) or output file (for single) | current directory |
 | `-V` | `--verify` | Verify protection signature | false |
 | `-l` | `--level` | Protection level | standard |
 | `-i` | `--intensity` | Float 0.0–1.0 | 0.5 |
@@ -25,16 +25,17 @@ cloakrs [OPTIONS] <INPUT>...
 | | `--progressive` | Progressive JPEG | false |
 | `-v` | `--verbose` | Verbose output | false |
 | `-d` | `--dmi` | DMI metadata value | auto |
-| | `--metadata` | Inject metadata | false |
+| | `--metadata` | Inject metadata (None = use level default) | None |
 | | `--legal-claims` | Inject legal claims | false |
 | `-k` | `--key` | Hex cryptographic key | none |
 | `-j` | `--jobs` | Parallel jobs | num_cpus |
 
 ## Input Handling
 
-- Single file: processes and outputs to stdout or `-o` file
+- Single file: processes and outputs to current directory or `-o` directory
 - Multiple files / directory: batch mode, outputs to `-o` directory
-- Reads from stdin when no input files specified
+- Output filename is always `{stem}_protected.{ext}`
+- Exits with error when no input files are found
 
 ## Batch Processing
 
@@ -42,21 +43,22 @@ When multiple inputs are provided:
 - Uses rayon-based parallel processing with `-j` jobs
 - Preserves directory structure in output
 - Progress reporting with verbose mode
+- Rayon thread pool initialization fails silently if already initialized
 
 ## Verification Mode (`-V`)
 
 1. Load image bytes
 2. Extract seed from metadata (PNG tEXt, JPEG COM, WebP META)
-3. Check DCT stego for JPEG images
-4. Report protection details (level, seed, intensity)
-5. Verify HMAC signature if key provided
+3. If seed found: report it and print protection details
+4. If no seed: fall back to LSB stego payload extraction (pixel stego)
+5. Report protection details (level, seed, intensity) from extracted payload
+6. No HMAC key handling in verify path — verification is informational only
 
 ## Format Auto-Detection
 
 1. Check `--format` flag
-2. Check output file extension
-3. Detect from input magic bytes
-4. Default to input format
+2. Detect from input magic bytes
+3. Default to PNG
 
 ## Dependencies
 

@@ -21,8 +21,8 @@ pub struct ProtectionPipeline {
 
 ### Key Methods
 
-- `process(&img, level, &ctx) -> Cow<DynamicImage>` — Pixel-level processing
-- `process_bytes(&img_bytes, level, &ctx) -> Vec<u8>` — Byte-level processing (JPEG fast path)
+- `process(&img, level, &ctx) -> Cow<DynamicImage>` — Pixel-level processing (validates dimensions)
+- `process_bytes(&img_bytes, level, &ctx) -> Vec<u8>` — Byte-level processing (no dimension validation)
 - `register_precomputed_variants(variants)` — Register precomputed perturbations for CDN
 
 ### Pipeline Flow (Standard/Enhanced/Strong)
@@ -39,17 +39,29 @@ pub struct ProtectionPipeline {
    c. Inject metadata to bytes
 ```
 
-The JPEG fast path (`apply_multi_protector_bytes`) operates directly on DCT coefficients via `JpegTranscoder`, bypassing pixel decode/encode cycles. This is critical for the sub-10ms latency target.
+The JPEG fast path (`apply_multi_protector_bytes`) operates directly on DCT coefficients via `JpegTranscoder`, bypassing pixel decode/encode cycles. It only triggers when **both** input and output are JPEG — format conversion always takes the full pipeline. This is critical for the sub-10ms latency target.
+
+### Light Level Flow
+
+`process_bytes` routes `Light` level through `metadata_trap.apply_bytes()`, which internally encodes → injects metadata → decodes. This can alter format/quality due to the encode/decode cycle. For byte-level output with metadata intact, use `process_bytes()` or `apply_bytes()` directly.
+
+### JPEG→JPEG Fast Path (bypasses perturbation)
+
+When both input and output are JPEG, `apply_multi_protector_bytes` skips perturbation entirely (no pixel decode/encode) and only applies DCT steganography + metadata injection. This preserves original quality and avoids lossy re-encoding artifacts.
 
 ## Convenience Functions
 
 Free functions that use a `LazyLock<ProtectionPipeline>` singleton:
 
 - `process_image(img, level, &ctx)` — Single image, pixel path
-- `process_image_bytes(bytes, level, &ctx)` — Single image, byte path
+- `process_image_bytes(bytes, level, &ctx)` — Single image, byte path. Auto-detects input format from magic bytes and sets `input_format` on context if not already set.
 - `process_images_parallel(images, level, &ctx)` — Rayon parallel batch
 - `process_images_bytes_parallel(images, level, &ctx)` — Parallel batch, byte path
-- `verify_image_bytes(bytes, mac_key) -> Option<bool>` — Verify protection signature
+- `verify_image_bytes(bytes, mac_key) -> Option<bool>` — Free function (not a pipeline method). Checks metadata seed extraction, then falls back to LSB stego payload extraction. No DCT stego verification. No HMAC key handling in the verify path.
+
+## Dimension Validation
+
+`process()` validates image dimensions against `max_dimension` from the context and returns an error if exceeded. `process_bytes()` does **not** perform this validation — large images can bypass the check via the byte path.
 
 ## Format Routing
 
