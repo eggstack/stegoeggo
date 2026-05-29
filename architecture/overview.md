@@ -15,7 +15,7 @@ Input Image (bytes or DynamicImage)
          │
          ├── Disabled  → PassthroughProtector (no-op)
          │
-         ├── Light     → MetadataTrapProtector (metadata only, no pixel change)
+         ├── Light     → MetadataTrapProtector (metadata only, encodes and re-decodes via apply_light_bytes)
          │
          ├── Standard  → NoiseProtector + SteganographyProtector + MetadataTrapProtector
          │

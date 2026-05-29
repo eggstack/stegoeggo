@@ -47,8 +47,8 @@ pub enum DmiValue {
     Prohibited,
     ProhibitedAiMlTraining,
     ProhibitedGenAiMlTraining,
-    ProhibitedScraping,
-    ProhibitedAnyProcessing,
+    ProhibitedExceptSearchEngineIndexing,
+    ProhibitedSeeConstraints,
 }
 ```
 
@@ -73,12 +73,14 @@ ProtectionContext::new(intensity, seed)  // intensity clamped to [0.0, 1.0]
 | `protection_level` | `Option<ProtectionLevel>` | None | Override level (crate-internal) |
 | `dmi_value` | `Option<DmiValue>` | None | IPTC DMI override |
 | `max_dimension` | `Option<u32>` | None | Resize constraint |
-| `inject_metadata` | `bool` | true | Enable metadata injection |
-| `inject_legal_claims` | `bool` | false | Enable legal metadata |
-| `stego_redundancy` | `u8` | 2 | Stego passes (1–5) |
+| `inject_metadata` | `Option<bool>` | None | Enable metadata injection |
+| `inject_legal_claims` | `Option<bool>` | None | Enable legal metadata |
+| `stego_redundancy` | `usize` | 2 | Stego passes (1–5) |
 | `jpeg_quality` | `u8` | 90 | JPEG encoding quality |
 | `progressive_jpeg` | `bool` | false | Progressive JPEG encoding |
 | `config` | `Option<Arc<ProtectionConfig>>` | None | `#[serde(skip)]` — MAC key + legal metadata |
+
+**Note:** `None` for `inject_metadata`/`inject_legal_claims` means "use level default" (enabled for Standard+). Explicit `false` disables injection.
 
 ### Builder Methods
 
@@ -97,7 +99,7 @@ Shared heavy configuration wrapped in `Arc`:
 
 ```rust
 pub struct ProtectionConfig {
-    pub mac_key: Vec<u8>,
+    pub mac_key: Option<Vec<u8>>,
     pub legal_metadata: Option<LegalMetadata>,
 }
 ```
@@ -114,7 +116,7 @@ Precomputed perturbation storage for CDN/WAF:
 
 ```rust
 pub struct ProtectedVariant {
-    uuid: Uuid,
+    variant_id: uuid::Uuid,
     original_hash: String,
     perturbation_data: Vec<u8>,
     intensity: f32,
@@ -123,14 +125,14 @@ pub struct ProtectedVariant {
 }
 ```
 
-- `cache_key()` — Returns `{uuid}_{hash}_{intensity}` for CDN caching
+- `cache_key()` — Returns `{hash}_{level}_{intensity}` for CDN caching
 - `new(hash, level, perturbation_data, intensity, width, height)` — No target model parameter
 
 ## StegoPayload
 
 Extracted stego data (returned from `SteganographyProtector::extract_payload`):
 
-- `protection_level() -> ProtectionLevel`
+- `protection_level() -> u8`
 - `seed() -> u64`
 - `intensity() -> f32`
 - `version() -> u8`
