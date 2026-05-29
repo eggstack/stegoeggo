@@ -12,7 +12,7 @@ pub trait Protector: Send + Sync {
     fn apply_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Vec<u8>;
     fn name(&self) -> &str;
     fn protection_level(&self) -> ProtectionLevel;
-    fn estimated_latency_ms(&self) -> f64;
+    fn estimated_latency_ms(&self) -> u32;
     fn is_enabled(&self) -> bool;
     fn modifies_pixels(&self) -> bool;
 }
@@ -25,19 +25,19 @@ pub trait Protector: Send + Sync {
 - **`name`** — Human-readable name for logging/debugging.
 - **`protection_level`** — Which `ProtectionLevel` this protector handles.
 - **`estimated_latency_ms`** — Expected processing time for performance budgets.
-- **`is_enabled`** — Whether this protector is active (e.g., `PassthroughProtector` returns false).
+- **`is_enabled`** — Whether this protector is active (default: `true`). Dead code — the pipeline never calls it.
 - **`modifies_pixels`** — Whether this protector changes pixel data (metadata-only protectors return false).
 
 ### Implementations
 
 | Protector | Level | modifies_pixels | estimated_latency_ms |
 |-----------|-------|-----------------|---------------------|
-| `PassthroughProtector` | Disabled | false | 0.0 |
-| `MetadataTrapProtector` | Light | false | ~1.0 |
-| `NoiseProtector` | Standard | true | ~5.0 |
-| `EnhancedProtector` | Enhanced | true | ~7.0 |
-| `PrecomputedProtector` | Strong | true | ~2.0 (cache hit) |
-| `SteganographyProtector` | Standard | true | ~3.0 |
+| `PassthroughProtector` | Disabled | false | 0 |
+| `MetadataTrapProtector` | Light | false | 2 |
+| `NoiseProtector` | Standard | true | 3 |
+| `EnhancedProtector` | Enhanced | true | 5 |
+| `PrecomputedProtector` | Strong | true | 2 |
+| `SteganographyProtector` | Standard | true | 2 |
 
 ## VariantLoader Trait
 
@@ -45,14 +45,14 @@ Persistent storage backend for `PrecomputedProtector`:
 
 ```rust
 pub trait VariantLoader: Send + Sync {
-    fn load_variant(&self, key: &str) -> Option<ProtectedVariant>;
+    fn load_variant(&self, key: &str) -> Result<Option<ProtectedVariant>>;
     fn store_variant(&self, variant: &ProtectedVariant) -> Result<()>;
 }
 ```
 
 ### Implementations
 
-- **`NoOpLoader`** — No-op implementation. `load_variant` always returns `None`, `store_variant` returns `Ok(())`.
+- **`NoOpLoader`** — No-op implementation. `load_variant` always returns `Ok(None)`, `store_variant` returns `Ok(())`.
 - Users implement this trait for persistent storage (Redis, filesystem, database, etc.)
 
 ### Usage in PrecomputedProtector
