@@ -345,3 +345,22 @@ All line numbers reference the current codebase state as of the review. Key sour
 - `src/protected/enhanced.rs` — Enhanced level protector
 - `src/protected/precomputed.rs` — Strong level protector
 - `src/protected/metadata_trap.rs` — Light level protector
+
+---
+
+## Completion Status
+
+### Completed: All Waves (2026-05-29)
+
+All documentation fixes from Waves 1-5 have been implemented and verified.
+
+**Execution summary**:
+- 8 parallel sub-agents processed Waves 1-4 (all independent)
+- Wave 5A: Stale content cleanup across 5 architecture files
+- Wave 5B: `cargo check` ✓, `cargo clippy --all-targets -- -D warnings` ✓, `cargo test --all-features` ✓ (261 tests pass)
+
+**Diversions from plan**:
+- Fixed pre-existing clippy `collapsible_match` warning in `src/jpeg_transcoder/header.rs:289-293` — collapsed nested `if` into match guard. This was not a documentation change but was necessary for clippy verification to pass.
+- No remote configured (`git remote -v` returns empty), so push to remote was skipped.
+- All 8 agent worktrees merged to master via `git merge` (fast-forward where possible, `ort` strategy for conflicts).
+- Wave 5C spot-check confirmed no stale variant names (`ProhibitedScraping`, `ProhibitedAnyProcessing`), no stale `is_enabled()` claims, no stale `next_u32` references, and no stale `MIN_PAYLOAD_SIZE 32` in architecture docs.
