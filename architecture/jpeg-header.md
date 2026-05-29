@@ -13,10 +13,12 @@ pub struct JpegHeader {
     pub precision: u8,
     pub coding_process: JpegCodingProcess,
     pub color_space: JpegColorSpace,
-    pub quantization_tables: Vec<QuantizationTable>,
-    pub huffman_tables: Vec<HuffmanTable>,
+    pub quantization_tables: [Option<QuantizationTable>; 4],
+    pub huffman_tables_dc: Vec<Option<HuffmanTable>>,
+    pub huffman_tables_ac: Vec<Option<HuffmanTable>>,
     pub components: Vec<ScanComponent>,
-    pub app_markers: Vec<Vec<u8>>,
+    pub app0_marker: Option<Vec<u8>>,
+    pub app1_marker: Option<Vec<u8>>,
     pub restart_interval: u16,
     pub progressive: bool,
 }
@@ -59,9 +61,9 @@ pub struct QuantizationTable {
 
 ```rust
 pub struct HuffmanTable {
-    pub class: u8,  // 0=DC, 1=AC
-    pub id: u8,
-    pub counts: [u8; 16],
+    pub table_class: u8,  // 0=DC, 1=AC
+    pub table_id: u8,
+    pub counts: [u16; 16],
     pub values: Vec<u8>,
 }
 ```
