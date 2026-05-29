@@ -13,8 +13,10 @@ pub struct XorShiftRng { state: u64 }
 ```
 
 - `new(seed: u64)` — Initializes with seed XOR'd with `XORSHIFT_SEED_OFFSET`
-- `next_u32()` — Returns random u32
-- `next_u32_range(max: u32)` — Returns value in `[0, max)`
+- `next_u64()` — Returns random u64
+- `gen_f32()` — Returns random f32 in `[-1.0, 1.0)`
+- `gen_range(range: Range<f32>)` — Returns f32 in given range
+- `gen_range_usize(range: Range<usize>)` — Returns usize in given range
 
 **WARNING:** This is NOT the same as `F5XorShiftRng` in `stego_f5.rs`. They use different algorithms and produce different sequences for the same seed. Do NOT interchange them.
 
@@ -23,19 +25,20 @@ pub struct XorShiftRng { state: u64 }
 HMAC-SHA256-based keyed seed derivation for deterministic noise.
 
 ```rust
-pub struct NoiseGenerator { mac_key: Vec<u8> }
+pub struct NoiseGenerator { seed: u64, mac_key: Option<Arc<[u8]>> }
 ```
 
-- `new(key: &[u8])` — Creates generator with HMAC key
-- `derive_seed(&self, component: u8, extra: u64) -> u64` — Derives deterministic seed via HMAC
+- `new(seed: u64)` — Creates generator with no MAC key
+- `with_mac_key(seed: u64, mac_key: impl Into<Arc<[u8]>>)` — Creates generator with HMAC key
+- `derive_keyed_seed(&self, pixel_pos: u64) -> u64` — Derives deterministic seed via HMAC (returns `self.seed` if no MAC key)
 
 ## PerturbationParams
 
-Pre-computed parameters for perturbation:
+Private struct with pre-computed perturbation parameters:
 
-- `intensity`, `block_width`, `block_height`, `keyed_seed_base`
-- `freq_h`, `freq_v`, `freq_d` — Frequency parameters for sinusoidal noise
-- `amplitude` — Noise amplitude derived from intensity
+- `intensity`, `blocks_x`, `keyed_seed_base`
+- `inv_pattern_scale`, `intensity_factor`, `phase_offset` — Sinusoidal noise parameters
+- `noise_gen` — Retained `NoiseGenerator` for deriving additional seeds
 
 ## PerturbationRuntime
 
@@ -52,17 +55,17 @@ Shared setup struct for both serial and parallel perturbation paths:
 ### Single-pass (auto-selects serial/parallel)
 
 ```rust
-pub fn apply_perturbation_single_pass(img: &mut RgbaImage, params: &mut PerturbationParams, ctx: &ProtectionContext) -> Vec<u8>
-pub fn apply_perturbation_single_pass_keyed(img: &mut RgbaImage, params: &mut PerturbationParams, ctx: &ProtectionContext) -> Vec<u8>
+pub fn apply_perturbation_single_pass(img: &RgbaImage, seed: u64, intensity: f32, intensity_multiplier: f32) -> DynamicImage
+pub fn apply_perturbation_single_pass_keyed(img: &RgbaImage, seed: u64, intensity: f32, intensity_multiplier: f32, mac_key: &[u8]) -> DynamicImage
 ```
 
 - Uses `parallel_threshold()` to decide: if pixels > threshold, uses parallel path
-- Returns the perturbation data as `Vec<u8>` (RGBA bytes) for precomputed variant storage
+- Returns perturbed image as `DynamicImage`
 
 ### Parallel path
 
 ```rust
-pub fn apply_perturbation_single_pass_keyed_par(img: &mut RgbaImage, params: &mut PerturbationParams, ctx: &ProtectionContext) -> Vec<u8>
+pub fn apply_perturbation_single_pass_keyed_par(img: &RgbaImage, seed: u64, intensity: f32, intensity_multiplier: f32, mac_key: &[u8]) -> DynamicImage
 ```
 
 - Uses `rayon::par_chunks_mut` for row-level parallelism
@@ -71,8 +74,8 @@ pub fn apply_perturbation_single_pass_keyed_par(img: &mut RgbaImage, params: &mu
 ### Precomputed application
 
 ```rust
-pub fn apply_perturbation(img: &mut RgbaImage, perturbation: &[u8], divisor: f32)
-pub fn apply_perturbation_par(img: &mut RgbaImage, perturbation: &[u8], divisor: f32)
+pub fn apply_perturbation(img: &RgbaImage, perturbation: &[u8], divisor: i16) -> Result<RgbaImage>
+pub fn apply_perturbation_par(img: &RgbaImage, perturbation: &[u8], divisor: i16) -> Result<RgbaImage>
 ```
 
 - Applies previously-generated perturbation data (from `PrecomputedProtector`)
@@ -86,7 +89,7 @@ pub fn apply_perturbation_par(img: &mut RgbaImage, perturbation: &[u8], divisor:
 - `encode_image_with_options(img, format, progressive, quality) -> Vec<u8>` — With JPEG options
 - `load_image_from_bytes(bytes) -> Result<DynamicImage>` — Decode image bytes
 - `parallel_threshold() -> usize` — Returns `cores * 64 * 64` (scales with rayon thread count)
-- `SIN_TABLE` — Fast sine lookup table (256 entries) for frequency perturbations
+- `SIN_TABLE` — Fast sine lookup table (1024 entries) for frequency perturbations
 
 ## Module Interactions
 
