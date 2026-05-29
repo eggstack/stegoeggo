@@ -74,15 +74,14 @@ fn get_scan_data_start(...) -> Option<usize>
 
 ## Common Pitfalls
 
-1. **`process_bytes` skips dimension validation** — `process()` validates `max_dimension` but `process_bytes()` does not
-2. **Two XorShiftRng implementations** — `XorShiftRng` in `util/image.rs` and `F5XorShiftRng` in `stego_f5.rs` use different algorithms. Never interchange.
-3. **Metadata injection survives only in byte paths** — `MetadataTrapProtector::apply()` returns `Cow::Borrowed` unchanged. Use `apply_bytes()` or `process_bytes()` for metadata.
-4. **`is_enabled()` is dead code** — defined in trait, never called by pipeline. `PassthroughProtector` returns `true` (not `false`).
-5. **Stego seed derivation** — embed/extract functions internally derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)`. Match seeds when calling directly.
-6. **`subtle` crate** — use `ConstantTimeEq::ct_eq()` for HMAC verification, not `==`
-7. **PrecomputedProtector cache** — `RwLock<LruCache>` with default capacity 100 entries. Configurable via `with_capacity()`. LRU eviction on insert when capacity exceeded. `peek()` used for reads (no LRU promotion).
-8. **F5 seed embedding** — Precondition check fails if any quantization value < 2. Values of 1 cannot represent 0-bits reliably. Use values >= 2.
-9. **ISCC is not standard-compliant** — uses custom component codes (`0x12`, `0x33`), not interoperable with other ISCC implementations.
+1. **Two XorShiftRng implementations** — `XorShiftRng` in `util/image.rs` and `F5XorShiftRng` in `stego_f5.rs` use different algorithms. Never interchange.
+2. **Metadata injection survives only in byte paths** — `MetadataTrapProtector::apply()` returns `Cow::Borrowed` unchanged. Use `apply_bytes()` or `process_bytes()` for metadata.
+3. **`is_enabled()` is dead code** — defined in trait, never called by pipeline. `PassthroughProtector` returns `true` (not `false`).
+4. **Stego seed derivation** — embed/extract functions internally derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)`. Match seeds when calling directly.
+5. **`subtle` crate** — use `ConstantTimeEq::ct_eq()` for HMAC verification, not `==`
+6. **PrecomputedProtector cache** — `RwLock<LruCache>` with default capacity 100 entries. Configurable via `with_capacity()`. LRU eviction on insert when capacity exceeded. `peek()` used for reads (no LRU promotion).
+7. **F5 seed embedding** — Precondition check fails if any quantization value < 2. Values of 1 cannot represent 0-bits reliably. Use values >= 2.
+8. **ISCC is not standard-compliant** — uses custom component codes (`0x12`, `0x33`), not interoperable with other ISCC implementations.
 
 ## Build & Test
 ```bash

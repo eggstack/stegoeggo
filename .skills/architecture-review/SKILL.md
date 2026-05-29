@@ -70,5 +70,4 @@ Systematic workflow for verifying architecture documents against the cloakrs cod
 - `Cow<'a, DynamicImage>` returns require lifetime annotations that docs frequently omit
 - `Option<bool>` fields have ambiguous `None` vs `false` semantics — document this explicitly
 - The JPEG transcoder has two separate PRNG implementations (`XorShiftRng` vs `F5XorShiftRng`) — never interchange
-- `process_bytes` skips dimension validation that `process` enforces
 - ISCC implementation is NOT standard-compliant — uses custom component codes

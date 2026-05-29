@@ -54,7 +54,7 @@ src/
 
 ## Architecture Documentation
 
-Architecture docs live in `architecture/` (21 files). All docs have been verified against source code. Known open bugs are tracked in `plans/plan.md`.
+Architecture docs live in `architecture/` (21 files). All docs have been verified against source code.
 
 ## Build & Test Commands
 
