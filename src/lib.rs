@@ -343,6 +343,23 @@ impl ProtectionPipeline {
         }
     }
 
+    fn validate_jpeg_dimensions_from_bytes(
+        img_bytes: &[u8],
+        max_dim: Option<u32>,
+    ) -> Result<()> {
+        if let Some(max) = max_dim {
+            let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)
+                .map_err(|e| Error::ImageDecode(format!("Failed to parse JPEG header: {}", e)))?;
+            if header.width as u32 > max || header.height as u32 > max {
+                return Err(Error::ImageDecode(format!(
+                    "Image dimensions {}x{} exceed maximum allowed {}",
+                    header.width, header.height, max
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn apply_multi_protector_bytes(
         &self,
         img_bytes: &[u8],
@@ -364,12 +381,14 @@ impl ProtectionPipeline {
         if input_format == crate::types::ImageOutputFormat::Jpeg
             && output_format == crate::types::ImageOutputFormat::Jpeg
         {
+            Self::validate_jpeg_dimensions_from_bytes(img_bytes, ctx.max_dimension())?;
             let with_stego = self.steganography.apply_dct_stego_bytes(img_bytes, ctx)?;
             return self.metadata_trap.inject_bytes(&with_stego, ctx);
         }
 
         // Non-JPEG-in: decode then use shared pipeline
         let img = load_image_from_bytes(img_bytes)?;
+        Self::validate_dimensions(&img, ctx.max_dimension())?;
         self.apply_protector_pipeline(&img, ctx, protector, output_format)
     }
 }
@@ -740,6 +759,30 @@ mod tests {
         assert!(
             result.is_err(),
             "Should fail when image exceeds max dimension"
+        );
+    }
+
+    #[test]
+    fn test_max_dimension_validation_process_bytes() {
+        use image::ImageEncoder;
+
+        let img = DynamicImage::new_rgb8(1000, 1000);
+        let mut buffer = Vec::new();
+        {
+            let encoder = image::codecs::png::PngEncoder::new(&mut buffer);
+            let rgb = img.to_rgb8();
+            encoder
+                .write_image(&rgb, 1000, 1000, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        }
+
+        let ctx = ProtectionContext::default().with_max_dimension(512);
+
+        let result = process_image_bytes(&buffer, ProtectionLevel::Standard, &ctx);
+
+        assert!(
+            result.is_err(),
+            "Should fail when image exceeds max dimension via process_bytes"
         );
     }
 }
