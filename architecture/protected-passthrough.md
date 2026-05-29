@@ -18,6 +18,7 @@ impl Protector for PassthroughProtector {
     fn protection_level(&self) -> ProtectionLevel { ProtectionLevel::Disabled }
     fn estimated_latency_ms(&self) -> u32 { 0 }
     fn modifies_pixels(&self) -> bool { false }
+    fn is_enabled(&self) -> bool { true }
 }
 ```
 
@@ -25,6 +26,7 @@ impl Protector for PassthroughProtector {
 
 - `modifies_pixels()` returns `false` — used by pipeline to decide optimization paths
 - `apply()` returns `Cow::Borrowed` — zero allocation, zero copy
+- `is_enabled()` returns `true` — but is dead code, pipeline never calls it
 - `apply_bytes()` uses default implementation (decode → apply → re-encode), but since `apply` is a no-op, the bytes pass through unchanged
 
 ## Module Interactions

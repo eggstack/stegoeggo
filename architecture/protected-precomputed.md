@@ -2,7 +2,7 @@
 
 **Source:** `src/protected/precomputed.rs` (~322 lines)
 
-CDN/WAF edge deployment protector for the `Strong` protection level. Pre-generates and caches perturbation data for instant application.
+CDN/WAF edge deployment protector for the `Strong` protection level. Pre-generates and caches perturbation data for instant application. Estimated latency: 2ms.
 
 ## Architecture
 
