@@ -696,11 +696,9 @@ impl SteganographyProtector {
     }
 
     fn bits_to_bytes(bits: &[u8]) -> Vec<u8> {
-        debug_assert!(
-            bits.len().is_multiple_of(8),
-            "bits_to_bytes: input length {} is not a multiple of 8, trailing bits will be dropped",
-            bits.len()
-        );
+        if bits.len() % 8 != 0 {
+            return Vec::new();
+        }
         let mut bytes = Vec::with_capacity(bits.len() / 8);
         for chunk in bits.chunks_exact(8) {
             let mut byte = 0u8;
