@@ -122,3 +122,7 @@ You are working on the cloakrs Rust codebase. Your task is to [description].
 
 When done, report back with: what you changed, test results, and any issues encountered.
 ```
+
+## Completed Plan Reference
+
+The plan in `plans/plan.md` was completed on 2026-05-30. All 11 items across 5 waves were implemented and verified. See `plans/plan.md` for the implementation summary.
