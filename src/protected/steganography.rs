@@ -1913,4 +1913,57 @@ mod tests {
         let result = protector.apply(&dyn_img, &ctx).unwrap();
         assert!(protector.verify_payload(&result));
     }
+
+    // ── Redundancy embedding tests ──────────────────────────────────────
+
+    #[test]
+    fn jpeg_stego_redundancy_extraction_succeeds() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+        let payload = protector.generate_payload(&ctx);
+
+        let embedded = protector.embed_jpeg_stego(&img, &payload, 42, 3);
+
+        let payload_bits = SteganographyProtector::bytes_to_bits(&payload);
+        let expected_bits = payload_bits.len();
+
+        let extracted = protector.extract_jpeg_stego(&embedded, expected_bits, 42);
+        assert!(
+            extracted.is_some(),
+            "Should extract payload with redundancy=3 and EXTRACT_REDUNDANCY=5"
+        );
+    }
+
+    #[test]
+    fn jpeg_stego_redundancy_multiple_extraction_seeds_work() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(99999);
+        let payload = protector.generate_payload(&ctx);
+
+        let embedded = protector.embed_jpeg_stego(&img, &payload, 99999, 3);
+
+        let payload_bits = SteganographyProtector::bytes_to_bits(&payload);
+        let expected_bits = payload_bits.len();
+
+        let extracted_0 = protector.extract_jpeg_stego(&embedded, expected_bits, 99999);
+        let extracted_1 = protector.extract_jpeg_stego(&embedded, expected_bits, 99999);
+        let extracted_2 = protector.extract_jpeg_stego(&embedded, expected_bits, 99999);
+
+        assert!(extracted_0.is_some(), "Extraction should succeed");
+        assert!(extracted_1.is_some(), "Extraction should succeed");
+        assert!(extracted_2.is_some(), "Extraction should succeed");
+
+        assert_eq!(
+            extracted_0.clone().unwrap(),
+            extracted_1.clone().unwrap(),
+            "All extractions should produce identical payloads"
+        );
+        assert_eq!(
+            extracted_0.unwrap(),
+            extracted_2.unwrap(),
+            "All extractions should produce identical payloads"
+        );
+    }
 }
