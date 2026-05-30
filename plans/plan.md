@@ -1,6 +1,8 @@
 # Cloakrs Implementation Plan
 
-## Status: In Progress
+## Status: Completed
+
+All items from all waves have been implemented and verified.
 
 This plan consolidates findings from all architecture review files into actionable items.
 Verified against source code in `src/` and `cloakrs-cli/src/`.
@@ -327,6 +329,26 @@ return Err(format!(
 | LRU Cache documentation | ✅ Complete | `LruCache` with bounded capacity documented |
 | Parallel threshold documentation | ✅ Complete | 1 core: 4096, 4 cores: 16384, 16 cores: 65536 |
 | verify_image_bytes DCT stego | ✅ Complete | pipeline.md correctly describes DCT stego verification |
+
+---
+
+## All Implementation Items (Completed)
+
+| Wave | Item | Status | Notes |
+|------|------|--------|-------|
+| 1A | 1A.1 `embed_jpeg_stego` Redundancy Bug | ✅ Complete | Added `embedded = 0;` reset between redundancy passes |
+| 1A | 1A.2 JPEG Segment Length Bounds | ✅ Complete | Added bounds check in `reassemble_jpeg` |
+| 1B | 1B.1 JPEG Segment Truncation | ✅ Complete | Added `ImageTruncated` error variant, fixed truncation in `inject_text_chunks_jpeg` and `extract_seed_from_jpeg` |
+| 1C | 1C.1 Division by Zero Potential | ✅ Complete | Added `debug_assert!(divisor != 0)` to `apply_perturbation` and `apply_perturbation_par` |
+| 2 | 2.1 `From<TranscoderError> for Error` | ✅ Complete | Added impl with proper variant mapping, updated callers to use `?` |
+| 2 | 2.2 Remove Dead Error Variants | ✅ Complete | Removed `Dimensions` and `JpegTranscode` variants, updated architecture/error.md |
+| 3 | 3.1 `bits_to_bytes` Runtime Check | ✅ Complete | Replaced `debug_assert!` with runtime check returning empty Vec |
+| 4 | 4.1 Extract Batch Duplicate Helper | ✅ Complete | Extracted `compute_output_path` helper, reduced ~50 lines of duplication |
+| 4 | 4.2 Improve Batch Error Messages | ✅ Complete | Changed `failed_count` to `failed_files: Vec<PathBuf>`, error message now lists files |
+| 5 | 5.1 Redundancy Embedding Test | ✅ Complete | Added `jpeg_stego_redundancy_extraction_succeeds` and `jpeg_stego_redundancy_multiple_extraction_seeds_work` tests |
+| 5 | 5.2 Error Variant Construction Test | ✅ Complete | Added 17 tests for error variant construction and Display/From implementations |
+
+**Total: 11 actionable items across 5 waves — all completed**
 
 ---
 

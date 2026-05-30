@@ -27,6 +27,8 @@ Understand all tasks, their dependencies, and which are parallelizable.
 git worktree add /Users/davidbowman/projects/cloak-wt-taskN -b fix/taskN-description master
 ```
 
+For independent items within the same wave, a single worktree can implement multiple items if they are in the same file.
+
 ### 3. Launch parallel agents
 
 Use the Task tool with `subagent_type: general` for each task. Each agent must:
@@ -46,13 +48,22 @@ git diff HEAD~1 --stat
 git diff HEAD~1 -- src/specific_file.rs
 ```
 
+**Important**: If an agent reports it committed but `git status` shows no changes, the agent likely committed to main (via merge) instead of its worktree. Verify the worktree has the fix before merging. If the fix is on main instead, you may need to:
+1. Check if the agent implementation is correct by reading the file
+2. Implement the fix yourself on the worktree and commit
+3. Then merge
+
 ### 5. Merge to main
 
 ```bash
 git merge fix/taskN-description --no-edit
 ```
 
-Handle merge conflicts if they arise (unlikely for independent tasks).
+If conflicts arise:
+1. Check the conflict markers
+2. Choose the correct version (usually the fix version for the specific bug)
+3. Run tests to verify the merge is correct
+4. Commit the merge
 
 ### 6. Run full test suite on main
 
@@ -80,8 +91,11 @@ git worktree remove /Users/davidbowman/projects/cloak-wt-taskN
 - **Worktree isolation**: Each agent MUST work in its own worktree. Overlapping writes cause agents to loop reverting each other.
 - **Branch conflicts**: Don't create worktrees from the same branch if tasks touch the same files.
 - **Test before merge**: Always run the full test suite on main after merging all worktrees.
-- **Format after merge**: Merges may introduce formatting inconsistencies — run `cargo fmt` after all merges.
+- **Format after merge**: Merges may introduce formatting inconsistencies - run `cargo fmt` after all merges.
 - **Plan file updates**: Only mark tasks complete after verifying the actual code changes, not just agent reports.
+- **Agent re-commits on main**: If a subagent says it committed but the worktree shows no changes, the agent likely committed to its worktree incorrectly. You may need to implement the fix directly on main.
+- **Merge conflicts**: When merging worktrees to main, conflicts can occur. Resolve by choosing the "main" version for unrelated changes and the "fix" version for the specific fix.
+- **Re-verify after merge**: Always re-run tests after merge to ensure no regressions.
 
 ## Agent Prompt Template
 

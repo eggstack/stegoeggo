@@ -2,10 +2,35 @@
 
 Session-specific learnings and corrections for future agents.
 
-## Plan Consolidation Session (2026-05-29)
+## Plan Implementation Session (2026-05-30)
 
-Consolidated all architecture review plan files into single `plans/plan.md`.
-Reviewed and corrected plan claims against current source code.
+All 11 items from `plans/plan.md` implemented and merged to master.
+
+### Items Completed
+
+| Wave | Item | Implementation |
+|------|------|----------------|
+| 1A | 1A.1 Redundancy Bug | Added `embedded = 0;` reset in `embed_jpeg_stego` |
+| 1A | 1A.2 Segment Length Bounds | Added bounds check in `reassemble_jpeg` |
+| 1B | 1B.1 JPEG Truncation | Added `ImageTruncated` error variant, fixed `inject_text_chunks_jpeg` and `extract_seed_from_jpeg` |
+| 1C | 1C.1 Division by Zero | Added `debug_assert!(divisor != 0)` to `apply_perturbation` and `apply_perturbation_par` |
+| 2 | 2.1 From<TranscoderError> | Implemented with proper variant mappings, updated callers to use `?` |
+| 2 | 2.2 Remove Dead Variants | Removed `Dimensions` and `JpegTranscode`, updated `architecture/error.md` |
+| 3 | 3.1 bits_to_bytes Runtime Check | Replaced `debug_assert!` with runtime check returning empty Vec |
+| 4 | 4.1 Extract Batch Helper | Extracted `compute_output_path` helper in CLI, reduced ~50 lines duplication |
+| 4 | 4.2 Batch Error Messages | Changed `failed_count` to `failed_files: Vec<PathBuf>` |
+| 5 | 5.1 Redundancy Test | Added `jpeg_stego_redundancy_extraction_succeeds` and `jpeg_stego_redundancy_multiple_extraction_seeds_work` |
+| 5 | 5.2 Error Variant Tests | Added 17 tests for error variant construction and Display/From implementations |
+
+### Parallelization Notes
+
+- Wave 1 used 3 worktrees (Track A: steganography.rs, Track B: metadata_trap.rs+error.rs, Track C: image.rs)
+- Waves 2-5 used sequential worktrees after fixing 1A.2 conflict with main
+- task3 (Wave 3) required re-commit on main due to merge conflict resolution
+
+### Test Suite
+- 264+ tests pass (168 unit + 9 async + 63 integration + 20 basic + 4+ doc-tests)
+- Clippy clean, format clean
 
 ### Corrections Applied to plan.md
 
@@ -52,12 +77,12 @@ Wave 1 splits into 3 parallel tracks (different files, no conflicts):
 
 ### Files Reference
 
-| File | Items |
-|------|-------|
+| File | Items (Updated) |
+|------|----------------|
 | `src/protected/steganography.rs` | 1A.1 (redundancy bug), 1A.2 (segment bounds), 3.1 (bits_to_bytes), 5.1 (redundancy test) |
 | `src/protected/metadata_trap.rs` | 1B.1 (truncation error) |
-| `src/util/image.rs` | 1C.1 (division by zero) |
-| `src/error.rs` | 1B.1 (add ImageTruncated), 2.1 (From<TranscoderError>), 2.2 (remove dead variants), 5.2 (error tests) |
+| `src/util/image.rs` util/image.rs | 1C.1 (division by zero) |
+| `src/error.rs` | 1B.1 (add ImageTruncated), 2.1 (From<TranscoderError>), 2.2 (removed Dimensions, JpegTranscode), 5.2 (error tests) |
 | `cloakrs-cli/src/main.rs` | 4.1 (dedupe helper), 4.2 (better error messages) |
 
 ## Prior Sessions
