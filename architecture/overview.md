@@ -1,6 +1,6 @@
 # Architecture Overview
 
-`cloakrs` is a Rust library and CLI for protecting images from unauthorized AI model training through adversarial image poisoning. It applies multiple layers of protection — metadata injection, adversarial noise perturbation, steganographic embedding, and precomputed variants — designed for CDN/WAF edge deployment with sub-10ms latency targets.
+`cloakrs` is a Rust library and CLI for protecting images from unauthorized AI model training through steganographic watermarking and metadata injection for legal deterrence. It applies multiple layers of protection — metadata injection and steganographic embedding — to serve as legal evidence of image ownership.
 
 ## System Architecture
 
@@ -17,18 +17,18 @@
 │                    (src/lib.rs - orchestration)                             │
 │                                                                              │
 │  Orchestrates protector selection, format routing, and pipeline composition │
-│  Holds Arc-wrapped protectors for all five levels                           │
+│  Holds Arc-wrapped protectors for all levels                               │
 └─────────────────────────────────┬───────────────────────────────────────────┘
                                   │
           ┌───────────────────────┼───────────────────────┐
           │                       │                       │
           ▼                       ▼                       ▼
 ┌─────────────────┐   ┌─────────────────────┐   ┌─────────────────────────┐
-│ Passthrough     │   │ NoiseProtector      │   │ JpegTranscoder         │
-│ (Disabled)      │   │ EnhancedProtector   │   │ (jpeg_transcoder/)     │
-│                 │   │ PrecomputedProtector│   │                         │
-│ No-op           │   │                     │   │ Operates on DCT         │
-│                 │   │ Flat struct fields  │   │ coefficients directly   │
+│ Passthrough     │   │ MetadataTrapProtector│   │ JpegTranscoder         │
+│ (Disabled)      │   │ (Light)              │   │ (jpeg_transcoder/)     │
+│                 │   │                     │   │                         │
+│ No-op           │   │ Metadata injection  │   │ Operates on DCT         │
+│                 │   │                     │   │ coefficients directly   │
 └─────────────────┘   └─────────────────────┘   │ for JPEG fast path     │
                                                   └─────────────────────────┘
            │                       │             │
@@ -52,11 +52,9 @@
 |-------|--------------|-------|----------|----------|
 | `Disabled` | None | None | None | Testing, passthrough |
 | `Light` | None | None | Seed + DMI | Minimal overhead |
-| `Standard` | Noise (10x) | LSB/DCT | Seed + DMI | General protection |
-| `Enhanced` | Noise (12x) | LSB/DCT | Seed + DMI | Higher intensity |
-| `Strong` | Precomputed | LSB/DCT | Seed + DMI | CDN edge, pre-generated |
+| `Standard` | Noise | LSB/DCT | Seed + DMI | General protection |
 
-Each level above `Disabled` activates metadata injection. Steganography (LSB or DCT) is applied for Standard/Enhanced/Strong. Perturbation (adversarial noise) varies by level: Standard uses 10x noise, Enhanced uses 12x noise, Strong uses precomputed perturbations. Light level only applies metadata injection without pixel perturbation.
+Each level above `Disabled` activates metadata injection. Steganography (LSB or DCT) is applied for Standard. Light level only applies metadata injection without steganography.
 
 ## Data Flow
 
@@ -72,10 +70,7 @@ ProtectionPipeline::process()
        │
        ├── [Light]   → encode → MetadataTrapProtector::inject_bytes() → decode → return Cow::Owned
        │
-       └── [Standard/Enhanced/Strong]
-              │
-              ▼
-         apply_perturbation()  ──► NoiseProtector / EnhancedProtector / PrecomputedProtector
+       └── [Standard]
               │
               ▼ (output_format == Jpeg?)
               │
@@ -102,7 +97,7 @@ ProtectionPipeline::process_bytes()
        │
        ├── [Light]    → MetadataTrapProtector::apply_bytes() → return Vec<u8>
        │
-       └── [Standard/Enhanced/Strong]
+       └── [Standard]
               │
               ▼ (input == JPEG && output == JPEG?)
               │
@@ -129,18 +124,15 @@ Progressive JPEGs are handled via seed-in-Q-tables only (coefficient manipulatio
 ```
 src/
 ├── lib.rs                     Pipeline orchestration, public API, LazyLock singletons
-├── types.rs                   ProtectionLevel, ProtectionContext, ProtectedVariant,
+├── types.rs                   ProtectionLevel, ProtectionContext, StegoPayload,
 │                              ImageOutputFormat, DmiValue, LegalMetadata, ProtectionConfig
-├── traits.rs                  Protector trait (apply/apply_bytes), VariantLoader trait
+├── traits.rs                  Protector trait (apply/apply_bytes)
 ├── error.rs                   Error enum (thiserror), Result type
 ├── async_api.rs               Tokio spawn_blocking wrappers (when async feature enabled)
 │
 ├── protected/                 Protection strategies (all implement Protector trait)
-│   ├── constants.rs           Tuning constants (NOISE_INTENSITY_MULTIPLIER, STEGO_*)
+│   ├── constants.rs           Tuning constants (STEGO_*)
 │   ├── passthrough.rs        No-op for Disabled level
-│   ├── noise.rs              Adversarial noise (Standard level, 10x intensity)
-│   ├── enhanced.rs           Wraps NoiseProtector with 12x intensity (Enhanced level)
-│   ├── precomputed.rs        Precomputed variants with LRU cache (Strong level)
 │   ├── metadata_trap.rs      Metadata injection (tEXt/COM/XMP markers, seed, DMI)
 │   └── steganography.rs       LSB embedding (PNG/WebP) + DCT F5 (JPEG)
 │
@@ -152,7 +144,7 @@ src/
 │
 └── util/
     ├── mod.rs                Module re-exports
-    ├── image.rs              XorShiftRng, NoiseGenerator, perturbation, encoding
+    ├── image.rs              XorShiftRng, encoding
     ├── iscc.rs               compute_iscc, Iscc content identifiers
     └── seed.rs               generate_random_seed() via SystemTime + splitmix64
 ```
@@ -164,17 +156,14 @@ Each component has a detailed deep-dive document in `architecture/`:
 | Component | File | Description |
 |-----------|------|-------------|
 | **Pipeline & API** | [pipeline.md](pipeline.md) | Orchestration, format routing, parallel processing, LazyLock singletons |
-| **Core Types** | [types.md](types.md) | ProtectionLevel, ProtectionContext, ProtectedVariant, config builders, Arc-wrapping |
-| **Traits** | [traits.md](traits.md) | Protector trait, VariantLoader trait, NoOpLoader |
+| **Core Types** | [types.md](types.md) | ProtectionLevel, ProtectionContext, config builders, Arc-wrapping |
+| **Traits** | [traits.md](traits.md) | Protector trait |
 | **Error Types** | [error.md](error.md) | Error enum (ImageDecode, Steganography, JpegTranscode, etc.) |
 | **Async API** | [async-api.md](async-api.md) | Tokio spawn_blocking wrappers for batch processing |
-| **Image Utilities** | [util-image.md](util-image.md) | XorShiftRng, NoiseGenerator, perturbation functions, encoding |
+| **Image Utilities** | [util-image.md](util-image.md) | XorShiftRng, encoding |
 | **ISCC Identifiers** | [util-iscc.md](util-iscc.md) | Perceptual content hashing (non-standard ISCC-like) |
 | **Seed Generation** | [util-seed.md](util-seed.md) | SystemTime + splitmix64 mixing (not CSPRNG) |
 | **Passthrough** | [protected-passthrough.md](protected-passthrough.md) | No-op for Disabled level |
-| **Noise Protector** | [protected-noise.md](protected-noise.md) | Standard adversarial noise (10x multiplier) |
-| **Enhanced Protector** | [protected-enhanced.md](protected-enhanced.md) | Noise with 12x intensity |
-| **Precomputed Protector** | [protected-precomputed.md](protected-precomputed.md) | LRU cache + VariantLoader for CDN edge |
 | **Metadata Trap** | [protected-metadata-trap.md](protected-metadata-trap.md) | IPTC/XMP/EXIF injection, seed embedding |
 | **Steganography** | [protected-steganography.md](protected-steganography.md) | LSB + DCT F5, payload generation/verification |
 | **JPEG Transcoder** | [jpeg-transcoder.md](jpeg-transcoder.md) | DCT decode/encode, assemble, scan data utilities |
@@ -212,14 +201,14 @@ When **both** input and output are JPEG, the pipeline operates directly on DCT c
 
 ### Two XorShiftRng Implementations
 
-- **`XorShiftRng`** in `util/image.rs` — general-purpose noise/pixel selection
+- **`XorShiftRng`** in `util/image.rs` — general-purpose pixel selection for steganography
 - **`F5XorShiftRng`** in `jpeg_transcoder/stego_f5.rs` — DCT coefficient shuffling
 
 They use different algorithms and produce different sequences for the same seed. **Do NOT interchange them.**
 
 ### Private Fields with Getters
 
-`ProtectionContext`, `ProtectedVariant`, `StegoPayload`, and `LegalMetadata` all use private fields with getter methods. This enforces consistent access patterns and allows internal refactoring without breaking consumers.
+`ProtectionContext`, `StegoPayload`, and `LegalMetadata` all use private fields with getter methods. This enforces consistent access patterns and allows internal refactoring without breaking consumers.
 
 ### Arc for Shared Config
 
@@ -268,7 +257,6 @@ Three-state control (`Option<bool>`) for metadata injection:
 | `clap` | 4 (CLI) | Command-line argument parsing |
 | `crc32fast` | 1.4 | CRC32 for PNG chunk checksums |
 | `thiserror` | 2 (error.rs) | Error enum derive |
-| `uuid` | 1.x | Variant ID generation |
 
 ## Security Notes
 

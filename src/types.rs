@@ -59,8 +59,6 @@ pub enum ProtectionLevel {
     Light,
     #[default]
     Standard,
-    Enhanced,
-    Strong,
 }
 
 impl ProtectionLevel {
@@ -69,8 +67,6 @@ impl ProtectionLevel {
             ProtectionLevel::Disabled => "disabled",
             ProtectionLevel::Light => "light",
             ProtectionLevel::Standard => "standard",
-            ProtectionLevel::Enhanced => "enhanced",
-            ProtectionLevel::Strong => "strong",
         }
     }
 
@@ -79,8 +75,6 @@ impl ProtectionLevel {
             ProtectionLevel::Disabled => 0,
             ProtectionLevel::Light => 1,
             ProtectionLevel::Standard => 2,
-            ProtectionLevel::Enhanced => 3,
-            ProtectionLevel::Strong => 4,
         }
     }
 
@@ -89,8 +83,6 @@ impl ProtectionLevel {
             0 => Some(ProtectionLevel::Disabled),
             1 => Some(ProtectionLevel::Light),
             2 => Some(ProtectionLevel::Standard),
-            3 => Some(ProtectionLevel::Enhanced),
-            4 => Some(ProtectionLevel::Strong),
             _ => None,
         }
     }
@@ -604,84 +596,6 @@ impl ProtectionContext {
     /// Set the protection level (non-consuming, crate-internal).
     pub(crate) fn set_protection_level(&mut self, level: ProtectionLevel) {
         self.protection_level = Some(level);
-    }
-}
-
-/// Precomputed protected variant for fast CDN edge deployment.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProtectedVariant {
-    variant_id: uuid::Uuid,
-    original_hash: String,
-    protection_level: ProtectionLevel,
-    perturbation_data: Vec<u8>,
-    intensity: f32,
-    width: u32,
-    height: u32,
-}
-
-impl ProtectedVariant {
-    /// Create a new ProtectedVariant with the specified parameters.
-    ///
-    /// The `original_hash` is the SHA-256 hash of the original image.
-    /// The `perturbation_data` contains the precomputed adversarial perturbations.
-    pub fn new(
-        original_hash: String,
-        protection_level: ProtectionLevel,
-        perturbation_data: Vec<u8>,
-        intensity: f32,
-        width: u32,
-        height: u32,
-    ) -> Self {
-        Self {
-            variant_id: uuid::Uuid::new_v4(),
-            original_hash,
-            protection_level,
-            perturbation_data,
-            intensity,
-            width,
-            height,
-        }
-    }
-
-    /// Generate a cache key for this variant based on hash, level, and intensity.
-    pub fn cache_key(&self) -> String {
-        // Round intensity to 4 decimal places to avoid f32 representation mismatches
-        // (e.g., 0.1 + 0.2 formatting as "0.30000001").
-        let intensity_rounded = (self.intensity * 10000.0).round() / 10000.0;
-        format!(
-            "{}_{}_{}",
-            self.original_hash,
-            self.protection_level.as_str(),
-            intensity_rounded
-        )
-    }
-
-    pub fn variant_id(&self) -> uuid::Uuid {
-        self.variant_id
-    }
-
-    pub fn original_hash(&self) -> &str {
-        &self.original_hash
-    }
-
-    pub fn protection_level(&self) -> ProtectionLevel {
-        self.protection_level
-    }
-
-    pub fn perturbation_data(&self) -> &[u8] {
-        &self.perturbation_data
-    }
-
-    pub fn intensity(&self) -> f32 {
-        self.intensity
-    }
-
-    pub fn width(&self) -> u32 {
-        self.width
-    }
-
-    pub fn height(&self) -> u32 {
-        self.height
     }
 }
 

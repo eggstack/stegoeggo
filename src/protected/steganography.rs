@@ -1035,7 +1035,7 @@ pub struct StegoPayload {
 }
 
 impl StegoPayload {
-    /// The protection level byte (0=Disabled, 1=Light, 2=Standard, 3=Enhanced, 4=Strong).
+    /// The protection level byte (0=Disabled, 1=Light, 2=Standard).
     pub fn protection_level(&self) -> u8 {
         self.protection_level
     }

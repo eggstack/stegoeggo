@@ -6,36 +6,29 @@ The pipeline is the central orchestration layer. It selects and composes protect
 
 ## ProtectionPipeline
 
-The main struct. Holds `Arc`-wrapped protectors for all five levels.
+The main struct. Holds `Arc`-wrapped protectors for all levels.
 
 ```rust
 pub struct ProtectionPipeline {
     passthrough: Arc<PassthroughProtector>,
-    noise: Arc<NoiseProtector>,           // Standard level
-    enhanced: Arc<EnhancedProtector>,    // Enhanced level
-    precomputed: Arc<PrecomputedProtector>, // Strong level
     metadata_trap: Arc<MetadataTrapProtector>,
     steganography: Arc<SteganographyProtector>,
 }
 ```
 
-All five protector types are flat fields (not nested under a `Protected/` subgroup).
-
 ### Key Methods
 
 - `process(&img, level, &ctx) -> Cow<DynamicImage>` — Pixel-level processing (validates dimensions)
 - `process_bytes(&img_bytes, level, &ctx) -> Vec<u8>` — Byte-level processing (validates dimensions for JPEG via header parse, and for non-JPEG via validate_dimensions after decode)
-- `register_precomputed_variants(variants)` — Register precomputed perturbations for CDN
 
-### Pipeline Flow (Standard/Enhanced/Strong)
+### Pipeline Flow (Standard)
 
 ```
-1. Apply perturbation (noise/enhanced/precomputed)
-2. If JPEG output:
+1. If JPEG output:
    a. Encode to JPEG bytes first
    b. Apply DCT stego to JPEG bytes
    c. Inject metadata to JPEG bytes
-3. If non-JPEG output:
+2. If non-JPEG output:
    a. Apply pixel stego to DynamicImage
    b. Encode to target format
    c. Inject metadata to bytes
@@ -47,9 +40,9 @@ The JPEG fast path (`apply_multi_protector_bytes`) operates directly on DCT coef
 
 `process_bytes` routes `Light` level through `metadata_trap.apply_bytes()`, which internally encodes → injects metadata → decodes. This can alter format/quality due to the encode/decode cycle. For byte-level output with metadata intact, use `process_bytes()` or `apply_bytes()` directly.
 
-### JPEG→JPEG Fast Path (bypasses perturbation)
+### JPEG→JPEG Fast Path (bypasses pixel decode/encode)
 
-When both input and output are JPEG, `apply_multi_protector_bytes` skips perturbation entirely (no pixel decode/encode) and only applies DCT steganography + metadata injection. This preserves original quality and avoids lossy re-encoding artifacts.
+When both input and output are JPEG, `apply_multi_protector_bytes` skips pixel decode/encode entirely and only applies DCT steganography + metadata injection. This preserves original quality and avoids lossy re-encoding artifacts.
 
 ## Convenience Functions
 

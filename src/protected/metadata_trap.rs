@@ -103,8 +103,6 @@ impl MetadataTrapProtector {
                 protection_level.and_then(|level| match level {
                     ProtectionLevel::Light => Some(DmiValue::Prohibited),
                     ProtectionLevel::Standard => Some(DmiValue::ProhibitedAiMlTraining),
-                    ProtectionLevel::Enhanced => Some(DmiValue::ProhibitedGenAiMlTraining),
-                    ProtectionLevel::Strong => Some(DmiValue::Prohibited),
                     _ => None,
                 })
             });
@@ -878,28 +876,6 @@ mod tests {
         );
         let dmi = standard.iter().find(|(k, _)| k == b"DMI-PROHIBITED");
         assert_eq!(dmi.unwrap().1, b"ProhibitedAiMlTraining");
-
-        let enhanced = protector.generate_poison_metadata(
-            None,
-            Some(ProtectionLevel::Enhanced),
-            None,
-            None,
-            None,
-            None,
-        );
-        let dmi = enhanced.iter().find(|(k, _)| k == b"DMI-PROHIBITED");
-        assert_eq!(dmi.unwrap().1, b"ProhibitedGenAiMlTraining");
-
-        let strong = protector.generate_poison_metadata(
-            None,
-            Some(ProtectionLevel::Strong),
-            None,
-            None,
-            None,
-            None,
-        );
-        let dmi = strong.iter().find(|(k, _)| k == b"DMI-PROHIBITED");
-        assert_eq!(dmi.unwrap().1, b"Prohibited");
     }
 
     #[test]
@@ -921,7 +897,7 @@ mod tests {
         let protector = MetadataTrapProtector::new();
         let metadata = protector.generate_poison_metadata(
             Some(DmiValue::Allowed),
-            Some(ProtectionLevel::Strong),
+            Some(ProtectionLevel::Standard),
             None,
             None,
             None,

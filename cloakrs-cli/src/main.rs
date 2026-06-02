@@ -107,8 +107,6 @@ enum ProtectionLevelArg {
     Disabled,
     Light,
     Standard,
-    Enhanced,
-    Strong,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -153,8 +151,6 @@ impl From<ProtectionLevelArg> for ProtectionLevel {
             ProtectionLevelArg::Disabled => ProtectionLevel::Disabled,
             ProtectionLevelArg::Light => ProtectionLevel::Light,
             ProtectionLevelArg::Standard => ProtectionLevel::Standard,
-            ProtectionLevelArg::Enhanced => ProtectionLevel::Enhanced,
-            ProtectionLevelArg::Strong => ProtectionLevel::Strong,
         }
     }
 }

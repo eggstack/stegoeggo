@@ -32,8 +32,6 @@ When no explicit DMI value is set, the protector auto-maps from `ProtectionLevel
 
 - Light → `Prohibited`
 - Standard → `ProhibitedAiMlTraining`
-- Enhanced → `ProhibitedGenAiMlTraining`
-- Strong → `Prohibited` (same as Light — DMI strength does not increase with protection level)
 
 ### Legal Metadata
 
@@ -99,7 +97,7 @@ Generates IPTC-compliant XMP packets:
 
 ## Module Interactions
 
-- **lib.rs**: Selected for `Light`, `Standard`, `Enhanced`, and `Strong` levels (always runs)
+- **lib.rs**: Selected for `Light` and `Standard` levels (always runs)
 - **types.rs**: Uses `DmiValue`, `ProtectionLevel`, `LegalMetadata`
 - **traits.rs**: Implements `Protector` trait
 - **protected/constants.rs**: Uses `STEGO_OFFSET_SEED_1` for seed embedding

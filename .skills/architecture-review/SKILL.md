@@ -44,7 +44,7 @@ Systematic workflow for verifying architecture documents against the cloakrs cod
 ### 4. Key source files to always check
 
 - `src/types.rs` — All core type definitions, constructors, getters
-- `src/traits.rs` — Protector trait, VariantLoader trait
+- `src/traits.rs` — Protector trait
 - `src/lib.rs` — Pipeline orchestration, public API
 - `src/error.rs` — Error variants
 - `src/protected/steganography.rs` — Stego payload format, extraction, verification
@@ -80,8 +80,6 @@ These have been fixed in documentation — if the code hasn't changed, these are
 - **`parallel_threshold()`** scales as `cores * 64 * 64` — 1c:4096, 4c:16384, 16c:65536
 - **`verify_image_bytes`** DOES perform DCT stego verification — contrary to old docs
 - **CLI batch** does NOT preserve directory structure — outputs flat to `-o` dir
-- **PrecomputedProtector cache** uses `LruCache` with bounded capacity (100) — not unbounded HashMap
-- **`ProtectedVariant`** has 7 fields including `protection_level` (not 6)
 - **`LegalMetadata`** field is `ai_constraints` (not `ai_training_constraints`)
 - **`ProtectionContext::with_format()`** (not `with_output_format()`)
 - **DmiValue mapping** is via helper in `metadata_trap.rs` — no `impl From<ProtectionLevel> for DmiValue`

@@ -26,11 +26,6 @@ description: Use when writing, modifying, or reviewing Rust code in the cloakrs 
 - `inject_legal_claims: Option<bool>` — `None` means use level default
 - `config: Option<Arc<ProtectionConfig>>` — `#[serde(skip)]`
 
-### ProtectedVariant
-- `variant_id: uuid::Uuid` (not `uuid`)
-- `cache_key()` returns `{hash}_{level}_{intensity}` (no UUID)
-- `protection_level: ProtectionLevel` field exists but is not in the cache key
-
 ### StegoPayload
 - `protection_level()` returns `u8`, not `ProtectionLevel`
 - All fields private — use getters only
@@ -39,14 +34,6 @@ description: Use when writing, modifying, or reviewing Rust code in the cloakrs 
 - `mac_key: Option<Vec<u8>>` (not `Vec<u8>`)
 
 ## Function Signatures
-
-### Perturbation functions
-```rust
-// These take immutable &RgbaImage, not &mut
-apply_perturbation_single_pass(img: &RgbaImage, seed: u64, intensity: f32, intensity_multiplier: f32) -> DynamicImage
-apply_perturbation_single_pass_keyed(img: &RgbaImage, seed: u64, intensity: f32, intensity_multiplier: f32, mac_key: &[u8]) -> DynamicImage
-apply_perturbation(img: &RgbaImage, perturbation: &[u8], divisor: i16) -> Result<RgbaImage>
-```
 
 ### Steganography methods (on SteganographyProtector)
 ```rust
@@ -79,9 +66,8 @@ fn get_scan_data_start(...) -> Option<usize>
 3. **`is_enabled()` is dead code** — defined in trait, never called by pipeline. `PassthroughProtector` returns `true` (not `false`).
 4. **Stego seed derivation** — embed/extract functions internally derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)`. Match seeds when calling directly.
 5. **`subtle` crate** — use `ConstantTimeEq::ct_eq()` for HMAC verification, not `==`
-6. **PrecomputedProtector cache** — `RwLock<LruCache>` with default capacity 100 entries. Configurable via `with_capacity()`. LRU eviction on insert when capacity exceeded. `peek()` used for reads (no LRU promotion).
-7. **F5 seed embedding** — Precondition check fails if any quantization value < 2. Values of 1 cannot represent 0-bits reliably. Use values >= 2.
-8. **ISCC is not standard-compliant** — uses custom component codes (`0x12`, `0x33`), not interoperable with other ISCC implementations.
+6. **F5 seed embedding** — Precondition check fails if any quantization value < 2. Values of 1 cannot represent 0-bits reliably. Use values >= 2.
+7. **ISCC is not standard-compliant** — uses custom component codes (`0x12`, `0x33`), not interoperable with other ISCC implementations.
 
 ## Build & Test
 ```bash

@@ -1,7 +1,6 @@
 use cloakrs::{
-    process_image, process_image_bytes, EnhancedProtector, MetadataTrapProtector, NoiseProtector,
-    PassthroughProtector, PrecomputedProtector, ProtectionContext, ProtectionLevel,
-    ProtectionPipeline, Protector,
+    process_image, process_image_bytes, MetadataTrapProtector, PassthroughProtector,
+    ProtectionContext, ProtectionLevel, ProtectionPipeline, Protector,
 };
 use image::DynamicImage;
 
@@ -25,8 +24,6 @@ mod basic {
             ProtectionLevel::Disabled,
             ProtectionLevel::Light,
             ProtectionLevel::Standard,
-            ProtectionLevel::Enhanced,
-            ProtectionLevel::Strong,
         ] {
             let result = process_image(img.clone(), *level, &ctx);
             assert!(result.is_ok(), "Failed for level: {:?}", level);
@@ -52,8 +49,6 @@ mod basic {
             ProtectionLevel::Disabled,
             ProtectionLevel::Light,
             ProtectionLevel::Standard,
-            ProtectionLevel::Enhanced,
-            ProtectionLevel::Strong,
         ] {
             let result = pipeline.process(&img, *level, &create_test_context());
             assert!(result.is_ok(), "Failed for level: {:?}", level);
@@ -108,102 +103,6 @@ mod protectors {
         let result = poisoner.apply(&img, &ctx);
         assert!(result.is_ok());
         assert_eq!(poisoner.protection_level(), ProtectionLevel::Light);
-    }
-
-    #[test]
-    fn test_noise() {
-        let poisoner = NoiseProtector::new();
-        let img = create_test_image();
-        let ctx = create_test_context();
-
-        let result = poisoner.apply(&img, &ctx);
-        assert!(result.is_ok());
-        assert_eq!(poisoner.protection_level(), ProtectionLevel::Standard);
-    }
-
-    #[test]
-    fn test_noise_actually_changes_image() {
-        let poisoner = NoiseProtector::new();
-        let img = create_test_image();
-        let ctx = ProtectionContext::new(0.8, 12345);
-
-        let result = poisoner.apply(&img, &ctx).unwrap();
-
-        let original_bytes = img.to_rgb8().into_raw();
-        let processed_bytes = result.to_rgb8().into_raw();
-
-        let mut differences = 0;
-        for (a, b) in original_bytes.iter().zip(processed_bytes.iter()) {
-            if a != b {
-                differences += 1;
-            }
-        }
-
-        assert!(differences > 0, "Noise should change the image");
-    }
-
-    #[test]
-    fn test_enhanced() {
-        let poisoner = EnhancedProtector::new();
-        let img = create_test_image();
-        let ctx = create_test_context();
-
-        let result = poisoner.apply(&img, &ctx);
-        assert!(result.is_ok());
-        assert_eq!(poisoner.protection_level(), ProtectionLevel::Enhanced);
-    }
-
-    #[test]
-    fn test_enhanced_actually_changes_image() {
-        let poisoner = EnhancedProtector::new();
-        let img = create_test_image();
-        let ctx = ProtectionContext::new(0.8, 12345);
-
-        let result = poisoner.apply(&img, &ctx).unwrap();
-
-        let original_bytes = img.to_rgb8().into_raw();
-        let processed_bytes = result.to_rgb8().into_raw();
-
-        let mut differences = 0;
-        for (a, b) in original_bytes.iter().zip(processed_bytes.iter()) {
-            if a != b {
-                differences += 1;
-            }
-        }
-
-        assert!(differences > 0, "Enhanced should change the image");
-    }
-
-    #[test]
-    fn test_precomputed() {
-        let poisoner = PrecomputedProtector::new();
-        let img = create_test_image();
-        let ctx = create_test_context();
-
-        let result = poisoner.apply(&img, &ctx);
-        assert!(result.is_ok());
-        assert_eq!(poisoner.protection_level(), ProtectionLevel::Strong);
-    }
-
-    #[test]
-    fn test_precomputed_generates_perturbation() {
-        let poisoner = PrecomputedProtector::new();
-        let img = create_test_image();
-        let ctx = ProtectionContext::new(0.5, 999);
-
-        let result = poisoner.apply(&img, &ctx).unwrap();
-
-        let original_bytes = img.to_rgba8().into_raw();
-        let processed_bytes = result.to_rgba8().into_raw();
-
-        let mut differences = 0;
-        for (a, b) in original_bytes.iter().zip(processed_bytes.iter()) {
-            if a != b {
-                differences += 1;
-            }
-        }
-
-        assert!(differences > 0, "Precomputed should add perturbation");
     }
 }
 
@@ -261,8 +160,6 @@ mod integration {
             ProtectionLevel::Disabled,
             ProtectionLevel::Light,
             ProtectionLevel::Standard,
-            ProtectionLevel::Enhanced,
-            ProtectionLevel::Strong,
         ] {
             let test_img = create_test_image();
             let result = pipeline.process(&test_img, *level, &create_test_context());

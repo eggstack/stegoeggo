@@ -176,8 +176,6 @@ mod concurrency {
             ProtectionLevel::Disabled,
             ProtectionLevel::Light,
             ProtectionLevel::Standard,
-            ProtectionLevel::Enhanced,
-            ProtectionLevel::Strong,
         ] {
             let result = process_image_async(create_test_image(32, 32), level, ctx.clone()).await;
             assert!(result.is_ok(), "Level {:?} should succeed", level);

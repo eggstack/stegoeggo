@@ -1,6 +1,3 @@
-/// Multiplier applied to noise intensity for the standard noise protector.
-pub const NOISE_INTENSITY_MULTIPLIER: f32 = 10.0;
-
 /// Multiplicative offset for steganography pixel selection seeds.
 /// Used to derive per-pass seeds from the context seed.
 pub const STEGO_OFFSET_SEED_1: u64 = 0x517cc1b727220a95;
@@ -22,6 +19,3 @@ pub const XORSHIFT_SEED_OFFSET: u64 = 0x123456789ABCDEF0;
 
 /// Splitmix64 mixing constant (golden ratio bits).
 pub const SPLITMIX64_SEED: u64 = 0x9e3779b97f4a7c15;
-
-/// Default capacity for the PrecomputedProtector in-memory LRU cache.
-pub const PRECOMPUTED_CACHE_CAPACITY: usize = 100;

@@ -6,15 +6,13 @@ Defines all core data structures used across the codebase. Uses builder pattern 
 
 ## ProtectionLevel
 
-Enum with five variants:
+Enum with three variants:
 
 ```rust
 pub enum ProtectionLevel {
     Disabled,    // No protection (PassthroughProtector)
     Light,       // Metadata injection only (MetadataTrapProtector)
     Standard,    // Noise + stego + metadata (default)
-    Enhanced,    // Higher intensity noise + stego + metadata
-    Strong,      // Precomputed variants + stego + metadata
 }
 ```
 
@@ -52,7 +50,7 @@ pub enum DmiValue {
 }
 ```
 
-Auto-mapped from `ProtectionLevel` via helper in `metadata_trap.rs`: Light→Prohibited, Standard→ProhibitedAiMlTraining, Enhanced→ProhibitedGenAiMlTraining, Strong→Prohibited. No `impl From<ProtectionLevel> for DmiValue>` exists — use the helper function directly.
+Auto-mapped from `ProtectionLevel` via helper in `metadata_trap.rs`: Light→Prohibited, Standard→ProhibitedAiMlTraining. No `impl From<ProtectionLevel> for DmiValue` exists — use the helper function directly.
 
 ## ProtectionContext
 
@@ -80,7 +78,7 @@ ProtectionContext::new(intensity, seed)  // intensity clamped to [0.0, 1.0]
 | `progressive_jpeg` | `bool` | false | Progressive JPEG encoding |
 | `config` | `Option<Arc<ProtectionConfig>>` | None | `#[serde(skip)]` — MAC key + legal metadata |
 
-**Note:** `None` for `inject_metadata`/`inject_legal_claims` means "use level default" (enabled for Standard+). Explicit `false` disables injection.
+**Note:** `None` for `inject_metadata`/`inject_legal_claims` means "use level default" (enabled for Standard). Explicit `false` disables injection.
 
 ### Builder Methods
 
@@ -109,25 +107,6 @@ pub struct ProtectionConfig {
 Builder-pattern struct for legal/copyright metadata:
 
 Fields: `copyright_holder`, `contact_email`, `license_url`, `usage_terms`, `creation_date`, `ai_constraints`, `web_statement_of_rights`.
-
-## ProtectedVariant
-
-Precomputed perturbation storage for CDN/WAF:
-
-```rust
-pub struct ProtectedVariant {
-    variant_id: uuid::Uuid,
-    original_hash: String,
-    protection_level: ProtectionLevel,  // Added in code but missing from docs
-    perturbation_data: Vec<u8>,
-    intensity: f32,
-    width: u32,
-    height: u32,
-}
-```
-
-- `cache_key()` — Returns `{hash}_{level}_{intensity}` for CDN caching
-- `new(original_hash, protection_level, perturbation_data, intensity, width, height)`
 
 ## StegoPayload
 

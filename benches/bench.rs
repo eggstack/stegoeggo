@@ -54,11 +54,7 @@ fn benchmark_pipeline_sizes(c: &mut Criterion) {
     for (size, label) in sizes.iter() {
         let img = create_test_image(*size, *size);
 
-        for level in [
-            ProtectionLevel::Light,
-            ProtectionLevel::Standard,
-            ProtectionLevel::Strong,
-        ] {
+        for level in [ProtectionLevel::Light, ProtectionLevel::Standard] {
             let id = format!("{}_{:?}", label, level);
             group.bench_with_input(BenchmarkId::new("image_size", id), &level, |b, &level| {
                 b.iter(|| pipeline.process(black_box(&img), level, black_box(&ctx)));
@@ -81,7 +77,6 @@ fn benchmark_protection_levels(c: &mut Criterion) {
         ProtectionLevel::Disabled,
         ProtectionLevel::Light,
         ProtectionLevel::Standard,
-        ProtectionLevel::Strong,
     ] {
         group.bench_with_input(
             BenchmarkId::new("level", level.as_str()),
@@ -110,11 +105,7 @@ fn benchmark_bytes_processing(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("process_bytes");
 
-    for level in [
-        ProtectionLevel::Light,
-        ProtectionLevel::Standard,
-        ProtectionLevel::Strong,
-    ] {
+    for level in [ProtectionLevel::Light, ProtectionLevel::Standard] {
         group.bench_with_input(
             BenchmarkId::new("png_512", level.as_str()),
             &level,
@@ -181,7 +172,8 @@ fn benchmark_allocations(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("allocations_512x512");
 
-    for level in [ProtectionLevel::Standard, ProtectionLevel::Enhanced] {
+    {
+        let level = ProtectionLevel::Standard;
         reset_counters();
         let _ = pipeline.process(&img_512, level, &ctx);
         let count = get_allocation_count();
@@ -212,8 +204,6 @@ fn benchmark_memory_usage(c: &mut Criterion) {
         ProtectionLevel::Disabled,
         ProtectionLevel::Light,
         ProtectionLevel::Standard,
-        ProtectionLevel::Enhanced,
-        ProtectionLevel::Strong,
     ] {
         group.bench_function(level.as_str(), |b| {
             b.iter(|| {
@@ -242,7 +232,8 @@ fn benchmark_jpeg_fast_path(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("jpeg_fast_path_512x512");
 
-    for level in [ProtectionLevel::Standard, ProtectionLevel::Enhanced] {
+    {
+        let level = ProtectionLevel::Standard;
         group.bench_with_input(
             BenchmarkId::new("jpeg_in_out", level.as_str()),
             &level,

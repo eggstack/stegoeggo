@@ -44,8 +44,8 @@ After all reviews complete, stale items in `architecture/` will be identified an
 **Review Output**: `plans/error-review.md`
 
 ### Module 4: Protected Modules
-**Documents**: `architecture/protected-*.md` (noise, enhanced, precomputed, passthrough, metadata_trap, steganography)
-**Source**: `src/protected/` (mod.rs, noise.rs, enhanced.rs, precomputed.rs, passthrough.rs, metadata_trap.rs, steganography.rs)
+**Documents**: `architecture/protected-*.md` (passthrough, metadata_trap, steganography)
+**Source**: `src/protected/` (mod.rs, passthrough.rs, metadata_trap.rs, steganography.rs)
 **Review Output**: `plans/protected-review.md`
 
 ### Module 5: JPEG Transcoder

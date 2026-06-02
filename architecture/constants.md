@@ -8,7 +8,6 @@ Tuning constants used across the protection modules.
 
 | Constant | Value | Used In | Purpose |
 |----------|-------|---------|---------|
-| `NOISE_INTENSITY_MULTIPLIER` | `10.0` | `noise.rs` | Scales intensity for Standard noise |
 | `STEGO_OFFSET_SEED_1` | `0x517cc1b727220a95` | `steganography.rs` | Multiplicative offset for stego pixel selection |
 | `STEGO_JPEG_AMPLITUDE` | `40` | `steganography.rs` | Pixel amplitude for JPEG stego |
 | `STEGO_JPEG_SPREAD` | `5` | `steganography.rs` | Spatial spread for JPEG stego |
@@ -19,9 +18,8 @@ Tuning constants used across the protection modules.
 ## Design Notes
 
 - `STEGO_OFFSET_SEED_1` is a large prime-like constant used in the seed derivation formula: `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)`
-- `NOISE_INTENSITY_MULTIPLIER` (10.0) is the Standard multiplier; Enhanced uses 12.0 (hardcoded in `EnhancedProtector`)
 - `XORSHIFT_SEED_OFFSET` ensures non-zero initial state for the PRNG
 
 ## Module Interactions
 
-- Referenced by `protected/noise.rs`, `protected/steganography.rs`, `util/image.rs`, `util/seed.rs`
+- Referenced by `protected/steganography.rs`, `util/image.rs`, `util/seed.rs`

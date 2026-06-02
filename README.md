@@ -1,6 +1,6 @@
 # cloakrs
 
-A modular Rust library for protecting images from AI scraping through adversarial poisoning strategies. Designed for CDN/WAF edge deployment with sub-10ms latency.
+A modular Rust library for protecting images from AI scraping through steganographic watermarking and metadata injection for legal deterrence.
 
 [![CI](https://github.com/yourorg/cloakrs/actions/workflows/ci.yml/badge.svg)](https://github.com/yourorg/cloakrs/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/cloakrs)](https://crates.io/crates/cloakrs)
@@ -8,21 +8,19 @@ A modular Rust library for protecting images from AI scraping through adversaria
 
 ## What is cloakrs?
 
-cloakrs implements **adversarial image protection** - a technique to protect images from being used to train AI models without the owner's consent. When AI systems scrape images from the web, poisoned images can:
+cloakrs implements **image protection through steganographic watermarking and metadata injection** — techniques to protect images from being used to train AI models without the owner's consent. When AI systems scrape images from the web, protected images can:
 
-- Degrade model quality when included in training datasets
-- Introduce visual artifacts in generated outputs
-- Make trained models unreliable for certain inputs
-- Serve as a deterrent to unauthorized scraping
+- Carry visible metadata markers (XMP, IPTC DMI, EXIF) that serve as legal deterrents
+- Contain hidden steganographic payloads that prove the image was protected
+- Embed legal metadata (copyright, usage terms) directly into the image file
+- Survive casual modification while retaining protection evidence
 
 The library provides multiple **layers of protection** that work together:
 
 | Layer | Description |
 |-------|-------------|
-| **Metadata Injection** | Embeds anti-scraping markers in image headers using IPTC DMI standard |
-| **Adversarial Perturbation** | Adds imperceptible noise patterns that disrupt AI model training |
-| **Steganography** | Hidden payloads embedded in image pixels for verification |
-| **Precomputed Variants** | Cached perturbations for ultra-fast CDN edge deployment |
+| **Metadata Injection** | Embeds anti-scraping markers in image headers using XMP, IPTC DMI, and EXIF |
+| **Steganography** | Hidden payloads embedded in image pixels (LSB) or DCT coefficients (JPEG) for verification |
 
 ### External Standards
 
@@ -71,9 +69,9 @@ cargo install cloakrs
 cloakrs input.png -o output.png
 
 # Specify protection level
-cloakrs input.png -o output.png --level strong
+cloakrs input.png -o output.png --level light
 
-# With cryptographic key for unique perturbations
+# With cryptographic key for HMAC-verified payloads
 cloakrs input.png -o output.png --key deadbeef123456
 
 # With legal metadata (for content you own!)
@@ -148,47 +146,42 @@ let protected = process_images_bytes_parallel(&image_bytes, ProtectionLevel::Sta
 
 ### Protection Levels
 
-The library provides five protection levels:
+The library provides three protection levels:
 
 | Level | Strategy | Latency | Use Case |
 |-------|----------|---------|----------|
 | `Disabled` | No protection | <0.1ms | Testing, whitelisted clients |
 | `Light` | Metadata injection only | ~2ms | Minimal visible markers |
-| `Standard` | Noise + Stego + Metadata | ~3-6ms | Default for most endpoints |
-| `Enhanced` | Enhanced perturbation | ~5-8ms | Higher protection needs |
-| `Strong` | Precomputed variants | ~2-6ms | High-value content, CDN |
+| `Standard` | Stego + Metadata | ~3-6ms | Default for most endpoints |
 
 ```rust
 use cloakrs::ProtectionLevel;
 
 // Use different levels
 let level = ProtectionLevel::Light;    // Metadata only
-let level = ProtectionLevel::Standard;  // Balanced (default)
-let level = ProtectionLevel::Enhanced; // Stronger noise
-let level = ProtectionLevel::Strong;    // Precomputed for speed
+let level = ProtectionLevel::Standard; // Stego + Metadata (default)
 ```
 
 ### Cryptographic Key Support
 
-Provide a hex key for keyed perturbations that make output unique and non-reproducible without the key:
+Provide a hex key for keyed HMAC-SHA256 payload verification:
 
 ```rust
 use cloakrs::{ProtectionContext, ProtectionLevel};
 
-// With MAC key - perturbations are cryptographically keyed
+// With MAC key - steganographic payloads are cryptographically verified
 let key = vec![0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78];
 let ctx = ProtectionContext::new(0.8, 42)
     .with_mac_key(key);
 
-// Without key - same seed produces same output
+// Without key - same seed produces same output (checksum-based verification)
 let ctx = ProtectionContext::new(0.8, 42);
 ```
 
 > **Note:** `ProtectionContext::default()` uses `generate_random_seed()`, which is **not cryptographically secure** — the seed is predictable from the system clock. For reproducible protection, always pass an explicit seed via `ProtectionContext::new(intensity, seed)`. For adversarial settings, pair with a MAC key.
 
 The MAC key affects:
-- Noise pattern generation
-- Steganography payload verification (HMAC instead of simple checksum)
+- Steganography payload verification (HMAC-SHA256 instead of simple checksum)
 
 ### Legal Metadata Injection
 
@@ -254,9 +247,9 @@ Available values:
 - `Prohibited` - All uses prohibited
 - `ProhibitedSeeConstraints` - Prohibited, see constraints for details
 
-### WAF Edge Optimization
+### Performance Tuning
 
-For CDN/WAF edge deployment with sub-10ms latency requirements:
+For latency-sensitive deployments:
 
 ```rust
 use cloakrs::{process_image_bytes, ProtectionContext, ProtectionLevel, ImageOutputFormat};
@@ -294,7 +287,7 @@ Arguments:
 Options:
   -o, --output <OUTPUT>    Output directory (batch) or file (single)
   -V, --verify             Verify if image contains protection signature
-  -l, --level <LEVEL>      Protection level: disabled, light, standard, enhanced, strong
+  -l, --level <LEVEL>      Protection level: disabled, light, standard
   -i, --intensity <FLOAT> Protection intensity 0.0-1.0 (default: 0.5)
   -s, --seed <SEED>        Seed for reproducible results
   -f, --format <FORMAT>   Output format: png, jpg, webp
@@ -303,9 +296,9 @@ Options:
   --progressive            Use progressive JPEG encoding
   -v, --verbose            Print verbose output
   -d, --dmi <DMI>          DMI metadata value
-  --metadata               Inject metadata (seed, DMI). Default: true for Standard+
+  --metadata               Inject metadata (seed, DMI). Default: true for Standard
   --legal-claims          Inject legal claims (copyright). WARNING: only for content you own
-  -k, --key <KEY>          Cryptographic key (hex string) for keyed perturbations
+  -k, --key <KEY>          Cryptographic key (hex string) for HMAC-SHA256 verification
   -j, --jobs <N>           Parallel jobs for batch processing (default: 1)
   -h, --help               Print help
   --version                Print version
@@ -317,8 +310,8 @@ Options:
 # Basic protection with default settings
 cloakrs photo.jpg -o photo_protected.png
 
-# Strong protection
-cloakrs art.png -o art_protected.png --level strong
+# Light protection (metadata only)
+cloakrs art.png -o art_protected.png --level light
 
 # With custom intensity and seed
 cloakrs image.jpg -o output.png -i 0.8 -s 12345
@@ -383,28 +376,19 @@ The library injects metadata into image headers:
 **WebP:** EXIF and XML chunks
 - Similar metadata injection
 
-### 2. Adversarial Perturbation
+### 2. Steganography
 
-Adds imperceptible noise in three stages:
-
-1. **Block Noise Generation**: Creates block-based noise patterns using a seeded random generator
-2. **Spatial Variation**: Applies brightness variations across horizontal strips
-3. **Frequency Perturbation**: Adds sinusoidal patterns in the frequency domain
-
-The noise intensity is controlled by the `intensity` parameter (0.0-1.0), with higher values producing more visible but more disruptive perturbations.
-
-### 3. Steganography
-
-Hidden payloads embedded in images:
+Hidden payloads embedded in images for verification and proof of protection:
 
 **PNG/WebP:** LSB (Least Significant Bit) embedding
 - Payload embedded in the lowest bits of RGB channels
-- 2x redundancy for verification
+- Redundant passes for verification robustness
 - Uses pseudo-random pixel selection based on seed
 
-**JPEG:** DCT-based or pixel-based embedding
-- Block-structured embedding with redundancy
-- Survives some re-encoding but less robust than PNG
+**JPEG:** DCT-based (F5-style) embedding
+- Seed embedded in quantization tables (survives re-encoding)
+- DCT coefficient perturbation using F5-style no-zero variant
+- Pixel-based fallback when DCT path unavailable
 
 **Payload Structure (32 bytes):**
 ```
@@ -418,90 +402,19 @@ Offset  Size  Field
 24      8     HMAC (if key provided) or checksum
 ```
 
-### 4. Precomputed Variants
-
-For CDN/WAF edge deployment:
-
-1. Precompute perturbations for known images
-2. Store variants with cache keys (hash + level + intensity)
-3. At edge, look up variant and apply instantly
-4. Achieves sub-10ms latency for cached content
-
-## CDN/WAF Integration
+## Integration Architecture
 
 ### Architecture Overview
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Origin Server │────▶│  CDN / WAF Edge │────▶│    End User     │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-        │                       │                        │
-        │  1. Upload images     │                        │
-        │  2. Precompute        │                        │
-        │     variants         │                        │
-        │                      │  3. Request            │
-        │                      │  4. Lookup variant     │
-        │                      │  5. Apply + serve      │
-```
-
-### Precomputation Workflow
-
-```rust
-use cloakrs::{
-    ProtectionPipeline, ProtectionContext, ProtectedVariant, 
-    ProtectionLevel, PrecomputedProtector,
-};
-use image::DynamicImage;
-
-// 1. Load original images (typically at upload time)
-let original = image::open("original.png")?;
-let hash = cloakrs::compute_image_hash(&original);
-
-// 2. Generate perturbation data
-let ctx = ProtectionContext::new(0.5, 42);
-
-// Create a PrecomputedProtector to generate and register variants
-let precomputed = PrecomputedProtector::new();
-let (width, height) = original.dimensions();
-
-let perturbation = precomputed.generate_perturbation_data(width, height, &ctx)?;
-
-// 3. Register precomputed variant
-let variant = ProtectedVariant::new(
-    hash,
-    ProtectionLevel::Strong,
-    perturbation,
-    0.5,
-    width,
-    height,
-);
-
-precomputed.register_variant(variant)?;
-
-// 4. Store variant (serialize to JSON for CDN)
-// In practice, store in Redis, database, or file
-let json = serde_json::to_string(&variant)?;
-std::fs::write("variant.json", json)?;
-```
-
-### Edge Application
-
-At the CDN edge (using precomputed variants):
-
-```rust
-use cloakrs::{ProtectionPipeline, ProtectionContext, ProtectionLevel, ProtectedVariant};
-
-// Load variant from storage (Redis, database, etc.)
-let variant: ProtectedVariant = serde_json::from_str(&stored_json)?;
-
-// Register the variant on a pipeline
-let pipeline = ProtectionPipeline::new();
-pipeline.register_precomputed_variants(vec![variant])?;
-
-// Now requests hit the fast path
-let ctx = ProtectionContext::new(0.5, seed);
-let img = image::open(requested_image)?;
-let protected = pipeline.process(&img, ProtectionLevel::Strong, &ctx)?;
+│   Image Source  │────▶│   Protection    │────▶│   Distribution  │
+└─────────────────┘     │   Pipeline      │     └─────────────────┘
+                        └─────────────────┘
+                                │
+                                │  1. Embed steganographic watermark
+                                │  2. Inject metadata markers
+                                │  3. Add legal claims (optional)
 ```
 
 ## Verification
@@ -518,7 +431,7 @@ let img = image::load_from_memory(&protected_bytes)?;
 let stego = SteganographyProtector::new();
 if stego.verify_payload(&img) {
     println!("Image is protected by cloakrs");
-    
+
     // Extract payload details
     if let Some(payload) = stego.extract_payload(&img) {
         println!("Protection level: {}", payload.protection_level());
@@ -541,15 +454,15 @@ JPEG's lossy compression can destroy steganography payloads embedded in pixel da
 
 **Current behavior:**
 - PNG/WebP: LSB steganography is fully supported and verifiable
-- JPEG: Steganography is embedded using a pixel-based approach that may survive some re-encoding, but is not guaranteed
+- JPEG: F5-style DCT steganography embeds in quantization tables (survives re-encoding) and coefficients
 
 **Recommendations:**
 - Use PNG output format for protected images when possible
-- If you must use JPEG, verification relies on metadata (seed extraction)
-- For highest reliability, use the DCT-based stego which embeds in quantization tables (survives re-encoding better)
-- The CLI automatically handles this and reports accordingly
+- For JPEG, verification relies on quantization table seed extraction and metadata
+- The library automatically uses the best available extraction method
+- The CLI handles this and reports accordingly
 
-**Technical note:** The library attempts DCT-based embedding for JPEG which modifies quantization tables, providing better durability against re-encoding than pixel-based approaches.
+**Technical note:** The library uses F5-style DCT embedding for JPEG which modifies quantization tables, providing better durability against re-encoding than pixel-based approaches.
 
 ## Performance
 
@@ -564,7 +477,7 @@ Benchmarked on Apple M1 Pro (10 cores), version 0.2.0:
 | 512×512 | Standard | ~3.0 | `stego_redundancy=1` |
 | 1024×1024 | Standard | ~20.0 | Default settings |
 
-**Target:** <10ms for CDN/WAF edge deployment
+**Target:** <10ms for typical image sizes
 
 ### Optimizations Applied (v0.2.0)
 
@@ -573,17 +486,16 @@ Benchmarked on Apple M1 Pro (10 cores), version 0.2.0:
 - Bounded fallback in steganography embedding
 - Fast-path bytes processing without unnecessary re-encoding
 - ISCC computation removed from hot path (available out-of-band)
-- Precomputed sin tables for frequency perturbations
 
 ## Technical Details
 
 ### Image Format Support
 
-| Format | Metadata | Stego | Perturbation |
-|--------|----------|-------|---------------|
-| PNG | tEXt/iTXt | LSB | Full |
-| JPEG | COM/XMP | DCT/Pixel | Full |
-| WebP | EXIF/XML | LSB | Full |
+| Format | Metadata | Stego |
+|--------|----------|-------|
+| PNG | tEXt/iTXt | LSB |
+| JPEG | COM/XMP/EXIF | DCT (F5) |
+| WebP | EXIF/XML | LSB |
 
 ### ISCC Computation
 
@@ -622,15 +534,14 @@ fn process() -> Result<DynamicImage> {
 
 Common errors:
 - `Error::ImageDecode(String)` - Failed to decode image
-- `Error::ImageEncode(String)` - Failed to encode image  
+- `Error::ImageEncode(String)` - Failed to encode image
 - `Error::Metadata(String)` - Metadata injection failure
-- `Error::VariantNotFound(String)` - Precomputed variant not found
 
 ## External References
 
 - [IPTC Photo Metadata Standard](https://iptc.org/standards/photo-metadata/) - DMI tag specification
 - [ISCC Project](https://iscc-project.github.io/) - Content identification standard
-- [Adversarial ML Overview](https://adversarial-ml-tutorial.org/) - Background on adversarial perturbations
+- [F5 Steganography](https://en.wikipedia.org/wiki/Steganography#Embedding) - DCT-based steganographic technique
 - [jpeg-encoder](https://crates.io/crates/jpeg-encoder) - JPEG encoding used
 - [image crate](https://image.rs/) - Image processing foundation
 
@@ -642,28 +553,11 @@ cloakrs
 ├── Protector trait           # Strategy pattern for protectors
 │   ├── PassthroughProtector # No-op (Disabled level)
 │   ├── MetadataTrapProtector # Metadata injection (Light level)
-│   ├── NoiseProtector        # Adversarial noise (Standard level)
-│   ├── EnhancedProtector     # Enhanced noise (Enhanced level)
-│   └── PrecomputedProtector  # Cached variants (Strong level)
-├── SteganographyProtector   # LSB/DCT embedding
-├── ProtectionLevel          # disabled → light → standard → enhanced → strong
+│   └── SteganographyProtector # LSB/DCT embedding (Standard level)
+├── ProtectionLevel          # disabled → light → standard
 ├── LegalMetadata            # Configurable legal metadata
-├── ProtectionContext            # Configuration for protection
-└── ProtectedVariant         # Precomputed variant storage
-```
-
-## Testing
-
-```bash
-# Run all tests
-cargo test
-
-# Run with output
-cargo test -- --nocapture
-
-# Run specific module tests
-cargo test poisoners
-cargo test steganography
+├── ProtectionContext        # Configuration for protection
+└── StegoPayload             # Extracted stego data
 ```
 
 ## Safety & Ethics

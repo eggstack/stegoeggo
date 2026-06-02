@@ -1,22 +1,19 @@
-//! High-performance image protection library for WAF edge deployment.
+//! Image protection library for legal deterrence against unauthorized AI training.
 //!
-//! This library provides modular protection strategies to protect images from being
-//! scraped and used to train AI models. Optimized for sub-10ms latency in CDN/WAF edge deployments.
+//! Protects images through steganographic payload embedding and metadata injection,
+//! providing evidence of protection and legal warnings that survive casual modification.
 //!
 //! # Protection Levels
 //!
 //! - `Disabled`: No protection applied
-//! - `Light`: Metadata injection (tEXt chunks for PNG, COM markers for JPEG)
-//! - `Standard`: Noise perturbation + steganography + metadata
-//! - `Enhanced`: Enhanced perturbation + steganography + metadata
-//! - `Strong`: Precomputed variants + steganography + metadata
+//! - `Light`: Metadata injection only (tEXt chunks for PNG, COM markers for JPEG)
+//! - `Standard`: Steganography + metadata injection
 //!
-//! # Multi-Layered Defense
+//! # Protection Layers
 //!
-//! Each protection level applies multiple layers of defense:
-//! 1. **Noise Perturbation** - Adversarial pixel-level noise
-//! 2. **Steganography** - Hidden LSB payload (PNG/WebP) or DCT perturbation (JPEG)
-//! 3. **Metadata Injection** - Visible anti-scraping markers
+//! Each protection level applies one or more layers:
+//! 1. **Steganography** - Hidden LSB payload (PNG/WebP) or DCT perturbation (JPEG)
+//! 2. **Metadata Injection** - Visible anti-scraping markers (XMP, IPTC, EXIF)
 //!
 //! # JPEG Limitations
 //!
@@ -34,11 +31,6 @@
 //! takes a byte-only fast path that operates directly on DCT coefficients, avoiding
 //! decode/encode cycles. This path applies DCT steganography (F5 embedding) and
 //! metadata injection. For progressive JPEGs, the progressive encoding is preserved.
-//!
-//! Pixel-level noise perturbation is skipped in this mode because it requires
-//! decoding to pixels and re-encoding, which would introduce additional lossy
-//! compression artifacts. For format conversion (e.g., JPEG input → PNG output),
-//! the full protection pipeline including noise perturbation is applied.
 //!
 //! # Security Considerations
 //!
@@ -106,24 +98,21 @@ pub mod async_api;
 
 pub use error::{Error, Result};
 pub use types::{
-    DmiValue, ImageOutputFormat, LegalMetadata, ProtectedVariant, ProtectionConfig,
-    ProtectionContext, ProtectionLevel, DEFAULT_OUTPUT_FORMAT,
+    DmiValue, ImageOutputFormat, LegalMetadata, ProtectionConfig, ProtectionContext,
+    ProtectionLevel, DEFAULT_OUTPUT_FORMAT,
 };
 
-pub use traits::{NoOpLoader, Protector, VariantLoader};
+pub use traits::Protector;
 
-pub use protected::enhanced::EnhancedProtector;
 pub use protected::metadata_trap::MetadataTrapProtector;
-pub use protected::noise::NoiseProtector;
 pub use protected::passthrough::PassthroughProtector;
-pub use protected::precomputed::PrecomputedProtector;
 pub use protected::steganography::{SteganographyProtector, StegoPayload};
 
 pub use jpeg_transcoder::is_progressive_jpeg;
 
 pub use util::image::{
-    apply_perturbation, compute_image_hash, detect_image_format, encode_image,
-    encode_image_with_options, load_image_from_bytes, NoiseGenerator,
+    compute_image_hash, detect_image_format, encode_image, encode_image_with_options,
+    load_image_from_bytes,
 };
 
 pub use util::iscc::{compute_iscc, compute_iscc_from_bytes, Iscc};
@@ -143,13 +132,6 @@ use std::sync::LazyLock;
 
 static DEFAULT_PIPELINE: LazyLock<ProtectionPipeline> = LazyLock::new(ProtectionPipeline::new);
 
-#[derive(Clone, Copy)]
-enum MultiProtector {
-    Noise,
-    Enhanced,
-    Precomputed,
-}
-
 /// Main pipeline for applying protection to images.
 ///
 /// Coordinates between different protector implementations based on the
@@ -157,9 +139,6 @@ enum MultiProtector {
 pub struct ProtectionPipeline {
     passthrough: Arc<PassthroughProtector>,
     metadata_trap: Arc<MetadataTrapProtector>,
-    noise: Arc<protected::noise::NoiseProtector>,
-    enhanced: Arc<protected::enhanced::EnhancedProtector>,
-    precomputed: Arc<protected::precomputed::PrecomputedProtector>,
     steganography: Arc<SteganographyProtector>,
 }
 
@@ -169,9 +148,6 @@ impl ProtectionPipeline {
         Self {
             passthrough: Arc::new(PassthroughProtector::new()),
             metadata_trap: Arc::new(MetadataTrapProtector::new()),
-            noise: Arc::new(protected::noise::NoiseProtector::new()),
-            enhanced: Arc::new(protected::enhanced::EnhancedProtector::new()),
-            precomputed: Arc::new(protected::precomputed::PrecomputedProtector::new()),
             steganography: Arc::new(SteganographyProtector::new()),
         }
     }
@@ -189,25 +165,7 @@ impl ProtectionPipeline {
         Ok(())
     }
 
-    fn apply_perturbation<'a>(
-        &'a self,
-        img: &'a DynamicImage,
-        ctx: &ProtectionContext,
-        protector: MultiProtector,
-    ) -> Result<Cow<'a, DynamicImage>> {
-        match protector {
-            MultiProtector::Noise => self.noise.apply(img, ctx),
-            MultiProtector::Enhanced => self.enhanced.apply(img, ctx),
-            MultiProtector::Precomputed => self.precomputed.apply(img, ctx),
-        }
-    }
-
     /// Process an image with the specified protection level.
-    ///
-    /// The `intensity` field of `ctx` controls only the perturbation stage
-    /// (noise/Enhanced/Precomputed). Steganography and metadata injection
-    /// run regardless of intensity. Setting `intensity` to 0.0 disables
-    /// pixel perturbation but stego and metadata layers remain active.
     pub fn process<'a>(
         &'a self,
         img: &'a DynamicImage,
@@ -223,48 +181,37 @@ impl ProtectionPipeline {
         match level {
             ProtectionLevel::Disabled => self.passthrough.apply(img, ctx),
             ProtectionLevel::Light => self.apply_light_bytes(img, ctx).map(Cow::Owned),
-            ProtectionLevel::Standard => self
-                .apply_multi_protector(img, ctx, MultiProtector::Noise)
-                .map(Cow::Owned),
-            ProtectionLevel::Enhanced => self
-                .apply_multi_protector(img, ctx, MultiProtector::Enhanced)
-                .map(Cow::Owned),
-            ProtectionLevel::Strong => self
-                .apply_multi_protector(img, ctx, MultiProtector::Precomputed)
-                .map(Cow::Owned),
+            ProtectionLevel::Standard => self.apply_standard_pipeline(img, ctx).map(Cow::Owned),
         }
     }
 
-    fn apply_multi_protector(
+    /// Standard pipeline: stego → encode → metadata injection.
+    fn apply_standard_pipeline(
         &self,
         img: &DynamicImage,
         ctx: &ProtectionContext,
-        protector: MultiProtector,
     ) -> Result<DynamicImage> {
         let output_format = ctx
             .output_format()
             .or(ctx.input_format())
             .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
 
-        let final_bytes = self.apply_protector_pipeline(img, ctx, protector, output_format)?;
+        let final_bytes = self.apply_pipeline_bytes(img, ctx, output_format)?;
         Ok(image::load_from_memory(&final_bytes)?)
     }
 
-    /// Shared pipeline: perturb → stego → encode → metadata injection.
-    /// Used by both `apply_multi_protector` and `apply_multi_protector_bytes`.
-    fn apply_protector_pipeline(
+    /// Shared pipeline: stego → encode → metadata injection.
+    /// Used by both `apply_standard_pipeline` and `apply_bytes_pipeline`.
+    fn apply_pipeline_bytes(
         &self,
         img: &DynamicImage,
         ctx: &ProtectionContext,
-        protector: MultiProtector,
         output_format: crate::types::ImageOutputFormat,
     ) -> Result<Vec<u8>> {
-        let processed = self.apply_perturbation(img, ctx, protector)?;
-
         // JPEG output: encode first, then apply DCT stego to the JPEG bytes
         if output_format == crate::types::ImageOutputFormat::Jpeg {
             let jpeg_bytes = crate::util::image::encode_image_with_options(
-                &processed,
+                img,
                 Some(output_format),
                 ctx.progressive_jpeg(),
                 ctx.jpeg_quality(),
@@ -274,7 +221,7 @@ impl ProtectionPipeline {
         }
 
         // Non-JPEG output: pixel stego then encode
-        let with_stego = self.steganography.apply(&processed, ctx)?;
+        let with_stego = self.steganography.apply(img, ctx)?;
         let encoded = crate::util::image::encode_image_with_options(
             &with_stego,
             Some(output_format),
@@ -302,14 +249,6 @@ impl ProtectionPipeline {
         Ok(image::load_from_memory(&with_metadata)?)
     }
 
-    /// Register precomputed variants for fast lookup during `process` calls.
-    ///
-    /// Delegates to the internal [`PrecomputedProtector`]'s batch registration.
-    /// Variants are keyed by `(hash, level, intensity)` for cache lookup.
-    pub fn register_precomputed_variants(&self, variants: Vec<ProtectedVariant>) -> Result<()> {
-        self.precomputed.register_variants(variants)
-    }
-
     /// Process image bytes with the specified protection level.
     ///
     /// For JPEG-in/JPEG-out, uses the byte-only fast path (DCT stego + metadata,
@@ -327,19 +266,7 @@ impl ProtectionPipeline {
         match level {
             ProtectionLevel::Disabled => Ok(img_bytes.to_vec()),
             ProtectionLevel::Light => self.metadata_trap.apply_bytes(img_bytes, &ctx_with_level),
-            ProtectionLevel::Standard => {
-                self.apply_multi_protector_bytes(img_bytes, &ctx_with_level, MultiProtector::Noise)
-            }
-            ProtectionLevel::Enhanced => self.apply_multi_protector_bytes(
-                img_bytes,
-                &ctx_with_level,
-                MultiProtector::Enhanced,
-            ),
-            ProtectionLevel::Strong => self.apply_multi_protector_bytes(
-                img_bytes,
-                &ctx_with_level,
-                MultiProtector::Precomputed,
-            ),
+            ProtectionLevel::Standard => self.apply_bytes_pipeline(img_bytes, &ctx_with_level),
         }
     }
 
@@ -356,12 +283,7 @@ impl ProtectionPipeline {
         Ok(())
     }
 
-    fn apply_multi_protector_bytes(
-        &self,
-        img_bytes: &[u8],
-        ctx: &ProtectionContext,
-        protector: MultiProtector,
-    ) -> Result<Vec<u8>> {
+    fn apply_bytes_pipeline(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
         let input_format = ctx
             .input_format()
             .or_else(|| crate::types::ImageOutputFormat::from_magic_bytes(img_bytes))
@@ -385,7 +307,7 @@ impl ProtectionPipeline {
         // Non-JPEG-in: decode then use shared pipeline
         let img = load_image_from_bytes(img_bytes)?;
         Self::validate_dimensions(&img, ctx.max_dimension())?;
-        self.apply_protector_pipeline(&img, ctx, protector, output_format)
+        self.apply_pipeline_bytes(&img, ctx, output_format)
     }
 }
 
@@ -526,8 +448,6 @@ mod tests {
             ProtectionLevel::Disabled,
             ProtectionLevel::Light,
             ProtectionLevel::Standard,
-            ProtectionLevel::Enhanced,
-            ProtectionLevel::Strong,
         ] {
             let result = pipeline.process(&img, *level, &ProtectionContext::default());
             assert!(result.is_ok(), "Failed for level: {:?}", level);
@@ -576,50 +496,6 @@ mod tests {
     }
 
     #[test]
-    fn test_end_to_end_enhanced_level() {
-        let pipeline = ProtectionPipeline::new();
-        let img = DynamicImage::new_rgb8(64, 64);
-
-        let ctx = ProtectionContext::default()
-            .with_seed(42)
-            .with_intensity(0.5);
-
-        let protected = pipeline
-            .process(&img, ProtectionLevel::Enhanced, &ctx)
-            .unwrap();
-
-        let stego = SteganographyProtector::new();
-        let verified = stego.verify_payload(&protected);
-
-        assert!(
-            verified,
-            "Payload should be verified after enhanced protection"
-        );
-    }
-
-    #[test]
-    fn test_end_to_end_strong_level() {
-        let pipeline = ProtectionPipeline::new();
-        let img = DynamicImage::new_rgb8(64, 64);
-
-        let ctx = ProtectionContext::default()
-            .with_seed(42)
-            .with_intensity(0.5);
-
-        let protected = pipeline
-            .process(&img, ProtectionLevel::Strong, &ctx)
-            .unwrap();
-
-        let stego = SteganographyProtector::new();
-        let verified = stego.verify_payload(&protected);
-
-        assert!(
-            verified,
-            "Payload should be verified after strong protection"
-        );
-    }
-
-    #[test]
     fn test_process_bytes_and_verify() {
         use image::ImageEncoder;
 
@@ -649,22 +525,6 @@ mod tests {
             "Protected bytes should differ from input at intensity {}",
             ctx.intensity()
         );
-    }
-
-    #[test]
-    fn test_deterministic_protection() {
-        let noise = NoiseProtector::new();
-        let img = DynamicImage::new_rgb8(32, 32);
-
-        let ctx1 = ProtectionContext::default().with_seed(42);
-        let ctx2 = ProtectionContext::default().with_seed(42);
-
-        let result1 = noise.apply(&img, &ctx1).unwrap();
-        let result2 = noise.apply(&img, &ctx2).unwrap();
-
-        assert_eq!(result1.width(), result2.width());
-        assert_eq!(result1.height(), result2.height());
-        assert_eq!(result1.to_rgba8().as_raw(), result2.to_rgba8().as_raw());
     }
 
     #[test]

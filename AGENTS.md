@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`cloakrs` is a Rust library and CLI for protecting images from unauthorized AI model training through adversarial image poisoning. Designed for CDN/WAF edge deployment with sub-10ms latency targets.
+`cloakrs` is a Rust library and CLI for protecting images from unauthorized AI use through steganographic watermarking and metadata injection for legal deterrence.
 
 ## Tech Stack
 
@@ -11,8 +11,8 @@
 
 ## Architecture
 
-- **Strategy pattern** via `Protector` trait (`src/traits.rs`) with five protection levels: Disabled, Light, Standard, Enhanced, Strong
-- **Pipeline** (`src/lib.rs`): `ProtectionPipeline` orchestrates multiple protectors based on `ProtectionLevel`
+- **Strategy pattern** via `Protector` trait (`src/traits.rs`) with three protection levels: Disabled, Light, Standard
+- **Pipeline** (`src/lib.rs`): `ProtectionPipeline` orchestrates protectors based on `ProtectionLevel`
 - **JPEG fast path**: When input/output are both JPEG, operates directly on DCT coefficients via custom transcoder (`src/jpeg_transcoder/`), bypassing pixel decode/encode
 - **Cow returns**: `Protector::apply` returns `Result<Cow<'a, DynamicImage>>` to avoid unnecessary cloning
 
@@ -22,15 +22,12 @@
 src/
 ├── lib.rs                 # Pipeline, top-level functions, module exports
 ├── types.rs               # Core types (ProtectionLevel, ProtectionContext, etc.)
-├── traits.rs              # Protector trait, VariantLoader trait
+├── traits.rs              # Protector trait
 ├── error.rs               # Error enum (thiserror)
 ├── async_api.rs           # Async wrappers (spawn_blocking)
 ├── protected/             # Protection strategies
 │   ├── constants.rs       # Tuning constants
 │   ├── passthrough.rs     # No-op (Disabled)
-│   ├── noise.rs           # Adversarial noise (Standard)
-│   ├── enhanced.rs        # Higher intensity (Enhanced)
-│   ├── precomputed.rs     # Precomputed variants (Strong)
 │   ├── metadata_trap.rs   # Metadata injection (Light)
 │   └── steganography.rs   # LSB/DCT steganographic embedding
 ├── jpeg_transcoder/       # JPEG-specific processing
@@ -38,7 +35,7 @@ src/
 │   ├── entropy.rs         # Huffman entropy codec
 │   └── stego_f5.rs        # F5-style DCT steganography
 └── util/
-    ├── image.rs           # Encoding, perturbation, hash
+    ├── image.rs           # Encoding, hash
     ├── iscc.rs            # ISCC content identifiers
     └── seed.rs            # Random seed generation
 ```
@@ -46,10 +43,9 @@ src/
 ## Key Types
 
 - `ProtectionContext::new(intensity: f32, seed: u64)` — intensity clamped to [0.0, 1.0]
-- `ProtectedVariant::new(hash, level, perturbation_data, intensity, width, height)` — no target model parameter
-- `ProtectionConfig` — shared heavy config (MAC key, legal metadata) wrapped in `Arc`
+- `ProtectionConfig` — MAC key and legal metadata wrapped in `Arc`
 - `StegoPayload` — extracted stego data with `protection_level()`, `seed()`, `intensity()`, `version()` getters
-- All struct fields on `ProtectionContext`, `ProtectedVariant`, and `StegoPayload` are private — use getter methods (e.g., `ctx.intensity()`, `ctx.seed()`, `variant.perturbation_data()`)
+- All struct fields on `ProtectionContext` and `StegoPayload` are private — use getter methods (e.g., `ctx.intensity()`, `ctx.seed()`)
 - `ProtectionContext` has `set_input_format()` (public) and `set_protection_level()` (crate-internal) for non-builder mutation
 
 ## Architecture Documentation
@@ -73,9 +69,7 @@ cargo bench                              # Criterion benchmarks
 - No comments in code unless explicitly asked
 - `#[must_use]` on builder methods
 - `pub(crate)` for internal modules (e.g., `jpeg_transcoder`)
-- `LazyLock` static singletons for default pipelines
-- `Arc<ProtectionConfig>` for shared heavy fields
-- Private fields with getter methods on `ProtectionContext`, `ProtectedVariant`, `StegoPayload`, `LegalMetadata`
+- Private fields with getter methods on `ProtectionContext`, `StegoPayload`, `LegalMetadata`
 
 ## Things to Watch Out For
 
@@ -87,21 +81,18 @@ cargo bench                              # Criterion benchmarks
 - **ISCC module** (`src/util/iscc.rs`): Content identification, exported from `lib.rs`. NOT ISCC-standard compliant — uses custom component codes (`0x12`, `0x33`) and non-standard DCT hash. Produces ISCC-like identifiers that are not interoperable with other ISCC implementations
 - **No `TargetModel`**: This concept was removed. `ProtectionContext::new` takes `(intensity, seed)` only
 - **Steganography seed derivation**: `embed_lsb` and `embed_jpeg_stego` internally derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)` before using `stego_permutation`. When calling internal embed/extract functions directly (outside of `apply()`), ensure seeds match. The public API (`apply()` + `extract_payload()`) handles this correctly
-- **XorShiftRng — two separate implementations**: `src/util/image.rs` has `XorShiftRng` (general-purpose noise/pixel selection) and `src/jpeg_transcoder/stego_f5.rs` has `F5XorShiftRng` (DCT coefficient shuffling). They use different algorithms and produce different sequences for the same seed. Do NOT interchange them — each is paired with their respective embed/extract code paths
+- **XorShiftRng — two separate implementations**: `src/util/image.rs` has `XorShiftRng` (general-purpose pixel selection for steganography) and `src/jpeg_transcoder/stego_f5.rs` has `F5XorShiftRng` (DCT coefficient shuffling). They use different algorithms and produce different sequences for the same seed. Do NOT interchange them — each is paired with their respective embed/extract code paths
 - **MetadataTrapProtector::apply()**: `apply()` returns `Cow::Borrowed(img)` unchanged. Metadata injection operates at the byte level and the `DynamicImage` API cannot preserve injected text chunks through encode/decode cycles. The pipeline routes `Light` level through `apply_light_bytes()` which encodes, injects metadata, then decodes (metadata survives in the byte output). For byte-level output with metadata intact, use `apply_bytes()` or `process_bytes()`
 - **`verify_payload_with_key()` returns `Option<bool>`**, not `bool` — use `== Some(true)` or `!= Some(true)` in assertions, not `assert!()` or `assert!(!)` directly
 - **JPEG stego redundancy bug** (`steganography.rs:788-841`): Fixed — `embedded = 0;` reset added between redundancy passes so all passes embed when `redundancy > 1`
 - **HuffmanDecoder/HuffmanEncoderTable caching**: In `entropy.rs`, Huffman decoders and encoder lookup tables are pre-built once before the MCU loop. `HuffmanEncoderTable` uses a `[(u16, u8); 256]` array for O(1) symbol→(code,length) lookup. These are internal types — do not rebuild per-MCU
 - **JPEG header parser bounds**: `header.rs:parse()` has guards for `data.len() < 2` (empty input) and `end_pos < 10` (too short for SOF). Segment data end uses `.max(segment_data_start)` to prevent inverted slice ranges when `segment_len` is malformed. Parse errors now include byte offset for debugging
-- **PrecomputedProtector auto-caching**: `apply()` auto-registers generated perturbations via `register_variant` on cache miss. The perturbation is no longer cloned — it is moved into the variant after use. Registration failure is silently ignored (best-effort caching). The `register_variant` method has a doc comment explaining the two-phase design (persist without lock, then insert with write lock). Cache uses `RwLock<LruCache>` with default capacity of 100 entries (configurable via `with_capacity()`). LRU eviction occurs on insert when capacity is exceeded
 - **`subtle` crate for constant-time comparison**: `verify_payload_mac` in `steganography.rs` uses `subtle::ConstantTimeEq::ct_eq()` instead of `==` to prevent timing attacks on HMAC verification
-- **Pipeline intensity semantics**: `intensity` controls only the perturbation stage (noise/Enhanced/Precomputed). Steganography and metadata injection run regardless of intensity value. This is by design — they are orthogonal protection layers
+- **Pipeline intensity semantics**: Steganography and metadata injection run regardless of intensity value. The `intensity` field is available on `ProtectionContext` but does not affect the current protection layers.
 - **F5 no-zero variant correctness**: `stego_f5.rs` implements a no-zero F5 variant that increments |coef| when |coef|=1 and LSB mismatches, avoiding detectable zero creation. The embed/extract position alignment is preserved because no coefficient is ever zeroed out. The implementation is correct
 - **F5 seed embedding Q-table edge case**: `stego_f5.rs` has a precondition check in `embed_seed_in_quantization_tables()` that fails if any quantization value in the first 2 tables is < 2. Values of 1 cannot represent a 0-bit (`1 & 0xFE = 0`, clamped back to 1). Use quantization values >= 2 for reliable seed embedding
 - **`#[serde(skip)]` on `config` field**: `ProtectionContext.config` (`Option<Arc<ProtectionConfig>>`) is skipped during serialization. MAC keys and legal metadata are lost in serde roundtrips. A test (`test_config_skipped_in_serde_roundtrip`) documents this behavior
-- **Async batch processing**: `process_images_parallel_async` and `process_images_bytes_parallel_async` run the entire batch inside a single `spawn_blocking`, delegating to the synchronous rayon-based parallel functions. This avoids per-image `spawn_blocking` calls that would cause thread pool overlap. Single-image async functions (`process_image_async`, `process_image_bytes_async`) still use one `spawn_blocking` per image, which is appropriate for the WAF hot path
-- **`parallel_threshold()`**: Scales with `rayon::current_num_threads()` — returns `cores * 64 * 64`. At 1 core: 4096. At 4 cores: 16384. At 16 cores: 65536. Replaces the old hardcoded `PARALLEL_THRESHOLD_PIXELS` const
-- **`PerturbationRuntime`**: Shared setup struct in `util/image.rs` that both serial and parallel perturbation paths use. Pre-computes `NoiseGenerator`, spatial seed, and per-row `y_variations` — eliminates duplicated code between the two paths. `PerturbationParams` retains the `NoiseGenerator` internally and exposes `derive_spatial_seed()` so callers avoid redundant HMAC key initialization
+- **Async batch processing**: `process_images_parallel_async` and `process_images_bytes_parallel_async` run the entire batch inside a single `spawn_blocking`, delegating to the synchronous rayon-based parallel functions. This avoids per-image `spawn_blocking` calls that would cause thread pool overlap. Single-image async functions (`process_image_async`, `process_image_bytes_async`) still use one `spawn_blocking` per image
 - **Steganography fallback seeds**: Extracted to `FALLBACK_SEEDS` constant in `steganography.rs`. These are common test/dev seeds tried when metadata is stripped
 - **Format detection strictness**: `apply_multi_protector_bytes` returns `Error::InvalidFormat` when the input format cannot be determined (from `ctx.input_format()` or magic bytes). Previously it silently defaulted to PNG
 - **JPEG segment length bounds**: `get_scan_data_start` now uses `checked_add` to prevent integer overflow when advancing past segments with malformed lengths
@@ -110,14 +101,10 @@ cargo bench                              # Criterion benchmarks
 - **`inject_metadata` / `inject_legal_claims` are `Option<bool>`**: Default is `None`, not `true`/`false`. The `None` semantics (use level default) vs explicit `false` (disable) are well-documented in `types.rs`. `with_metadata_injection(false)` and not calling it at all have different effects
 - **`process_bytes` dimension validation**: `process_bytes()` now validates `max_dimension` for both JPEG (via header parse) and non-JPEG paths. Previously only `process()` enforced this
 - **CLI batch filename collisions**: Batch mode in `cloakrs-cli` detects duplicate output stems and appends `_protected_1`, `_protected_2`, etc. to prevent silent overwrites
-- **`is_enabled()` is dead code**: Defined in the `Protector` trait with default `true`. `PassthroughProtector` overrides it to return `true`. The pipeline never calls `is_enabled()` — it uses direct `match level` dispatch
-- **`ProtectedVariant::cache_key()` format**: Returns `{hash}_{level}_{intensity}` (not `{uuid}_{hash}_{intensity}`). The UUID (`variant_id`) is generated but not included in the cache key
-- **Pipeline flow order (JPEG output)**: For JPEG output, the pipeline applies perturbation → encode → DCT stego → metadata (encode happens before stego). For non-JPEG output: perturbation → pixel stego → encode → metadata. The JPEG→JPEG fast path (`apply_multi_protector_bytes`) bypasses perturbation entirely and only applies DCT stego + metadata
+- **Pipeline flow order (JPEG output)**: For JPEG output, the pipeline applies encode → DCT stego → metadata (encode happens before stego). For non-JPEG output: pixel stego → encode → metadata. The JPEG→JPEG fast path bypasses pixel decode entirely and only applies DCT stego + metadata
 - **CLI file path**: The CLI binary lives at `cloakrs-cli/src/main.rs`, not `src/bin/cloakrs/main.rs`
 - **MIN_PAYLOAD_SIZE vs actual payload size**: `MIN_PAYLOAD_SIZE` (=26) is the minimum valid payload for parsing (24-byte header + 2-byte checksum). `generate_payload()` always produces 32 bytes (padded with zeros). These are different numbers — the constant is a parsing threshold, not the output size
-- **`register_variant` error handling**: The `register_variant()` method returns `Result<()>` and propagates loader errors with `?`. However, `PrecomputedProtector::apply()` calls `let _ = self.register_variant(variant)` — silently discarding errors. The cache is best-effort; registration failure is not fatal
 - **`PassthroughProtector::modifies_pixels()`**: Returns `false` (passthrough.rs:50-52) for efficiency. The default `Protector` trait implementation returns `true`, so other protectors that don't modify pixels should also override this
-- **Error variants `Dimensions` and `JpegTranscode` are dead code**: Removed from `error.rs`. `Dimensions` was intended for dimension exceeded errors but pipeline uses `Error::ImageDecode` instead. `JpegTranscode` was intended to wrap `TranscoderError` but `TranscoderError` is used directly instead. `From<TranscoderError> for Error` is now implemented.
 - **`ImageTruncated` error variant**: Added to `error.rs` for handling truncated JPEG parsing. Used in `metadata_trap.rs` when JPEG segment parsing encounters truncated data.
 - **`extract_seed_from_jpeg` returns `Result<u64>`**: Changed from `Option<u64>`. Callers should use `.ok()` to convert to `Option` if needed (truncation = None).
 - **`bits_to_bytes` runtime check**: Now validates `bits.len() % 8 != 0` at runtime instead of only in debug builds. Returns empty Vec for invalid input.

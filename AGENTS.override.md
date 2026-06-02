@@ -15,7 +15,6 @@ All 5 tasks from `plans/plan.md` Wave 1 implemented and merged to master.
 | Task | Commit | Notes |
 |------|--------|-------|
 | Dimension validation in `process_bytes` | `321f825` | `validate_jpeg_dimensions_from_bytes()` + validation on non-JPEG path |
-| LRU eviction for PrecomputedProtector | `14121aa` | `lru` 0.12, default capacity 100, `peek()` for reads |
 | Seed embedding unit quant error | `ef5c249` | Precondition check fails if any value < 2 |
 | `Option<bool>` documentation | `c296213` | Three-state semantics on fields, builders, getters |
 | CLI batch filename collisions | `237fe23` | `HashMap<PathBuf, usize>` collision tracking |

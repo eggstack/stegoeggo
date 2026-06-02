@@ -97,7 +97,7 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 
 ## Module Interactions
 
-- **lib.rs**: Applied after perturbation in Standard/Enhanced/Strong pipelines
+- **lib.rs**: Applied in Standard pipeline
 - **jpeg_transcoder/**: Used for JPEG fast path (`apply_dct_stego_bytes`)
 - **stego_f5.rs**: `DctStegoF5` for F5-style DCT manipulation
 - **util/image.rs**: `XorShiftRng` for LSB pixel selection

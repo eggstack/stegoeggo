@@ -12,8 +12,6 @@ pub enum Error {
     ImageEncode(String),
     Io(std::io::Error),
     Serialization(String),
-    VariantNotFound(String),
-    InvalidVariant(String),
     Metadata(String),
     Config(String),
     Image(String),
@@ -36,8 +34,6 @@ pub enum Error {
 | `ImageEncode` | `image`/`jpeg_transcoder` | Failed to encode image |
 | `Io` | `std::io` | File I/O errors |
 | `Serialization` | `serde_json` | JSON serialization/deserialization failures |
-| `VariantNotFound` | `PrecomputedProtector` | Requested variant not in cache or loader |
-| `InvalidVariant` | `PrecomputedProtector` | Variant data is corrupted or incompatible |
 | `Metadata` | `MetadataTrapProtector` | Metadata injection/extraction failures |
 | `Config` | `ProtectionContext` | Invalid configuration values |
 | `Image` | General / `jpeg_transcoder` | Image processing errors (unsupported features, etc.) |

@@ -1,7 +1,6 @@
 use cloakrs::{
     process_image, process_image_bytes, process_images_bytes_parallel, process_images_parallel,
-    DmiValue, EnhancedProtector, ImageOutputFormat, LegalMetadata, MetadataTrapProtector,
-    NoiseProtector, PassthroughProtector, PrecomputedProtector, ProtectedVariant,
+    DmiValue, ImageOutputFormat, LegalMetadata, MetadataTrapProtector, PassthroughProtector,
     ProtectionContext, ProtectionLevel, ProtectionPipeline, SteganographyProtector,
 };
 use image::{DynamicImage, ImageEncoder};
@@ -68,34 +67,6 @@ mod round_trip {
         assert!(
             stego.verify_payload(&protected),
             "Standard level should be verifiable"
-        );
-    }
-
-    #[test]
-    fn test_protect_and_verify_enhanced_level() {
-        let img = create_test_image(64, 64);
-        let ctx = ProtectionContext::new(0.8, 42);
-
-        let protected = process_image(img.clone(), ProtectionLevel::Enhanced, &ctx).unwrap();
-
-        let stego = SteganographyProtector::new();
-        assert!(
-            stego.verify_payload(&protected),
-            "Enhanced level should be verifiable"
-        );
-    }
-
-    #[test]
-    fn test_protect_and_verify_strong_level() {
-        let img = create_test_image(64, 64);
-        let ctx = ProtectionContext::new(0.9, 42);
-
-        let protected = process_image(img.clone(), ProtectionLevel::Strong, &ctx).unwrap();
-
-        let stego = SteganographyProtector::new();
-        assert!(
-            stego.verify_payload(&protected),
-            "Strong level should be verifiable"
         );
     }
 
@@ -291,14 +262,7 @@ mod metadata_injection {
         let img = create_test_image(32, 32);
         let png_bytes = image_to_png_bytes(&img);
 
-        let test_cases = vec![
-            (ProtectionLevel::Standard, DmiValue::ProhibitedAiMlTraining),
-            (
-                ProtectionLevel::Enhanced,
-                DmiValue::ProhibitedGenAiMlTraining,
-            ),
-            (ProtectionLevel::Strong, DmiValue::Prohibited),
-        ];
+        let test_cases = vec![(ProtectionLevel::Standard, DmiValue::ProhibitedAiMlTraining)];
 
         for (level, expected_dmi) in test_cases {
             let ctx = ProtectionContext::new(0.5, 42)
@@ -531,52 +495,6 @@ mod steganography {
     }
 }
 
-mod precomputed_variants {
-    use super::*;
-
-    #[test]
-    fn test_register_empty_variants() {
-        let pipeline = ProtectionPipeline::new();
-        let result = pipeline.register_precomputed_variants(vec![]);
-        assert!(result.is_ok(), "Should handle empty variant list");
-    }
-
-    #[test]
-    fn test_register_variants_allows_duplicates() {
-        let pipeline = ProtectionPipeline::new();
-
-        let img = create_test_image(32, 32);
-        let hash = cloakrs::compute_image_hash(&img);
-
-        let variant1 =
-            ProtectedVariant::new(hash.clone(), ProtectionLevel::Strong, vec![], 0.5, 32, 32);
-
-        let variant2 = ProtectedVariant::new(hash, ProtectionLevel::Strong, vec![], 0.5, 32, 32);
-
-        pipeline
-            .register_precomputed_variants(vec![variant1])
-            .unwrap();
-        let result = pipeline.register_precomputed_variants(vec![variant2]);
-        assert!(result.is_ok(), "Should handle duplicate registration");
-    }
-
-    #[test]
-    fn test_strong_level_uses_different_algorithm() {
-        let img = create_test_image(64, 64);
-        let ctx = ProtectionContext::new(0.5, 42);
-
-        let standard = process_image(img.clone(), ProtectionLevel::Standard, &ctx).unwrap();
-        let strong = process_image(img.clone(), ProtectionLevel::Strong, &ctx).unwrap();
-
-        let stego = SteganographyProtector::new();
-        assert!(
-            stego.verify_payload(&standard),
-            "Standard should be verifiable"
-        );
-        assert!(stego.verify_payload(&strong), "Strong should be verifiable");
-    }
-}
-
 mod parallel_processing {
     use super::*;
 
@@ -635,24 +553,6 @@ mod parallel_processing {
 
 mod edge_cases {
     use super::*;
-    use cloakrs::Protector;
-
-    #[test]
-    fn test_zero_intensity_noise_preserves_image() {
-        let noise = NoiseProtector::new();
-        let img = create_test_image(32, 32);
-        let original_bytes = img.to_rgba8().into_raw();
-
-        let ctx = ProtectionContext::new(0.0, 11111);
-
-        let result = noise.apply(&img, &ctx).unwrap();
-        let result_bytes = result.to_rgba8().into_raw();
-
-        assert_eq!(
-            original_bytes, result_bytes,
-            "Zero intensity noise should preserve image"
-        );
-    }
 
     #[test]
     fn test_max_intensity_modifies_image() {
@@ -758,69 +658,6 @@ mod protector_individual {
     }
 
     #[test]
-    fn test_noise_modifies_pixels() {
-        let protector = NoiseProtector::new();
-        let img = create_test_image(50, 50);
-        let ctx = ProtectionContext::new(0.8, 77777);
-
-        let result = protector.apply(&img, &ctx).unwrap();
-
-        let original = img.to_rgba8();
-        let modified = result.to_rgba8();
-
-        let diff_count: usize = original
-            .as_raw()
-            .iter()
-            .zip(modified.as_raw().iter())
-            .filter(|(a, b)| a != b)
-            .count();
-
-        assert!(diff_count > 0, "Noise protector should modify pixels");
-    }
-
-    #[test]
-    fn test_enhanced_creates_visible_pattern() {
-        let protector = EnhancedProtector::new();
-        let img = create_colored_image(64, 64, 128, 128, 128);
-        let ctx = ProtectionContext::new(0.9, 88888);
-
-        let result = protector.apply(&img, &ctx).unwrap();
-
-        let original = img.to_rgba8();
-        let modified = result.to_rgba8();
-
-        let diff_count: usize = original
-            .as_raw()
-            .iter()
-            .zip(modified.as_raw().iter())
-            .filter(|(a, b)| a != b)
-            .count();
-
-        assert!(diff_count > 0, "Enhanced protector should modify pixels");
-    }
-
-    #[test]
-    fn test_precomputed_adds_perturbation() {
-        let protector = PrecomputedProtector::new();
-        let img = create_test_image(64, 64);
-        let ctx = ProtectionContext::new(0.6, 99999);
-
-        let result = protector.apply(&img, &ctx).unwrap();
-
-        let original = img.to_rgba8();
-        let modified = result.to_rgba8();
-
-        let diff_count: usize = original
-            .as_raw()
-            .iter()
-            .zip(modified.as_raw().iter())
-            .filter(|(a, b)| a != b)
-            .count();
-
-        assert!(diff_count > 0, "Precomputed should add perturbation");
-    }
-
-    #[test]
     fn test_stego_embed_and_extract() {
         let stego = SteganographyProtector::new();
         let img = create_test_image(64, 64);
@@ -866,8 +703,6 @@ mod pipeline {
             ProtectionLevel::Disabled,
             ProtectionLevel::Light,
             ProtectionLevel::Standard,
-            ProtectionLevel::Enhanced,
-            ProtectionLevel::Strong,
         ] {
             let result = pipeline.process(&img, level, &ctx);
             assert!(result.is_ok(), "Pipeline should handle level {:?}", level);
@@ -884,8 +719,6 @@ mod pipeline {
             ProtectionLevel::Disabled,
             ProtectionLevel::Light,
             ProtectionLevel::Standard,
-            ProtectionLevel::Enhanced,
-            ProtectionLevel::Strong,
         ] {
             let result = pipeline.process_bytes(&img_bytes, level, &ctx);
             assert!(

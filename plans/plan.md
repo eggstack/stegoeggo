@@ -35,12 +35,8 @@ cargo fmt --check
 ## Prior Items (Completed)
 
 - Dimension validation in `process_bytes`
-- LRU eviction for PrecomputedProtector
 - Seed embedding unit quant error
 - `Option<bool>` documentation
-- CLI batch filename collisions
-- LRU Cache documentation
-- Parallel threshold documentation
 - verify_image_bytes DCT stego
 
 ---
