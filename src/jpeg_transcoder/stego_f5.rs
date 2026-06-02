@@ -25,16 +25,16 @@ use std::collections::HashMap;
 /// Seed embedding magic (stored in quantization tables)
 const SEED_MAGIC: &[u8] = b"SEED";
 
-/// F5-specific Xorshift64 PRNG for coefficient shuffling.
-/// Uses a different algorithm than the general-purpose `XorShiftRng` in `util/image.rs`.
+/// DCT coefficient shuffling PRNG for F5 steganography.
+/// Uses a different algorithm than the general-purpose `PixelSelectionRng` in `util/image.rs`.
 /// Changing this algorithm would break compatibility with existing steganographic data.
 ///
-/// **WARNING:** Do NOT interchange with the general-purpose `XorShiftRng` — they produce
+/// **WARNING:** Do NOT interchange with the general-purpose `PixelSelectionRng` — they produce
 /// different sequences for the same seed and are each paired with their respective
 /// embed/extract code paths.
-struct F5XorShiftRng(u64);
+struct DctCoefficientRng(u64);
 
-impl F5XorShiftRng {
+impl DctCoefficientRng {
     fn new(seed: u64) -> Self {
         Self(if seed == 0 { 1 } else { seed })
     }
@@ -230,7 +230,7 @@ impl DctStegoF5 {
         positions.sort_unstable();
 
         // Shuffle positions using seeded PRNG for pseudo-random ordering
-        let mut rng = F5XorShiftRng::new(seed);
+        let mut rng = DctCoefficientRng::new(seed);
         for i in (1..positions.len()).rev() {
             let j = rng.gen_range(i + 1);
             positions.swap(i, j);
@@ -346,7 +346,7 @@ impl DctStegoF5 {
         positions.sort_unstable();
 
         // Shuffle with same seed
-        let mut rng = F5XorShiftRng::new(seed);
+        let mut rng = DctCoefficientRng::new(seed);
         for i in (1..positions.len()).rev() {
             let j = rng.gen_range(i + 1);
             positions.swap(i, j);

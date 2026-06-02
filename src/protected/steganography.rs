@@ -7,7 +7,7 @@ use crate::protected::constants::{
 use crate::protected::metadata_trap::MetadataTrapProtector;
 use crate::traits::Protector;
 use crate::types::{ProtectionContext, ProtectionLevel};
-use crate::util::image::XorShiftRng;
+use crate::util::image::PixelSelectionRng;
 use hmac::{Hmac, Mac};
 use image::{DynamicImage, Rgba, RgbaImage};
 use sha2::Sha256;
@@ -93,7 +93,7 @@ impl SteganographyProtector {
             Ok((mut header, mut coefficients)) => {
                 // Baseline JPEG: full F5 DCT stego + seed in Q-tables
                 let payload = self.generate_payload(ctx);
-                let redundancy = ctx.stego_redundancy().max(1);
+                let redundancy = ctx.effective_redundancy();
 
                 let available_coeffs: usize = coefficients
                     .values()
@@ -602,6 +602,15 @@ impl SteganographyProtector {
             payload.push(checksum[1]);
         }
 
+        #[cfg(debug_assertions)]
+        if ctx.mac_key().is_none() {
+            eprintln!(
+                "[cloakrs] WARNING: Embedding stego payload without MAC key. \
+                 Verification uses a trivial checksum — not suitable for adversarial settings. \
+                 Use .with_mac_key() for cryptographic verification."
+            );
+        }
+
         while payload.len() < 32 {
             payload.push(0);
         }
@@ -786,7 +795,7 @@ impl SteganographyProtector {
 
         for pass in 0..redundancy {
             let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
-            let mut rng = XorShiftRng::new(offset_seed);
+            let mut rng = PixelSelectionRng::new(offset_seed);
 
             let mut embedded = 0;
 
@@ -866,7 +875,7 @@ impl SteganographyProtector {
 
             let mut bit_votes: Vec<Vec<i32>> = vec![Vec::new(); expected_bits];
 
-            let mut rng = XorShiftRng::new(offset_seed);
+            let mut rng = PixelSelectionRng::new(offset_seed);
 
             let y_start_offset = rng.gen_range_usize(0..spread);
             let x_start_offset = rng.gen_range_usize(0..spread);
@@ -953,7 +962,7 @@ impl SteganographyProtector {
             .input_format()
             .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
 
-        let redundancy = ctx.stego_redundancy();
+        let redundancy = ctx.effective_redundancy();
 
         let processed = match format {
             crate::types::ImageOutputFormat::Png => {

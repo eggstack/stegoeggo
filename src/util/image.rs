@@ -4,17 +4,17 @@ use digest::Digest;
 use image::{DynamicImage, GenericImageView, ImageEncoder, ImageFormat};
 use sha2::Sha256;
 
-/// General-purpose XorShift64 PRNG for noise generation and pixel selection.
-/// Not interchangeable with the F5-specific PRNG in `jpeg_transcoder/stego_f5.rs`.
+/// XorShift64 PRNG for stego pixel selection.
+/// Not interchangeable with the DCT-specific PRNG in `jpeg_transcoder/stego_f5.rs`.
 ///
 /// **WARNING:** These two PRNG implementations use different algorithms. Do NOT
 /// swap one for the other — they produce different sequences for the same seed
 /// and are each paired with their respective embed/extract code paths.
-pub struct XorShiftRng {
+pub struct PixelSelectionRng {
     state: u64,
 }
 
-impl XorShiftRng {
+impl PixelSelectionRng {
     #[inline]
     pub fn new(seed: u64) -> Self {
         Self {

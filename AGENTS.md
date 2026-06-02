@@ -7,7 +7,7 @@
 ## Tech Stack
 
 - Rust (edition 2021, MSRV 1.87, stable channel)
-- Key crates: `image` 0.25, `jpeg-encoder` 0.7, `rayon` 1.10, `sha2`/`hmac` for crypto, `serde`/`serde_json` for serialization, `subtle` 2 (constant-time comparisons), `tokio` (optional, for async)
+- Key crates: `image` 0.25, `jpeg-encoder` 0.7, `rayon` 1.10, `sha2`/`hmac` for crypto, `serde`/`serde_json` for serialization, `subtle` 2 (constant-time comparisons), `iscc-lib` 0.4 (ISO 24138:2024 ISCC), `getrandom` 0.2 (CSPRNG), `tokio` (optional, for async)
 
 ## Architecture
 
@@ -75,20 +75,21 @@ cargo bench                              # Criterion benchmarks
 
 - **`.gitignore`**: `.DS_Store` files exist on disk but are excluded by git
 - **Stego payload format**: 24-byte header + 2-byte checksum (or 8-byte HMAC), always padded to 32 bytes total (even in checksum mode). Use `MIN_PAYLOAD_SIZE` (=26) and `MIN_PAYLOAD_BITS` (=208) constants in `steganography.rs`
-- **`generate_random_seed()`**: Not cryptographically secure — uses SystemTime + splitmix64 mixing (`seed.rs:16-33`). Uses `unwrap_or_default()` (does NOT panic on pre-UNIX-epoch clocks). Guarantees non-zero output (`if x == 0 { 42 }`)
+- **`generate_random_seed()`**: Uses `getrandom` (OS CSPRNG) for cryptographically secure randomness. Falls back to system-time-based mixing if `getrandom` fails. Guarantees non-zero output (`if x == 0 { 42 }`)
 - **`ProtectionContext::default()`**: Calls `generate_random_seed()` — the seed is predictable. Doc comment on the `Default` impl warns about this. Users needing cryptographic seeds should use `ProtectionContext::new(intensity, seed)` with a CSPRNG
 - **JPEG transcoder modules**: `header.rs` and `entropy.rs` have `#![allow(dead_code)]` for JPEG spec reference types (color spaces, standard Huffman tables) — keep these
-- **ISCC module** (`src/util/iscc.rs`): Content identification, exported from `lib.rs`. NOT ISCC-standard compliant — uses custom component codes (`0x12`, `0x33`) and non-standard DCT hash. Produces ISCC-like identifiers that are not interoperable with other ISCC implementations
+- **ISCC module** (`src/util/iscc.rs`): Content identification, exported from `lib.rs`. Uses `iscc-lib` crate (ISO 24138:2024) for standard-compliant ISCC generation. Produces interoperable ISCC identifiers with proper varnibble headers and Base32 encoding
 - **No `TargetModel`**: This concept was removed. `ProtectionContext::new` takes `(intensity, seed)` only
 - **Steganography seed derivation**: `embed_lsb` and `embed_jpeg_stego` internally derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)` before using `stego_permutation`. When calling internal embed/extract functions directly (outside of `apply()`), ensure seeds match. The public API (`apply()` + `extract_payload()`) handles this correctly
-- **XorShiftRng — two separate implementations**: `src/util/image.rs` has `XorShiftRng` (general-purpose pixel selection for steganography) and `src/jpeg_transcoder/stego_f5.rs` has `F5XorShiftRng` (DCT coefficient shuffling). They use different algorithms and produce different sequences for the same seed. Do NOT interchange them — each is paired with their respective embed/extract code paths
+- **XorShiftRng — two separate implementations**: `src/util/image.rs` has `PixelSelectionRng` (general-purpose pixel selection for steganography) and `src/jpeg_transcoder/stego_f5.rs` has `DctCoefficientRng` (DCT coefficient shuffling). They use different algorithms and produce different sequences for the same seed. Do NOT interchange them — each is paired with their respective embed/extract code paths
 - **MetadataTrapProtector::apply()**: `apply()` returns `Cow::Borrowed(img)` unchanged. Metadata injection operates at the byte level and the `DynamicImage` API cannot preserve injected text chunks through encode/decode cycles. The pipeline routes `Light` level through `apply_light_bytes()` which encodes, injects metadata, then decodes (metadata survives in the byte output). For byte-level output with metadata intact, use `apply_bytes()` or `process_bytes()`
+- **`stego_redundancy` is `Option<usize>`**: Default is `None` (derive from intensity). Explicit `.with_stego_redundancy(n)` sets `Some(n)`. Internal code uses `ctx.effective_redundancy()` which maps intensity to redundancy when not explicitly set. The public `stego_redundancy()` getter returns `unwrap_or(2)` for backward compatibility.
 - **`verify_payload_with_key()` returns `Option<bool>`**, not `bool` — use `== Some(true)` or `!= Some(true)` in assertions, not `assert!()` or `assert!(!)` directly
 - **JPEG stego redundancy bug** (`steganography.rs:788-841`): Fixed — `embedded = 0;` reset added between redundancy passes so all passes embed when `redundancy > 1`
 - **HuffmanDecoder/HuffmanEncoderTable caching**: In `entropy.rs`, Huffman decoders and encoder lookup tables are pre-built once before the MCU loop. `HuffmanEncoderTable` uses a `[(u16, u8); 256]` array for O(1) symbol→(code,length) lookup. These are internal types — do not rebuild per-MCU
 - **JPEG header parser bounds**: `header.rs:parse()` has guards for `data.len() < 2` (empty input) and `end_pos < 10` (too short for SOF). Segment data end uses `.max(segment_data_start)` to prevent inverted slice ranges when `segment_len` is malformed. Parse errors now include byte offset for debugging
 - **`subtle` crate for constant-time comparison**: `verify_payload_mac` in `steganography.rs` uses `subtle::ConstantTimeEq::ct_eq()` instead of `==` to prevent timing attacks on HMAC verification
-- **Pipeline intensity semantics**: Steganography and metadata injection run regardless of intensity value. The `intensity` field is available on `ProtectionContext` but does not affect the current protection layers.
+- **Pipeline intensity semantics**: Steganography and metadata injection run regardless of intensity value. When `stego_redundancy` is not explicitly set, `intensity` controls redundancy via `effective_redundancy()` (<0.3→1, 0.3-0.7→2, >=0.7→3). Explicit `with_stego_redundancy()` overrides this.
 - **F5 no-zero variant correctness**: `stego_f5.rs` implements a no-zero F5 variant that increments |coef| when |coef|=1 and LSB mismatches, avoiding detectable zero creation. The embed/extract position alignment is preserved because no coefficient is ever zeroed out. The implementation is correct
 - **F5 seed embedding Q-table edge case**: `stego_f5.rs` has a precondition check in `embed_seed_in_quantization_tables()` that fails if any quantization value in the first 2 tables is < 2. Values of 1 cannot represent a 0-bit (`1 & 0xFE = 0`, clamped back to 1). Use quantization values >= 2 for reliable seed embedding
 - **`#[serde(skip)]` on `config` field**: `ProtectionContext.config` (`Option<Arc<ProtectionConfig>>`) is skipped during serialization. MAC keys and legal metadata are lost in serde roundtrips. A test (`test_config_skipped_in_serde_roundtrip`) documents this behavior
@@ -106,5 +107,5 @@ cargo bench                              # Criterion benchmarks
 - **MIN_PAYLOAD_SIZE vs actual payload size**: `MIN_PAYLOAD_SIZE` (=26) is the minimum valid payload for parsing (24-byte header + 2-byte checksum). `generate_payload()` always produces 32 bytes (padded with zeros). These are different numbers — the constant is a parsing threshold, not the output size
 - **`PassthroughProtector::modifies_pixels()`**: Returns `false` (passthrough.rs:50-52) for efficiency. The default `Protector` trait implementation returns `true`, so other protectors that don't modify pixels should also override this
 - **`ImageTruncated` error variant**: Added to `error.rs` for handling truncated JPEG parsing. Used in `metadata_trap.rs` when JPEG segment parsing encounters truncated data.
-- **`extract_seed_from_jpeg` returns `Result<u64>`**: Changed from `Option<u64>`. Callers should use `.ok()` to convert to `Option` if needed (truncation = None).
+- **`extract_seed_from_jpeg` returns `Option<u64>`**: Returns `None` on truncated data or when no seed is found. Callers receive `Option` directly without needing `.ok()`.
 - **`bits_to_bytes` runtime check**: Now validates `bits.len() % 8 != 0` at runtime instead of only in debug builds. Returns empty Vec for invalid input.

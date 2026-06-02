@@ -1,19 +1,19 @@
-/// Generate a pseudo-random seed from the current system time.
+/// Generate a cryptographically secure random seed.
 ///
-/// Uses a hash-like mixing function to combine seconds and nanoseconds,
-/// avoiding predictable patterns when two calls share the same second.
+/// Uses `getrandom` (OS CSPRNG) for randomness. Falls back to system-time-based
+/// mixing if `getrandom` fails (e.g., in unusual sandboxed environments).
 /// Returns a non-zero u64.
 ///
-/// # Security
-///
-/// **Not cryptographically secure.** The output is deterministic given the
-/// system clock. If seed unpredictability is required (e.g., adversarial
-/// settings where an attacker knows the approximate request time), use a
-/// CSPRNG like `getrandom` instead.
-///
-/// This is suitable for determinism within a single request (reproducible
-/// protection from a known seed), not for generating secret keys or nonces.
+/// This is suitable for generating unpredictable seeds in adversarial settings.
+/// For reproducible protection, use `ProtectionContext::new(intensity, seed)` with
+/// a seed of your choice.
 pub fn generate_random_seed() -> u64 {
+    let mut buf = [0u8; 8];
+    if getrandom::getrandom(&mut buf).is_ok() {
+        let x = u64::from_le_bytes(buf);
+        return if x == 0 { 42 } else { x };
+    }
+    // Fallback: time-based seed (not cryptographically secure)
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();

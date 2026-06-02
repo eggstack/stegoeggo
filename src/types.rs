@@ -314,20 +314,15 @@ pub struct ProtectionContext {
     /// [`with_legal_metadata`](ProtectionContext::with_legal_metadata).
     /// WARNING: Only enable for content you own. May create legal liability otherwise.
     inject_legal_claims: Option<bool>,
-    stego_redundancy: usize,
+    stego_redundancy: Option<usize>,
     jpeg_quality: u8,
     progressive_jpeg: bool,
     #[serde(skip)]
     config: Option<Arc<ProtectionConfig>>,
 }
 
-/// # Security
-///
-/// The default seed is generated from the system clock via
-/// `generate_random_seed()` and is **not cryptographically secure**.
-/// An attacker who knows the approximate request time can predict the seed.
-/// Use `ProtectionContext::new(intensity, seed)` with a CSPRNG-generated
-/// seed if unpredictability is required.
+/// The default seed is generated via `getrandom` (OS CSPRNG).
+/// For reproducible protection, use `ProtectionContext::new(intensity, seed)`.
 impl Default for ProtectionContext {
     fn default() -> Self {
         let seed = crate::util::seed::generate_random_seed();
@@ -341,7 +336,7 @@ impl Default for ProtectionContext {
             max_dimension: None,
             inject_metadata: None,
             inject_legal_claims: None,
-            stego_redundancy: 2,
+            stego_redundancy: None,
             jpeg_quality: 90,
             progressive_jpeg: false,
             config: None,
@@ -364,7 +359,7 @@ impl ProtectionContext {
             max_dimension: None,
             inject_metadata: None,
             inject_legal_claims: None,
-            stego_redundancy: 2,
+            stego_redundancy: None,
             jpeg_quality: 90,
             progressive_jpeg: false,
             config: None,
@@ -497,10 +492,11 @@ impl ProtectionContext {
     }
 
     /// Set the stego embedding redundancy (1-5). Higher values are more robust
-    /// for verification but slower. Default is 2.
+    /// for verification but slower. When not set, redundancy is derived from
+    /// `intensity` via [`effective_redundancy`](Self::effective_redundancy).
     #[must_use]
     pub fn with_stego_redundancy(mut self, redundancy: usize) -> Self {
-        self.stego_redundancy = redundancy.clamp(1, 5);
+        self.stego_redundancy = Some(redundancy.clamp(1, 5));
         self
     }
 
@@ -574,8 +570,34 @@ impl ProtectionContext {
     }
 
     /// Get the stego embedding redundancy.
+    ///
+    /// Returns the explicitly set value, or the default (2). Internally,
+    /// prefer [`effective_redundancy`] which derives from intensity when
+    /// the user hasn't explicitly set this value.
     pub fn stego_redundancy(&self) -> usize {
-        self.stego_redundancy
+        self.stego_redundancy.unwrap_or(2)
+    }
+
+    /// Compute the effective stego redundancy.
+    ///
+    /// When the user has explicitly set `stego_redundancy` via
+    /// [`with_stego_redundancy`], that value is returned. Otherwise,
+    /// the redundancy is derived from the current `intensity`:
+    /// - `intensity < 0.3` → 1 (minimal embedding)
+    /// - `intensity < 0.7` → 2 (standard)
+    /// - `intensity >= 0.7` → 3 (heavy)
+    pub(crate) fn effective_redundancy(&self) -> usize {
+        if let Some(r) = self.stego_redundancy {
+            return r;
+        }
+        let i = self.intensity;
+        if i < 0.3 {
+            1
+        } else if i < 0.7 {
+            2
+        } else {
+            3
+        }
     }
 
     /// Get the JPEG encoding quality.

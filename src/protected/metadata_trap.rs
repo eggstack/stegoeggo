@@ -534,13 +534,15 @@ impl Default for MetadataTrapProtector {
 }
 
 impl Protector for MetadataTrapProtector {
-    /// Metadata injection operates at the byte level (PNG tEXt chunks,
-    /// JPEG COM/APP markers, WebP META chunks). The `DynamicImage` API
-    /// cannot preserve this metadata through encode/decode cycles.
+    /// # Warning
     ///
-    /// This method returns the image unchanged. Use [`apply_bytes`] to
-    /// obtain output bytes with injected metadata, or use the pipeline's
-    /// byte-level paths (`process_bytes` / `apply_light_bytes`).
+    /// This method returns the image **unchanged**. Metadata injection operates at the
+    /// byte level (PNG tEXt chunks, JPEG COM/APP markers, WebP META chunks) and cannot
+    /// be preserved through the `DynamicImage` encode/decode cycle.
+    ///
+    /// Use [`apply_bytes`](Protector::apply_bytes) for byte-level metadata injection,
+    /// or use the [`ProtectionPipeline`](crate::ProtectionPipeline) which routes
+    /// metadata correctly via `process_bytes` or `apply_light_bytes`.
     fn apply<'a>(
         &self,
         img: &'a DynamicImage,
@@ -580,7 +582,7 @@ impl MetadataTrapProtector {
         if img_bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
             Self::extract_seed_from_png(img_bytes)
         } else if img_bytes.starts_with(&[0xFF, 0xD8]) {
-            Self::extract_seed_from_jpeg(img_bytes).ok()
+            Self::extract_seed_from_jpeg(img_bytes)
         } else if img_bytes.len() >= 12
             && &img_bytes[0..4] == b"RIFF"
             && &img_bytes[8..12] == b"WEBP"
@@ -631,7 +633,7 @@ impl MetadataTrapProtector {
         None
     }
 
-    fn extract_seed_from_jpeg(jpeg_data: &[u8]) -> Result<u64> {
+    fn extract_seed_from_jpeg(jpeg_data: &[u8]) -> Option<u64> {
         let mut pos = 2;
         while pos + 2 <= jpeg_data.len() {
             if jpeg_data[pos] != 0xFF {
@@ -652,11 +654,7 @@ impl MetadataTrapProtector {
 
             if marker == 0xFE {
                 if pos + 4 > jpeg_data.len() {
-                    return Err(Error::ImageTruncated(format!(
-                        "JPEG comment parsing truncated at byte {} (needed 4 bytes, had {})",
-                        pos,
-                        jpeg_data.len() - pos
-                    )));
+                    return None;
                 }
                 let comment_len =
                     u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
@@ -670,10 +668,7 @@ impl MetadataTrapProtector {
 
                 if let Ok(comment_str) = String::from_utf8(comment.to_vec()) {
                     if let Some(seed_part) = comment_str.strip_prefix("X-Protection-Seed: ") {
-                        return seed_part
-                            .trim()
-                            .parse()
-                            .map_err(|_| Error::ImageTruncated("Invalid seed value".to_string()));
+                        return seed_part.trim().parse().ok();
                     }
                 }
                 pos += 2 + comment_len;
@@ -681,16 +676,12 @@ impl MetadataTrapProtector {
             }
 
             if pos + 4 > jpeg_data.len() {
-                return Err(Error::ImageTruncated(format!(
-                    "JPEG segment parsing truncated at byte {} (needed 4 bytes, had {})",
-                    pos,
-                    jpeg_data.len() - pos
-                )));
+                return None;
             }
             let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
             pos += 2 + segment_len;
         }
-        Ok(0)
+        None
     }
 
     fn extract_seed_from_webp(webp_data: &[u8]) -> Option<u64> {
