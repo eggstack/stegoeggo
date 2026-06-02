@@ -13,3 +13,11 @@ wallpapertest_poisoned.png
 *_protected.png
 *_protected.jpg
 *_protected.webp
+
+# Nested crate build artifacts
+cloakrs-cli/target/
+
+# Internal workflow docs (not for public distribution)
+plans/
+architecture/review_plan.md
+AGENTS.override.md
