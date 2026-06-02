@@ -91,11 +91,6 @@ pub trait Protector: Send + Sync {
     /// Estimated latency in milliseconds for this protector.
     fn estimated_latency_ms(&self) -> u32;
 
-    /// Whether this protector is currently active.
-    fn is_enabled(&self) -> bool {
-        true
-    }
-
     /// Returns true if this protector modifies pixel data.
     /// When false, `apply_bytes` returns the input unchanged.
     fn modifies_pixels(&self) -> bool {

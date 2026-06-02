@@ -43,10 +43,6 @@ impl Protector for PassthroughProtector {
         0
     }
 
-    fn is_enabled(&self) -> bool {
-        true
-    }
-
     fn modifies_pixels(&self) -> bool {
         false
     }

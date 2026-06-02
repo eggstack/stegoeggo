@@ -118,7 +118,10 @@ pub use util::image::{
     load_image_from_bytes,
 };
 
-pub use util::iscc::{compute_iscc, compute_iscc_from_bytes, Iscc};
+pub use util::iscc::{
+    compute_iscc, compute_iscc_from_bytes, compute_iscc_from_bytes_with_metadata,
+    compute_iscc_with_metadata, Iscc,
+};
 pub use util::seed::generate_random_seed;
 
 #[cfg(feature = "async")]

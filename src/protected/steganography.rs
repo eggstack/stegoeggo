@@ -1810,12 +1810,6 @@ mod tests {
     }
 
     #[test]
-    fn protector_is_enabled() {
-        let p = SteganographyProtector::new();
-        assert!(p.is_enabled());
-    }
-
-    #[test]
     fn protector_apply_bytes_png_roundtrip() {
         let p = SteganographyProtector::new();
         let img = make_large_test_image();

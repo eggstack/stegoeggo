@@ -191,12 +191,29 @@ impl MetadataTrapProtector {
         data
     }
 
-    /// Generates IPTC-IIM (Information Interchange Model) data record containing DMI.
-    /// Uses IPTC Application Record tag 120 (Caption/Abstract) with the DMI value encoded.
+    /// Generates IPTC-IIM (Information Interchange Model) data records containing DMI
+    /// and optionally the protection seed.
+    ///
+    /// Includes:
+    /// - Tag 5 (Object Name): protection seed for redundant recovery
+    /// - Tag 120 (Caption/Abstract): DMI value
+    ///
     /// Returns the raw IPTC record bytes (without the Photoshop resource envelope).
-    fn generate_iptc_iim_dmi(dmi: DmiValue) -> Vec<u8> {
+    fn generate_iptc_iim_dmi(dmi: DmiValue, seed: Option<u64>) -> Vec<u8> {
+        let mut data = Vec::new();
+
+        if let Some(s) = seed {
+            let seed_str = s.to_string();
+            data.extend_from_slice(&[0x1C, 0x02, 0x05]); // record 2, tag 5 (Object Name)
+            data.extend_from_slice(&(seed_str.len() as u16).to_be_bytes());
+            data.extend_from_slice(seed_str.as_bytes());
+            if seed_str.len() % 2 != 0 {
+                data.push(0);
+            }
+        }
+
         let dmi_str = format!("DMI: {}", dmi.as_str());
-        let mut data = vec![0x1C, 0x02, 0x78]; // record 2, tag 120 (Caption/Abstract)
+        data.extend_from_slice(&[0x1C, 0x02, 0x78]); // record 2, tag 120 (Caption/Abstract)
         data.extend_from_slice(&(dmi_str.len() as u16).to_be_bytes());
         data.extend_from_slice(dmi_str.as_bytes());
         if dmi_str.len() % 2 != 0 {
@@ -243,6 +260,12 @@ impl MetadataTrapProtector {
                 for (key, value) in metadata {
                     let text_chunk = Self::create_png_text_chunk(key, value);
                     output.extend_from_slice(&text_chunk);
+                }
+                if let Some(s) = seed {
+                    let desc_value = format!("Protected image. Seed: {}", s);
+                    let desc_chunk =
+                        Self::create_png_text_chunk(b"Description", desc_value.as_bytes());
+                    output.extend_from_slice(&desc_chunk);
                 }
             }
 
@@ -363,7 +386,8 @@ impl MetadataTrapProtector {
             let exif_marker = Self::create_jpeg_exif_marker(&Self::generate_exif_dmi(dmi_val));
             output.extend_from_slice(&exif_marker);
 
-            let iptc_marker = Self::create_jpeg_iptc_marker(&Self::generate_iptc_iim_dmi(dmi_val));
+            let iptc_marker =
+                Self::create_jpeg_iptc_marker(&Self::generate_iptc_iim_dmi(dmi_val, seed));
             output.extend_from_slice(&iptc_marker);
 
             let xmp_marker = Self::create_jpeg_xmp_marker(&Self::generate_xmp_dmi(dmi_val, seed));
@@ -477,8 +501,11 @@ impl MetadataTrapProtector {
             return Ok(webp_data.to_vec());
         }
 
+        let exif_chunk = seed.map(Self::create_webp_exif_chunk);
+
         // Copy original data and append new chunks
-        let new_len = webp_data.len() + xmp_chunk.len();
+        let extra_len = xmp_chunk.len() + exif_chunk.as_ref().map_or(0, |c| c.len());
+        let new_len = webp_data.len() + extra_len;
         if new_len > u32::MAX as usize + 8 {
             return Err(Error::Metadata(
                 "WebP file would exceed 4 GiB limit after metadata injection".to_string(),
@@ -487,6 +514,9 @@ impl MetadataTrapProtector {
         let mut output = Vec::with_capacity(new_len);
         output.extend_from_slice(webp_data);
         output.extend_from_slice(&xmp_chunk);
+        if let Some(exif) = exif_chunk {
+            output.extend_from_slice(&exif);
+        }
 
         // Update RIFF file size in header (bytes 4-8, little-endian)
         // RIFF size = total file size - 8 (RIFF header + size field)
@@ -506,6 +536,35 @@ impl MetadataTrapProtector {
         chunk.extend_from_slice(&(xmp_data.len() as u32).to_le_bytes());
         chunk.extend_from_slice(xmp_data);
         if !xmp_data.len().is_multiple_of(2) {
+            chunk.push(0);
+        }
+        chunk
+    }
+
+    /// Creates a WebP EXIF chunk with UserComment containing the seed.
+    /// Uses the standard `EXIF` FourCC.
+    fn create_webp_exif_chunk(seed: u64) -> Vec<u8> {
+        let comment = format!("Protection seed: {}", seed);
+        let mut exif_data = Vec::new();
+        exif_data.extend_from_slice(b"Exif\x00\x00");
+        let mut tiff_header = Vec::with_capacity(8);
+        tiff_header.extend_from_slice(b"II");
+        tiff_header.extend_from_slice(&42u16.to_le_bytes());
+        tiff_header.extend_from_slice(&8u32.to_le_bytes());
+        let mut ifd = Vec::with_capacity(14);
+        ifd.extend_from_slice(&1u16.to_le_bytes());
+        ifd.extend_from_slice(&0x9286u16.to_le_bytes());
+        ifd.extend_from_slice(&2u16.to_le_bytes());
+        ifd.extend_from_slice(&(comment.len() as u32).to_le_bytes());
+        ifd.extend_from_slice(&22u32.to_le_bytes());
+        exif_data.extend_from_slice(&tiff_header);
+        exif_data.extend_from_slice(&ifd);
+        exif_data.extend_from_slice(comment.as_bytes());
+        let mut chunk = Vec::new();
+        chunk.extend_from_slice(b"EXIF");
+        chunk.extend_from_slice(&(exif_data.len() as u32).to_le_bytes());
+        chunk.extend_from_slice(&exif_data);
+        if !exif_data.len().is_multiple_of(2) {
             chunk.push(0);
         }
         chunk
@@ -647,14 +706,24 @@ impl MetadataTrapProtector {
 
                 if let Some(null_pos) = data.iter().position(|&b| b == 0) {
                     let key = &data[..null_pos];
+                    let value = &data[null_pos + 1..];
+                    let value_str = if let Some(end) = value.iter().position(|&b| b == 0) {
+                        String::from_utf8_lossy(&value[..end]).into_owned()
+                    } else {
+                        String::from_utf8_lossy(value).into_owned()
+                    };
+
                     if key == b"X-Protection-Seed" {
-                        let value = &data[null_pos + 1..];
-                        if let Some(end) = value.iter().position(|&b| b == 0) {
-                            let value_str = String::from_utf8_lossy(&value[..end]);
-                            return value_str.parse().ok();
-                        } else {
-                            let value_str = String::from_utf8_lossy(value);
-                            return value_str.parse().ok();
+                        if let Ok(seed) = value_str.parse() {
+                            return Some(seed);
+                        }
+                    }
+
+                    if key == b"Description" {
+                        if let Some(seed_str) = value_str.strip_prefix("Protected image. Seed: ") {
+                            if let Ok(seed) = seed_str.trim().parse() {
+                                return Some(seed);
+                            }
                         }
                     }
                 }
@@ -711,19 +780,61 @@ impl MetadataTrapProtector {
                 return None;
             }
             let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
+
+            if marker == 0xED {
+                let seg_start = pos + 4;
+                let seg_end = (seg_start + segment_len).min(jpeg_data.len());
+                let seg_data = &jpeg_data[seg_start..seg_end];
+                if let Some(seed) = Self::extract_seed_from_iptc(seg_data) {
+                    return Some(seed);
+                }
+            }
+
             pos += 2 + segment_len;
         }
         None
     }
 
+    fn extract_seed_from_iptc(iptc_data: &[u8]) -> Option<u64> {
+        let photoshop_header = b"Photoshop 3.0\x00";
+        let search_start = iptc_data
+            .windows(photoshop_header.len())
+            .position(|w| w == photoshop_header)
+            .map(|p| p + photoshop_header.len())
+            .unwrap_or(0);
+
+        let mut i = search_start;
+        while i + 5 <= iptc_data.len() {
+            if iptc_data[i] != 0x1C || iptc_data[i + 1] != 0x02 {
+                i += 1;
+                continue;
+            }
+            let tag = iptc_data[i + 2];
+            let data_len = u16::from_be_bytes([iptc_data[i + 3], iptc_data[i + 4]]) as usize;
+            let data_start = i + 5;
+            let data_end = (data_start + data_len).min(iptc_data.len());
+            if tag == 0x05 {
+                let data = &iptc_data[data_start..data_end];
+                if let Ok(s) = std::str::from_utf8(data) {
+                    if let Ok(seed) = s.trim().trim_end_matches('\0').parse::<u64>() {
+                        return Some(seed);
+                    }
+                }
+            }
+            i = data_end;
+            if !data_len.is_multiple_of(2) && i < iptc_data.len() {
+                i += 1;
+            }
+        }
+        None
+    }
+
     fn extract_seed_from_webp(webp_data: &[u8]) -> Option<u64> {
-        // WebP RIFF container: "RIFF" + u32_le file_size + "WEBP" + chunks...
-        // Each chunk: FourCC (4 bytes) + u32_le chunk_size + data + optional padding byte
         if webp_data.len() < 20 {
             return None;
         }
 
-        let mut pos = 12; // Skip RIFF header: "RIFF"(4) + size(4) + "WEBP"(4)
+        let mut pos = 12;
 
         while pos + 8 <= webp_data.len() {
             let chunk_type = &webp_data[pos..pos + 4];
@@ -737,11 +848,9 @@ impl MetadataTrapProtector {
             let data_start = pos + 8;
             let data_end = (data_start + chunk_size).min(webp_data.len());
 
-            // Check XMP chunk (standard WebP FourCC: "XMP " with trailing space)
             if chunk_type == b"XMP " && data_end > data_start {
                 let data = &webp_data[data_start..data_end];
                 if let Ok(xmp_str) = std::str::from_utf8(data) {
-                    // Look for cloakrs:ProtectionSeed="NNN" in XMP content
                     if let Some(start) = xmp_str.find("cloakrs:ProtectionSeed=\"") {
                         let value_start = start + "cloakrs:ProtectionSeed=\"".len();
                         if let Some(end) = xmp_str[value_start..].find('"') {
@@ -754,7 +863,24 @@ impl MetadataTrapProtector {
                 }
             }
 
-            // Advance to next chunk (chunks are 2-byte aligned)
+            if chunk_type == b"EXIF" && data_end > data_start {
+                let data = &webp_data[data_start..data_end];
+                let needle = b"Protection seed: ";
+                if let Some(offset) = data.windows(needle.len()).position(|w| w == needle) {
+                    let start = offset + needle.len();
+                    let end = data[start..]
+                        .iter()
+                        .position(|&b| b == b'\0' || b == b'\n')
+                        .map(|p| start + p)
+                        .unwrap_or(data.len());
+                    if let Ok(seed_str) = std::str::from_utf8(&data[start..end]) {
+                        if let Ok(seed) = seed_str.trim().parse::<u64>() {
+                            return Some(seed);
+                        }
+                    }
+                }
+            }
+
             pos = data_start + chunk_size;
             if !chunk_size.is_multiple_of(2) {
                 pos += 1;
@@ -1199,12 +1325,6 @@ mod tests {
     }
 
     #[test]
-    fn protector_is_enabled() {
-        let p = MetadataTrapProtector::new();
-        assert!(p.is_enabled());
-    }
-
-    #[test]
     fn protector_apply_preserves_dimensions() {
         let p = MetadataTrapProtector::new();
         let img = make_test_image();
@@ -1381,5 +1501,123 @@ mod tests {
         let xmp = MetadataTrapProtector::generate_xmp_dmi(DmiValue::ProhibitedAiMlTraining, None);
         let xmp_str = String::from_utf8_lossy(&xmp);
         assert!(xmp_str.contains("xmlns:cloakrs=\"https://github.com/anomalyco/cloakrs\""));
+    }
+
+    // ── Redundant metadata injection ─────────────────────────────────
+
+    #[test]
+    fn png_seed_extractable_from_description_chunk() {
+        let protector = MetadataTrapProtector::new();
+        let img = make_test_image();
+        let png = encode_png(&img);
+        let ctx = ProtectionContext::new(0.5, 42);
+        let injected = protector.inject_bytes(&png, &ctx).unwrap();
+
+        let mut pos = 8;
+        let mut found_description = false;
+        while pos + 12 <= injected.len() {
+            let chunk_len = u32::from_be_bytes([
+                injected[pos],
+                injected[pos + 1],
+                injected[pos + 2],
+                injected[pos + 3],
+            ]) as usize;
+            let chunk_type = &injected[pos + 4..pos + 8];
+            if chunk_type == b"IEND" {
+                break;
+            }
+            if chunk_type == b"tEXt" {
+                let data_start = pos + 8;
+                let data_end = (data_start + chunk_len).min(injected.len());
+                let data = &injected[data_start..data_end];
+                if let Some(null_pos) = data.iter().position(|&b| b == 0) {
+                    let key = &data[..null_pos];
+                    if key == b"Description" {
+                        found_description = true;
+                        let value = &data[null_pos + 1..];
+                        let value_str = String::from_utf8_lossy(value);
+                        assert!(value_str.contains("Protected image. Seed: 42"));
+                    }
+                }
+            }
+            pos += 12 + chunk_len;
+        }
+        assert!(found_description, "Description chunk not found");
+    }
+
+    #[test]
+    fn jpeg_iptc_has_object_name_seed() {
+        let protector = MetadataTrapProtector::new();
+        let img = make_test_image();
+        let jpeg = encode_jpeg(&img);
+        let ctx = ProtectionContext::new(0.5, 42).with_dmi(DmiValue::ProhibitedAiMlTraining);
+        let injected = protector.inject_bytes(&jpeg, &ctx).unwrap();
+
+        assert_eq!(
+            MetadataTrapProtector::extract_seed_from_image(&injected),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn webp_exif_chunk_has_seed() {
+        let protector = MetadataTrapProtector::new();
+        let img = make_test_image();
+        let webp = encode_webp(&img);
+        let ctx = ProtectionContext::new(0.5, 42).with_dmi(DmiValue::ProhibitedAiMlTraining);
+        let injected = protector.inject_bytes(&webp, &ctx).unwrap();
+
+        assert_eq!(
+            MetadataTrapProtector::extract_seed_from_image(&injected),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn png_seed_survives_description_only() {
+        let protector = MetadataTrapProtector::new();
+        let img = make_test_image();
+        let png = encode_png(&img);
+        let ctx = ProtectionContext::new(0.5, 99);
+        let injected = protector.inject_bytes(&png, &ctx).unwrap();
+
+        let mut output = Vec::new();
+        output.extend_from_slice(&injected[0..8]);
+        let mut pos = 8;
+        while pos + 12 <= injected.len() {
+            let chunk_len = u32::from_be_bytes([
+                injected[pos],
+                injected[pos + 1],
+                injected[pos + 2],
+                injected[pos + 3],
+            ]) as usize;
+            let chunk_type = &injected[pos + 4..pos + 8];
+            let keep = chunk_type == b"IEND"
+                || chunk_type == b"tEXt" && {
+                    let data_start = pos + 8;
+                    let data_end = (data_start + chunk_len).min(injected.len());
+                    let data = &injected[data_start..data_end];
+                    if let Some(null_pos) = data.iter().position(|&b| b == 0) {
+                        &data[..null_pos] == b"Description"
+                    } else {
+                        false
+                    }
+                };
+            if chunk_type == b"IEND" {
+                let text_chunk = MetadataTrapProtector::create_png_text_chunk(
+                    b"Description",
+                    b"Protected image. Seed: 99",
+                );
+                output.extend_from_slice(&text_chunk);
+            }
+            if keep || chunk_type == b"IEND" {
+                output.extend_from_slice(&injected[pos..pos + 12 + chunk_len]);
+            }
+            pos += 12 + chunk_len;
+        }
+        assert_eq!(
+            MetadataTrapProtector::extract_seed_from_image(&output),
+            Some(99)
+        );
     }
 }

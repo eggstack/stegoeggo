@@ -573,16 +573,7 @@ impl ProtectionContext {
         self.inject_legal_claims
     }
 
-    /// Get the stego embedding redundancy.
-    ///
-    /// Returns the explicitly set value, or the default (2). Internally,
-    /// prefer [`effective_redundancy`] which derives from intensity when
-    /// the user hasn't explicitly set this value.
-    pub fn stego_redundancy(&self) -> usize {
-        self.stego_redundancy.unwrap_or(2)
-    }
-
-    /// Compute the effective stego redundancy.
+    /// Get the effective stego redundancy.
     ///
     /// When the user has explicitly set `stego_redundancy` via
     /// [`with_stego_redundancy`], that value is returned. Otherwise,
@@ -590,6 +581,10 @@ impl ProtectionContext {
     /// - `intensity < 0.3` → 1 (minimal embedding)
     /// - `intensity < 0.7` → 2 (standard)
     /// - `intensity >= 0.7` → 3 (heavy)
+    pub fn stego_redundancy(&self) -> usize {
+        self.effective_redundancy()
+    }
+
     pub(crate) fn effective_redundancy(&self) -> usize {
         if let Some(r) = self.stego_redundancy {
             return r;
