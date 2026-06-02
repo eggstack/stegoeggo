@@ -19,21 +19,10 @@ categories = ["graphics", "multimedia::images"]
 include = [
     "src/**/*.rs",
     "Cargo.toml",
-    "Cargo.lock",
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
     "SECURITY.md",
-]
-exclude = [
-    ".github/",
-    "architecture/",
-    "benches/",
-    "examples/",
-    "plans/",
-    "tests/",
-    ".skills/",
-    "*.lock.bak",
 ]
 
 [features]
