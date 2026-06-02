@@ -57,7 +57,7 @@ src/
 
 ## Architecture Documentation
 
-Architecture docs live in `architecture/` (21 files). All docs have been verified against source code.
+Architecture docs live in `architecture/` (19 files). All docs have been verified against source code.
 
 ## Build & Test Commands
 
@@ -102,7 +102,7 @@ cargo bench                              # Criterion benchmarks
 - **`#[serde(skip)]` on `config` field**: `ProtectionContext.config` (`Option<Arc<ProtectionConfig>>`) is skipped during serialization. MAC keys and legal metadata are lost in serde roundtrips. A test (`test_config_skipped_in_serde_roundtrip`) documents this behavior
 - **Async batch processing**: `process_images_parallel_async` and `process_images_bytes_parallel_async` run the entire batch inside a single `spawn_blocking`, delegating to the synchronous rayon-based parallel functions. This avoids per-image `spawn_blocking` calls that would cause thread pool overlap. Single-image async functions (`process_image_async`, `process_image_bytes_async`) still use one `spawn_blocking` per image
 - **Steganography fallback seeds**: Extracted to `FALLBACK_SEEDS` constant in `steganography.rs`. These are common test/dev seeds tried when metadata is stripped
-- **Format detection strictness**: `apply_multi_protector_bytes` returns `Error::InvalidFormat` when the input format cannot be determined (from `ctx.input_format()` or magic bytes). Previously it silently defaulted to PNG
+- **Format detection strictness**: `apply_bytes_pipeline` returns `Error::InvalidFormat` when the input format cannot be determined (from `ctx.input_format()` or magic bytes). Previously it silently defaulted to PNG
 - **JPEG segment length bounds**: `get_scan_data_start` now uses `checked_add` to prevent integer overflow when advancing past segments with malformed lengths
 - **Entropy decoder natural order**: The entropy decoder stores coefficients directly in natural (row-major) order via `block[ZIGZAG[k]] = magnitude`. The old reorder loop was redundant (identity operation) and has been removed
 - **JPEG quantization debug assertion**: `assemble_jpeg` has a `debug_assert!` for 8-bit quantization values exceeding 255

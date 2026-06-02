@@ -77,4 +77,4 @@ pub enum TranscoderError {
 - **entropy.rs**: `CoefficientDecoder` / `CoefficientEncoder` for Huffman codec
 - **stego_f5.rs**: `DctStegoF5` for coefficient manipulation
 - **protected/steganography.rs**: `apply_dct_stego_bytes` calls transcoder for JPEG fast path
-- **lib.rs**: Used in `apply_multi_protector_bytes` when input/output are both JPEG
+- **lib.rs**: Used in `apply_bytes_pipeline` when input/output are both JPEG

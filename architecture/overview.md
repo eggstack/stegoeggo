@@ -201,8 +201,8 @@ When **both** input and output are JPEG, the pipeline operates directly on DCT c
 
 ### Two XorShiftRng Implementations
 
-- **`XorShiftRng`** in `util/image.rs` — general-purpose pixel selection for steganography
-- **`F5XorShiftRng`** in `jpeg_transcoder/stego_f5.rs` — DCT coefficient shuffling
+- **`PixelSelectionRng`** in `util/image.rs` — general-purpose pixel selection for steganography
+- **`DctCoefficientRng`** in `jpeg_transcoder/stego_f5.rs` — DCT coefficient shuffling
 
 They use different algorithms and produce different sequences for the same seed. **Do NOT interchange them.**
 
@@ -224,9 +224,9 @@ static DEFAULT_PIPELINE: LazyLock<ProtectionPipeline> = LazyLock::new(Protection
 
 ### Stego Payload Format
 
-- 24-byte header + 2-byte checksum = 26 bytes minimum (`MIN_PAYLOAD_SIZE`)
+- 24-byte header + 4-byte CRC32 checksum = 28 bytes minimum (`MIN_PAYLOAD_SIZE`)
 - With HMAC key: 24-byte header + 8-byte HMAC = 32 bytes total
-- Always padded to 32 bytes in `generate_payload()`
+- Non-MAC mode produces 76-byte ECC-encoded payload (24 bytes × 3 replication + 4 CRC32)
 
 ### Metadata Injection Semantics
 
@@ -261,7 +261,7 @@ Three-state control (`Option<bool>`) for metadata injection:
 ## Security Notes
 
 - **Default seed is CSPRNG-backed**: `ProtectionContext::default()` calls `generate_random_seed()` which uses `getrandom` (OS CSPRNG). Use `ProtectionContext::new(intensity, seed)` when you need reproducible results across runs.
-- **Without MAC key**: Stego verification uses trivial additive checksum, not HMAC. Payloads are forgeable.
+- **Without MAC key**: Stego verification uses a non-cryptographic CRC32 checksum, not HMAC. Payloads are forgeable.
 - **Primary deterrence is metadata**: Visible XMP/IPTC/EXIF markers remain even if stego payload is stripped. Metadata provides legal evidence of intent.
 - **JPEG stego limitations**: F5 DCT embedding may not survive re-compression. Quantization table seed embedding is more robust (survives re-encode).
 

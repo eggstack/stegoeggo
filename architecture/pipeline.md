@@ -34,7 +34,7 @@ pub struct ProtectionPipeline {
    c. Inject metadata to bytes
 ```
 
-The JPEG fast path (`apply_multi_protector_bytes`) operates directly on DCT coefficients via `JpegTranscoder`, bypassing pixel decode/encode cycles. It only triggers when **both** input and output are JPEG — format conversion always takes the full pipeline. This is critical for the sub-10ms latency target.
+The JPEG fast path (`apply_bytes_pipeline`) operates directly on DCT coefficients via `JpegTranscoder`, bypassing pixel decode/encode cycles. It only triggers when **both** input and output are JPEG — format conversion always takes the full pipeline. This is critical for the sub-10ms latency target.
 
 ### Light Level Flow
 
@@ -42,7 +42,7 @@ The JPEG fast path (`apply_multi_protector_bytes`) operates directly on DCT coef
 
 ### JPEG→JPEG Fast Path (bypasses pixel decode/encode)
 
-When both input and output are JPEG, `apply_multi_protector_bytes` skips pixel decode/encode entirely and only applies DCT steganography + metadata injection. This preserves original quality and avoids lossy re-encoding artifacts.
+When both input and output are JPEG, `apply_bytes_pipeline` skips pixel decode/encode entirely and only applies DCT steganography + metadata injection. This preserves original quality and avoids lossy re-encoding artifacts.
 
 ## Convenience Functions
 
@@ -70,5 +70,5 @@ Free functions that use a `LazyLock<ProtectionPipeline>` singleton:
 - **types.rs**: Uses `ProtectionLevel`, `ProtectionContext`, `ImageOutputFormat`
 - **traits.rs**: Calls `Protector::apply()` and `Protector::apply_bytes()`
 - **protected/*.rs**: Delegates to specific protector implementations
-- **jpeg_transcoder/**: Used for JPEG fast path in `apply_multi_protector_bytes`
+- **jpeg_transcoder/**: Used for JPEG fast path in `apply_bytes_pipeline`
 - **util/image.rs**: Used for encoding, format detection, image loading

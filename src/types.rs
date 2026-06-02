@@ -259,8 +259,8 @@ pub struct ProtectionConfig {
     ///
     /// # Security
     ///
-    /// Without a MAC key, steganographic payload verification uses a trivial
-    /// additive checksum that provides no cryptographic assurance. Always set a
+    /// Without a MAC key, steganographic payload verification uses a non-cryptographic
+    /// CRC32 checksum that provides no cryptographic assurance. Always set a
     /// MAC key in adversarial settings to enable HMAC-SHA256 verification.
     pub mac_key: Option<Vec<u8>>,
     /// Legal metadata for copyright and AI training restrictions.
@@ -387,8 +387,19 @@ impl ProtectionContext {
     /// Intensity is clamped to the range [0.0, 1.0].
     ///
     /// **Production use requires a MAC key.** Without one, steganographic payloads use
-    /// a 16-bit checksum that can be trivially forged. Call `.with_mac_key()` for
-    /// adversarial or production deployments.
+    /// a non-cryptographic CRC32 checksum that can be trivially forged. Call `.with_mac_key()`
+    /// for adversarial or production deployments.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use cloakrs::{ProtectionContext, ProtectionLevel, process_image};
+    /// use image::DynamicImage;
+    ///
+    /// let img = DynamicImage::new_rgb8(64, 64);
+    /// let ctx = ProtectionContext::new(0.5, 42);
+    /// let protected = process_image(img, ProtectionLevel::Standard, &ctx).unwrap();
+    /// ```
     pub fn new(intensity: f32, seed: u64) -> Self {
         Self {
             intensity: intensity.clamp(0.0, 1.0),

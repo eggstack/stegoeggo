@@ -10,11 +10,11 @@ Defines the core trait contracts that all protectors implement.
 pub trait Protector: Send + Sync {
     fn apply(&self, img: &DynamicImage, ctx: &ProtectionContext) -> Result<Cow<DynamicImage>>;
     fn apply_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>>;
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
     fn protection_level(&self) -> ProtectionLevel;
     fn estimated_latency_ms(&self) -> u32;
-    fn modifies_pixels(&self) -> bool;
-    fn is_enabled(&self) -> bool;
+    fn modifies_pixels(&self) -> bool { true }
+    fn requires_bytes_level(&self) -> bool { false }
 }
 ```
 
@@ -26,7 +26,7 @@ pub trait Protector: Send + Sync {
 - **`protection_level`** — Which `ProtectionLevel` this protector handles.
 - **`estimated_latency_ms`** — Expected processing time for performance budgets.
 - **`modifies_pixels`** — Whether this protector changes pixel data (metadata-only protectors return false).
-- **`is_enabled`** — Whether this protector is active. Default returns `true`. `PassthroughProtector` overrides to return `true`. Note: this method is dead code — the pipeline never calls it (uses direct `match level` dispatch instead).
+- **`requires_bytes_level`** — Whether this protector only operates at the byte level. When true, `apply()` may return the image unchanged, and callers should use `apply_bytes()` for full protection.
 
 ### Implementations
 

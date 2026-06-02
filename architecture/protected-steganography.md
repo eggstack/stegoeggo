@@ -4,7 +4,7 @@
 
 The most complex module. Handles LSB and DCT-based steganographic embedding for payload storage and verification.
 
-## Payload Format (32 bytes total)
+## Payload Format
 
 ```
 Offset  Size  Field
@@ -13,11 +13,11 @@ Offset  Size  Field
 2       8     Seed (u64, little-endian)
 10      2     Intensity (u16, scaled f32)
 12      8     Timestamp (u64, seconds since epoch)
-20      2     Additive checksum (without MAC key)
+20      4     CRC32 checksum (without MAC key, no ECC)
 20      8     HMAC-SHA256 first 8 bytes (with MAC key)
 ```
 
-Checksum is 2 bytes (first 16-bit additive checksum). HMAC is 8 bytes (first 8 bytes of HMAC-SHA256). Always padded to 32 bytes. `MIN_PAYLOAD_SIZE = 26` (24-byte header + 2-byte checksum), `MIN_PAYLOAD_BITS = 208`.
+Without a MAC key, the payload uses a 4-byte CRC32 checksum. With a MAC key, the 8 trailing bytes are a truncated HMAC-SHA256. `MIN_PAYLOAD_SIZE = 28` (24-byte header + 4-byte CRC32), `MIN_PAYLOAD_BITS = 224`. In non-MAC mode, `generate_payload()` produces an ECC-encoded payload of 76 bytes (24 bytes × 3 replication + 4 CRC32). In MAC mode, the payload is 32 bytes (24 header + 8 HMAC).
 
 ## StegoPayload (Extracted)
 
@@ -39,7 +39,7 @@ fn extract_lsb(img: &RgbaImage, seed: u64, redundancy: u8) -> Vec<u8>
 - Uses collision-free LCG permutation (`stego_permutation`) for pixel selection
 - Seed derivation: `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)` per pass
 - Embeds payload bits into LSBs of selected pixels
-- Redundancy 1–5: multiple passes for reliability
+- Redundancy 1–10: multiple passes for reliability
 
 ### JPEG Pixel Stego
 
@@ -78,7 +78,7 @@ pub fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8
 1. Detect image format
 2. For JPEG: extract from DCT coefficients (F5) or quantization tables
 3. For PNG/WebP: extract from pixel LSBs
-4. Verify integrity: HMAC-SHA256 (with key) or additive checksum (without)
+4. Verify integrity: HMAC-SHA256 (with key) or CRC32 checksum (without)
 5. HMAC uses `subtle::ConstantTimeEq::ct_eq()` to prevent timing attacks
 
 ### Majority Voting
@@ -87,7 +87,7 @@ Extraction always runs 5 passes. Each pass uses different seed derivation. Resul
 
 ## Redundancy
 
-- Configurable 1–5 via `ProtectionContext::stego_redundancy`
+- Configurable 1–10 via `ProtectionContext::stego_redundancy` (clamped via `.with_stego_redundancy(n)`)
 - Embedding loops with `break` to exit inner loops after each pass
 - Extraction always runs 5 passes regardless of redundancy setting
 

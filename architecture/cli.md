@@ -20,7 +20,7 @@ cloakrs [OPTIONS] <INPUT>...
 | `-i` | `--intensity` | Float 0.0–1.0 | 0.5 |
 | `-s` | `--seed` | Seed for reproducibility | random |
 | `-f` | `--format` | Output format (png/jpg/webp) | auto |
-| | `--stego-redundancy` | 1–5 | 2 |
+| | `--stego-redundancy` | 1–10 | 2 |
 | | `--jpeg-quality` | 1–100 | 90 |
 | | `--progressive` | Progressive JPEG | false |
 | `-v` | `--verbose` | Verbose output | false |

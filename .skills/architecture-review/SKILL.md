@@ -9,7 +9,7 @@ Systematic workflow for verifying architecture documents against the cloakrs cod
 
 ## Quick Reference
 
-- Architecture docs live in `architecture/` (21 files)
+- Architecture docs live in `architecture/` (19 files)
 - Review outputs go to `plans/`
 - Source code is in `src/`
 - Use `rg` (ripgrep) for fast content search, `glob` for file patterns

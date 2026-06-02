@@ -4,12 +4,12 @@
 
 Core image processing utilities: PRNG, encoding, hashing, and format detection.
 
-## XorShiftRng
+## PixelSelectionRng
 
 General-purpose XorShift64 PRNG for pixel selection in steganography.
 
 ```rust
-pub struct XorShiftRng { state: u64 }
+pub struct PixelSelectionRng { state: u64 }
 ```
 
 - `new(seed: u64)` — Initializes with seed using `wrapping_add(XORSHIFT_SEED_OFFSET)` (not XOR)
@@ -29,6 +29,6 @@ pub struct XorShiftRng { state: u64 }
 
 ## Module Interactions
 
-- **protected/steganography.rs**: Uses `XorShiftRng` for pixel selection (LSB stego)
+- **protected/steganography.rs**: Uses `PixelSelectionRng` for pixel selection (LSB stego)
 - **util/seed.rs**: `generate_random_seed()` used for default context seeds
 - **lib.rs**: Uses encoding/detection functions for format routing

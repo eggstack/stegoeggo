@@ -1,10 +1,13 @@
 use crate::types::LegalMetadata;
 use image::DynamicImage;
 
-/// ISCC (International Standard Content Code) identifier.
+/// ISCC-**like** (International Standard Content Code) identifier.
 ///
-/// Computed from an image's perceptual and data characteristics.
-/// See the [ISCC specification](https://iscc-project.github.io/) for details.
+/// Computed from an image's perceptual and data characteristics using
+/// a custom DCT-based perceptual hash. **Not guaranteed to be interoperable**
+/// with the standard [ISCC specification](https://iscc-project.github.io/) —
+/// use these identifiers for in-application deduplication and provenance
+/// tracking, not for cross-ISCC-tool interoperability.
 #[derive(Debug, Clone)]
 pub struct Iscc {
     /// Optional metadata code (generated from legal metadata when provided).

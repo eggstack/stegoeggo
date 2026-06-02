@@ -117,8 +117,9 @@ impl SteganographyProtector {
     /// Returns `true` if a payload is found and its checksum or HMAC is valid.
     /// For HMAC verification, use [`verify_payload_with_key`](Self::verify_payload_with_key).
     ///
-    /// **Warning:** Without a MAC key, this method only checks a 16-bit checksum that
-    /// can be forged. For adversarial settings, always verify with a MAC key.
+    /// **Warning:** Without a MAC key, this method only checks a non-cryptographic
+    /// CRC32 checksum that can be forged. For adversarial settings, always verify
+    /// with a MAC key.
     pub fn verify_payload(&self, img: &DynamicImage) -> bool {
         self.verify_payload_with_key(img, &[]).unwrap_or(false)
     }
@@ -339,8 +340,8 @@ impl SteganographyProtector {
     /// Returns `Some(true)` if the payload is found and HMAC is valid, `Some(false)` if
     /// found but HMAC doesn't match, or `None` if no payload is found.
     ///
-    /// Without a MAC key (empty `mac_key`), falls back to a weak 16-bit checksum that
-    /// provides no cryptographic protection. For production use, always provide a key.
+    /// Without a MAC key (empty `mac_key`), falls back to a non-cryptographic CRC32 checksum
+    /// that provides no cryptographic protection. For production use, always provide a key.
     pub fn verify_payload_with_key(&self, img: &DynamicImage, mac_key: &[u8]) -> Option<bool> {
         // Encode once, delegate to bytes-aware method to avoid double-encoding.
         if let Ok(png_bytes) = crate::util::image::encode_image(img, image::ImageFormat::Png) {

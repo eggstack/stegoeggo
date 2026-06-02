@@ -37,8 +37,8 @@
 //! For production use, always set a MAC key via `with_mac_key()` — the default
 //! checksum provides no cryptographic integrity.
 //!
-//! **Without a MAC key**, steganographic payload verification uses a trivial
-//! additive checksum. An attacker can trivially forge valid-looking payloads.
+//! **Without a MAC key**, steganographic payload verification uses a non-cryptographic
+//! CRC32 checksum. An attacker can trivially forge valid-looking payloads.
 //! This is suitable for accidental corruption detection and legal deterrence
 //! (visible metadata markers prove intent), but **not** for adversarial settings.
 //!
@@ -423,6 +423,20 @@ pub fn process_images_bytes_parallel(
 ///
 /// Automatically detects the input format from magic bytes and preserves
 /// the output format. Returns the protected image as bytes.
+///
+/// For JPEG-in/JPEG-out, this function takes a byte-only fast path that
+/// operates on DCT coefficients directly, avoiding pixel decode/encode cycles.
+///
+/// # Examples
+///
+/// ```no_run
+/// use cloakrs::{process_image_bytes, ProtectionContext, ProtectionLevel};
+///
+/// let img_bytes: Vec<u8> = std::fs::read("input.png").unwrap();
+/// let ctx = ProtectionContext::new(0.5, 42);
+/// let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+/// std::fs::write("output.png", &protected).unwrap();
+/// ```
 #[must_use = "the protected image bytes should be saved or used"]
 pub fn process_image_bytes(
     img_bytes: &[u8],
@@ -459,10 +473,10 @@ pub fn process_image_bytes(
 /// * `mac_key` - Optional MAC key for HMAC-SHA256 verification. Pass empty slice
 ///   for checksum-only verification.
 ///
-/// # Example
+/// # Examples
 ///
-/// ```ignore
-/// match cloakrs::verify_image_bytes(&img_bytes, &mac_key) {
+/// ```no_run
+/// match cloakrs::verify_image_bytes(&img_bytes, &[]) {
 ///     Some(true) => println!("Protected and verified"),
 ///     Some(false) => println!("Protected but verification failed"),
 ///     None => println!("No protection found"),

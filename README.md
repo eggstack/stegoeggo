@@ -180,10 +180,11 @@ let ctx = ProtectionContext::new(0.8, 42);
 
 > **Note:** `ProtectionContext::default()` uses `generate_random_seed()`, which is backed by the OS CSPRNG via the `getrandom` crate. The seed is unpredictable by design. For **reproducible** protection across runs, pass an explicit seed via `ProtectionContext::new(intensity, seed)`. In rare sandboxed environments where `getrandom` is unavailable, a time-based fallback is used and a warning is logged.
 
-> **Security Notice:** Without a MAC key, steganographic payloads use a 16-bit checksum
-> that can be trivially forged by anyone who reads the source code. For production deployments
-> (CDN protection, adversarial settings), **always** set a MAC key via `.with_mac_key()`.
-> The default configuration without a key is suitable for development and testing only.
+> **Security Notice:** Without a MAC key, steganographic payloads use a non-cryptographic
+> CRC32 checksum that can be trivially forged by anyone who reads the source code. For
+> production deployments (CDN protection, adversarial settings), **always** set a MAC key
+> via `.with_mac_key()`. The default configuration without a key is suitable for
+> development and testing only.
 
 The MAC key affects:
 - Steganography payload verification (HMAC-SHA256 instead of simple checksum)
@@ -552,7 +553,7 @@ Benchmarked on Apple M1 Pro (10 cores), version 0.2.0:
 
 ### ISCC Computation
 
-The library computes ISCC (Immutable Self-Certifying Constituent Content) identifiers:
+The library computes ISCC-**like** (Immutable Self-Certifying Constituent Content) identifiers for content identification. **Note:** these identifiers are not guaranteed to be interoperable with the standard ISCC specification — they use a custom DCT-based perceptual hash and SHA-256 instance code. They are suitable for in-application deduplication and provenance tracking, but should not be used for cross-ISCC-tool interoperability:
 
 ```rust
 use cloakrs::{compute_iscc, Iscc};
@@ -635,7 +636,7 @@ This library is designed to protect intellectual property from unauthorized AI t
 
 This is a defensive tool for content protection, not an offensive weapon against AI systems.
 
-**Production use requires MAC keys:** Without a cryptographic MAC key, steganographic payloads use a weak 16-bit checksum that can be forged. For adversarial or production deployments (e.g., CDN protection), always set a MAC key via `.with_mac_key()` to ensure payload integrity.
+**Production use requires MAC keys:** Without a cryptographic MAC key, steganographic payloads use a non-cryptographic CRC32 checksum that can be forged. For adversarial or production deployments (e.g., CDN protection), always set a MAC key via `.with_mac_key()` to ensure payload integrity.
 
 ## License
 
