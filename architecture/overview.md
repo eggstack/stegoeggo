@@ -162,7 +162,7 @@ Each component has a detailed deep-dive document in `architecture/`:
 | **Async API** | [async-api.md](async-api.md) | Tokio spawn_blocking wrappers for batch processing |
 | **Image Utilities** | [util-image.md](util-image.md) | XorShiftRng, encoding |
 | **ISCC Identifiers** | [util-iscc.md](util-iscc.md) | Perceptual content hashing (non-standard ISCC-like) |
-| **Seed Generation** | [util-seed.md](util-seed.md) | SystemTime + splitmix64 mixing (not CSPRNG) |
+| **Seed Generation** | [util-seed.md](util-seed.md) | getrandom (OS CSPRNG), with time-based splitmix64 fallback |
 | **Passthrough** | [protected-passthrough.md](protected-passthrough.md) | No-op for Disabled level |
 | **Metadata Trap** | [protected-metadata-trap.md](protected-metadata-trap.md) | IPTC/XMP/EXIF injection, seed embedding |
 | **Steganography** | [protected-steganography.md](protected-steganography.md) | LSB + DCT F5, payload generation/verification |
@@ -260,7 +260,7 @@ Three-state control (`Option<bool>`) for metadata injection:
 
 ## Security Notes
 
-- **Default seed is not CSPRNG**: `ProtectionContext::default()` uses `generate_random_seed()` which derives from `SystemTime` — predictable if request time is known. Use `ProtectionContext::new(intensity, csprng_seed)` for adversarial settings.
+- **Default seed is CSPRNG-backed**: `ProtectionContext::default()` calls `generate_random_seed()` which uses `getrandom` (OS CSPRNG). Use `ProtectionContext::new(intensity, seed)` when you need reproducible results across runs.
 - **Without MAC key**: Stego verification uses trivial additive checksum, not HMAC. Payloads are forgeable.
 - **Primary deterrence is metadata**: Visible XMP/IPTC/EXIF markers remain even if stego payload is stripped. Metadata provides legal evidence of intent.
 - **JPEG stego limitations**: F5 DCT embedding may not survive re-compression. Quantization table seed embedding is more robust (survives re-encode).

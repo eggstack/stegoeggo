@@ -83,7 +83,7 @@ cargo bench                              # Criterion benchmarks
 - **`.gitignore`**: `.DS_Store` files exist on disk but are excluded by git
 - **Stego payload format**: 24-byte header + 4-byte CRC32 checksum (or 8-byte HMAC), always padded to 32 bytes total. Use `MIN_PAYLOAD_SIZE` (=28) and `MIN_PAYLOAD_BITS` (=224) constants in `steganography.rs`
 - **`generate_random_seed()`**: Uses `getrandom` (OS CSPRNG) for cryptographically secure randomness. Falls back to system-time-based mixing if `getrandom` fails. Guarantees non-zero output (`if x == 0 { 42 }`)
-- **`ProtectionContext::default()`**: Calls `generate_random_seed()` — the seed is predictable. Doc comment on the `Default` impl warns about this. Users needing cryptographic seeds should use `ProtectionContext::new(intensity, seed)` with a CSPRNG
+- **`ProtectionContext::default()`**: Calls `generate_random_seed()` which is backed by `getrandom` (OS CSPRNG). The seed is unpredictable. For reproducible results across runs, use `ProtectionContext::new(intensity, seed)` with an explicit seed. In rare sandboxed environments where `getrandom` is unavailable, the function falls back to a time-based mix and logs a warning
 - **JPEG transcoder modules**: `header.rs` and `entropy.rs` have `#![allow(dead_code)]` for JPEG spec reference types (color spaces, standard Huffman tables) — keep these
 - **ISCC module** (`src/util/iscc.rs`): Content identification, exported from `lib.rs`. Uses `iscc-lib` crate (ISO 24138:2024) for standard-compliant ISCC generation. Produces interoperable ISCC identifiers with proper varnibble headers and Base32 encoding
 - **No `TargetModel`**: This concept was removed. `ProtectionContext::new` takes `(intensity, seed)` only

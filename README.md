@@ -11,7 +11,7 @@ A modular Rust library for protecting images from AI scraping through steganogra
 cloakrs implements **image protection through steganographic watermarking and metadata injection** — techniques to protect images from being used to train AI models without the owner's consent. When AI systems scrape images from the web, protected images can:
 
 - Carry visible metadata markers (XMP, IPTC DMI, EXIF) that serve as legal deterrents
-- Contain hidden steganographic payloads that prove the image was protected
+- Contain hidden steganographic payloads (best-effort evidence channel; see [Robustness & Survival](#robustness--survival))
 - Embed legal metadata (copyright, usage terms) directly into the image file
 - Survive casual modification while retaining protection evidence
 
@@ -151,8 +151,8 @@ The library provides three protection levels:
 | Level | Strategy | Latency | Use Case |
 |-------|----------|---------|----------|
 | `Disabled` | No protection | <0.1ms | Testing, whitelisted clients |
-| `Light` | Metadata injection only | ~2ms | Minimal visible markers |
-| `Standard` | Stego + Metadata | ~3-6ms | Default for most endpoints |
+| `Light` | Metadata + minimal stego (Q-table seed for JPEG, LSB redundancy=1 for PNG/WebP) | ~1-2ms (for 256x256; scales with image size) | Minimal visible markers, low cost |
+| `Standard` | Full stego (DCT F5 + metadata for JPEG, LSB + metadata for PNG/WebP) | ~3-6ms | Default for most endpoints |
 
 ```rust
 use cloakrs::ProtectionLevel;
@@ -178,7 +178,7 @@ let ctx = ProtectionContext::new(0.8, 42)
 let ctx = ProtectionContext::new(0.8, 42);
 ```
 
-> **Note:** `ProtectionContext::default()` uses `generate_random_seed()`, which is **not cryptographically secure** — the seed is predictable from the system clock. For reproducible protection, always pass an explicit seed via `ProtectionContext::new(intensity, seed)`. For adversarial settings, pair with a MAC key.
+> **Note:** `ProtectionContext::default()` uses `generate_random_seed()`, which is backed by the OS CSPRNG via the `getrandom` crate. The seed is unpredictable by design. For **reproducible** protection across runs, pass an explicit seed via `ProtectionContext::new(intensity, seed)`. In rare sandboxed environments where `getrandom` is unavailable, a time-based fallback is used and a warning is logged.
 
 > **Security Notice:** Without a MAC key, steganographic payloads use a 16-bit checksum
 > that can be trivially forged by anyone who reads the source code. For production deployments
@@ -262,7 +262,7 @@ use cloakrs::{process_image_bytes, ProtectionContext, ProtectionLevel, ImageOutp
 // Optimized context for WAF edge deployment
 let ctx = ProtectionContext::new(0.5, seed)
     .with_format(ImageOutputFormat::Png)      // or Jpeg for smaller files
-    .with_stego_redundancy(2)                        // 1-5, lower = faster
+    .with_stego_redundancy(2)                        // 1-10, lower = faster
     .with_jpeg_quality(85)                         // 1-100, lower = faster
     .with_progressive_jpeg(true);                   // Progressive rendering for web
 
@@ -274,7 +274,7 @@ let protected_bytes = process_image_bytes(&input_bytes, ProtectionLevel::Standar
 
 | Parameter | Default | Range | Effect on Latency |
 |----------|---------|-------|-------------------|
-| `stego_redundancy` | 2 | 1-5 | Higher = more robust verification, slower |
+| `stego_redundancy` | derived | 1-10 | Higher = more robust verification, slower. Default: derived from `intensity` (1 below 0.3, 2 from 0.3 to 0.7, 3 above) |
 | `jpeg_quality` | 90 | 1-100 | Higher = larger files, same speed |
 | `progressive_jpeg` | false | bool | Progressive = faster perceived load |
 | `output_format` | PNG | PNG/JPEG/WebP | JPEG = smallest files |
@@ -296,7 +296,7 @@ Options:
   -i, --intensity <FLOAT> Protection intensity 0.0-1.0 (default: 0.5)
   -s, --seed <SEED>        Seed for reproducible results
   -f, --format <FORMAT>   Output format: png, jpg, webp
-  --stego-redundancy <N>  Stego redundancy 1-5 (default: 2). Higher = robust, lower = fast
+  --stego-redundancy <N>  Stego redundancy 1-10 (default: 2). Higher = robust, lower = fast
   --jpeg-quality <N>       JPEG quality 1-100 (default: 90)
   --progressive            Use progressive JPEG encoding
   -v, --verbose            Print verbose output
@@ -395,7 +395,11 @@ Hidden payloads embedded in images for verification and proof of protection:
 - DCT coefficient perturbation using F5-style no-zero variant
 - Pixel-based fallback when DCT path unavailable
 
-**Payload Structure (32 bytes):**
+**Payload Structure:**
+
+The embedded payload has two variants depending on whether a MAC key is configured:
+
+*MAC mode (32 bytes, with `with_mac_key`):*
 ```
 Offset  Size  Field
 0       1     Version (1)
@@ -404,8 +408,18 @@ Offset  Size  Field
 10      2     Intensity (0-100, little-endian)
 12      8     Timestamp (Unix epoch)
 20      4     Reserved/padding
-24      8     HMAC (if key provided) or checksum
+24      8     HMAC-SHA256 (truncated to 8 bytes)
 ```
+
+*Default mode (76 bytes, no MAC key — uses ECC for error recovery):*
+```
+Offset  Size  Field
+0       24    Header (same as MAC mode above, bytes 0-23)
+24      72    Reed-Solomon-like 3× repetition ECC encoding of the 24-byte header
+96      4     CRC32 checksum of bytes 0-95
+```
+
+Without a MAC key, the payload uses 3× repetition coding with majority-vote decoding (`src/protected/ecc.rs`) so it can recover from bit corruption. With a MAC key, the 8-byte truncated HMAC-SHA256 provides cryptographic integrity.
 
 ## Integration Architecture
 
@@ -469,13 +483,47 @@ JPEG's lossy compression can destroy steganography payloads embedded in pixel da
 
 **Technical note:** The library uses F5-style DCT embedding for JPEG which modifies quantization tables, providing better durability against re-encoding than pixel-based approaches.
 
+## Robustness & Survival
+
+Different protection layers survive different image transformations. The truth, verified by the test suite in `tests/robustness.rs` and `tests/robust_stego_matrix` (in `tests/robustness.rs`):
+
+### What survives common transformations
+
+| Transformation | Visible metadata (DMI, XMP, EXIF, COM) | Q-table seed (JPEG) | LSB stego payload (PNG/WebP) | DCT stego payload (JPEG) |
+|----------------|-----------------------------------------|---------------------|------------------------------|--------------------------|
+| **File copy / re-hosting** | ✓ | ✓ | ✓ | ✓ |
+| **PNG ↔ PNG re-encode** | ✓ | n/a | ✓ (spread-spectrum + ECC + majority vote) | n/a |
+| **JPEG → JPEG via `image` crate encoder** | ✗ (encoder strips COM/APP1) | ✗ (encoder rebuilds Q-tables) | ✗ (decoded to pixels) | ✗ |
+| **JPEG → JPEG via `cloakrs` fast path** | ✓ (re-injected) | ✓ (re-injected) | n/a | ✓ (DCT coeffs preserved) |
+| **Format conversion (PNG ↔ JPEG) via `image` crate** | ✗ | ✗ | ✗ | ✗ |
+| **Crop** | ✗ (clipped) | ✗ | ✗ | ✗ |
+| **Resize** | ✗ (resampled) | ✗ | ✗ | ✗ |
+| **Naive metadata strip** | ✗ | n/a | ✓ (still extractable) | partial |
+| **LSB-preserving noise** (e.g. contrast, brightness) | ✓ | n/a | ✓ | n/a |
+| **LSB-flipping noise** (e.g. random LSB overwrites) | ✓ | n/a | ✗ without ECC / partial with ECC | n/a |
+
+### Encoder reality check
+
+The `image` crate (and most general-purpose JPEG encoders) **do not preserve** COM or APP1 markers, and **rebuild standard Q-tables from scratch** on every encode. This means the visible metadata channel and the Q-table seed channel are both single-encoding only when the image passes through a generic encoder. The `cloakrs` custom transcoder (`JpegTranscoder`) preserves DCT coefficients and re-injects metadata, but only when the image is processed through `process_image_bytes` (not through an external re-encoder).
+
+### Recommendations
+
+- **For maximum legal evidence**: Use PNG output. The visible metadata + LSB stego payload survive almost everything except cropping, resizing, and re-encoding through a non-`cloakrs` JPEG encoder.
+- **For CDN/WAF deployment**: Use `Standard` level with PNG output. JPEG output discards the LSB payload and visible metadata on every re-compression.
+- **For maximum robustness against stripping**: Set a MAC key via `with_mac_key()`. Without it, the embedded checksum can be trivially forged by anyone who reads this source.
+- **For the strongest claims about evidence**: Serve the protected image directly and reference its ISCC code. Don't rely on downstream consumers to preserve any of the embedded channels.
+
+### Honest threat model
+
+The primary deterrence mechanism is **visible metadata injection** — DMI tags, TDM reservation, copyright, and structured COM markers. These are detectable by IPTC/XMP-aware scrapers and provide the strongest legal evidence *when preserved*. The steganographic payload is a **bonus evidence channel**: useful for proving the image was processed by this library at the point of distribution, but it is not designed to survive re-encoding through a general-purpose image pipeline. The library is a deterrent, not a forensic watermark.
+
 ## Performance
 
 Benchmarked on Apple M1 Pro (10 cores), version 0.2.0:
 
 | Image Size | Level | Time (ms) | Notes |
 |------------|-------|-----------|-------|
-| 256×256 | Light | ~0.1 | Metadata only |
+| 256×256 | Light | ~1.0 | Metadata + minimal stego (LSB redundancy=1 or Q-table seed) |
 | 256×256 | Standard | ~1.5 | Default settings |
 | 256×256 | Standard | ~1.0 | `stego_redundancy=1` |
 | 512×512 | Standard | ~5.0 | Default settings |
@@ -556,14 +604,19 @@ Common errors:
 cloakrs
 ├── ProtectionPipeline        # Main orchestration
 ├── Protector trait           # Strategy pattern for protectors
-│   ├── PassthroughProtector # No-op (Disabled level)
-│   ├── MetadataTrapProtector # Metadata injection (Light level)
-│   └── SteganographyProtector # LSB/DCT embedding (Standard level)
+│   ├── PassthroughProtector      # No-op (Disabled level)
+│   ├── MetadataTrapProtector     # Metadata injection (always)
+│   └── SteganographyProtector    # LSB/DCT embedding (Light: minimal, Standard: full)
 ├── ProtectionLevel          # disabled → light → standard
 ├── LegalMetadata            # Configurable legal metadata
 ├── ProtectionContext        # Configuration for protection
 └── StegoPayload             # Extracted stego data
 ```
+
+**Steganography intensity by level:**
+- `Disabled`: none
+- `Light`: minimal — Q-table seed (JPEG) or LSB redundancy=1 (PNG/WebP)
+- `Standard`: full — DCT F5 (JPEG) or LSB + ECC + spread-spectrum (PNG/WebP)
 
 ## Safety & Ethics
 

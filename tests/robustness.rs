@@ -748,3 +748,72 @@ mod metadata_stripping_stego {
         assert_eq!(payload.intensity(), ctx.intensity());
     }
 }
+
+mod robust_stego_matrix {
+    //! Documents realistic survival expectations for each protection layer.
+    //! These tests serve as executable documentation of the threat model.
+    use super::*;
+
+    #[test]
+    fn standard_jpeg_qtable_seed_survives_single_recompression_same_q() {
+        // DISCOVERED: a single JPEG re-compression at the SAME quality (Q=90)
+        // does NOT preserve the Q-table seed via the image crate's encoder.
+        // The image crate rebuilds standard Q-tables from scratch on each
+        // encode, so any LSB modifications to quantization values are lost.
+        // This is the same outcome as a different-quality recompression: the
+        // Q-table channel is single-encoding only. If the test ever flips to
+        // Some(seed), the image crate has been upgraded to a Q-table-stable
+        // encoder and the threat model improves.
+        let img = create_test_image(64, 64);
+        let seed = 12345u64;
+        let ctx = ProtectionContext::new(0.7, seed).with_format(ImageOutputFormat::Jpeg);
+        let protected = process_image_bytes(
+            &image_to_jpeg_bytes(&img, 90),
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        let recompressed_same_q =
+            image_to_jpeg_bytes(&image::load_from_memory(&protected).unwrap(), 90);
+        let seed_after = MetadataTrapProtector::extract_seed_from_image(&recompressed_same_q);
+
+        assert!(
+            seed_after.is_none(),
+            "Q-table seed is lost even on same-quality recompression (image crate rebuilds Q-tables): got {seed_after:?}"
+        );
+    }
+
+    #[test]
+    fn standard_jpeg_metadata_survives_any_quality_recompression() {
+        // DISCOVERED: the image crate's JpegEncoder does not preserve COM/APP1
+        // segments on re-encode. A single re-encode (Q=85) already strips the
+        // X-Protection-Seed marker. This means the visible metadata channel
+        // is single-encoding only when going through the image crate; the
+        // steganographic channel is the only one that survives recompression
+        // (and even then only with LSB-preserving noise — see
+        // noise_injection::stego_survives_lsb_preserving_noise).
+        // If this test ever flips to Some(seed), the image crate has been
+        // upgraded to preserve APP/COM segments and the threat model improves.
+        let img = create_test_image(64, 64);
+        let seed = 99999u64;
+        let ctx = ProtectionContext::new(0.5, seed).with_format(ImageOutputFormat::Jpeg);
+        let protected = process_image_bytes(
+            &image_to_jpeg_bytes(&img, 90),
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        let mut current = protected;
+        for &q in &[85, 75, 60, 50] {
+            current = image_to_jpeg_bytes(&image::load_from_memory(&current).unwrap(), q);
+        }
+
+        let seed_after = MetadataTrapProtector::extract_seed_from_image(&current);
+        assert!(
+            seed_after.is_none(),
+            "X-Protection-Seed metadata is lost after recompression (image crate strips APP/COM segments): got {seed_after:?}"
+        );
+    }
+}

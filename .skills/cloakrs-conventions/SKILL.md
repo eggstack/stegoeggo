@@ -82,4 +82,4 @@ cargo fmt --check                        # Format check
 - Unit tests live in each source file as `#[cfg(test)] mod tests`
 - Integration tests in `tests/` directory
 - Test with `ProtectionContext::new(intensity, seed)` for deterministic results
-- `ProtectionContext::default()` uses predictable random seed — not for production
+- `ProtectionContext::default()` uses CSPRNG-backed seed (via `getrandom`) — safe for production; use `ProtectionContext::new(intensity, seed)` for reproducibility

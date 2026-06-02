@@ -288,7 +288,7 @@ impl ProtectionConfig {
 /// Context for protection operations containing intensity and configuration.
 ///
 /// Cheap to clone (heavy fields are in `Arc<ProtectionConfig>`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ProtectionContext {
     intensity: f32,
     seed: u64,
@@ -323,6 +323,39 @@ pub struct ProtectionContext {
     progressive_jpeg: bool,
     #[serde(skip)]
     config: Option<Arc<ProtectionConfig>>,
+}
+
+impl Serialize for ProtectionContext {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut fields = 12;
+        if self.config.is_some() {
+            fields += 1;
+        }
+        let mut s = serializer.serialize_struct("ProtectionContext", fields)?;
+        s.serialize_field("intensity", &self.intensity)?;
+        s.serialize_field("seed", &self.seed)?;
+        s.serialize_field("input_format", &self.input_format)?;
+        s.serialize_field("output_format", &self.output_format)?;
+        s.serialize_field("protection_level", &self.protection_level)?;
+        s.serialize_field("dmi_value", &self.dmi_value)?;
+        s.serialize_field("max_dimension", &self.max_dimension)?;
+        s.serialize_field("inject_metadata", &self.inject_metadata)?;
+        s.serialize_field("inject_legal_claims", &self.inject_legal_claims)?;
+        s.serialize_field("stego_redundancy", &self.stego_redundancy)?;
+        s.serialize_field("jpeg_quality", &self.jpeg_quality)?;
+        s.serialize_field("progressive_jpeg", &self.progressive_jpeg)?;
+        if self.config.is_some() {
+            s.serialize_field(
+                "_config_dropped_warning",
+                "ProtectionContext.config is not serialized; MAC key and legal metadata will be lost on roundtrip. Set them again after deserialization.",
+            )?;
+        }
+        s.end()
+    }
 }
 
 /// The default seed is generated via `getrandom` (OS CSPRNG).
@@ -654,5 +687,37 @@ mod tests {
         let restored: ProtectionContext = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.seed(), 12345);
         assert_eq!(restored.intensity(), 0.7);
+    }
+
+    #[test]
+    fn serialize_emits_warning_when_config_set() {
+        let ctx = ProtectionContext::new(0.5, 99).with_mac_key(b"key".to_vec());
+        let json = serde_json::to_string(&ctx).unwrap();
+        assert!(
+            json.contains("_config_dropped_warning"),
+            "Serialized JSON should contain a warning field when config is set: {json}"
+        );
+        assert!(
+            json.contains("MAC key"),
+            "Warning should mention the MAC key: {json}"
+        );
+
+        let restored: ProtectionContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.seed(), 99);
+        assert_eq!(restored.intensity(), 0.5);
+        assert!(
+            restored.mac_key().is_none(),
+            "MAC key should be lost after serde roundtrip even when warning is emitted"
+        );
+    }
+
+    #[test]
+    fn serialize_no_warning_when_config_none() {
+        let ctx = ProtectionContext::new(0.5, 99);
+        let json = serde_json::to_string(&ctx).unwrap();
+        assert!(
+            !json.contains("_config_dropped_warning"),
+            "No warning should be emitted when config is None: {json}"
+        );
     }
 }

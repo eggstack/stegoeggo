@@ -4,6 +4,7 @@ use cloakrs::{
     generate_random_seed, process_image_bytes, DmiValue, ImageOutputFormat, MetadataTrapProtector,
     ProtectionContext, ProtectionLevel, SteganographyProtector, DEFAULT_OUTPUT_FORMAT,
 };
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -48,7 +49,7 @@ struct Args {
     #[arg(
         long,
         default_value = "2",
-        help = "Stego embedding redundancy (1-5). Higher = more robust, lower = faster"
+        help = "Stego embedding redundancy (1-10). Higher = more robust, lower = faster"
     )]
     stego_redundancy: usize,
 
@@ -431,7 +432,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut ctx = ProtectionContext::new(args.intensity.clamp(0.0, 1.0), seed)
         .with_format(output_format.unwrap_or(cloakrs::ImageOutputFormat::Png))
-        .with_stego_redundancy(args.stego_redundancy.clamp(1, 5))
+        .with_stego_redundancy(args.stego_redundancy.clamp(1, 10))
         .with_jpeg_quality(args.jpeg_quality.clamp(1, 100))
         .with_progressive_jpeg(args.progressive);
 
@@ -505,8 +506,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 args.jobs
             );
         }
-
-        use std::collections::HashMap;
 
         let results: Vec<Result<(PathBuf, PathBuf), (PathBuf, String)>> = if args.jobs > 1 {
             let seen_paths: std::sync::Mutex<HashMap<PathBuf, usize>> =
