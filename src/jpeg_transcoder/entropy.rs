@@ -654,30 +654,26 @@ impl CoefficientEncoder {
         let mut k = 1;
 
         while k < 64 {
-            let value = block[k];
+            let value = block[ZIGZAG[k]];
 
             if value == 0 {
-                // Count consecutive zeros
                 let mut zero_count = 0;
-                while k < 64 && block[k] == 0 {
+                while k < 64 && block[ZIGZAG[k]] == 0 {
                     zero_count += 1;
                     k += 1;
                 }
 
                 if k >= 64 {
-                    // All remaining coefficients are zero — EOB
                     self.write_huffman_code(writer, table, 0x00)?;
                     break;
                 }
 
-                // Handle runs of 16 or more zeros with ZRL markers
                 while zero_count >= 16 {
-                    self.write_huffman_code(writer, table, 0xF0)?; // ZRL (16 zeros)
+                    self.write_huffman_code(writer, table, 0xF0)?;
                     zero_count -= 16;
                 }
 
-                // Encode the non-zero value that terminated the zero run
-                let non_zero_value = block[k];
+                let non_zero_value = block[ZIGZAG[k]];
                 let size = self.magnitude_size(non_zero_value.unsigned_abs());
                 let encodable_size = size.min(10);
                 let clamped_value = if size > 10 {
@@ -703,7 +699,6 @@ impl CoefficientEncoder {
 
                 k += 1;
             } else {
-                // Non-zero coefficient not preceded by zeros — encode with run=0
                 let size = self.magnitude_size(value.unsigned_abs());
                 let encodable_size = size.min(10);
                 let clamped_value = if size > 10 {
@@ -717,7 +712,7 @@ impl CoefficientEncoder {
                     value
                 };
 
-                let rs = encodable_size; // run=0, size=encodable_size
+                let rs = encodable_size;
                 self.write_huffman_code(writer, table, rs)?;
 
                 if clamped_value > 0 {

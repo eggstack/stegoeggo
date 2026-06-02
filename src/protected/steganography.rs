@@ -145,6 +145,41 @@ impl SteganographyProtector {
         }
     }
 
+    /// Embed only the seed in JPEG quantization tables (no DCT coefficient modification).
+    /// Used for Light level JPEG protection — the seed survives recompression with
+    /// zero visual impact.
+    pub fn apply_qtable_seed_bytes(&self, jpeg_bytes: &[u8], seed: u64) -> Result<Vec<u8>> {
+        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
+            return Err(Error::Steganography("Not a valid JPEG".to_string()));
+        }
+
+        let mut header = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+        DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
+        Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)
+    }
+
+    /// Embed a minimal LSB stego payload with redundancy=1.
+    /// Used for Light level PNG/WebP protection — embeds the seed and protection
+    /// metadata with minimal visual impact.
+    pub fn embed_lsb_minimal(&self, img: &DynamicImage, ctx: &ProtectionContext) -> DynamicImage {
+        let payload = self.generate_payload(ctx);
+        let rgba = img.to_rgba8();
+        let format = ctx
+            .input_format()
+            .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
+
+        let processed = match format {
+            crate::types::ImageOutputFormat::Png | crate::types::ImageOutputFormat::WebP => {
+                self.embed_lsb(&rgba, &payload, ctx.seed(), 1)
+            }
+            crate::types::ImageOutputFormat::Jpeg => {
+                self.embed_jpeg_stego(&rgba, &payload, ctx.seed(), 1)
+            }
+        };
+
+        DynamicImage::ImageRgba8(processed)
+    }
+
     /// Replace quantization tables in a JPEG byte stream with those from header.
     /// Preserves the rest of the byte stream verbatim (including progressive scans).
     fn reassemble_jpeg_with_qtables(

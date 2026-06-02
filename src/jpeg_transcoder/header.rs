@@ -88,6 +88,7 @@ pub struct JpegHeader {
 
     pub app0_marker: Option<Vec<u8>>,
     pub app1_markers: Vec<Vec<u8>>,
+    pub com_markers: Vec<Vec<u8>>,
 
     pub restart_interval: u16,
 
@@ -108,6 +109,7 @@ impl Default for JpegHeader {
             components: Vec::new(),
             app0_marker: None,
             app1_markers: Vec::new(),
+            com_markers: Vec::new(),
             restart_interval: 0,
             is_progressive: false,
         }
@@ -283,7 +285,7 @@ impl JpegHeader {
                 }
                 // COM - Comment
                 0xFE => {
-                    // Skip comments
+                    header.com_markers.push(segment_data.to_vec());
                 }
                 0xDD if segment_data.len() >= 2 => {
                     header.restart_interval =
@@ -506,5 +508,22 @@ mod tests {
     fn parse_tiny_data_returns_error() {
         let result = JpegHeader::parse(&[0xFF, 0xD8]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn com_markers_are_preserved_through_parse() {
+        let mut data = vec![0xFF, 0xD8];
+
+        let com_payload = b"Test comment";
+        let com_len = (com_payload.len() + 2) as u16;
+        data.extend_from_slice(&[0xFF, 0xFE]);
+        data.extend_from_slice(&com_len.to_be_bytes());
+        data.extend_from_slice(com_payload);
+
+        data.extend_from_slice(&[0xFF, 0xD9]);
+
+        let header = JpegHeader::parse(&data).unwrap();
+        assert_eq!(header.com_markers.len(), 1);
+        assert_eq!(header.com_markers[0], com_payload);
     }
 }

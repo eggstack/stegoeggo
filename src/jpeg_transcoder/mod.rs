@@ -117,6 +117,16 @@ impl JpegTranscoder {
             output.extend_from_slice(app1);
         }
 
+        // COM - Comment markers (preserved from original)
+        for com in &header.com_markers {
+            output.push(0xFF);
+            output.push(0xFE);
+            let len = (com.len() + 2) as u16;
+            output.push((len >> 8) as u8);
+            output.push((len & 0xFF) as u8);
+            output.extend_from_slice(com);
+        }
+
         // DQT - Quantization tables
         for table in header.quantization_tables.iter().flatten() {
             output.push(0xFF);
@@ -215,7 +225,7 @@ impl JpegTranscoder {
         output.push(0xC4);
 
         // Calculate length: 2 (length field itself) + 1 (info byte) + 16 (counts) + values
-        let mut len = 17;
+        let mut len = 19;
         for &c in &table.counts {
             len += c as usize;
         }

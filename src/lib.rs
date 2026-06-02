@@ -237,9 +237,12 @@ impl ProtectionPipeline {
         self.metadata_trap.inject_bytes(&encoded, ctx)
     }
 
-    /// Light level: metadata injection only, no perturbation or steganography.
-    /// Encodes to bytes, injects metadata, then decodes back to `DynamicImage`.
-    /// Metadata survives in the byte-level output; pixel content is unchanged.
+    /// Light level: metadata injection + minimal steganographic seed marker.
+    /// For JPEG, embeds seed in quantization tables (survives recompression).
+    /// For PNG/WebP, embeds a minimal LSB payload with redundancy=1,
+    /// then injects metadata (so tEXt chunks survive the re-encode).
+    /// Encodes to bytes, applies minimal stego, injects metadata,
+    /// then decodes back to `DynamicImage`.
     fn apply_light_bytes(
         &self,
         img: &DynamicImage,
@@ -250,9 +253,26 @@ impl ProtectionPipeline {
             .or(ctx.input_format())
             .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
 
-        let encoded = crate::util::image::encode_image(img, output_format.to_image_format())?;
-        let with_metadata = self.metadata_trap.inject_bytes(&encoded, ctx)?;
-        Ok(image::load_from_memory(&with_metadata)?)
+        match output_format {
+            crate::types::ImageOutputFormat::Jpeg => {
+                let encoded =
+                    crate::util::image::encode_image(img, output_format.to_image_format())?;
+                let with_metadata = self.metadata_trap.inject_bytes(&encoded, ctx)?;
+                let with_stego = self
+                    .steganography
+                    .apply_qtable_seed_bytes(&with_metadata, ctx.seed())?;
+                Ok(image::load_from_memory(&with_stego)?)
+            }
+            _ => {
+                let mut minimal_ctx = ctx.clone();
+                minimal_ctx.set_protection_level(crate::types::ProtectionLevel::Light);
+                let stego_img = self.steganography.embed_lsb_minimal(img, &minimal_ctx);
+                let encoded =
+                    crate::util::image::encode_image(&stego_img, output_format.to_image_format())?;
+                let with_metadata = self.metadata_trap.inject_bytes(&encoded, ctx)?;
+                Ok(image::load_from_memory(&with_metadata)?)
+            }
+        }
     }
 
     /// Process image bytes with the specified protection level.
@@ -271,7 +291,32 @@ impl ProtectionPipeline {
 
         match level {
             ProtectionLevel::Disabled => Ok(img_bytes.to_vec()),
-            ProtectionLevel::Light => self.metadata_trap.apply_bytes(img_bytes, &ctx_with_level),
+            ProtectionLevel::Light => {
+                let format = ctx_with_level
+                    .output_format()
+                    .or(ctx_with_level.input_format())
+                    .unwrap_or_else(|| {
+                        crate::types::ImageOutputFormat::from_magic_bytes(img_bytes)
+                            .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT)
+                    });
+                match format {
+                    crate::types::ImageOutputFormat::Jpeg => {
+                        let with_metadata =
+                            self.metadata_trap.apply_bytes(img_bytes, &ctx_with_level)?;
+                        self.steganography
+                            .apply_qtable_seed_bytes(&with_metadata, ctx_with_level.seed())
+                    }
+                    _ => {
+                        let mut minimal_ctx = ctx_with_level.clone();
+                        minimal_ctx.set_protection_level(crate::types::ProtectionLevel::Light);
+                        let img = image::load_from_memory(img_bytes)?;
+                        let stego_img = self.steganography.embed_lsb_minimal(&img, &minimal_ctx);
+                        let encoded =
+                            crate::util::image::encode_image(&stego_img, format.to_image_format())?;
+                        self.metadata_trap.apply_bytes(&encoded, &ctx_with_level)
+                    }
+                }
+            }
             ProtectionLevel::Standard => self.apply_bytes_pipeline(img_bytes, &ctx_with_level),
         }
     }

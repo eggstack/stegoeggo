@@ -112,6 +112,8 @@ impl MetadataTrapProtector {
                     metadata.push((b"DMI-PROHIBITED".to_vec(), dmi.as_str().as_bytes().to_vec()));
                 }
             }
+
+            metadata.push((b"noai".to_vec(), b"noindex".to_vec()));
         }
 
         if should_inject_claims {
@@ -147,6 +149,16 @@ impl MetadataTrapProtector {
                 let now = current_date_iso();
                 metadata.push((b"DateCreated".to_vec(), now.as_bytes().to_vec()));
             }
+
+            if let Some(constraints) = legal.ai_constraints() {
+                metadata.push((b"AIConstraints".to_vec(), constraints.as_bytes().to_vec()));
+            }
+            if let Some(statement) = legal.web_statement_of_rights() {
+                metadata.push((
+                    b"WebStatementOfRights".to_vec(),
+                    statement.as_bytes().to_vec(),
+                ));
+            }
         } else {
             metadata.push((
                 b"UsageTerms".to_vec(),
@@ -163,14 +175,17 @@ impl MetadataTrapProtector {
         let seed_attr = seed
             .map(|s| format!("\n             cloakrs:ProtectionSeed=\"{}\"", s))
             .unwrap_or_default();
+        let tdm_value = if dmi == DmiValue::Allowed { "0" } else { "1" };
         let xmp = format!(
             "<?xpacket begin=\"{bom}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
              <x:xmpmeta xmlns:x=\"adobe:ns:meta/\" \
              xmlns:iptc4xmpExt=\"http://iptc.org/std/Iptc4xmpExt/2008-02-29/\" \
+             xmlns:tdm=\"http://www.niso.org/schemas/tdm/\" \
              xmlns:cloakrs=\"https://github.com/anomalyco/cloakrs\">\n\
              <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
              <rdf:Description rdf:about=\"\"\n\
-             {property}=\"{}\"{seed_attr}/>\n\
+             {property}=\"{}\"\n\
+             tdm:reserve_tdm=\"{tdm_value}\"{seed_attr}/>\n\
              </rdf:RDF>\n\
              </x:xmpmeta>\n\
              <?xpacket end=\"w\"?>",
@@ -306,6 +321,7 @@ impl MetadataTrapProtector {
         metadata: &[(Vec<u8>, Vec<u8>)],
         dmi: Option<DmiValue>,
         seed: Option<u64>,
+        ctx: Option<&ProtectionContext>,
     ) -> Result<Vec<u8>> {
         if metadata.is_empty() && dmi.is_none() {
             return Ok(jpeg_data.to_vec());
@@ -331,7 +347,7 @@ impl MetadataTrapProtector {
 
             if marker == 0xD9 {
                 if !inserted {
-                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed);
+                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx);
                     inserted = true;
                 }
                 output.extend_from_slice(&jpeg_data[pos..]);
@@ -340,7 +356,7 @@ impl MetadataTrapProtector {
 
             if marker == 0xDA {
                 if !inserted {
-                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed);
+                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx);
                     inserted = true;
                 }
                 output.extend_from_slice(&jpeg_data[pos..]);
@@ -367,13 +383,13 @@ impl MetadataTrapProtector {
         }
 
         if !inserted {
-            self.inject_all_dmi_markers(&mut output, dmi, metadata, seed);
+            self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx);
         }
 
         Ok(output)
     }
 
-    /// Injects all DMI markers: EXIF, IPTC-IIM, XMP, and text comments.
+    /// Injects all DMI markers: EXIF, IPTC-IIM, XMP, structured COM, and text comments.
     /// This ensures maximum compatibility across different image processing systems.
     fn inject_all_dmi_markers(
         &self,
@@ -381,6 +397,7 @@ impl MetadataTrapProtector {
         dmi: Option<DmiValue>,
         metadata: &[(Vec<u8>, Vec<u8>)],
         seed: Option<u64>,
+        ctx: Option<&ProtectionContext>,
     ) {
         if let Some(dmi_val) = dmi {
             let exif_marker = Self::create_jpeg_exif_marker(&Self::generate_exif_dmi(dmi_val));
@@ -397,6 +414,11 @@ impl MetadataTrapProtector {
         for (key, value) in metadata {
             let com_chunk = Self::create_jpeg_comment(key, value);
             output.extend_from_slice(&com_chunk);
+        }
+
+        if let Some(context) = ctx {
+            let structured_com = Self::generate_structured_com_marker(dmi, seed, context);
+            output.extend_from_slice(&structured_com);
         }
     }
 
@@ -606,11 +628,89 @@ impl MetadataTrapProtector {
         chunk
     }
 
+    const STRUCTURED_COM_MAGIC: &'static [u8] = b"cloakrs:v1:";
+
+    fn generate_structured_com_marker(
+        dmi: Option<DmiValue>,
+        _seed: Option<u64>,
+        ctx: &ProtectionContext,
+    ) -> Vec<u8> {
+        let mut payload = Vec::with_capacity(48);
+        payload.extend_from_slice(Self::STRUCTURED_COM_MAGIC);
+
+        payload.push(1); // version
+
+        let level_byte = ctx.protection_level().map(|l| l.to_byte()).unwrap_or(2);
+        payload.push(level_byte);
+
+        payload.extend_from_slice(&ctx.seed().to_le_bytes());
+
+        let intensity_val = (ctx.intensity() * 100.0) as u16;
+        payload.extend_from_slice(&intensity_val.to_le_bytes());
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        payload.extend_from_slice(&now.to_le_bytes());
+
+        let dmi_byte = dmi.map(|d| d as u8).unwrap_or(0);
+        payload.push(dmi_byte);
+
+        let checksum = Self::crc16(&payload);
+        payload.extend_from_slice(&checksum.to_le_bytes());
+
+        let mut marker = Vec::with_capacity(4 + payload.len());
+        marker.push(0xFF);
+        marker.push(0xFE);
+        let len = (payload.len() + 2) as u16;
+        marker.extend_from_slice(&len.to_be_bytes());
+        marker.extend_from_slice(&payload);
+        marker
+    }
+
+    fn parse_structured_com_payload(data: &[u8]) -> Option<(u64, u8, u16)> {
+        if data.len() < 34 {
+            return None;
+        }
+        if !data.starts_with(Self::STRUCTURED_COM_MAGIC) {
+            return None;
+        }
+        let version = data[11];
+        if version != 1 {
+            return None;
+        }
+        let level = data[12];
+        let seed = u64::from_le_bytes(data[13..21].try_into().ok()?);
+        let intensity = u16::from_le_bytes(data[21..23].try_into().ok()?);
+        let stored_checksum = u16::from_le_bytes(data[32..34].try_into().ok()?);
+        let computed_checksum = Self::crc16(&data[0..32]);
+        if stored_checksum != computed_checksum {
+            return None;
+        }
+        Some((seed, level, intensity))
+    }
+
     fn crc32(chunk_type: &[u8], data: &[u8]) -> u32 {
         let mut hasher = Crc32Hasher::new();
         hasher.update(chunk_type);
         hasher.update(data);
         !hasher.finalize()
+    }
+
+    fn crc16(data: &[u8]) -> u16 {
+        let mut crc: u16 = 0xFFFF;
+        for &byte in data {
+            crc ^= byte as u16;
+            for _ in 0..8 {
+                if crc & 1 != 0 {
+                    crc = (crc >> 1) ^ 0xA001;
+                } else {
+                    crc >>= 1;
+                }
+            }
+        }
+        crc
     }
 }
 
@@ -767,6 +867,14 @@ impl MetadataTrapProtector {
                 let comment_end = (comment_start + comment_len - 2).min(jpeg_data.len());
                 let comment = &jpeg_data[comment_start..comment_end];
 
+                if comment.starts_with(Self::STRUCTURED_COM_MAGIC) {
+                    if let Some((seed, _level, _intensity)) =
+                        Self::parse_structured_com_payload(comment)
+                    {
+                        return Some(seed);
+                    }
+                }
+
                 if let Ok(comment_str) = String::from_utf8(comment.to_vec()) {
                     if let Some(seed_part) = comment_str.strip_prefix("X-Protection-Seed: ") {
                         return seed_part.trim().parse().ok();
@@ -917,9 +1025,13 @@ impl MetadataTrapProtector {
             ImageOutputFormat::Png => {
                 self.inject_text_chunks_png(img_bytes, &metadata, ctx.dmi_value(), seed)?
             }
-            ImageOutputFormat::Jpeg => {
-                self.inject_text_chunks_jpeg(img_bytes, &metadata, ctx.dmi_value(), seed)?
-            }
+            ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg(
+                img_bytes,
+                &metadata,
+                ctx.dmi_value(),
+                seed,
+                Some(ctx),
+            )?,
             ImageOutputFormat::WebP => {
                 self.inject_text_chunks_webp(img_bytes, &metadata, ctx.dmi_value(), seed)?
             }
@@ -1030,6 +1142,21 @@ mod tests {
     }
 
     #[test]
+    fn generate_poison_metadata_includes_noai() {
+        let protector = MetadataTrapProtector::new();
+        let metadata = protector.generate_poison_metadata(
+            None,
+            Some(ProtectionLevel::Light),
+            Some(42),
+            None,
+            None,
+            None,
+        );
+        let noai = metadata.iter().find(|(k, _)| k == b"noai");
+        assert_eq!(noai.unwrap().1, b"noindex");
+    }
+
+    #[test]
     fn generate_poison_metadata_disabled_skips_injection() {
         let protector = MetadataTrapProtector::new();
         let metadata = protector.generate_poison_metadata(
@@ -1081,6 +1208,49 @@ mod tests {
 
         let contact = metadata.iter().find(|(k, _)| k == b"Contact");
         assert_eq!(contact.unwrap().1, b"legal@test.com");
+    }
+
+    #[test]
+    fn generate_poison_metadata_ai_constraints_and_web_statement() {
+        let protector = MetadataTrapProtector::new();
+        let legal = LegalMetadata::new()
+            .with_ai_constraints("no-training")
+            .with_web_statement_of_rights("https://example.com/rights");
+        let metadata = protector.generate_poison_metadata(
+            None,
+            Some(ProtectionLevel::Standard),
+            None,
+            Some(&legal),
+            None,
+            Some(true),
+        );
+        let constraints = metadata.iter().find(|(k, _)| k == b"AIConstraints");
+        assert_eq!(constraints.unwrap().1, b"no-training");
+
+        let statement = metadata.iter().find(|(k, _)| k == b"WebStatementOfRights");
+        assert_eq!(statement.unwrap().1, b"https://example.com/rights");
+    }
+
+    #[test]
+    fn generate_poison_metadata_omits_constraints_when_none() {
+        let protector = MetadataTrapProtector::new();
+        let legal = LegalMetadata::new().with_copyright_holder("Test");
+        let metadata = protector.generate_poison_metadata(
+            None,
+            Some(ProtectionLevel::Standard),
+            None,
+            Some(&legal),
+            None,
+            Some(true),
+        );
+        assert!(
+            !metadata.iter().any(|(k, _)| k == b"AIConstraints"),
+            "AIConstraints should not be present when not set"
+        );
+        assert!(
+            !metadata.iter().any(|(k, _)| k == b"WebStatementOfRights"),
+            "WebStatementOfRights should not be present when not set"
+        );
     }
 
     // ── PNG injection + extraction ────────────────────────────────────
@@ -1161,7 +1331,7 @@ mod tests {
         let jpeg = encode_jpeg(&make_test_image());
         let metadata = vec![(b"Test-Key".to_vec(), b"Test-Value".to_vec())];
         let result = protector
-            .inject_text_chunks_jpeg(&jpeg, &metadata, None, None)
+            .inject_text_chunks_jpeg(&jpeg, &metadata, None, None, None)
             .unwrap();
         assert!(result.starts_with(&[0xFF, 0xD8]));
         assert!(result.ends_with(&[0xFF, 0xD9]));
@@ -1173,7 +1343,7 @@ mod tests {
         let jpeg = encode_jpeg(&make_test_image());
         let metadata = vec![(b"X-Protection-Seed".to_vec(), b"54321".to_vec())];
         let result = protector
-            .inject_text_chunks_jpeg(&jpeg, &metadata, None, Some(54321))
+            .inject_text_chunks_jpeg(&jpeg, &metadata, None, Some(54321), None)
             .unwrap();
         let extracted = MetadataTrapProtector::extract_seed_from_jpeg(&result).unwrap();
         assert_eq!(extracted, 54321);
@@ -1185,7 +1355,7 @@ mod tests {
         let jpeg = encode_jpeg(&make_test_image());
         let metadata = vec![(b"Test".to_vec(), b"Val".to_vec())];
         let result = protector
-            .inject_text_chunks_jpeg(&jpeg, &metadata, None, None)
+            .inject_text_chunks_jpeg(&jpeg, &metadata, None, None, None)
             .unwrap();
 
         // Should contain COM marker (0xFFFE)
@@ -1198,6 +1368,7 @@ mod tests {
         let result = protector.inject_text_chunks_jpeg(
             b"NOTJPEG",
             &[(b"key".to_vec(), b"val".to_vec())],
+            None,
             None,
             None,
         );
@@ -1264,7 +1435,7 @@ mod tests {
         let jpeg = encode_jpeg(&make_test_image());
         let metadata = vec![(b"X-Protection-Seed".to_vec(), b"200".to_vec())];
         let injected = protector
-            .inject_text_chunks_jpeg(&jpeg, &metadata, None, Some(200))
+            .inject_text_chunks_jpeg(&jpeg, &metadata, None, Some(200), None)
             .unwrap();
         assert_eq!(
             MetadataTrapProtector::extract_seed_from_image(&injected),
@@ -1409,7 +1580,7 @@ mod tests {
         let protector = MetadataTrapProtector::new();
         let jpeg = encode_jpeg(&make_test_image());
         let result = protector
-            .inject_text_chunks_jpeg(&jpeg, &[], None, None)
+            .inject_text_chunks_jpeg(&jpeg, &[], None, None, None)
             .unwrap();
         assert_eq!(result, jpeg);
     }
@@ -1501,6 +1672,73 @@ mod tests {
         let xmp = MetadataTrapProtector::generate_xmp_dmi(DmiValue::ProhibitedAiMlTraining, None);
         let xmp_str = String::from_utf8_lossy(&xmp);
         assert!(xmp_str.contains("xmlns:cloakrs=\"https://github.com/anomalyco/cloakrs\""));
+    }
+
+    #[test]
+    fn xmp_contains_tdm_reservation_prohibit() {
+        let xmp = MetadataTrapProtector::generate_xmp_dmi(DmiValue::ProhibitedAiMlTraining, None);
+        let xmp_str = String::from_utf8_lossy(&xmp);
+        assert!(
+            xmp_str.contains("tdm:reserve_tdm=\"1\""),
+            "TDM reservation should be '1' for prohibited values"
+        );
+        assert!(xmp_str.contains("xmlns:tdm=\"http://www.niso.org/schemas/tdm/\""));
+    }
+
+    #[test]
+    fn xmp_contains_tdm_reservation_allow() {
+        let xmp = MetadataTrapProtector::generate_xmp_dmi(DmiValue::Allowed, None);
+        let xmp_str = String::from_utf8_lossy(&xmp);
+        assert!(
+            xmp_str.contains("tdm:reserve_tdm=\"0\""),
+            "TDM reservation should be '0' for Allowed"
+        );
+    }
+
+    #[test]
+    fn structured_com_marker_roundtrip() {
+        let protector = MetadataTrapProtector::new();
+        let jpeg = encode_jpeg(&make_test_image());
+        let ctx =
+            ProtectionContext::new(0.7, 42).with_format(crate::types::ImageOutputFormat::Jpeg);
+        let metadata = protector.generate_poison_metadata(
+            Some(DmiValue::ProhibitedAiMlTraining),
+            Some(ProtectionLevel::Standard),
+            Some(42),
+            None,
+            None,
+            None,
+        );
+        let injected = protector
+            .inject_text_chunks_jpeg(
+                &jpeg,
+                &metadata,
+                Some(DmiValue::ProhibitedAiMlTraining),
+                Some(42),
+                Some(&ctx),
+            )
+            .unwrap();
+
+        let extracted_seed = MetadataTrapProtector::extract_seed_from_image(&injected);
+        assert_eq!(extracted_seed, Some(42));
+    }
+
+    #[test]
+    fn structured_com_marker_parse_roundtrip() {
+        let ctx =
+            ProtectionContext::new(0.5, 12345).with_format(crate::types::ImageOutputFormat::Jpeg);
+        let marker = MetadataTrapProtector::generate_structured_com_marker(
+            Some(DmiValue::Prohibited),
+            None,
+            &ctx,
+        );
+        let payload = &marker[4..];
+        let parsed = MetadataTrapProtector::parse_structured_com_payload(payload);
+        assert!(parsed.is_some());
+        let (seed, level, intensity) = parsed.unwrap();
+        assert_eq!(seed, 12345);
+        assert_eq!(level, 2);
+        assert_eq!(intensity, 50);
     }
 
     // ── Redundant metadata injection ─────────────────────────────────

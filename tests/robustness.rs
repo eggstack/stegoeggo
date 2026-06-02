@@ -69,7 +69,7 @@ mod jpeg_recompression {
     }
 
     #[test]
-    fn dct_stego_jpeg_not_decodable_by_image_crate() {
+    fn dct_stego_jpeg_decodable_by_image_crate() {
         let img = create_test_image(64, 64);
         let seed = 42u64;
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
@@ -80,9 +80,8 @@ mod jpeg_recompression {
 
         let result = image::load_from_memory(&protected_bytes);
         assert!(
-            result.is_err(),
-            "DCT-stego'd JPEG is NOT decodable by the image crate \
-             (F5 embedding modifies Huffman tables incompatibly)"
+            result.is_ok(),
+            "DCT-stego'd JPEG should be decodable by the image crate after transcoder fixes"
         );
     }
 

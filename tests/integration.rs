@@ -625,7 +625,7 @@ mod edge_cases {
     }
 
     #[test]
-    fn test_light_level_no_pixel_modification() {
+    fn test_light_level_minimal_pixel_modification() {
         let img = create_colored_image(32, 32, 50, 100, 150);
         let original_bytes = img.to_rgba8().into_raw();
 
@@ -634,9 +634,18 @@ mod edge_cases {
         let result = process_image(img, ProtectionLevel::Light, &ctx).unwrap();
         let result_bytes = result.to_rgba8().into_raw();
 
-        assert_eq!(
-            original_bytes, result_bytes,
-            "Light level should not modify pixels"
+        assert_eq!(original_bytes.len(), result_bytes.len());
+
+        let max_diff = original_bytes
+            .iter()
+            .zip(result_bytes.iter())
+            .map(|(a, b)| (*a as i16 - *b as i16).unsigned_abs())
+            .max()
+            .unwrap();
+        assert!(
+            max_diff <= 2,
+            "Light level should modify pixels by at most 2 (LSB stego), got {}",
+            max_diff
         );
     }
 }

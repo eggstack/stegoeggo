@@ -3,6 +3,10 @@ use std::sync::Arc;
 
 /// IPTC Photo Metadata Standard 2023.1 - DMI (Data Mining) tags for AI exclusion.
 /// These tags communicate whether content may be used for AI/ML training.
+///
+/// When injected into XMP metadata, the TDM Reservation Protocol (ISO/IEC 21000-21)
+/// property `tdm:reserve_tdm` is also included: `"1"` for all prohibition values,
+/// `"0"` for `Allowed`. This is the standard referenced by the EU AI Act (2024).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[non_exhaustive]
 pub enum DmiValue {
