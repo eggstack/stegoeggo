@@ -382,7 +382,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .split(',')
                     .filter_map(|s| s.trim().parse().ok())
                     .collect();
-                seeds.iter().any(|&s| stego.verify_payload_with_seed(&img, s))
+                seeds
+                    .iter()
+                    .any(|&s| stego.verify_payload_with_seed(&img, s))
             } else {
                 false
             }

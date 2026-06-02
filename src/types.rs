@@ -545,7 +545,7 @@ impl ProtectionContext {
 
     /// Set the stego embedding redundancy (1-10). Higher values are more robust
     /// for verification but slower. When not set, redundancy is derived from
-    /// `intensity` via [`effective_redundancy`](Self::effective_redundancy).
+    /// `intensity` via the internal `effective_redundancy()` helper.
     #[must_use]
     pub fn with_stego_redundancy(mut self, redundancy: usize) -> Self {
         self.stego_redundancy = Some(redundancy.clamp(1, 10));
@@ -624,7 +624,7 @@ impl ProtectionContext {
     /// Get the effective stego redundancy.
     ///
     /// When the user has explicitly set `stego_redundancy` via
-    /// [`with_stego_redundancy`], that value is returned. Otherwise,
+    /// `with_stego_redundancy()`, that value is returned. Otherwise,
     /// the redundancy is derived from the current `intensity`:
     /// - `intensity < 0.3` → 1 (minimal embedding)
     /// - `intensity < 0.7` → 2 (standard)
