@@ -2,18 +2,26 @@
 name = "cloakrs-cli"
 version = "0.2.0"
 edition = "2021"
-description = "CLI for cloakrs image protection library"
+rust-version = "1.87"
+description = "Command-line interface for the cloakrs image protection library"
 authors = ["David Bowman <dbowman91@proton.me>"]
 license = "MIT"
 repository = "https://github.com/anomalyco/cloakrs"
+homepage = "https://github.com/anomalyco/cloakrs"
+readme = "../README.md"
+keywords = ["image", "steganography", "watermark", "cli", "ai-safety"]
+categories = ["command-line-utilities", "multimedia::images"]
 
 [[bin]]
 name = "cloakrs"
 path = "src/main.rs"
 
 [dependencies]
-cloakrs = { path = ".." }
+cloakrs = { path = "..", version = "0.2" }
 clap = { version = "4", features = ["derive"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 rayon = "1.10"
 hex = "0.4"
+
+[lints.rust]
+unsafe_code = "forbid"

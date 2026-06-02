@@ -1,3 +1,7 @@
+[workspace]
+resolver = "2"
+members = [".", "cloakrs-cli"]
+
 [package]
 name = "cloakrs"
 version = "0.2.0"
@@ -12,6 +16,25 @@ documentation = "https://docs.rs/cloakrs"
 readme = "README.md"
 keywords = ["image", "steganography", "anti-scraping", "ai-safety", "watermark"]
 categories = ["graphics", "multimedia::images"]
+include = [
+    "src/**/*.rs",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md",
+]
+exclude = [
+    ".github/",
+    "architecture/",
+    "benches/",
+    "examples/",
+    "plans/",
+    "tests/",
+    ".skills/",
+    "*.lock.bak",
+]
 
 [features]
 default = []
@@ -46,3 +69,22 @@ required-features = ["async"]
 [[bench]]
 name = "bench"
 harness = false
+
+[[example]]
+name = "protect_and_verify"
+path = "examples/protect_and_verify.rs"
+
+[[example]]
+name = "verify_saved"
+path = "examples/verify_saved.rs"
+
+[[example]]
+name = "legal_metadata"
+path = "examples/legal_metadata.rs"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints.rust]
+unsafe_code = "forbid"
