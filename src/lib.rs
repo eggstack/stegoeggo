@@ -34,6 +34,9 @@
 //!
 //! # Security Considerations
 //!
+//! For production use, always set a MAC key via `with_mac_key()` — the default
+//! checksum provides no cryptographic integrity.
+//!
 //! **Without a MAC key**, steganographic payload verification uses a trivial
 //! additive checksum. An attacker can trivially forge valid-looking payloads.
 //! This is suitable for accidental corruption detection and legal deterrence

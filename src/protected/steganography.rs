@@ -22,6 +22,12 @@ const MIN_PAYLOAD_SIZE: usize = 26;
 const MIN_PAYLOAD_BITS: usize = MIN_PAYLOAD_SIZE * 8;
 
 /// Common test/dev seeds tried when metadata seed is unavailable.
+///
+/// These are only useful for images protected with one of these known seeds.
+/// Images protected with `generate_random_seed()` (the default) will NOT be
+/// found via fallback — they rely on metadata seed extraction or DCT Q-table
+/// seed for verification. Production deployments should use explicit seeds
+/// or rely on the metadata-based extraction path.
 const FALLBACK_SEEDS: &[u64] = &[42, 0, 1, 12345, 99999, 123456789];
 
 #[inline(always)]

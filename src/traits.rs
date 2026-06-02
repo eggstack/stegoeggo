@@ -19,6 +19,11 @@ use std::borrow::Cow;
 pub trait Protector: Send + Sync {
     /// Apply protection to an image, returning either the original (borrowed)
     /// or a new owned image.
+    ///
+    /// Some protectors (e.g., [`MetadataTrapProtector`](crate::MetadataTrapProtector))
+    /// operate at the byte level only and their `apply()` may return the image
+    /// unchanged. For full protection, callers should use
+    /// [`apply_bytes`](Self::apply_bytes).
     fn apply<'a>(
         &self,
         img: &'a DynamicImage,
@@ -95,5 +100,12 @@ pub trait Protector: Send + Sync {
     /// When false, `apply_bytes` returns the input unchanged.
     fn modifies_pixels(&self) -> bool {
         true
+    }
+
+    /// Returns true if this protector only operates at the byte level.
+    /// When true, `apply()` may return the image unchanged, and callers
+    /// should use `apply_bytes()` for full protection.
+    fn requires_bytes_level(&self) -> bool {
+        false
     }
 }

@@ -157,15 +157,20 @@ impl MetadataTrapProtector {
         }
     }
 
-    fn generate_xmp_dmi(dmi: DmiValue) -> Vec<u8> {
+    fn generate_xmp_dmi(dmi: DmiValue, seed: Option<u64>) -> Vec<u8> {
         let property = dmi.to_iptc_property();
         let bom = "\u{feff}";
+        let seed_attr = seed
+            .map(|s| format!("\n             cloakrs:ProtectionSeed=\"{}\"", s))
+            .unwrap_or_default();
         let xmp = format!(
             "<?xpacket begin=\"{bom}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
-             <x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:iptc4xmpExt=\"http://iptc.org/std/Iptc4xmpExt/2008-02-29/\">\n\
+             <x:xmpmeta xmlns:x=\"adobe:ns:meta/\" \
+             xmlns:iptc4xmpExt=\"http://iptc.org/std/Iptc4xmpExt/2008-02-29/\" \
+             xmlns:cloakrs=\"https://github.com/anomalyco/cloakrs\">\n\
              <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
              <rdf:Description rdf:about=\"\"\n\
-             {property}=\"{}\"/>\n\
+             {property}=\"{}\"{seed_attr}/>\n\
              </rdf:RDF>\n\
              </x:xmpmeta>\n\
              <?xpacket end=\"w\"?>",
@@ -188,10 +193,10 @@ impl MetadataTrapProtector {
 
     /// Generates IPTC-IIM (Information Interchange Model) data record containing DMI.
     /// Uses IPTC Application Record tag 120 (Caption/Abstract) with the DMI value encoded.
-    /// Includes proper record/entry header structure for maximum compatibility.
+    /// Returns the raw IPTC record bytes (without the Photoshop resource envelope).
     fn generate_iptc_iim_dmi(dmi: DmiValue) -> Vec<u8> {
         let dmi_str = format!("DMI: {}", dmi.as_str());
-        let mut data = vec![0x1C, 0x02, 0x78];
+        let mut data = vec![0x1C, 0x02, 0x78]; // record 2, tag 120 (Caption/Abstract)
         data.extend_from_slice(&(dmi_str.len() as u16).to_be_bytes());
         data.extend_from_slice(dmi_str.as_bytes());
         if dmi_str.len() % 2 != 0 {
@@ -205,6 +210,7 @@ impl MetadataTrapProtector {
         png_data: &[u8],
         metadata: &[(Vec<u8>, Vec<u8>)],
         dmi: Option<DmiValue>,
+        seed: Option<u64>,
     ) -> Result<Vec<u8>> {
         if metadata.is_empty() && dmi.is_none() {
             return Ok(png_data.to_vec());
@@ -230,7 +236,8 @@ impl MetadataTrapProtector {
 
             if chunk_type == b"IEND" {
                 if let Some(dmi_val) = dmi {
-                    let xmp_chunk = Self::create_png_xmp_chunk(&Self::generate_xmp_dmi(dmi_val));
+                    let xmp_chunk =
+                        Self::create_png_xmp_chunk(&Self::generate_xmp_dmi(dmi_val, seed));
                     output.extend_from_slice(&xmp_chunk);
                 }
                 for (key, value) in metadata {
@@ -275,6 +282,7 @@ impl MetadataTrapProtector {
         jpeg_data: &[u8],
         metadata: &[(Vec<u8>, Vec<u8>)],
         dmi: Option<DmiValue>,
+        seed: Option<u64>,
     ) -> Result<Vec<u8>> {
         if metadata.is_empty() && dmi.is_none() {
             return Ok(jpeg_data.to_vec());
@@ -300,7 +308,7 @@ impl MetadataTrapProtector {
 
             if marker == 0xD9 {
                 if !inserted {
-                    self.inject_all_dmi_markers(&mut output, dmi, metadata);
+                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed);
                     inserted = true;
                 }
                 output.extend_from_slice(&jpeg_data[pos..]);
@@ -309,7 +317,7 @@ impl MetadataTrapProtector {
 
             if marker == 0xDA {
                 if !inserted {
-                    self.inject_all_dmi_markers(&mut output, dmi, metadata);
+                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed);
                     inserted = true;
                 }
                 output.extend_from_slice(&jpeg_data[pos..]);
@@ -336,7 +344,7 @@ impl MetadataTrapProtector {
         }
 
         if !inserted {
-            self.inject_all_dmi_markers(&mut output, dmi, metadata);
+            self.inject_all_dmi_markers(&mut output, dmi, metadata, seed);
         }
 
         Ok(output)
@@ -349,6 +357,7 @@ impl MetadataTrapProtector {
         output: &mut Vec<u8>,
         dmi: Option<DmiValue>,
         metadata: &[(Vec<u8>, Vec<u8>)],
+        seed: Option<u64>,
     ) {
         if let Some(dmi_val) = dmi {
             let exif_marker = Self::create_jpeg_exif_marker(&Self::generate_exif_dmi(dmi_val));
@@ -357,7 +366,7 @@ impl MetadataTrapProtector {
             let iptc_marker = Self::create_jpeg_iptc_marker(&Self::generate_iptc_iim_dmi(dmi_val));
             output.extend_from_slice(&iptc_marker);
 
-            let xmp_marker = Self::create_jpeg_xmp_marker(&Self::generate_xmp_dmi(dmi_val));
+            let xmp_marker = Self::create_jpeg_xmp_marker(&Self::generate_xmp_dmi(dmi_val, seed));
             output.extend_from_slice(&xmp_marker);
         }
 
@@ -378,29 +387,66 @@ impl MetadataTrapProtector {
     }
 
     /// Creates an EXIF APP1 marker (0xFFE1) with DMI data in UserComment tag.
-    /// Includes the standard "Exif\0\0" TIFF header prefix that JPEG parsers expect.
+    /// Includes a valid minimal TIFF structure so EXIF parsers can locate the tag.
+    ///
+    /// Structure:
+    /// - APP1 marker (0xFFE1) + length
+    /// - "Exif\0\0" prefix
+    /// - TIFF header: byte order "II" (little-endian) + magic 42 + IFD0 offset (8)
+    /// - IFD0: 1 entry for UserComment (tag 0x9286)
+    /// - UserComment data: ASCII charset identifier (8 bytes) + text
     fn create_jpeg_exif_marker(exif_data: &[u8]) -> Vec<u8> {
         let tiff_prefix = b"Exif\x00\x00";
-        let mut marker = Vec::new();
+
+        // TIFF header: "II" (little-endian) + magic 42 + IFD0 offset
+        let mut tiff_header = Vec::with_capacity(8);
+        tiff_header.extend_from_slice(b"II"); // byte order
+        tiff_header.extend_from_slice(&42u16.to_le_bytes()); // magic
+        tiff_header.extend_from_slice(&8u32.to_le_bytes()); // IFD0 offset
+
+        // IFD0: entry count (1) + one entry for UserComment (12 bytes)
+        let mut ifd = Vec::with_capacity(14);
+        ifd.extend_from_slice(&1u16.to_le_bytes()); // entry count
+        ifd.extend_from_slice(&0x9286u16.to_le_bytes()); // tag: UserComment
+        ifd.extend_from_slice(&2u16.to_le_bytes()); // type: ASCII (2)
+        ifd.extend_from_slice(&(exif_data.len() as u32).to_le_bytes()); // count
+                                                                        // Value: if <= 4 bytes, stored inline; otherwise offset from TIFF start.
+                                                                        // Our data is always > 4 bytes, so use offset = 8 (header) + 2 (count) + 12 (entry) = 22
+        ifd.extend_from_slice(&22u32.to_le_bytes()); // offset to data
+
+        let total_len = tiff_prefix.len() + tiff_header.len() + ifd.len() + exif_data.len();
+        let mut marker = Vec::with_capacity(4 + total_len);
         marker.push(0xFF);
         marker.push(0xE1);
-        let len = (tiff_prefix.len() + exif_data.len() + 2) as u16;
-        marker.extend_from_slice(&len.to_be_bytes());
+        marker.extend_from_slice(&(total_len as u16).to_be_bytes());
         marker.extend_from_slice(tiff_prefix);
+        marker.extend_from_slice(&tiff_header);
+        marker.extend_from_slice(&ifd);
         marker.extend_from_slice(exif_data);
         marker
     }
 
     /// Creates an IPTC-IIM APP13 marker (0xFFED) containing DMI data.
-    /// Uses Photoshop 3.0 identifier for compatibility with Photoshop and other tools.
+    /// Wraps the IPTC data in a valid Photoshop resource envelope:
+    /// "Photoshop 3.0\0" + Resource ID (0x0404) + Pascal string + data size + data.
     fn create_jpeg_iptc_marker(iptc_data: &[u8]) -> Vec<u8> {
         let photoshop_id = b"Photoshop 3.0\0";
+
+        // Photoshop resource envelope
+        let mut resource = Vec::new();
+        resource.extend_from_slice(&0x0404u16.to_be_bytes()); // Resource ID: IPTC-IIM
+        resource.push(0x00); // Pascal string length (0 = empty)
+        resource.push(0x00); // padding byte (even alignment)
+        resource.extend_from_slice(&(iptc_data.len() as u32).to_be_bytes()); // data size
+        resource.extend_from_slice(iptc_data); // IPTC-IIM data
+
+        let mut data = Vec::new();
+        data.extend_from_slice(photoshop_id);
+        data.extend_from_slice(&resource);
+
         let mut marker = Vec::new();
         marker.push(0xFF);
         marker.push(0xED);
-        let mut data = Vec::new();
-        data.extend_from_slice(photoshop_id);
-        data.extend_from_slice(iptc_data);
         let len = (data.len() + 2) as u16;
         marker.extend_from_slice(&len.to_be_bytes());
         marker.extend_from_slice(&data);
@@ -412,6 +458,7 @@ impl MetadataTrapProtector {
         webp_data: &[u8],
         metadata: &[(Vec<u8>, Vec<u8>)],
         dmi: Option<DmiValue>,
+        seed: Option<u64>,
     ) -> Result<Vec<u8>> {
         if metadata.is_empty() && dmi.is_none() {
             return Ok(webp_data.to_vec());
@@ -421,25 +468,25 @@ impl MetadataTrapProtector {
             return Err(Error::Metadata("Invalid WebP signature".to_string()));
         }
 
-        // Calculate size of new chunks to append
-        let mut new_chunks = Vec::new();
-        if let Some(dmi_val) = dmi {
-            let xmp_chunk = Self::create_webp_xmp_chunk(&Self::generate_xmp_dmi(dmi_val));
-            new_chunks.extend_from_slice(&xmp_chunk);
-        }
-        for (key, value) in metadata {
-            let meta_chunk = Self::create_webp_metadata_chunk(key, value);
-            new_chunks.extend_from_slice(&meta_chunk);
-        }
+        let dmi_val = dmi.unwrap_or(DmiValue::Unspecified);
 
-        if new_chunks.is_empty() {
+        // Build XMP chunk with DMI and seed embedded as XMP properties
+        let xmp_chunk = Self::create_webp_xmp_chunk(&Self::generate_xmp_dmi(dmi_val, seed));
+
+        if xmp_chunk.is_empty() {
             return Ok(webp_data.to_vec());
         }
 
         // Copy original data and append new chunks
-        let mut output = Vec::with_capacity(webp_data.len() + new_chunks.len());
+        let new_len = webp_data.len() + xmp_chunk.len();
+        if new_len > u32::MAX as usize + 8 {
+            return Err(Error::Metadata(
+                "WebP file would exceed 4 GiB limit after metadata injection".to_string(),
+            ));
+        }
+        let mut output = Vec::with_capacity(new_len);
         output.extend_from_slice(webp_data);
-        output.extend_from_slice(&new_chunks);
+        output.extend_from_slice(&xmp_chunk);
 
         // Update RIFF file size in header (bytes 4-8, little-endian)
         // RIFF size = total file size - 8 (RIFF header + size field)
@@ -452,9 +499,10 @@ impl MetadataTrapProtector {
         Ok(output)
     }
 
+    /// Creates a WebP XMP chunk with the standard `XMP ` FourCC.
     fn create_webp_xmp_chunk(xmp_data: &[u8]) -> Vec<u8> {
         let mut chunk = Vec::new();
-        chunk.extend_from_slice(b"XML ");
+        chunk.extend_from_slice(b"XMP ");
         chunk.extend_from_slice(&(xmp_data.len() as u32).to_le_bytes());
         chunk.extend_from_slice(xmp_data);
         if !xmp_data.len().is_multiple_of(2) {
@@ -499,26 +547,6 @@ impl MetadataTrapProtector {
         chunk
     }
 
-    fn create_webp_metadata_chunk(key: &[u8], value: &[u8]) -> Vec<u8> {
-        let mut data = Vec::new();
-        data.extend_from_slice(key);
-        data.push(0);
-        data.extend_from_slice(value);
-
-        let len = data.len() as u32;
-
-        let mut full_chunk = Vec::new();
-        full_chunk.extend_from_slice(b"META");
-        full_chunk.extend_from_slice(&len.to_le_bytes());
-        full_chunk.extend_from_slice(&data);
-
-        if !data.len().is_multiple_of(2) {
-            full_chunk.push(0);
-        }
-
-        full_chunk
-    }
-
     fn crc32(chunk_type: &[u8], data: &[u8]) -> u32 {
         let mut hasher = Crc32Hasher::new();
         hasher.update(chunk_type);
@@ -537,7 +565,7 @@ impl Protector for MetadataTrapProtector {
     /// # Warning
     ///
     /// This method returns the image **unchanged**. Metadata injection operates at the
-    /// byte level (PNG tEXt chunks, JPEG COM/APP markers, WebP META chunks) and cannot
+    /// byte level (PNG tEXt chunks, JPEG COM/APP markers, WebP XMP chunks) and cannot
     /// be preserved through the `DynamicImage` encode/decode cycle.
     ///
     /// Use [`apply_bytes`](Protector::apply_bytes) for byte-level metadata injection,
@@ -565,6 +593,10 @@ impl Protector for MetadataTrapProtector {
 
     fn estimated_latency_ms(&self) -> u32 {
         2
+    }
+
+    fn requires_bytes_level(&self) -> bool {
+        true
     }
 }
 
@@ -705,18 +737,19 @@ impl MetadataTrapProtector {
             let data_start = pos + 8;
             let data_end = (data_start + chunk_size).min(webp_data.len());
 
-            if chunk_type == b"META" && data_end > data_start {
+            // Check XMP chunk (standard WebP FourCC: "XMP " with trailing space)
+            if chunk_type == b"XMP " && data_end > data_start {
                 let data = &webp_data[data_start..data_end];
-
-                // Data format: key\0value
-                if let Some(null_pos) = data.iter().position(|&b| b == 0) {
-                    let key = &data[..null_pos];
-                    if key == b"X-Protection-Seed" {
-                        let value = &data[null_pos + 1..];
-                        // Value may be null-terminated
-                        let value_end = value.iter().position(|&b| b == 0).unwrap_or(value.len());
-                        let value_str = String::from_utf8_lossy(&value[..value_end]);
-                        return value_str.parse().ok();
+                if let Ok(xmp_str) = std::str::from_utf8(data) {
+                    // Look for cloakrs:ProtectionSeed="NNN" in XMP content
+                    if let Some(start) = xmp_str.find("cloakrs:ProtectionSeed=\"") {
+                        let value_start = start + "cloakrs:ProtectionSeed=\"".len();
+                        if let Some(end) = xmp_str[value_start..].find('"') {
+                            let value_str = &xmp_str[value_start..value_start + end];
+                            if let Ok(seed) = value_str.parse::<u64>() {
+                                return Some(seed);
+                            }
+                        }
                     }
                 }
             }
@@ -753,15 +786,16 @@ impl MetadataTrapProtector {
                     .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT)
             });
 
+        let seed = Some(ctx.seed());
         let with_metadata = match format {
             ImageOutputFormat::Png => {
-                self.inject_text_chunks_png(img_bytes, &metadata, ctx.dmi_value())?
+                self.inject_text_chunks_png(img_bytes, &metadata, ctx.dmi_value(), seed)?
             }
             ImageOutputFormat::Jpeg => {
-                self.inject_text_chunks_jpeg(img_bytes, &metadata, ctx.dmi_value())?
+                self.inject_text_chunks_jpeg(img_bytes, &metadata, ctx.dmi_value(), seed)?
             }
             ImageOutputFormat::WebP => {
-                self.inject_text_chunks_webp(img_bytes, &metadata, ctx.dmi_value())?
+                self.inject_text_chunks_webp(img_bytes, &metadata, ctx.dmi_value(), seed)?
             }
         };
 
@@ -931,7 +965,7 @@ mod tests {
         let png = encode_png(&make_test_image());
         let metadata = vec![(b"Test-Key".to_vec(), b"Test-Value".to_vec())];
         let result = protector
-            .inject_text_chunks_png(&png, &metadata, None)
+            .inject_text_chunks_png(&png, &metadata, None, None)
             .unwrap();
         assert!(result.starts_with(&[0x89, 0x50, 0x4E, 0x47]));
         assert!(result.len() > png.len());
@@ -941,7 +975,9 @@ mod tests {
     fn png_inject_empty_metadata_returns_original() {
         let protector = MetadataTrapProtector::new();
         let png = encode_png(&make_test_image());
-        let result = protector.inject_text_chunks_png(&png, &[], None).unwrap();
+        let result = protector
+            .inject_text_chunks_png(&png, &[], None, None)
+            .unwrap();
         assert_eq!(result, png);
     }
 
@@ -951,6 +987,7 @@ mod tests {
         let result = protector.inject_text_chunks_png(
             b"NOTAPNG",
             &[(b"key".to_vec(), b"val".to_vec())],
+            None,
             None,
         );
         assert!(result.is_err());
@@ -962,7 +999,7 @@ mod tests {
         let png = encode_png(&make_test_image());
         let metadata = vec![];
         let result = protector
-            .inject_text_chunks_png(&png, &metadata, None)
+            .inject_text_chunks_png(&png, &metadata, None, None)
             .unwrap();
         let extracted = MetadataTrapProtector::extract_seed_from_png(&result);
         assert!(extracted.is_none());
@@ -973,7 +1010,7 @@ mod tests {
             (b"Other".to_vec(), b"Value".to_vec()),
         ];
         let result = protector
-            .inject_text_chunks_png(&png, &metadata_with_seed, None)
+            .inject_text_chunks_png(&png, &metadata_with_seed, None, Some(12345))
             .unwrap();
         let extracted = MetadataTrapProtector::extract_seed_from_png(&result);
         assert_eq!(extracted, Some(12345));
@@ -984,7 +1021,7 @@ mod tests {
         let protector = MetadataTrapProtector::new();
         let png = encode_png(&make_test_image());
         let result = protector
-            .inject_text_chunks_png(&png, &[], Some(DmiValue::ProhibitedAiMlTraining))
+            .inject_text_chunks_png(&png, &[], Some(DmiValue::ProhibitedAiMlTraining), None)
             .unwrap();
         // XMP is injected as iTXt chunk with "XML:com.adobe.xmp" keyword
         assert!(result.len() > png.len());
@@ -998,7 +1035,7 @@ mod tests {
         let jpeg = encode_jpeg(&make_test_image());
         let metadata = vec![(b"Test-Key".to_vec(), b"Test-Value".to_vec())];
         let result = protector
-            .inject_text_chunks_jpeg(&jpeg, &metadata, None)
+            .inject_text_chunks_jpeg(&jpeg, &metadata, None, None)
             .unwrap();
         assert!(result.starts_with(&[0xFF, 0xD8]));
         assert!(result.ends_with(&[0xFF, 0xD9]));
@@ -1010,7 +1047,7 @@ mod tests {
         let jpeg = encode_jpeg(&make_test_image());
         let metadata = vec![(b"X-Protection-Seed".to_vec(), b"54321".to_vec())];
         let result = protector
-            .inject_text_chunks_jpeg(&jpeg, &metadata, None)
+            .inject_text_chunks_jpeg(&jpeg, &metadata, None, Some(54321))
             .unwrap();
         let extracted = MetadataTrapProtector::extract_seed_from_jpeg(&result).unwrap();
         assert_eq!(extracted, 54321);
@@ -1022,7 +1059,7 @@ mod tests {
         let jpeg = encode_jpeg(&make_test_image());
         let metadata = vec![(b"Test".to_vec(), b"Val".to_vec())];
         let result = protector
-            .inject_text_chunks_jpeg(&jpeg, &metadata, None)
+            .inject_text_chunks_jpeg(&jpeg, &metadata, None, None)
             .unwrap();
 
         // Should contain COM marker (0xFFFE)
@@ -1036,6 +1073,7 @@ mod tests {
             b"NOTJPEG",
             &[(b"key".to_vec(), b"val".to_vec())],
             None,
+            None,
         );
         assert!(result.is_err());
     }
@@ -1048,7 +1086,7 @@ mod tests {
         let webp = encode_webp(&make_test_image());
         let metadata = vec![(b"Test-Key".to_vec(), b"Test-Value".to_vec())];
         let result = protector
-            .inject_text_chunks_webp(&webp, &metadata, None)
+            .inject_text_chunks_webp(&webp, &metadata, None, None)
             .unwrap();
         assert!(result.starts_with(b"RIFF"));
         assert!(&result[8..12] == b"WEBP");
@@ -1060,7 +1098,7 @@ mod tests {
         let webp = encode_webp(&make_test_image());
         let metadata = vec![(b"X-Protection-Seed".to_vec(), b"99999".to_vec())];
         let result = protector
-            .inject_text_chunks_webp(&webp, &metadata, None)
+            .inject_text_chunks_webp(&webp, &metadata, None, Some(99999))
             .unwrap();
         let extracted = MetadataTrapProtector::extract_seed_from_webp(&result);
         assert_eq!(extracted, Some(99999));
@@ -1072,6 +1110,7 @@ mod tests {
         let result = protector.inject_text_chunks_webp(
             b"NOTWEBP",
             &[(b"key".to_vec(), b"val".to_vec())],
+            None,
             None,
         );
         assert!(result.is_err());
@@ -1085,7 +1124,7 @@ mod tests {
         let png = encode_png(&make_test_image());
         let metadata = vec![(b"X-Protection-Seed".to_vec(), b"100".to_vec())];
         let injected = protector
-            .inject_text_chunks_png(&png, &metadata, None)
+            .inject_text_chunks_png(&png, &metadata, None, Some(100))
             .unwrap();
         assert_eq!(
             MetadataTrapProtector::extract_seed_from_image(&injected),
@@ -1099,7 +1138,7 @@ mod tests {
         let jpeg = encode_jpeg(&make_test_image());
         let metadata = vec![(b"X-Protection-Seed".to_vec(), b"200".to_vec())];
         let injected = protector
-            .inject_text_chunks_jpeg(&jpeg, &metadata, None)
+            .inject_text_chunks_jpeg(&jpeg, &metadata, None, Some(200))
             .unwrap();
         assert_eq!(
             MetadataTrapProtector::extract_seed_from_image(&injected),
@@ -1113,7 +1152,7 @@ mod tests {
         let webp = encode_webp(&make_test_image());
         let metadata = vec![(b"X-Protection-Seed".to_vec(), b"300".to_vec())];
         let injected = protector
-            .inject_text_chunks_webp(&webp, &metadata, None)
+            .inject_text_chunks_webp(&webp, &metadata, None, Some(300))
             .unwrap();
         assert_eq!(
             MetadataTrapProtector::extract_seed_from_image(&injected),
@@ -1249,7 +1288,9 @@ mod tests {
     fn inject_empty_metadata_jpeg() {
         let protector = MetadataTrapProtector::new();
         let jpeg = encode_jpeg(&make_test_image());
-        let result = protector.inject_text_chunks_jpeg(&jpeg, &[], None).unwrap();
+        let result = protector
+            .inject_text_chunks_jpeg(&jpeg, &[], None, None)
+            .unwrap();
         assert_eq!(result, jpeg);
     }
 
@@ -1257,7 +1298,88 @@ mod tests {
     fn inject_empty_metadata_webp() {
         let protector = MetadataTrapProtector::new();
         let webp = encode_webp(&make_test_image());
-        let result = protector.inject_text_chunks_webp(&webp, &[], None).unwrap();
+        let result = protector
+            .inject_text_chunks_webp(&webp, &[], None, None)
+            .unwrap();
         assert_eq!(result, webp);
+    }
+
+    // ── Standards compliance ──────────────────────────────────────────
+
+    #[test]
+    fn webp_xmp_chunk_uses_correct_fourcc() {
+        let xmp_data = b"test xmp data";
+        let chunk = MetadataTrapProtector::create_webp_xmp_chunk(xmp_data);
+        assert_eq!(&chunk[0..4], b"XMP ");
+    }
+
+    #[test]
+    fn webp_xmp_chunk_contains_seed_in_xmp_content() {
+        let dmi = DmiValue::ProhibitedAiMlTraining;
+        let seed = Some(42u64);
+        let xmp = MetadataTrapProtector::generate_xmp_dmi(dmi, seed);
+        let xmp_str = String::from_utf8_lossy(&xmp);
+        assert!(xmp_str.contains("cloakrs:ProtectionSeed=\"42\""));
+    }
+
+    #[test]
+    fn webp_xmp_chunk_no_seed_omits_attribute() {
+        let dmi = DmiValue::ProhibitedAiMlTraining;
+        let xmp = MetadataTrapProtector::generate_xmp_dmi(dmi, None);
+        let xmp_str = String::from_utf8_lossy(&xmp);
+        assert!(!xmp_str.contains("cloakrs:ProtectionSeed"));
+    }
+
+    #[test]
+    fn jpeg_exif_marker_has_tiff_header() {
+        let exif_data = b"Exif test data";
+        let marker = MetadataTrapProtector::create_jpeg_exif_marker(exif_data);
+        assert_eq!(marker[0], 0xFF);
+        assert_eq!(marker[1], 0xE1);
+        let exif_pos = marker
+            .windows(6)
+            .position(|w| w == b"Exif\x00\x00")
+            .unwrap();
+        let tiff_start = exif_pos + 6;
+        assert_eq!(&marker[tiff_start..tiff_start + 2], b"II");
+        assert_eq!(marker[tiff_start + 2], 42);
+        assert_eq!(marker[tiff_start + 3], 0);
+    }
+
+    #[test]
+    fn jpeg_exif_marker_has_ifd_usercomment() {
+        let exif_data = b"DMI: ProhibitedAiMlTraining";
+        let marker = MetadataTrapProtector::create_jpeg_exif_marker(exif_data);
+        let exif_pos = marker
+            .windows(6)
+            .position(|w| w == b"Exif\x00\x00")
+            .unwrap();
+        let ifd_start = exif_pos + 6 + 8;
+        let entry_count = u16::from_le_bytes([marker[ifd_start], marker[ifd_start + 1]]);
+        assert_eq!(entry_count, 1);
+        let tag = u16::from_le_bytes([marker[ifd_start + 2], marker[ifd_start + 3]]);
+        assert_eq!(tag, 0x9286);
+    }
+
+    #[test]
+    fn jpeg_iptc_marker_has_photoshop_resource_envelope() {
+        let iptc_data = vec![0x1C, 0x02, 0x78, 0x00, 0x05, b'D', b'M', b'I', b':', b' '];
+        let marker = MetadataTrapProtector::create_jpeg_iptc_marker(&iptc_data);
+        assert_eq!(marker[0], 0xFF);
+        assert_eq!(marker[1], 0xED);
+        let photoshop_pos = marker
+            .windows(14)
+            .position(|w| w == b"Photoshop 3.0\x00")
+            .unwrap();
+        let resource_start = photoshop_pos + 14;
+        let resource_id = u16::from_be_bytes([marker[resource_start], marker[resource_start + 1]]);
+        assert_eq!(resource_id, 0x0404);
+    }
+
+    #[test]
+    fn xmp_contains_cloakrs_namespace() {
+        let xmp = MetadataTrapProtector::generate_xmp_dmi(DmiValue::ProhibitedAiMlTraining, None);
+        let xmp_str = String::from_utf8_lossy(&xmp);
+        assert!(xmp_str.contains("xmlns:cloakrs=\"https://github.com/anomalyco/cloakrs\""));
     }
 }

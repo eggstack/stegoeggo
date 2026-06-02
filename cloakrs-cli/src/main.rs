@@ -94,6 +94,12 @@ struct Args {
     key: Option<String>,
 
     #[arg(
+        long,
+        help = "Additional seeds to try during verification (comma-separated u64 values)"
+    )]
+    known_seeds: Option<String>,
+
+    #[arg(
         short = 'j',
         long = "jobs",
         default_value = "1",
@@ -366,8 +372,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             true
         } else {
-            let p = stego.extract_payload(&img);
-            p.is_some()
+            // Try default extraction first
+            if stego.extract_payload(&img).is_some() {
+                true
+            } else if let Some(ref seeds_str) = args.known_seeds {
+                // Try user-provided seeds
+                let seeds: Vec<u64> = seeds_str
+                    .split(',')
+                    .filter_map(|s| s.trim().parse().ok())
+                    .collect();
+                seeds.iter().any(|&s| stego.verify_payload_with_seed(&img, s))
+            } else {
+                false
+            }
         };
 
         if verified {

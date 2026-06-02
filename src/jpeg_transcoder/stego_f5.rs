@@ -73,28 +73,16 @@ impl DctStegoF5 {
     ///
     /// Embeds 12 bytes: 4 bytes magic + 8 bytes seed (u64).
     ///
-    /// All quantization values in the first 2 tables must be >= 2. Values of 1
-    /// cannot represent a 0-bit (`1 & 0xFE = 0`, which is invalid and gets
-    /// clamped back to 1), so embedding would silently fail for any 0-bit.
+    /// Positions where the quantization value is 1 are skipped because `1 & 0xFE`
+    /// would change the value from 1 to 0, corrupting the Q-table. This means
+    /// fewer bits are embedded than intended. Extraction handles partial reads
+    /// gracefully — if the full seed cannot be recovered, the caller falls back
+    /// to other extraction methods.
     pub fn embed_seed_in_quantization_tables(
         &self,
         header: &mut JpegHeader,
         seed: u64,
     ) -> Result<()> {
-        for table_idx in 0..2 {
-            if let Some(ref quant) = header.quantization_tables[table_idx] {
-                for (pos, &val) in quant.values.iter().enumerate().take(64) {
-                    if val < 2 {
-                        return Err(TranscoderError::EmbeddingFailed(format!(
-                            "Quantization table {} value at position {} is {} \
-                             (must be >= 2 for reliable seed embedding)",
-                            table_idx, pos, val
-                        )));
-                    }
-                }
-            }
-        }
-
         let mut payload = Vec::new();
         payload.extend_from_slice(SEED_MAGIC);
 
@@ -111,6 +99,9 @@ impl DctStegoF5 {
                 for pos in 0..64 {
                     if bit_idx >= bits.len() {
                         break;
+                    }
+                    if quant.values[pos] == 1 {
+                        continue;
                     }
                     if bits[bit_idx] == 1 {
                         quant.values[pos] |= 1;
@@ -633,7 +624,7 @@ mod tests {
     }
 
     #[test]
-    fn test_seed_embed_all_ones_quant_returns_error() {
+    fn test_seed_embed_all_ones_quant_skips_positions() {
         let mut header = JpegHeader::default();
         for i in 0..2 {
             let table = crate::jpeg_transcoder::header::QuantizationTable {
@@ -646,7 +637,13 @@ mod tests {
 
         let stego = DctStegoF5::new();
         let result = stego.embed_seed_in_quantization_tables(&mut header, 0xCAFEBABEu64);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+
+        let extracted = stego.extract_seed_from_quantization_tables(&header);
+        assert!(
+            extracted.is_none(),
+            "all-ones tables should not yield a valid seed"
+        );
     }
 
     #[test]
