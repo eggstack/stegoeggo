@@ -1,6 +1,6 @@
 use cloakrs::{
-    process_image_bytes, verify_image_bytes, MetadataTrapProtector, ProtectionContext,
-    ProtectionLevel, SteganographyProtector,
+    process_image_bytes, verify_image_bytes, ImageOutputFormat, MetadataTrapProtector,
+    ProtectionContext, ProtectionLevel, SteganographyProtector,
 };
 use image::DynamicImage;
 use image::ImageEncoder;
@@ -474,5 +474,277 @@ mod crop {
             payload.is_none(),
             "LSB stego does NOT survive crop (pixel positions shift, seed-based selection mismatches)"
         );
+    }
+}
+
+mod ecc_recovery {
+    use super::*;
+
+    #[test]
+    fn ecc_recovers_from_bit_corruption_in_pixel_data() {
+        let img = create_test_image(128, 128);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.7, seed)
+            .with_format(ImageOutputFormat::Png)
+            .with_stego_redundancy(3);
+
+        let png_bytes = image_to_png_bytes(&img);
+        let protected_bytes =
+            process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        let protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        let mut rgba = protected_img.to_rgba8();
+        let raw = rgba.as_mut();
+
+        for i in 0..12 {
+            let byte_idx = 200 + i * 37;
+            if byte_idx < raw.len() {
+                raw[byte_idx] ^= 0xFF;
+            }
+        }
+
+        let corrupted_img = DynamicImage::ImageRgba8(rgba);
+        let corrupted_png = image_to_png_bytes(&corrupted_img);
+
+        let result = verify_image_bytes(&corrupted_png, &[]);
+        assert_eq!(
+            result,
+            Some(true),
+            "ECC majority-vote decoding recovers payload from bit-corrupted pixel data"
+        );
+    }
+}
+
+mod jpeg_quality_reduction {
+    use super::*;
+
+    #[test]
+    fn qtable_seed_embedded_and_extractable_before_recompress() {
+        let img = create_test_image(128, 128);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.5, seed).with_format(ImageOutputFormat::Jpeg);
+
+        let protected_bytes = process_image_bytes(
+            &image_to_jpeg_bytes(&img, 90),
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        let seed_before = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
+        assert_eq!(seed_before, Some(seed), "Seed embedded in Q-tables at Q=90");
+
+        let recompressed =
+            image_to_jpeg_bytes(&image::load_from_memory(&protected_bytes).unwrap(), 50);
+
+        let seed_after = MetadataTrapProtector::extract_seed_from_image(&recompressed);
+        assert!(
+            seed_after.is_none(),
+            "Q-table seed lost after image crate re-encoder creates new quantization tables (Q=90→Q=50)"
+        );
+    }
+
+    #[test]
+    fn qtable_seed_lost_after_multiple_recompressions() {
+        let img = create_test_image(64, 64);
+        let seed = 99u64;
+        let ctx = ProtectionContext::new(0.5, seed).with_format(ImageOutputFormat::Jpeg);
+
+        let protected_bytes = process_image_bytes(
+            &image_to_jpeg_bytes(&img, 95),
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        let mut current_bytes = protected_bytes;
+        for &quality in &[80, 60, 40] {
+            let img = image::load_from_memory(&current_bytes).unwrap();
+            current_bytes = image_to_jpeg_bytes(&img, quality);
+        }
+
+        let seed_after = MetadataTrapProtector::extract_seed_from_image(&current_bytes);
+        assert!(
+            seed_after.is_none(),
+            "Q-table seed lost after image crate re-encoder creates new quantization tables (95→80→60→40)"
+        );
+    }
+}
+
+mod dct_payload_after_recompression {
+    use super::*;
+
+    #[test]
+    fn verify_finds_no_protection_after_jpeg_recompress() {
+        let img = create_test_image(128, 128);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.6, seed).with_format(ImageOutputFormat::Jpeg);
+
+        let protected_bytes = process_image_bytes(
+            &image_to_jpeg_bytes(&img, 90),
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        let recompressed =
+            image_to_jpeg_bytes(&image::load_from_memory(&protected_bytes).unwrap(), 75);
+
+        let result = verify_image_bytes(&recompressed, &[]);
+        assert!(
+            result.is_none(),
+            "verify_image_bytes: no protection survives JPEG re-encoding (Q=90→Q=75) — image crate encoder creates new quantization tables and Huffman codes"
+        );
+    }
+
+    #[test]
+    fn verify_finds_no_protection_after_low_quality_recompress() {
+        let img = create_test_image(128, 128);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.6, seed).with_format(ImageOutputFormat::Jpeg);
+
+        let protected_bytes = process_image_bytes(
+            &image_to_jpeg_bytes(&img, 85),
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        let recompressed =
+            image_to_jpeg_bytes(&image::load_from_memory(&protected_bytes).unwrap(), 50);
+
+        let result = verify_image_bytes(&recompressed, &[]);
+        assert!(
+            result.is_none(),
+            "verify_image_bytes: no protection survives JPEG re-encoding (Q=85→Q=50) — image crate encoder creates new quantization tables and Huffman codes"
+        );
+    }
+}
+
+mod lsb_png_roundtrip {
+    use super::*;
+
+    #[test]
+    fn lsb_payload_survives_png_roundtrip() {
+        let img = create_test_image(64, 64);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.7, seed).with_format(ImageOutputFormat::Png);
+
+        let protected_bytes =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        let stego = SteganographyProtector::new();
+        let payload = stego.extract_payload_with_seed(&protected_img, seed);
+        assert!(
+            payload.is_some(),
+            "LSB payload survives PNG roundtrip (lossless format preserves pixel LSBs)"
+        );
+        let payload = payload.unwrap();
+        assert_eq!(payload.seed(), seed, "Extracted seed matches original");
+        assert_eq!(
+            payload.protection_level(),
+            2,
+            "Protection level is Standard (2)"
+        );
+    }
+
+    #[test]
+    fn verify_payload_after_png_roundtrip() {
+        let img = create_test_image(64, 64);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.6, seed).with_format(ImageOutputFormat::Png);
+
+        let protected_bytes =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let result = verify_image_bytes(&protected_bytes, &[]);
+        assert_eq!(
+            result,
+            Some(true),
+            "verify_image_bytes confirms payload after PNG encode/decode roundtrip"
+        );
+    }
+
+    #[test]
+    fn lsb_payload_survives_multiple_png_roundtrips() {
+        let img = create_test_image(64, 64);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.7, seed).with_format(ImageOutputFormat::Png);
+
+        let protected_bytes =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let mut current_bytes = protected_bytes;
+        for _ in 0..5 {
+            let img = image::load_from_memory(&current_bytes).unwrap();
+            current_bytes = image_to_png_bytes(&img);
+        }
+
+        let result = verify_image_bytes(&current_bytes, &[]);
+        assert_eq!(
+            result,
+            Some(true),
+            "LSB payload survives five PNG roundtrips (all lossless)"
+        );
+    }
+}
+
+mod metadata_stripping_stego {
+    use super::*;
+
+    #[test]
+    fn stego_detectable_after_metadata_strip() {
+        let img = create_test_image(64, 64);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.7, seed).with_format(ImageOutputFormat::Png);
+
+        let protected_bytes =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        let stripped_bytes = image_to_png_bytes(&protected_img);
+
+        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(&stripped_bytes);
+        assert!(
+            metadata_seed.is_none(),
+            "Metadata seed stripped after re-encode (DynamicImage drops tEXt chunks)"
+        );
+
+        let result = verify_image_bytes(&stripped_bytes, &[]);
+        assert_eq!(
+            result,
+            Some(true),
+            "verify_image_bytes finds stego via fallback seeds after metadata strip"
+        );
+    }
+
+    #[test]
+    fn stego_payload_extractable_after_metadata_strip() {
+        let img = create_test_image(64, 64);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.8, seed).with_format(ImageOutputFormat::Png);
+
+        let protected_bytes =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        let stripped_bytes = image_to_png_bytes(&protected_img);
+        let stripped_img = image::load_from_memory(&stripped_bytes).unwrap();
+
+        let stego = SteganographyProtector::new();
+        let payload = stego.extract_payload_with_seed(&stripped_img, seed);
+        assert!(
+            payload.is_some(),
+            "extract_payload_with_seed recovers full payload after metadata strip"
+        );
+        let payload = payload.unwrap();
+        assert_eq!(payload.seed(), seed, "Extracted seed matches original");
+        assert_eq!(payload.intensity(), ctx.intensity());
     }
 }

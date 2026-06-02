@@ -6,6 +6,7 @@
 //! - [`PassthroughProtector`] - No-op protector for disabled protection
 
 pub mod constants;
+pub(crate) mod ecc;
 pub mod metadata_trap;
 pub mod passthrough;
 pub mod steganography;

@@ -9,6 +9,13 @@
 - Rust (edition 2021, MSRV 1.87, stable channel)
 - Key crates: `image` 0.25, `jpeg-encoder` 0.7, `rayon` 1.10, `sha2`/`hmac` for crypto, `serde`/`serde_json` for serialization, `subtle` 2 (constant-time comparisons), `iscc-lib` 0.4 (ISO 24138:2024 ISCC), `getrandom` 0.2 (CSPRNG), `tokio` (optional, for async)
 
+## Design Philosophy
+
+- **Legal deterrence, not anti-forensics**: The purpose is making protection detectable in legal proceedings, not preventing a determined adversary from removing it
+- **Forgeability is irrelevant**: HMAC/checksum forgeability does not matter — the goal is detection, not authentication. A forger who can strip protection entirely has already lost the deterrence value
+- **Robustness is the primary metric**: Steganographic payload survival against common image transformations (compression, resize, format conversion, social media re-encoding) is the most important engineering metric
+- **Metadata stripping is a known limitation**: All image processing tools can strip metadata. This is why steganographic embedding is the primary detection channel — metadata is a bonus layer, not the core defense
+
 ## Architecture
 
 - **Strategy pattern** via `Protector` trait (`src/traits.rs`) with three protection levels: Disabled, Light, Standard
@@ -74,7 +81,7 @@ cargo bench                              # Criterion benchmarks
 ## Things to Watch Out For
 
 - **`.gitignore`**: `.DS_Store` files exist on disk but are excluded by git
-- **Stego payload format**: 24-byte header + 2-byte checksum (or 8-byte HMAC), always padded to 32 bytes total (even in checksum mode). Use `MIN_PAYLOAD_SIZE` (=26) and `MIN_PAYLOAD_BITS` (=208) constants in `steganography.rs`
+- **Stego payload format**: 24-byte header + 4-byte CRC32 checksum (or 8-byte HMAC), always padded to 32 bytes total. Use `MIN_PAYLOAD_SIZE` (=28) and `MIN_PAYLOAD_BITS` (=224) constants in `steganography.rs`
 - **`generate_random_seed()`**: Uses `getrandom` (OS CSPRNG) for cryptographically secure randomness. Falls back to system-time-based mixing if `getrandom` fails. Guarantees non-zero output (`if x == 0 { 42 }`)
 - **`ProtectionContext::default()`**: Calls `generate_random_seed()` — the seed is predictable. Doc comment on the `Default` impl warns about this. Users needing cryptographic seeds should use `ProtectionContext::new(intensity, seed)` with a CSPRNG
 - **JPEG transcoder modules**: `header.rs` and `entropy.rs` have `#![allow(dead_code)]` for JPEG spec reference types (color spaces, standard Huffman tables) — keep these
@@ -83,7 +90,7 @@ cargo bench                              # Criterion benchmarks
 - **Steganography seed derivation**: `embed_lsb` and `embed_jpeg_stego` internally derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)` before using `stego_permutation`. When calling internal embed/extract functions directly (outside of `apply()`), ensure seeds match. The public API (`apply()` + `extract_payload()`) handles this correctly
 - **XorShiftRng — two separate implementations**: `src/util/image.rs` has `PixelSelectionRng` (general-purpose pixel selection for steganography) and `src/jpeg_transcoder/stego_f5.rs` has `DctCoefficientRng` (DCT coefficient shuffling). They use different algorithms and produce different sequences for the same seed. Do NOT interchange them — each is paired with their respective embed/extract code paths
 - **MetadataTrapProtector::apply()**: `apply()` returns `Cow::Borrowed(img)` unchanged. Metadata injection operates at the byte level and the `DynamicImage` API cannot preserve injected text chunks through encode/decode cycles. The pipeline routes `Light` level through `apply_light_bytes()` which encodes, injects metadata, then decodes (metadata survives in the byte output). For byte-level output with metadata intact, use `apply_bytes()` or `process_bytes()`
-- **`stego_redundancy` is `Option<usize>`**: Default is `None` (derive from intensity). Explicit `.with_stego_redundancy(n)` sets `Some(n)`. Internal code uses `ctx.effective_redundancy()` which maps intensity to redundancy when not explicitly set. The public `stego_redundancy()` getter returns `unwrap_or(2)` for backward compatibility.
+- **`stego_redundancy` is `Option<usize>`**: Default is `None` (derive from intensity). Explicit `.with_stego_redundancy(n)` sets `Some(n)`. Internal code uses `ctx.effective_redundancy()` which maps intensity to redundancy when not explicitly set. The public `stego_redundancy()` getter returns `unwrap_or(2)` for backward compatibility. Valid range is 1-10.
 - **`verify_payload_with_key()` returns `Option<bool>`**, not `bool` — use `== Some(true)` or `!= Some(true)` in assertions, not `assert!()` or `assert!(!)` directly
 - **JPEG stego redundancy bug** (`steganography.rs:788-841`): Fixed — `embedded = 0;` reset added between redundancy passes so all passes embed when `redundancy > 1`
 - **HuffmanDecoder/HuffmanEncoderTable caching**: In `entropy.rs`, Huffman decoders and encoder lookup tables are pre-built once before the MCU loop. `HuffmanEncoderTable` uses a `[(u16, u8); 256]` array for O(1) symbol→(code,length) lookup. These are internal types — do not rebuild per-MCU
@@ -104,8 +111,14 @@ cargo bench                              # Criterion benchmarks
 - **CLI batch filename collisions**: Batch mode in `cloakrs-cli` detects duplicate output stems and appends `_protected_1`, `_protected_2`, etc. to prevent silent overwrites
 - **Pipeline flow order (JPEG output)**: For JPEG output, the pipeline applies encode → DCT stego → metadata (encode happens before stego). For non-JPEG output: pixel stego → encode → metadata. The JPEG→JPEG fast path bypasses pixel decode entirely and only applies DCT stego + metadata
 - **CLI file path**: The CLI binary lives at `cloakrs-cli/src/main.rs`, not `src/bin/cloakrs/main.rs`
-- **MIN_PAYLOAD_SIZE vs actual payload size**: `MIN_PAYLOAD_SIZE` (=26) is the minimum valid payload for parsing (24-byte header + 2-byte checksum). `generate_payload()` always produces 32 bytes (padded with zeros). These are different numbers — the constant is a parsing threshold, not the output size
+- **MIN_PAYLOAD_SIZE vs actual payload size**: `MIN_PAYLOAD_SIZE` (=28) is the minimum valid payload for parsing (24-byte header + 4-byte CRC32 checksum). In non-MAC mode, `generate_payload()` produces an ECC-encoded payload of 76 bytes (24 bytes × 3 replication + 4 CRC32). In MAC mode, it produces 32 bytes (24 header + 8 HMAC). These are different numbers — the constant is a parsing threshold, not the output size
 - **`PassthroughProtector::modifies_pixels()`**: Returns `false` (passthrough.rs:50-52) for efficiency. The default `Protector` trait implementation returns `true`, so other protectors that don't modify pixels should also override this
 - **`ImageTruncated` error variant**: Added to `error.rs` for handling truncated JPEG parsing. Used in `metadata_trap.rs` when JPEG segment parsing encounters truncated data.
 - **`extract_seed_from_jpeg` returns `Option<u64>`**: Returns `None` on truncated data or when no seed is found. Callers receive `Option` directly without needing `.ok()`.
 - **`bits_to_bytes` runtime check**: Now validates `bits.len() % 8 != 0` at runtime instead of only in debug builds. Returns empty Vec for invalid input.
+- **Three seed storage locations**: Seeds are stored in three redundant locations for maximum recovery: (1) Q-table LSBs in JPEG files (survives re-encoding), (2) metadata markers (survives pixel changes but can be stripped), (3) fixed-position LSB pattern in first 64 pixel channels (`embed_seed_lsb_fallback`/`extract_seed_lsb_fallback`). The extraction chain tries metadata → LSB fallback → common test seeds (`FALLBACK_SEEDS`). The LSB fallback uses a deterministic fixed-position pattern (pixel 0 R/G/B, pixel 1 R/G/B, ...) — no PRNG involved
+- **ECC on stego payload**: Non-MAC payloads are Reed-Solomon-like encoded (3× repetition with majority voting) before CRC32 checksumming. This allows recovery from bit corruption in the extracted payload. The `ecc` module (`src/protected/ecc.rs`) provides `ecc_encode`/`ecc_decode` functions
+- **Spread spectrum LSB**: Each payload bit is embedded across `STEGO_SPREAD_FACTOR` (=5) adjacent pixels via majority voting, replacing single-bit-per-pixel embedding. This makes LSB steganography survive localized noise and moderate filtering
+- **Content-adaptive amplitude**: JPEG-amplitude pixel steganography uses per-pixel amplitude based on local texture variance (via `compute_local_variance`). Smooth regions use amplitude ~10 (less visible), textured regions use amplitude ~60 (more robust)
+- **Large-magnitude DCT coefficient preference**: F5 embedding sorts non-zero AC coefficients by |magnitude| descending before shuffling, so the largest (most robust to requantization) coefficients are used first
+- **F5 redundancy cap**: Maximum redundancy increased from 5 to 10. Extraction tries all 10 redundancy values when searching for valid payloads
