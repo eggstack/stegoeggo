@@ -37,12 +37,6 @@ pub enum Error {
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
-    #[error("Variant not found: {0}")]
-    VariantNotFound(String),
-
-    #[error("Invalid variant format: {0}")]
-    InvalidVariant(String),
-
     #[error("Metadata error: {0}")]
     Metadata(String),
 
@@ -57,9 +51,6 @@ pub enum Error {
 
     #[error("Steganography error: {0}")]
     Steganography(String),
-
-    #[error("Hash computation error: {0}")]
-    HashError(String),
 
     #[error("Invalid image format: {0}")]
     InvalidFormat(String),
@@ -117,22 +108,6 @@ mod tests {
     }
 
     #[test]
-    fn error_variant_not_found_display() {
-        let err = Error::VariantNotFound("variant-abc".to_string());
-        let s = err.to_string();
-        assert!(s.contains("Variant not found"));
-        assert!(s.contains("variant-abc"));
-    }
-
-    #[test]
-    fn error_invalid_variant_display() {
-        let err = Error::InvalidVariant("corrupted data".to_string());
-        let s = err.to_string();
-        assert!(s.contains("Invalid variant format"));
-        assert!(s.contains("corrupted data"));
-    }
-
-    #[test]
     fn error_metadata_display() {
         let err = Error::Metadata("missing required field".to_string());
         let s = err.to_string();
@@ -154,14 +129,6 @@ mod tests {
         let s = err.to_string();
         assert!(s.contains("Steganography error"));
         assert!(s.contains("embedding failed"));
-    }
-
-    #[test]
-    fn error_hash_error_display() {
-        let err = Error::HashError("invalid hash".to_string());
-        let s = err.to_string();
-        assert!(s.contains("Hash computation error"));
-        assert!(s.contains("invalid hash"));
     }
 
     #[test]
@@ -220,12 +187,9 @@ mod tests {
     fn error_all_variants_constructible() {
         let _ = Error::ImageDecode("test".to_string());
         let _ = Error::ImageEncode("test".to_string());
-        let _ = Error::VariantNotFound("test".to_string());
-        let _ = Error::InvalidVariant("test".to_string());
         let _ = Error::Metadata("test".to_string());
         let _ = Error::Config("test".to_string());
         let _ = Error::Steganography("test".to_string());
-        let _ = Error::HashError("test".to_string());
         let _ = Error::InvalidFormat("test".to_string());
         let _ = Error::ImageTruncated("test".to_string());
         let _ = Error::PayloadVerification("test".to_string());

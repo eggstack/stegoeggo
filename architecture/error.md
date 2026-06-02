@@ -7,16 +7,16 @@ Uses `thiserror` for ergonomic error derivation.
 ## Error Enum
 
 ```rust
+#[non_exhaustive]
 pub enum Error {
     ImageDecode(String),
     ImageEncode(String),
     Io(std::io::Error),
-    Serialization(String),
+    Serialization(#[from] serde_json::Error),
     Metadata(String),
     Config(String),
-    Image(String),
+    Image(#[from] ImageError),
     Steganography(String),
-    HashError(String),
     InvalidFormat(String),
     ImageTruncated(String),
     PayloadVerification(String),
@@ -38,7 +38,6 @@ pub enum Error {
 | `Config` | `ProtectionContext` | Invalid configuration values |
 | `Image` | General / `jpeg_transcoder` | Image processing errors (unsupported features, etc.) |
 | `Steganography` | `SteganographyProtector` | Stego embed/extract failures |
-| `HashError` | `util::image` | SHA-256 hashing failures |
 | `InvalidFormat` | Pipeline / `jpeg_transcoder` | Input format cannot be determined |
 | `ImageTruncated` | Pipeline | Image data was truncated |
 | `PayloadVerification` | `SteganographyProtector` | HMAC/checksum verification failed |

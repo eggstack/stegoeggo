@@ -476,6 +476,7 @@ pub fn process_image_bytes(
 /// # Examples
 ///
 /// ```no_run
+/// # let img_bytes: Vec<u8> = Vec::new();
 /// match cloakrs::verify_image_bytes(&img_bytes, &[]) {
 ///     Some(true) => println!("Protected and verified"),
 ///     Some(false) => println!("Protected but verification failed"),

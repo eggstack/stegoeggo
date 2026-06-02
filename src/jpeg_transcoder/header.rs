@@ -136,15 +136,14 @@ impl JpegHeader {
             .collect();
 
         // Use the last SOI as start (usually main image)
-        let start_pos = if !soi_positions.is_empty() {
-            *soi_positions.last().unwrap()
-        } else {
-            return Err(TranscoderError::InvalidFormat("No SOI marker found".into()));
+        let start_pos = match soi_positions.last() {
+            Some(&pos) => pos,
+            None => return Err(TranscoderError::InvalidFormat("No SOI marker found".into())),
         };
 
         // Find the last EOI in the file (for the main image)
-        let end_pos = if !eoi_positions.is_empty() {
-            *eoi_positions.last().unwrap()
+        let end_pos = if let Some(&pos) = eoi_positions.last() {
+            pos
         } else {
             data.len()
         };
