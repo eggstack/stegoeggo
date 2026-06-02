@@ -348,6 +348,10 @@ impl ProtectionContext {
     /// Create a new ProtectionContext with the specified intensity and seed.
     ///
     /// Intensity is clamped to the range [0.0, 1.0].
+    ///
+    /// **Production use requires a MAC key.** Without one, steganographic payloads use
+    /// a 16-bit checksum that can be trivially forged. Call `.with_mac_key()` for
+    /// adversarial or production deployments.
     pub fn new(intensity: f32, seed: u64) -> Self {
         Self {
             intensity: intensity.clamp(0.0, 1.0),

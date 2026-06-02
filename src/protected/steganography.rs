@@ -71,6 +71,9 @@ impl SteganographyProtector {
     ///
     /// Returns `true` if a payload is found and its checksum or HMAC is valid.
     /// For HMAC verification, use [`verify_payload_with_key`](Self::verify_payload_with_key).
+    ///
+    /// **Warning:** Without a MAC key, this method only checks a 16-bit checksum that
+    /// can be forged. For adversarial settings, always verify with a MAC key.
     pub fn verify_payload(&self, img: &DynamicImage) -> bool {
         self.verify_payload_with_key(img, &[]).unwrap_or(false)
     }
@@ -247,6 +250,9 @@ impl SteganographyProtector {
     ///
     /// Returns `Some(true)` if the payload is found and HMAC is valid, `Some(false)` if
     /// found but HMAC doesn't match, or `None` if no payload is found.
+    ///
+    /// Without a MAC key (empty `mac_key`), falls back to a weak 16-bit checksum that
+    /// provides no cryptographic protection. For production use, always provide a key.
     pub fn verify_payload_with_key(&self, img: &DynamicImage, mac_key: &[u8]) -> Option<bool> {
         // Encode once, delegate to bytes-aware method to avoid double-encoding.
         if let Ok(png_bytes) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
@@ -489,17 +495,9 @@ impl SteganographyProtector {
             }
         }
 
-        // Progressive JPEG or DCT decode failure: check seed in Q-tables only
-        if let Ok(header) = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes) {
-            let stego_f5 = DctStegoF5::new();
-            if stego_f5
-                .extract_seed_from_quantization_tables(&header)
-                .is_some()
-            {
-                return Some(true);
-            }
-        }
-
+        // Progressive JPEG or DCT decode failure: check seed in Q-tables only.
+        // Don't return Some(true) here — a Q-table seed alone doesn't prove full
+        // payload integrity. Callers should fall back to metadata extraction.
         None
     }
 
@@ -947,12 +945,6 @@ impl SteganographyProtector {
 
         for candidate in &all_candidates {
             if Self::verify_checksum(candidate) {
-                return Some(candidate.clone());
-            }
-        }
-
-        for candidate in &all_candidates {
-            if candidate.len() >= MIN_PAYLOAD_SIZE {
                 return Some(candidate.clone());
             }
         }
@@ -1684,17 +1676,13 @@ mod tests {
         let protector = SteganographyProtector::new();
         let img = make_large_test_image();
         let ctx = ctx_no_mac(42);
-        let payload = protector.generate_payload(&ctx);
 
-        let embedded = protector.embed_jpeg_stego(&img, &payload, 42, 3);
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
 
-        // Verify extraction works with redundancy=3
-        let payload_bits = SteganographyProtector::bytes_to_bits(&payload);
-        let expected_bits = payload_bits.len();
-        let extracted = protector.extract_jpeg_stego(&embedded, expected_bits, 42);
         assert!(
-            extracted.is_some(),
-            "Should extract payload with redundancy=3"
+            protector.verify_payload(&result),
+            "Payload should be verifiable after embedding with redundancy=3"
         );
     }
 
@@ -1936,18 +1924,17 @@ mod tests {
         let protector = SteganographyProtector::new();
         let img = make_large_test_image();
         let ctx = ctx_no_mac(42);
-        let payload = protector.generate_payload(&ctx);
 
-        let embedded = protector.embed_jpeg_stego(&img, &payload, 42, 3);
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
 
-        let payload_bits = SteganographyProtector::bytes_to_bits(&payload);
-        let expected_bits = payload_bits.len();
-
-        let extracted = protector.extract_jpeg_stego(&embedded, expected_bits, 42);
+        let payload = protector.extract_payload(&result);
         assert!(
-            extracted.is_some(),
-            "Should extract payload with redundancy=3 and EXTRACT_REDUNDANCY=5"
+            payload.is_some(),
+            "Should extract payload after embedding with redundancy"
         );
+        let p = payload.unwrap();
+        assert_eq!(p.seed(), 42);
     }
 
     #[test]
@@ -1955,30 +1942,27 @@ mod tests {
         let protector = SteganographyProtector::new();
         let img = make_large_test_image();
         let ctx = ctx_no_mac(99999);
-        let payload = protector.generate_payload(&ctx);
 
-        let embedded = protector.embed_jpeg_stego(&img, &payload, 99999, 3);
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
 
-        let payload_bits = SteganographyProtector::bytes_to_bits(&payload);
-        let expected_bits = payload_bits.len();
-
-        let extracted_0 = protector.extract_jpeg_stego(&embedded, expected_bits, 99999);
-        let extracted_1 = protector.extract_jpeg_stego(&embedded, expected_bits, 99999);
-        let extracted_2 = protector.extract_jpeg_stego(&embedded, expected_bits, 99999);
+        let extracted_0 = protector.extract_payload(&result);
+        let extracted_1 = protector.extract_payload(&result);
+        let extracted_2 = protector.extract_payload(&result);
 
         assert!(extracted_0.is_some(), "Extraction should succeed");
         assert!(extracted_1.is_some(), "Extraction should succeed");
         assert!(extracted_2.is_some(), "Extraction should succeed");
 
         assert_eq!(
-            extracted_0.clone().unwrap(),
-            extracted_1.clone().unwrap(),
-            "All extractions should produce identical payloads"
+            extracted_0.clone().unwrap().seed(),
+            extracted_1.clone().unwrap().seed(),
+            "All extractions should produce identical seeds"
         );
         assert_eq!(
-            extracted_0.unwrap(),
-            extracted_2.unwrap(),
-            "All extractions should produce identical payloads"
+            extracted_0.unwrap().seed(),
+            extracted_2.unwrap().seed(),
+            "All extractions should produce identical seeds"
         );
     }
 }

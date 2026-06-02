@@ -107,9 +107,15 @@ impl JpegTranscoder {
             output.extend_from_slice(app0);
         }
 
-        // APP1 (XMP/exif metadata) is intentionally omitted here.
-        // The protection pipeline injects metadata in a separate step after DCT stego,
-        // so stripping it during reassembly is correct.
+        // APP1 (EXIF, XMP, ICC profiles)
+        for app1 in &header.app1_markers {
+            output.push(0xFF);
+            output.push(0xE1);
+            let len = (app1.len() + 2) as u16;
+            output.push((len >> 8) as u8);
+            output.push((len & 0xFF) as u8);
+            output.extend_from_slice(app1);
+        }
 
         // DQT - Quantization tables
         for table in header.quantization_tables.iter().flatten() {

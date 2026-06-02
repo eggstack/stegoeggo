@@ -180,6 +180,11 @@ let ctx = ProtectionContext::new(0.8, 42);
 
 > **Note:** `ProtectionContext::default()` uses `generate_random_seed()`, which is **not cryptographically secure** — the seed is predictable from the system clock. For reproducible protection, always pass an explicit seed via `ProtectionContext::new(intensity, seed)`. For adversarial settings, pair with a MAC key.
 
+> **Security Notice:** Without a MAC key, steganographic payloads use a 16-bit checksum
+> that can be trivially forged by anyone who reads the source code. For production deployments
+> (CDN protection, adversarial settings), **always** set a MAC key via `.with_mac_key()`.
+> The default configuration without a key is suitable for development and testing only.
+
 The MAC key affects:
 - Steganography payload verification (HMAC-SHA256 instead of simple checksum)
 
@@ -576,6 +581,8 @@ This library is designed to protect intellectual property from unauthorized AI t
 - Any use that violates applicable laws
 
 This is a defensive tool for content protection, not an offensive weapon against AI systems.
+
+**Production use requires MAC keys:** Without a cryptographic MAC key, steganographic payloads use a weak 16-bit checksum that can be forged. For adversarial or production deployments (e.g., CDN protection), always set a MAC key via `.with_mac_key()` to ensure payload integrity.
 
 ## License
 

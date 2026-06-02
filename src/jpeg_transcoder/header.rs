@@ -87,7 +87,7 @@ pub struct JpegHeader {
     pub components: Vec<ScanComponent>,
 
     pub app0_marker: Option<Vec<u8>>,
-    pub app1_marker: Option<Vec<u8>>,
+    pub app1_markers: Vec<Vec<u8>>,
 
     pub restart_interval: u16,
 
@@ -107,7 +107,7 @@ impl Default for JpegHeader {
             huffman_tables_ac: vec![None, None, None, None],
             components: Vec::new(),
             app0_marker: None,
-            app1_marker: None,
+            app1_markers: Vec::new(),
             restart_interval: 0,
             is_progressive: false,
         }
@@ -250,7 +250,7 @@ impl JpegHeader {
                 }
                 // APP1 (EXIF, etc)
                 0xE1 => {
-                    header.app1_marker = Some(segment_data.to_vec());
+                    header.app1_markers.push(segment_data.to_vec());
                 }
                 // DQT - Define Quantization Table
                 0xDB => {

@@ -18,7 +18,7 @@ pub struct JpegHeader {
     pub huffman_tables_ac: Vec<Option<HuffmanTable>>,
     pub components: Vec<ScanComponent>,
     pub app0_marker: Option<Vec<u8>>,
-    pub app1_marker: Option<Vec<u8>>,
+    pub app1_markers: Vec<Vec<u8>>,
     pub restart_interval: u16,
     pub progressive: bool,
 }
