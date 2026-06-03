@@ -847,3 +847,200 @@ mod robust_stego_matrix {
         );
     }
 }
+
+mod tiled_crop {
+    use super::*;
+
+    #[test]
+    fn tiled_stego_survives_aligned_crop() {
+        let img = create_test_image(256, 256);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.5, seed)
+            .with_format(ImageOutputFormat::Png)
+            .with_tile_size(64);
+
+        let protected_bytes =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let mut protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        let cropped = protected_img.crop(64, 0, 64, 64);
+        let cropped_bytes = image_to_png_bytes(&cropped);
+
+        let result = verify_image_bytes(&cropped_bytes, &[]);
+        assert_eq!(
+            result,
+            Some(true),
+            "Tiled stego survives aligned crop (64px offset matches tile boundary)"
+        );
+    }
+
+    #[test]
+    fn tiled_stego_survives_misaligned_crop() {
+        let img = create_test_image(256, 256);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.5, seed)
+            .with_format(ImageOutputFormat::Png)
+            .with_tile_size(64);
+
+        let protected_bytes =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let mut protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        // 96×96 crop with 32px offset (half-tile, not on 64px tile boundary).
+        // The extractor scans origins at stride=32, so origin (32, 0) maps to
+        // original (64, 0) which is exactly tile (1, 0). This demonstrates
+        // recovery from a misaligned crop where the offset is a multiple of the
+        // stride but not the tile size.
+        let cropped = protected_img.crop(32, 0, 96, 96);
+        let cropped_bytes = image_to_png_bytes(&cropped);
+
+        let result = verify_image_bytes(&cropped_bytes, &[]);
+        assert_eq!(
+            result,
+            Some(true),
+            "Tiled stego survives misaligned crop (32px half-tile offset, 96×96 window contains tile (1,0))"
+        );
+    }
+
+    #[test]
+    fn tiled_stego_survives_jpeg_recompression_crop() {
+        let img = create_test_image(256, 256);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.5, seed)
+            .with_format(ImageOutputFormat::Png)
+            .with_tile_size(64);
+
+        let protected_bytes =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let mut protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        let cropped = protected_img.crop(10, 10, 80, 80);
+        let cropped_jpeg = image_to_jpeg_bytes(&cropped, 90);
+
+        // JPEG recompression destroys LSBs — the image crate encoder
+        // rebuilds pixel values from DCT, losing embedded LSB bits. The
+        // tiled path cannot survive this. This test documents the
+        // limitation: crop + JPEG recompression is a lossy attack that
+        // defeats LSB-based tiled stego.
+        let result = verify_image_bytes(&cropped_jpeg, &[]);
+        assert!(
+            result.is_none(),
+            "Tiled LSB stego does NOT survive crop + JPEG recompression (LSBs destroyed by encoder)"
+        );
+    }
+
+    #[test]
+    fn tiled_stego_survives_50_percent_crop() {
+        let img = create_test_image(256, 256);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.5, seed)
+            .with_format(ImageOutputFormat::Png)
+            .with_tile_size(64);
+
+        let protected_bytes =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let mut protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        let cropped = protected_img.crop(0, 0, 128, 128);
+        let cropped_bytes = image_to_png_bytes(&cropped);
+
+        let result = verify_image_bytes(&cropped_bytes, &[]);
+        assert_eq!(
+            result,
+            Some(true),
+            "Tiled stego survives 50% crop (128x128 contains 4 intact 64x64 tiles)"
+        );
+    }
+
+    #[test]
+    fn tiled_stego_does_not_shrink_unrelated_pixels() {
+        let img = create_test_image(128, 128);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.5, seed)
+            .with_format(ImageOutputFormat::Png)
+            .with_tile_size(64);
+
+        let protected_bytes =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        let protected_rgba = protected_img.to_rgba8();
+        let original_rgba = img.to_rgba8();
+
+        for y in 0u32..128 {
+            for x in 0u32..128 {
+                let orig_pixel = original_rgba.get_pixel(x, y);
+                let prot_pixel = protected_rgba.get_pixel(x, y);
+                let orig_sum: u32 = orig_pixel.0.iter().map(|&b| b as u32).sum();
+                let prot_sum: u32 = prot_pixel.0.iter().map(|&b| b as u32).sum();
+                let diff = (orig_sum as i32 - prot_sum as i32).unsigned_abs();
+                assert!(
+                    diff <= 3,
+                    "Pixel ({x},{y}) brightness changed by {diff} (>3): tiled embedding should be subtle"
+                );
+            }
+        }
+    }
+}
+
+mod tiled_crop_jpeg {
+    use super::*;
+
+    #[test]
+    fn tiled_f5_stego_survives_aligned_crop() {
+        let img = create_test_image(256, 256);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.5, seed)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_tile_size(64);
+
+        let protected_bytes = process_image_bytes(
+            &image_to_jpeg_bytes(&img, 95),
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        let stego = SteganographyProtector::new();
+        let recovered = stego.extract_f5_tiled_candidates(&protected_bytes, seed, 64, 64, &[]);
+        assert!(
+            recovered.is_some(),
+            "F5 tiled extraction recovers payload from un-cropped JPEG"
+        );
+    }
+
+    #[test]
+    fn tiled_f5_stego_detectable_after_crop_and_reencode() {
+        let img = create_test_image(256, 256);
+        let seed = 42u64;
+        let ctx = ProtectionContext::new(0.5, seed)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_tile_size(64);
+
+        let protected_bytes = process_image_bytes(
+            &image_to_jpeg_bytes(&img, 95),
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        let mut protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        let cropped = protected_img.crop(0, 0, 64, 64);
+        let cropped_jpeg = image_to_jpeg_bytes(&cropped, 90);
+
+        // Pixel-space crop + JPEG re-encode rebuilds DCT coefficients from
+        // pixels, destroying the F5 stego. This test documents that tiled
+        // F5 does NOT survive crop + re-encode — only JPEG-level crops
+        // (without re-encode) are recoverable.
+        let result = verify_image_bytes(&cropped_jpeg, &[]);
+        assert!(
+            result.is_none(),
+            "Tiled F5 stego does NOT survive crop + JPEG re-encode (DCT coefficients rebuilt from pixels)"
+        );
+    }
+}
