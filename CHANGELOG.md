@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - **Steganographic watermarking** via `SteganographyProtector`:
   - LSB embedding for PNG/WebP with spread-spectrum, content-adaptive amplitude, and 3× repetition ECC
   - F5-style DCT coefficient embedding for JPEG with no-zero coefficient variant (avoids shrinkage detection)
-  - Seed embedded in JPEG quantization tables (survives re-encoding)
+  - Seed embedded in JPEG quantization tables (survives byte-preserving metadata insertion; not arbitrary recompression)
 - **Three protection levels**: `Disabled`, `Light`, `Standard`
 - **Verification API** (`verify_image_bytes`, `verify_payload`, `extract_payload`) with optional HMAC-SHA256 key verification
 - **ISCC-like content identification** via `compute_iscc`

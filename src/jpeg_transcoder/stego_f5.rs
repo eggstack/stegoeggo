@@ -4,7 +4,7 @@
 //! Features:
 //! - F5-style embedding with shrinkage handling
 //! - Configurable redundancy for robustness
-//! - Seed embedded in quantization tables (survives re-encoding)
+//! - Seed embedded in quantization tables when those tables are preserved
 //! - Progressive JPEG support
 //!
 //! ## Variant: No-zero-coefficient F5
@@ -59,6 +59,11 @@ pub struct DctStegoF5 {
 }
 
 impl DctStegoF5 {
+    #[inline]
+    fn normalize_ac_coefficient(value: i16) -> i16 {
+        value.clamp(-1023, 1023)
+    }
+
     pub fn new() -> Self {
         Self { redundancy: 3 }
     }
@@ -69,7 +74,7 @@ impl DctStegoF5 {
         }
     }
 
-    /// Embed seed in quantization tables (survives JPEG re-encoding).
+    /// Embed seed in quantization tables when those tables are preserved.
     ///
     /// Embeds 12 bytes: 4 bytes magic + 8 bytes seed (u64).
     ///
@@ -172,7 +177,7 @@ impl DctStegoF5 {
     /// Algorithm:
     /// 1. Skip DC coefficient (position 0)
     /// 2. For each bit:
-    ///    - Find non-zero AC coefficient
+    ///    - Find AC coefficients with magnitude >= 2
     ///    - If LSB matches target, keep it
     ///    - If LSB doesn't match, decrement absolute value (F5's shrinkage handling)
     /// 3. Embed with configurable redundancy
@@ -184,6 +189,17 @@ impl DctStegoF5 {
     ) -> Result<usize> {
         if payload.is_empty() {
             return Ok(0);
+        }
+
+        // Canonicalize all AC coefficients into the encoder's representable range
+        // before selecting carriers. This keeps the payload path aligned with the
+        // JPEG bytes that will actually be emitted.
+        for blocks in coefficients.values_mut() {
+            for block in blocks.iter_mut() {
+                for coef in block.iter_mut().skip(1) {
+                    *coef = Self::normalize_ac_coefficient(*coef);
+                }
+            }
         }
 
         // Convert payload to bits
@@ -202,24 +218,23 @@ impl DctStegoF5 {
             }
         }
 
-        // Collect all embeddable positions (non-zero AC coefficients)
+        // Collect AC positions with magnitude >= 2 in deterministic component/block order.
+        //
+        // The carrier set must stay stable after embedding. Because this variant
+        // never drops selected coefficients below magnitude 2, the carrier set
+        // remains stable after the one-step adjustment used here.
         let mut positions: Vec<(u8, usize, usize)> = Vec::new();
         for (comp_id, blocks) in coefficients.iter() {
             for (block_idx, block) in blocks.iter().enumerate() {
                 for (pos, &coef) in block.iter().enumerate().skip(1) {
-                    // Skip DC at position 0, include all non-zero AC coefficients
-                    if coef != 0 {
+                    if coef.abs() >= 2 {
                         positions.push((*comp_id, block_idx, pos));
                     }
                 }
             }
         }
 
-        positions.sort_by(|a, b| {
-            let mag_a = coefficients[&a.0][a.1][a.2].unsigned_abs();
-            let mag_b = coefficients[&b.0][b.1][b.2].unsigned_abs();
-            mag_b.cmp(&mag_a)
-        });
+        positions.sort();
 
         // Shuffle positions using seeded PRNG for pseudo-random ordering
         let mut rng = DctCoefficientRng::new(seed);
@@ -230,19 +245,15 @@ impl DctStegoF5 {
 
         if bits.len() > positions.len() {
             return Err(TranscoderError::EmbeddingFailed(format!(
-                "Insufficient capacity: need {} bits, have {} non-zero AC coefficients",
+                "Insufficient capacity: need {} bits, have {} AC coefficients",
                 bits.len(),
                 positions.len()
             )));
         }
 
         // Embed bits using F5-style value decrementing.
-        // Each non-zero AC coefficient in shuffled order consumes exactly one bit.
-        // - |coef| >= 2, LSB mismatch: decrement/increment toward zero (no zero created)
-        // - |coef| == 1, LSB mismatch: increment absolute value (+1→+2, -1→-2)
-        //   to flip LSB without creating zero. More detectable than decrementing to
-        //   zero, but avoids shrinkage which would break position alignment between
-        //   embed and extract.
+        // Each selected AC coefficient in shuffled order consumes exactly one bit.
+        // - LSB mismatch: decrement/increment toward zero, but never below |2|
         // - LSB already matches: no-op (position still consumed, bit counted)
 
         let mut bit_idx = 0usize;
@@ -257,12 +268,16 @@ impl DctStegoF5 {
                 .and_then(|b| b.get(block_idx))
                 .map(|b| b[pos])
                 .unwrap_or(0);
-
-            if current == 0 {
-                continue;
-            }
+            let current = Self::normalize_ac_coefficient(current);
 
             let target_bit = bits[bit_idx];
+            let block = coefficients
+                .get_mut(&comp_id)
+                .unwrap()
+                .get_mut(block_idx)
+                .unwrap();
+            block[pos] = current;
+
             let current_lsb = (current & 1) as u8;
 
             if current_lsb == target_bit {
@@ -271,36 +286,15 @@ impl DctStegoF5 {
                 continue;
             }
 
-            // LSB doesn't match — need to flip it
-            if current.abs() >= 2 {
-                // Safe: changing by 1 flips LSB without creating zero
-                let block = coefficients
-                    .get_mut(&comp_id)
-                    .unwrap()
-                    .get_mut(block_idx)
-                    .unwrap();
-                if current > 0 {
-                    block[pos] = current - 1;
-                } else {
-                    block[pos] = current + 1;
-                }
-                bit_idx += 1;
+            // LSB doesn't match — flip it without creating zero.
+            if current.abs() <= 2 {
+                block[pos] = if current > 0 { 3 } else { -3 };
+            } else if current > 0 {
+                block[pos] = current - 1;
             } else {
-                // |coef| == 1: increment absolute value to flip LSB.
-                // +1 → +2: LSB 1→0, non-zero
-                // -1 → -2: LSB 1→0, non-zero
-                let block = coefficients
-                    .get_mut(&comp_id)
-                    .unwrap()
-                    .get_mut(block_idx)
-                    .unwrap();
-                if current > 0 {
-                    block[pos] = current + 1;
-                } else {
-                    block[pos] = current - 1;
-                }
-                bit_idx += 1;
+                block[pos] = current + 1;
             }
+            bit_idx += 1;
         }
 
         if bit_idx < bits.len() {
@@ -313,32 +307,32 @@ impl DctStegoF5 {
         Ok(original_bit_count)
     }
 
-    /// F5-style DCT extraction
+    /// F5-style DCT extraction.
     ///
-    /// Extracts LSBs from non-zero AC coefficients in same order as embedding
+    /// `expected_bits` is the original payload bit count before redundancy
+    /// repetition. When redundancy is greater than 1, the extractor reads
+    /// `expected_bits * redundancy` bits and then majority-votes them back
+    /// down to the original length.
     pub fn extract_f5(
         &self,
         coefficients: &HashMap<u8, Vec<[i16; 64]>>,
         expected_bits: usize,
         seed: u64,
     ) -> Vec<u8> {
-        // Collect all non-zero AC coefficients in same order as embedding
+        // Collect AC positions with magnitude >= 2 in the same deterministic
+        // order as embedding.
         let mut positions: Vec<(u8, usize, usize)> = Vec::new();
         for (comp_id, blocks) in coefficients.iter() {
             for (block_idx, block) in blocks.iter().enumerate() {
                 for (pos, &coef) in block.iter().enumerate().skip(1) {
-                    if coef != 0 {
+                    if coef.abs() >= 2 {
                         positions.push((*comp_id, block_idx, pos));
                     }
                 }
             }
         }
 
-        positions.sort_by(|a, b| {
-            let mag_a = coefficients[&a.0][a.1][a.2].unsigned_abs();
-            let mag_b = coefficients[&b.0][b.1][b.2].unsigned_abs();
-            mag_b.cmp(&mag_a)
-        });
+        positions.sort();
 
         // Shuffle with same seed
         let mut rng = DctCoefficientRng::new(seed);
@@ -348,9 +342,14 @@ impl DctStegoF5 {
         }
 
         // Extract LSBs
-        let mut bits = Vec::with_capacity(expected_bits);
+        let required_bits = if self.redundancy > 1 {
+            expected_bits.saturating_mul(self.redundancy)
+        } else {
+            expected_bits
+        };
+        let mut bits = Vec::with_capacity(required_bits);
         for &(comp_id, block_idx, pos) in positions.iter() {
-            if bits.len() >= expected_bits {
+            if bits.len() >= required_bits {
                 break;
             }
 
@@ -360,7 +359,7 @@ impl DctStegoF5 {
         }
 
         // Remove redundancy by majority voting per bit position
-        if self.redundancy > 1 && bits.len() >= expected_bits * self.redundancy {
+        if self.redundancy > 1 && bits.len() >= required_bits {
             let mut decoded_bits = Vec::with_capacity(expected_bits);
             for i in 0..expected_bits {
                 let mut ones = 0;
@@ -388,6 +387,76 @@ impl Default for DctStegoF5 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_coefficients(block_count: usize) -> HashMap<u8, Vec<[i16; 64]>> {
+        let mut coefficients: HashMap<u8, Vec<[i16; 64]>> = HashMap::new();
+        let mut blocks = Vec::new();
+
+        for i in 0..block_count {
+            let mut block = [0i16; 64];
+            block[0] = 50;
+            for (j, val) in block.iter_mut().enumerate().skip(1) {
+                *val = ((i * 63 + j) as i16) * 2 + 3;
+            }
+            blocks.push(block);
+        }
+
+        coefficients.insert(1, blocks);
+        coefficients
+    }
+
+    fn bits_to_bytes(bits: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for chunk in bits.chunks(8) {
+            if chunk.len() < 8 {
+                break;
+            }
+            let mut byte = 0u8;
+            for (i, &bit) in chunk.iter().enumerate() {
+                byte |= bit << i;
+            }
+            bytes.push(byte);
+        }
+        bytes
+    }
+
+    fn shuffled_positions(
+        coefficients: &HashMap<u8, Vec<[i16; 64]>>,
+        seed: u64,
+    ) -> Vec<(u8, usize, usize)> {
+        let mut positions: Vec<(u8, usize, usize)> = Vec::new();
+        for (comp_id, blocks) in coefficients.iter() {
+            for (block_idx, block) in blocks.iter().enumerate() {
+                for (pos, _) in block.iter().enumerate().skip(1) {
+                    positions.push((*comp_id, block_idx, pos));
+                }
+            }
+        }
+
+        positions.sort();
+
+        let mut rng = DctCoefficientRng::new(seed);
+        for i in (1..positions.len()).rev() {
+            let j = rng.gen_range(i + 1);
+            positions.swap(i, j);
+        }
+
+        positions
+    }
+
+    fn flip_lsb_without_zero(value: i16) -> i16 {
+        if value & 1 == 0 {
+            if value > 0 {
+                value + 1
+            } else {
+                value - 1
+            }
+        } else if value > 0 {
+            value + 1
+        } else {
+            value - 1
+        }
+    }
 
     #[test]
     fn test_seed_embed_extract() {
@@ -420,182 +489,50 @@ mod tests {
     }
 
     #[test]
-    fn test_f5_embed_extract_roundtrip() {
-        let stego = DctStegoF5::with_redundancy(3);
-
-        let mut coefficients: HashMap<u8, Vec<[i16; 64]>> = HashMap::new();
-
-        let mut blocks = Vec::new();
-        for i in 0..50 {
-            let mut block = [0i16; 64];
-            block[0] = 100;
-            for (j, val) in block.iter_mut().enumerate().skip(1) {
-                *val = ((i * 63 + j) as i16) * 2 + 3;
-            }
-            blocks.push(block);
-        }
-        coefficients.insert(1, blocks);
-
-        let payload = b"Hello, World! This is a test payload.";
+    fn test_f5_redundancy_1_roundtrip() {
+        let stego = DctStegoF5::with_redundancy(1);
+        let mut coefficients = make_coefficients(8);
+        let payload = b"Hello, World!";
 
         stego.embed_f5(&mut coefficients, payload, 42).unwrap();
 
-        let bits = stego.extract_f5(&coefficients, payload.len() * 8 * 3, 42);
-
-        // Convert bits to bytes
-        let mut bytes: Vec<u8> = Vec::new();
-        for chunk in bits.chunks(8) {
-            if chunk.len() < 8 {
-                break;
-            }
-            let mut byte: u8 = 0;
-            for (i, &bit) in chunk.iter().enumerate() {
-                byte |= bit << i;
-            }
-            bytes.push(byte);
-        }
-
-        // Check with redundancy (3x)
-        assert!(bytes.len() >= payload.len());
-
-        // With majority voting, first 12 bytes should be the payload
-        for (i, &expected) in payload.iter().enumerate() {
-            let mut ones = 0;
-            for r in 0..3 {
-                let idx = i + r * payload.len();
-                if idx < bytes.len() && bytes[idx] == expected {
-                    ones += 1;
-                }
-            }
-            assert!(
-                ones >= 2,
-                "Byte {} failed majority voting: expected {}, ones={}",
-                i,
-                expected,
-                ones
-            );
-        }
+        let bits = stego.extract_f5(&coefficients, payload.len() * 8, 42);
+        assert_eq!(bits_to_bytes(&bits), payload);
     }
 
     #[test]
-    fn test_f5_embed_extract_unit_coefficients() {
+    fn test_f5_redundancy_3_majority_recovers_corrupted_copy() {
         let stego = DctStegoF5::with_redundancy(3);
-
-        let mut coefficients: HashMap<u8, Vec<[i16; 64]>> = HashMap::new();
-
-        let mut blocks = Vec::new();
-        for i in 0..5 {
-            let mut block = [0i16; 64];
-            block[0] = 50;
-            for (j, val) in block.iter_mut().enumerate().skip(1) {
-                *val = ((i * 63 + j) as i16) * 2 + 3;
-            }
-            blocks.push(block);
-        }
-        coefficients.insert(1, blocks);
-
-        let payload = b"AB";
+        let mut coefficients = make_coefficients(8);
+        let payload = b"ABCD";
 
         stego.embed_f5(&mut coefficients, payload, 42).unwrap();
 
-        let expected_bits = payload.len() * 8 * 3;
+        let positions = shuffled_positions(&coefficients, 42);
+        let expected_bits = payload.len() * 8;
+        let corrupted_idx = expected_bits + 5;
+        let (comp_id, block_idx, pos) = positions[corrupted_idx];
+        let block = coefficients
+            .get_mut(&comp_id)
+            .and_then(|blocks| blocks.get_mut(block_idx))
+            .unwrap();
+        block[pos] = flip_lsb_without_zero(block[pos]);
+
         let bits = stego.extract_f5(&coefficients, expected_bits, 42);
-
-        let mut bytes: Vec<u8> = Vec::new();
-        for chunk in bits.chunks(8) {
-            if chunk.len() < 8 {
-                break;
-            }
-            let mut byte: u8 = 0;
-            for (i, &bit) in chunk.iter().enumerate() {
-                byte |= bit << i;
-            }
-            bytes.push(byte);
-        }
-
-        assert!(bytes.len() >= payload.len());
-
-        for (i, &expected) in payload.iter().enumerate() {
-            let mut ones = 0;
-            for r in 0..3 {
-                let idx = i + r * payload.len();
-                if idx < bytes.len() && bytes[idx] == expected {
-                    ones += 1;
-                }
-            }
-            assert!(
-                ones >= 2,
-                "Byte {} failed majority voting: expected {}, ones={}",
-                i,
-                expected,
-                ones
-            );
-        }
+        assert_eq!(bits_to_bytes(&bits), payload);
     }
 
     #[test]
-    fn test_f5_embed_extract_mixed_coefficients() {
+    fn test_f5_wrong_seed_does_not_recover_payload() {
         let stego = DctStegoF5::with_redundancy(3);
-
-        let mut coefficients: HashMap<u8, Vec<[i16; 64]>> = HashMap::new();
-
-        let mut blocks = Vec::new();
-        for i in 0..50 {
-            let mut block = [0i16; 64];
-            block[0] = 50;
-            for (j, val) in block.iter_mut().enumerate().skip(1) {
-                *val = ((i * 63 + j) as i16) * 2 + 3;
-            }
-            blocks.push(block);
-        }
-        coefficients.insert(1, blocks);
-
+        let mut coefficients = make_coefficients(8);
         let payload = b"test!";
 
         stego.embed_f5(&mut coefficients, payload, 42).unwrap();
 
-        let expected_bits = payload.len() * 8 * 3;
-        let bits = stego.extract_f5(&coefficients, expected_bits, 42);
-
-        let mut bytes: Vec<u8> = Vec::new();
-        for chunk in bits.chunks(8) {
-            if chunk.len() < 8 {
-                break;
-            }
-            let mut byte: u8 = 0;
-            for (i, &bit) in chunk.iter().enumerate() {
-                byte |= bit << i;
-            }
-            bytes.push(byte);
-        }
-
-        assert!(bytes.len() >= payload.len());
-
-        for (i, &expected) in payload.iter().enumerate() {
-            let mut matches = 0;
-            for r in 0..3 {
-                let idx = i + r * payload.len();
-                if idx < bytes.len() && bytes[idx] == expected {
-                    matches += 1;
-                }
-            }
-            assert!(
-                matches >= 2,
-                "Byte {} failed majority voting: expected {}, copies={:?}",
-                i,
-                expected,
-                (0..3)
-                    .map(|r| {
-                        let idx = i + r * payload.len();
-                        if idx < bytes.len() {
-                            bytes[idx]
-                        } else {
-                            0
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            );
-        }
+        let bits = stego.extract_f5(&coefficients, payload.len() * 8, 99);
+        let recovered = bits_to_bytes(&bits);
+        assert_ne!(recovered, payload);
     }
 
     #[test]
@@ -657,8 +594,8 @@ mod tests {
 
     #[test]
     fn test_seed_survives_reencoding() {
-        // This test verifies that seed in quantization tables survives
-        // (quantization tables are preserved during re-encoding)
+        // This test verifies that the seed survives workflows that preserve
+        // quantization tables.
         let mut header = JpegHeader::default();
         // Initialize quantization tables with non-zero values
         for i in 0..2 {
@@ -680,8 +617,7 @@ mod tests {
             .embed_seed_in_quantization_tables(&mut header, seed)
             .unwrap();
 
-        // Simulate re-encoding: quantization tables should be preserved
-        // (in real JPEG re-encoding, tables are typically preserved)
+        // Simulate a table-preserving round trip.
 
         let extracted = stego
             .extract_seed_from_quantization_tables(&header)

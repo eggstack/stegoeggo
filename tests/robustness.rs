@@ -86,6 +86,36 @@ mod jpeg_recompression {
     }
 
     #[test]
+    fn dct_stego_verifies_through_public_api_with_redundancy_3() {
+        let img = create_test_image(1024, 1024);
+        let seed = 42u64;
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+        let ctx = ProtectionContext::new(0.6, seed)
+            .with_format(cloakrs::ImageOutputFormat::Jpeg)
+            .with_stego_redundancy(3);
+
+        let protected_bytes =
+            process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        assert_eq!(verify_image_bytes(&protected_bytes, &[]), Some(true));
+    }
+
+    #[test]
+    fn qtable_seed_only_does_not_count_as_verified_payload() {
+        let img = create_test_image(16, 16);
+        let seed = 424242u64;
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+        let ctx = ProtectionContext::new(0.5, seed)
+            .with_format(cloakrs::ImageOutputFormat::Jpeg)
+            .with_stego_redundancy(3);
+
+        let protected_bytes =
+            process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        assert_eq!(verify_image_bytes(&protected_bytes, &[]), None);
+    }
+
+    #[test]
     fn png_metadata_lost_on_jpeg_conversion() {
         let img = create_test_image(64, 64);
         let seed = 42u64;

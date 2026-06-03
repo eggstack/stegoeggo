@@ -392,9 +392,9 @@ Hidden payloads embedded in images for verification and proof of protection:
 - Uses pseudo-random pixel selection based on seed
 
 **JPEG:** DCT-based (F5-style) embedding
-- Seed embedded in quantization tables (survives re-encoding)
+- Seed embedded in quantization tables when those tables are preserved
 - DCT coefficient perturbation using F5-style no-zero variant
-- Pixel-based fallback when DCT path unavailable
+- Pixel-domain JPEG fallback removed; JPEG protection now goes through the DCT fast path
 
 **Payload Structure:**
 
@@ -474,15 +474,15 @@ JPEG's lossy compression can destroy steganography payloads embedded in pixel da
 
 **Current behavior:**
 - PNG/WebP: LSB steganography is fully supported and verifiable
-- JPEG: F5-style DCT steganography embeds in quantization tables (survives re-encoding) and coefficients
+- JPEG: F5-style DCT steganography stores a seed in quantization tables when those tables are preserved and embeds payload bits in coefficients
 
 **Recommendations:**
 - Use PNG output format for protected images when possible
-- For JPEG, verification relies on quantization table seed extraction and metadata
+- For JPEG, a quantization-table seed is detection only; full verification relies on DCT payload integrity or metadata
 - The library automatically uses the best available extraction method
 - The CLI handles this and reports accordingly
 
-**Technical note:** The library uses F5-style DCT embedding for JPEG which modifies quantization tables, providing better durability against re-encoding than pixel-based approaches.
+**Technical note:** The library uses F5-style DCT embedding for JPEG. The quantization-table seed is useful when tables are preserved, but generic JPEG re-encoding can regenerate those tables and lose the seed.
 
 ## Robustness & Survival
 
@@ -494,9 +494,12 @@ Different protection layers survive different image transformations. The truth, 
 |----------------|-----------------------------------------|---------------------|------------------------------|--------------------------|
 | **File copy / re-hosting** | ✓ | ✓ | ✓ | ✓ |
 | **PNG ↔ PNG re-encode** | ✓ | n/a | ✓ (spread-spectrum + ECC + majority vote) | n/a |
+| **WebP lossless ↔ WebP lossless** | ✓ | n/a | ✓ (same as PNG) | n/a |
+| **WebP lossy (any re-encode)** | ✓ | n/a | ✗ (lossy codec destroys LSBs) | n/a |
 | **JPEG → JPEG via `image` crate encoder** | ✗ (encoder strips COM/APP1) | ✗ (encoder rebuilds Q-tables) | ✗ (decoded to pixels) | ✗ |
 | **JPEG → JPEG via `cloakrs` fast path** | ✓ (re-injected) | ✓ (re-injected) | n/a | ✓ (DCT coeffs preserved) |
 | **Format conversion (PNG ↔ JPEG) via `image` crate** | ✗ | ✗ | ✗ | ✗ |
+| **Format conversion (WebP ↔ JPEG) via `image` crate** | ✗ | n/a | ✗ | n/a |
 | **Crop** | ✗ (clipped) | ✗ | ✗ | ✗ |
 | **Resize** | ✗ (resampled) | ✗ | ✗ | ✗ |
 | **Naive metadata strip** | ✗ | n/a | ✓ (still extractable) | partial |
@@ -506,6 +509,10 @@ Different protection layers survive different image transformations. The truth, 
 ### Encoder reality check
 
 The `image` crate (and most general-purpose JPEG encoders) **do not preserve** COM or APP1 markers, and **rebuild standard Q-tables from scratch** on every encode. This means the visible metadata channel and the Q-table seed channel are both single-encoding only when the image passes through a generic encoder. The `cloakrs` custom transcoder (`JpegTranscoder`) preserves DCT coefficients and re-injects metadata, but only when the image is processed through `process_image_bytes` (not through an external re-encoder).
+
+### WebP caveat
+
+`cloakrs` uses LSB embedding for WebP, which only survives **lossless** WebP round-trips. The `image` crate's `WebPEncoder::new_lossless` preserves LSBs; lossy WebP re-encoding (the common web delivery path) destroys the LSB payload. If you serve protected WebP, configure your CDN to deliver lossless WebP, or convert protected output to PNG/JPEG-in-WebP-container with a tool that preserves the bitstream.
 
 ### Recommendations
 

@@ -118,74 +118,30 @@ impl Default for JpegHeader {
 
 impl JpegHeader {
     pub fn parse(data: &[u8]) -> Result<Self> {
-        // Simple approach: find the last SOI-EOI pair in the file
-        // This handles files with embedded thumbnails
-
         if data.len() < 2 {
             return Err(TranscoderError::InvalidFormat("Input too short".into()));
         }
 
-        // Find all SOI positions
-        let soi_positions: Vec<usize> = (0..data.len() - 1)
-            .filter(|&i| data[i] == 0xFF && data[i + 1] == 0xD8)
-            .collect();
+        if data[0] != 0xFF || data[1] != 0xD8 {
+            return Err(TranscoderError::InvalidFormat("No SOI marker found".into()));
+        }
 
-        // Find all EOI positions
-        let eoi_positions: Vec<usize> = (0..data.len() - 1)
-            .filter(|&i| data[i] == 0xFF && data[i + 1] == 0xD9)
-            .collect();
-
-        // Use the last SOI as start (usually main image)
-        let start_pos = match soi_positions.last() {
-            Some(&pos) => pos,
-            None => return Err(TranscoderError::InvalidFormat("No SOI marker found".into())),
-        };
-
-        // Find the last EOI in the file (for the main image)
-        let end_pos = if let Some(&pos) = eoi_positions.last() {
-            pos
-        } else {
-            data.len()
-        };
+        if data.len() <= 2 {
+            return Err(TranscoderError::InvalidFormat(
+                "Truncated JPEG header".into(),
+            ));
+        }
 
         let mut header = JpegHeader::default();
 
-        // Parse from start_pos
-        let mut pos = start_pos + 2;
-        if pos >= data.len() {
-            pos = start_pos;
-        }
-
-        // We'll also find the largest SOF to get dimensions
-        let mut largest_sof_pos = 0;
+        // Parse the outer JPEG stream sequentially from the leading SOI.
+        // This avoids false positives from marker-like byte sequences inside
+        // metadata payloads such as COM, APP1, or APP13 segments.
+        let mut pos = 2;
         let mut largest_width = 0usize;
         let mut largest_height = 0usize;
 
-        // Find largest SOF between start_pos and end_pos
-        if end_pos < 10 {
-            return Err(TranscoderError::InvalidFormat(
-                "JPEG too short for SOF".into(),
-            ));
-        }
-        let mut search_pos = start_pos;
-        while search_pos < end_pos - 10 {
-            if data[search_pos] == 0xFF
-                && (data[search_pos + 1] == 0xC0
-                    || data[search_pos + 1] == 0xC1
-                    || data[search_pos + 1] == 0xC2)
-            {
-                let h = ((data[search_pos + 5] as usize) << 8) | (data[search_pos + 6] as usize);
-                let w = ((data[search_pos + 7] as usize) << 8) | (data[search_pos + 8] as usize);
-                if w * h > largest_width * largest_height {
-                    largest_width = w;
-                    largest_height = h;
-                    largest_sof_pos = search_pos;
-                }
-            }
-            search_pos += 1;
-        }
-
-        while pos < end_pos {
+        while pos < data.len() {
             // Find next marker - skip to 0xFF
             while pos < data.len() && data[pos] != 0xFF {
                 pos += 1;
@@ -261,16 +217,34 @@ impl JpegHeader {
                 0xC0 => {
                     // Parse all SOFs - we'll fix dimensions later
                     header.parse_sof(segment_data)?;
+                    if (header.width as usize) * (header.height as usize)
+                        > largest_width * largest_height
+                    {
+                        largest_width = header.width as usize;
+                        largest_height = header.height as usize;
+                    }
                 }
                 // SOF1 - Start of Frame (extended)
                 0xC1 => {
                     header.parse_sof(segment_data)?;
+                    if (header.width as usize) * (header.height as usize)
+                        > largest_width * largest_height
+                    {
+                        largest_width = header.width as usize;
+                        largest_height = header.height as usize;
+                    }
                 }
                 // SOF2 - Start of Frame (progressive)
                 0xC2 => {
                     header.parse_sof(segment_data)?;
                     header.is_progressive = true;
                     header.coding_process = JpegCodingProcess::ProgressiveDCT;
+                    if (header.width as usize) * (header.height as usize)
+                        > largest_width * largest_height
+                    {
+                        largest_width = header.width as usize;
+                        largest_height = header.height as usize;
+                    }
                 }
                 // DHT - Define Huffman Table
                 0xC4 => {
@@ -295,11 +269,11 @@ impl JpegHeader {
                 }
             }
 
-            pos = pos + 2 + segment_len;
+            pos += 2 + segment_len;
         }
 
         // Fix dimensions to use the largest SOF
-        if largest_sof_pos > 0
+        if largest_width > 0
             && (header.width as usize, header.height as usize) != (largest_width, largest_height)
         {
             header.width = largest_width as u16;
@@ -380,10 +354,27 @@ impl JpegHeader {
             let sampling = data[offset + 1];
             let quant_table_id = data[offset + 2];
 
+            let h_sampling = (sampling >> 4) & 0x0F;
+            let v_sampling = sampling & 0x0F;
+
+            if h_sampling == 0 || v_sampling == 0 {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "Component {} has zero sampling factor (h={}, v={}); \
+                     JPEG spec requires 1-4",
+                    component_id, h_sampling, v_sampling
+                )));
+            }
+            if h_sampling > 4 || v_sampling > 4 {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "Component {} sampling factor exceeds JPEG maximum (h={}, v={})",
+                    component_id, h_sampling, v_sampling
+                )));
+            }
+
             self.components.push(ScanComponent {
                 component_id,
-                h_sampling: (sampling >> 4) & 0x0F,
-                v_sampling: sampling & 0x0F,
+                h_sampling,
+                v_sampling,
                 quant_table_id,
                 dc_table_id: 0,
                 ac_table_id: 0,
@@ -524,5 +515,67 @@ mod tests {
         let header = JpegHeader::parse(&data).unwrap();
         assert_eq!(header.com_markers.len(), 1);
         assert_eq!(header.com_markers[0], com_payload);
+    }
+
+    #[test]
+    fn parse_ignores_marker_like_bytes_inside_metadata_payloads() {
+        use crate::protected::metadata_trap::MetadataTrapProtector;
+        use crate::types::{ImageOutputFormat, ProtectionContext};
+        use image::DynamicImage;
+
+        let img = DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(32, 32, |x, y| {
+            image::Rgb([(x * 3) as u8, (y * 5) as u8, ((x + y) * 7) as u8])
+        }));
+
+        let jpeg = crate::util::image::encode_image(&img, image::ImageFormat::Jpeg).unwrap();
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
+        let injected = MetadataTrapProtector::new()
+            .inject_bytes(&jpeg, &ctx)
+            .unwrap();
+
+        let header = JpegHeader::parse(&injected).unwrap();
+        assert!(header.width > 0);
+        assert!(header.height > 0);
+        assert!(!header.quantization_tables.iter().all(|t| t.is_none()));
+    }
+
+    /// Regression test for a divide-by-zero panic discovered by the fuzz harness
+    /// in `fuzz/fuzz_targets/pipeline_bytes.rs`. A SOF segment with a component
+    /// whose sampling-factor nibble is 0 must be rejected at parse time, not
+    /// panic later in the entropy decoder.
+    #[test]
+    fn parse_rejects_zero_sampling_factor() {
+        // SOF0 + 1 component with h_sampling=0 (high nibble)
+        let data: &[u8] = &[
+            0xFF, 0xD8, // SOI
+            0xFF, 0xC0, // SOF0
+            0x00, 0x11, // segment length 17
+            0x08, // precision 8
+            0x00, 0x10, // height 16
+            0x00, 0x10, // width 16
+            0x01, // 1 component
+            0x01, 0x00, 0x00, // id=1, sampling=0x00 (h=0, v=0), quant=0
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let result = JpegHeader::parse(data);
+        assert!(
+            result.is_err(),
+            "SOF with zero sampling factor must be rejected"
+        );
+    }
+
+    #[test]
+    fn parse_rejects_oversized_sampling_factor() {
+        // SOF0 + 1 component with h_sampling=5 (above JPEG max of 4)
+        let data: &[u8] = &[
+            0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x11, 0x08, 0x00, 0x10, 0x00, 0x10, 0x01, 0x01, 0x50,
+            0x00, // id=1, sampling=0x50 (h=5, v=0)
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let result = JpegHeader::parse(data);
+        assert!(
+            result.is_err(),
+            "SOF with sampling factor > 4 must be rejected"
+        );
     }
 }

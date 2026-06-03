@@ -130,7 +130,7 @@ impl HuffmanDecoder {
         }
     }
 
-    fn decode(&self, bit_reader: &mut BitReader) -> Option<i16> {
+    fn decode_symbol(&self, bit_reader: &mut BitReader) -> Option<u8> {
         // Read bits until we match a code
         let mut code: u16 = 0;
         #[allow(unused_assignments)]
@@ -145,35 +145,7 @@ impl HuffmanDecoder {
                 if code >= self.min_code[idx] as u16 && code <= self.max_code[idx] as u16 {
                     let val_idx = ((code as i32) + self.val_offset[idx]) as usize;
                     if val_idx < self.values.len() {
-                        let size = self.values[val_idx] as usize;
-
-                        // Get magnitude
-                        if size == 0 {
-                            return Some(0); // DC difference of 0
-                        }
-
-                        // Read magnitude bits
-                        let mut magnitude: i16 = 0;
-                        for _ in 0..size {
-                            if let Some(bit) = bit_reader.read_bit() {
-                                magnitude = (magnitude << 1) | bit as i16;
-                            } else {
-                                return None;
-                            }
-                        }
-
-                        // Extend sign
-                        let size = self.values[val_idx] as usize;
-                        if size >= 16 {
-                            // Invalid size - would cause overflow
-                            return None;
-                        }
-                        let sign_bit = 1i16 << size;
-                        if magnitude < sign_bit {
-                            magnitude -= sign_bit - 1;
-                        }
-
-                        return Some(magnitude);
+                        return Some(self.values[val_idx]);
                     }
                 }
             } else {
@@ -207,32 +179,36 @@ impl<'a> BitReader<'a> {
             return None;
         }
 
-        while self.byte_pos < self.data.len() {
+        if self.byte_pos < self.data.len() {
             if self.bit_pos == 7 {
-                // Check for marker
+                // Check for a real marker at byte boundaries. Stuffed 0xFF 0x00
+                // bytes are part of the entropy stream: read the 0xFF data byte,
+                // then skip the 0x00 stuffing byte after consuming the byte.
                 if self.data[self.byte_pos] == 0xFF && self.byte_pos + 1 < self.data.len() {
                     let next = self.data[self.byte_pos + 1];
-                    // RST markers or fill byte
-                    if (0xD0..=0xD7).contains(&next) || next == 0x00 {
-                        self.byte_pos += 2;
-                        continue;
-                    }
-                    if next == 0xD9 {
-                        // EOI
+                    if next != 0x00 {
+                        if next == 0xD9 || (0xD0..=0xD7).contains(&next) {
+                            self.eoi_reached = true;
+                            return None;
+                        }
                         self.eoi_reached = true;
                         return None;
                     }
-                    // Other marker - stop
-                    self.eoi_reached = true;
-                    return None;
                 }
             }
 
             let bit = (self.data[self.byte_pos] >> self.bit_pos) & 1;
 
             if self.bit_pos == 0 {
-                self.bit_pos = 7;
+                let current = self.data[self.byte_pos];
                 self.byte_pos += 1;
+                if current == 0xFF
+                    && self.byte_pos < self.data.len()
+                    && self.data[self.byte_pos] == 0x00
+                {
+                    self.byte_pos += 1;
+                }
+                self.bit_pos = 7;
             } else {
                 self.bit_pos -= 1;
             }
@@ -242,6 +218,28 @@ impl<'a> BitReader<'a> {
 
         None
     }
+}
+
+fn read_magnitude(bit_reader: &mut BitReader<'_>, size: usize) -> Option<i16> {
+    if size == 0 {
+        return Some(0);
+    }
+    if size >= 16 {
+        return None;
+    }
+
+    let mut magnitude: i16 = 0;
+    for _ in 0..size {
+        magnitude = (magnitude << 1) | bit_reader.read_bit()? as i16;
+    }
+
+    let threshold = 1i16 << (size - 1);
+    let adjustment = (1i16 << size) - 1;
+    if magnitude < threshold {
+        magnitude -= adjustment;
+    }
+
+    Some(magnitude)
 }
 
 pub struct CoefficientDecoder {
@@ -344,21 +342,22 @@ impl CoefficientDecoder {
 
                             // Decode DC coefficient
                             let dc_predictor = dc_predictors.entry(comp.component_id).or_insert(0);
-                            if let Some(diff) = dc_decoder.decode(&mut bit_reader) {
-                                // Check for overflow
+                            if let Some(size) = dc_decoder.decode_symbol(&mut bit_reader) {
+                                let Some(diff) = read_magnitude(&mut bit_reader, size as usize)
+                                else {
+                                    break;
+                                };
                                 let new_val = (*dc_predictor as i32) + (diff as i32);
-                                if new_val > i16::MAX as i32 || new_val < i16::MIN as i32 {
-                                    // DC coefficient overflow - skip this block
-                                    continue;
-                                }
-                                *dc_predictor = new_val as i16;
+                                let clamped =
+                                    new_val.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                                *dc_predictor = clamped;
                                 block[0] = *dc_predictor;
                             }
 
                             // Decode AC coefficients
                             let mut k = 1;
                             while k < 64 {
-                                if let Some(ss) = ac_decoder.decode(&mut bit_reader) {
+                                if let Some(ss) = ac_decoder.decode_symbol(&mut bit_reader) {
                                     let run = (ss >> 4) & 0x0F;
                                     let size = ss & 0x0F;
 
@@ -367,30 +366,23 @@ impl CoefficientDecoder {
                                             // EOB - end of block
                                             break;
                                         }
-                                        // ZRL - skip zeros
-                                        k += run as usize;
+                                        // ZRL - skip 16 zeros (0xF0).
+                                        k += (run as usize) + 1;
                                     } else {
-                                        // Read magnitude
-                                        let mut magnitude: i16 = 0;
-                                        for _ in 0..size {
-                                            if let Some(bit) = bit_reader.read_bit() {
-                                                magnitude = (magnitude << 1) | bit as i16;
-                                            }
-                                        }
-
-                                        // Extend sign
-                                        let sign_bit = 1i16 << size;
-                                        if magnitude < sign_bit {
-                                            magnitude -= sign_bit - 1;
-                                        }
-
-                                        if k < 64 {
-                                            block[ZIGZAG[k]] = magnitude;
-                                            k += 1;
-                                        }
-
-                                        // Skip zeros
+                                        // Skip leading zeros before placing this coefficient.
                                         k += run as usize;
+                                        if k >= 64 {
+                                            break;
+                                        }
+
+                                        let Some(magnitude) =
+                                            read_magnitude(&mut bit_reader, size as usize)
+                                        else {
+                                            break;
+                                        };
+
+                                        block[ZIGZAG[k]] = magnitude;
+                                        k += 1;
                                     }
                                 } else {
                                     break;
@@ -636,8 +628,9 @@ impl CoefficientEncoder {
             if clamped_diff > 0 {
                 writer.write_bits(clamped_diff as u16, encodable_size);
             } else {
-                // Two's complement representation
-                let magnitude = ((clamped_diff as i32) - 1).unsigned_abs() as u16;
+                // JPEG negative-value representation: add the max positive value
+                // for this size and write the resulting codeword bits.
+                let magnitude = (clamped_diff as i32 + ((1i32 << encodable_size) - 1)) as u16;
                 writer.write_bits(magnitude, encodable_size);
             }
         }
@@ -693,7 +686,7 @@ impl CoefficientEncoder {
                 if clamped_value > 0 {
                     writer.write_bits(clamped_value as u16, encodable_size);
                 } else {
-                    let magnitude = ((clamped_value as i32) - 1).unsigned_abs() as u16;
+                    let magnitude = (clamped_value as i32 + ((1i32 << encodable_size) - 1)) as u16;
                     writer.write_bits(magnitude, encodable_size);
                 }
 
@@ -718,7 +711,7 @@ impl CoefficientEncoder {
                 if clamped_value > 0 {
                     writer.write_bits(clamped_value as u16, encodable_size);
                 } else {
-                    let magnitude = ((clamped_value as i32) - 1).unsigned_abs() as u16;
+                    let magnitude = (clamped_value as i32 + ((1i32 << encodable_size) - 1)) as u16;
                     writer.write_bits(magnitude, encodable_size);
                 }
 

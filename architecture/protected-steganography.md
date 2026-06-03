@@ -41,16 +41,12 @@ fn extract_lsb(img: &RgbaImage, seed: u64, redundancy: u8) -> Vec<u8>
 - Embeds payload bits into LSBs of selected pixels
 - Redundancy 1–10: multiple passes for reliability
 
+**WebP caveat:** LSB embedding survives **lossless** WebP round-trips (which is what `cloakrs` produces via the `image` crate's `WebPEncoder::new_lossless`). Lossy WebP re-encoding (the common web delivery path) destroys the LSB payload. If WebP is the chosen delivery format, configure the CDN to deliver lossless WebP, or accept metadata-only protection.
+
 ### JPEG Pixel Stego
 
-```rust
-fn embed_jpeg_stego(img: &mut RgbaImage, payload: &[u8], seed: u64, redundancy: u8)
-fn extract_jpeg_stego(img: &RgbaImage, seed: u64, redundancy: u8) -> Vec<u8>
-```
-
-- Amplitude-based embedding with block stride
-- Uses `STEGO_JPEG_AMPLITUDE` (40), `STEGO_JPEG_SPREAD` (5), `STEGO_JPEG_BLOCK_STRIDE` (15)
-- For JPEG images that go through the pixel path (non-baseline or format conversion)
+Removed from the public pipeline. JPEG output now uses the DCT fast path and
+quantization-table seed storage; there is no exposed pixel-domain JPEG fallback.
 
 ### DCT Stego (JPEG Fast Path)
 
@@ -58,7 +54,7 @@ fn extract_jpeg_stego(img: &RgbaImage, seed: u64, redundancy: u8) -> Vec<u8>
 pub fn apply_dct_stego_bytes(jpeg_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>>
 ```
 
-- For baseline JPEG: Full F5 embedding + seed in quantization tables
+- For baseline JPEG: F5 coefficient embedding + seed in quantization tables when those tables are preserved
 - For progressive JPEG: Seed-in-Q-tables only (F5 not supported for progressive)
 - Uses `JpegTranscoder` to decode/encode DCT coefficients
 - Uses `DctStegoF5` for coefficient manipulation
@@ -76,10 +72,12 @@ pub fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8
 ### Verification Flow
 
 1. Detect image format
-2. For JPEG: extract from DCT coefficients (F5) or quantization tables
+2. For JPEG: detect the seed in quantization tables, then verify DCT payload integrity from coefficients when available
 3. For PNG/WebP: extract from pixel LSBs
 4. Verify integrity: HMAC-SHA256 (with key) or CRC32 checksum (without)
 5. HMAC uses `subtle::ConstantTimeEq::ct_eq()` to prevent timing attacks
+
+Seed detection is not the same as payload verification: a JPEG can expose its seed in quantization tables without a verifiable payload.
 
 ### Majority Voting
 
@@ -101,5 +99,5 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 - **jpeg_transcoder/**: Used for JPEG fast path (`apply_dct_stego_bytes`)
 - **stego_f5.rs**: `DctStegoF5` for F5-style DCT manipulation
 - **util/image.rs**: `XorShiftRng` for LSB pixel selection
-- **protected/constants.rs**: `STEGO_OFFSET_SEED_1`, `STEGO_JPEG_AMPLITUDE`, etc.
+- **protected/constants.rs**: `STEGO_OFFSET_SEED_1`, `STEGO_SPREAD_FACTOR`, etc.
 - **types.rs**: Uses `ProtectionLevel`, `StegoPayload`

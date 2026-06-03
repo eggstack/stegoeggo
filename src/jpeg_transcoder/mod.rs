@@ -1,7 +1,7 @@
 //! JPEG DCT Transcoder for steganography
 //!
 //! This module provides JPEG transcoding capabilities that preserve DCT coefficients,
-//! allowing steganographic embedding that survives re-encoding.
+//! enabling steganographic embedding for byte-preserving JPEG fast paths.
 
 pub mod entropy;
 pub mod header;
@@ -262,7 +262,11 @@ mod scan_utils {
             // SOS marker found — scan data starts after the SOS segment header
             if marker == 0xDA {
                 let len = ((data[pos + 2] as usize) << 8) | (data[pos + 3] as usize);
-                return Some(pos + 2 + len);
+                let scan_start = pos.checked_add(2).and_then(|p| p.checked_add(len))?;
+                if scan_start > data.len() {
+                    return None;
+                }
+                return Some(scan_start);
             }
 
             // Standalone markers (no length field): RSTm (0xD0-0xD7), SOI (0xD8), EOI (0xD9)
@@ -325,6 +329,20 @@ mod tests {
     fn get_scan_data_start_truncated_returns_none() {
         // SOI + partial marker
         assert!(scan_utils::get_scan_data_start(&[0xFF, 0xD8, 0xFF]).is_none());
+    }
+
+    /// Regression test for an out-of-bounds slice panic discovered by the fuzz
+    /// harness. A JPEG with a SOS marker near the end of the buffer whose
+    /// declared header length exceeds the buffer must return `None`, not panic.
+    #[test]
+    fn get_scan_data_start_oversized_sos_returns_none() {
+        let malformed: &[u8] = &[
+            0xFF, 0xD8, // SOI
+            0xFF, 0xDA, // SOS
+            0xFF, 0xFF, // SOS header length = 0xFFFF (way past buffer end)
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        ];
+        assert!(scan_utils::get_scan_data_start(malformed).is_none());
     }
 
     #[test]

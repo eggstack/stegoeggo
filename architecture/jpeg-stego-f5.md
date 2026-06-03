@@ -19,13 +19,13 @@ pub fn embed_seed_in_quantization_tables(&self, header: &mut JpegHeader, seed: u
 pub fn extract_seed_from_quantization_tables(&self, header: &JpegHeader) -> Option<u64>
 ```
 
-Embeds 12 bytes in quantization table LSBs:
+Embeds 12 bytes in quantization table LSBs when the tables are preserved:
 - Magic bytes: `"SEED"` (4 bytes)
 - Seed: 8 bytes (u64, little-endian)
 
 ### Q-Table Edge Case
 
-Clears quantization table LSBs with `&= 0xFE`. A quantization value of 1 becomes 0 (invalid in JPEG). A post-clear clamp (`if val == 0 { val = 1 }`) prevents this. However, seed embedding may fail silently if too many values are 1 (0-bits can't stick).
+Clears quantization table LSBs with `&= 0xFE`. A quantization value of 1 would become 0 (invalid in JPEG), so those positions are skipped instead. Seed embedding can still fail to recover every bit if too many values are 1 and there are not enough usable positions.
 
 **Recommendation:** Use quantization values >= 2 for reliable seed embedding.
 
@@ -35,6 +35,8 @@ Clears quantization table LSBs with `&= 0xFE`. A quantization value of 1 becomes
 pub fn embed_f5(coefficients: &mut Coefficients, payload: &[u8], seed: u64) -> Result<usize>
 pub fn extract_f5(coefficients: &Coefficients, expected_bits: usize, seed: u64) -> Vec<u8>
 ```
+
+`expected_bits` is the original payload bit count. Redundancy is handled internally by reading `expected_bits * redundancy` bits before majority voting.
 
 ### F5 Algorithm
 
@@ -56,7 +58,7 @@ This avoids detectable zero creation. The embed/extract position alignment is pr
 
 F5 extraction handles redundancy-based majority voting in a single pass (not multiple passes):
 - Embedding repeats bits `redundancy` times before writing to coefficients
-- Extraction reads all repeated bits and takes the majority value per bit position
+- Extraction reads `expected_bits * redundancy` bits, then votes per original bit position
 - Robust against noise and perturbation
 
 Note: The 5-pass extraction logic with multiple seed derivations is in `steganography.rs` (`extract_with_redundancy`), not in F5 extraction.

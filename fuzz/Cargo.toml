@@ -1,0 +1,18 @@
+[package]
+name = "cloakrs-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+cloakrs = { path = ".." }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "pipeline_bytes"
+path = "fuzz_targets/pipeline_bytes.rs"
+test = false
+doc = false

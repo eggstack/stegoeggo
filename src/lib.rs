@@ -12,15 +12,16 @@
 //! # Protection Layers
 //!
 //! Each protection level applies one or more layers:
-//! 1. **Steganography** - Hidden LSB payload (PNG/WebP) or DCT perturbation (JPEG)
+//! 1. **Steganography** - Hidden LSB payload (PNG, lossless WebP) or DCT perturbation (JPEG). Lossy WebP is not supported.
 //! 2. **Metadata Injection** - Visible anti-scraping markers (XMP, IPTC, EXIF)
 //!
 //! # JPEG Limitations
 //!
 //! JPEG's lossy compression inherently limits steganographic robustness. For JPEG,
-//! the library embeds a seed in quantization tables (survives re-encoding) and uses
-//! F5-style DCT coefficient embedding. However, pixel-based stego payloads may not
-//! survive JPEG re-compression. **For maximum verifiability, use PNG output format.**
+//! the library can store a seed in quantization tables when those tables are preserved
+//! and uses F5-style DCT coefficient embedding for baseline JPEGs. However,
+//! pixel-based stego payloads may not survive JPEG re-compression.
+//! **For maximum verifiability, use PNG output format.**
 //!
 //! Verification priority for JPEG: metadata seed extraction > DCT quantization table
 //! seed > DCT coefficient extraction > pixel-based extraction.
@@ -240,7 +241,7 @@ impl ProtectionPipeline {
     }
 
     /// Light level: metadata injection + minimal steganographic seed marker.
-    /// For JPEG, embeds seed in quantization tables (survives recompression).
+    /// For JPEG, stores the seed in quantization tables when those tables are preserved.
     /// For PNG/WebP, embeds a minimal LSB payload with redundancy=1,
     /// then injects metadata (so tEXt chunks survive the re-encode).
     /// Encodes to bytes, applies minimal stego, injects metadata,
@@ -459,9 +460,9 @@ pub fn process_image_bytes(
     DEFAULT_PIPELINE.process_bytes(img_bytes, level, &ctx_with_format)
 }
 
-/// Verify that image bytes contain a protection signature.
+/// Verify that image bytes contain a protection payload whose integrity can be proved.
 ///
-/// Checks metadata seeds, DCT stego (for JPEG), and LSB stego (for PNG/WebP).
+/// Checks metadata seeds, DCT stego integrity (for JPEG), and LSB stego (for PNG/WebP).
 ///
 /// # Returns
 ///

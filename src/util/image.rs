@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::error::{Error, Result};
 use crate::protected::constants::XORSHIFT_SEED_OFFSET;
 use digest::Digest;

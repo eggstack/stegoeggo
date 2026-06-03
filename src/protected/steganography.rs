@@ -1,14 +1,10 @@
 use crate::error::{Error, Result};
-use crate::jpeg_transcoder::{DctStegoF5, JpegHeader, JpegTranscoder};
-use crate::protected::constants::{
-    SPLITMIX64_SEED, STEGO_JPEG_BLOCK_STRIDE, STEGO_JPEG_MAX_AMPLITUDE, STEGO_JPEG_MIN_AMPLITUDE,
-    STEGO_JPEG_SPREAD, STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR,
-};
+use crate::jpeg_transcoder::{DctStegoF5, JpegTranscoder};
+use crate::protected::constants::{SPLITMIX64_SEED, STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR};
 use crate::protected::ecc;
 use crate::protected::metadata_trap::MetadataTrapProtector;
 use crate::traits::Protector;
 use crate::types::{ProtectionContext, ProtectionLevel};
-use crate::util::image::PixelSelectionRng;
 use crc32fast::Hasher as Crc32Hasher;
 use hmac::{Hmac, Mac};
 use image::{DynamicImage, Rgba, RgbaImage};
@@ -22,10 +18,25 @@ type HmacSha256 = Hmac<Sha256>;
 const MIN_PAYLOAD_SIZE: usize = 28;
 /// ECC-encoded payload size: 72 bytes (24 data × 3 replication) + 4 bytes CRC32.
 const ECC_PAYLOAD_SIZE: usize = ecc::TOTAL_ECC_LEN + 4;
-/// Bit length of the minimum payload.
-const MIN_PAYLOAD_BITS: usize = MIN_PAYLOAD_SIZE * 8;
 /// Bit length of the ECC-encoded payload.
 const ECC_PAYLOAD_BITS: usize = ECC_PAYLOAD_SIZE * 8;
+
+/// The version byte written into the payload header by `generate_payload()`.
+///
+/// Bump this when the payload layout changes in a non-backward-compatible way.
+const CURRENT_PAYLOAD_VERSION: u8 = 1;
+
+/// Payload versions the extractor knows how to parse, in preference order.
+///
+/// When a future v2 lands, append `2` here and add a `parse_stego_payload_v2` arm
+/// in `parse_stego_payload`. The parser tries each version in order, so a single
+/// binary can read both old and new payloads without forcing a coordinated upgrade
+/// of every protected image in the wild.
+///
+/// Removing a version from this slice will make previously-protected images
+/// un-parseable. Only remove a version when you are confident no surviving
+/// protected image still uses it.
+const SUPPORTED_PAYLOAD_VERSIONS: &[u8] = &[1];
 
 /// Common test/dev seeds tried when metadata seed is unavailable.
 ///
@@ -44,50 +55,12 @@ fn splitmix64(x: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-fn compute_local_variance(img: &RgbaImage, x: u32, y: u32, block_size: usize) -> f32 {
-    let (w, h) = img.dimensions();
-    let half = block_size as i32 / 2;
-
-    let x0 = (x as i32 - half).max(0) as u32;
-    let y0 = (y as i32 - half).max(0) as u32;
-    let x1 = (x as i32 + half + 1).min(w as i32) as u32;
-    let y1 = (y as i32 + half + 1).min(h as i32) as u32;
-
-    let mut sum: f64 = 0.0;
-    let mut sum_sq: f64 = 0.0;
-    let mut count: u32 = 0;
-
-    for py in y0..y1 {
-        for px in x0..x1 {
-            let val = img.get_pixel(px, py)[0] as f64;
-            sum += val;
-            sum_sq += val * val;
-            count += 1;
-        }
-    }
-
-    if count == 0 {
-        return 0.0;
-    }
-
-    let mean = sum / count as f64;
-    let variance = sum_sq / count as f64 - mean * mean;
-    variance.max(0.0) as f32
-}
-
-fn compute_adaptive_amplitude(img: &RgbaImage, x: u32, y: u32) -> i16 {
-    let variance = compute_local_variance(img, x, y, 8);
-    let normalized = (variance / 4000.0).min(1.0);
-    let amplitude = STEGO_JPEG_MIN_AMPLITUDE
-        + (STEGO_JPEG_MAX_AMPLITUDE - STEGO_JPEG_MIN_AMPLITUDE) * normalized;
-    amplitude.round() as i16
-}
-
 /// Steganographic protection: embeds hidden payloads in image pixels or DCT coefficients.
 ///
 /// For PNG/WebP images, uses LSB (Least Significant Bit) embedding with pseudo-random
-/// pixel selection. For JPEG images, uses F5-style DCT coefficient embedding and
-/// quantization table seed storage.
+/// pixel selection. WebP support is **lossless-only**: lossy WebP re-encoding destroys
+/// LSBs. For JPEG images, uses F5-style DCT coefficient embedding and quantization
+/// table seed storage.
 ///
 /// The embedded payload contains protection metadata (level, seed, intensity, timestamp)
 /// and is verified via checksum or HMAC-SHA256 when a MAC key is configured.
@@ -101,9 +74,9 @@ fn compute_adaptive_amplitude(img: &RgbaImage, x: u32, y: u32) -> i16 {
 /// # JPEG Behavior
 ///
 /// When called through [`apply_bytes`](crate::traits::Protector::apply_bytes) on JPEG
-/// input, the protector uses [`apply_dct_stego_bytes`](Self::apply_dct_stego_bytes) which
-/// embeds the seed in quantization tables (survives re-encoding) and applies F5 DCT
-/// coefficient embedding for baseline JPEGs.
+/// input, the protector uses [`apply_dct_stego_bytes`](Self::apply_dct_stego_bytes),
+/// which stores the seed in quantization tables when those tables are preserved and
+/// applies F5 DCT coefficient embedding for baseline JPEGs.
 pub struct SteganographyProtector;
 
 impl SteganographyProtector {
@@ -145,36 +118,60 @@ impl SteganographyProtector {
 
         // Try to decode DCT coefficients (works for baseline JPEG)
         match JpegTranscoder::decode_coefficients(jpeg_bytes) {
-            Ok((mut header, mut coefficients)) => {
-                // Baseline JPEG: full F5 DCT stego + seed in Q-tables
+            Ok((header, coefficients)) => {
+                // Canonicalize through the transcoder once so capacity checks
+                // and embedding match the coefficient set the encoder actually
+                // preserves on the way back out.
+                let canonical_jpeg = JpegTranscoder::encode_coefficients(&header, &coefficients)?;
+                let (mut header, coefficients) =
+                    JpegTranscoder::decode_coefficients(&canonical_jpeg)?;
+
                 let payload = self.generate_payload(ctx);
                 let redundancy = ctx.effective_redundancy();
+                let payload_bits = payload.len().saturating_mul(8);
 
-                let available_coeffs: usize = coefficients
-                    .values()
-                    .flat_map(|v| v.iter())
-                    .map(|block| block.iter().skip(1).filter(|&&c| c != 0).count())
-                    .sum();
+                let available_coeffs = Self::dct_payload_capacity(&coefficients);
 
-                if available_coeffs >= payload.len() * 8 {
-                    let attempts: &[usize] = if redundancy <= 1 {
-                        &[1]
-                    } else if redundancy <= 2 {
-                        &[1, 2]
-                    } else {
-                        &[1, 2, redundancy]
-                    };
-                    for &r in attempts {
-                        if DctStegoF5::with_redundancy(r)
-                            .embed_f5(&mut coefficients, &payload, seed)
-                            .is_ok()
-                        {
-                            break;
+                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
+
+                if available_coeffs >= payload_bits {
+                    for r in (1..=redundancy).rev() {
+                        if payload_bits.saturating_mul(r) > available_coeffs {
+                            continue;
+                        }
+
+                        let mut working_coefficients = coefficients.clone();
+                        for _ in 0..4 {
+                            let mut attempt_coefficients = working_coefficients.clone();
+                            if DctStegoF5::with_redundancy(r)
+                                .embed_f5(&mut attempt_coefficients, &payload, seed)
+                                .is_err()
+                            {
+                                break;
+                            }
+
+                            let attempt_bytes = JpegTranscoder::encode_coefficients(
+                                &header,
+                                &attempt_coefficients,
+                            )?;
+                            if let Ok((_, roundtrip_coefficients)) =
+                                JpegTranscoder::decode_coefficients(&attempt_bytes)
+                            {
+                                let roundtrip_bits = DctStegoF5::with_redundancy(r).extract_f5(
+                                    &roundtrip_coefficients,
+                                    payload_bits,
+                                    seed,
+                                );
+                                if Self::bits_to_bytes(&roundtrip_bits) == payload {
+                                    return Ok(attempt_bytes);
+                                }
+                                working_coefficients = roundtrip_coefficients;
+                            } else {
+                                break;
+                            }
                         }
                     }
                 }
-
-                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
 
                 Ok(JpegTranscoder::encode_coefficients(&header, &coefficients)?)
             }
@@ -192,8 +189,8 @@ impl SteganographyProtector {
     }
 
     /// Embed only the seed in JPEG quantization tables (no DCT coefficient modification).
-    /// Used for Light level JPEG protection — the seed survives recompression with
-    /// zero visual impact.
+    /// Used for Light level JPEG protection — the seed is recoverable when the
+    /// quantization tables themselves are preserved.
     pub fn apply_qtable_seed_bytes(&self, jpeg_bytes: &[u8], seed: u64) -> Result<Vec<u8>> {
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
@@ -219,7 +216,20 @@ impl SteganographyProtector {
                 self.embed_lsb(&rgba, &payload, ctx.seed(), 1)
             }
             crate::types::ImageOutputFormat::Jpeg => {
-                self.embed_jpeg_stego(&rgba, &payload, ctx.seed(), 1)
+                if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Jpeg)
+                {
+                    if let Ok(with_seed) = self.apply_qtable_seed_bytes(&encoded, ctx.seed()) {
+                        if let Ok(stego_img) = image::load_from_memory(&with_seed) {
+                            stego_img.to_rgba8()
+                        } else {
+                            rgba.clone()
+                        }
+                    } else {
+                        rgba.clone()
+                    }
+                } else {
+                    rgba.clone()
+                }
             }
         };
 
@@ -302,6 +312,20 @@ impl SteganographyProtector {
         Ok(output)
     }
 
+    fn dct_payload_capacity(coefficients: &crate::jpeg_transcoder::Coefficients) -> usize {
+        coefficients
+            .values()
+            .flat_map(|blocks| blocks.iter())
+            .map(|block| {
+                block
+                    .iter()
+                    .skip(1)
+                    .filter(|&&coef| coef.abs() >= 2)
+                    .count()
+            })
+            .sum()
+    }
+
     fn extract_with_redundancy(
         &self,
         img: &RgbaImage,
@@ -320,15 +344,6 @@ impl SteganographyProtector {
                 if Self::verify_payload_integrity(&payload, mac_key) {
                     return Some(payload);
                 }
-            }
-        }
-
-        if let Some(jpeg_payload) = self.extract_jpeg_stego(img, ecc_bits, seed) {
-            if Self::try_ecc_decode(&jpeg_payload).is_some() {
-                return Some(jpeg_payload);
-            }
-            if Self::verify_payload_integrity(&jpeg_payload, mac_key) {
-                return Some(jpeg_payload);
             }
         }
 
@@ -363,6 +378,14 @@ impl SteganographyProtector {
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
             if let Some(true) = self.verify_dct_stego(img_bytes, mac_key) {
                 return Some(true);
+            }
+
+            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image(img_bytes) {
+                if let Some(true) =
+                    self.verify_dct_stego_with_seed(img_bytes, metadata_seed, mac_key)
+                {
+                    return Some(true);
+                }
             }
         }
 
@@ -399,17 +422,23 @@ impl SteganographyProtector {
 
     /// Verify protection from raw image bytes using a known seed.
     ///
-    /// For JPEG bytes, checks both DCT quantization table seed and pixel-based stego.
-    /// Falls back to metadata seed extraction if the provided seed doesn't match.
+    /// For JPEG bytes, verifies DCT payload integrity first, then falls back to
+    /// pixel-based stego using the provided seed.
     pub fn verify_payload_from_bytes(&self, img_bytes: &[u8], seed: u64) -> bool {
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
-            // Try to extract seed from Q-tables (works for both baseline and progressive)
-            if let Ok(header) = JpegHeader::parse(img_bytes) {
-                let stego_qtable = DctStegoF5::new();
-                if let Some(extracted_seed) =
-                    stego_qtable.extract_seed_from_quantization_tables(&header)
-                {
-                    if seed == extracted_seed {
+            if let Some(payload_bytes) = self.extract_verified_dct_payload(img_bytes, &[]) {
+                let header = if let Some(decoded) = Self::try_ecc_decode(&payload_bytes) {
+                    decoded
+                } else {
+                    payload_bytes
+                };
+
+                if header.len() >= 10 {
+                    let embedded_seed = u64::from_le_bytes([
+                        header[2], header[3], header[4], header[5], header[6], header[7],
+                        header[8], header[9],
+                    ]);
+                    if embedded_seed == seed {
                         return true;
                     }
                 }
@@ -528,10 +557,39 @@ impl SteganographyProtector {
         }
 
         let version = payload[0];
-        if version != 1 {
-            return None;
+
+        for &supported in SUPPORTED_PAYLOAD_VERSIONS {
+            if version == supported {
+                return match supported {
+                    1 => Self::parse_stego_payload_v1(payload),
+                    _ => None,
+                };
+            }
         }
 
+        None
+    }
+
+    /// Parse a version-1 stego payload header.
+    ///
+    /// Header layout (24 bytes):
+    /// ```text
+    /// Offset  Size  Field
+    /// 0       1     Version (=1)
+    /// 1       1     ProtectionLevel byte
+    /// 2       8     Seed (u64, little-endian)
+    /// 10      2     Intensity (u16, scaled f32 / 100.0)
+    /// 12      8     Timestamp (u64, seconds since Unix epoch)
+    /// 20      4     Reserved / CRC32 (in non-MAC, non-ECC mode) or HMAC bytes
+    /// ```
+    /// After the 24-byte header the payload is either:
+    /// - 4 CRC32 bytes (minimum non-MAC payload = 28 bytes), or
+    /// - 8 truncated HMAC-SHA256 bytes (MAC payload = 32 bytes), or
+    /// - 72 bytes of 3×-repetition ECC + 4 CRC32 bytes (ECC payload = 76 bytes).
+    ///
+    /// This function only parses the 24-byte header; integrity check (CRC/HMAC/ECC)
+    /// is the caller's responsibility via `verify_payload_integrity`/`try_ecc_decode`.
+    fn parse_stego_payload_v1(payload: &[u8]) -> Option<StegoPayload> {
         let protection_level = payload[1];
 
         let extracted_seed = u64::from_le_bytes([
@@ -546,7 +604,7 @@ impl SteganographyProtector {
             protection_level,
             seed: extracted_seed,
             intensity,
-            version,
+            version: 1,
         })
     }
 
@@ -578,7 +636,7 @@ impl SteganographyProtector {
         Self::parse_stego_payload(&payload)
     }
 
-    fn verify_dct_stego(&self, jpeg_bytes: &[u8], mac_key: &[u8]) -> Option<bool> {
+    fn extract_verified_dct_payload(&self, jpeg_bytes: &[u8], mac_key: &[u8]) -> Option<Vec<u8>> {
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return None;
         }
@@ -588,45 +646,68 @@ impl SteganographyProtector {
             if let Some(extracted_seed) =
                 DctStegoF5::new().extract_seed_from_quantization_tables(&header)
             {
-                let bits_needed = ECC_PAYLOAD_BITS;
-
-                // Try the same redundancy values the embedder falls back to:
-                // [1, min(2, r), r]. Since we don't know r, try all valid
-                // redundancies. Do NOT break on bit-count match — only break
-                // when integrity verification succeeds.
-                for redundancy in 1..=10 {
-                    let stego_f5 = DctStegoF5::with_redundancy(redundancy);
-                    let total_bits = bits_needed * redundancy;
-                    let extracted = stego_f5.extract_f5(&coefficients, total_bits, extracted_seed);
-
-                    if extracted.len() >= MIN_PAYLOAD_BITS {
-                        let bits_to_check = extracted.len().min(ECC_PAYLOAD_BITS);
-                        let payload_bytes: Vec<u8> = extracted[..bits_to_check]
-                            .chunks(8)
-                            .map(|chunk| {
-                                let mut byte = 0u8;
-                                for (i, &bit) in chunk.iter().enumerate() {
-                                    byte |= bit << i;
-                                }
-                                byte
-                            })
-                            .collect();
-
-                        if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                            return Some(true);
-                        }
-                        if Self::try_ecc_decode(&payload_bytes).is_some() {
-                            return Some(true);
-                        }
-                    }
-                }
+                return self.extract_verified_dct_payload_from_coefficients(
+                    &coefficients,
+                    extracted_seed,
+                    mac_key,
+                );
             }
         }
 
-        // Progressive JPEG or DCT decode failure: check seed in Q-tables only.
-        // Don't return Some(true) here — a Q-table seed alone doesn't prove full
-        // payload integrity. Callers should fall back to metadata extraction.
         None
+    }
+
+    fn extract_verified_dct_payload_from_coefficients(
+        &self,
+        coefficients: &crate::jpeg_transcoder::Coefficients,
+        seed: u64,
+        mac_key: &[u8],
+    ) -> Option<Vec<u8>> {
+        let bits_needed = ECC_PAYLOAD_BITS;
+
+        // Try a range of plausible redundancies. Since we do not know the
+        // configured value, accept the first candidate whose integrity check passes.
+        for redundancy in 1..=10 {
+            let stego_f5 = DctStegoF5::with_redundancy(redundancy);
+            let extracted = stego_f5.extract_f5(coefficients, bits_needed, seed);
+
+            if extracted.len() < bits_needed {
+                continue;
+            }
+
+            let payload_bytes = Self::bits_to_bytes(&extracted);
+            if Self::verify_payload_integrity(&payload_bytes, mac_key) {
+                return Some(payload_bytes);
+            }
+            if Self::try_ecc_decode(&payload_bytes).is_some() {
+                return Some(payload_bytes);
+            }
+        }
+
+        None
+    }
+
+    fn verify_dct_stego_with_seed(
+        &self,
+        jpeg_bytes: &[u8],
+        seed: u64,
+        mac_key: &[u8],
+    ) -> Option<bool> {
+        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
+            return None;
+        }
+
+        if let Ok((_, coefficients)) = JpegTranscoder::decode_coefficients(jpeg_bytes) {
+            self.extract_verified_dct_payload_from_coefficients(&coefficients, seed, mac_key)
+                .map(|_| true)
+        } else {
+            None
+        }
+    }
+
+    fn verify_dct_stego(&self, jpeg_bytes: &[u8], mac_key: &[u8]) -> Option<bool> {
+        self.extract_verified_dct_payload(jpeg_bytes, mac_key)
+            .map(|_| true)
     }
 
     fn compute_payload_mac(payload_without_mac: &[u8], mac_key: &[u8]) -> [u8; 8] {
@@ -719,7 +800,7 @@ impl SteganographyProtector {
     fn generate_payload(&self, ctx: &ProtectionContext) -> Vec<u8> {
         let mut header = Vec::with_capacity(24);
 
-        header.push(1);
+        header.push(CURRENT_PAYLOAD_VERSION);
 
         let level_byte = ctx.protection_level().map(|l| l.to_byte()).unwrap_or(2);
 
@@ -890,237 +971,6 @@ impl SteganographyProtector {
         output.put_pixel(x, y, new_pixel);
     }
 
-    fn get_pixel_channel_value(pixel: &Rgba<u8>, channel: usize) -> i16 {
-        match channel {
-            0 => pixel[0] as i16,
-            1 => pixel[1] as i16,
-            _ => pixel[2] as i16,
-        }
-    }
-
-    fn embed_jpeg_bit_in_pixel(
-        output: &mut RgbaImage,
-        x: u32,
-        y: u32,
-        channel: usize,
-        bit: u8,
-        amplitude: i16,
-    ) {
-        let pixel = output.get_pixel(x, y);
-
-        let original = Self::get_pixel_channel_value(pixel, channel);
-        let adjustment = if bit == 1 { amplitude } else { -amplitude };
-        let new_val = (original + adjustment).clamp(0, 255) as u8;
-
-        let new_pixel = Rgba([
-            if channel == 0 { new_val } else { pixel[0] },
-            if channel == 1 { new_val } else { pixel[1] },
-            if channel == 2 { new_val } else { pixel[2] },
-            pixel[3],
-        ]);
-        output.put_pixel(x, y, new_pixel);
-    }
-
-    fn embed_jpeg_stego(
-        &self,
-        img: &RgbaImage,
-        payload: &[u8],
-        seed: u64,
-        redundancy: usize,
-    ) -> RgbaImage {
-        let (width, height) = img.dimensions();
-
-        let payload_bits = Self::bytes_to_bits(payload);
-        let total_bits = payload_bits.len();
-
-        let total_pixels = (width * height) as usize;
-        if total_bits * 4 > total_pixels {
-            return img.clone();
-        }
-
-        let mut output = img.clone();
-
-        let spread: usize = STEGO_JPEG_SPREAD;
-        let block_stride = STEGO_JPEG_BLOCK_STRIDE;
-
-        let bits_per_pass = total_bits;
-
-        for pass in 0..redundancy {
-            let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
-            let mut rng = PixelSelectionRng::new(offset_seed);
-
-            let mut embedded = 0;
-
-            let y_start_offset = rng.gen_range_usize(0..spread);
-            let x_start_offset = rng.gen_range_usize(0..spread);
-
-            for y_base in (y_start_offset..height as usize).step_by(block_stride) {
-                for y_offset in 0..spread {
-                    let y = (y_base + y_offset) as u32;
-                    if y >= height {
-                        break;
-                    }
-
-                    for x_base in (x_start_offset..width as usize).step_by(block_stride) {
-                        for x_offset in 0..spread {
-                            let x = (x_base + x_offset) as u32;
-                            if x >= width {
-                                break;
-                            }
-
-                            let bit_idx = embedded % bits_per_pass;
-                            let bit = payload_bits[bit_idx];
-                            let channel = embedded % 3;
-
-                            let adaptive_amp = compute_adaptive_amplitude(&output, x, y);
-
-                            Self::embed_jpeg_bit_in_pixel(
-                                &mut output,
-                                x,
-                                y,
-                                channel,
-                                bit,
-                                adaptive_amp,
-                            );
-
-                            embedded += 1;
-
-                            if embedded >= bits_per_pass {
-                                break;
-                            }
-                        }
-                    }
-                    if embedded >= bits_per_pass {
-                        break;
-                    }
-                }
-                if embedded >= bits_per_pass {
-                    break;
-                }
-            }
-            #[allow(unused_assignments)]
-            {
-                embedded = 0;
-            }
-        }
-
-        output
-    }
-
-    const EXTRACT_REDUNDANCY: usize = 10;
-
-    fn extract_jpeg_stego(
-        &self,
-        img: &RgbaImage,
-        expected_bits: usize,
-        seed: u64,
-    ) -> Option<Vec<u8>> {
-        let (width, height) = img.dimensions();
-
-        let spread: usize = STEGO_JPEG_SPREAD;
-        let block_stride = STEGO_JPEG_BLOCK_STRIDE;
-
-        let mut all_candidates: Vec<Vec<u8>> = Vec::new();
-
-        for redundancy in 0..Self::EXTRACT_REDUNDANCY {
-            let offset_seed =
-                seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(redundancy as u64));
-
-            let mut bit_votes: Vec<Vec<i32>> = vec![Vec::new(); expected_bits];
-
-            let mut rng = PixelSelectionRng::new(offset_seed);
-
-            let y_start_offset = rng.gen_range_usize(0..spread);
-            let x_start_offset = rng.gen_range_usize(0..spread);
-
-            let mut embedded_count = 0;
-
-            for y_base in (y_start_offset..height as usize).step_by(block_stride) {
-                for y_offset in 0..spread {
-                    let y = (y_base + y_offset) as u32;
-                    if y >= height {
-                        break;
-                    }
-
-                    for x_base in (x_start_offset..width as usize).step_by(block_stride) {
-                        for x_offset in 0..spread {
-                            let x = (x_base + x_offset) as u32;
-                            if x >= width {
-                                break;
-                            }
-
-                            if embedded_count >= expected_bits {
-                                break;
-                            }
-
-                            let pixel = img.get_pixel(x, y);
-                            let channel = embedded_count % 3;
-
-                            let value = Self::get_pixel_channel_value(pixel, channel) as f32;
-                            let deviation = value - 128.0;
-
-                            bit_votes[embedded_count].push(deviation as i32);
-                            embedded_count += 1;
-                        }
-                    }
-                }
-            }
-
-            if bit_votes.iter().any(|v| v.is_empty()) {
-                continue;
-            }
-
-            let mut bits = Vec::with_capacity(expected_bits);
-            let mut pixel_idx = 0;
-
-            for y_base in (y_start_offset..height as usize).step_by(block_stride) {
-                for y_offset in 0..spread {
-                    let y = (y_base + y_offset) as u32;
-                    if y >= height {
-                        break;
-                    }
-
-                    for x_base in (x_start_offset..width as usize).step_by(block_stride) {
-                        for x_offset in 0..spread {
-                            let x = (x_base + x_offset) as u32;
-                            if x >= width {
-                                break;
-                            }
-
-                            if pixel_idx >= bits.len() {
-                                break;
-                            }
-
-                            let adaptive_amp = compute_adaptive_amplitude(img, x, y) as f32;
-                            let votes = &bit_votes[pixel_idx];
-                            let sum: i32 = votes.iter().sum();
-                            let avg = sum as f32 / votes.len() as f32;
-
-                            let bit = if avg > adaptive_amp / 4.0 { 1 } else { 0 };
-                            bits[pixel_idx] = bit;
-                            pixel_idx += 1;
-                        }
-                    }
-                }
-            }
-
-            if bits.len() >= MIN_PAYLOAD_BITS {
-                let bytes = Self::bits_to_bytes(&bits);
-                if bytes.len() >= MIN_PAYLOAD_SIZE {
-                    all_candidates.push(bytes);
-                }
-            }
-        }
-
-        for candidate in &all_candidates {
-            if Self::verify_checksum(candidate) {
-                return Some(candidate.clone());
-            }
-        }
-
-        None
-    }
-
     fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
         let (width, height) = img.dimensions();
         let total_channels = (width * height * 3) as usize;
@@ -1177,7 +1027,11 @@ impl SteganographyProtector {
         }
     }
 
-    fn apply_to_image_owned(&self, img: &DynamicImage, ctx: &ProtectionContext) -> DynamicImage {
+    fn apply_to_image_owned(
+        &self,
+        img: &DynamicImage,
+        ctx: &ProtectionContext,
+    ) -> Result<DynamicImage> {
         let payload = self.generate_payload(ctx);
         let rgba = img.to_rgba8();
 
@@ -1192,7 +1046,14 @@ impl SteganographyProtector {
                 self.embed_lsb(&rgba, &payload, ctx.seed(), redundancy)
             }
             crate::types::ImageOutputFormat::Jpeg => {
-                self.embed_jpeg_stego(&rgba, &payload, ctx.seed(), redundancy)
+                let jpeg_bytes = crate::util::image::encode_image_with_options(
+                    img,
+                    Some(crate::types::ImageOutputFormat::Jpeg),
+                    ctx.progressive_jpeg(),
+                    ctx.jpeg_quality(),
+                )?;
+                let with_stego = self.apply_dct_stego_bytes(&jpeg_bytes, ctx)?;
+                return Ok(image::load_from_memory(&with_stego)?);
             }
             crate::types::ImageOutputFormat::WebP => {
                 self.embed_lsb(&rgba, &payload, ctx.seed(), redundancy)
@@ -1201,7 +1062,7 @@ impl SteganographyProtector {
 
         let mut result = processed;
         Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
-        DynamicImage::ImageRgba8(result)
+        Ok(DynamicImage::ImageRgba8(result))
     }
 }
 
@@ -1217,7 +1078,7 @@ impl Protector for SteganographyProtector {
         img: &'a DynamicImage,
         ctx: &ProtectionContext,
     ) -> Result<Cow<'a, DynamicImage>> {
-        Ok(Cow::Owned(self.apply_to_image_owned(img, ctx)))
+        Ok(Cow::Owned(self.apply_to_image_owned(img, ctx)?))
     }
 
     fn apply_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
@@ -1232,7 +1093,7 @@ impl Protector for SteganographyProtector {
 
         let img = image::load_from_memory(img_bytes)?;
 
-        let processed = self.apply_to_image_owned(&img, ctx);
+        let processed = self.apply_to_image_owned(&img, ctx)?;
 
         let image_format = match format {
             crate::types::ImageOutputFormat::Png => image::ImageFormat::Png,
@@ -1294,6 +1155,7 @@ impl StegoPayload {
 mod tests {
     use super::*;
     use crate::types::ProtectionConfig;
+    use image::ImageEncoder;
     use image::{ImageBuffer, RgbaImage};
     use std::sync::Arc;
 
@@ -1305,6 +1167,29 @@ mod tests {
 
     fn make_large_test_image() -> RgbaImage {
         make_test_image(128, 128)
+    }
+
+    fn make_high_entropy_test_image(w: u32, h: u32) -> RgbaImage {
+        ImageBuffer::from_fn(w, h, |x, y| {
+            let r = ((x * 73 + y * 151 + (x ^ y) * 17 + x * y) % 256) as u8;
+            let g = ((x * 53 + y * 97 + (x * 3 + y * 5)) % 256) as u8;
+            let b = ((x * 29 + y * 43 + (x ^ (y << 1)) * 11 + x * y * 3) % 256) as u8;
+            Rgba([r, g, b, 255])
+        })
+    }
+
+    fn image_to_jpeg_bytes(img: &DynamicImage, quality: u8) -> Vec<u8> {
+        let mut buffer = Vec::new();
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, quality);
+        encoder
+            .write_image(
+                &img.to_rgb8(),
+                img.width(),
+                img.height(),
+                image::ExtendedColorType::Rgb8,
+            )
+            .unwrap();
+        buffer
     }
 
     fn ctx_no_mac(seed: u64) -> ProtectionContext {
@@ -1674,57 +1559,6 @@ mod tests {
         assert_eq!(pixel[2], 0xFF);
     }
 
-    #[test]
-    fn get_pixel_channel_value_reads_correctly() {
-        let pixel = Rgba([100, 150, 200, 255]);
-        assert_eq!(
-            SteganographyProtector::get_pixel_channel_value(&pixel, 0),
-            100
-        );
-        assert_eq!(
-            SteganographyProtector::get_pixel_channel_value(&pixel, 1),
-            150
-        );
-        assert_eq!(
-            SteganographyProtector::get_pixel_channel_value(&pixel, 2),
-            200
-        );
-        assert_eq!(
-            SteganographyProtector::get_pixel_channel_value(&pixel, 3),
-            200
-        );
-    }
-
-    #[test]
-    fn embed_jpeg_bit_amplitude() {
-        let mut img = ImageBuffer::from_pixel(1, 1, Rgba([128, 128, 128, 255]));
-        let amplitude: i16 = 40;
-
-        // Bit 1: +amplitude
-        SteganographyProtector::embed_jpeg_bit_in_pixel(&mut img, 0, 0, 0, 1, amplitude);
-        assert_eq!(img.get_pixel(0, 0)[0], 168);
-
-        // Bit 0: -amplitude
-        let mut img2 = ImageBuffer::from_pixel(1, 1, Rgba([128, 128, 128, 255]));
-        SteganographyProtector::embed_jpeg_bit_in_pixel(&mut img2, 0, 0, 0, 0, amplitude);
-        assert_eq!(img2.get_pixel(0, 0)[0], 88);
-    }
-
-    #[test]
-    fn embed_jpeg_bit_clamps_to_range() {
-        let mut img = ImageBuffer::from_pixel(1, 1, Rgba([10, 10, 10, 255]));
-        let amplitude: i16 = 40;
-
-        // -40 from 10 = -30, clamped to 0
-        SteganographyProtector::embed_jpeg_bit_in_pixel(&mut img, 0, 0, 0, 0, amplitude);
-        assert_eq!(img.get_pixel(0, 0)[0], 0);
-
-        // +40 to 250 = 290, clamped to 255
-        let mut img2 = ImageBuffer::from_pixel(1, 1, Rgba([250, 250, 250, 255]));
-        SteganographyProtector::embed_jpeg_bit_in_pixel(&mut img2, 0, 0, 0, 1, amplitude);
-        assert_eq!(img2.get_pixel(0, 0)[0], 255);
-    }
-
     // ── Embed/extract via public API ───────────────────────────────────
     // Internal embed_lsb/extract_lsb use different seed derivation,
     // so we test through the public apply() + extract_payload() API
@@ -1853,75 +1687,59 @@ mod tests {
         assert!(protector.extract_lsb(&img, 256, 42).is_none());
     }
 
-    // ── JPEG stego via public API ─────────────────────────────────────
+    // ── DCT capacity / verification ───────────────────────────────────
 
     #[test]
-    fn jpeg_stego_embed_modifies_pixels() {
+    fn dct_stego_low_capacity_keeps_qtable_seed_only() {
         let protector = SteganographyProtector::new();
-        let img = make_large_test_image();
-        let ctx = ctx_no_mac(42);
-        let payload = protector.generate_payload(&ctx);
+        let img = make_test_image(16, 16);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(crate::types::ImageOutputFormat::Jpeg)
+            .with_stego_redundancy(3);
+        let payload_bits = protector.generate_payload(&ctx).len() * 8;
+        let required_bits = payload_bits * ctx.effective_redundancy();
 
-        let embedded = protector.embed_jpeg_stego(&img, &payload, 42, 1);
+        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
+        assert!(SteganographyProtector::dct_payload_capacity(&coefficients) < required_bits);
 
-        let mut diffs = 0u32;
-        for (a, b) in img.pixels().zip(embedded.pixels()) {
-            if a != b {
-                diffs += 1;
-            }
-        }
-        assert!(diffs > 0, "JPEG stego should modify some pixels");
-    }
+        let protected = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
+        let (header, _) = JpegTranscoder::decode_coefficients(&protected).unwrap();
 
-    #[test]
-    fn jpeg_stego_different_seeds_differ() {
-        let protector = SteganographyProtector::new();
-        let img = make_large_test_image();
-        let ctx = ctx_no_mac(42);
-        let payload = protector.generate_payload(&ctx);
-
-        let a = protector.embed_jpeg_stego(&img, &payload, 42, 1);
-        let b = protector.embed_jpeg_stego(&img, &payload, 99, 1);
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn jpeg_stego_payload_too_large_returns_clone() {
-        let protector = SteganographyProtector::new();
-        let tiny = make_test_image(2, 2);
-        let ctx = ctx_no_mac(42);
-        let payload = protector.generate_payload(&ctx);
-
-        let result = protector.embed_jpeg_stego(&tiny, &payload, 42, 1);
-        assert_eq!(result, tiny);
-    }
-
-    #[test]
-    fn jpeg_stego_redundancy_3_embeds_all_passes() {
-        let protector = SteganographyProtector::new();
-        let img = make_large_test_image();
-        let ctx = ctx_no_mac(42);
-
-        let dyn_img = DynamicImage::ImageRgba8(img);
-        let result = protector.apply(&dyn_img, &ctx).unwrap();
-
+        assert_eq!(
+            DctStegoF5::new().extract_seed_from_quantization_tables(&header),
+            Some(42),
+            "JPEG output should still carry the Q-table seed"
+        );
         assert!(
-            protector.verify_payload(&result),
-            "Payload should be verifiable after embedding with redundancy=3"
+            !protector.verify_payload_from_bytes(&protected, 42),
+            "Q-table seed alone must not count as full verification"
         );
     }
 
     #[test]
-    fn jpeg_stego_via_apply_png_fallback() {
-        // When format is PNG, apply uses LSB not JPEG stego.
-        // When format is explicitly JPEG, apply_bytes uses DCT stego.
+    fn dct_stego_high_capacity_verifies_with_redundancy_3() {
         let protector = SteganographyProtector::new();
-        let img = make_large_test_image();
-        let ctx = ctx_no_mac(42);
+        let img = make_high_entropy_test_image(1024, 1024);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(crate::types::ImageOutputFormat::Jpeg)
+            .with_stego_redundancy(3);
+        let payload_bits = protector.generate_payload(&ctx).len() * 8;
 
-        let dyn_img = DynamicImage::ImageRgba8(img);
-        let result = protector.apply(&dyn_img, &ctx).unwrap();
-        assert!(protector.verify_payload(&result));
+        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
+        assert!(SteganographyProtector::dct_payload_capacity(&coefficients) >= payload_bits * 3);
+
+        let protected = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
+        let (header, _) = JpegTranscoder::decode_coefficients(&protected).unwrap();
+        assert_eq!(
+            DctStegoF5::new().extract_seed_from_quantization_tables(&header),
+            Some(42)
+        );
+        assert!(
+            protector.verify_payload_from_bytes(&protected, 42),
+            "DCT payload should verify with redundancy=3 when capacity permits"
+        );
     }
 
     // ── StegoPayload parsing ──────────────────────────────────────────
@@ -1949,6 +1767,44 @@ mod tests {
         let mut payload = vec![0u8; 26];
         payload[0] = 99; // invalid version
         assert!(SteganographyProtector::parse_stego_payload(&payload).is_none());
+    }
+
+    #[test]
+    fn current_payload_version_is_in_supported_list() {
+        assert!(
+            SUPPORTED_PAYLOAD_VERSIONS.contains(&CURRENT_PAYLOAD_VERSION),
+            "SUPPORTED_PAYLOAD_VERSIONS must include CURRENT_PAYLOAD_VERSION ({}) \
+             so freshly-generated payloads are always parseable",
+            CURRENT_PAYLOAD_VERSION
+        );
+    }
+
+    #[test]
+    fn supported_versions_are_unique() {
+        let mut sorted: Vec<u8> = SUPPORTED_PAYLOAD_VERSIONS.to_vec();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            SUPPORTED_PAYLOAD_VERSIONS.len(),
+            "SUPPORTED_PAYLOAD_VERSIONS must not contain duplicate versions"
+        );
+    }
+
+    #[test]
+    fn migration_path_v1_still_parses_after_v2_introduced() {
+        // Simulate a v1 payload embedded before a hypothetical v2 lands.
+        // The extractor must still parse it because v1 remains in
+        // SUPPORTED_PAYLOAD_VERSIONS.
+        let mut v1_payload = vec![0u8; 24];
+        v1_payload[0] = 1; // version 1
+        v1_payload[1] = 2; // Standard protection level
+        v1_payload[2..10].copy_from_slice(&0xDEADBEEFu64.to_le_bytes());
+        v1_payload[10..12].copy_from_slice(&50u16.to_le_bytes()); // intensity 0.50
+
+        let parsed = SteganographyProtector::parse_stego_payload(&v1_payload).unwrap();
+        assert_eq!(parsed.version(), 1);
+        assert_eq!(parsed.seed(), 0xDEADBEEF);
+        assert_eq!(parsed.protection_level(), 2);
     }
 
     // ── Extract with redundancy via public API ────────────────────────

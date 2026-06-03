@@ -47,9 +47,22 @@ fn benchmark_pipeline_sizes(c: &mut Criterion) {
     let pipeline = ProtectionPipeline::new();
     let ctx = ProtectionContext::default();
 
-    let sizes = [(256, "256"), (512, "512"), (1024, "1024")];
+    // Sizes cover both typical WAF responses (256–1024 px) and CDN origin
+    // images (2K / 4K). 8K (7680×4320) is intentionally not included here:
+    // a single 32-bit RGBA frame at 8K is ~132 MB, which makes per-iteration
+    // allocation noise dominate the signal. If you need that data point, run
+    //   cargo bench --bench bench -- 'large_image_bytes' --warm-up-time 5
+    // from a workstation with >16 GB RAM.
+    let sizes = [
+        (256, "256"),
+        (512, "512"),
+        (1024, "1024"),
+        (2560, "2k"),
+        (3840, "4k"),
+    ];
 
     let mut group = c.benchmark_group("pipeline_image_sizes");
+    group.sample_size(10);
 
     for (size, label) in sizes.iter() {
         let img = create_test_image(*size, *size);
@@ -113,6 +126,37 @@ fn benchmark_bytes_processing(c: &mut Criterion) {
                 b.iter(|| process_image_bytes(black_box(&png_bytes), level, black_box(&ctx)));
             },
         );
+    }
+
+    group.finish();
+}
+
+/// End-to-end bytes-in / bytes-out at CDN-image sizes (2K and 4K). This is the
+/// most production-relevant group: a WAF origin request sees bytes, not a
+/// `DynamicImage`, and PNG-in / PNG-out with stego + metadata is the
+/// "maximum legal evidence" path documented in the README.
+fn benchmark_large_image_bytes(c: &mut Criterion) {
+    let ctx = ProtectionContext::default();
+    let mut group = c.benchmark_group("large_image_bytes");
+    group.sample_size(10);
+
+    for &(size, label) in &[(2560u32, "2k"), (3840u32, "4k")] {
+        let img = create_test_image(size, size);
+        let mut png_bytes = Vec::new();
+        {
+            use image::ImageEncoder;
+            let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+            encoder
+                .write_image(&img.to_rgb8(), size, size, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        }
+
+        for level in [ProtectionLevel::Light, ProtectionLevel::Standard] {
+            let id = format!("png_{}_{}", label, level.as_str());
+            group.bench_with_input(BenchmarkId::new("large", id), &level, |b, &level| {
+                b.iter(|| process_image_bytes(black_box(&png_bytes), level, black_box(&ctx)));
+            });
+        }
     }
 
     group.finish();
@@ -251,6 +295,7 @@ criterion_group!(
     benchmark_pipeline_sizes,
     benchmark_protection_levels,
     benchmark_bytes_processing,
+    benchmark_large_image_bytes,
     benchmark_format_preservation,
     benchmark_allocations,
     benchmark_memory_usage,

@@ -263,12 +263,12 @@ Three-state control (`Option<bool>`) for metadata injection:
 - **Default seed is CSPRNG-backed**: `ProtectionContext::default()` calls `generate_random_seed()` which uses `getrandom` (OS CSPRNG). Use `ProtectionContext::new(intensity, seed)` when you need reproducible results across runs.
 - **Without MAC key**: Stego verification uses a non-cryptographic CRC32 checksum, not HMAC. Payloads are forgeable.
 - **Primary deterrence is metadata**: Visible XMP/IPTC/EXIF markers remain even if stego payload is stripped. Metadata provides legal evidence of intent.
-- **JPEG stego limitations**: F5 DCT embedding may not survive re-compression. Quantization table seed embedding is more robust (survives re-encode).
+- **JPEG stego limitations**: F5 DCT embedding may not survive re-compression. Quantization-table seed embedding is only reliable when the tables themselves are preserved.
 
 ## Verification Priority (JPEG)
 
 When extracting from JPEG, check in order:
 1. Metadata seed (tEXt/XMP markers) — most robust
-2. Quantization table seed — survives re-encoding
+2. Quantization table seed — detection only when the tables are preserved
 3. DCT coefficient extraction — fragile
 4. Pixel-based LSB — not applicable to JPEG

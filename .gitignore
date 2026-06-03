@@ -16,6 +16,10 @@ wallpapertest_poisoned.png
 
 # Nested crate build artifacts
 cloakrs-cli/target/
+fuzz/target/
+fuzz/artifacts/
+fuzz/corpus/
+fuzz/.cargo/
 
 # Internal workflow docs (not for public distribution)
 plans/

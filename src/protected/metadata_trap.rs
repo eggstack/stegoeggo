@@ -377,9 +377,27 @@ impl MetadataTrapProtector {
             }
 
             let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
+            let segment_end = pos
+                .checked_add(2)
+                .and_then(|v| v.checked_add(segment_len))
+                .ok_or_else(|| {
+                    Error::Metadata(format!(
+                        "JPEG segment length overflow at byte {} (segment_len={})",
+                        pos, segment_len
+                    ))
+                })?;
 
-            output.extend_from_slice(&jpeg_data[pos..pos + 2 + segment_len]);
-            pos += 2 + segment_len;
+            if segment_end > jpeg_data.len() {
+                return Err(Error::ImageTruncated(format!(
+                    "JPEG segment at byte {} claims length {} but only {} bytes remain",
+                    pos,
+                    segment_len,
+                    jpeg_data.len().saturating_sub(pos + 2)
+                )));
+            }
+
+            output.extend_from_slice(&jpeg_data[pos..segment_end]);
+            pos = segment_end;
         }
 
         if !inserted {
@@ -1373,6 +1391,48 @@ mod tests {
             None,
         );
         assert!(result.is_err());
+    }
+
+    /// Regression test for an out-of-bounds slice panic discovered by the fuzz
+    /// harness in `fuzz/fuzz_targets/pipeline_bytes.rs`. A JPEG with an unknown
+    /// marker (FF 0A) whose segment_len field (0x3100) exceeds the buffer must
+    /// return an `Error::ImageTruncated` / `Error::Metadata`, not panic.
+    #[test]
+    fn jpeg_malformed_segment_length_does_not_panic() {
+        let protector = MetadataTrapProtector::new();
+        let malformed: &[u8] = &[
+            0xFF, 0xD8, // SOI
+            0xFF, 0x0A, // unknown marker
+            0x31, 0x00, // segment_len = 0x3100 (12544), but only 3 bytes remain
+            0x08, 0x00, 0x7A, 0x00, 0xEF,
+        ];
+        let result = protector.inject_text_chunks_jpeg(
+            malformed,
+            &[(b"key".to_vec(), b"val".to_vec())],
+            None,
+            None,
+            None,
+        );
+        assert!(result.is_err(), "malformed segment length must error");
+    }
+
+    #[test]
+    fn jpeg_segment_length_at_u16_max_does_not_panic() {
+        let protector = MetadataTrapProtector::new();
+        let malformed: &[u8] = &[
+            0xFF, 0xD8, // SOI
+            0xFF, 0xFE, // COM marker
+            0xFF, 0xFF, // segment_len = 0xFFFF (max u16)
+            0x00,
+        ];
+        let result = protector.inject_text_chunks_jpeg(
+            malformed,
+            &[(b"key".to_vec(), b"val".to_vec())],
+            None,
+            None,
+            None,
+        );
+        assert!(result.is_err(), "segment_len near u16::MAX must error");
     }
 
     // ── WebP injection + extraction ───────────────────────────────────
