@@ -342,6 +342,13 @@ pub struct ProtectionContext {
     /// potentially missing a successful tile when the crop is small or
     /// misaligned with the tile grid. Default 64.
     tile_extraction_max_origins: u32,
+    /// Truncated content hash (4 bytes) for linking the protected image to its original.
+    ///
+    /// Derived from the ISCC content code or a truncated SHA-256 of the image pixels.
+    /// Embedded in v2 payloads for provenance tracking. When not set, the hash is
+    /// zeroed in the payload (v2 payloads without a content hash still carry the
+    /// DMI value and flags fields).
+    content_hash: Option<[u8; 4]>,
     #[serde(skip)]
     config: Option<Arc<ProtectionConfig>>,
 }
@@ -352,7 +359,7 @@ impl Serialize for ProtectionContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut fields = 14;
+        let mut fields = 15;
         if self.config.is_some() {
             fields += 1;
         }
@@ -374,6 +381,7 @@ impl Serialize for ProtectionContext {
             "tile_extraction_max_origins",
             &self.tile_extraction_max_origins,
         )?;
+        s.serialize_field("content_hash", &self.content_hash)?;
         if self.config.is_some() {
             s.serialize_field(
                 "_config_dropped_warning",
@@ -404,6 +412,7 @@ impl Default for ProtectionContext {
             progressive_jpeg: false,
             tile_size: None,
             tile_extraction_max_origins: 64,
+            content_hash: None,
             config: None,
         }
     }
@@ -444,6 +453,7 @@ impl ProtectionContext {
             progressive_jpeg: false,
             tile_size: None,
             tile_extraction_max_origins: 64,
+            content_hash: None,
             config: None,
         }
     }
@@ -641,6 +651,21 @@ impl ProtectionContext {
         self
     }
 
+    /// Set a content hash for provenance tracking (v2 payloads).
+    ///
+    /// The 4-byte hash is embedded in v2 payload headers and can be used
+    /// to link a protected image back to its original, even after metadata
+    /// stripping. Typically derived from a truncated ISCC content code or
+    /// SHA-256 of the image pixels.
+    ///
+    /// When not set, the hash is zeroed in the payload (v2 payloads without
+    /// a content hash still carry the DMI value and flags fields).
+    #[must_use]
+    pub fn with_content_hash(mut self, hash: [u8; 4]) -> Self {
+        self.content_hash = Some(hash);
+        self
+    }
+
     /// Get the intensity value.
     pub fn intensity(&self) -> f32 {
         self.intensity
@@ -755,6 +780,11 @@ impl ProtectionContext {
         self.tile_extraction_max_origins.max(1)
     }
 
+    /// Get the content hash, if set.
+    pub fn content_hash(&self) -> Option<[u8; 4]> {
+        self.content_hash
+    }
+
     /// Set the input format hint (non-consuming).
     pub fn set_input_format(&mut self, format: ImageOutputFormat) {
         self.input_format = Some(format);
@@ -763,6 +793,57 @@ impl ProtectionContext {
     /// Set the protection level (non-consuming, crate-internal).
     pub(crate) fn set_protection_level(&mut self, level: ProtectionLevel) {
         self.protection_level = Some(level);
+    }
+}
+
+/// Detailed result of image protection verification.
+///
+/// Returned by [`verify_image_bytes_detailed`](crate::verify_image_bytes_detailed).
+/// Provides richer information than the `Option<bool>` return of
+/// [`verify_image_bytes`](crate::verify_image_bytes).
+#[derive(Debug, Clone)]
+pub enum VerificationResult {
+    /// Protection data found and integrity check passed.
+    ///
+    /// Contains the extracted [`StegoPayload`](crate::StegoPayload) with
+    /// protection metadata (seed, intensity, version, content hash, DMI value).
+    Verified {
+        /// The extracted payload from the protected image.
+        payload: crate::StegoPayload,
+    },
+    /// Protection data found but integrity check failed.
+    ///
+    /// The payload was extracted but either the CRC32 checksum is invalid
+    /// (non-MAC mode) or the HMAC-SHA256 verification failed (MAC mode).
+    /// This may indicate corruption, wrong MAC key, or tampering.
+    Corrupted {
+        /// The partially extracted payload (may contain valid metadata).
+        payload: crate::StegoPayload,
+    },
+    /// No protection data found in the image.
+    ///
+    /// The extraction chain exhausted all seed sources (metadata, LSB fallback,
+    /// tiled extraction) without finding a valid payload.
+    NotFound,
+}
+
+impl VerificationResult {
+    /// Returns `true` if verification succeeded.
+    pub fn is_verified(&self) -> bool {
+        matches!(self, VerificationResult::Verified { .. })
+    }
+
+    /// Returns `true` if protection data was found (whether valid or corrupted).
+    pub fn is_found(&self) -> bool {
+        !matches!(self, VerificationResult::NotFound)
+    }
+
+    /// Returns the payload if verification succeeded.
+    pub fn payload(&self) -> Option<&crate::StegoPayload> {
+        match self {
+            VerificationResult::Verified { payload } => Some(payload),
+            _ => None,
+        }
     }
 }
 

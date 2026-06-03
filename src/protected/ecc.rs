@@ -1,10 +1,10 @@
 const DATA_LEN: usize = 24;
-const REPLICATION_FACTOR: usize = 3;
+pub(crate) const REPLICATION_FACTOR: usize = 3;
 pub(crate) const TOTAL_ECC_LEN: usize = DATA_LEN * REPLICATION_FACTOR;
 
 pub(crate) fn ecc_encode(data: &[u8]) -> Vec<u8> {
-    assert_eq!(data.len(), DATA_LEN);
-    let mut encoded = Vec::with_capacity(TOTAL_ECC_LEN);
+    let data_len = data.len();
+    let mut encoded = Vec::with_capacity(data_len * REPLICATION_FACTOR);
     for _ in 0..REPLICATION_FACTOR {
         encoded.extend_from_slice(data);
     }

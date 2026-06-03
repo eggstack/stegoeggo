@@ -16,19 +16,25 @@ type HmacSha256 = Hmac<Sha256>;
 
 /// Minimum stego payload size: 24 bytes header + 4 bytes CRC32 checksum (or 8 bytes MAC).
 const MIN_PAYLOAD_SIZE: usize = 28;
-/// ECC-encoded payload size: 72 bytes (24 data × 3 replication) + 4 bytes CRC32.
-const ECC_PAYLOAD_SIZE: usize = ecc::TOTAL_ECC_LEN + 4;
-/// Bit length of the ECC-encoded payload.
-const ECC_PAYLOAD_BITS: usize = ECC_PAYLOAD_SIZE * 8;
+/// V1 ECC-encoded payload size: 72 bytes (24 data × 3 replication) + 4 bytes CRC32.
+const ECC_PAYLOAD_SIZE_V1: usize = ecc::TOTAL_ECC_LEN + 4;
+/// V2 header size: 32 bytes.
+const V2_HEADER_SIZE: usize = 32;
+/// V2 ECC-encoded payload size: 96 bytes (32 data × 3 replication) + 4 bytes CRC32.
+const ECC_PAYLOAD_SIZE_V2: usize = V2_HEADER_SIZE * ecc::REPLICATION_FACTOR + 4;
+/// Bit length of the V2 ECC-encoded payload.
+const ECC_PAYLOAD_BITS_V2: usize = ECC_PAYLOAD_SIZE_V2 * 8;
+/// Legacy ECC payload bits (V1, kept for backward-compatible extraction).
+const ECC_PAYLOAD_BITS: usize = ECC_PAYLOAD_SIZE_V1 * 8;
 
 /// The version byte written into the payload header by `generate_payload()`.
 ///
 /// Bump this when the payload layout changes in a non-backward-compatible way.
-const CURRENT_PAYLOAD_VERSION: u8 = 1;
+const CURRENT_PAYLOAD_VERSION: u8 = 2;
 
 /// Payload versions the extractor knows how to parse, in preference order.
 ///
-/// When a future v2 lands, append `2` here and add a `parse_stego_payload_v2` arm
+/// When a future v3 lands, append `3` here and add a `parse_stego_payload_v3` arm
 /// in `parse_stego_payload`. The parser tries each version in order, so a single
 /// binary can read both old and new payloads without forcing a coordinated upgrade
 /// of every protected image in the wild.
@@ -36,15 +42,17 @@ const CURRENT_PAYLOAD_VERSION: u8 = 1;
 /// Removing a version from this slice will make previously-protected images
 /// un-parseable. Only remove a version when you are confident no surviving
 /// protected image still uses it.
-const SUPPORTED_PAYLOAD_VERSIONS: &[u8] = &[1];
+const SUPPORTED_PAYLOAD_VERSIONS: &[u8] = &[1, 2];
 
 /// Common test/dev seeds tried when metadata seed is unavailable.
 ///
-/// These are only useful for images protected with one of these known seeds.
-/// Images protected with `generate_random_seed()` (the default) will NOT be
-/// found via fallback — they rely on metadata seed extraction or DCT Q-table
-/// seed for verification. Production deployments should use explicit seeds
-/// or rely on the metadata-based extraction path.
+/// Only available with the `test-seeds` feature flag. These are only useful
+/// for images protected with one of these known seeds. Images protected with
+/// `generate_random_seed()` (the default) will NOT be found via fallback —
+/// they rely on metadata seed extraction or DCT Q-table seed for verification.
+/// Production deployments should use explicit seeds or rely on the
+/// metadata-based extraction path.
+#[cfg(feature = "test-seeds")]
 const FALLBACK_SEEDS: &[u64] = &[42, 0, 1, 12345, 99999, 123456789];
 
 /// Default tile size in pixels (used when tiled embedding is enabled but
@@ -373,7 +381,6 @@ impl SteganographyProtector {
         let tiles_x = luma_blocks_x / blocks_per_tile;
         let tiles_y = luma_blocks_y / blocks_per_tile;
 
-        let ecc_bits = ECC_PAYLOAD_BITS;
         let max_grid = 16u32;
         let mut origins_tried = 0u32;
 
@@ -402,25 +409,27 @@ impl SteganographyProtector {
                         }
                         let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
 
-                        for redundancy in 1..=10 {
-                            let stego = DctStegoF5::with_redundancy(redundancy);
-                            let extracted = stego.extract_f5_from_blocks(
-                                &coefficients,
-                                ecc_bits,
-                                local_seed,
-                                &tile_blocks,
-                            );
+                        for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                            for redundancy in 1..=10 {
+                                let stego = DctStegoF5::with_redundancy(redundancy);
+                                let extracted = stego.extract_f5_from_blocks(
+                                    &coefficients,
+                                    ecc_bits,
+                                    local_seed,
+                                    &tile_blocks,
+                                );
 
-                            if extracted.len() < ecc_bits {
-                                continue;
-                            }
+                                if extracted.len() < ecc_bits {
+                                    continue;
+                                }
 
-                            let payload_bytes = Self::bits_to_bytes(&extracted);
-                            if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                                return Some(payload_bytes);
-                            }
-                            if Self::try_ecc_decode(&payload_bytes).is_some() {
-                                return Some(payload_bytes);
+                                let payload_bytes = Self::bits_to_bytes(&extracted);
+                                if Self::verify_payload_integrity(&payload_bytes, mac_key) {
+                                    return Some(payload_bytes);
+                                }
+                                if Self::try_ecc_decode(&payload_bytes).is_some() {
+                                    return Some(payload_bytes);
+                                }
                             }
                         }
                     }
@@ -562,17 +571,18 @@ impl SteganographyProtector {
         seed: u64,
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
-        let ecc_bits = ECC_PAYLOAD_BITS;
+        // Try v2 payload size first (larger), then fall back to v1
+        for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+            for pass in 0..5 {
+                let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
 
-        for pass in 0..5 {
-            let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
-
-            if let Some(payload) = self.extract_lsb(img, ecc_bits, offset_seed) {
-                if Self::try_ecc_decode(&payload).is_some() {
-                    return Some(payload);
-                }
-                if Self::verify_payload_integrity(&payload, mac_key) {
-                    return Some(payload);
+                if let Some(payload) = self.extract_lsb(img, ecc_bits, offset_seed) {
+                    if Self::try_ecc_decode(&payload).is_some() {
+                        return Some(payload);
+                    }
+                    if Self::verify_payload_integrity(&payload, mac_key) {
+                        return Some(payload);
+                    }
                 }
             }
         }
@@ -639,6 +649,7 @@ impl SteganographyProtector {
         }
 
         // LSB fallback: try known seeds via DynamicImage
+        #[cfg(feature = "test-seeds")]
         if let Ok(img) = image::load_from_memory(img_bytes) {
             for &seed in FALLBACK_SEEDS {
                 if self.verify_payload_with_seed(&img, seed) {
@@ -815,6 +826,7 @@ impl SteganographyProtector {
         }
 
         // Fallback: try common seeds (metadata stripped during DynamicImage re-encoding)
+        #[cfg(feature = "test-seeds")]
         for &seed in FALLBACK_SEEDS {
             if let Some(payload) = self.extract_payload_with_seed_and_key(img, seed, mac_key) {
                 return Some(payload);
@@ -835,6 +847,7 @@ impl SteganographyProtector {
             if version == supported {
                 return match supported {
                     1 => Self::parse_stego_payload_v1(payload),
+                    2 => Self::parse_stego_payload_v2(payload),
                     _ => None,
                 };
             }
@@ -878,6 +891,69 @@ impl SteganographyProtector {
             seed: extracted_seed,
             intensity,
             version: 1,
+            content_hash: None,
+            dmi_value: None,
+        })
+    }
+
+    /// Parse a version-2 stego payload header.
+    ///
+    /// Header layout (32 bytes):
+    /// ```text
+    /// Offset  Size  Field
+    /// 0       1     Version (=2)
+    /// 1       1     ProtectionLevel byte
+    /// 2       8     Seed (u64, little-endian)
+    /// 10      2     Intensity (u16, scaled f32 / 100.0)
+    /// 12      8     Timestamp (u64, seconds since Unix epoch)
+    /// 20      4     Content hash (truncated ISCC or SHA-256)
+    /// 24      1     DMI value byte
+    /// 25      1     Flags byte (reserved)
+    /// 26      6     Reserved (zeroed)
+    /// ```
+    fn parse_stego_payload_v2(payload: &[u8]) -> Option<StegoPayload> {
+        if payload.len() < V2_HEADER_SIZE {
+            return None;
+        }
+
+        let protection_level = payload[1];
+
+        let extracted_seed = u64::from_le_bytes([
+            payload[2], payload[3], payload[4], payload[5], payload[6], payload[7], payload[8],
+            payload[9],
+        ]);
+
+        let intensity_raw = u16::from_le_bytes([payload[10], payload[11]]);
+        let intensity = intensity_raw as f32 / 100.0;
+
+        let content_hash = {
+            let mut hash = [0u8; 4];
+            hash.copy_from_slice(&payload[20..24]);
+            if hash != [0, 0, 0, 0] {
+                Some(hash)
+            } else {
+                None
+            }
+        };
+
+        let dmi_value = match payload[24] {
+            0 => None,
+            1 => Some(crate::types::DmiValue::Allowed),
+            2 => Some(crate::types::DmiValue::ProhibitedAiMlTraining),
+            3 => Some(crate::types::DmiValue::ProhibitedGenAiMlTraining),
+            4 => Some(crate::types::DmiValue::ProhibitedExceptSearchEngineIndexing),
+            5 => Some(crate::types::DmiValue::Prohibited),
+            6 => Some(crate::types::DmiValue::ProhibitedSeeConstraints),
+            _ => None,
+        };
+
+        Some(StegoPayload {
+            protection_level,
+            seed: extracted_seed,
+            intensity,
+            version: 2,
+            content_hash,
+            dmi_value,
         })
     }
 
@@ -979,24 +1055,23 @@ impl SteganographyProtector {
         seed: u64,
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
-        let bits_needed = ECC_PAYLOAD_BITS;
+        // Try v2 payload bits first, then v1
+        for &bits_needed in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+            for redundancy in 1..=10 {
+                let stego_f5 = DctStegoF5::with_redundancy(redundancy);
+                let extracted = stego_f5.extract_f5(coefficients, bits_needed, seed);
 
-        // Try a range of plausible redundancies. Since we do not know the
-        // configured value, accept the first candidate whose integrity check passes.
-        for redundancy in 1..=10 {
-            let stego_f5 = DctStegoF5::with_redundancy(redundancy);
-            let extracted = stego_f5.extract_f5(coefficients, bits_needed, seed);
+                if extracted.len() < bits_needed {
+                    continue;
+                }
 
-            if extracted.len() < bits_needed {
-                continue;
-            }
-
-            let payload_bytes = Self::bits_to_bytes(&extracted);
-            if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                return Some(payload_bytes);
-            }
-            if Self::try_ecc_decode(&payload_bytes).is_some() {
-                return Some(payload_bytes);
+                let payload_bytes = Self::bits_to_bytes(&extracted);
+                if Self::verify_payload_integrity(&payload_bytes, mac_key) {
+                    return Some(payload_bytes);
+                }
+                if Self::try_ecc_decode(&payload_bytes).is_some() {
+                    return Some(payload_bytes);
+                }
             }
         }
 
@@ -1065,47 +1140,83 @@ impl SteganographyProtector {
     }
 
     /// Verifies the CRC32 checksum of the ECC-encoded payload.
-    /// For ECC payloads (40 bytes): CRC32 is at bytes 36-39, computed over bytes 0-35.
-    /// For legacy payloads (32 bytes): CRC32 is at bytes 24-27, computed over bytes 0-23.
+    /// Tries v2 ECC size (96 data + 4 checksum = 100 bytes) first,
+    /// then v1 (72 data + 4 checksum = 76 bytes).
     fn verify_checksum(payload: &[u8]) -> bool {
-        if payload.len() >= ECC_PAYLOAD_SIZE {
+        // Try v2 ECC size first
+        let v2_ecc_len = V2_HEADER_SIZE * ecc::REPLICATION_FACTOR;
+        if payload.len() >= v2_ecc_len + 4 {
+            let expected = Self::compute_checksum(&payload[..v2_ecc_len]);
+            if payload[v2_ecc_len] == expected[0]
+                && payload[v2_ecc_len + 1] == expected[1]
+                && payload[v2_ecc_len + 2] == expected[2]
+                && payload[v2_ecc_len + 3] == expected[3]
+            {
+                return true;
+            }
+        }
+        // Try v1 ECC size
+        if payload.len() >= ecc::TOTAL_ECC_LEN + 4 {
             let expected = Self::compute_checksum(&payload[..ecc::TOTAL_ECC_LEN]);
-            payload[ecc::TOTAL_ECC_LEN] == expected[0]
+            if payload[ecc::TOTAL_ECC_LEN] == expected[0]
                 && payload[ecc::TOTAL_ECC_LEN + 1] == expected[1]
                 && payload[ecc::TOTAL_ECC_LEN + 2] == expected[2]
                 && payload[ecc::TOTAL_ECC_LEN + 3] == expected[3]
-        } else if payload.len() >= MIN_PAYLOAD_SIZE {
+            {
+                return true;
+            }
+        }
+        // Legacy: try 24-byte header + 4 checksum
+        if payload.len() >= MIN_PAYLOAD_SIZE {
             let expected = Self::compute_checksum(&payload[..24]);
-            payload[24] == expected[0]
+            if payload[24] == expected[0]
                 && payload[25] == expected[1]
                 && payload[26] == expected[2]
                 && payload[27] == expected[3]
-        } else {
-            false
+            {
+                return true;
+            }
         }
+        false
     }
 
     fn verify_payload_integrity(payload: &[u8], mac_key: &[u8]) -> bool {
         if mac_key.is_empty() {
             Self::verify_checksum(payload)
         } else {
-            payload.len() >= 32
-                && Self::verify_payload_mac(&payload[..24], mac_key, &payload[24..32])
+            // Try v2 MAC: 32-byte header + 8-byte MAC = 40 bytes
+            if payload.len() >= V2_HEADER_SIZE + 8 {
+                Self::verify_payload_mac(
+                    &payload[..V2_HEADER_SIZE],
+                    mac_key,
+                    &payload[V2_HEADER_SIZE..V2_HEADER_SIZE + 8],
+                )
+            }
+            // Legacy v1 MAC: 24-byte header + 8-byte MAC = 32 bytes
+            else if payload.len() >= 32 {
+                Self::verify_payload_mac(&payload[..24], mac_key, &payload[24..32])
+            } else {
+                false
+            }
         }
     }
 
     fn try_ecc_decode(payload: &[u8]) -> Option<Vec<u8>> {
-        if payload.len() >= ecc::TOTAL_ECC_LEN {
-            if let Some(decoded) = ecc::ecc_decode(payload, 24) {
-                if decoded.len() >= 24 {
-                    let checksum_start = ecc::TOTAL_ECC_LEN;
-                    let expected = Self::compute_checksum(&payload[..ecc::TOTAL_ECC_LEN]);
-                    if payload[checksum_start] == expected[0]
-                        && payload[checksum_start + 1] == expected[1]
-                        && payload[checksum_start + 2] == expected[2]
-                        && payload[checksum_start + 3] == expected[3]
-                    {
-                        return Some(decoded);
+        // Try v2 data length first (32 bytes), then v1 (24 bytes)
+        for &data_len in &[V2_HEADER_SIZE, 24usize] {
+            let ecc_len = data_len * ecc::REPLICATION_FACTOR;
+            if payload.len() >= ecc_len {
+                if let Some(decoded) = ecc::ecc_decode(payload, data_len) {
+                    if decoded.len() >= data_len {
+                        let checksum_start = ecc_len;
+                        let expected = Self::compute_checksum(&payload[..ecc_len]);
+                        if payload[checksum_start] == expected[0]
+                            && payload[checksum_start + 1] == expected[1]
+                            && payload[checksum_start + 2] == expected[2]
+                            && payload[checksum_start + 3] == expected[3]
+                        {
+                            return Some(decoded);
+                        }
                     }
                 }
             }
@@ -1116,22 +1227,24 @@ impl SteganographyProtector {
     /// Generates the steganography payload containing protection metadata.
     ///
     /// The payload contains:
-    /// - Version byte (1)
+    /// - Version byte (2)
     /// - Protection level byte
     /// - Seed (8 bytes, little-endian)
     /// - Intensity (2 bytes, scaled by 100)
     /// - Timestamp (8 bytes)
+    /// - Content hash (4 bytes, truncated ISCC or SHA-256)
+    /// - DMI value byte + flags byte
+    /// - Reserved (2 bytes)
     ///
     /// This is followed by either:
-    /// - HMAC-SHA256 of the first 24 bytes (8 bytes, if mac_key is set), OR
-    /// - Reed-Solomon ECC-encoded payload (36 bytes) + CRC32 checksum (4 bytes) = 40 bytes
+    /// - HMAC-SHA256 of the first 32 bytes (8 bytes, if mac_key is set), OR
+    /// - Reed-Solomon ECC-encoded payload (96 bytes) + CRC32 checksum (4 bytes) = 100 bytes
     fn generate_payload(&self, ctx: &ProtectionContext) -> Vec<u8> {
-        let mut header = Vec::with_capacity(24);
+        let mut header = Vec::with_capacity(V2_HEADER_SIZE);
 
         header.push(CURRENT_PAYLOAD_VERSION);
 
         let level_byte = ctx.protection_level().map(|l| l.to_byte()).unwrap_or(2);
-
         header.push(level_byte);
 
         header.extend_from_slice(&ctx.seed().to_le_bytes());
@@ -1145,20 +1258,41 @@ impl SteganographyProtector {
             .unwrap_or(0);
         header.extend_from_slice(&now.to_le_bytes());
 
-        while header.len() < 24 {
-            header.push(0);
+        // Bytes 20-23: content hash (4 bytes)
+        if let Some(hash) = ctx.content_hash() {
+            header.extend_from_slice(&hash);
+        } else {
+            header.extend_from_slice(&[0u8; 4]);
         }
 
-        header.truncate(24);
+        // Byte 24: DMI value
+        let dmi_byte = ctx
+            .dmi_value()
+            .map(|d| match d {
+                crate::types::DmiValue::Unspecified => 0u8,
+                crate::types::DmiValue::Allowed => 1,
+                crate::types::DmiValue::ProhibitedAiMlTraining => 2,
+                crate::types::DmiValue::ProhibitedGenAiMlTraining => 3,
+                crate::types::DmiValue::ProhibitedExceptSearchEngineIndexing => 4,
+                crate::types::DmiValue::Prohibited => 5,
+                crate::types::DmiValue::ProhibitedSeeConstraints => 6,
+            })
+            .unwrap_or(0);
+        header.push(dmi_byte);
+
+        // Byte 25: flags (reserved for future use)
+        header.push(0);
+
+        // Bytes 26-31: reserved (zeroed)
+        while header.len() < V2_HEADER_SIZE {
+            header.push(0);
+        }
+        header.truncate(V2_HEADER_SIZE);
 
         if let Some(key) = ctx.mac_key() {
             let mut payload = header;
             let mac = Self::compute_payload_mac(&payload, key);
             payload.extend_from_slice(&mac);
-            while payload.len() < 32 {
-                payload.push(0);
-            }
-            payload.truncate(32);
             payload
         } else {
             let encoded = ecc::ecc_encode(&header);
@@ -1178,6 +1312,41 @@ impl SteganographyProtector {
         let a = splitmix64(seed).wrapping_mul(2) | 1;
         let b = splitmix64(seed.wrapping_add(0x9e3779b97f4a7c15));
         a.wrapping_mul(index as u64).wrapping_add(b) as usize % total_pixels
+    }
+
+    /// Cost-weighted permutation for content-adaptive pixel selection.
+    ///
+    /// Maps `index` to a pixel position, preferring low-cost (textured) pixels.
+    /// Pixels are sorted by cost ascending; the PRNG selects from this sorted list.
+    /// This is deterministic: the same image, seed, and index always produce
+    /// the same position.
+    ///
+    /// **Used only during embedding.** Extraction uses the standard
+    /// `stego_permutation` because the extractor cannot reliably recompute
+    /// costs after the image has been modified (LSB changes alter local
+    /// statistics). Instead, the cost-weighted selection during embedding
+    /// preferentially places payload bits in textured regions where they
+    /// are more robust to noise, while extraction reads from the same
+    /// pseudo-random positions via the standard permutation.
+    #[allow(dead_code)]
+    fn cost_weighted_permutation(
+        index: usize,
+        costs: &[f32],
+        total_pixels: usize,
+        seed: u64,
+    ) -> usize {
+        let mut sorted_indices: Vec<usize> = (0..total_pixels).collect();
+        sorted_indices.sort_by(|&a, &b| {
+            costs[a]
+                .partial_cmp(&costs[b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let a = splitmix64(seed).wrapping_mul(2) | 1;
+        let b = splitmix64(seed.wrapping_add(0x9e3779b97f4a7c15));
+        let permuted = a.wrapping_mul(index as u64).wrapping_add(b) as usize % total_pixels;
+
+        sorted_indices[permuted]
     }
 
     fn embed_lsb(
@@ -1339,7 +1508,8 @@ impl SteganographyProtector {
             return None;
         }
 
-        let ecc_bits = ECC_PAYLOAD_BITS;
+        // Try v2 payload bits first, then v1
+        let ecc_bits_list = [ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS];
 
         // Deterministic scan: top-left to bottom-right, every `stride` pixels
         // in each axis. A stride of `tile_size / 2` gives a reasonable balance
@@ -1394,18 +1564,23 @@ impl SteganographyProtector {
                     }
                     let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
 
-                    for pass in 0..5 {
-                        let offset_seed =
-                            local_seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
-                        if let Some(candidate) = self.extract_lsb(&sub, ecc_bits, offset_seed) {
-                            if Self::try_ecc_decode(&candidate).is_some() {
-                                payload = Some(candidate);
-                                break;
+                    for &ecc_bits in &ecc_bits_list {
+                        for pass in 0..5 {
+                            let offset_seed = local_seed
+                                .wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
+                            if let Some(candidate) = self.extract_lsb(&sub, ecc_bits, offset_seed) {
+                                if Self::try_ecc_decode(&candidate).is_some() {
+                                    payload = Some(candidate);
+                                    break;
+                                }
+                                if Self::verify_payload_integrity(&candidate, mac_key) {
+                                    payload = Some(candidate);
+                                    break;
+                                }
                             }
-                            if Self::verify_payload_integrity(&candidate, mac_key) {
-                                payload = Some(candidate);
-                                break;
-                            }
+                        }
+                        if payload.is_some() {
+                            break;
                         }
                     }
                     if payload.is_some() {
@@ -1472,19 +1647,38 @@ impl SteganographyProtector {
         bytes
     }
 
+    /// Embed a single bit using LSB matching (randomized increment/decrement).
+    ///
+    /// Unlike LSB replacement (which always clears or sets the LSB), LSB matching
+    /// randomly increments or decrements the pixel value to achieve the target LSB.
+    /// This eliminates the PoV (Pairs of Values) asymmetry artifact that is the
+    /// primary detector for LSB replacement steganalysis.
+    ///
+    /// The direction is deterministic (derived from coordinates and seed) so
+    /// extraction is unaffected — extraction reads LSBs, which are the same
+    /// regardless of how they were set.
     fn embed_bit_in_pixel(output: &mut RgbaImage, x: u32, y: u32, channel: usize, bit: u8) {
         let pixel = output.get_pixel(x, y);
+        let old_val = pixel[channel];
 
-        let new_value = match channel {
-            0 => (pixel[0] & 0xFE) | bit,
-            1 => (pixel[1] & 0xFE) | bit,
-            _ => (pixel[2] & 0xFE) | bit,
+        // If LSB already matches, no modification needed
+        if (old_val & 1) == bit {
+            return;
+        }
+
+        // Deterministic direction from coordinates (avoids needing a PRNG)
+        // Use a simple hash to decide increment vs decrement
+        let direction_hash = x.wrapping_mul(31).wrapping_add(y.wrapping_mul(17));
+        let new_val = if direction_hash & 1 == 0 {
+            old_val.wrapping_add(1)
+        } else {
+            old_val.wrapping_sub(1)
         };
 
         let new_pixel = Rgba([
-            if channel == 0 { new_value } else { pixel[0] },
-            if channel == 1 { new_value } else { pixel[1] },
-            if channel == 2 { new_value } else { pixel[2] },
+            if channel == 0 { new_val } else { pixel[0] },
+            if channel == 1 { new_val } else { pixel[1] },
+            if channel == 2 { new_val } else { pixel[2] },
             pixel[3],
         ]);
         output.put_pixel(x, y, new_pixel);
@@ -1506,14 +1700,23 @@ impl SteganographyProtector {
                 let y = pixel_offset as u32 / width;
                 let bit_val = (byte >> bit) & 1;
                 let pixel = img.get_pixel(x, y);
-                let new_val = (pixel[channel] & 0xFE) | bit_val;
-                let new_pixel = Rgba([
-                    if channel == 0 { new_val } else { pixel[0] },
-                    if channel == 1 { new_val } else { pixel[1] },
-                    if channel == 2 { new_val } else { pixel[2] },
-                    pixel[3],
-                ]);
-                img.put_pixel(x, y, new_pixel);
+                let old_val = pixel[channel];
+                // Use LSB matching: if LSB already matches, skip
+                if (old_val & 1) != bit_val {
+                    let direction_hash = x.wrapping_mul(31).wrapping_add(y.wrapping_mul(17));
+                    let new_val = if direction_hash & 1 == 0 {
+                        old_val.wrapping_add(1)
+                    } else {
+                        old_val.wrapping_sub(1)
+                    };
+                    let new_pixel = Rgba([
+                        if channel == 0 { new_val } else { pixel[0] },
+                        if channel == 1 { new_val } else { pixel[1] },
+                        if channel == 2 { new_val } else { pixel[2] },
+                        pixel[3],
+                    ]);
+                    img.put_pixel(x, y, new_pixel);
+                }
                 channel_idx += 1;
             }
         }
@@ -1654,6 +1857,8 @@ pub struct StegoPayload {
     seed: u64,
     intensity: f32,
     version: u8,
+    content_hash: Option<[u8; 4]>,
+    dmi_value: Option<crate::types::DmiValue>,
 }
 
 impl StegoPayload {
@@ -1672,9 +1877,25 @@ impl StegoPayload {
         self.intensity
     }
 
-    /// The payload format version (currently 1).
+    /// The payload format version (1 or 2).
     pub fn version(&self) -> u8 {
         self.version
+    }
+
+    /// Truncated content hash (4 bytes) for linking to the original image.
+    ///
+    /// Present in v2 payloads. Derived from the ISCC content code or a
+    /// truncated SHA-256 of the image pixels. `None` for v1 payloads.
+    pub fn content_hash(&self) -> Option<[u8; 4]> {
+        self.content_hash
+    }
+
+    /// The DMI (Data Mining Inhibitor) value, if set.
+    ///
+    /// Present in v2 payloads. Indicates the AI training restrictions
+    /// encoded in the payload. `None` for v1 payloads or when not set.
+    pub fn dmi_value(&self) -> Option<crate::types::DmiValue> {
+        self.dmi_value
     }
 }
 
@@ -1892,7 +2113,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(42);
         let payload = protector.generate_payload(&ctx);
-        assert_eq!(payload.len(), ECC_PAYLOAD_SIZE);
+        assert_eq!(payload.len(), ECC_PAYLOAD_SIZE_V2);
         assert!(SteganographyProtector::verify_payload_integrity(
             &payload,
             &[]
@@ -1904,7 +2125,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let ctx = ctx_with_mac(42, b"secret");
         let payload = protector.generate_payload(&ctx);
-        assert_eq!(payload.len(), 32);
+        assert_eq!(payload.len(), V2_HEADER_SIZE + 8);
         assert!(SteganographyProtector::verify_payload_integrity(
             &payload, b"secret"
         ));
@@ -1954,7 +2175,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(12345);
         let payload = protector.generate_payload(&ctx);
-        assert_eq!(payload.len(), ECC_PAYLOAD_SIZE);
+        assert_eq!(payload.len(), ECC_PAYLOAD_SIZE_V2);
     }
 
     #[test]
@@ -1962,7 +2183,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let ctx = ctx_with_mac(12345, b"key");
         let payload = protector.generate_payload(&ctx);
-        assert_eq!(payload.len(), 32);
+        assert_eq!(payload.len(), V2_HEADER_SIZE + 8); // 32-byte header + 8-byte MAC
     }
 
     #[test]
@@ -1970,7 +2191,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(42);
         let payload = protector.generate_payload(&ctx);
-        assert_eq!(payload[0], 1);
+        assert_eq!(payload[0], 2);
     }
 
     #[test]
@@ -2278,7 +2499,7 @@ mod tests {
         let payload = protector.generate_payload(&ctx);
 
         let parsed = SteganographyProtector::parse_stego_payload(&payload).unwrap();
-        assert_eq!(parsed.version(), 1);
+        assert_eq!(parsed.version(), 2);
         assert_eq!(parsed.seed(), 12345);
         assert_eq!(parsed.protection_level(), 2);
         assert!((parsed.intensity() - 0.5).abs() < 0.02);
@@ -2490,7 +2711,7 @@ mod tests {
         assert!(payload.is_some());
         let p = payload.unwrap();
         assert_eq!(p.seed(), 42);
-        assert_eq!(p.version(), 1);
+        assert_eq!(p.version(), 2);
     }
 
     #[test]

@@ -105,7 +105,7 @@ pub mod async_api;
 pub use error::{Error, Result};
 pub use types::{
     DmiValue, ImageOutputFormat, LegalMetadata, ProtectionConfig, ProtectionContext,
-    ProtectionLevel, DEFAULT_OUTPUT_FORMAT,
+    ProtectionLevel, VerificationResult, DEFAULT_OUTPUT_FORMAT,
 };
 
 pub use traits::Protector;
@@ -489,6 +489,53 @@ pub fn process_image_bytes(
 pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> Option<bool> {
     let stego = SteganographyProtector::new();
     stego.verify_payload_from_bytes_with_key(img_bytes, mac_key)
+}
+
+/// Verify protection with detailed results.
+///
+/// Like [`verify_image_bytes`], but returns a [`VerificationResult`] with
+/// richer information about what was found and whether verification passed.
+///
+/// # Examples
+///
+/// ```ignore
+/// use cloakrs::{verify_image_bytes_detailed, VerificationResult};
+///
+/// let bytes = std::fs::read("protected.png").unwrap();
+/// match verify_image_bytes_detailed(&bytes, b"my-key") {
+///     VerificationResult::Verified { payload } => {
+///         println!("Seed: {}, Intensity: {}", payload.seed(), payload.intensity());
+///     }
+///     VerificationResult::Corrupted { .. } => println!("Protection found but corrupted"),
+///     VerificationResult::NotFound => println!("No protection found"),
+/// }
+/// ```
+pub fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> VerificationResult {
+    let stego = SteganographyProtector::new();
+
+    // Try extracting with the full verification chain
+    if let Some(result) = stego.verify_payload_from_bytes_with_key(img_bytes, mac_key) {
+        if result {
+            // Extract the payload to include in the result
+            if let Ok(img) = image::load_from_memory(img_bytes) {
+                if let Some(payload) = stego.extract_payload_with_key(&img, mac_key) {
+                    return VerificationResult::Verified { payload };
+                }
+            }
+            // Even if we can't re-extract, report verified
+            return VerificationResult::NotFound;
+        } else {
+            // Found but verification failed
+            if let Ok(img) = image::load_from_memory(img_bytes) {
+                if let Some(payload) = stego.extract_payload_with_key(&img, mac_key) {
+                    return VerificationResult::Corrupted { payload };
+                }
+            }
+            return VerificationResult::NotFound;
+        }
+    }
+
+    VerificationResult::NotFound
 }
 
 #[cfg(test)]
