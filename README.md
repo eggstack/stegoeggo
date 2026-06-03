@@ -500,7 +500,7 @@ Different protection layers survive different image transformations. The truth, 
 | **JPEG → JPEG via `cloakrs` fast path** | ✓ (re-injected) | ✓ (re-injected) | n/a | ✓ (DCT coeffs preserved) |
 | **Format conversion (PNG ↔ JPEG) via `image` crate** | ✗ | ✗ | ✗ | ✗ |
 | **Format conversion (WebP ↔ JPEG) via `image` crate** | ✗ | n/a | ✗ | n/a |
-| **Crop** | ✗ (clipped) | ✗ | ✗ | ✗ |
+| **Crop** | ✗ (clipped) | ✗ | ✓ with `with_tile_size()` (≥1 intact tile) | partial (tile-aligned crops without re-encode) |
 | **Resize** | ✗ (resampled) | ✗ | ✗ | ✗ |
 | **Naive metadata strip** | ✗ | n/a | ✓ (still extractable) | partial |
 | **LSB-preserving noise** (e.g. contrast, brightness) | ✓ | n/a | ✓ | n/a |
@@ -516,7 +516,7 @@ The `image` crate (and most general-purpose JPEG encoders) **do not preserve** C
 
 ### Recommendations
 
-- **For maximum legal evidence**: Use PNG output. The visible metadata + LSB stego payload survive almost everything except cropping, resizing, and re-encoding through a non-`cloakrs` JPEG encoder.
+- **For maximum legal evidence**: Use PNG output. The visible metadata + LSB stego payload survive almost everything except cropping, resizing, and re-encoding through a non-`cloakrs` JPEG encoder. For crop resistance, add `.with_tile_size(64)` to the protection context — this embeds the payload in every 64×64 tile so any crop containing at least one full tile is recoverable.
 - **For CDN/WAF deployment**: Use `Standard` level with PNG output. JPEG output discards the LSB payload and visible metadata on every re-compression.
 - **For maximum robustness against stripping**: Set a MAC key via `with_mac_key()`. Without it, the embedded checksum can be trivially forged by anyone who reads this source.
 - **For the strongest claims about evidence**: Serve the protected image directly and reference its ISCC code. Don't rely on downstream consumers to preserve any of the embedded channels.

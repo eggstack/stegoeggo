@@ -16,3 +16,9 @@ name = "pipeline_bytes"
 path = "fuzz_targets/pipeline_bytes.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "tiled_round_trip"
+path = "fuzz_targets/tiled_round_trip.rs"
+test = false
+doc = false

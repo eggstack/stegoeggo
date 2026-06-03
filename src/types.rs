@@ -321,6 +321,27 @@ pub struct ProtectionContext {
     stego_redundancy: Option<usize>,
     jpeg_quality: u8,
     progressive_jpeg: bool,
+    /// Tile size for crop-resistant stego embedding, in pixels.
+    ///
+    /// - `None` (default): tiling is disabled. Behavior matches the non-tiled
+    ///   baseline, which survives common image transformations (resize,
+    ///   recompression, format conversion) but is destroyed by cropping.
+    /// - `Some(0)`: treated as disabled, same as `None`.
+    /// - `Some(n)` with `n > 0`: each `n × n` pixel tile embeds a full copy of
+    ///   the payload. The extractor scans candidate tile origins so the
+    ///   payload is recoverable from any crop that contains at least one
+    ///   intact tile. Valid range: 32..=1024. Smaller tiles fail ECC capacity
+    ///   in non-MAC mode; larger tiles shrink the protected image's usable
+    ///   embed region.
+    ///
+    /// Tiled mode multiplies total embed work by the tile count and is
+    /// **opt-in** because the capacity and embedding-time costs are real.
+    tile_size: Option<u32>,
+    /// Maximum number of candidate tile origins the extractor will try before
+    /// giving up. Bounds extraction time on very large images at the cost of
+    /// potentially missing a successful tile when the crop is small or
+    /// misaligned with the tile grid. Default 64.
+    tile_extraction_max_origins: u32,
     #[serde(skip)]
     config: Option<Arc<ProtectionConfig>>,
 }
@@ -331,7 +352,7 @@ impl Serialize for ProtectionContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut fields = 12;
+        let mut fields = 14;
         if self.config.is_some() {
             fields += 1;
         }
@@ -348,6 +369,11 @@ impl Serialize for ProtectionContext {
         s.serialize_field("stego_redundancy", &self.stego_redundancy)?;
         s.serialize_field("jpeg_quality", &self.jpeg_quality)?;
         s.serialize_field("progressive_jpeg", &self.progressive_jpeg)?;
+        s.serialize_field("tile_size", &self.tile_size)?;
+        s.serialize_field(
+            "tile_extraction_max_origins",
+            &self.tile_extraction_max_origins,
+        )?;
         if self.config.is_some() {
             s.serialize_field(
                 "_config_dropped_warning",
@@ -376,6 +402,8 @@ impl Default for ProtectionContext {
             stego_redundancy: None,
             jpeg_quality: 90,
             progressive_jpeg: false,
+            tile_size: None,
+            tile_extraction_max_origins: 64,
             config: None,
         }
     }
@@ -414,6 +442,8 @@ impl ProtectionContext {
             stego_redundancy: None,
             jpeg_quality: 90,
             progressive_jpeg: false,
+            tile_size: None,
+            tile_extraction_max_origins: 64,
             config: None,
         }
     }
@@ -567,6 +597,50 @@ impl ProtectionContext {
         self
     }
 
+    /// Enable tiled stego embedding for crop resistance.
+    ///
+    /// Each `size × size` pixel tile embeds a full copy of the payload. The
+    /// extractor scans candidate tile origins so the payload is recoverable
+    /// from any crop that contains at least one intact tile.
+    ///
+    /// Pass `0` to disable tiling (same as never calling this method).
+    /// Valid range for non-zero values: 32..=1024. Values outside that range
+    /// are clamped. The most common choice is 64 (matches the LSB tile
+    /// capacity for the default ECC payload).
+    ///
+    /// Tiled embedding multiplies total embed work by the tile count, so
+    /// consider the capacity and embedding-time costs. For adversarial
+    /// settings where cropping is a known attack vector, opt in via
+    /// `with_tile_size(64)`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use cloakrs::{ProtectionContext, ProtectionLevel, process_image_bytes};
+    ///
+    /// let bytes: Vec<u8> = Vec::new();
+    /// let ctx = ProtectionContext::new(0.7, 42).with_tile_size(64);
+    /// let _protected = process_image_bytes(&bytes, ProtectionLevel::Standard, &ctx);
+    /// ```
+    #[must_use]
+    pub fn with_tile_size(mut self, size: u32) -> Self {
+        if size == 0 {
+            self.tile_size = Some(0);
+        } else {
+            self.tile_size = Some(size.clamp(32, 1024));
+        }
+        self
+    }
+
+    /// Set the maximum number of candidate tile origins the extractor will
+    /// try. Default is 64. Higher values increase extraction time but improve
+    /// recovery from small or misaligned crops.
+    #[must_use]
+    pub fn with_tile_extraction_max_origins(mut self, n: u32) -> Self {
+        self.tile_extraction_max_origins = n.clamp(1, 4096);
+        self
+    }
+
     /// Get the intensity value.
     pub fn intensity(&self) -> f32 {
         self.intensity
@@ -657,6 +731,30 @@ impl ProtectionContext {
         self.progressive_jpeg
     }
 
+    /// Get the tile size for crop-resistant stego embedding.
+    ///
+    /// Returns the configured value if set, otherwise `None`. Note that
+    /// `Some(0)` and `None` both indicate that tiling is disabled — callers
+    /// that need a single on/off decision should use
+    /// [`is_tile_mode_enabled`](Self::is_tile_mode_enabled) instead.
+    pub fn tile_size(&self) -> Option<u32> {
+        self.tile_size
+    }
+
+    /// Returns `true` when tiled embedding is active.
+    ///
+    /// Treats both `Some(0)` and `None` as "tiling disabled" so callers
+    /// don't need to special-case the sentinel.
+    pub fn is_tile_mode_enabled(&self) -> bool {
+        matches!(self.tile_size, Some(n) if n > 0)
+    }
+
+    /// Get the maximum number of candidate tile origins the extractor will
+    /// try. Always at least 1.
+    pub fn tile_extraction_max_origins(&self) -> u32 {
+        self.tile_extraction_max_origins.max(1)
+    }
+
     /// Set the input format hint (non-consuming).
     pub fn set_input_format(&mut self, format: ImageOutputFormat) {
         self.input_format = Some(format);
@@ -730,5 +828,67 @@ mod tests {
             !json.contains("_config_dropped_warning"),
             "No warning should be emitted when config is None: {json}"
         );
+    }
+
+    // ── Tile size configuration ───────────────────────────────────────
+
+    #[test]
+    fn tile_size_default_is_none() {
+        let ctx = ProtectionContext::new(0.5, 42);
+        assert_eq!(ctx.tile_size(), None);
+        assert!(!ctx.is_tile_mode_enabled());
+    }
+
+    #[test]
+    fn with_tile_size_zero_disables_tiling() {
+        let ctx = ProtectionContext::new(0.5, 42).with_tile_size(0);
+        assert_eq!(ctx.tile_size(), Some(0));
+        assert!(!ctx.is_tile_mode_enabled());
+    }
+
+    #[test]
+    fn with_tile_size_enables_tiling() {
+        let ctx = ProtectionContext::new(0.5, 42).with_tile_size(64);
+        assert_eq!(ctx.tile_size(), Some(64));
+        assert!(ctx.is_tile_mode_enabled());
+    }
+
+    #[test]
+    fn with_tile_size_clamps_below_minimum() {
+        let ctx = ProtectionContext::new(0.5, 42).with_tile_size(8);
+        assert_eq!(ctx.tile_size(), Some(32), "values below 32 clamp up to 32");
+    }
+
+    #[test]
+    fn with_tile_size_clamps_above_maximum() {
+        let ctx = ProtectionContext::new(0.5, 42).with_tile_size(4096);
+        assert_eq!(
+            ctx.tile_size(),
+            Some(1024),
+            "values above 1024 clamp down to 1024"
+        );
+    }
+
+    #[test]
+    fn with_tile_extraction_max_origins_defaults_to_64() {
+        let ctx = ProtectionContext::new(0.5, 42);
+        assert_eq!(ctx.tile_extraction_max_origins(), 64);
+    }
+
+    #[test]
+    fn with_tile_extraction_max_origins_zero_clamps_to_one() {
+        let ctx = ProtectionContext::new(0.5, 42).with_tile_extraction_max_origins(0);
+        assert_eq!(ctx.tile_extraction_max_origins(), 1);
+    }
+
+    #[test]
+    fn tile_settings_survive_serde_roundtrip() {
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_tile_size(64)
+            .with_tile_extraction_max_origins(128);
+        let json = serde_json::to_string(&ctx).unwrap();
+        let restored: ProtectionContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.tile_size(), Some(64));
+        assert_eq!(restored.tile_extraction_max_origins(), 128);
     }
 }

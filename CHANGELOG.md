@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [0.2.0] - 2024-06-02
 
 ### Added
+- **Crop-resistant tiled steganography** via `with_tile_size(n)` on `ProtectionContext`:
+  - Embeds the full payload in each `tile_size × tile_size` tile independently
+  - LSB tiled path for PNG/WebP; F5 tiled path for JPEG
+  - Any crop containing ≥1 intact tile is recoverable
+  - Configurable `tile_extraction_max_origins` to bound extraction time
 - **Metadata injection** via `MetadataTrapProtector` — IPTC DMI tags, TDM reservation (ISO/IEC 21000-21), XMP packets, EXIF UserComment for AI-training opt-out markers
 - **Steganographic watermarking** via `SteganographyProtector`:
   - LSB embedding for PNG/WebP with spread-spectrum, content-adaptive amplitude, and 3× repetition ECC

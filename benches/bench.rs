@@ -290,6 +290,67 @@ fn benchmark_jpeg_fast_path(c: &mut Criterion) {
     group.finish();
 }
 
+fn benchmark_tiled_embed(c: &mut Criterion) {
+    let mut group = c.benchmark_group("tiled_embed");
+
+    for size in [256u32, 1024] {
+        let img = create_test_image(size, size);
+        let jpeg_bytes = {
+            let mut buf = std::io::Cursor::new(Vec::new());
+            img.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
+            buf.into_inner()
+        };
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_tile_size(64)
+            .with_format(ImageOutputFormat::Jpeg);
+
+        group.bench_with_input(
+            BenchmarkId::new("jpeg_tiled", size),
+            &(&jpeg_bytes, &ctx),
+            |b, &(bytes, ctx)| {
+                b.iter(|| {
+                    process_image_bytes(black_box(bytes), ProtectionLevel::Standard, black_box(ctx))
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn benchmark_tiled_extract(c: &mut Criterion) {
+    let mut group = c.benchmark_group("tiled_extract");
+
+    for size in [256u32, 1024] {
+        let img = create_test_image(size, size);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_tile_size(64)
+            .with_format(ImageOutputFormat::Jpeg);
+
+        let protected = process_image_bytes(
+            &{
+                let mut buf = std::io::Cursor::new(Vec::new());
+                img.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
+                buf.into_inner()
+            },
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        group.bench_with_input(
+            BenchmarkId::new("jpeg_tiled", size),
+            &protected,
+            |b, bytes| {
+                b.iter(|| cloakrs::verify_image_bytes(black_box(bytes), &[]));
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     benchmark_pipeline_sizes,
@@ -300,5 +361,7 @@ criterion_group!(
     benchmark_allocations,
     benchmark_memory_usage,
     benchmark_jpeg_fast_path,
+    benchmark_tiled_embed,
+    benchmark_tiled_extract,
 );
 criterion_main!(benches);

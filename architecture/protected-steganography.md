@@ -101,3 +101,61 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 - **util/image.rs**: `XorShiftRng` for LSB pixel selection
 - **protected/constants.rs**: `STEGO_OFFSET_SEED_1`, `STEGO_SPREAD_FACTOR`, etc.
 - **types.rs**: Uses `ProtectionLevel`, `StegoPayload`
+
+## Tiled Embedding (Crop Resistance)
+
+Tiled mode embeds the full payload in each `tile_size × tile_size` pixel region
+independently, so the payload survives arbitrary crops that leave at least one
+intact tile.
+
+### Configuration
+
+```rust
+let ctx = ProtectionContext::new(0.5, seed)
+    .with_tile_size(64)        // 0 = disabled (default), 32..=1024
+    .with_tile_extraction_max_origins(64);  // max candidate origins for extraction
+```
+
+When `tile_size > 0`, both LSB (PNG/WebP) and DCT (JPEG) paths use tiled
+embedding. The tile grid is fixed; no state is shared between tiles.
+
+### Per-Tile Seed Derivation
+
+Each tile uses `tile_seed(master_seed, tile_x, tile_y)` — a splitmix64 hash
+of the master seed mixed with the tile grid coordinate. The same tile coordinate
+in any cropped image produces the same seed, so extraction is self-coordinating.
+
+### LSB Tiled Path
+
+- `embed_lsb_tiled`: clones the image, iterates tiles, embeds payload in each
+  tile's pixel sub-region using `embed_lsb` with per-tile seed and redundancy 1.
+- `extract_lsb_tiled_candidates`: scans candidate tile origins in the cropped
+  image (stride = `tile_size / 2`, up to `max_origins`), tries grid coordinates
+  around each origin, extracts and verifies integrity.
+
+### F5 Tiled Path
+
+- `apply_dct_stego_bytes_tiled`: iterates tile grid in DCT block space,
+  embeds payload in each tile's blocks using `embed_f5_in_blocks` with per-tile
+  seed.
+- `extract_f5_tiled_candidates`: scans tile positions in the cropped JPEG's
+  coefficient container, tries grid coordinates, extracts and verifies.
+
+### Verification Chain Integration
+
+Both tiled paths are wired as fallbacks in the existing verification chain:
+- `extract_verified_dct_payload`: tries non-tiled first, then tiled F5 fallback
+- `verify_dct_stego_with_seed`: tries non-tiled first, then tiled F5 fallback
+- `verify_payload_with_seed`: tries non-tiled first, then tiled LSB fallback
+- `extract_payload_with_seed` / `extract_payload_with_seed_and_key`: tiled LSB fallback
+
+### Limitations
+
+- **Crop + re-encode destroys DCT stego.** Tiled F5 only survives JPEG crops
+  that preserve DCT coefficients (no re-encode). For re-encoded crops, the LSB
+  tiled path (if output is PNG/WebP) is the recovery channel.
+- **Capacity cost.** Each tile embeds the full payload (64× for a 64×64 grid).
+  Tiled mode is opt-in via `with_tile_size(n)` because of this cost.
+- **Extraction cost is O(K²).** For a 1024×1024 cropped image with
+  `tile_min = 32`, up to ~1024 origins × 9 grid coords × 10 redundancies =
+  ~92,160 extraction attempts. Early exit on first success keeps this practical.

@@ -77,3 +77,37 @@ F5-specific PRNG for DCT coefficient shuffling. **Different algorithm from `XorS
 - **jpeg-transcoder.md**: Uses `JpegTranscoder` for coefficient decode/encode
 - **jpeg-header.md**: Modifies quantization tables for seed embedding
 - **jpeg-entropy.md**: Works with decoded `Coefficients` type
+
+## Tiled F5 (Crop Resistance)
+
+For crop-resistant JPEG protection, F5 embedding is scoped to tile-sized block
+regions. Each tile embeds the full payload independently.
+
+### Tile Block Set
+
+```rust
+pub fn tile_block_set(header, coefficients, tile_x, tile_y, tile_size) -> HashSet<(u8, usize)>
+```
+
+Computes the set of `(comp_id, block_idx)` pairs that fall within a tile. For
+4:2:0 subsampling, a 64×64 luma tile maps to 8×8 luma blocks and 4×4 chroma
+blocks per component. The function handles the MCU-interleaved block ordering
+used by the coefficient container.
+
+### Block-Scoped Embed/Extract
+
+```rust
+pub fn embed_f5_in_blocks(coefficients, payload, seed, tile_blocks) -> Result<usize>
+pub fn extract_f5_from_blocks(coefficients, expected_bits, seed, tile_blocks) -> Vec<u8>
+```
+
+Same F5 algorithm as the global variants but the carrier set is restricted to
+the specified `(comp_id, block_idx)` pairs. Redundancy is fixed at 1 because
+the tile grid itself is the redundancy.
+
+### Integration
+
+- `apply_dct_stego_bytes_tiled`: iterates the tile grid, calls
+  `embed_f5_in_blocks` for each tile with `tile_seed(master, tx, ty)`.
+- `extract_f5_tiled_candidates`: scans tile positions in the cropped JPEG,
+  tries grid coordinates, calls `extract_f5_from_blocks`, verifies integrity.
