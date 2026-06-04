@@ -25,21 +25,27 @@ impl From<TranscoderError> for Error {
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
+    /// Image decoding failed (invalid format, corrupt data, or unsupported features).
     #[error("Image decoding error: {0}")]
     ImageDecode(String),
 
+    /// Image encoding failed ( unsupported format, encoder error).
     #[error("Image encoding error: {0}")]
     ImageEncode(String),
 
+    /// An I/O error occurred (file not found, permission denied, etc.).
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// JSON serialization or deserialization failed.
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
+    /// A metadata operation failed (injection, extraction, or parsing).
     #[error("Metadata error: {0}")]
     Metadata(String),
 
+    /// A configuration error occurred (invalid parameters).
     #[error("Configuration error: {0}")]
     Config(String),
 
@@ -49,24 +55,31 @@ pub enum Error {
     #[error("Image error: {0}")]
     Image(#[from] ImageError),
 
+    /// A steganographic embedding or extraction operation failed.
     #[error("Steganography error: {0}")]
     Steganography(String),
 
+    /// The image format could not be determined or is unsupported.
     #[error("Invalid image format: {0}")]
     InvalidFormat(String),
 
+    /// The image data was truncated or incomplete.
     #[error("Image data was truncated: {0}")]
     ImageTruncated(String),
 
+    /// Payload verification failed (CRC32 mismatch or HMAC verification failure).
     #[error("Payload verification failed: {0}")]
     PayloadVerification(String),
 
+    /// A cryptographic operation failed (HMAC, key derivation, etc.).
     #[error("Cryptographic error: {0}")]
     Crypto(String),
 
+    /// ISCC (International Standard Content Code) generation failed.
     #[error("ISCC generation error: {0}")]
     Iscc(String),
 
+    /// An async blocking task failed.
     #[cfg(feature = "async")]
     #[error("Blocking task failed: {0}")]
     Task(String),

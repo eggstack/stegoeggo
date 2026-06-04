@@ -1,10 +1,10 @@
+use image::{DynamicImage, ImageEncoder};
 use stegoeggo::{
     process_image, process_image_bytes, process_images_bytes_parallel, process_images_parallel,
     DmiValue, ImageOutputFormat, LegalMetadata, MetadataTrapProtector, PassthroughProtector,
     ProtectionContext, ProtectionLevel, ProtectionPipeline, SteganographyProtector,
     VerificationStatus,
 };
-use image::{DynamicImage, ImageEncoder};
 
 fn create_test_image(width: u32, height: u32) -> DynamicImage {
     DynamicImage::new_rgb8(width, height)
@@ -958,8 +958,8 @@ mod serde_tests {
 
     #[test]
     fn test_config_skipped_in_serde_roundtrip() {
-        use stegoeggo::ProtectionConfig;
         use std::sync::Arc;
+        use stegoeggo::ProtectionConfig;
 
         let config = Arc::new(
             ProtectionConfig::new()

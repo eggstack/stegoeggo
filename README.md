@@ -2,9 +2,11 @@
 
 A modular Rust library for protecting images from AI scraping through steganographic watermarking and metadata injection for legal deterrence.
 
-[![CI](https://github.com/yourorg/stegoeggo/actions/workflows/ci.yml/badge.svg)](https://github.com/yourorg/stegoeggo/actions/workflows/ci.yml)
+[![CI](https://github.com/eggstack/stegoeggo/actions/workflows/ci.yml/badge.svg)](https://github.com/eggstack/stegoeggo/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/stegoeggo)](https://crates.io/crates/stegoeggo)
+[![Documentation](https://docs.rs/stegoeggo/badge.svg)](https://docs.rs/stegoeggo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![MSRV](https://img.shields.io/badge/MSRV-1.87-blue.svg)](https://blog.rust-lang.org/)
 
 ## What is stegoeggo?
 
@@ -57,7 +59,7 @@ cargo build --release
 Or install directly:
 
 ```bash
-cargo install stegoeggo
+cargo install stegoeggo-cli
 ```
 
 ## Quick Start
@@ -704,6 +706,8 @@ stegoeggo
 - `Standard`: full — DCT F5 (JPEG) or LSB + ECC + spread-spectrum (PNG/WebP)
 
 ## Safety & Ethics
+
+This library uses `#![forbid(unsafe_code)]` throughout — no `unsafe` blocks exist in the library crate. All image processing is built on safe Rust with the `image` crate.
 
 This library is designed to protect intellectual property from unauthorized AI training. It is intended for:
 

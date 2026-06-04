@@ -1,9 +1,9 @@
+use image::{DynamicImage, ImageBuffer, Rgba};
 /// Full pipeline example: protect an image and verify the protection.
 ///
 /// Demonstrates the complete workflow from image creation through protection
 /// to steganographic verification and payload extraction.
 use stegoeggo::{process_image_bytes, ProtectionContext, ProtectionLevel, SteganographyProtector};
-use image::{DynamicImage, ImageBuffer, Rgba};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Create a test image (in practice, load from file or network)

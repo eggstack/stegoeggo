@@ -1,9 +1,9 @@
+use image::{DynamicImage, ImageEncoder};
 use stegoeggo::{
     process_image_async, process_image_bytes_async, process_images_bytes_parallel_async,
     process_images_parallel_async, verify_image_bytes_async, ProtectionContext, ProtectionLevel,
     SteganographyProtector, VerificationStatus,
 };
-use image::{DynamicImage, ImageEncoder};
 
 fn create_test_image(width: u32, height: u32) -> DynamicImage {
     DynamicImage::new_rgb8(width, height)

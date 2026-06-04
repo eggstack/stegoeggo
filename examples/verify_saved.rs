@@ -1,5 +1,5 @@
-use stegoeggo::{ProtectionContext, Protector, SteganographyProtector};
 use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage};
+use stegoeggo::{ProtectionContext, Protector, SteganographyProtector};
 
 fn main() {
     let stego = SteganographyProtector::new();

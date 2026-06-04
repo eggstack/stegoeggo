@@ -1,9 +1,9 @@
+use image::DynamicImage;
+use image::ImageEncoder;
 use stegoeggo::{
     process_image_bytes, verify_image_bytes, ImageOutputFormat, MetadataTrapProtector,
     ProtectionContext, ProtectionLevel, SteganographyProtector, VerificationStatus,
 };
-use image::DynamicImage;
-use image::ImageEncoder;
 
 fn create_test_image(width: u32, height: u32) -> DynamicImage {
     let img = DynamicImage::new_rgb8(width, height);

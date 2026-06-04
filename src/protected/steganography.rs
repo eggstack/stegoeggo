@@ -1953,21 +1953,25 @@ pub struct StegoPayload {
 
 impl StegoPayload {
     /// The protection level byte (0=Disabled, 1=Light, 2=Standard).
+    #[must_use]
     pub fn protection_level(&self) -> u8 {
         self.protection_level
     }
 
     /// The seed used when the protection was applied.
+    #[must_use]
     pub fn seed(&self) -> u64 {
         self.seed
     }
 
     /// The perturbation intensity (0.0–1.0).
+    #[must_use]
     pub fn intensity(&self) -> f32 {
         self.intensity
     }
 
     /// The payload format version (1 or 2).
+    #[must_use]
     pub fn version(&self) -> u8 {
         self.version
     }
@@ -1976,6 +1980,7 @@ impl StegoPayload {
     ///
     /// Present in v2 payloads. Derived from the ISCC content code or a
     /// truncated SHA-256 of the image pixels. `None` for v1 payloads.
+    #[must_use]
     pub fn content_hash(&self) -> Option<[u8; 4]> {
         self.content_hash
     }
@@ -1984,6 +1989,7 @@ impl StegoPayload {
     ///
     /// Present in v2 payloads. Indicates the AI training restrictions
     /// encoded in the payload. `None` for v1 payloads or when not set.
+    #[must_use]
     pub fn dmi_value(&self) -> Option<crate::types::DmiValue> {
         self.dmi_value
     }

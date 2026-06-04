@@ -1,9 +1,9 @@
+use image::{DynamicImage, ImageBuffer, Rgba};
 /// Legal metadata injection example.
 ///
 /// Demonstrates how to inject copyright and usage restrictions
 /// into images you own for IP protection.
 use stegoeggo::{LegalMetadata, MetadataTrapProtector, ProtectionContext, ProtectionLevel};
-use image::{DynamicImage, ImageBuffer, Rgba};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create an image you own

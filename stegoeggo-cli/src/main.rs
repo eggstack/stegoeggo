@@ -1,12 +1,12 @@
 use clap::{Parser, ValueEnum};
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use stegoeggo::Error;
 use stegoeggo::{
     generate_random_seed, process_image_bytes, DmiValue, ImageOutputFormat, MetadataTrapProtector,
     ProtectionContext, ProtectionLevel, SteganographyProtector, DEFAULT_OUTPUT_FORMAT,
 };
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(name = "stegoeggo")]

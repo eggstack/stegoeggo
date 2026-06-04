@@ -20,10 +20,23 @@ pub struct Iscc {
 }
 
 impl Iscc {
+    /// Computes an ISCC identifier from an image.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Iscc`] if the underlying ISCC computation fails.
     pub fn from_image(img: &DynamicImage) -> Result<Self> {
         Self::from_image_with_metadata(img, None)
     }
 
+    /// Computes an ISCC identifier from an image with optional legal metadata.
+    ///
+    /// When `legal_metadata` is `Some`, a meta code is generated for
+    /// full ISO 24138:2024 compliance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Iscc`] if the underlying ISCC computation fails.
     pub fn from_image_with_metadata(
         img: &DynamicImage,
         legal_metadata: Option<&LegalMetadata>,
@@ -79,26 +92,38 @@ impl Iscc {
         })
     }
 
+    /// Returns the meta code component, if legal metadata was provided.
+    #[must_use]
     pub fn meta_code(&self) -> Option<&str> {
         self.meta.as_deref()
     }
 
+    /// Returns the content code component (perceptual hash).
+    #[must_use]
     pub fn content(&self) -> &str {
         &self.content
     }
 
+    /// Returns the data code component (instance code).
+    #[must_use]
     pub fn data(&self) -> &str {
         &self.data
     }
 
+    /// Returns the instance code component (exact byte hash).
+    #[must_use]
     pub fn instance(&self) -> &str {
         &self.instance
     }
 
+    /// Returns the full ISCC URI (e.g., `ISCC:AA...+EE...+II...`).
+    #[must_use]
     pub fn full(&self) -> &str {
         &self.full
     }
 
+    /// Returns the content code as raw bytes.
+    #[must_use]
     pub fn content_bytes(&self) -> &[u8] {
         self.content.as_bytes()
     }

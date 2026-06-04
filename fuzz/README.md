@@ -8,6 +8,7 @@
 |--------|---------|-------------------|
 | `jpeg_parser` | `JpegHeader::parse`, `JpegTranscoder::decode_coefficients`, `DctStegoF5` | The hand-rolled JPEG parser and DCT coefficient decoder. This is the largest untrusted-byte consumer in the library. |
 | `pipeline_bytes` | `process_image_bytes`, `verify_image_bytes` | The full public bytes-in / bytes-out path. Catches format-detection logic errors, encoder failures on degenerate inputs, and verification-time panics. |
+| `tiled_round_trip` | Tiled stego embed/extract | Exercises the crop-resistant tiled steganography path end-to-end. Verifies that tiled payloads survive round-trips without corruption. |
 
 ## Running
 
@@ -16,6 +17,7 @@ Requires `cargo-fuzz` (already installed locally):
 ```bash
 cargo fuzz run jpeg_parser -- -max_total_time=60
 cargo fuzz run pipeline_bytes -- -max_total_time=60
+cargo fuzz run tiled_round_trip -- -max_total_time=60
 ```
 
 For an overnight run, drop the `-max_total_time` flag. The fuzzer will explore

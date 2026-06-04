@@ -1,8 +1,8 @@
+use image::DynamicImage;
 use stegoeggo::{
     process_image, process_image_bytes, MetadataTrapProtector, PassthroughProtector,
     ProtectionContext, ProtectionLevel, ProtectionPipeline, Protector,
 };
-use image::DynamicImage;
 
 fn create_test_image() -> DynamicImage {
     DynamicImage::new_rgb8(10, 10)

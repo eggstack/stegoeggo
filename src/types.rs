@@ -21,6 +21,8 @@ pub enum DmiValue {
 }
 
 impl DmiValue {
+    /// Returns the string representation of this DMI value.
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             DmiValue::Unspecified => "Unspecified",
@@ -66,6 +68,8 @@ pub enum ProtectionLevel {
 }
 
 impl ProtectionLevel {
+    /// Returns the lowercase string representation of this protection level.
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             ProtectionLevel::Disabled => "disabled",
@@ -74,6 +78,8 @@ impl ProtectionLevel {
         }
     }
 
+    /// Encodes this protection level as a single byte for payload serialization.
+    #[must_use]
     pub fn to_byte(&self) -> u8 {
         match self {
             ProtectionLevel::Disabled => 0,
@@ -82,6 +88,8 @@ impl ProtectionLevel {
         }
     }
 
+    /// Decodes a protection level from a byte. Returns `None` for unknown values.
+    #[must_use]
     pub fn from_byte(b: u8) -> Option<Self> {
         match b {
             0 => Some(ProtectionLevel::Disabled),
@@ -106,6 +114,10 @@ pub enum ImageOutputFormat {
 pub const DEFAULT_OUTPUT_FORMAT: ImageOutputFormat = ImageOutputFormat::Png;
 
 impl ImageOutputFormat {
+    /// Parses an image format from a file extension (case-insensitive).
+    ///
+    /// Recognizes `"png"`, `"jpg"`, `"jpeg"`, and `"webp"`.
+    #[must_use]
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext.to_lowercase().as_str() {
             "png" => Some(ImageOutputFormat::Png),
@@ -115,6 +127,10 @@ impl ImageOutputFormat {
         }
     }
 
+    /// Detects the image format from file magic bytes.
+    ///
+    /// Returns `None` if the bytes are too short or the format is unrecognized.
+    #[must_use]
     pub fn from_magic_bytes(bytes: &[u8]) -> Option<Self> {
         if bytes.len() < 4 {
             return None;
@@ -131,14 +147,20 @@ impl ImageOutputFormat {
         None
     }
 
+    /// Returns `true` if the bytes start with the PNG magic number.
+    #[must_use]
     pub fn is_png(bytes: &[u8]) -> bool {
         bytes.len() >= 4 && bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47])
     }
 
+    /// Returns `true` if the bytes start with the JPEG magic number.
+    #[must_use]
     pub fn is_jpeg(bytes: &[u8]) -> bool {
         bytes.len() >= 3 && bytes.starts_with(&[0xFF, 0xD8, 0xFF])
     }
 
+    /// Returns `true` if the bytes start with the RIFF/WEBP magic number.
+    #[must_use]
     pub fn is_webp(bytes: &[u8]) -> bool {
         bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP"
     }
@@ -152,6 +174,8 @@ impl ImageOutputFormat {
         }
     }
 
+    /// Converts to the corresponding `image::ImageFormat` variant.
+    #[must_use]
     pub fn to_image_format(self) -> image::ImageFormat {
         match self {
             ImageOutputFormat::Png => image::ImageFormat::Png,
@@ -175,74 +199,97 @@ pub struct LegalMetadata {
 }
 
 impl LegalMetadata {
+    /// Creates a new `LegalMetadata` with all fields unset.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Returns the copyright holder name, if set.
+    #[must_use]
     pub fn copyright_holder(&self) -> Option<&str> {
         self.copyright_holder.as_deref()
     }
 
+    /// Returns the contact email for IP claims, if set.
+    #[must_use]
     pub fn contact_email(&self) -> Option<&str> {
         self.contact_email.as_deref()
     }
 
+    /// Returns the license URL, if set.
+    #[must_use]
     pub fn license_url(&self) -> Option<&str> {
         self.license_url.as_deref()
     }
 
+    /// Returns the usage terms string, if set.
+    #[must_use]
     pub fn usage_terms(&self) -> Option<&str> {
         self.usage_terms.as_deref()
     }
 
+    /// Returns the creation date string, if set.
+    #[must_use]
     pub fn creation_date(&self) -> Option<&str> {
         self.creation_date.as_deref()
     }
 
+    /// Returns the AI training constraints string, if set.
+    #[must_use]
     pub fn ai_constraints(&self) -> Option<&str> {
         self.ai_constraints.as_deref()
     }
 
+    /// Returns the web statement of rights URL, if set.
+    #[must_use]
     pub fn web_statement_of_rights(&self) -> Option<&str> {
         self.web_statement_of_rights.as_deref()
     }
 
+    /// Sets the copyright holder name.
     #[must_use]
     pub fn with_copyright_holder(mut self, holder: impl Into<String>) -> Self {
         self.copyright_holder = Some(holder.into());
         self
     }
 
+    /// Sets the contact email for IP claims.
     #[must_use]
     pub fn with_contact_email(mut self, email: impl Into<String>) -> Self {
         self.contact_email = Some(email.into());
         self
     }
 
+    /// Sets the license URL.
     #[must_use]
     pub fn with_license_url(mut self, url: impl Into<String>) -> Self {
         self.license_url = Some(url.into());
         self
     }
 
+    /// Sets the usage terms (e.g., "All Rights Reserved").
     #[must_use]
     pub fn with_usage_terms(mut self, terms: impl Into<String>) -> Self {
         self.usage_terms = Some(terms.into());
         self
     }
 
+    /// Sets the creation date string.
     #[must_use]
     pub fn with_creation_date(mut self, date: impl Into<String>) -> Self {
         self.creation_date = Some(date.into());
         self
     }
 
+    /// Sets the AI training constraints (e.g., "No AI training permitted").
     #[must_use]
     pub fn with_ai_constraints(mut self, constraints: impl Into<String>) -> Self {
         self.ai_constraints = Some(constraints.into());
         self
     }
 
+    /// Sets the web statement of rights URL.
     #[must_use]
     pub fn with_web_statement_of_rights(mut self, statement: impl Into<String>) -> Self {
         self.web_statement_of_rights = Some(statement.into());
@@ -268,10 +315,13 @@ pub struct ProtectionConfig {
 }
 
 impl ProtectionConfig {
+    /// Creates a new `ProtectionConfig` with no MAC key or legal metadata.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets the MAC key for cryptographic payload verification.
     #[must_use]
     pub fn with_mac_key(mut self, key: Vec<u8>) -> Self {
         self.mac_key = Some(key);
@@ -284,10 +334,14 @@ impl ProtectionConfig {
         self
     }
 
+    /// Returns the MAC key, if set.
+    #[must_use]
     pub fn mac_key(&self) -> Option<&[u8]> {
         self.mac_key.as_deref()
     }
 
+    /// Returns the legal metadata, if set.
+    #[must_use]
     pub fn legal_metadata(&self) -> Option<&LegalMetadata> {
         self.legal_metadata.as_ref()
     }
@@ -500,11 +554,13 @@ impl ProtectionContext {
     }
 
     /// Access the MAC key, if set.
+    #[must_use]
     pub fn mac_key(&self) -> Option<&[u8]> {
         self.config.as_ref().and_then(|c| c.mac_key.as_deref())
     }
 
     /// Access the legal metadata, if set.
+    #[must_use]
     pub fn legal_metadata(&self) -> Option<&LegalMetadata> {
         self.config.as_ref().and_then(|c| c.legal_metadata.as_ref())
     }
@@ -675,36 +731,43 @@ impl ProtectionContext {
     }
 
     /// Get the intensity value.
+    #[must_use]
     pub fn intensity(&self) -> f32 {
         self.intensity
     }
 
     /// Get the seed value.
+    #[must_use]
     pub fn seed(&self) -> u64 {
         self.seed
     }
 
     /// Get the input format hint.
+    #[must_use]
     pub fn input_format(&self) -> Option<ImageOutputFormat> {
         self.input_format
     }
 
     /// Get the output format.
+    #[must_use]
     pub fn output_format(&self) -> Option<ImageOutputFormat> {
         self.output_format
     }
 
     /// Get the protection level.
+    #[must_use]
     pub fn protection_level(&self) -> Option<ProtectionLevel> {
         self.protection_level
     }
 
     /// Get the DMI value.
+    #[must_use]
     pub fn dmi_value(&self) -> Option<DmiValue> {
         self.dmi_value
     }
 
     /// Get the maximum dimension limit.
+    #[must_use]
     pub fn max_dimension(&self) -> Option<u32> {
         self.max_dimension
     }
@@ -715,6 +778,7 @@ impl ProtectionContext {
     /// pipeline will apply the level-based default (inject unless `Disabled`).
     /// The pipeline resolves this by calling
     /// `inject_metadata.unwrap_or(!matches!(level, Disabled))`.
+    #[must_use]
     pub fn inject_metadata(&self) -> Option<bool> {
         self.inject_metadata
     }
@@ -724,6 +788,7 @@ impl ProtectionContext {
     /// Returns the caller's explicit override, if any. `None` means the
     /// pipeline will **not** inject legal claims (default is off).
     /// The pipeline resolves this by calling `inject_legal_claims.unwrap_or(false)`.
+    #[must_use]
     pub fn inject_legal_claims(&self) -> Option<bool> {
         self.inject_legal_claims
     }
@@ -736,6 +801,7 @@ impl ProtectionContext {
     /// - `intensity < 0.3` → 1 (minimal embedding)
     /// - `intensity < 0.7` → 2 (standard)
     /// - `intensity >= 0.7` → 3 (heavy)
+    #[must_use]
     pub fn stego_redundancy(&self) -> usize {
         self.effective_redundancy()
     }
@@ -755,11 +821,13 @@ impl ProtectionContext {
     }
 
     /// Get the JPEG encoding quality.
+    #[must_use]
     pub fn jpeg_quality(&self) -> u8 {
         self.jpeg_quality
     }
 
     /// Get whether progressive JPEG encoding is enabled.
+    #[must_use]
     pub fn progressive_jpeg(&self) -> bool {
         self.progressive_jpeg
     }
@@ -770,6 +838,7 @@ impl ProtectionContext {
     /// `Some(0)` and `None` both indicate that tiling is disabled — callers
     /// that need a single on/off decision should use
     /// [`is_tile_mode_enabled`](Self::is_tile_mode_enabled) instead.
+    #[must_use]
     pub fn tile_size(&self) -> Option<u32> {
         self.tile_size
     }
@@ -778,17 +847,20 @@ impl ProtectionContext {
     ///
     /// Treats both `Some(0)` and `None` as "tiling disabled" so callers
     /// don't need to special-case the sentinel.
+    #[must_use]
     pub fn is_tile_mode_enabled(&self) -> bool {
         matches!(self.tile_size, Some(n) if n > 0)
     }
 
     /// Get the maximum number of candidate tile origins the extractor will
     /// try. Always at least 1.
+    #[must_use]
     pub fn tile_extraction_max_origins(&self) -> u32 {
         self.tile_extraction_max_origins.max(1)
     }
 
     /// Get the content hash, if set.
+    #[must_use]
     pub fn content_hash(&self) -> Option<[u8; 4]> {
         self.content_hash
     }
@@ -848,16 +920,19 @@ pub enum VerificationResult {
 
 impl VerificationResult {
     /// Returns `true` if verification succeeded.
+    #[must_use]
     pub fn is_verified(&self) -> bool {
         matches!(self, VerificationResult::Verified { .. })
     }
 
     /// Returns `true` if protection data was found (whether valid or corrupted).
+    #[must_use]
     pub fn is_found(&self) -> bool {
         !matches!(self, VerificationResult::NotFound)
     }
 
     /// Returns the payload if verification succeeded.
+    #[must_use]
     pub fn payload(&self) -> Option<&crate::StegoPayload> {
         match self {
             VerificationResult::Verified { payload } => Some(payload),
@@ -866,6 +941,7 @@ impl VerificationResult {
     }
 
     /// Returns the metadata seed when the result is metadata-only evidence.
+    #[must_use]
     pub fn metadata_seed(&self) -> Option<u64> {
         match self {
             VerificationResult::MetadataOnly { seed } => Some(*seed),

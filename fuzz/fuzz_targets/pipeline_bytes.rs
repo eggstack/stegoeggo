@@ -1,7 +1,7 @@
 #![no_main]
 
-use stegoeggo::{process_image_bytes, verify_image_bytes, ProtectionContext, ProtectionLevel};
 use libfuzzer_sys::fuzz_target;
+use stegoeggo::{process_image_bytes, verify_image_bytes, ProtectionContext, ProtectionLevel};
 
 fuzz_target!(|data: &[u8]| {
     if data.is_empty() {

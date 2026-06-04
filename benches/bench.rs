@@ -1,10 +1,10 @@
-use stegoeggo::{
-    process_image_bytes, ImageOutputFormat, ProtectionContext, ProtectionLevel, ProtectionPipeline,
-};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::DynamicImage;
 use std::alloc::System;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use stegoeggo::{
+    process_image_bytes, ImageOutputFormat, ProtectionContext, ProtectionLevel, ProtectionPipeline,
+};
 
 static ALLOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
 static ALLOCATED_BYTES: AtomicUsize = AtomicUsize::new(0);

@@ -2,7 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.0] - 2024-06-02
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [Unreleased]
+
+## [0.2.0] - 2026-06-04
 
 ### Added
 - **Crop-resistant tiled steganography** via `with_tile_size(n)` on `ProtectionContext`:
@@ -36,6 +40,10 @@ All notable changes to this project will be documented in this file.
 - JPEG redundancy embedding bug (embedded = 0 reset between passes)
 - Dimension validation in `process_bytes` for both JPEG and non-JPEG paths
 
-## [0.1.0] - 2024-03-13
+## [0.1.0] - 2026-03-13
 
 Initial release.
+
+[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/eggstack/stegoeggo/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/eggstack/stegoeggo/releases/tag/v0.1.0

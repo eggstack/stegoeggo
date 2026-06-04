@@ -396,6 +396,12 @@ impl Default for ProtectionPipeline {
 /// Process an image with the specified protection level.
 ///
 /// Takes an owned DynamicImage and returns a processed image.
+///
+/// # Errors
+///
+/// Returns [`Error::ImageDecode`] if the image dimensions exceed `max_dimension`.
+/// Returns [`Error::ImageEncode`] or [`Error::Steganography`] if encoding or
+/// embedding fails.
 #[must_use = "the protected image should be saved or used"]
 pub fn process_image(
     img: DynamicImage,
@@ -411,6 +417,10 @@ pub fn process_image(
 ///
 /// Takes a slice of images and returns a vector of processed images.
 /// Uses Rayon for parallel processing.
+///
+/// # Errors
+///
+/// Returns the first error encountered from any image processing call.
 #[must_use = "the protected images should be saved or used"]
 pub fn process_images_parallel(
     images: &[DynamicImage],
@@ -431,6 +441,10 @@ pub fn process_images_parallel(
 /// Process multiple images in parallel (bytes variant).
 ///
 /// Takes a slice of image bytes and returns a vector of processed image bytes.
+///
+/// # Errors
+///
+/// Returns the first error encountered from any image processing call.
 #[must_use = "the protected image bytes should be saved or used"]
 pub fn process_images_bytes_parallel(
     images: &[Vec<u8>],
@@ -462,6 +476,12 @@ pub fn process_images_bytes_parallel(
 /// let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 /// std::fs::write("output.png", &protected).unwrap();
 /// ```
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidFormat`] if the image format cannot be determined.
+/// Returns [`Error::ImageDecode`], [`Error::ImageEncode`], or
+/// [`Error::Steganography`] if processing fails.
 #[must_use = "the protected image bytes should be saved or used"]
 pub fn process_image_bytes(
     img_bytes: &[u8],
@@ -508,6 +528,12 @@ pub fn process_image_bytes(
 ///     eprintln!("Warning: {}", w);
 /// }
 /// ```
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidFormat`] if the image format cannot be determined.
+/// Returns [`Error::ImageDecode`], [`Error::ImageEncode`], or
+/// [`Error::Steganography`] if processing fails.
 pub fn process_image_bytes_with_info(
     img_bytes: &[u8],
     level: ProtectionLevel,
@@ -530,6 +556,12 @@ pub fn process_image_bytes_with_info(
 /// The library owns steganographic and metadata injection mechanics; the proxy
 /// should still enforce request byte limits, concurrency limits, timeouts, and
 /// cache policy outside this function.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidFormat`] if the image format cannot be determined.
+/// Returns [`Error::ImageDecode`], [`Error::ImageEncode`], or
+/// [`Error::Steganography`] if processing fails.
 pub fn process_image_bytes_with_warnings(
     img_bytes: &[u8],
     level: ProtectionLevel,
@@ -670,7 +702,7 @@ pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatu
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```no_run
 /// use stegoeggo::{verify_image_bytes_detailed, VerificationResult};
 ///
 /// let bytes = std::fs::read("protected.png").unwrap();
