@@ -262,9 +262,9 @@ pub struct ProtectionConfig {
     /// Without a MAC key, steganographic payload verification uses a non-cryptographic
     /// CRC32 checksum that provides no cryptographic assurance. Always set a
     /// MAC key in adversarial settings to enable HMAC-SHA256 verification.
-    pub mac_key: Option<Vec<u8>>,
+    mac_key: Option<Vec<u8>>,
     /// Legal metadata for copyright and AI training restrictions.
-    pub legal_metadata: Option<LegalMetadata>,
+    legal_metadata: Option<LegalMetadata>,
 }
 
 impl ProtectionConfig {
@@ -282,6 +282,14 @@ impl ProtectionConfig {
     pub fn with_legal_metadata(mut self, metadata: LegalMetadata) -> Self {
         self.legal_metadata = Some(metadata);
         self
+    }
+
+    pub fn mac_key(&self) -> Option<&[u8]> {
+        self.mac_key.as_deref()
+    }
+
+    pub fn legal_metadata(&self) -> Option<&LegalMetadata> {
+        self.legal_metadata.as_ref()
     }
 }
 

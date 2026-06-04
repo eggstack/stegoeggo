@@ -1,3 +1,4 @@
+use crate::error::{Error, Result};
 use crate::types::LegalMetadata;
 use image::DynamicImage;
 
@@ -8,34 +9,30 @@ use image::DynamicImage;
 /// with the standard [ISCC specification](https://iscc-project.github.io/) —
 /// use these identifiers for in-application deduplication and provenance
 /// tracking, not for cross-ISCC-tool interoperability.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[must_use]
 pub struct Iscc {
-    /// Optional metadata code (generated from legal metadata when provided).
-    pub meta: Option<String>,
-    /// Content-derived identifier (perceptual hash of normalized image).
-    pub content: String,
-    /// Data-derived identifier (instance code from raw image bytes).
-    pub data: String,
-    /// Per-file instance identifier (same as `data`).
-    pub instance: String,
-    /// Full ISCC URI (e.g., `ISCC:...`).
-    pub full: String,
+    meta: Option<String>,
+    content: String,
+    data: String,
+    instance: String,
+    full: String,
 }
 
 impl Iscc {
-    pub fn from_image(img: &DynamicImage) -> Self {
+    pub fn from_image(img: &DynamicImage) -> Result<Self> {
         Self::from_image_with_metadata(img, None)
     }
 
     pub fn from_image_with_metadata(
         img: &DynamicImage,
         legal_metadata: Option<&LegalMetadata>,
-    ) -> Self {
+    ) -> Result<Self> {
         let normalized = normalize_image(img);
         let pixels = extract_grayscale_pixels(&normalized);
 
-        let content_result =
-            iscc_lib::gen_image_code_v0(&pixels, 256).expect("image code generation failed");
+        let content_result = iscc_lib::gen_image_code_v0(&pixels, 256)
+            .map_err(|e| Error::Iscc(format!("image code generation failed: {}", e)))?;
         let content_code = content_result
             .iscc
             .strip_prefix("ISCC:")
@@ -43,7 +40,7 @@ impl Iscc {
 
         let raw_bytes = img.to_rgba8().into_raw();
         let instance_result = iscc_lib::gen_instance_code_v0(&raw_bytes, 256)
-            .expect("instance code generation failed");
+            .map_err(|e| Error::Iscc(format!("instance code generation failed: {}", e)))?;
         let instance_code = instance_result
             .iscc
             .strip_prefix("ISCC:")
@@ -73,17 +70,33 @@ impl Iscc {
             None => format!("ISCC:{}+{}", content_code, instance_code),
         };
 
-        Self {
+        Ok(Self {
             meta: meta_code,
             content: content_code.to_string(),
             data: instance_code.to_string(),
             instance: instance_code.to_string(),
             full,
-        }
+        })
     }
 
     pub fn meta_code(&self) -> Option<&str> {
         self.meta.as_deref()
+    }
+
+    pub fn content(&self) -> &str {
+        &self.content
+    }
+
+    pub fn data(&self) -> &str {
+        &self.data
+    }
+
+    pub fn instance(&self) -> &str {
+        &self.instance
+    }
+
+    pub fn full(&self) -> &str {
+        &self.full
     }
 
     pub fn content_bytes(&self) -> &[u8] {
@@ -137,21 +150,24 @@ fn extract_grayscale_pixels(img: &DynamicImage) -> Vec<u8> {
 }
 
 /// Compute an ISCC identifier from a `DynamicImage`.
-pub fn compute_iscc(img: &DynamicImage) -> Iscc {
+pub fn compute_iscc(img: &DynamicImage) -> Result<Iscc> {
     Iscc::from_image(img)
 }
 
 /// Compute an ISCC identifier from a `DynamicImage` with legal metadata.
 ///
 /// Generates a meta code from the provided legal metadata for full ISO 24138:2024 compliance.
-pub fn compute_iscc_with_metadata(img: &DynamicImage, legal_metadata: &LegalMetadata) -> Iscc {
+pub fn compute_iscc_with_metadata(
+    img: &DynamicImage,
+    legal_metadata: &LegalMetadata,
+) -> Result<Iscc> {
     Iscc::from_image_with_metadata(img, Some(legal_metadata))
 }
 
 /// Compute an ISCC identifier from raw image bytes.
 ///
 /// Returns `None` if the bytes cannot be decoded as an image.
-pub fn compute_iscc_from_bytes(bytes: &[u8]) -> Option<Iscc> {
+pub fn compute_iscc_from_bytes(bytes: &[u8]) -> Option<Result<Iscc>> {
     let img = image::load_from_memory(bytes).ok()?;
     Some(Iscc::from_image(&img))
 }
@@ -162,7 +178,7 @@ pub fn compute_iscc_from_bytes(bytes: &[u8]) -> Option<Iscc> {
 pub fn compute_iscc_from_bytes_with_metadata(
     bytes: &[u8],
     legal_metadata: &LegalMetadata,
-) -> Option<Iscc> {
+) -> Option<Result<Iscc>> {
     let img = image::load_from_memory(bytes).ok()?;
     Some(Iscc::from_image_with_metadata(&img, Some(legal_metadata)))
 }
@@ -174,22 +190,22 @@ mod tests {
     #[test]
     fn test_iscc_deterministic() {
         let img = DynamicImage::new_rgb8(100, 100);
-        let iscc1 = Iscc::from_image(&img);
-        let iscc2 = Iscc::from_image(&img);
+        let iscc1 = Iscc::from_image(&img).unwrap();
+        let iscc2 = Iscc::from_image(&img).unwrap();
 
-        assert_eq!(iscc1.content, iscc2.content);
-        assert_eq!(iscc1.full, iscc2.full);
+        assert_eq!(iscc1.content(), iscc2.content());
+        assert_eq!(iscc1.full(), iscc2.full());
     }
 
     #[test]
     fn test_iscc_starts_with_ee_prefix() {
         let img = DynamicImage::new_rgb8(100, 100);
-        let iscc = Iscc::from_image(&img);
+        let iscc = Iscc::from_image(&img).unwrap();
 
         assert!(
-            iscc.content.starts_with("EE"),
+            iscc.content().starts_with("EE"),
             "content code should start with EE (CONTENT-IMAGE prefix per ISO 24138:2024), got: {}",
-            iscc.content
+            iscc.content()
         );
     }
 
@@ -201,22 +217,22 @@ mod tests {
         let legal = LegalMetadata::new()
             .with_copyright_holder("Test Author")
             .with_usage_terms("CC BY 4.0");
-        let iscc = Iscc::from_image_with_metadata(&img, Some(&legal));
+        let iscc = Iscc::from_image_with_metadata(&img, Some(&legal)).unwrap();
 
-        assert!(iscc.meta.is_some(), "meta code should be present");
-        let meta = iscc.meta.as_ref().unwrap();
+        assert!(iscc.meta_code().is_some(), "meta code should be present");
+        let meta = iscc.meta_code().unwrap();
         assert!(
             meta.starts_with("AA"),
             "meta code should start with AA (META prefix), got: {}",
             meta
         );
         assert!(
-            iscc.full.starts_with("ISCC:AA"),
+            iscc.full().starts_with("ISCC:AA"),
             "full URI should start with ISCC:AA when meta is present, got: {}",
-            iscc.full
+            iscc.full()
         );
         assert!(
-            iscc.full.contains('+'),
+            iscc.full().contains('+'),
             "full URI should contain + separators"
         );
     }
@@ -224,20 +240,44 @@ mod tests {
     #[test]
     fn test_iscc_without_metadata_no_meta_code() {
         let img = DynamicImage::new_rgb8(100, 100);
-        let iscc = Iscc::from_image(&img);
+        let iscc = Iscc::from_image(&img).unwrap();
 
-        assert!(iscc.meta.is_none());
         assert!(iscc.meta_code().is_none());
     }
 
     #[test]
     fn test_meta_code_getter() {
         let img = DynamicImage::new_rgb8(100, 100);
-        let iscc = Iscc::from_image(&img);
+        let iscc = Iscc::from_image(&img).unwrap();
         assert!(iscc.meta_code().is_none());
 
         let legal = LegalMetadata::new().with_copyright_holder("Author");
-        let iscc = Iscc::from_image_with_metadata(&img, Some(&legal));
+        let iscc = Iscc::from_image_with_metadata(&img, Some(&legal)).unwrap();
         assert!(iscc.meta_code().is_some());
+    }
+
+    #[test]
+    fn test_compute_iscc_returns_result() {
+        let img = DynamicImage::new_rgb8(100, 100);
+        let iscc = compute_iscc(&img).unwrap();
+        assert!(!iscc.full().is_empty());
+    }
+
+    #[test]
+    fn test_compute_iscc_from_bytes_returns_option_of_result() {
+        let img = DynamicImage::new_rgb8(100, 100);
+        let bytes = crate::util::image::encode_image(&img, image::ImageFormat::Png).unwrap();
+        let result = compute_iscc_from_bytes(&bytes).unwrap();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_iscc_field_getters() {
+        let img = DynamicImage::new_rgb8(100, 100);
+        let iscc = Iscc::from_image(&img).unwrap();
+        assert!(!iscc.data().is_empty());
+        assert!(!iscc.instance().is_empty());
+        assert_eq!(iscc.data(), iscc.instance());
+        assert!(!iscc.content_bytes().is_empty());
     }
 }

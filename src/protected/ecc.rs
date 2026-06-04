@@ -1,7 +1,22 @@
+/// Error correction for steganographic payloads using 3x repetition with majority voting.
+///
+/// Each byte of the original payload is replicated 3 times. During decoding, for each
+/// byte position, the most frequent value across the 3 copies is selected. This allows
+/// correction of up to 1 corrupted copy per byte position (2 out of 3 must agree).
+///
+/// This is not true Reed-Solomon coding — it provides simpler error correction that is
+/// sufficient for the steganographic use case where individual bits may be flipped by
+/// image processing noise. The 3x expansion trades capacity for robustness.
 const DATA_LEN: usize = 24;
+/// Number of times each data byte is replicated in the ECC-encoded output.
 pub(crate) const REPLICATION_FACTOR: usize = 3;
+/// Total length of the ECC-encoded data (DATA_LEN × REPLICATION_FACTOR).
 pub(crate) const TOTAL_ECC_LEN: usize = DATA_LEN * REPLICATION_FACTOR;
 
+/// Encode data using 3x repetition.
+///
+/// Each byte is written 3 times consecutively. The output length is
+/// `data.len() * REPLICATION_FACTOR`.
 pub(crate) fn ecc_encode(data: &[u8]) -> Vec<u8> {
     let data_len = data.len();
     let mut encoded = Vec::with_capacity(data_len * REPLICATION_FACTOR);
@@ -11,6 +26,13 @@ pub(crate) fn ecc_encode(data: &[u8]) -> Vec<u8> {
     encoded
 }
 
+/// Decode ECC-encoded data using majority voting.
+///
+/// For each byte position, counts votes across the 3 copies and returns the most
+/// frequent value. Returns `None` if the encoded data is shorter than expected.
+///
+/// Corrects exactly 1 corrupted copy per byte position. If 2 or more copies are
+/// corrupted to the same wrong value, the wrong value wins the vote.
 pub(crate) fn ecc_decode(encoded: &[u8], data_len: usize) -> Option<Vec<u8>> {
     let expected_len = data_len * REPLICATION_FACTOR;
     if encoded.len() < expected_len {

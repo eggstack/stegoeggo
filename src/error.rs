@@ -64,6 +64,9 @@ pub enum Error {
     #[error("Cryptographic error: {0}")]
     Crypto(String),
 
+    #[error("ISCC generation error: {0}")]
+    Iscc(String),
+
     #[cfg(feature = "async")]
     #[error("Blocking task failed: {0}")]
     Task(String),
@@ -184,6 +187,14 @@ mod tests {
     }
 
     #[test]
+    fn error_iscc_display() {
+        let err = Error::Iscc("image code generation failed".to_string());
+        let s = err.to_string();
+        assert!(s.contains("ISCC generation error"));
+        assert!(s.contains("image code generation failed"));
+    }
+
+    #[test]
     fn error_all_variants_constructible() {
         let _ = Error::ImageDecode("test".to_string());
         let _ = Error::ImageEncode("test".to_string());
@@ -194,5 +205,6 @@ mod tests {
         let _ = Error::ImageTruncated("test".to_string());
         let _ = Error::PayloadVerification("test".to_string());
         let _ = Error::Crypto("test".to_string());
+        let _ = Error::Iscc("test".to_string());
     }
 }

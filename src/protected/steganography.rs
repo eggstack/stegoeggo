@@ -836,6 +836,95 @@ impl SteganographyProtector {
         None
     }
 
+    /// Extract the steganographic payload from raw image bytes.
+    ///
+    /// Like [`extract_payload_with_key`](Self::extract_payload_with_key), but operates
+    /// directly on image bytes to avoid unnecessary decode/encode cycles. This is the
+    /// byte-level equivalent used by [`verify_image_bytes_detailed`](crate::verify_image_bytes_detailed).
+    pub fn extract_payload_from_bytes_with_key(
+        &self,
+        img_bytes: &[u8],
+        mac_key: &[u8],
+    ) -> Option<StegoPayload> {
+        // JPEG: try DCT extraction first (avoids pixel decode)
+        if img_bytes.starts_with(&[0xFF, 0xD8]) {
+            if let Some(payload_bytes) = self.extract_verified_dct_payload(img_bytes, mac_key) {
+                if let Some(decoded) = Self::try_ecc_decode(&payload_bytes) {
+                    if let Some(payload) = Self::parse_stego_payload(&decoded) {
+                        return Some(payload);
+                    }
+                }
+                if Self::verify_payload_integrity(&payload_bytes, mac_key) {
+                    return Self::parse_stego_payload(&payload_bytes);
+                }
+            }
+
+            // Tiled F5 fallback for JPEG
+            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image(img_bytes) {
+                if let Some(payload_bytes) = self.extract_f5_tiled_candidates(
+                    img_bytes,
+                    metadata_seed,
+                    DEFAULT_TILE_SIZE,
+                    64,
+                    mac_key,
+                ) {
+                    if let Some(decoded) = Self::try_ecc_decode(&payload_bytes) {
+                        if let Some(payload) = Self::parse_stego_payload(&decoded) {
+                            return Some(payload);
+                        }
+                    }
+                    if Self::verify_payload_integrity(&payload_bytes, mac_key) {
+                        return Self::parse_stego_payload(&payload_bytes);
+                    }
+                }
+            }
+        }
+
+        // Try metadata seed extraction from bytes (works for PNG, JPEG, WebP)
+        if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image(img_bytes) {
+            if let Ok(img) = image::load_from_memory(img_bytes) {
+                if let Some(payload) =
+                    self.extract_payload_with_seed_and_key(&img, metadata_seed, mac_key)
+                {
+                    return Some(payload);
+                }
+            }
+        }
+
+        // LSB fallback seed
+        if let Ok(img) = image::load_from_memory(img_bytes) {
+            let rgba = img.to_rgba8();
+            if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
+                if let Some(payload) =
+                    self.extract_payload_with_seed_and_key(&img, fallback_seed, mac_key)
+                {
+                    return Some(payload);
+                }
+            }
+        }
+
+        // Tiled LSB fallback
+        if let Ok(img) = image::load_from_memory(img_bytes) {
+            let rgba = img.to_rgba8();
+            for &seed in &[42u64, 0, 1, 12345, 99999, 123456789] {
+                if let Some(payload) =
+                    self.extract_lsb_tiled_candidates(&rgba, seed, DEFAULT_TILE_SIZE, 64, mac_key)
+                {
+                    if let Some(decoded) = Self::try_ecc_decode(&payload) {
+                        if let Some(payload) = Self::parse_stego_payload(&decoded) {
+                            return Some(payload);
+                        }
+                    }
+                    if Self::verify_payload_integrity(&payload, mac_key) {
+                        return Self::parse_stego_payload(&payload);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     fn parse_stego_payload(payload: &[u8]) -> Option<StegoPayload> {
         if payload.len() < 24 {
             return None;
