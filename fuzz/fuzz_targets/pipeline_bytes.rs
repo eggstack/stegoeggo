@@ -1,6 +1,6 @@
 #![no_main]
 
-use cloakrs::{process_image_bytes, verify_image_bytes, ProtectionContext, ProtectionLevel};
+use stegoeggo::{process_image_bytes, verify_image_bytes, ProtectionContext, ProtectionLevel};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

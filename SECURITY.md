@@ -9,7 +9,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability within cloakrs, please report it responsibly.
+If you discover a security vulnerability within stegoeggo, please report it responsibly.
 
 Do NOT open a public GitHub issue. Instead, contact the maintainer directly at the email address listed in the crate metadata or GitHub profile.
 

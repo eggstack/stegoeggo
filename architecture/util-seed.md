@@ -28,7 +28,7 @@ if getrandom::getrandom(&mut buf).is_ok() {
 
 ```rust
 eprintln!(
-    "[cloakrs] WARNING: getrandom unavailable, using time-based seed (not cryptographically secure). \
+    "[stegoeggo] WARNING: getrandom unavailable, using time-based seed (not cryptographically secure). \
      For adversarial settings, use ProtectionContext::new(intensity, external_csprng_seed)"
 );
 let now = std::time::SystemTime::now()

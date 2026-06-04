@@ -1,4 +1,4 @@
-use cloakrs::{
+use stegoeggo::{
     process_image, process_image_bytes, process_images_bytes_parallel, process_images_parallel,
     DmiValue, ImageOutputFormat, LegalMetadata, MetadataTrapProtector, PassthroughProtector,
     ProtectionContext, ProtectionLevel, ProtectionPipeline, SteganographyProtector,
@@ -653,7 +653,7 @@ mod edge_cases {
 
 mod protector_individual {
     use super::*;
-    use cloakrs::Protector;
+    use stegoeggo::Protector;
 
     #[test]
     fn test_passthrough_preserves_dimensions() {
@@ -772,8 +772,8 @@ mod utilities {
     fn test_image_hash_deterministic() {
         let img = create_colored_image(64, 64, 100, 150, 200);
 
-        let hash1 = cloakrs::compute_image_hash(&img);
-        let hash2 = cloakrs::compute_image_hash(&img);
+        let hash1 = stegoeggo::compute_image_hash(&img);
+        let hash2 = stegoeggo::compute_image_hash(&img);
 
         assert_eq!(hash1, hash2, "Hash should be deterministic");
     }
@@ -783,8 +783,8 @@ mod utilities {
         let img1 = create_colored_image(64, 64, 10, 20, 30);
         let img2 = create_colored_image(64, 64, 200, 210, 220);
 
-        let hash1 = cloakrs::compute_image_hash(&img1);
-        let hash2 = cloakrs::compute_image_hash(&img2);
+        let hash1 = stegoeggo::compute_image_hash(&img1);
+        let hash2 = stegoeggo::compute_image_hash(&img2);
 
         assert_eq!(hash1.len(), 64, "Hash should be a hex string");
         assert_eq!(hash2.len(), 64, "Hash should be a hex string");
@@ -816,7 +816,7 @@ mod utilities {
     fn test_iscc_computation() {
         let img = create_test_image(32, 32);
 
-        let iscc = cloakrs::compute_iscc(&img).unwrap();
+        let iscc = stegoeggo::compute_iscc(&img).unwrap();
         assert!(!iscc.full().is_empty(), "ISCC should be computed");
     }
 
@@ -824,7 +824,7 @@ mod utilities {
     fn test_iscc_from_bytes() {
         let img_bytes = image_to_png_bytes(&create_test_image(32, 32));
 
-        let result = cloakrs::compute_iscc_from_bytes(&img_bytes);
+        let result = stegoeggo::compute_iscc_from_bytes(&img_bytes);
         assert!(result.is_some(), "ISCC should be computed from bytes");
         let _ = result.unwrap().unwrap();
     }
@@ -898,7 +898,7 @@ mod edge_case_tests {
 
 mod verify_tests {
     use super::*;
-    use cloakrs::{
+    use stegoeggo::{
         verify_image_bytes, verify_image_bytes_detailed, MetadataTrapProtector, VerificationStatus,
     };
 
@@ -958,13 +958,13 @@ mod serde_tests {
 
     #[test]
     fn test_config_skipped_in_serde_roundtrip() {
-        use cloakrs::ProtectionConfig;
+        use stegoeggo::ProtectionConfig;
         use std::sync::Arc;
 
         let config = Arc::new(
             ProtectionConfig::new()
                 .with_mac_key(b"secret".to_vec())
-                .with_legal_metadata(cloakrs::LegalMetadata::new().with_copyright_holder("Test")),
+                .with_legal_metadata(stegoeggo::LegalMetadata::new().with_copyright_holder("Test")),
         );
         let ctx = ProtectionContext::new(0.7, 12345).with_config(config);
 
@@ -1058,7 +1058,7 @@ mod webp_tests {
         let protected_img = image::load_from_memory(&protected_bytes).unwrap();
         let stripped_bytes = image_to_png_bytes(&protected_img);
 
-        let result = cloakrs::verify_image_bytes(&stripped_bytes, &[]);
+        let result = stegoeggo::verify_image_bytes(&stripped_bytes, &[]);
         assert_eq!(
             result,
             VerificationStatus::Verified,
@@ -1069,7 +1069,7 @@ mod webp_tests {
 
 mod error_variant_tests {
     use super::*;
-    use cloakrs::Error;
+    use stegoeggo::Error;
 
     #[test]
     fn test_invalid_format_error_variant() {
@@ -1202,7 +1202,7 @@ mod inject_legal_claims_toggle {
     use super::*;
 
     fn legal_ctx(inject: Option<bool>) -> ProtectionContext {
-        let legal = cloakrs::LegalMetadata::new()
+        let legal = stegoeggo::LegalMetadata::new()
             .with_copyright_holder("Test Owner")
             .with_contact_email("legal@example.com");
         let mut ctx = ProtectionContext::new(0.5, 42)
@@ -1262,7 +1262,7 @@ mod inject_legal_claims_toggle {
 
 mod progressive_jpeg_warning {
     use super::*;
-    use cloakrs::{
+    use stegoeggo::{
         process_image_bytes_with_info, process_image_bytes_with_warnings, ProtectionWarning,
     };
 

@@ -1,23 +1,23 @@
 [package]
-name = "cloakrs-cli"
+name = "stegoeggo-cli"
 version = "0.2.0"
 edition = "2021"
 rust-version = "1.87"
-description = "Command-line interface for the cloakrs image protection library"
+description = "Command-line interface for the stegoeggo image protection library"
 authors = ["David Bowman <dbowman91@proton.me>"]
 license = "MIT"
-repository = "https://github.com/eggstack/cloakrs"
-homepage = "https://github.com/eggstack/cloakrs"
+repository = "https://github.com/eggstack/stegoeggo"
+homepage = "https://github.com/eggstack/stegoeggo"
 readme = "../README.md"
 keywords = ["image", "steganography", "watermark", "cli", "ai-safety"]
 categories = ["command-line-utilities", "multimedia::images"]
 
 [[bin]]
-name = "cloakrs"
+name = "stegoeggo"
 path = "src/main.rs"
 
 [dependencies]
-cloakrs = { path = "..", version = "0.2", features = ["test-seeds"] }
+stegoeggo = { path = "..", version = "0.2", features = ["test-seeds"] }
 clap = { version = "4", features = ["derive"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 rayon = "1.10"

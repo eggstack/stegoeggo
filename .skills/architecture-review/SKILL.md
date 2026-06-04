@@ -1,11 +1,11 @@
 ---
 name: architecture-review
-description: Use when reviewing, verifying, or updating architecture documentation against actual source code in the cloakrs codebase. Triggers on tasks like "verify architecture docs", "check doc accuracy", "review architecture documents", "find doc discrepancies", or when editing files in architecture/ directory.
+description: Use when reviewing, verifying, or updating architecture documentation against actual source code in the stegoeggo codebase. Triggers on tasks like "verify architecture docs", "check doc accuracy", "review architecture documents", "find doc discrepancies", or when editing files in architecture/ directory.
 ---
 
 # Architecture Documentation Review
 
-Systematic workflow for verifying architecture documents against the cloakrs codebase.
+Systematic workflow for verifying architecture documents against the stegoeggo codebase.
 
 ## Quick Reference
 

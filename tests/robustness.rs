@@ -1,4 +1,4 @@
-use cloakrs::{
+use stegoeggo::{
     process_image_bytes, verify_image_bytes, ImageOutputFormat, MetadataTrapProtector,
     ProtectionContext, ProtectionLevel, SteganographyProtector, VerificationStatus,
 };
@@ -55,7 +55,7 @@ mod jpeg_recompression {
         let img = create_test_image(128, 128);
         let seed = 42u64;
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
-        let ctx = ProtectionContext::new(0.5, seed).with_format(cloakrs::ImageOutputFormat::Jpeg);
+        let ctx = ProtectionContext::new(0.5, seed).with_format(stegoeggo::ImageOutputFormat::Jpeg);
 
         let protected_bytes =
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -73,7 +73,7 @@ mod jpeg_recompression {
         let img = create_test_image(64, 64);
         let seed = 42u64;
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
-        let ctx = ProtectionContext::new(0.5, seed).with_format(cloakrs::ImageOutputFormat::Jpeg);
+        let ctx = ProtectionContext::new(0.5, seed).with_format(stegoeggo::ImageOutputFormat::Jpeg);
 
         let protected_bytes =
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -91,7 +91,7 @@ mod jpeg_recompression {
         let seed = 42u64;
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
         let ctx = ProtectionContext::new(0.6, seed)
-            .with_format(cloakrs::ImageOutputFormat::Jpeg)
+            .with_format(stegoeggo::ImageOutputFormat::Jpeg)
             .with_stego_redundancy(3);
 
         let protected_bytes =
@@ -109,7 +109,7 @@ mod jpeg_recompression {
         let seed = 424242u64;
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
         let ctx = ProtectionContext::new(0.5, seed)
-            .with_format(cloakrs::ImageOutputFormat::Jpeg)
+            .with_format(stegoeggo::ImageOutputFormat::Jpeg)
             .with_stego_redundancy(3);
 
         let protected_bytes =
@@ -125,7 +125,7 @@ mod jpeg_recompression {
     fn png_metadata_lost_on_jpeg_conversion() {
         let img = create_test_image(64, 64);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.5, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.5, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -152,7 +152,7 @@ mod jpeg_recompression {
     fn verify_image_bytes_finds_stego_via_fallback_on_recompressed_jpeg() {
         let img = create_test_image(64, 64);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.6, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.6, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -177,7 +177,7 @@ mod metadata_stripping {
     fn stego_survives_png_metadata_strip() {
         let img = create_test_image(64, 64);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.6, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.6, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -204,7 +204,7 @@ mod metadata_stripping {
     fn verify_finds_stego_after_metadata_strip() {
         let img = create_test_image(64, 64);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.6, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.6, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -225,7 +225,7 @@ mod metadata_stripping {
     fn extract_payload_after_metadata_strip() {
         let img = create_test_image(64, 64);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.7, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.7, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -253,7 +253,7 @@ mod format_conversion_round_trip {
     fn png_to_jpeg_metadata_lost() {
         let img = create_test_image(64, 64);
         let seed = 99u64;
-        let ctx = ProtectionContext::new(0.5, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.5, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -273,7 +273,7 @@ mod format_conversion_round_trip {
     fn png_to_jpeg_to_png_metadata_lost() {
         let img = create_test_image(64, 64);
         let seed = 99u64;
-        let ctx = ProtectionContext::new(0.5, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.5, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -295,7 +295,7 @@ mod format_conversion_round_trip {
     fn png_to_jpeg_to_png_stego_lost() {
         let img = create_test_image(64, 64);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.7, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.7, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -323,7 +323,7 @@ mod image_resizing {
     fn metadata_lost_after_resize() {
         let img = create_test_image(128, 128);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.5, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.5, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -344,7 +344,7 @@ mod image_resizing {
     fn stego_lost_after_resize() {
         let img = create_test_image(128, 128);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.7, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.7, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -369,7 +369,7 @@ mod noise_injection {
     fn metadata_lost_after_noise_and_reencode() {
         let img = create_test_image(64, 64);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.5, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.5, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -403,7 +403,7 @@ mod noise_injection {
     fn stego_lost_with_lsb_flipping_noise() {
         let img = create_test_image(64, 64);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.8, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.8, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -436,7 +436,7 @@ mod noise_injection {
     fn stego_survives_lsb_preserving_noise() {
         let img = create_test_image(64, 64);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.8, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.8, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -475,7 +475,7 @@ mod crop {
     fn metadata_lost_after_crop_and_reencode() {
         let img = create_test_image(100, 100);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.5, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.5, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
@@ -496,7 +496,7 @@ mod crop {
     fn stego_lost_after_crop() {
         let img = create_test_image(100, 100);
         let seed = 42u64;
-        let ctx = ProtectionContext::new(0.8, seed).with_format(cloakrs::ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.8, seed).with_format(stegoeggo::ImageOutputFormat::Png);
 
         let protected_bytes =
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)

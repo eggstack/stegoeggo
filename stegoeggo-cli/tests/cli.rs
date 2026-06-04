@@ -4,15 +4,15 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn cli_bin() -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_BIN_EXE_cloakrs"));
+    let mut path = PathBuf::from(env!("CARGO_BIN_EXE_stegoeggo"));
     if !path.exists() {
         let output = Command::new("cargo")
-            .args(["build", "-p", "cloakrs-cli"])
+            .args(["build", "-p", "stegoeggo-cli"])
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .output()
             .expect("Failed to build CLI");
         assert!(output.status.success(), "CLI build failed");
-        path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/debug/cloakrs");
+        path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/debug/stegoeggo");
     }
     path
 }
@@ -102,7 +102,7 @@ fn test_help_flag() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("cloakrs"));
+    assert!(stdout.contains("stegoeggo"));
     assert!(stdout.contains("Image protection CLI"));
 }
 

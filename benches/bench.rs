@@ -1,4 +1,4 @@
-use cloakrs::{
+use stegoeggo::{
     process_image_bytes, ImageOutputFormat, ProtectionContext, ProtectionLevel, ProtectionPipeline,
 };
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
@@ -343,7 +343,7 @@ fn benchmark_tiled_extract(c: &mut Criterion) {
             BenchmarkId::new("jpeg_tiled", size),
             &protected,
             |b, bytes| {
-                b.iter(|| cloakrs::verify_image_bytes(black_box(bytes), &[]));
+                b.iter(|| stegoeggo::verify_image_bytes(black_box(bytes), &[]));
             },
         );
     }

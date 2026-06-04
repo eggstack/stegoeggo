@@ -2,7 +2,7 @@
 ///
 /// Demonstrates how to inject copyright and usage restrictions
 /// into images you own for IP protection.
-use cloakrs::{LegalMetadata, MetadataTrapProtector, ProtectionContext, ProtectionLevel};
+use stegoeggo::{LegalMetadata, MetadataTrapProtector, ProtectionContext, ProtectionLevel};
 use image::{DynamicImage, ImageBuffer, Rgba};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Both with_legal_metadata() AND with_legal_claims(true) are required —
     // one provides the content, the other enables injection.
     let ctx = ProtectionContext::new(0.5, 42)
-        .with_dmi(cloakrs::DmiValue::ProhibitedAiMlTraining)
+        .with_dmi(stegoeggo::DmiValue::ProhibitedAiMlTraining)
         .with_legal_metadata(
             LegalMetadata::new()
                 .with_copyright_holder("Example Corp")
@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_legal_claims(true);
 
     // Process at Standard level (noise + stego + metadata)
-    let protected = cloakrs::process_image(img, ProtectionLevel::Standard, &ctx)?;
+    let protected = stegoeggo::process_image(img, ProtectionLevel::Standard, &ctx)?;
     println!(
         "Protected with legal metadata: {}x{}",
         protected.width(),
@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Encode to PNG to get byte-level output with metadata
-    let png_bytes = cloakrs::encode_image(&protected, image::ImageFormat::Png)?;
+    let png_bytes = stegoeggo::encode_image(&protected, image::ImageFormat::Png)?;
 
     // Verify the seed is extractable from metadata
     if let Some(seed) = MetadataTrapProtector::extract_seed_from_image(&png_bytes) {
@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Verify steganographic protection
-    let verified = cloakrs::verify_image_bytes(&png_bytes, &[]);
+    let verified = stegoeggo::verify_image_bytes(&png_bytes, &[]);
     println!("Protection verified: {:?}", verified);
 
     println!("\nOutput contains:");

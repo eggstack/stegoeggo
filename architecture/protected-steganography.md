@@ -41,7 +41,7 @@ fn extract_lsb(img: &RgbaImage, seed: u64, redundancy: u8) -> Vec<u8>
 - Embeds payload bits into LSBs of selected pixels
 - Redundancy 1–10: multiple passes for reliability
 
-**WebP caveat:** LSB embedding survives **lossless** WebP round-trips (which is what `cloakrs` produces via the `image` crate's `WebPEncoder::new_lossless`). Lossy WebP re-encoding (the common web delivery path) destroys the LSB payload. If WebP is the chosen delivery format, configure the CDN to deliver lossless WebP, or accept metadata-only protection.
+**WebP caveat:** LSB embedding survives **lossless** WebP round-trips (which is what `stegoeggo` produces via the `image` crate's `WebPEncoder::new_lossless`). Lossy WebP re-encoding (the common web delivery path) destroys the LSB payload. If WebP is the chosen delivery format, configure the CDN to deliver lossless WebP, or accept metadata-only protection.
 
 ### JPEG Pixel Stego
 

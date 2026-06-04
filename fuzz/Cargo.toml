@@ -1,5 +1,5 @@
 [package]
-name = "cloakrs-fuzz"
+name = "stegoeggo-fuzz"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -8,7 +8,7 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-cloakrs = { path = "..", features = ["fuzz"] }
+stegoeggo = { path = "..", features = ["fuzz"] }
 libfuzzer-sys = "0.4"
 
 [[bin]]

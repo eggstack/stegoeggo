@@ -1,4 +1,4 @@
-use cloakrs::{
+use stegoeggo::{
     process_image, process_image_bytes, MetadataTrapProtector, PassthroughProtector,
     ProtectionContext, ProtectionLevel, ProtectionPipeline, Protector,
 };
@@ -196,7 +196,7 @@ mod integration {
 
     #[test]
     fn test_metadata_injection_png() {
-        use cloakrs::ImageOutputFormat;
+        use stegoeggo::ImageOutputFormat;
 
         let img = create_test_image();
 
@@ -224,7 +224,7 @@ mod integration {
 
     #[test]
     fn test_xmp_injection_jpeg() {
-        use cloakrs::{DmiValue, ImageOutputFormat};
+        use stegoeggo::{DmiValue, ImageOutputFormat};
 
         let img = create_test_image();
 
@@ -255,7 +255,7 @@ mod integration {
 
     #[test]
     fn test_auto_dmi_from_protection_level() {
-        use cloakrs::ImageOutputFormat;
+        use stegoeggo::ImageOutputFormat;
 
         let img = create_test_image();
 

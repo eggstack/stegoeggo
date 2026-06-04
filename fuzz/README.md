@@ -1,6 +1,6 @@
 # Fuzz Targets
 
-`cargo-fuzz` harnesses for the most untrusted-input-facing surfaces of `cloakrs`.
+`cargo-fuzz` harnesses for the most untrusted-input-facing surfaces of `stegoeggo`.
 
 ## Targets
 

@@ -64,7 +64,7 @@ Free functions that use a `LazyLock<ProtectionPipeline>` singleton:
 
 For tight reverse-proxy serving, prefer:
 
-1. Cache lookup in the proxy before calling cloakrs.
+1. Cache lookup in the proxy before calling stegoeggo.
 2. `process_image_bytes_with_warnings()` on cache misses.
 3. A `ProtectionContext` with `with_mac_key()`, `with_max_dimension()`, explicit `with_format()`, and bounded `with_stego_redundancy()`.
 4. Policy/logging based on `ProtectionWarning`.

@@ -47,7 +47,7 @@
 //! verification. Always set a MAC key in production:
 //!
 //! ```ignore
-//! use cloakrs::{ProtectionContext, ProtectionLevel};
+//! use stegoeggo::{ProtectionContext, ProtectionLevel};
 //!
 //! let ctx = ProtectionContext::default()
 //!     .with_mac_key(b"your-secret-key".to_vec());
@@ -61,7 +61,7 @@
 //! # WAF-Optimized Usage
 //!
 //! ```ignore
-//! use cloakrs::{process_image_bytes, ProtectionContext, ProtectionLevel, ImageOutputFormat};
+//! use stegoeggo::{process_image_bytes, ProtectionContext, ProtectionLevel, ImageOutputFormat};
 //!
 //! let ctx = ProtectionContext::new(0.5, 42)
 //!     .with_format(ImageOutputFormat::Png)
@@ -72,7 +72,7 @@
 //!
 //! let input_bytes = std::fs::read("image.png")?;
 //! let (protected, warnings) =
-//!     cloakrs::process_image_bytes_with_warnings(&input_bytes, ProtectionLevel::Standard, &ctx)?;
+//!     stegoeggo::process_image_bytes_with_warnings(&input_bytes, ProtectionLevel::Standard, &ctx)?;
 //! // Reverse proxies should log or enforce warnings before serving.
 //! ```
 //!
@@ -81,7 +81,7 @@
 //! Embed copyright and usage restrictions in images for IP protection.
 //!
 //! ```rust
-//! use cloakrs::{ProtectionContext, LegalMetadata, ProtectionLevel};
+//! use stegoeggo::{ProtectionContext, LegalMetadata, ProtectionLevel};
 //!
 //! let ctx = ProtectionContext::default()
 //!     .with_legal_metadata(
@@ -455,7 +455,7 @@ pub fn process_images_bytes_parallel(
 /// # Examples
 ///
 /// ```no_run
-/// use cloakrs::{process_image_bytes, ProtectionContext, ProtectionLevel};
+/// use stegoeggo::{process_image_bytes, ProtectionContext, ProtectionLevel};
 ///
 /// let img_bytes: Vec<u8> = std::fs::read("input.png").unwrap();
 /// let ctx = ProtectionContext::new(0.5, 42);
@@ -497,7 +497,7 @@ pub fn process_image_bytes(
 /// # Examples
 ///
 /// ```no_run
-/// use cloakrs::{process_image_bytes_with_info, ProtectionContext, ProtectionLevel};
+/// use stegoeggo::{process_image_bytes_with_info, ProtectionContext, ProtectionLevel};
 ///
 /// let img_bytes: Vec<u8> = std::fs::read("input.jpg").unwrap();
 /// let ctx = ProtectionContext::new(0.5, 42);
@@ -652,10 +652,10 @@ pub fn process_image_bytes_with_warnings(
 ///
 /// ```no_run
 /// # let img_bytes: Vec<u8> = Vec::new();
-/// match cloakrs::verify_image_bytes(&img_bytes, &[]) {
-///     cloakrs::VerificationStatus::Verified => println!("Protected and verified"),
-///     cloakrs::VerificationStatus::Invalid => println!("Protected but verification failed"),
-///     cloakrs::VerificationStatus::NotFound => println!("No protection found"),
+/// match stegoeggo::verify_image_bytes(&img_bytes, &[]) {
+///     stegoeggo::VerificationStatus::Verified => println!("Protected and verified"),
+///     stegoeggo::VerificationStatus::Invalid => println!("Protected but verification failed"),
+///     stegoeggo::VerificationStatus::NotFound => println!("No protection found"),
 /// }
 /// ```
 pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus {
@@ -671,7 +671,7 @@ pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatu
 /// # Examples
 ///
 /// ```ignore
-/// use cloakrs::{verify_image_bytes_detailed, VerificationResult};
+/// use stegoeggo::{verify_image_bytes_detailed, VerificationResult};
 ///
 /// let bytes = std::fs::read("protected.png").unwrap();
 /// match verify_image_bytes_detailed(&bytes, b"my-key") {

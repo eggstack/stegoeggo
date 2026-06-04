@@ -1,4 +1,4 @@
-use cloakrs::{
+use stegoeggo::{
     process_image_async, process_image_bytes_async, process_images_bytes_parallel_async,
     process_images_parallel_async, verify_image_bytes_async, ProtectionContext, ProtectionLevel,
     SteganographyProtector, VerificationStatus,

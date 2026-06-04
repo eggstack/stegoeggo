@@ -11,9 +11,9 @@
 //! ## Single image processing (WAF hot path)
 //!
 //! ```no_run
-//! use cloakrs::{process_image_bytes_with_warnings_async, ProtectionContext, ProtectionLevel};
+//! use stegoeggo::{process_image_bytes_with_warnings_async, ProtectionContext, ProtectionLevel};
 //!
-//! # #[tokio::main] async fn main() -> Result<(), cloakrs::Error> {
+//! # #[tokio::main] async fn main() -> Result<(), stegoeggo::Error> {
 //! let ctx = ProtectionContext::new(0.5, 42);
 //! let bytes: Vec<u8> = std::fs::read("input.png")?;
 //! let (protected, warnings) =
@@ -25,9 +25,9 @@
 //! ## Parallel batch processing (CDN origin)
 //!
 //! ```no_run
-//! use cloakrs::{process_images_bytes_parallel_async, ProtectionContext, ProtectionLevel};
+//! use stegoeggo::{process_images_bytes_parallel_async, ProtectionContext, ProtectionLevel};
 //!
-//! # #[tokio::main] async fn main() -> Result<(), cloakrs::Error> {
+//! # #[tokio::main] async fn main() -> Result<(), stegoeggo::Error> {
 //! let ctx = ProtectionContext::new(0.5, 42);
 //! let images: Vec<Vec<u8>> = vec![std::fs::read("a.png")?, std::fs::read("b.png")?];
 //! let protected = process_images_bytes_parallel_async(
@@ -42,15 +42,15 @@
 //! ## Verification endpoint
 //!
 //! ```no_run
-//! use cloakrs::verify_image_bytes_async;
+//! use stegoeggo::verify_image_bytes_async;
 //!
-//! # #[tokio::main] async fn main() -> Result<(), cloakrs::Error> {
+//! # #[tokio::main] async fn main() -> Result<(), stegoeggo::Error> {
 //! let img_bytes: Vec<u8> = std::fs::read("suspect.png")?;
 //! let key = hex::decode("deadbeef").unwrap();
 //! match verify_image_bytes_async(img_bytes, key).await? {
-//!     cloakrs::VerificationStatus::Verified => println!("Verified: image is protected"),
-//!     cloakrs::VerificationStatus::Invalid => println!("Invalid: protection signature mismatch"),
-//!     cloakrs::VerificationStatus::NotFound => println!("Unprotected: no signature found"),
+//!     stegoeggo::VerificationStatus::Verified => println!("Verified: image is protected"),
+//!     stegoeggo::VerificationStatus::Invalid => println!("Invalid: protection signature mismatch"),
+//!     stegoeggo::VerificationStatus::NotFound => println!("Unprotected: no signature found"),
 //! }
 //! # Ok(())
 //! # }

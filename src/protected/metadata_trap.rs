@@ -173,7 +173,7 @@ impl MetadataTrapProtector {
         let property = dmi.to_iptc_property();
         let bom = "\u{feff}";
         let seed_attr = seed
-            .map(|s| format!("\n             cloakrs:ProtectionSeed=\"{}\"", s))
+            .map(|s| format!("\n             stegoeggo:ProtectionSeed=\"{}\"", s))
             .unwrap_or_default();
         let tdm_value = if dmi == DmiValue::Allowed { "0" } else { "1" };
         let xmp = format!(
@@ -181,7 +181,7 @@ impl MetadataTrapProtector {
              <x:xmpmeta xmlns:x=\"adobe:ns:meta/\" \
              xmlns:iptc4xmpExt=\"http://iptc.org/std/Iptc4xmpExt/2008-02-29/\" \
              xmlns:tdm=\"http://www.niso.org/schemas/tdm/\" \
-             xmlns:cloakrs=\"https://github.com/anomalyco/cloakrs\">\n\
+             xmlns:stegoeggo=\"https://github.com/anomalyco/stegoeggo\">\n\
              <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
              <rdf:Description rdf:about=\"\"\n\
              {property}=\"{}\"\n\
@@ -977,8 +977,8 @@ impl MetadataTrapProtector {
             if chunk_type == b"XMP " && data_end > data_start {
                 let data = &webp_data[data_start..data_end];
                 if let Ok(xmp_str) = std::str::from_utf8(data) {
-                    if let Some(start) = xmp_str.find("cloakrs:ProtectionSeed=\"") {
-                        let value_start = start + "cloakrs:ProtectionSeed=\"".len();
+                    if let Some(start) = xmp_str.find("stegoeggo:ProtectionSeed=\"") {
+                        let value_start = start + "stegoeggo:ProtectionSeed=\"".len();
                         if let Some(end) = xmp_str[value_start..].find('"') {
                             let value_str = &xmp_str[value_start..value_start + end];
                             if let Ok(seed) = value_str.parse::<u64>() {
@@ -1670,7 +1670,7 @@ mod tests {
         let seed = Some(42u64);
         let xmp = MetadataTrapProtector::generate_xmp_dmi(dmi, seed);
         let xmp_str = String::from_utf8_lossy(&xmp);
-        assert!(xmp_str.contains("cloakrs:ProtectionSeed=\"42\""));
+        assert!(xmp_str.contains("stegoeggo:ProtectionSeed=\"42\""));
     }
 
     #[test]
@@ -1678,7 +1678,7 @@ mod tests {
         let dmi = DmiValue::ProhibitedAiMlTraining;
         let xmp = MetadataTrapProtector::generate_xmp_dmi(dmi, None);
         let xmp_str = String::from_utf8_lossy(&xmp);
-        assert!(!xmp_str.contains("cloakrs:ProtectionSeed"));
+        assert!(!xmp_str.contains("stegoeggo:ProtectionSeed"));
     }
 
     #[test]
@@ -1728,10 +1728,10 @@ mod tests {
     }
 
     #[test]
-    fn xmp_contains_cloakrs_namespace() {
+    fn xmp_contains_stegoeggo_namespace() {
         let xmp = MetadataTrapProtector::generate_xmp_dmi(DmiValue::ProhibitedAiMlTraining, None);
         let xmp_str = String::from_utf8_lossy(&xmp);
-        assert!(xmp_str.contains("xmlns:cloakrs=\"https://github.com/anomalyco/cloakrs\""));
+        assert!(xmp_str.contains("xmlns:stegoeggo=\"https://github.com/anomalyco/stegoeggo\""));
     }
 
     #[test]

@@ -5,7 +5,7 @@ description: Use when executing tasks from plans/plan.md or any multi-wave paral
 
 # Plan-Based Task Execution
 
-Workflow for executing multi-wave parallel tasks in the cloakrs codebase using git worktrees.
+Workflow for executing multi-wave parallel tasks in the stegoeggo codebase using git worktrees.
 
 ## Quick Reference
 
@@ -102,7 +102,7 @@ git worktree remove /Users/davidbowman/projects/cloak-wt-taskN
 When launching agents for plan tasks, use this template:
 
 ```
-You are working on the cloakrs Rust codebase. Your task is to [description].
+You are working on the stegoeggo Rust codebase. Your task is to [description].
 
 **Working directory**: `/Users/davidbowman/projects/cloak-wt-taskN`
 **Branch**: `fix/taskN-description`

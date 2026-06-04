@@ -1,4 +1,4 @@
-//! Error types for the cloakrs library.
+//! Error types for the stegoeggo library.
 //!
 //! This module defines the custom error types used throughout the library
 //! for handling various failure modes including image decoding/encoding errors,

@@ -15,7 +15,7 @@ wallpapertest_poisoned.png
 *_protected.webp
 
 # Nested crate build artifacts
-cloakrs-cli/target/
+stegoeggo-cli/target/
 fuzz/target/
 fuzz/artifacts/
 fuzz/corpus/

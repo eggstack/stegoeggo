@@ -22,7 +22,7 @@ All notable changes to this project will be documented in this file.
 - **Parallel batch processing** via Rayon
 - **JPEG fast path** (`JpegTranscoder`) operating on DCT coefficients without pixel decode/encode
 - **Legal metadata injection** for copyright, contact, license, and usage terms
-- **CLI tool** (`cloakrs`) with batch processing and format conversion
+- **CLI tool** (`stegoeggo`) with batch processing and format conversion
 
 ### Changed
 - MSRV: 1.87

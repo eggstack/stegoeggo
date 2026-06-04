@@ -1,14 +1,14 @@
-# cloakrs
+# stegoeggo
 
 A modular Rust library for protecting images from AI scraping through steganographic watermarking and metadata injection for legal deterrence.
 
-[![CI](https://github.com/yourorg/cloakrs/actions/workflows/ci.yml/badge.svg)](https://github.com/yourorg/cloakrs/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/cloakrs)](https://crates.io/crates/cloakrs)
+[![CI](https://github.com/yourorg/stegoeggo/actions/workflows/ci.yml/badge.svg)](https://github.com/yourorg/stegoeggo/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/stegoeggo)](https://crates.io/crates/stegoeggo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## What is cloakrs?
+## What is stegoeggo?
 
-cloakrs implements **image protection through steganographic watermarking and metadata injection** — techniques to protect images from being used to train AI models without the owner's consent. When AI systems scrape images from the web, protected images can:
+stegoeggo implements **image protection through steganographic watermarking and metadata injection** — techniques to protect images from being used to train AI models without the owner's consent. When AI systems scrape images from the web, protected images can:
 
 - Carry visible metadata markers (XMP, IPTC DMI, EXIF) that serve as legal deterrents
 - Contain hidden steganographic payloads (best-effort evidence channel; see [Robustness & Survival](#robustness--survival))
@@ -35,7 +35,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-cloakrs = "0.2"
+stegoeggo = "0.2"
 image = "0.25"  # Required for DynamicImage
 ```
 
@@ -43,7 +43,7 @@ For async support (Tokio-based WAF/CDN deployments):
 
 ```toml
 [dependencies]
-cloakrs = { version = "0.2", features = ["async"] }
+stegoeggo = { version = "0.2", features = ["async"] }
 ```
 
 ### As a CLI Tool
@@ -57,7 +57,7 @@ cargo build --release
 Or install directly:
 
 ```bash
-cargo install cloakrs
+cargo install stegoeggo
 ```
 
 ## Quick Start
@@ -66,25 +66,25 @@ cargo install cloakrs
 
 ```bash
 # Protect an image with default settings (Standard level)
-cloakrs input.png -o output.png
+stegoeggo input.png -o output.png
 
 # Specify protection level
-cloakrs input.png -o output.png --level light
+stegoeggo input.png -o output.png --level light
 
 # With cryptographic key for HMAC-verified payloads
-cloakrs input.png -o output.png --key deadbeef123456
+stegoeggo input.png -o output.png --key deadbeef123456
 
 # With legal metadata (for content you own!)
-cloakrs input.png -o output.png --legal-claims
+stegoeggo input.png -o output.png --legal-claims
 
 # Verify if an image is protected
-cloakrs protected.png -V
+stegoeggo protected.png -V
 ```
 
 ### Library
 
 ```rust
-use cloakrs::{ProtectionPipeline, ProtectionContext, ProtectionLevel};
+use stegoeggo::{ProtectionPipeline, ProtectionContext, ProtectionLevel};
 use image::DynamicImage;
 
 // Create pipeline and context
@@ -103,7 +103,7 @@ let protected = pipeline.process(&img, ProtectionLevel::Standard, &ctx).unwrap()
 Process images from files or network sources without loading into DynamicImage:
 
 ```rust
-use cloakrs::{process_image_bytes, ProtectionContext, ProtectionLevel};
+use stegoeggo::{process_image_bytes, ProtectionContext, ProtectionLevel};
 
 // Read image from file
 let img_bytes = std::fs::read("image.png")?;
@@ -118,7 +118,7 @@ let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx)
 Process multiple images concurrently using Rayon:
 
 ```rust
-use cloakrs::{process_images_parallel, ProtectionContext, ProtectionLevel};
+use stegoeggo::{process_images_parallel, ProtectionContext, ProtectionLevel};
 use image::DynamicImage;
 
 let images: Vec<DynamicImage> = vec![
@@ -134,7 +134,7 @@ let results = process_images_parallel(&images, ProtectionLevel::Standard, &ctx)?
 Or process bytes in parallel:
 
 ```rust
-use cloakrs::{process_images_bytes_parallel, ProtectionContext, ProtectionLevel};
+use stegoeggo::{process_images_bytes_parallel, ProtectionContext, ProtectionLevel};
 
 let image_bytes: Vec<Vec<u8>> = vec![
     std::fs::read("image1.png")?,
@@ -155,7 +155,7 @@ The library provides three protection levels:
 | `Standard` | Full stego (DCT F5 + metadata for JPEG, LSB + metadata for PNG/WebP) | ~3-6ms | Default for most endpoints |
 
 ```rust
-use cloakrs::ProtectionLevel;
+use stegoeggo::ProtectionLevel;
 
 // Use different levels
 let level = ProtectionLevel::Light;    // Metadata only
@@ -167,7 +167,7 @@ let level = ProtectionLevel::Standard; // Stego + Metadata (default)
 Provide a hex key for keyed HMAC-SHA256 payload verification:
 
 ```rust
-use cloakrs::{ProtectionContext, ProtectionLevel};
+use stegoeggo::{ProtectionContext, ProtectionLevel};
 
 // With MAC key - steganographic payloads are cryptographically verified
 let key = vec![0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78];
@@ -196,7 +196,7 @@ Inject real legal metadata (copyright, contact info, usage terms). **Only use fo
 Both `with_legal_metadata(...)` (provides the content) and `with_legal_claims(true)` (enables injection) are required — metadata will not be injected without both:
 
 ```rust
-use cloakrs::{ProtectionContext, LegalMetadata, ProtectionLevel};
+use stegoeggo::{ProtectionContext, LegalMetadata, ProtectionLevel};
 
 let ctx = ProtectionContext::default()
     .with_legal_metadata(
@@ -216,7 +216,7 @@ let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx)
 Control individual protection components:
 
 ```rust
-use cloakrs::{ProtectionContext, ProtectionLevel};
+use stegoeggo::{ProtectionContext, ProtectionLevel};
 
 // Minimal - stego only, no metadata
 let ctx = ProtectionContext::new(0.5, 42)
@@ -238,7 +238,7 @@ let ctx = ProtectionContext::new(0.5, 42)
 Set IPTC-standard DMI metadata values:
 
 ```rust
-use cloakrs::{ProtectionContext, DmiValue, ProtectionLevel};
+use stegoeggo::{ProtectionContext, DmiValue, ProtectionLevel};
 
 let ctx = ProtectionContext::default()
     .with_dmi(DmiValue::ProhibitedAiMlTraining);
@@ -258,7 +258,7 @@ Available values:
 For latency-sensitive deployments:
 
 ```rust
-use cloakrs::{
+use stegoeggo::{
     process_image_bytes_with_warnings, ImageOutputFormat, ProtectionContext, ProtectionLevel,
 };
 
@@ -276,7 +276,7 @@ let (protected_bytes, warnings) =
 
 // Reverse proxies should log warnings and may enforce policy before serving.
 for warning in warnings {
-    tracing::warn!(%warning, "cloakrs protection warning");
+    tracing::warn!(%warning, "stegoeggo protection warning");
 }
 ```
 
@@ -291,14 +291,14 @@ for warning in warnings {
 
 ### Reverse Proxy Integration Contract
 
-`cloakrs` owns steganographic embedding and metadata injection. The reverse proxy
+`stegoeggo` owns steganographic embedding and metadata injection. The reverse proxy
 should own cache lookup/storage, request byte limits, concurrency limits,
 timeouts, and serving policy.
 
 Recommended hot-path shape:
 
 ```rust
-use cloakrs::{
+use stegoeggo::{
     process_image_bytes_with_warnings, ImageOutputFormat, ProtectionContext, ProtectionLevel,
     ProtectionWarning,
 };
@@ -332,7 +332,7 @@ than `VerificationResult::Verified`.
 ### Full Options Reference
 
 ```bash
-cloakrs [OPTIONS] <INPUT>
+stegoeggo [OPTIONS] <INPUT>
 
 Arguments:
   <INPUT>                  Input image file(s)
@@ -361,31 +361,31 @@ Options:
 
 ```bash
 # Basic protection with default settings
-cloakrs photo.jpg -o photo_protected.png
+stegoeggo photo.jpg -o photo_protected.png
 
 # Light protection (metadata only)
-cloakrs art.png -o art_protected.png --level light
+stegoeggo art.png -o art_protected.png --level light
 
 # With custom intensity and seed
-cloakrs image.jpg -o output.png -i 0.8 -s 12345
+stegoeggo image.jpg -o output.png -i 0.8 -s 12345
 
 # Convert format while protecting
-cloakrs image.png -o image.jpg -f jpg
+stegoeggo image.png -o image.jpg -f jpg
 
 # WAF-optimized: fast processing with progressive JPEG
-cloakrs image.png -o image.jpg -f jpg --stego-redundancy 1 --jpeg-quality 85 --progressive
+stegoeggo image.png -o image.jpg -f jpg --stego-redundancy 1 --jpeg-quality 85 --progressive
 
 # WAF-optimized: PNG output, minimal latency
-cloakrs image.png -o protected.png --stego-redundancy 1
+stegoeggo image.png -o protected.png --stego-redundancy 1
 
 # With legal metadata
-cloakrs my_art.png -o protected.png --legal-claims --level standard
+stegoeggo my_art.png -o protected.png --legal-claims --level standard
 
 # With cryptographic key
-cloakrs image.png -o output.png --key a1b2c3d4e5f6
+stegoeggo image.png -o output.png --key a1b2c3d4e5f6
 
 # Verify protection
-cloakrs output.png -V
+stegoeggo output.png -V
 ```
 
 ### Verification
@@ -393,7 +393,7 @@ cloakrs output.png -V
 Check if an image has been protected:
 
 ```bash
-cloakrs image.png -V
+stegoeggo image.png -V
 ```
 
 Output examples:
@@ -489,7 +489,7 @@ Without a MAC key, the payload uses 3× repetition coding with majority-vote dec
 ### Programmatic Verification
 
 ```rust
-use cloakrs::{SteganographyProtector, MetadataTrapProtector};
+use stegoeggo::{SteganographyProtector, MetadataTrapProtector};
 use image::DynamicImage;
 
 let img = image::load_from_memory(&protected_bytes)?;
@@ -497,7 +497,7 @@ let img = image::load_from_memory(&protected_bytes)?;
 // Method 1: Steganography verification
 let stego = SteganographyProtector::new();
 if stego.verify_payload(&img) {
-    println!("Image is protected by cloakrs");
+    println!("Image is protected by stegoeggo");
 
     // Extract payload details
     if let Some(payload) = stego.extract_payload(&img) {
@@ -544,7 +544,7 @@ Different protection layers survive different image transformations. The truth, 
 | **WebP lossless ↔ WebP lossless** | ✓ | n/a | ✓ (same as PNG) | n/a |
 | **WebP lossy (any re-encode)** | ✓ | n/a | ✗ (lossy codec destroys LSBs) | n/a |
 | **JPEG → JPEG via `image` crate encoder** | ✗ (encoder strips COM/APP1) | ✗ (encoder rebuilds Q-tables) | ✗ (decoded to pixels) | ✗ |
-| **JPEG → JPEG via `cloakrs` fast path** | ✓ (re-injected) | ✓ (re-injected) | n/a | ✓ (DCT coeffs preserved) |
+| **JPEG → JPEG via `stegoeggo` fast path** | ✓ (re-injected) | ✓ (re-injected) | n/a | ✓ (DCT coeffs preserved) |
 | **Format conversion (PNG ↔ JPEG) via `image` crate** | ✗ | ✗ | ✗ | ✗ |
 | **Format conversion (WebP ↔ JPEG) via `image` crate** | ✗ | n/a | ✗ | n/a |
 | **Crop** | ✗ (clipped) | ✗ | ✓ with `with_tile_size()` (≥1 intact tile) | partial (tile-aligned crops without re-encode) |
@@ -555,15 +555,15 @@ Different protection layers survive different image transformations. The truth, 
 
 ### Encoder reality check
 
-The `image` crate (and most general-purpose JPEG encoders) **do not preserve** COM or APP1 markers, and **rebuild standard Q-tables from scratch** on every encode. This means the visible metadata channel and the Q-table seed channel are both single-encoding only when the image passes through a generic encoder. The `cloakrs` custom transcoder (`JpegTranscoder`) preserves DCT coefficients and re-injects metadata, but only when the image is processed through `process_image_bytes` (not through an external re-encoder).
+The `image` crate (and most general-purpose JPEG encoders) **do not preserve** COM or APP1 markers, and **rebuild standard Q-tables from scratch** on every encode. This means the visible metadata channel and the Q-table seed channel are both single-encoding only when the image passes through a generic encoder. The `stegoeggo` custom transcoder (`JpegTranscoder`) preserves DCT coefficients and re-injects metadata, but only when the image is processed through `process_image_bytes` (not through an external re-encoder).
 
 ### WebP caveat
 
-`cloakrs` uses LSB embedding for WebP, which only survives **lossless** WebP round-trips. The `image` crate's `WebPEncoder::new_lossless` preserves LSBs; lossy WebP re-encoding (the common web delivery path) destroys the LSB payload. If you serve protected WebP, configure your CDN to deliver lossless WebP, or convert protected output to PNG/JPEG-in-WebP-container with a tool that preserves the bitstream.
+`stegoeggo` uses LSB embedding for WebP, which only survives **lossless** WebP round-trips. The `image` crate's `WebPEncoder::new_lossless` preserves LSBs; lossy WebP re-encoding (the common web delivery path) destroys the LSB payload. If you serve protected WebP, configure your CDN to deliver lossless WebP, or convert protected output to PNG/JPEG-in-WebP-container with a tool that preserves the bitstream.
 
 ### Recommendations
 
-- **For maximum legal evidence**: Use PNG output. The visible metadata + LSB stego payload survive almost everything except cropping, resizing, and re-encoding through a non-`cloakrs` JPEG encoder. For crop resistance, add `.with_tile_size(64)` to the protection context — this embeds the payload in every 64×64 tile so any crop containing at least one full tile is recoverable.
+- **For maximum legal evidence**: Use PNG output. The visible metadata + LSB stego payload survive almost everything except cropping, resizing, and re-encoding through a non-`stegoeggo` JPEG encoder. For crop resistance, add `.with_tile_size(64)` to the protection context — this embeds the payload in every 64×64 tile so any crop containing at least one full tile is recoverable.
 - **For CDN/WAF deployment**: Use `Standard` level with PNG output. JPEG output discards the LSB payload and visible metadata on every re-compression.
 - **For maximum robustness against stripping**: Set a MAC key via `with_mac_key()`. Without it, the embedded checksum can be trivially forged by anyone who reads this source.
 - **For the strongest claims about evidence**: Serve the protected image directly and reference its ISCC code. Don't rely on downstream consumers to preserve any of the embedded channels.
@@ -610,7 +610,7 @@ Benchmarked on Apple M1 Pro (10 cores), version 0.2.0:
 The library computes ISCC-**like** (Immutable Self-Certifying Constituent Content) identifiers for content identification. **Note:** these identifiers are not guaranteed to be interoperable with the standard ISCC specification — they use a custom DCT-based perceptual hash and SHA-256 instance code. They are suitable for in-application deduplication and provenance tracking, but should not be used for cross-ISCC-tool interoperability:
 
 ```rust
-use cloakrs::{compute_iscc, Iscc};
+use stegoeggo::{compute_iscc, Iscc};
 
 let img = image::open("image.png")?;
 let iscc = compute_iscc(&img);
@@ -633,7 +633,7 @@ The `Iscc` struct fields:
 The library uses `thiserror` for error handling:
 
 ```rust
-use cloakrs::{Error, Result};
+use stegoeggo::{Error, Result};
 
 fn process() -> Result<DynamicImage> {
     // Operations that may fail
@@ -656,7 +656,7 @@ Common errors:
 ## Architecture
 
 ```
-cloakrs
+stegoeggo
 ├── ProtectionPipeline        # Main orchestration
 ├── Protector trait           # Strategy pattern for protectors
 │   ├── PassthroughProtector      # No-op (Disabled level)

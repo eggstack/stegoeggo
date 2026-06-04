@@ -1,6 +1,6 @@
 ---
-name: cloakrs-conventions
-description: Use when writing, modifying, or reviewing Rust code in the cloakrs codebase. Triggers on tasks like "write tests", "add feature", "fix bug", "refactor", or any code change in src/. Covers code style, patterns, and pitfalls specific to this project.
+name: stegoeggo-conventions
+description: Use when writing, modifying, or reviewing Rust code in the stegoeggo codebase. Triggers on tasks like "write tests", "add feature", "fix bug", "refactor", or any code change in src/. Covers code style, patterns, and pitfalls specific to this project.
 ---
 
 # Cloakrs Code Conventions

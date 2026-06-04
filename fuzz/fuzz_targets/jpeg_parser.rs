@@ -8,8 +8,8 @@ fuzz_target!(|data: &[u8]| {
     }
 
     // Exercise the JPEG header parser
-    let _ = cloakrs::parse_jpeg_for_fuzz(data);
+    let _ = stegoeggo::parse_jpeg_for_fuzz(data);
 
     // Also exercise the progressive detection
-    let _ = cloakrs::is_progressive_jpeg(data);
+    let _ = stegoeggo::is_progressive_jpeg(data);
 });

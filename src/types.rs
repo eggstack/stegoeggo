@@ -438,7 +438,7 @@ impl ProtectionContext {
     /// # Examples
     ///
     /// ```no_run
-    /// use cloakrs::{ProtectionContext, ProtectionLevel, process_image};
+    /// use stegoeggo::{ProtectionContext, ProtectionLevel, process_image};
     /// use image::DynamicImage;
     ///
     /// let img = DynamicImage::new_rgb8(64, 64);
@@ -634,7 +634,7 @@ impl ProtectionContext {
     /// # Examples
     ///
     /// ```no_run
-    /// use cloakrs::{ProtectionContext, ProtectionLevel, process_image_bytes};
+    /// use stegoeggo::{ProtectionContext, ProtectionLevel, process_image_bytes};
     ///
     /// let bytes: Vec<u8> = Vec::new();
     /// let ctx = ProtectionContext::new(0.7, 42).with_tile_size(64);
@@ -884,10 +884,10 @@ impl VerificationResult {
 /// # Examples
 ///
 /// ```no_run
-/// use cloakrs::VerificationStatus;
+/// use stegoeggo::VerificationStatus;
 ///
 /// let img_bytes: Vec<u8> = std::fs::read("protected.png").unwrap();
-/// match cloakrs::verify_image_bytes(&img_bytes, b"key") {
+/// match stegoeggo::verify_image_bytes(&img_bytes, b"key") {
 ///     VerificationStatus::Verified => println!("Protected and verified"),
 ///     VerificationStatus::Invalid => println!("Protected but verification failed"),
 ///     VerificationStatus::NotFound => println!("No protection found"),
@@ -966,7 +966,7 @@ pub enum ProtectionWarning {
     /// JPEG output was requested.
     ///
     /// The protection is efficient for byte-preserving JPEG serving through the
-    /// cloakrs fast path, but generic downstream JPEG re-encoding destroys
+    /// stegoeggo fast path, but generic downstream JPEG re-encoding destroys
     /// COM/APP metadata, Q-table seed bits, and DCT payload evidence.
     JpegReencodeFragile,
     /// Image is too small for LSB steganographic embedding.

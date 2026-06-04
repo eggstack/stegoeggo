@@ -1,13 +1,13 @@
 # CLI Tool
 
-**Source:** `cloakrs-cli/src/main.rs` (~545 lines)
+**Source:** `stegoeggo-cli/src/main.rs` (~545 lines)
 
-Command-line interface for `cloakrs`. Built with `clap` 4 (derive).
+Command-line interface for `stegoeggo`. Built with `clap` 4 (derive).
 
 ## Binary
 
 ```bash
-cloakrs [OPTIONS] <INPUT>...
+stegoeggo [OPTIONS] <INPUT>...
 ```
 
 ## Options
@@ -64,7 +64,7 @@ When multiple inputs are provided:
 ## Dependencies
 
 - `clap` 4 — Argument parsing (derive macro)
-- `cloakrs` — Library crate
+- `stegoeggo` — Library crate
 - `image` — Image loading for verbose reporting
 - `rayon` — Parallel batch processing
 - `hex` — Key encoding

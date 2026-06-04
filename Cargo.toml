@@ -1,18 +1,18 @@
 [workspace]
 resolver = "2"
-members = [".", "cloakrs-cli", "fuzz"]
+members = [".", "stegoeggo-cli", "fuzz"]
 
 [package]
-name = "cloakrs"
+name = "stegoeggo"
 version = "0.2.0"
 edition = "2021"
 rust-version = "1.87"
 description = "Image protection through steganographic watermarking and metadata injection for legal deterrence"
 authors = ["David Bowman <dbowman91@proton.me>"]
 license = "MIT"
-repository = "https://github.com/eggstack/cloakrs"
-homepage = "https://github.com/eggstack/cloakrs"
-documentation = "https://docs.rs/cloakrs"
+repository = "https://github.com/eggstack/stegoeggo"
+homepage = "https://github.com/eggstack/stegoeggo"
+documentation = "https://docs.rs/stegoeggo"
 readme = "README.md"
 keywords = ["image", "steganography", "anti-scraping", "ai-safety", "watermark"]
 categories = ["graphics", "multimedia::images"]

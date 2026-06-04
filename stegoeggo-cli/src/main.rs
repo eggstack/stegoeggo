@@ -1,6 +1,6 @@
 use clap::{Parser, ValueEnum};
-use cloakrs::Error;
-use cloakrs::{
+use stegoeggo::Error;
+use stegoeggo::{
     generate_random_seed, process_image_bytes, DmiValue, ImageOutputFormat, MetadataTrapProtector,
     ProtectionContext, ProtectionLevel, SteganographyProtector, DEFAULT_OUTPUT_FORMAT,
 };
@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
-#[command(name = "cloakrs")]
+#[command(name = "stegoeggo")]
 #[command(about = "Image protection CLI for protecting against AI scraping", long_about = None)]
 struct Args {
     #[arg(help = "Input image file(s). Use multiple files or a directory for batch processing")]
@@ -310,7 +310,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let is_batch = input_files.len() > 1 || args.input.iter().any(|p| p.is_dir());
 
     if args.verbose {
-        println!("cloakrs CLI");
+        println!("stegoeggo CLI");
         println!("==============");
         println!("Input files: {}", input_files.len());
         if is_batch {
@@ -433,7 +433,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut ctx = ProtectionContext::new(args.intensity.clamp(0.0, 1.0), seed)
-        .with_format(output_format.unwrap_or(cloakrs::ImageOutputFormat::Png))
+        .with_format(output_format.unwrap_or(stegoeggo::ImageOutputFormat::Png))
         .with_stego_redundancy(args.stego_redundancy.clamp(1, 10))
         .with_jpeg_quality(args.jpeg_quality.clamp(1, 100))
         .with_progressive_jpeg(args.progressive);
