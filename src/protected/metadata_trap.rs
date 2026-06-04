@@ -1016,7 +1016,12 @@ impl MetadataTrapProtector {
         None
     }
 
-    pub fn inject_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
+    #[doc(hidden)]
+    pub fn inject_bytes(
+        &self,
+        img_bytes: &[u8],
+        ctx: &ProtectionContext,
+    ) -> Result<Vec<u8>> {
         let metadata = self.generate_poison_metadata(
             ctx.dmi_value(),
             ctx.protection_level(),

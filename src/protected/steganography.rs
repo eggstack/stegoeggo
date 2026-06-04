@@ -140,7 +140,7 @@ impl SteganographyProtector {
     ///
     /// This is the JPEG fast path — it avoids pixel decode/encode cycles and preserves
     /// quality. Used internally by the pipeline for JPEG-in/JPEG-out flows.
-    pub fn apply_dct_stego_bytes(
+    pub(crate) fn apply_dct_stego_bytes(
         &self,
         jpeg_bytes: &[u8],
         ctx: &ProtectionContext,
@@ -230,7 +230,7 @@ impl SteganographyProtector {
     /// Embed only the seed in JPEG quantization tables (no DCT coefficient modification).
     /// Used for Light level JPEG protection — the seed is recoverable when the
     /// quantization tables themselves are preserved.
-    pub fn apply_qtable_seed_bytes(&self, jpeg_bytes: &[u8], seed: u64) -> Result<Vec<u8>> {
+    pub(crate) fn apply_qtable_seed_bytes(&self, jpeg_bytes: &[u8], seed: u64) -> Result<Vec<u8>> {
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
         }
@@ -248,7 +248,7 @@ impl SteganographyProtector {
     /// fixed at 1 because the tile grid itself is the redundancy.
     ///
     /// Returns the re-encoded JPEG bytes, or an error if embedding fails.
-    pub fn apply_dct_stego_bytes_tiled(
+    pub(crate) fn apply_dct_stego_bytes_tiled(
         &self,
         jpeg_bytes: &[u8],
         ctx: &ProtectionContext,
@@ -350,6 +350,7 @@ impl SteganographyProtector {
     ///
     /// Tries different grid coordinates for each tile origin to find one
     /// that produces a valid payload.
+    #[doc(hidden)]
     pub fn extract_f5_tiled_candidates(
         &self,
         jpeg_bytes: &[u8],
@@ -444,7 +445,11 @@ impl SteganographyProtector {
     /// Embed a minimal LSB stego payload with redundancy=1.
     /// Used for Light level PNG/WebP protection — embeds the seed and protection
     /// metadata with minimal visual impact.
-    pub fn embed_lsb_minimal(&self, img: &DynamicImage, ctx: &ProtectionContext) -> DynamicImage {
+    pub(crate) fn embed_lsb_minimal(
+        &self,
+        img: &DynamicImage,
+        ctx: &ProtectionContext,
+    ) -> DynamicImage {
         let payload = self.generate_payload(ctx);
         let rgba = img.to_rgba8();
         let format = ctx

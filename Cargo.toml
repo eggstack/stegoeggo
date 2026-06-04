@@ -23,6 +23,7 @@ include = [
     "LICENSE",
     "CHANGELOG.md",
     "SECURITY.md",
+    "examples/**/*.rs",
 ]
 
 [features]

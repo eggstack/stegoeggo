@@ -328,6 +328,7 @@ impl ProtectionConfig {
         self
     }
 
+    /// Sets the legal metadata for content ownership claims.
     #[must_use]
     pub fn with_legal_metadata(mut self, metadata: LegalMetadata) -> Self {
         self.legal_metadata = Some(metadata);
@@ -1020,6 +1021,7 @@ impl From<VerificationStatus> for Option<bool> {
 /// For legal defense use cases, callers should check for warnings to understand
 /// what level of protection was actually applied.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ProtectionWarning {
     /// No MAC key was configured.
     ///
