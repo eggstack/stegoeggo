@@ -105,7 +105,7 @@ pub mod async_api;
 pub use error::{Error, Result};
 pub use types::{
     DmiValue, ImageOutputFormat, LegalMetadata, ProtectionConfig, ProtectionContext,
-    ProtectionLevel, VerificationResult, DEFAULT_OUTPUT_FORMAT,
+    ProtectionLevel, ProtectionWarning, VerificationResult, DEFAULT_OUTPUT_FORMAT,
 };
 
 pub use traits::Protector;
@@ -115,6 +115,23 @@ pub use protected::passthrough::PassthroughProtector;
 pub use protected::steganography::{SteganographyProtector, StegoPayload};
 
 pub use jpeg_transcoder::is_progressive_jpeg;
+
+/// Parse JPEG header and decode DCT coefficients from raw bytes.
+///
+/// This function is exposed for fuzzing the internal JPEG parser. It parses
+/// the JPEG header and decodes the entropy-coded scan data into DCT coefficients.
+///
+/// Returns `Ok((header, coefficients))` on success, or `Err` if the JPEG
+/// is invalid, progressive, or otherwise unsupported.
+#[cfg(feature = "fuzz")]
+pub fn parse_jpeg_for_fuzz(
+    data: &[u8],
+) -> std::result::Result<
+    (jpeg_transcoder::JpegHeader, jpeg_transcoder::Coefficients),
+    jpeg_transcoder::TranscoderError,
+> {
+    jpeg_transcoder::JpegTranscoder::decode_coefficients(data)
+}
 
 pub use util::image::{
     compute_image_hash, detect_image_format, encode_image, encode_image_with_options,
@@ -458,6 +475,69 @@ pub fn process_image_bytes(
     };
 
     DEFAULT_PIPELINE.process_bytes(img_bytes, level, &ctx_with_format)
+}
+
+/// Process image bytes with protection level and return any warnings about
+/// degraded protection.
+///
+/// Like [`process_image_bytes`], but also returns a [`ProtectionWarning`] if
+/// the protection was applied with reduced effectiveness. This is important
+/// for legal defense use cases where the caller needs to know the actual
+/// protection level applied.
+///
+/// # Returns
+///
+/// A tuple of `(protected_bytes, Option<ProtectionWarning>)`. The warning
+/// is `Some` when the protection was degraded (e.g., progressive JPEG fallback).
+///
+/// # Examples
+///
+/// ```no_run
+/// use cloakrs::{process_image_bytes_with_info, ProtectionContext, ProtectionLevel};
+///
+/// let img_bytes: Vec<u8> = std::fs::read("input.jpg").unwrap();
+/// let ctx = ProtectionContext::new(0.5, 42);
+/// let (protected, warning) = process_image_bytes_with_info(
+///     &img_bytes, ProtectionLevel::Standard, &ctx
+/// ).unwrap();
+/// if let Some(w) = warning {
+///     eprintln!("Warning: {}", w);
+/// }
+/// ```
+pub fn process_image_bytes_with_info(
+    img_bytes: &[u8],
+    level: ProtectionLevel,
+    ctx: &ProtectionContext,
+) -> Result<(Vec<u8>, Option<ProtectionWarning>)> {
+    let format = ImageOutputFormat::from_magic_bytes(img_bytes)
+        .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
+
+    let ctx_with_format = {
+        let mut ctx = ctx.clone();
+        if ctx.input_format().is_none() {
+            ctx.set_input_format(format);
+        }
+        ctx
+    };
+
+    let mut warning = None;
+
+    // Detect progressive JPEG fallback before processing — the pipeline silently
+    // falls back to Q-table seed only for progressive JPEGs. If the caller
+    // requested progressive JPEG output, the encoded output will be progressive
+    // and the DCT transcoder will reject it.
+    if level == ProtectionLevel::Standard && ctx_with_format.progressive_jpeg() {
+        let output_format = ctx_with_format
+            .output_format()
+            .or(ctx_with_format.input_format())
+            .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+        if output_format == ImageOutputFormat::Jpeg {
+            warning = Some(ProtectionWarning::ProgressiveJpegFallback);
+        }
+    }
+
+    let result = DEFAULT_PIPELINE.process_bytes(img_bytes, level, &ctx_with_format)?;
+    Ok((result, warning))
 }
 
 /// Verify that image bytes contain a protection payload whose integrity can be proved.

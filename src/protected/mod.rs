@@ -10,6 +10,7 @@ pub(crate) mod ecc;
 pub mod metadata_trap;
 pub mod passthrough;
 pub mod steganography;
+#[cfg(feature = "fuzz")]
 pub(crate) mod stego_cost;
 
 // Re-exports are handled at the crate root level in lib.rs

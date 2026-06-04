@@ -855,6 +855,35 @@ impl VerificationResult {
     }
 }
 
+/// Warning about degraded protection during image processing.
+///
+/// Returned by [`process_image_bytes_with_info`](crate::process_image_bytes_with_info)
+/// when the protection was applied but with reduced effectiveness.
+/// For legal defense use cases, callers should check for warnings to understand
+/// what level of protection was actually applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProtectionWarning {
+    /// Progressive JPEG detected — fell back to Q-table seed only.
+    ///
+    /// Full F5 DCT steganography was not applied because the JPEG uses
+    /// progressive encoding, which the transcoder cannot decode. Only the
+    /// seed was stored in quantization tables. This provides weaker protection
+    /// than the standard DCT steganography path.
+    ProgressiveJpegFallback,
+}
+
+impl std::fmt::Display for ProtectionWarning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProtectionWarning::ProgressiveJpegFallback => write!(
+                f,
+                "Progressive JPEG detected: fell back to Q-table seed only. \
+                 Full F5 DCT steganography was not applied."
+            ),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -2081,6 +2081,32 @@ mod tests {
         assert_eq!(bytes[0], 1);
     }
 
+    #[test]
+    fn bits_to_bytes_non_multiple_of_8_returns_empty() {
+        let bits = vec![1, 0, 1]; // 3 bits — not a multiple of 8
+        let bytes = SteganographyProtector::bits_to_bytes(&bits);
+        assert!(
+            bytes.is_empty(),
+            "Non-multiple-of-8 input should return empty Vec"
+        );
+    }
+
+    #[test]
+    fn bits_to_bytes_empty_input() {
+        let bits: Vec<u8> = vec![];
+        let bytes = SteganographyProtector::bits_to_bytes(&bits);
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn bits_to_bytes_16_bits() {
+        let bits = vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0];
+        let bytes = SteganographyProtector::bits_to_bytes(&bits);
+        assert_eq!(bytes.len(), 2);
+        assert_eq!(bytes[0], 1);
+        assert_eq!(bytes[1], 2);
+    }
+
     // ── Checksum ──────────────────────────────────────────────────────
 
     #[test]

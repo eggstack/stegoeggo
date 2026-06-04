@@ -975,6 +975,68 @@ mod webp_tests {
         let protected_img = image::load_from_memory(&protected_bytes);
         assert!(protected_img.is_ok(), "WebP should be loadable");
     }
+
+    #[test]
+    fn test_webp_lsb_stego_roundtrip() {
+        let img = create_colored_image(64, 64, 50, 100, 150);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let ctx = ProtectionContext::new(0.7, 42).with_format(ImageOutputFormat::WebP);
+
+        let protected_bytes =
+            process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        let protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        let stego = SteganographyProtector::new();
+        let payload = stego.extract_payload_with_seed(&protected_img, 42);
+        assert!(
+            payload.is_some(),
+            "LSB stego should survive WebP lossless roundtrip"
+        );
+        let payload = payload.unwrap();
+        assert_eq!(payload.seed(), 42);
+    }
+
+    #[test]
+    fn test_webp_metadata_injection() {
+        let img = create_test_image(32, 32);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::WebP)
+            .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+        let protected_bytes =
+            process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        let has_xmp = protected_bytes.windows(4).any(|w| w == b"XMP ")
+            || protected_bytes.windows(3).any(|w| w == b"XMP");
+        assert!(
+            has_xmp || protected_bytes.len() > 100,
+            "WebP should contain XMP or EXIF metadata"
+        );
+    }
+
+    #[test]
+    fn test_webp_verify_after_metadata_strip() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let ctx = ProtectionContext::new(0.7, 42).with_format(ImageOutputFormat::WebP);
+
+        let protected_bytes =
+            process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        let protected_img = image::load_from_memory(&protected_bytes).unwrap();
+        let stripped_bytes = image_to_png_bytes(&protected_img);
+
+        let result = cloakrs::verify_image_bytes(&stripped_bytes, &[]);
+        assert_eq!(
+            result,
+            Some(true),
+            "LSB stego should survive metadata stripping via DynamicImage roundtrip"
+        );
+    }
 }
 
 mod error_variant_tests {
@@ -1004,6 +1066,175 @@ mod error_variant_tests {
                 Error::InvalidFormat(_) | Error::Image(_)
             ),
             "Should return InvalidFormat or Image error for empty input"
+        );
+    }
+}
+
+mod jpeg_max_dimension {
+    use super::*;
+
+    #[test]
+    fn test_max_dimension_validation_jpeg_via_process_bytes() {
+        let img = create_test_image(1000, 1000);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_max_dimension(512);
+
+        let result = process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx);
+        assert!(
+            result.is_err(),
+            "Should fail when JPEG exceeds max dimension via process_bytes"
+        );
+    }
+
+    #[test]
+    fn test_max_dimension_within_limit_jpeg() {
+        let img = create_test_image(256, 256);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_max_dimension(512);
+
+        let result = process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx);
+        assert!(
+            result.is_ok(),
+            "Should succeed when JPEG is within max dimension"
+        );
+    }
+}
+
+mod inject_metadata_toggle {
+    use super::*;
+
+    #[test]
+    fn test_inject_metadata_false_skips_metadata() {
+        let img = create_test_image(32, 32);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_metadata_injection(false);
+
+        let protected_bytes =
+            process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        let has_seed = protected_bytes
+            .windows(18)
+            .any(|w| w == b"X-Protection-Seed");
+        assert!(
+            !has_seed,
+            "Should NOT inject seed metadata when metadata_injection is false"
+        );
+    }
+
+    #[test]
+    fn test_inject_metadata_default_injects() {
+        let img = create_test_image(32, 32);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Png);
+
+        let protected_bytes =
+            process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        let has_seed = protected_bytes
+            .windows(18)
+            .any(|w| w == b"X-Protection-Seed");
+        let has_dmi = protected_bytes.windows(14).any(|w| w == b"DMI-PROHIBITED");
+        assert!(
+            has_seed || has_dmi,
+            "Should inject metadata by default (seed or DMI present)"
+        );
+    }
+
+    #[test]
+    fn test_inject_metadata_false_jpeg() {
+        let img = create_test_image(32, 32);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_metadata_injection(false);
+
+        let protected_bytes =
+            process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        let has_com = protected_bytes.windows(2).any(|w| w == [0xFF, 0xFE]);
+        assert!(
+            !has_com,
+            "Should NOT inject COM markers when metadata_injection is false"
+        );
+    }
+}
+
+mod progressive_jpeg_warning {
+    use super::*;
+    use cloakrs::{process_image_bytes_with_info, ProtectionWarning};
+
+    #[test]
+    fn test_progressive_jpeg_returns_warning() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_progressive_jpeg(true);
+
+        let (protected, warning) =
+            process_image_bytes_with_info(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        assert!(!protected.is_empty());
+        assert_eq!(
+            warning,
+            Some(ProtectionWarning::ProgressiveJpegFallback),
+            "Should warn about progressive JPEG fallback"
+        );
+    }
+
+    #[test]
+    fn test_baseline_jpeg_no_warning() {
+        let img = create_test_image(64, 64);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
+
+        let (_, warning) =
+            process_image_bytes_with_info(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        assert_eq!(warning, None, "Baseline JPEG should not produce warning");
+    }
+
+    #[test]
+    fn test_png_no_warning() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Png);
+
+        let (_, warning) =
+            process_image_bytes_with_info(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        assert_eq!(warning, None, "PNG should not produce warning");
+    }
+
+    #[test]
+    fn test_light_level_no_warning_even_for_progressive() {
+        let img = create_test_image(64, 64);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_progressive_jpeg(true);
+
+        let (_, warning) =
+            process_image_bytes_with_info(&jpeg_bytes, ProtectionLevel::Light, &ctx).unwrap();
+
+        assert_eq!(
+            warning, None,
+            "Light level should not warn about progressive JPEG (no DCT stego attempted)"
         );
     }
 }

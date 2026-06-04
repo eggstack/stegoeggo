@@ -8,7 +8,7 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-cloakrs = { path = ".." }
+cloakrs = { path = "..", features = ["fuzz"] }
 libfuzzer-sys = "0.4"
 
 [[bin]]
@@ -20,5 +20,11 @@ doc = false
 [[bin]]
 name = "tiled_round_trip"
 path = "fuzz_targets/tiled_round_trip.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "jpeg_parser"
+path = "fuzz_targets/jpeg_parser.rs"
 test = false
 doc = false
