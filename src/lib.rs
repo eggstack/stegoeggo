@@ -158,9 +158,11 @@
 //! ```
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 pub mod error;
 pub mod traits;
+/// Core types: protection levels, configuration, legal metadata, and verification results.
 pub mod types;
 
 pub(crate) mod jpeg_transcoder;
@@ -484,6 +486,20 @@ pub fn process_image(
 /// Takes a slice of images and returns a vector of processed images.
 /// Uses Rayon for parallel processing.
 ///
+/// # Examples
+///
+/// ```no_run
+/// use stegoeggo::{process_images_parallel, ProtectionContext, ProtectionLevel};
+/// use image::DynamicImage;
+///
+/// let images: Vec<DynamicImage> = vec![
+///     image::open("image1.png").unwrap(),
+///     image::open("image2.png").unwrap(),
+/// ];
+/// let ctx = ProtectionContext::new(0.5, 42);
+/// let protected = process_images_parallel(&images, ProtectionLevel::Standard, &ctx).unwrap();
+/// ```
+///
 /// # Errors
 ///
 /// Returns the first error encountered from any image processing call.
@@ -507,6 +523,19 @@ pub fn process_images_parallel(
 /// Process multiple images in parallel (bytes variant).
 ///
 /// Takes a slice of image bytes and returns a vector of processed image bytes.
+///
+/// # Examples
+///
+/// ```no_run
+/// use stegoeggo::{process_images_bytes_parallel, ProtectionContext, ProtectionLevel};
+///
+/// let images: Vec<Vec<u8>> = vec![
+///     std::fs::read("image1.png").unwrap(),
+///     std::fs::read("image2.png").unwrap(),
+/// ];
+/// let ctx = ProtectionContext::new(0.5, 42);
+/// let protected = process_images_bytes_parallel(&images, ProtectionLevel::Standard, &ctx).unwrap();
+/// ```
 ///
 /// # Errors
 ///

@@ -10,13 +10,20 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[non_exhaustive]
 pub enum DmiValue {
+    /// No DMI restriction specified (default).
     #[default]
     Unspecified,
+    /// Content may be used for AI/ML training.
     Allowed,
+    /// Prohibited for AI/ML training.
     ProhibitedAiMlTraining,
+    /// Prohibited for generative AI training.
     ProhibitedGenAiMlTraining,
+    /// Prohibited except for search engine indexing.
     ProhibitedExceptSearchEngineIndexing,
+    /// All uses prohibited.
     Prohibited,
+    /// Prohibited, see constraints for details.
     ProhibitedSeeConstraints,
 }
 
@@ -61,8 +68,11 @@ impl DmiValue {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[non_exhaustive]
 pub enum ProtectionLevel {
+    /// No protection applied.
     Disabled,
+    /// Metadata injection with minimal steganography.
     Light,
+    /// Full steganography + metadata injection (default).
     #[default]
     Standard,
 }
@@ -104,9 +114,12 @@ impl ProtectionLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[non_exhaustive]
 pub enum ImageOutputFormat {
+    /// Portable Network Graphics (default).
     #[default]
     Png,
+    /// Joint Photographic Experts Group.
     Jpeg,
+    /// WebP image format.
     WebP,
 }
 

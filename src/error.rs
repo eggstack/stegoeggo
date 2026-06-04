@@ -91,6 +91,7 @@ pub enum Error {
     Task(String),
 }
 
+/// A specialized `Result` type for stegoeggo operations.
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]

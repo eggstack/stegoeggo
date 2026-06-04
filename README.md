@@ -104,46 +104,46 @@ let protected = pipeline.process(&img, ProtectionLevel::Standard, &ctx).unwrap()
 
 Process images from files or network sources without loading into DynamicImage:
 
-```rust
+```rust,no_run
 use stegoeggo::{process_image_bytes, ProtectionContext, ProtectionLevel};
 
 // Read image from file
-let img_bytes = std::fs::read("image.png")?;
+let img_bytes = std::fs::read("image.png").unwrap();
 
 // Process with automatic format detection
 let ctx = ProtectionContext::default();
-let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx)?;
+let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 ```
 
 ### Parallel Processing
 
 Process multiple images concurrently using Rayon:
 
-```rust
+```rust,no_run
 use stegoeggo::{process_images_parallel, ProtectionContext, ProtectionLevel};
 use image::DynamicImage;
 
 let images: Vec<DynamicImage> = vec![
-    image::open("image1.png")?,
-    image::open("image2.png")?,
-    image::open("image3.png")?,
+    image::open("image1.png").unwrap(),
+    image::open("image2.png").unwrap(),
+    image::open("image3.png").unwrap(),
 ];
 
 let ctx = ProtectionContext::default();
-let results = process_images_parallel(&images, ProtectionLevel::Standard, &ctx)?;
+let results = process_images_parallel(&images, ProtectionLevel::Standard, &ctx).unwrap();
 ```
 
 Or process bytes in parallel:
 
-```rust
+```rust,ignore
 use stegoeggo::{process_images_bytes_parallel, ProtectionContext, ProtectionLevel};
 
 let image_bytes: Vec<Vec<u8>> = vec![
-    std::fs::read("image1.png")?,
-    std::fs::read("image2.png")?,
+    std::fs::read("image1.png").unwrap(),
+    std::fs::read("image2.png").unwrap(),
 ];
 
-let protected = process_images_bytes_parallel(&image_bytes, ProtectionLevel::Standard, &ctx)?;
+let protected = process_images_bytes_parallel(&image_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 ```
 
 ### Protection Levels
@@ -197,9 +197,10 @@ Inject real legal metadata (copyright, contact info, usage terms). **Only use fo
 
 Both `with_legal_metadata(...)` (provides the content) and `with_legal_claims(true)` (enables injection) are required — metadata will not be injected without both:
 
-```rust
-use stegoeggo::{ProtectionContext, LegalMetadata, ProtectionLevel};
+```rust,ignore
+use stegoeggo::{process_image_bytes, ProtectionContext, LegalMetadata, ProtectionLevel};
 
+let img_bytes = std::fs::read("image.png").unwrap();
 let ctx = ProtectionContext::default()
     .with_legal_metadata(
         LegalMetadata::new()
@@ -210,7 +211,7 @@ let ctx = ProtectionContext::default()
     )
     .with_legal_claims(true);
 
-let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx)?;
+let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 ```
 
 ### Granular Control
@@ -259,26 +260,29 @@ Available values:
 
 For latency-sensitive deployments:
 
-```rust
+```rust,ignore
 use stegoeggo::{
     process_image_bytes_with_warnings, ImageOutputFormat, ProtectionContext, ProtectionLevel,
 };
 
 // Optimized context for WAF edge deployment
+let seed = 42u64;
+let mac_key = b"your-secret-key".to_vec();
+let input_bytes = std::fs::read("image.png").unwrap();
 let ctx = ProtectionContext::new(0.5, seed)
     .with_format(ImageOutputFormat::Png)      // or Jpeg for smaller files
     .with_mac_key(mac_key)                     // required for adversarial serving
-    .with_stego_redundancy(2)                        // 1-10, lower = faster
-    .with_jpeg_quality(85)                         // 1-100, lower = faster
-    .with_progressive_jpeg(true);                   // Progressive rendering for web
+    .with_stego_redundancy(2)                  // 1-10, lower = faster
+    .with_jpeg_quality(85)                     // 1-100, lower = faster
+    .with_progressive_jpeg(true);              // Progressive rendering for web
 
 // Process and serve directly
 let (protected_bytes, warnings) =
-    process_image_bytes_with_warnings(&input_bytes, ProtectionLevel::Standard, &ctx)?;
+    process_image_bytes_with_warnings(&input_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
 // Reverse proxies should log warnings and may enforce policy before serving.
-for warning in warnings {
-    tracing::warn!(%warning, "stegoeggo protection warning");
+for warning in &warnings {
+    eprintln!("Warning: {warning}");
 }
 ```
 
@@ -299,12 +303,15 @@ timeouts, and serving policy.
 
 Recommended hot-path shape:
 
-```rust
+```rust,ignore
 use stegoeggo::{
     process_image_bytes_with_warnings, ImageOutputFormat, ProtectionContext, ProtectionLevel,
     ProtectionWarning,
 };
 
+let seed = 42u64;
+let mac_key = b"your-secret-key".to_vec();
+let origin_bytes = std::fs::read("image.png").unwrap();
 let ctx = ProtectionContext::new(0.5, seed)
     .with_format(ImageOutputFormat::Png)
     .with_mac_key(mac_key)
@@ -312,7 +319,7 @@ let ctx = ProtectionContext::new(0.5, seed)
     .with_stego_redundancy(1);
 
 let (protected, warnings) =
-    process_image_bytes_with_warnings(&origin_bytes, ProtectionLevel::Standard, &ctx)?;
+    process_image_bytes_with_warnings(&origin_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
 if warnings.iter().any(|w| matches!(w, ProtectionWarning::MissingMacKey)) {
     // Production policy should normally reject this configuration.
@@ -490,11 +497,12 @@ Without a MAC key, the payload uses 3× repetition coding with majority-vote dec
 
 ### Programmatic Verification
 
-```rust
+```rust,ignore
 use stegoeggo::{SteganographyProtector, MetadataTrapProtector};
 use image::DynamicImage;
 
-let img = image::load_from_memory(&protected_bytes)?;
+let protected_bytes = std::fs::read("protected.png").unwrap();
+let img = image::load_from_memory(&protected_bytes).unwrap();
 
 // Method 1: Steganography verification
 let stego = SteganographyProtector::new();
@@ -641,10 +649,10 @@ Standard protection at 512×512: 60 allocations, 5.7 MB peak.
 
 The library computes ISCC-**like** (Immutable Self-Certifying Constituent Content) identifiers for content identification. **Note:** these identifiers are not guaranteed to be interoperable with the standard ISCC specification — they use a custom DCT-based perceptual hash and SHA-256 instance code. They are suitable for in-application deduplication and provenance tracking, but should not be used for cross-ISCC-tool interoperability:
 
-```rust
+```rust,ignore
 use stegoeggo::{compute_iscc, Iscc};
 
-let img = image::open("image.png")?;
+let img = image::open("image.png").unwrap();
 let iscc = compute_iscc(&img);
 
 println!("Content Code: {}", iscc.content);
@@ -664,10 +672,10 @@ The `Iscc` struct fields:
 
 The library uses `thiserror` for error handling:
 
-```rust
+```rust,ignore
 use stegoeggo::{Error, Result};
 
-fn process() -> Result<DynamicImage> {
+fn process() -> Result<image::DynamicImage> {
     // Operations that may fail
 }
 ```

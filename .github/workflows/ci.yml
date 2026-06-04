@@ -77,6 +77,24 @@ jobs:
       - name: Run audit
         run: cargo audit
 
+  deny:
+    name: License & Advisory Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny
+
+      - name: Check licenses
+        run: cargo deny check licenses
+
+      - name: Check advisories
+        run: cargo deny check advisories
+
   bench:
     name: Benchmark
     runs-on: ubuntu-latest
