@@ -148,11 +148,11 @@ let protected = process_images_bytes_parallel(&image_bytes, ProtectionLevel::Sta
 
 The library provides three protection levels:
 
-| Level | Strategy | Latency | Use Case |
-|-------|----------|---------|----------|
-| `Disabled` | No protection | <0.1ms | Testing, whitelisted clients |
-| `Light` | Metadata + minimal stego (Q-table seed for JPEG, LSB redundancy=1 for PNG/WebP) | ~1-2ms (for 256x256; scales with image size) | Minimal visible markers, low cost |
-| `Standard` | Full stego (DCT F5 + metadata for JPEG, LSB + metadata for PNG/WebP) | ~3-6ms | Default for most endpoints |
+| Level | Strategy | Latency (512×512) | Use Case |
+|-------|----------|-------------------|----------|
+| `Disabled` | No protection | ~20 ns | Testing, whitelisted clients |
+| `Light` | Metadata + minimal stego (Q-table seed for JPEG, LSB redundancy=1 for PNG/WebP) | ~0.8 ms | Minimal visible markers, low cost |
+| `Standard` | Full stego (DCT F5 + metadata for JPEG, LSB + metadata for PNG/WebP) | ~0.8 ms | Default for most endpoints |
 
 ```rust
 use stegoeggo::ProtectionLevel;
@@ -574,26 +574,56 @@ The primary deterrence mechanism is **visible metadata injection** — DMI tags,
 
 ## Performance
 
-Benchmarked on Apple M1 Pro (10 cores), version 0.2.0:
+Benchmarked on Apple M4 Pro (12 cores), version 0.2.0.
 
-| Image Size | Level | Time (ms) | Notes |
-|------------|-------|-----------|-------|
-| 256×256 | Light | ~1.0 | Metadata + minimal stego (LSB redundancy=1 or Q-table seed) |
-| 256×256 | Standard | ~1.5 | Default settings |
-| 256×256 | Standard | ~1.0 | `stego_redundancy=1` |
-| 512×512 | Standard | ~5.0 | Default settings |
-| 512×512 | Standard | ~3.0 | `stego_redundancy=1` |
-| 1024×1024 | Standard | ~20.0 | Default settings |
+### In-Memory Processing (`DynamicImage` path)
 
-**Target:** <10ms for typical image sizes
+| Image Size | Light | Standard |
+|------------|-------|----------|
+| 256×256 | 0.2 ms | 0.2 ms |
+| 512×512 | 0.8 ms | 0.8 ms |
+| 1024×1024 | 3.2 ms | 3.1 ms |
+| 2560×2560 (2K) | 18 ms | 20 ms |
+| 3840×3840 (4K) | 35 ms | 40 ms |
 
-### Optimizations Applied (v0.2.0)
+### Bytes-in/Bytes-out Processing (production path for WAF/CDN)
 
-- Configurable stego redundancy (default 2x, can reduce to 1x)
-- Pre-allocated buffers to reduce memory allocations
-- Bounded fallback in steganography embedding
-- Fast-path bytes processing without unnecessary re-encoding
-- ISCC computation removed from hot path (available out-of-band)
+PNG in / PNG out — the "maximum legal evidence" path:
+
+| Image Size | Light | Standard |
+|------------|-------|----------|
+| 512×512 | 0.7 ms | 0.7 ms |
+| 2560×2560 (2K) | 11 ms | 13 ms |
+| 3840×3840 (4K) | 25 ms | 29 ms |
+
+### JPEG Fast Path
+
+JPEG-in / JPEG-out bypasses pixel decode entirely and operates directly on DCT coefficients:
+
+| Image Size | Time |
+|------------|------|
+| 256×256 | **1.3 µs** |
+| 512×512 | 1.6 ms |
+
+### Tiled Embedding (crop-resistant mode)
+
+JPEG with `with_tile_size(64)`:
+
+| Image Size | Embed | Extract |
+|------------|-------|---------|
+| 256×256 | 1.5 ms | 270 ms |
+| 1024×1024 | 253 ms | — |
+
+### Allocations
+
+Standard protection at 512×512: 60 allocations, 5.7 MB peak.
+
+### Summary
+
+- **<1 ms** for images up to 512×512
+- **<5 ms** for images up to 1024×1024
+- **<30 ms** for 4K images (bytes path, Standard level)
+- JPEG fast path is sub-millisecond for small images
 
 ## Technical Details
 
