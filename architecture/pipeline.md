@@ -52,11 +52,24 @@ Free functions that use a `LazyLock<ProtectionPipeline>` singleton:
 - `process_image_bytes(bytes, level, &ctx)` — Single image, byte path. Auto-detects input format from magic bytes and sets `input_format` on context if not already set.
 - `process_images_parallel(images, level, &ctx)` — Rayon parallel batch
 - `process_images_bytes_parallel(images, level, &ctx)` — Parallel batch, byte path
-- `verify_image_bytes(bytes, mac_key) -> Option<bool>` — Free function (not a pipeline method). Checks DCT stego first, then metadata seed extraction, then falls back to LSB stego payload extraction. Uses HMAC key via `verify_payload_integrity`.
+- `process_image_bytes_with_warnings(bytes, level, &ctx) -> (Vec<u8>, Vec<ProtectionWarning>)` — Recommended reverse-proxy API. Keeps processing byte-oriented and returns advisory/degradation warnings for proxy policy/logging.
+- `verify_image_bytes(bytes, mac_key) -> Option<bool>` — Free function (not a pipeline method). Checks DCT stego first, then metadata seed extraction, then falls back to LSB stego payload extraction for non-JPEG formats. Uses HMAC key via `verify_payload_integrity`.
+- `verify_image_bytes_detailed(bytes, mac_key) -> VerificationResult` — Distinguishes verified payloads from metadata-only evidence.
 
 ## Dimension Validation
 
-`process()` validates image dimensions against `max_dimension` from the context and returns an error if exceeded. `process_bytes()` does **not** perform this validation — large images can bypass the check via the byte path.
+`process()` validates image dimensions against `max_dimension` from the context and returns an error if exceeded. `process_bytes()` also validates dimensions on the Standard byte path: JPEG-in/JPEG-out is checked from parsed headers before DCT processing, and non-JPEG inputs are checked after decode. Reverse proxies should still enforce input byte-size limits before calling the library.
+
+## Reverse Proxy Integration
+
+For tight reverse-proxy serving, prefer:
+
+1. Cache lookup in the proxy before calling cloakrs.
+2. `process_image_bytes_with_warnings()` on cache misses.
+3. A `ProtectionContext` with `with_mac_key()`, `with_max_dimension()`, explicit `with_format()`, and bounded `with_stego_redundancy()`.
+4. Policy/logging based on `ProtectionWarning`.
+
+The library intentionally does not own proxy-level cache policy, concurrency limits, request body limits, or timeout/cancellation behavior.
 
 ## Format Routing
 

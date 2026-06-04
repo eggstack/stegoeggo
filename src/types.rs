@@ -828,6 +828,17 @@ pub enum VerificationResult {
         /// The partially extracted payload (may contain valid metadata).
         payload: crate::StegoPayload,
     },
+    /// Metadata markers were found, but no steganographic payload could be
+    /// integrity-verified.
+    ///
+    /// This is useful evidence that the image passed through the protection
+    /// pipeline, but it is weaker than [`Verified`](Self::Verified). Metadata
+    /// can be stripped, copied, or forged more easily than a MAC-verified
+    /// steganographic payload.
+    MetadataOnly {
+        /// Protection seed recovered from metadata.
+        seed: u64,
+    },
     /// No protection data found in the image.
     ///
     /// The extraction chain exhausted all seed sources (metadata, LSB fallback,
@@ -853,6 +864,14 @@ impl VerificationResult {
             _ => None,
         }
     }
+
+    /// Returns the metadata seed when the result is metadata-only evidence.
+    pub fn metadata_seed(&self) -> Option<u64> {
+        match self {
+            VerificationResult::MetadataOnly { seed } => Some(*seed),
+            _ => None,
+        }
+    }
 }
 
 /// Warning about degraded protection during image processing.
@@ -863,6 +882,17 @@ impl VerificationResult {
 /// what level of protection was actually applied.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProtectionWarning {
+    /// No MAC key was configured.
+    ///
+    /// The embedded payload can still detect accidental corruption via CRC32,
+    /// but it is forgeable. Reverse proxies serving adversarial traffic should
+    /// configure a MAC key and verify with the same key.
+    MissingMacKey,
+    /// Metadata injection was disabled.
+    ///
+    /// The steganographic payload may still be present, but visible legal/DMI
+    /// markers will not be available to scrapers or downstream evidence tools.
+    MetadataInjectionDisabled,
     /// Progressive JPEG detected — fell back to Q-table seed only.
     ///
     /// Full F5 DCT steganography was not applied because the JPEG uses
@@ -870,15 +900,34 @@ pub enum ProtectionWarning {
     /// seed was stored in quantization tables. This provides weaker protection
     /// than the standard DCT steganography path.
     ProgressiveJpegFallback,
+    /// JPEG output was requested.
+    ///
+    /// The protection is efficient for byte-preserving JPEG serving through the
+    /// cloakrs fast path, but generic downstream JPEG re-encoding destroys
+    /// COM/APP metadata, Q-table seed bits, and DCT payload evidence.
+    JpegReencodeFragile,
 }
 
 impl std::fmt::Display for ProtectionWarning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ProtectionWarning::MissingMacKey => write!(
+                f,
+                "No MAC key configured: payload integrity is CRC32-only and forgeable."
+            ),
+            ProtectionWarning::MetadataInjectionDisabled => write!(
+                f,
+                "Metadata injection disabled: visible DMI/legal evidence will not be emitted."
+            ),
             ProtectionWarning::ProgressiveJpegFallback => write!(
                 f,
                 "Progressive JPEG detected: fell back to Q-table seed only. \
                  Full F5 DCT steganography was not applied."
+            ),
+            ProtectionWarning::JpegReencodeFragile => write!(
+                f,
+                "JPEG output is fragile under downstream re-encoding; serve byte-identical \
+                 output or expect metadata/Q-table/DCT evidence loss."
             ),
         }
     }

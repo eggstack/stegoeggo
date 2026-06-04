@@ -897,7 +897,7 @@ mod edge_case_tests {
 
 mod verify_tests {
     use super::*;
-    use cloakrs::verify_image_bytes;
+    use cloakrs::{verify_image_bytes, verify_image_bytes_detailed, MetadataTrapProtector};
 
     #[test]
     fn test_verify_image_bytes_sync() {
@@ -922,6 +922,27 @@ mod verify_tests {
             result.is_none() || result == Some(false),
             "Unprotected image should not verify"
         );
+    }
+
+    #[test]
+    fn test_detailed_verify_reports_metadata_only() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.5, 777);
+        let metadata_only = MetadataTrapProtector::new()
+            .inject_bytes(&png_bytes, &ctx)
+            .unwrap();
+
+        let result = verify_image_bytes_detailed(&metadata_only, &[]);
+        assert!(
+            result.is_found(),
+            "Metadata seed should be reported as found"
+        );
+        assert!(
+            !result.is_verified(),
+            "Metadata-only evidence should not be treated as payload verification"
+        );
+        assert_eq!(result.metadata_seed(), Some(777));
     }
 }
 
@@ -1172,7 +1193,9 @@ mod inject_metadata_toggle {
 
 mod progressive_jpeg_warning {
     use super::*;
-    use cloakrs::{process_image_bytes_with_info, ProtectionWarning};
+    use cloakrs::{
+        process_image_bytes_with_info, process_image_bytes_with_warnings, ProtectionWarning,
+    };
 
     #[test]
     fn test_progressive_jpeg_returns_warning() {
@@ -1236,5 +1259,24 @@ mod progressive_jpeg_warning {
             warning, None,
             "Light level should not warn about progressive JPEG (no DCT stego attempted)"
         );
+    }
+
+    #[test]
+    fn test_proxy_warning_api_reports_all_advisories() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_progressive_jpeg(true)
+            .with_metadata_injection(false);
+
+        let (_, warnings) =
+            process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        assert!(warnings.contains(&ProtectionWarning::MissingMacKey));
+        assert!(warnings.contains(&ProtectionWarning::MetadataInjectionDisabled));
+        assert!(warnings.contains(&ProtectionWarning::ProgressiveJpegFallback));
+        assert!(warnings.contains(&ProtectionWarning::JpegReencodeFragile));
     }
 }

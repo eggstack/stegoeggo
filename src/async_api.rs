@@ -11,12 +11,13 @@
 //! ## Single image processing (WAF hot path)
 //!
 //! ```no_run
-//! use cloakrs::{process_image_bytes_async, ProtectionContext, ProtectionLevel};
+//! use cloakrs::{process_image_bytes_with_warnings_async, ProtectionContext, ProtectionLevel};
 //!
 //! # #[tokio::main] async fn main() -> Result<(), cloakrs::Error> {
 //! let ctx = ProtectionContext::new(0.5, 42);
 //! let bytes: Vec<u8> = std::fs::read("input.png")?;
-//! let protected = process_image_bytes_async(bytes, ProtectionLevel::Standard, ctx).await?;
+//! let (protected, warnings) =
+//!     process_image_bytes_with_warnings_async(bytes, ProtectionLevel::Standard, ctx).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -56,7 +57,7 @@
 //! ```
 
 use crate::error::{Error, Result};
-use crate::types::{ProtectionContext, ProtectionLevel};
+use crate::types::{ProtectionContext, ProtectionLevel, ProtectionWarning};
 use image::DynamicImage;
 
 fn join_err(e: tokio::task::JoinError) -> Error {
@@ -96,6 +97,24 @@ pub async fn process_image_bytes_async(
     tokio::task::spawn_blocking(move || crate::process_image_bytes(&img_bytes, level, &ctx))
         .await
         .map_err(join_err)?
+}
+
+/// Process image bytes asynchronously and return all protection warnings.
+///
+/// This is the preferred async API for reverse proxies because it keeps image
+/// work on the blocking pool and lets the proxy log or enforce degraded
+/// protection states before serving the bytes.
+#[must_use = "the protected image bytes and warnings should be used"]
+pub async fn process_image_bytes_with_warnings_async(
+    img_bytes: Vec<u8>,
+    level: ProtectionLevel,
+    ctx: ProtectionContext,
+) -> Result<(Vec<u8>, Vec<ProtectionWarning>)> {
+    tokio::task::spawn_blocking(move || {
+        crate::process_image_bytes_with_warnings(&img_bytes, level, &ctx)
+    })
+    .await
+    .map_err(join_err)?
 }
 
 /// Process multiple images asynchronously and in parallel.

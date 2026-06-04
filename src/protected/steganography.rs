@@ -614,23 +614,30 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> Option<bool> {
+        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(img_bytes);
+
         // JPEG: check DCT stego directly (no re-encode needed)
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
             if let Some(true) = self.verify_dct_stego(img_bytes, mac_key) {
                 return Some(true);
             }
 
-            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image(img_bytes) {
+            if let Some(metadata_seed) = metadata_seed {
                 if let Some(true) =
                     self.verify_dct_stego_with_seed(img_bytes, metadata_seed, mac_key)
                 {
                     return Some(true);
                 }
             }
+
+            // JPEG output in this crate uses DCT/Q-table channels, not pixel
+            // LSB channels. Avoid a lossy decode and futile LSB scan in the
+            // reverse-proxy verification hot path.
+            return None;
         }
 
         // Extract metadata seed directly from bytes (works for PNG, JPEG, WebP)
-        if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image(img_bytes) {
+        if let Some(metadata_seed) = metadata_seed {
             if let Ok(img) = image::load_from_memory(img_bytes) {
                 if self.verify_payload_with_seed(&img, metadata_seed) {
                     return Some(true);
@@ -643,6 +650,16 @@ impl SteganographyProtector {
             let rgba = img.to_rgba8();
             if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
                 if self.verify_payload_with_seed(&img, fallback_seed) {
+                    return Some(true);
+                }
+            }
+
+            // Crop-resistant tiled payloads may survive after metadata and the
+            // fixed-position seed fallback are clipped away. Keep this bounded
+            // to the same small set used by payload extraction so verification
+            // remains predictable.
+            for &seed in &[42u64, 0, 1, 12345, 99999, 123456789] {
+                if self.try_tiled_extraction_verify(&rgba, seed, DEFAULT_TILE_SIZE, 64, mac_key) {
                     return Some(true);
                 }
             }
@@ -846,6 +863,8 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> Option<StegoPayload> {
+        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(img_bytes);
+
         // JPEG: try DCT extraction first (avoids pixel decode)
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
             if let Some(payload_bytes) = self.extract_verified_dct_payload(img_bytes, mac_key) {
@@ -860,7 +879,7 @@ impl SteganographyProtector {
             }
 
             // Tiled F5 fallback for JPEG
-            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image(img_bytes) {
+            if let Some(metadata_seed) = metadata_seed {
                 if let Some(payload_bytes) = self.extract_f5_tiled_candidates(
                     img_bytes,
                     metadata_seed,
@@ -878,10 +897,15 @@ impl SteganographyProtector {
                     }
                 }
             }
+
+            // JPEG stego is coefficient-based in this crate. If DCT extraction
+            // failed, decoding to pixels and trying LSB extraction is wasted
+            // work for production byte-level verification.
+            return None;
         }
 
         // Try metadata seed extraction from bytes (works for PNG, JPEG, WebP)
-        if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image(img_bytes) {
+        if let Some(metadata_seed) = metadata_seed {
             if let Ok(img) = image::load_from_memory(img_bytes) {
                 if let Some(payload) =
                     self.extract_payload_with_seed_and_key(&img, metadata_seed, mac_key)

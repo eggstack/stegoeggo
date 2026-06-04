@@ -65,12 +65,15 @@
 //!
 //! let ctx = ProtectionContext::new(0.5, 42)
 //!     .with_format(ImageOutputFormat::Png)
+//!     .with_mac_key(b"shared-verification-key".to_vec())
 //!     .with_stego_redundancy(2)      // Lower = faster
 //!     .with_jpeg_quality(85)        // Lower = smaller files
 //!     .with_progressive_jpeg(true); // Progressive rendering for web
 //!
 //! let input_bytes = std::fs::read("image.png")?;
-//! let protected = process_image_bytes(&input_bytes, ProtectionLevel::Standard, &ctx)?;
+//! let (protected, warnings) =
+//!     cloakrs::process_image_bytes_with_warnings(&input_bytes, ProtectionLevel::Standard, &ctx)?;
+//! // Reverse proxies should log or enforce warnings before serving.
 //! ```
 //!
 //! Legal Metadata
@@ -86,7 +89,8 @@
 //!             .with_copyright_holder("Example Corp")
 //!             .with_contact_email("legal@example.com")
 //!             .with_usage_terms("All Rights Reserved. No AI training permitted.")
-//!     );
+//!     )
+//!     .with_legal_claims(true);
 //! ```
 
 #![forbid(unsafe_code)]
@@ -146,8 +150,8 @@ pub use util::seed::generate_random_seed;
 
 #[cfg(feature = "async")]
 pub use async_api::{
-    process_image_async, process_image_bytes_async, process_images_bytes_parallel_async,
-    process_images_parallel_async, verify_image_bytes_async,
+    process_image_async, process_image_bytes_async, process_image_bytes_with_warnings_async,
+    process_images_bytes_parallel_async, process_images_parallel_async, verify_image_bytes_async,
 };
 
 use image::DynamicImage;
@@ -477,7 +481,7 @@ pub fn process_image_bytes(
     DEFAULT_PIPELINE.process_bytes(img_bytes, level, &ctx_with_format)
 }
 
-/// Process image bytes with protection level and return any warnings about
+/// Process image bytes with protection level and return warnings about
 /// degraded protection.
 ///
 /// Like [`process_image_bytes`], but also returns a [`ProtectionWarning`] if
@@ -485,10 +489,9 @@ pub fn process_image_bytes(
 /// for legal defense use cases where the caller needs to know the actual
 /// protection level applied.
 ///
-/// # Returns
-///
-/// A tuple of `(protected_bytes, Option<ProtectionWarning>)`. The warning
-/// is `Some` when the protection was degraded (e.g., progressive JPEG fallback).
+/// This compatibility helper returns only the first warning. New reverse-proxy
+/// integrations should prefer [`process_image_bytes_with_warnings`] so they can
+/// log or enforce every warning emitted for the request.
 ///
 /// # Examples
 ///
@@ -509,6 +512,28 @@ pub fn process_image_bytes_with_info(
     level: ProtectionLevel,
     ctx: &ProtectionContext,
 ) -> Result<(Vec<u8>, Option<ProtectionWarning>)> {
+    let (bytes, warnings) = process_image_bytes_with_warnings(img_bytes, level, ctx)?;
+    let warning = warnings
+        .into_iter()
+        .find(|w| matches!(w, ProtectionWarning::ProgressiveJpegFallback));
+    Ok((bytes, warning))
+}
+
+/// Process image bytes with protection level and return all protection warnings.
+///
+/// This is the recommended API for reverse-proxy integrations. It keeps the
+/// hot path byte-oriented, while giving the caller enough information to make
+/// policy decisions about serving, logging, or falling back when the actual
+/// emitted evidence is weaker than requested.
+///
+/// The library owns steganographic and metadata injection mechanics; the proxy
+/// should still enforce request byte limits, concurrency limits, timeouts, and
+/// cache policy outside this function.
+pub fn process_image_bytes_with_warnings(
+    img_bytes: &[u8],
+    level: ProtectionLevel,
+    ctx: &ProtectionContext,
+) -> Result<(Vec<u8>, Vec<ProtectionWarning>)> {
     let format = ImageOutputFormat::from_magic_bytes(img_bytes)
         .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
 
@@ -520,7 +545,13 @@ pub fn process_image_bytes_with_info(
         ctx
     };
 
-    let mut warning = None;
+    let mut warnings = Vec::new();
+    if level != ProtectionLevel::Disabled && ctx_with_format.mac_key().is_none() {
+        warnings.push(ProtectionWarning::MissingMacKey);
+    }
+    if matches!(ctx_with_format.inject_metadata(), Some(false)) {
+        warnings.push(ProtectionWarning::MetadataInjectionDisabled);
+    }
 
     // Detect progressive JPEG fallback before processing — the pipeline silently
     // falls back to Q-table seed only for progressive JPEGs. If the caller
@@ -532,12 +563,19 @@ pub fn process_image_bytes_with_info(
             .or(ctx_with_format.input_format())
             .unwrap_or(DEFAULT_OUTPUT_FORMAT);
         if output_format == ImageOutputFormat::Jpeg {
-            warning = Some(ProtectionWarning::ProgressiveJpegFallback);
+            warnings.push(ProtectionWarning::ProgressiveJpegFallback);
         }
+    }
+    let output_format = ctx_with_format
+        .output_format()
+        .or(ctx_with_format.input_format())
+        .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+    if level != ProtectionLevel::Disabled && output_format == ImageOutputFormat::Jpeg {
+        warnings.push(ProtectionWarning::JpegReencodeFragile);
     }
 
     let result = DEFAULT_PIPELINE.process_bytes(img_bytes, level, &ctx_with_format)?;
-    Ok((result, warning))
+    Ok((result, warnings))
 }
 
 /// Verify that image bytes contain a protection payload whose integrity can be proved.
@@ -586,6 +624,9 @@ pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> Option<bool> {
 ///     VerificationResult::Verified { payload } => {
 ///         println!("Seed: {}, Intensity: {}", payload.seed(), payload.intensity());
 ///     }
+///     VerificationResult::MetadataOnly { seed } => {
+///         println!("Metadata seed found, but payload was not verified: {}", seed);
+///     }
 ///     VerificationResult::Corrupted { .. } => println!("Protection found but corrupted"),
 ///     VerificationResult::NotFound => println!("No protection found"),
 /// }
@@ -605,6 +646,10 @@ pub fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> Verifica
             }
             return VerificationResult::NotFound;
         }
+    }
+
+    if let Some(seed) = MetadataTrapProtector::extract_seed_from_image(img_bytes) {
+        return VerificationResult::MetadataOnly { seed };
     }
 
     VerificationResult::NotFound

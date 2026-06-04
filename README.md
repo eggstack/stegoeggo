@@ -258,17 +258,26 @@ Available values:
 For latency-sensitive deployments:
 
 ```rust
-use cloakrs::{process_image_bytes, ProtectionContext, ProtectionLevel, ImageOutputFormat};
+use cloakrs::{
+    process_image_bytes_with_warnings, ImageOutputFormat, ProtectionContext, ProtectionLevel,
+};
 
 // Optimized context for WAF edge deployment
 let ctx = ProtectionContext::new(0.5, seed)
     .with_format(ImageOutputFormat::Png)      // or Jpeg for smaller files
+    .with_mac_key(mac_key)                     // required for adversarial serving
     .with_stego_redundancy(2)                        // 1-10, lower = faster
     .with_jpeg_quality(85)                         // 1-100, lower = faster
     .with_progressive_jpeg(true);                   // Progressive rendering for web
 
 // Process and serve directly
-let protected_bytes = process_image_bytes(&input_bytes, ProtectionLevel::Standard, &ctx)?;
+let (protected_bytes, warnings) =
+    process_image_bytes_with_warnings(&input_bytes, ProtectionLevel::Standard, &ctx)?;
+
+// Reverse proxies should log warnings and may enforce policy before serving.
+for warning in warnings {
+    tracing::warn!(%warning, "cloakrs protection warning");
+}
 ```
 
 **Configuration Guide:**
@@ -279,6 +288,44 @@ let protected_bytes = process_image_bytes(&input_bytes, ProtectionLevel::Standar
 | `jpeg_quality` | 90 | 1-100 | Higher = larger files, same speed |
 | `progressive_jpeg` | false | bool | Progressive = faster perceived load |
 | `output_format` | PNG | PNG/JPEG/WebP | JPEG = smallest files |
+
+### Reverse Proxy Integration Contract
+
+`cloakrs` owns steganographic embedding and metadata injection. The reverse proxy
+should own cache lookup/storage, request byte limits, concurrency limits,
+timeouts, and serving policy.
+
+Recommended hot-path shape:
+
+```rust
+use cloakrs::{
+    process_image_bytes_with_warnings, ImageOutputFormat, ProtectionContext, ProtectionLevel,
+    ProtectionWarning,
+};
+
+let ctx = ProtectionContext::new(0.5, seed)
+    .with_format(ImageOutputFormat::Png)
+    .with_mac_key(mac_key)
+    .with_max_dimension(4096)
+    .with_stego_redundancy(1);
+
+let (protected, warnings) =
+    process_image_bytes_with_warnings(&origin_bytes, ProtectionLevel::Standard, &ctx)?;
+
+if warnings.iter().any(|w| matches!(w, ProtectionWarning::MissingMacKey)) {
+    // Production policy should normally reject this configuration.
+}
+```
+
+Use `process_image_bytes_with_warnings()` rather than the `DynamicImage` API in
+the proxy path. For JPEG-in/JPEG-out, this keeps protection on the byte/DCT fast
+path. For PNG/WebP, the library must still decode and re-encode pixels to embed
+LSB payloads, so cache protected outputs aggressively at the proxy layer.
+
+For verification, prefer `verify_image_bytes_detailed()`. A
+`VerificationResult::MetadataOnly` result means metadata was found, but no
+steganographic payload was integrity-verified; treat that as weaker evidence
+than `VerificationResult::Verified`.
 
 ## CLI Usage
 
