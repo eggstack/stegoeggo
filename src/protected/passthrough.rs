@@ -11,6 +11,7 @@ use std::borrow::Cow;
 pub struct PassthroughProtector;
 
 impl PassthroughProtector {
+    /// Create a new `PassthroughProtector`.
     pub fn new() -> Self {
         Self
     }

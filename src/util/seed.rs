@@ -13,11 +13,6 @@ pub fn generate_random_seed() -> u64 {
         let x = u64::from_le_bytes(buf);
         return if x == 0 { 42 } else { x };
     }
-    // Fallback: time-based seed (not cryptographically secure)
-    eprintln!(
-        "[stegoeggo] WARNING: getrandom unavailable, using time-based seed (not cryptographically secure). \
-         For adversarial settings, use ProtectionContext::new(intensity, external_csprng_seed)"
-    );
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();

@@ -22,6 +22,12 @@ impl From<TranscoderError> for Error {
     }
 }
 
+/// Error type for all stegoeggo operations.
+///
+/// This enum captures failure modes from image decoding/encoding,
+/// metadata operations, steganographic embedding/extraction, and
+/// cryptographic verification. All variants are non-exhaustive to
+/// allow adding new error cases in future minor releases.
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum Error {

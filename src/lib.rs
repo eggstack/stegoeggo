@@ -92,6 +92,70 @@
 //!     )
 //!     .with_legal_claims(true);
 //! ```
+//!
+//! # Feature Flags
+//!
+//! | Feature | Description |
+//! |---------|-------------|
+//! | `async` | Enables Tokio-based async wrappers (`process_image_async`, etc.) for WAF/CDN integration |
+//! | `test-seeds` | Enables fallback seed guessing during verification (tries common test/dev seeds). Used by the CLI; not recommended for library consumers |
+//! | `fuzz` | Exposes internal JPEG parser for fuzz harnesses. Not part of the stable API |
+//!
+//! # Tiled Steganography
+//!
+//! For crop-resistant protection, enable tiled mode. The full payload is embedded
+//! in each `tile_size × tile_size` tile independently, so any crop containing at
+//! least one intact tile is recoverable:
+//!
+//! ```ignore
+//! use stegoeggo::{ProtectionContext, ProtectionLevel};
+//!
+//! let ctx = ProtectionContext::new(0.5, 42)
+//!     .with_tile_size(64);          // 64×64 tiles
+//!
+//! let protected = stegoeggo::process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx)?;
+//! ```
+//!
+//! # Async API
+//!
+//! For Tokio-based services (WAFs, CDN edge workers), use the async variants:
+//!
+//! ```ignore
+//! use stegoeggo::{process_image_bytes_async, ProtectionContext, ProtectionLevel};
+//!
+//! let ctx = ProtectionContext::new(0.5, 42);
+//! let protected = process_image_bytes_async(&img_bytes, ProtectionLevel::Standard, &ctx).await?;
+//! ```
+//!
+//! # Parallel Batch Processing
+//!
+//! Process multiple images concurrently using Rayon:
+//!
+//! ```ignore
+//! use stegoeggo::{process_images_parallel, ProtectionContext, ProtectionLevel};
+//!
+//! let images: Vec<image::DynamicImage> = vec![ /* ... */ ];
+//! let ctx = ProtectionContext::default();
+//! let results = process_images_parallel(&images, ProtectionLevel::Standard, &ctx)?;
+//! ```
+//!
+//! # Warnings API
+//!
+//! `process_image_bytes_with_warnings` returns both the protected bytes and
+//! any warnings about the protection process (e.g., progressive JPEG fallback,
+//! insufficient DCT capacity):
+//!
+//! ```ignore
+//! use stegoeggo::{process_image_bytes_with_warnings, ProtectionContext, ProtectionLevel};
+//!
+//! let ctx = ProtectionContext::new(0.5, 42);
+//! let (protected, warnings) =
+//!     process_image_bytes_with_warnings(&img_bytes, ProtectionLevel::Standard, &ctx)?;
+//!
+//! for w in &warnings {
+//!     eprintln!("Warning: {w}");
+//! }
+//! ```
 
 #![forbid(unsafe_code)]
 
@@ -166,7 +230,9 @@ static DEFAULT_PIPELINE: LazyLock<ProtectionPipeline> = LazyLock::new(Protection
 /// Main pipeline for applying protection to images.
 ///
 /// Coordinates between different protector implementations based on the
-/// selected protection level.
+/// selected protection level. Create one via [`ProtectionPipeline::new`]
+/// or use the convenience functions ([`process_image`], [`process_image_bytes`]).
+#[non_exhaustive]
 pub struct ProtectionPipeline {
     passthrough: Arc<PassthroughProtector>,
     metadata_trap: Arc<MetadataTrapProtector>,
