@@ -273,9 +273,19 @@ impl DctStegoF5 {
             let target_bit = bits[bit_idx];
             let block = coefficients
                 .get_mut(&comp_id)
-                .unwrap()
+                .ok_or_else(|| {
+                    TranscoderError::EmbeddingFailed(format!(
+                        "Component {} not found in coefficient map",
+                        comp_id
+                    ))
+                })?
                 .get_mut(block_idx)
-                .unwrap();
+                .ok_or_else(|| {
+                    TranscoderError::EmbeddingFailed(format!(
+                        "Block index {} out of range for component {}",
+                        block_idx, comp_id
+                    ))
+                })?;
             block[pos] = current;
 
             let current_lsb = (current & 1) as u8;
@@ -523,9 +533,19 @@ impl DctStegoF5 {
             let target_bit = bits[bit_idx];
             let block = coefficients
                 .get_mut(&comp_id)
-                .unwrap()
+                .ok_or_else(|| {
+                    TranscoderError::EmbeddingFailed(format!(
+                        "Component {} not found in coefficient map",
+                        comp_id
+                    ))
+                })?
                 .get_mut(block_idx)
-                .unwrap();
+                .ok_or_else(|| {
+                    TranscoderError::EmbeddingFailed(format!(
+                        "Block index {} out of range for component {}",
+                        block_idx, comp_id
+                    ))
+                })?;
             block[pos] = current;
 
             let current_lsb = (current & 1) as u8;

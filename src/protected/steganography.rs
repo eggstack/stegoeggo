@@ -1427,41 +1427,6 @@ impl SteganographyProtector {
         a.wrapping_mul(index as u64).wrapping_add(b) as usize % total_pixels
     }
 
-    /// Cost-weighted permutation for content-adaptive pixel selection.
-    ///
-    /// Maps `index` to a pixel position, preferring low-cost (textured) pixels.
-    /// Pixels are sorted by cost ascending; the PRNG selects from this sorted list.
-    /// This is deterministic: the same image, seed, and index always produce
-    /// the same position.
-    ///
-    /// **Used only during embedding.** Extraction uses the standard
-    /// `stego_permutation` because the extractor cannot reliably recompute
-    /// costs after the image has been modified (LSB changes alter local
-    /// statistics). Instead, the cost-weighted selection during embedding
-    /// preferentially places payload bits in textured regions where they
-    /// are more robust to noise, while extraction reads from the same
-    /// pseudo-random positions via the standard permutation.
-    #[allow(dead_code)]
-    fn cost_weighted_permutation(
-        index: usize,
-        costs: &[f32],
-        total_pixels: usize,
-        seed: u64,
-    ) -> usize {
-        let mut sorted_indices: Vec<usize> = (0..total_pixels).collect();
-        sorted_indices.sort_by(|&a, &b| {
-            costs[a]
-                .partial_cmp(&costs[b])
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        let a = splitmix64(seed).wrapping_mul(2) | 1;
-        let b = splitmix64(seed.wrapping_add(0x9e3779b97f4a7c15));
-        let permuted = a.wrapping_mul(index as u64).wrapping_add(b) as usize % total_pixels;
-
-        sorted_indices[permuted]
-    }
-
     fn embed_lsb(
         &self,
         img: &RgbaImage,
@@ -3272,6 +3237,34 @@ mod tests {
         assert!(
             recovered.is_some(),
             "max_origins=1 should still find payload at first tile"
+        );
+    }
+
+    #[test]
+    fn wrong_mac_key_returns_none() {
+        use crate::ImageOutputFormat;
+
+        let protector = SteganographyProtector::new();
+        let img = DynamicImage::ImageRgba8(make_test_image(64, 64));
+        let correct_key = b"correct-secret-key";
+        let wrong_key = b"wrong-secret-key!!";
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_mac_key(correct_key.to_vec())
+            .with_format(ImageOutputFormat::Png);
+
+        let protected = protector.apply(&img, &ctx).unwrap();
+
+        let payload_correct = protector.extract_payload_with_key(&protected, correct_key);
+        assert!(
+            payload_correct.is_some(),
+            "Should extract payload with correct key"
+        );
+
+        let payload_wrong = protector.extract_payload_with_key(&protected, wrong_key);
+        assert!(
+            payload_wrong.is_none(),
+            "extract_payload_with_key should return None with wrong MAC key"
         );
     }
 

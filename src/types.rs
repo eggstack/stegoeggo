@@ -1058,4 +1058,52 @@ mod tests {
         assert_eq!(restored.tile_size(), Some(64));
         assert_eq!(restored.tile_extraction_max_origins(), 128);
     }
+
+    #[test]
+    fn protection_level_byte_roundtrip() {
+        let levels = [
+            ProtectionLevel::Disabled,
+            ProtectionLevel::Light,
+            ProtectionLevel::Standard,
+        ];
+        for level in &levels {
+            let byte = level.to_byte();
+            let restored = ProtectionLevel::from_byte(byte);
+            assert_eq!(restored.as_ref(), Some(level));
+        }
+    }
+
+    #[test]
+    fn protection_level_from_invalid_byte() {
+        assert!(ProtectionLevel::from_byte(3).is_none());
+        assert!(ProtectionLevel::from_byte(255).is_none());
+    }
+
+    #[test]
+    fn dmi_value_iptc_property_mapping() {
+        use crate::types::DmiValue;
+
+        let allowed = DmiValue::Allowed;
+        assert!(allowed.to_iptc_property().contains("DMI-Allowed"));
+
+        let prohibited_training = DmiValue::ProhibitedAiMlTraining;
+        assert!(prohibited_training
+            .to_iptc_property()
+            .contains("DMI-Prohibited"));
+
+        let prohibited_gen = DmiValue::ProhibitedGenAiMlTraining;
+        assert!(prohibited_gen.to_iptc_property().contains("DMI-Prohibited"));
+
+        let prohibited_all = DmiValue::Prohibited;
+        assert!(prohibited_all.to_iptc_property().contains("DMI-Prohibited"));
+
+        let prohibited_se = DmiValue::ProhibitedExceptSearchEngineIndexing;
+        assert!(prohibited_se.to_iptc_property().contains("DMI-Prohibited"));
+
+        let prohibited_see = DmiValue::ProhibitedSeeConstraints;
+        assert!(prohibited_see.to_iptc_property().contains("DMI-Prohibited"));
+
+        let unspecified = DmiValue::Unspecified;
+        assert!(unspecified.to_iptc_property().contains("DMI"));
+    }
 }

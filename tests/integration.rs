@@ -1191,6 +1191,68 @@ mod inject_metadata_toggle {
     }
 }
 
+mod inject_legal_claims_toggle {
+    use super::*;
+
+    fn legal_ctx(inject: Option<bool>) -> ProtectionContext {
+        let legal = cloakrs::LegalMetadata::new()
+            .with_copyright_holder("Test Owner")
+            .with_contact_email("legal@example.com");
+        let mut ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_legal_metadata(legal);
+        if let Some(v) = inject {
+            ctx = ctx.with_legal_claims(v);
+        }
+        ctx
+    }
+
+    #[test]
+    fn test_legal_claims_injected_when_true() {
+        let img = create_test_image(32, 32);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = legal_ctx(Some(true));
+
+        let protected = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
+
+        let has_copyright = protected.windows(9).any(|w| w == b"Copyright");
+        assert!(
+            has_copyright,
+            "Copyright metadata should be present when inject_legal_claims=true"
+        );
+    }
+
+    #[test]
+    fn test_legal_claims_absent_when_false() {
+        let img = create_test_image(32, 32);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = legal_ctx(Some(false));
+
+        let protected = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
+
+        let has_copyright = protected.windows(9).any(|w| w == b"Copyright");
+        assert!(
+            !has_copyright,
+            "Copyright metadata should be absent when inject_legal_claims=false"
+        );
+    }
+
+    #[test]
+    fn test_legal_claims_absent_by_default() {
+        let img = create_test_image(32, 32);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = legal_ctx(None);
+
+        let protected = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
+
+        let has_copyright = protected.windows(9).any(|w| w == b"Copyright");
+        assert!(
+            !has_copyright,
+            "Copyright metadata should be absent by default (None)"
+        );
+    }
+}
+
 mod progressive_jpeg_warning {
     use super::*;
     use cloakrs::{
