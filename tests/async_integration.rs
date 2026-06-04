@@ -1,7 +1,7 @@
 use cloakrs::{
     process_image_async, process_image_bytes_async, process_images_bytes_parallel_async,
     process_images_parallel_async, verify_image_bytes_async, ProtectionContext, ProtectionLevel,
-    SteganographyProtector,
+    SteganographyProtector, VerificationStatus,
 };
 use image::{DynamicImage, ImageEncoder};
 
@@ -65,7 +65,7 @@ mod single_image {
             .unwrap();
 
         let result = verify_image_bytes_async(protected, vec![]).await;
-        assert_eq!(result.unwrap(), Some(true));
+        assert_eq!(result.unwrap(), VerificationStatus::Verified);
     }
 }
 

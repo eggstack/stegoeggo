@@ -109,7 +109,8 @@ pub mod async_api;
 pub use error::{Error, Result};
 pub use types::{
     DmiValue, ImageOutputFormat, LegalMetadata, ProtectionConfig, ProtectionContext,
-    ProtectionLevel, ProtectionWarning, VerificationResult, DEFAULT_OUTPUT_FORMAT,
+    ProtectionLevel, ProtectionWarning, VerificationResult, VerificationStatus,
+    DEFAULT_OUTPUT_FORMAT,
 };
 
 pub use traits::Protector;
@@ -553,28 +554,80 @@ pub fn process_image_bytes_with_warnings(
         warnings.push(ProtectionWarning::MetadataInjectionDisabled);
     }
 
-    // Detect progressive JPEG fallback before processing — the pipeline silently
-    // falls back to Q-table seed only for progressive JPEGs. If the caller
-    // requested progressive JPEG output, the encoded output will be progressive
-    // and the DCT transcoder will reject it.
-    if level == ProtectionLevel::Standard && ctx_with_format.progressive_jpeg() {
-        let output_format = ctx_with_format
-            .output_format()
-            .or(ctx_with_format.input_format())
-            .unwrap_or(DEFAULT_OUTPUT_FORMAT);
-        if output_format == ImageOutputFormat::Jpeg {
-            warnings.push(ProtectionWarning::ProgressiveJpegFallback);
-        }
-    }
     let output_format = ctx_with_format
         .output_format()
         .or(ctx_with_format.input_format())
         .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+
+    // Detect progressive JPEG fallback before processing — the pipeline silently
+    // falls back to Q-table seed only for progressive JPEGs. If the caller
+    // requested progressive JPEG output, the encoded output will be progressive
+    // and the DCT transcoder will reject it.
+    if level == ProtectionLevel::Standard
+        && ctx_with_format.progressive_jpeg()
+        && output_format == ImageOutputFormat::Jpeg
+    {
+        warnings.push(ProtectionWarning::ProgressiveJpegFallback);
+    }
+
+    // Also detect progressive JPEG input: the DCT transcoder cannot decode
+    // progressive JPEGs, so Standard level falls back to Q-table seed only.
+    if level == ProtectionLevel::Standard
+        && format == ImageOutputFormat::Jpeg
+        && is_progressive_jpeg(img_bytes)
+    {
+        warnings.push(ProtectionWarning::ProgressiveJpegFallback);
+    }
+
     if level != ProtectionLevel::Disabled && output_format == ImageOutputFormat::Jpeg {
         warnings.push(ProtectionWarning::JpegReencodeFragile);
     }
+    if level != ProtectionLevel::Disabled && output_format == ImageOutputFormat::WebP {
+        warnings.push(ProtectionWarning::WebpLossyReencodeDestructive);
+    }
+
+    // Pre-check LSB capacity for PNG/WebP Standard level — the pipeline silently
+    // skips embedding when the image has too few pixels.
+    if level == ProtectionLevel::Standard
+        && matches!(
+            output_format,
+            ImageOutputFormat::Png | ImageOutputFormat::WebP
+        )
+    {
+        if let Ok(img) = image::load_from_memory(img_bytes) {
+            let (w, h) = img.dimensions();
+            let total_pixels = (w as usize) * (h as usize);
+            // Payload: 32-byte V2 header × 3 (ECC) + 4 CRC = 100 bytes = 800 bits
+            // Required pixels: ceil(800 / 3) × STEGO_SPREAD_FACTOR(5) ≈ 1340
+            let payload_bits: usize = 800;
+            let pixels_needed =
+                payload_bits.div_ceil(3) * crate::protected::constants::STEGO_SPREAD_FACTOR;
+            if total_pixels < pixels_needed {
+                warnings.push(ProtectionWarning::LsbCapacitySkipped);
+            }
+        }
+    }
 
     let result = DEFAULT_PIPELINE.process_bytes(img_bytes, level, &ctx_with_format)?;
+
+    // Post-check DCT capacity: if the output is essentially unchanged (same length
+    // or within a small margin), DCT stego likely failed due to insufficient
+    // AC coefficients. This catches small JPEGs where the F5 embed silently falls
+    // back to Q-table seed only.
+    if level == ProtectionLevel::Standard && format == ImageOutputFormat::Jpeg {
+        let size_delta = (result.len() as i64 - img_bytes.len() as i64).unsigned_abs();
+        // If the output is smaller or nearly the same size, DCT stego was likely
+        // skipped (Q-table seed adds only ~100 bytes, metadata adds ~500-2000 bytes).
+        // A real DCT embed typically changes size noticeably due to coefficient modification.
+        // Heuristic: if the output is within 10% of input size, DCT capacity was likely insufficient.
+        if size_delta * 10 < img_bytes.len() as u64 / 20 {
+            // Check if this is NOT a progressive JPEG (progressive gets its own warning)
+            if !is_progressive_jpeg(img_bytes) {
+                warnings.push(ProtectionWarning::DctCapacityInsufficient);
+            }
+        }
+    }
+
     Ok((result, warnings))
 }
 
@@ -584,9 +637,10 @@ pub fn process_image_bytes_with_warnings(
 ///
 /// # Returns
 ///
-/// - `Some(true)` — protection data found and verification passed
-/// - `Some(false)` — protection data found but verification failed (corrupted or wrong key)
-/// - `None` — no protection data found in the image
+/// - [`VerificationStatus::Verified`] — protection data found and verification passed
+/// - [`VerificationStatus::Invalid`] — protection data found but verification failed
+///   (corrupted or wrong key)
+/// - [`VerificationStatus::NotFound`] — no protection data found in the image
 ///
 /// # Arguments
 ///
@@ -599,12 +653,12 @@ pub fn process_image_bytes_with_warnings(
 /// ```no_run
 /// # let img_bytes: Vec<u8> = Vec::new();
 /// match cloakrs::verify_image_bytes(&img_bytes, &[]) {
-///     Some(true) => println!("Protected and verified"),
-///     Some(false) => println!("Protected but verification failed"),
-///     None => println!("No protection found"),
+///     cloakrs::VerificationStatus::Verified => println!("Protected and verified"),
+///     cloakrs::VerificationStatus::Invalid => println!("Protected but verification failed"),
+///     cloakrs::VerificationStatus::NotFound => println!("No protection found"),
 /// }
 /// ```
-pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> Option<bool> {
+pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus {
     let stego = SteganographyProtector::new();
     stego.verify_payload_from_bytes_with_key(img_bytes, mac_key)
 }
@@ -634,18 +688,20 @@ pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> Option<bool> {
 pub fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> VerificationResult {
     let stego = SteganographyProtector::new();
 
-    if let Some(result) = stego.verify_payload_from_bytes_with_key(img_bytes, mac_key) {
-        if result {
+    match stego.verify_payload_from_bytes_with_key(img_bytes, mac_key) {
+        VerificationStatus::Verified => {
             if let Some(payload) = stego.extract_payload_from_bytes_with_key(img_bytes, mac_key) {
                 return VerificationResult::Verified { payload };
             }
             return VerificationResult::NotFound;
-        } else {
+        }
+        VerificationStatus::Invalid => {
             if let Some(payload) = stego.extract_payload_from_bytes_with_key(img_bytes, mac_key) {
                 return VerificationResult::Corrupted { payload };
             }
             return VerificationResult::NotFound;
         }
+        VerificationStatus::NotFound => {}
     }
 
     if let Some(seed) = MetadataTrapProtector::extract_seed_from_image(img_bytes) {

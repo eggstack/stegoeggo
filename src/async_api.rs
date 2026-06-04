@@ -48,16 +48,16 @@
 //! let img_bytes: Vec<u8> = std::fs::read("suspect.png")?;
 //! let key = hex::decode("deadbeef").unwrap();
 //! match verify_image_bytes_async(img_bytes, key).await? {
-//!     Some(true) => println!("Verified: image is protected"),
-//!     Some(false) => println!("Invalid: protection signature mismatch"),
-//!     None => println!("Unprotected: no signature found"),
+//!     cloakrs::VerificationStatus::Verified => println!("Verified: image is protected"),
+//!     cloakrs::VerificationStatus::Invalid => println!("Invalid: protection signature mismatch"),
+//!     cloakrs::VerificationStatus::NotFound => println!("Unprotected: no signature found"),
 //! }
 //! # Ok(())
 //! # }
 //! ```
 
 use crate::error::{Error, Result};
-use crate::types::{ProtectionContext, ProtectionLevel, ProtectionWarning};
+use crate::types::{ProtectionContext, ProtectionLevel, ProtectionWarning, VerificationStatus};
 use image::DynamicImage;
 
 fn join_err(e: tokio::task::JoinError) -> Error {
@@ -154,13 +154,15 @@ pub async fn process_images_bytes_parallel_async(
 /// Verify image bytes asynchronously.
 ///
 /// Checks for protection signatures via metadata, DCT stego, and LSB stego.
-/// Returns `Ok(Some(true))` if verified, `Ok(Some(false))` if checked but invalid,
-/// `Ok(None)` if no protection data was found, or `Err` if the task failed.
+/// Returns `Ok(VerificationStatus::Verified)` if verified,
+/// `Ok(VerificationStatus::Invalid)` if checked but invalid,
+/// `Ok(VerificationStatus::NotFound)` if no protection data was found,
+/// or `Err` if the task failed.
 #[must_use = "the verification result should be checked"]
 pub async fn verify_image_bytes_async(
     img_bytes: Vec<u8>,
     mac_key: Vec<u8>,
-) -> Result<Option<bool>> {
+) -> Result<VerificationStatus> {
     tokio::task::spawn_blocking(move || crate::verify_image_bytes(&img_bytes, &mac_key))
         .await
         .map_err(join_err)

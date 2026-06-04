@@ -1,6 +1,6 @@
 use cloakrs::{
     process_image_bytes, verify_image_bytes, ImageOutputFormat, MetadataTrapProtector,
-    ProtectionContext, ProtectionLevel, SteganographyProtector,
+    ProtectionContext, ProtectionLevel, SteganographyProtector, VerificationStatus,
 };
 use image::DynamicImage;
 use image::ImageEncoder;
@@ -97,7 +97,10 @@ mod jpeg_recompression {
         let protected_bytes =
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
-        assert_eq!(verify_image_bytes(&protected_bytes, &[]), Some(true));
+        assert_eq!(
+            verify_image_bytes(&protected_bytes, &[]),
+            VerificationStatus::Verified
+        );
     }
 
     #[test]
@@ -112,7 +115,10 @@ mod jpeg_recompression {
         let protected_bytes =
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
-        assert_eq!(verify_image_bytes(&protected_bytes, &[]), None);
+        assert_eq!(
+            verify_image_bytes(&protected_bytes, &[]),
+            VerificationStatus::NotFound
+        );
     }
 
     #[test]
@@ -156,8 +162,9 @@ mod jpeg_recompression {
         let jpeg_bytes = image_to_jpeg_bytes(&protected_img, 85);
 
         let result = verify_image_bytes(&jpeg_bytes, &[]);
-        assert!(
-            result.is_none(),
+        assert_eq!(
+            result,
+            VerificationStatus::NotFound,
             "verify_image_bytes: no protection data survives PNG→JPEG conversion"
         );
     }
@@ -209,7 +216,7 @@ mod metadata_stripping {
         let result = verify_image_bytes(&stripped_bytes, &[]);
         assert_eq!(
             result,
-            Some(true),
+            VerificationStatus::Verified,
             "verify_image_bytes finds stego via fallback seeds after metadata strip"
         );
     }
@@ -539,7 +546,7 @@ mod ecc_recovery {
         let result = verify_image_bytes(&corrupted_png, &[]);
         assert_eq!(
             result,
-            Some(true),
+            VerificationStatus::Verified,
             "ECC majority-vote decoding recovers payload from bit-corrupted pixel data"
         );
     }
@@ -621,8 +628,9 @@ mod dct_payload_after_recompression {
             image_to_jpeg_bytes(&image::load_from_memory(&protected_bytes).unwrap(), 75);
 
         let result = verify_image_bytes(&recompressed, &[]);
-        assert!(
-            result.is_none(),
+        assert_eq!(
+            result,
+            VerificationStatus::NotFound,
             "verify_image_bytes: no protection survives JPEG re-encoding (Q=90→Q=75) — image crate encoder creates new quantization tables and Huffman codes"
         );
     }
@@ -644,8 +652,9 @@ mod dct_payload_after_recompression {
             image_to_jpeg_bytes(&image::load_from_memory(&protected_bytes).unwrap(), 50);
 
         let result = verify_image_bytes(&recompressed, &[]);
-        assert!(
-            result.is_none(),
+        assert_eq!(
+            result,
+            VerificationStatus::NotFound,
             "verify_image_bytes: no protection survives JPEG re-encoding (Q=85→Q=50) — image crate encoder creates new quantization tables and Huffman codes"
         );
     }
@@ -693,7 +702,7 @@ mod lsb_png_roundtrip {
         let result = verify_image_bytes(&protected_bytes, &[]);
         assert_eq!(
             result,
-            Some(true),
+            VerificationStatus::Verified,
             "verify_image_bytes confirms payload after PNG encode/decode roundtrip"
         );
     }
@@ -717,7 +726,7 @@ mod lsb_png_roundtrip {
         let result = verify_image_bytes(&current_bytes, &[]);
         assert_eq!(
             result,
-            Some(true),
+            VerificationStatus::Verified,
             "LSB payload survives five PNG roundtrips (all lossless)"
         );
     }
@@ -748,7 +757,7 @@ mod metadata_stripping_stego {
         let result = verify_image_bytes(&stripped_bytes, &[]);
         assert_eq!(
             result,
-            Some(true),
+            VerificationStatus::Verified,
             "verify_image_bytes finds stego via fallback seeds after metadata strip"
         );
     }
@@ -870,7 +879,7 @@ mod tiled_crop {
         let result = verify_image_bytes(&cropped_bytes, &[]);
         assert_eq!(
             result,
-            Some(true),
+            VerificationStatus::Verified,
             "Tiled stego survives aligned crop (64px offset matches tile boundary)"
         );
     }
@@ -899,7 +908,7 @@ mod tiled_crop {
         let result = verify_image_bytes(&cropped_bytes, &[]);
         assert_eq!(
             result,
-            Some(true),
+            VerificationStatus::Verified,
             "Tiled stego survives misaligned crop (32px half-tile offset, 96×96 window contains tile (1,0))"
         );
     }
@@ -926,8 +935,9 @@ mod tiled_crop {
         // limitation: crop + JPEG recompression is a lossy attack that
         // defeats LSB-based tiled stego.
         let result = verify_image_bytes(&cropped_jpeg, &[]);
-        assert!(
-            result.is_none(),
+        assert_eq!(
+            result,
+            VerificationStatus::NotFound,
             "Tiled LSB stego does NOT survive crop + JPEG recompression (LSBs destroyed by encoder)"
         );
     }
@@ -951,7 +961,7 @@ mod tiled_crop {
         let result = verify_image_bytes(&cropped_bytes, &[]);
         assert_eq!(
             result,
-            Some(true),
+            VerificationStatus::Verified,
             "Tiled stego survives 50% crop (128x128 contains 4 intact 64x64 tiles)"
         );
     }
@@ -1038,8 +1048,9 @@ mod tiled_crop_jpeg {
         // F5 does NOT survive crop + re-encode — only JPEG-level crops
         // (without re-encode) are recoverable.
         let result = verify_image_bytes(&cropped_jpeg, &[]);
-        assert!(
-            result.is_none(),
+        assert_eq!(
+            result,
+            VerificationStatus::NotFound,
             "Tiled F5 stego does NOT survive crop + JPEG re-encode (DCT coefficients rebuilt from pixels)"
         );
     }

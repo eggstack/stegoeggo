@@ -874,6 +874,69 @@ impl VerificationResult {
     }
 }
 
+/// Simple verification status for quick checks.
+///
+/// Returned by [`verify_image_bytes`](crate::verify_image_bytes) and
+/// [`SteganographyProtector::verify_payload_with_key`](crate::SteganographyProtector::verify_payload_with_key).
+/// For richer information, use [`VerificationResult`] via
+/// [`verify_image_bytes_detailed`](crate::verify_image_bytes_detailed).
+///
+/// # Examples
+///
+/// ```no_run
+/// use cloakrs::VerificationStatus;
+///
+/// let img_bytes: Vec<u8> = std::fs::read("protected.png").unwrap();
+/// match cloakrs::verify_image_bytes(&img_bytes, b"key") {
+///     VerificationStatus::Verified => println!("Protected and verified"),
+///     VerificationStatus::Invalid => println!("Protected but verification failed"),
+///     VerificationStatus::NotFound => println!("No protection found"),
+/// }
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VerificationStatus {
+    /// Protection data found and integrity check passed.
+    Verified,
+    /// Protection data found but integrity check failed.
+    ///
+    /// The payload was extracted but either the CRC32 checksum is invalid
+    /// (non-MAC mode) or the HMAC-SHA256 verification failed (MAC mode).
+    /// This may indicate corruption, wrong MAC key, or tampering.
+    Invalid,
+    /// No protection data found in the image.
+    NotFound,
+}
+
+impl std::fmt::Display for VerificationStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VerificationStatus::Verified => write!(f, "Verified"),
+            VerificationStatus::Invalid => write!(f, "Invalid"),
+            VerificationStatus::NotFound => write!(f, "NotFound"),
+        }
+    }
+}
+
+impl From<Option<bool>> for VerificationStatus {
+    fn from(val: Option<bool>) -> Self {
+        match val {
+            Some(true) => VerificationStatus::Verified,
+            Some(false) => VerificationStatus::Invalid,
+            None => VerificationStatus::NotFound,
+        }
+    }
+}
+
+impl From<VerificationStatus> for Option<bool> {
+    fn from(val: VerificationStatus) -> Self {
+        match val {
+            VerificationStatus::Verified => Some(true),
+            VerificationStatus::Invalid => Some(false),
+            VerificationStatus::NotFound => None,
+        }
+    }
+}
+
 /// Warning about degraded protection during image processing.
 ///
 /// Returned by [`process_image_bytes_with_info`](crate::process_image_bytes_with_info)
@@ -906,6 +969,25 @@ pub enum ProtectionWarning {
     /// cloakrs fast path, but generic downstream JPEG re-encoding destroys
     /// COM/APP metadata, Q-table seed bits, and DCT payload evidence.
     JpegReencodeFragile,
+    /// Image is too small for LSB steganographic embedding.
+    ///
+    /// The payload requires more pixels than the image provides. No LSB payload
+    /// was embedded. Only metadata markers (and Q-table seeds for JPEG) were applied.
+    /// Use a larger image or a smaller payload to enable steganographic protection.
+    LsbCapacitySkipped,
+    /// JPEG DCT coefficients insufficient for full F5 embedding.
+    ///
+    /// The image has too few DCT coefficients (e.g., a very small or heavily
+    /// compressed JPEG) to embed the full payload. Only the seed was stored in
+    /// quantization tables. This provides weaker protection than the standard
+    /// DCT steganography path.
+    DctCapacityInsufficient,
+    /// WebP lossy re-encoding will destroy steganographic payloads.
+    ///
+    /// WebP lossy compression modifies pixel values, which destroys LSB
+    /// steganographic data. Use lossless WebP or another format to preserve
+    /// steganographic protection.
+    WebpLossyReencodeDestructive,
 }
 
 impl std::fmt::Display for ProtectionWarning {
@@ -928,6 +1010,21 @@ impl std::fmt::Display for ProtectionWarning {
                 f,
                 "JPEG output is fragile under downstream re-encoding; serve byte-identical \
                  output or expect metadata/Q-table/DCT evidence loss."
+            ),
+            ProtectionWarning::LsbCapacitySkipped => write!(
+                f,
+                "Image too small for LSB steganographic embedding: no payload embedded. \
+                 Only metadata markers were applied."
+            ),
+            ProtectionWarning::DctCapacityInsufficient => write!(
+                f,
+                "JPEG DCT coefficients insufficient for full F5 embedding: \
+                 fell back to Q-table seed only. Weaker protection applied."
+            ),
+            ProtectionWarning::WebpLossyReencodeDestructive => write!(
+                f,
+                "WebP lossy re-encoding will destroy LSB steganographic payloads. \
+                 Use lossless WebP or another format to preserve steganographic protection."
             ),
         }
     }

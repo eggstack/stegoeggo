@@ -2,6 +2,7 @@ use cloakrs::{
     process_image, process_image_bytes, process_images_bytes_parallel, process_images_parallel,
     DmiValue, ImageOutputFormat, LegalMetadata, MetadataTrapProtector, PassthroughProtector,
     ProtectionContext, ProtectionLevel, ProtectionPipeline, SteganographyProtector,
+    VerificationStatus,
 };
 use image::{DynamicImage, ImageEncoder};
 
@@ -897,7 +898,9 @@ mod edge_case_tests {
 
 mod verify_tests {
     use super::*;
-    use cloakrs::{verify_image_bytes, verify_image_bytes_detailed, MetadataTrapProtector};
+    use cloakrs::{
+        verify_image_bytes, verify_image_bytes_detailed, MetadataTrapProtector, VerificationStatus,
+    };
 
     #[test]
     fn test_verify_image_bytes_sync() {
@@ -909,7 +912,11 @@ mod verify_tests {
             process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
         let result = verify_image_bytes(&protected_bytes, &[]);
-        assert_eq!(result, Some(true), "Protected image should verify");
+        assert_eq!(
+            result,
+            VerificationStatus::Verified,
+            "Protected image should verify"
+        );
     }
 
     #[test]
@@ -919,7 +926,7 @@ mod verify_tests {
 
         let result = verify_image_bytes(&png_bytes, &[]);
         assert!(
-            result.is_none() || result == Some(false),
+            result == VerificationStatus::NotFound || result == VerificationStatus::Invalid,
             "Unprotected image should not verify"
         );
     }
@@ -1054,7 +1061,7 @@ mod webp_tests {
         let result = cloakrs::verify_image_bytes(&stripped_bytes, &[]);
         assert_eq!(
             result,
-            Some(true),
+            VerificationStatus::Verified,
             "LSB stego should survive metadata stripping via DynamicImage roundtrip"
         );
     }

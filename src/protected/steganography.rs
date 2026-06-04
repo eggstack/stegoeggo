@@ -4,7 +4,7 @@ use crate::protected::constants::{SPLITMIX64_SEED, STEGO_OFFSET_SEED_1, STEGO_SP
 use crate::protected::ecc;
 use crate::protected::metadata_trap::MetadataTrapProtector;
 use crate::traits::Protector;
-use crate::types::{ProtectionContext, ProtectionLevel};
+use crate::types::{ProtectionContext, ProtectionLevel, VerificationStatus};
 use crc32fast::Hasher as Crc32Hasher;
 use hmac::{Hmac, Mac};
 use image::{DynamicImage, Rgba, RgbaImage};
@@ -121,14 +121,15 @@ impl SteganographyProtector {
 
     /// Verify that an image contains a valid protection payload.
     ///
-    /// Returns `true` if a payload is found and its checksum or HMAC is valid.
-    /// For HMAC verification, use [`verify_payload_with_key`](Self::verify_payload_with_key).
+    /// Returns `VerificationStatus::Verified` if a payload is found and its
+    /// checksum or HMAC is valid. For HMAC verification, use
+    /// [`verify_payload_with_key`](Self::verify_payload_with_key).
     ///
     /// **Warning:** Without a MAC key, this method only checks a non-cryptographic
     /// CRC32 checksum that can be forged. For adversarial settings, always verify
     /// with a MAC key.
     pub fn verify_payload(&self, img: &DynamicImage) -> bool {
-        self.verify_payload_with_key(img, &[]).unwrap_or(false)
+        self.verify_payload_with_key(img, &[]) == VerificationStatus::Verified
     }
 
     /// Apply DCT-based steganography to JPEG bytes.
@@ -592,17 +593,22 @@ impl SteganographyProtector {
 
     /// Verify protection using a MAC key for HMAC-SHA256 validation.
     ///
-    /// Returns `Some(true)` if the payload is found and HMAC is valid, `Some(false)` if
-    /// found but HMAC doesn't match, or `None` if no payload is found.
+    /// Returns [`VerificationStatus::Verified`] if the payload is found and HMAC is valid,
+    /// [`VerificationStatus::Invalid`] if found but HMAC doesn't match, or
+    /// [`VerificationStatus::NotFound`] if no payload is found.
     ///
     /// Without a MAC key (empty `mac_key`), falls back to a non-cryptographic CRC32 checksum
     /// that provides no cryptographic protection. For production use, always provide a key.
-    pub fn verify_payload_with_key(&self, img: &DynamicImage, mac_key: &[u8]) -> Option<bool> {
+    pub fn verify_payload_with_key(
+        &self,
+        img: &DynamicImage,
+        mac_key: &[u8],
+    ) -> VerificationStatus {
         // Encode once, delegate to bytes-aware method to avoid double-encoding.
         if let Ok(png_bytes) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
             self.verify_payload_from_bytes_with_key(&png_bytes, mac_key)
         } else {
-            None
+            VerificationStatus::NotFound
         }
     }
 
@@ -613,34 +619,34 @@ impl SteganographyProtector {
         &self,
         img_bytes: &[u8],
         mac_key: &[u8],
-    ) -> Option<bool> {
+    ) -> VerificationStatus {
         let metadata_seed = MetadataTrapProtector::extract_seed_from_image(img_bytes);
 
         // JPEG: check DCT stego directly (no re-encode needed)
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
-            if let Some(true) = self.verify_dct_stego(img_bytes, mac_key) {
-                return Some(true);
+            if self.verify_dct_stego(img_bytes, mac_key) == VerificationStatus::Verified {
+                return VerificationStatus::Verified;
             }
 
             if let Some(metadata_seed) = metadata_seed {
-                if let Some(true) =
-                    self.verify_dct_stego_with_seed(img_bytes, metadata_seed, mac_key)
+                if self.verify_dct_stego_with_seed(img_bytes, metadata_seed, mac_key)
+                    == VerificationStatus::Verified
                 {
-                    return Some(true);
+                    return VerificationStatus::Verified;
                 }
             }
 
             // JPEG output in this crate uses DCT/Q-table channels, not pixel
             // LSB channels. Avoid a lossy decode and futile LSB scan in the
             // reverse-proxy verification hot path.
-            return None;
+            return VerificationStatus::NotFound;
         }
 
         // Extract metadata seed directly from bytes (works for PNG, JPEG, WebP)
         if let Some(metadata_seed) = metadata_seed {
             if let Ok(img) = image::load_from_memory(img_bytes) {
                 if self.verify_payload_with_seed(&img, metadata_seed) {
-                    return Some(true);
+                    return VerificationStatus::Verified;
                 }
             }
         }
@@ -650,7 +656,7 @@ impl SteganographyProtector {
             let rgba = img.to_rgba8();
             if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
                 if self.verify_payload_with_seed(&img, fallback_seed) {
-                    return Some(true);
+                    return VerificationStatus::Verified;
                 }
             }
 
@@ -660,7 +666,7 @@ impl SteganographyProtector {
             // remains predictable.
             for &seed in &[42u64, 0, 1, 12345, 99999, 123456789] {
                 if self.try_tiled_extraction_verify(&rgba, seed, DEFAULT_TILE_SIZE, 64, mac_key) {
-                    return Some(true);
+                    return VerificationStatus::Verified;
                 }
             }
         }
@@ -670,12 +676,12 @@ impl SteganographyProtector {
         if let Ok(img) = image::load_from_memory(img_bytes) {
             for &seed in FALLBACK_SEEDS {
                 if self.verify_payload_with_seed(&img, seed) {
-                    return Some(true);
+                    return VerificationStatus::Verified;
                 }
             }
         }
 
-        None
+        VerificationStatus::NotFound
     }
 
     /// Verify protection from raw image bytes using a known seed.
@@ -1196,9 +1202,9 @@ impl SteganographyProtector {
         jpeg_bytes: &[u8],
         seed: u64,
         mac_key: &[u8],
-    ) -> Option<bool> {
+    ) -> VerificationStatus {
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
-            return None;
+            return VerificationStatus::NotFound;
         }
 
         if let Ok((_, coefficients)) = JpegTranscoder::decode_coefficients(jpeg_bytes) {
@@ -1206,7 +1212,7 @@ impl SteganographyProtector {
                 .extract_verified_dct_payload_from_coefficients(&coefficients, seed, mac_key)
                 .is_some()
             {
-                return Some(true);
+                return VerificationStatus::Verified;
             }
         }
 
@@ -1215,15 +1221,21 @@ impl SteganographyProtector {
             .extract_f5_tiled_candidates(jpeg_bytes, seed, DEFAULT_TILE_SIZE, 64, mac_key)
             .is_some()
         {
-            return Some(true);
+            return VerificationStatus::Verified;
         }
 
-        None
+        VerificationStatus::NotFound
     }
 
-    fn verify_dct_stego(&self, jpeg_bytes: &[u8], mac_key: &[u8]) -> Option<bool> {
-        self.extract_verified_dct_payload(jpeg_bytes, mac_key)
-            .map(|_| true)
+    fn verify_dct_stego(&self, jpeg_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus {
+        if self
+            .extract_verified_dct_payload(jpeg_bytes, mac_key)
+            .is_some()
+        {
+            VerificationStatus::Verified
+        } else {
+            VerificationStatus::NotFound
+        }
     }
 
     fn compute_payload_mac(payload_without_mac: &[u8], mac_key: &[u8]) -> [u8; 8] {
