@@ -39,11 +39,7 @@ struct Args {
     #[arg(short, long, help = "Seed for reproducible results")]
     seed: Option<u64>,
 
-    #[arg(
-        short,
-        long,
-        help = "Output format (png|jpg|webp) - defaults to input format"
-    )]
+    #[arg(short, long, help = "Output format (png|jpg|webp) - defaults to png")]
     format: Option<OutputFormatArg>,
 
     #[arg(
@@ -78,7 +74,7 @@ struct Args {
 
     #[arg(
         long,
-        help = "Inject metadata (seed, DMI). Default: true for Standard+, false for Light"
+        help = "Inject metadata (seed, DMI). Default: true for Light and Standard"
     )]
     metadata: Option<bool>,
 
@@ -203,7 +199,7 @@ fn is_image_file(path: &Path) -> bool {
 fn compute_output_path(
     input_path: &Path,
     output_dir: &Option<PathBuf>,
-    output_format: &Option<ImageOutputFormat>,
+    output_format: ImageOutputFormat,
     seen: &mut HashMap<PathBuf, usize>,
 ) -> Option<PathBuf> {
     let stem = input_path
@@ -211,15 +207,7 @@ fn compute_output_path(
         .and_then(|s| s.to_str())
         .unwrap_or("output")
         .to_string();
-    let ext = output_format
-        .as_ref()
-        .map(|f| f.extension().to_string())
-        .unwrap_or_else(|| {
-            ImageOutputFormat::from_magic_bytes(&fs::read(input_path).unwrap_or_default())
-                .unwrap_or(DEFAULT_OUTPUT_FORMAT)
-                .extension()
-                .to_string()
-        });
+    let ext = output_format.extension();
 
     let count = seen.entry(PathBuf::from(&stem)).or_insert(0);
     if *count > 0 {
@@ -239,7 +227,7 @@ fn compute_output_path(
 fn process_single_file(
     input_path: &PathBuf,
     output_dir: &Option<PathBuf>,
-    output_format: &Option<ImageOutputFormat>,
+    output_format: ImageOutputFormat,
     ctx_base: &ProtectionContext,
     protection_level: ProtectionLevel,
     verbose: bool,
@@ -250,18 +238,12 @@ fn process_single_file(
     let detected_format =
         ImageOutputFormat::from_magic_bytes(&input_bytes).unwrap_or(DEFAULT_OUTPUT_FORMAT);
 
-    let output_fmt = match output_format {
-        Some(fmt) => {
-            if verbose && *fmt != detected_format {
-                eprintln!(
-                    "Warning: --format {:?} differs from detected format {:?}",
-                    fmt, detected_format
-                );
-            }
-            *fmt
-        }
-        None => detected_format,
-    };
+    if verbose && output_format != detected_format {
+        eprintln!(
+            "Warning: output format {:?} differs from detected format {:?}",
+            output_format, detected_format
+        );
+    }
 
     let mut ctx = ctx_base.clone();
     ctx.set_input_format(detected_format);
@@ -279,7 +261,7 @@ fn process_single_file(
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("output");
-        let ext = output_fmt.extension();
+        let ext = output_format.extension();
         let filename = format!("{}_protected.{}", stem, ext);
 
         if let Some(ref dir) = output_dir {
@@ -419,6 +401,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .transpose()?;
 
     let output_format = args.format.map(ImageOutputFormat::from);
+    let effective_output_format = output_format.unwrap_or(DEFAULT_OUTPUT_FORMAT);
 
     let protection_level = ProtectionLevel::from(args.level);
 
@@ -433,7 +416,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut ctx = ProtectionContext::new(args.intensity.clamp(0.0, 1.0), seed)
-        .with_format(output_format.unwrap_or(stegoeggo::ImageOutputFormat::Png))
+        .with_format(effective_output_format)
         .with_stego_redundancy(args.stego_redundancy.clamp(1, 10))
         .with_jpeg_quality(args.jpeg_quality.clamp(1, 100))
         .with_progressive_jpeg(args.progressive);
@@ -518,14 +501,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_max_len(1)
                 .map(|input_path| {
                     let mut seen = seen_paths.lock().unwrap();
-                    let override_output =
-                        compute_output_path(input_path, &output_dir, &output_format, &mut seen);
+                    let override_output = compute_output_path(
+                        input_path,
+                        &output_dir,
+                        effective_output_format,
+                        &mut seen,
+                    );
                     drop(seen);
 
                     process_single_file(
                         input_path,
                         &output_dir,
-                        &output_format,
+                        effective_output_format,
                         &ctx,
                         protection_level,
                         args.verbose,
@@ -541,13 +528,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             input_files
                 .iter()
                 .map(|input_path| {
-                    let override_output =
-                        compute_output_path(input_path, &output_dir, &output_format, &mut seen);
+                    let override_output = compute_output_path(
+                        input_path,
+                        &output_dir,
+                        effective_output_format,
+                        &mut seen,
+                    );
 
                     process_single_file(
                         input_path,
                         &output_dir,
-                        &output_format,
+                        effective_output_format,
                         &ctx,
                         protection_level,
                         args.verbose,
@@ -613,7 +604,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let output_path = process_single_file(
             input_path,
             &args.output,
-            &output_format,
+            effective_output_format,
             &ctx,
             protection_level,
             args.verbose,

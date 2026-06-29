@@ -219,7 +219,7 @@ let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx)
 Control individual protection components:
 
 ```rust
-use stegoeggo::{ProtectionContext, ProtectionLevel};
+use stegoeggo::{LegalMetadata, ProtectionContext, ProtectionLevel};
 
 // Minimal - stego only, no metadata
 let ctx = ProtectionContext::new(0.5, 42)
@@ -352,13 +352,13 @@ Options:
   -l, --level <LEVEL>      Protection level: disabled, light, standard
   -i, --intensity <FLOAT> Protection intensity 0.0-1.0 (default: 0.5)
   -s, --seed <SEED>        Seed for reproducible results
-  -f, --format <FORMAT>   Output format: png, jpg, webp
+  -f, --format <FORMAT>   Output format: png, jpg, webp (default: png)
   --stego-redundancy <N>  Stego redundancy 1-10 (default: 2). Higher = robust, lower = fast
   --jpeg-quality <N>       JPEG quality 1-100 (default: 90)
   --progressive            Use progressive JPEG encoding
   -v, --verbose            Print verbose output
   -d, --dmi <DMI>          DMI metadata value
-  --metadata               Inject metadata (seed, DMI). Default: true for Standard
+  --metadata               Inject metadata (seed, DMI). Default: true for Light and Standard
   --legal-claims          Inject legal claims (copyright). WARNING: only for content you own
   -k, --key <KEY>          Cryptographic key (hex string) for HMAC-SHA256 verification
   -j, --jobs <N>           Parallel jobs for batch processing (default: 1)
@@ -372,7 +372,7 @@ Options:
 # Basic protection with default settings
 stegoeggo photo.jpg -o photo_protected.png
 
-# Light protection (metadata only)
+# Light protection (metadata + minimal stego)
 stegoeggo art.png -o art_protected.png --level light
 
 # With custom intensity and seed
@@ -456,23 +456,25 @@ Hidden payloads embedded in images for verification and proof of protection:
 
 The embedded payload has two variants depending on whether a MAC key is configured:
 
-*MAC mode (32 bytes, with `with_mac_key`):*
+*MAC mode (40 bytes, with `with_mac_key`):*
 ```
 Offset  Size  Field
-0       1     Version (1)
+0       1     Version (2)
 1       1     Protection level
 2       8     Seed (little-endian)
 10      2     Intensity (0-100, little-endian)
 12      8     Timestamp (Unix epoch)
-20      4     Reserved/padding
-24      8     HMAC-SHA256 (truncated to 8 bytes)
+20      4     Content hash (truncated ISCC or SHA-256)
+24      1     DMI value
+25      1     Flags (reserved)
+26      6     Reserved/padding
+32      8     HMAC-SHA256 (truncated to 8 bytes)
 ```
 
-*Default mode (76 bytes, no MAC key — uses ECC for error recovery):*
+*Default mode (100 bytes, no MAC key — uses ECC for error recovery):*
 ```
 Offset  Size  Field
-0       24    Header (same as MAC mode above, bytes 0-23)
-24      72    Reed-Solomon-like 3× repetition ECC encoding of the 24-byte header
+0       96    Reed-Solomon-like 3× repetition ECC encoding of the 32-byte header
 96      4     CRC32 checksum of bytes 0-95
 ```
 

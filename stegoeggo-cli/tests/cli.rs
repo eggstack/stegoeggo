@@ -1,4 +1,3 @@
-use image::ImageEncoder;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -89,10 +88,6 @@ fn create_test_webp(path: &PathBuf) {
     .unwrap();
 }
 
-fn output_in_dir(tmp: &tempfile::TempDir, name: &str) -> PathBuf {
-    tmp.path().join(name)
-}
-
 #[test]
 fn test_help_flag() {
     let output = Command::new(cli_bin())
@@ -177,6 +172,39 @@ fn test_protect_jpeg_default() {
     assert!(
         output_bytes.starts_with(&[0xFF, 0xD8]),
         "Output should be JPEG"
+    );
+}
+
+#[test]
+fn test_protect_jpeg_without_format_defaults_to_png_extension() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.jpg");
+    let output_dir = tmp.path().join("out");
+
+    create_test_jpeg(&input, 90);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output_dir)
+        .arg("-s")
+        .arg("42")
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert!(
+        result.status.success(),
+        "CLI should succeed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let output_file = output_dir.join("input_protected.png");
+    assert!(output_file.exists());
+
+    let output_bytes = fs::read(&output_file).unwrap();
+    assert!(
+        output_bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]),
+        "Default output should be PNG"
     );
 }
 

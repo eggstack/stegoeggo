@@ -482,7 +482,7 @@ impl MetadataTrapProtector {
         let mut marker = Vec::with_capacity(4 + total_len);
         marker.push(0xFF);
         marker.push(0xE1);
-        marker.extend_from_slice(&(total_len as u16).to_be_bytes());
+        marker.extend_from_slice(&((total_len + 2) as u16).to_be_bytes());
         marker.extend_from_slice(tiff_prefix);
         marker.extend_from_slice(&tiff_header);
         marker.extend_from_slice(&ifd);
@@ -713,7 +713,7 @@ impl MetadataTrapProtector {
         let mut hasher = Crc32Hasher::new();
         hasher.update(chunk_type);
         hasher.update(data);
-        !hasher.finalize()
+        hasher.finalize()
     }
 
     fn crc16(data: &[u8]) -> u16 {
@@ -1287,6 +1287,59 @@ mod tests {
     }
 
     #[test]
+    fn png_injected_chunks_have_valid_crc() {
+        let protector = MetadataTrapProtector::new();
+        let png = encode_png(&make_test_image());
+        let metadata = vec![(b"Test-Key".to_vec(), b"Test-Value".to_vec())];
+        let result = protector
+            .inject_text_chunks_png(
+                &png,
+                &metadata,
+                Some(DmiValue::ProhibitedAiMlTraining),
+                Some(42),
+            )
+            .unwrap();
+
+        let mut pos = 8;
+        let mut checked_injected_chunk = false;
+        while pos + 12 <= result.len() {
+            let chunk_len = u32::from_be_bytes([
+                result[pos],
+                result[pos + 1],
+                result[pos + 2],
+                result[pos + 3],
+            ]) as usize;
+            let chunk_type = &result[pos + 4..pos + 8];
+            let data_start = pos + 8;
+            let data_end = data_start + chunk_len;
+            let crc_start = data_end;
+            let crc_end = crc_start + 4;
+            assert!(crc_end <= result.len(), "PNG chunk extends past file end");
+
+            if chunk_type == b"tEXt" || chunk_type == b"iTXt" {
+                let stored = u32::from_be_bytes([
+                    result[crc_start],
+                    result[crc_start + 1],
+                    result[crc_start + 2],
+                    result[crc_start + 3],
+                ]);
+                let mut hasher = Crc32Hasher::new();
+                hasher.update(chunk_type);
+                hasher.update(&result[data_start..data_end]);
+                assert_eq!(stored, hasher.finalize());
+                checked_injected_chunk = true;
+            }
+
+            if chunk_type == b"IEND" {
+                break;
+            }
+            pos = crc_end;
+        }
+
+        assert!(checked_injected_chunk);
+    }
+
+    #[test]
     fn png_inject_empty_metadata_returns_original() {
         let protector = MetadataTrapProtector::new();
         let png = encode_png(&make_test_image());
@@ -1696,6 +1749,14 @@ mod tests {
         assert_eq!(&marker[tiff_start..tiff_start + 2], b"II");
         assert_eq!(marker[tiff_start + 2], 42);
         assert_eq!(marker[tiff_start + 3], 0);
+    }
+
+    #[test]
+    fn jpeg_exif_marker_length_matches_payload() {
+        let exif_data = b"DMI: ProhibitedAiMlTraining";
+        let marker = MetadataTrapProtector::create_jpeg_exif_marker(exif_data);
+        let segment_len = u16::from_be_bytes([marker[2], marker[3]]) as usize;
+        assert_eq!(segment_len, marker.len() - 2);
     }
 
     #[test]
