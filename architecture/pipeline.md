@@ -38,7 +38,7 @@ The JPEG fast path (`apply_bytes_pipeline`) operates directly on DCT coefficient
 
 ### Light Level Flow
 
-`process_bytes` routes `Light` level through `metadata_trap.apply_bytes()`, which internally encodes → injects metadata → decodes. This can alter format/quality due to the encode/decode cycle. For byte-level output with metadata intact, use `process_bytes()` or `apply_bytes()` directly.
+`process_bytes` preserves the detected input format unless `ProtectionContext::with_format()` requests conversion. For JPEG output, Light injects metadata and stores the seed in quantization tables. For PNG/WebP output, Light embeds a minimal LSB payload with redundancy=1, encodes to the target format, then injects metadata.
 
 ### JPEG→JPEG Fast Path (bypasses pixel decode/encode)
 
@@ -58,7 +58,7 @@ Free functions that use a `LazyLock<ProtectionPipeline>` singleton:
 
 ## Dimension Validation
 
-`process()` validates image dimensions against `max_dimension` from the context and returns an error if exceeded. `process_bytes()` also validates dimensions on the Standard byte path: JPEG-in/JPEG-out is checked from parsed headers before DCT processing, and non-JPEG inputs are checked after decode. Reverse proxies should still enforce input byte-size limits before calling the library.
+`process()` validates image dimensions against `max_dimension` from the context and returns an error if exceeded. `process_bytes()` validates dimensions for active protection levels: JPEG inputs are checked from parsed headers before DCT/Q-table processing, and non-JPEG inputs are checked after decode. Reverse proxies should still enforce input byte-size limits before calling the library.
 
 ## Reverse Proxy Integration
 

@@ -16,6 +16,13 @@
 - **Robustness is the primary metric**: Steganographic payload survival against common image transformations (compression, resize, format conversion, social media re-encoding) is the most important engineering metric
 - **Metadata stripping is a known limitation**: All image processing tools can strip metadata. This is why steganographic embedding is the primary detection channel — metadata is a bonus layer, not the core defense
 
+## Workspace Structure
+
+Three workspace members:
+- `.` — Main library crate (`stegoeggo`)
+- `stegoeggo-cli/` — CLI binary (`stegoeggo` binary name)
+- `fuzz/` — Fuzz harnesses (requires `cargo-fuzz` + nightly)
+
 ## Architecture
 
 - **Strategy pattern** via `Protector` trait (`src/traits.rs`) with three protection levels: Disabled, Light, Standard
@@ -36,7 +43,9 @@ src/
 │   ├── constants.rs       # Tuning constants
 │   ├── passthrough.rs     # No-op (Disabled)
 │   ├── metadata_trap.rs   # Metadata injection (Light)
-│   └── steganography.rs   # LSB/DCT steganographic embedding
+│   ├── steganography.rs   # LSB/DCT steganographic embedding
+│   ├── ecc.rs             # 3x repetition ECC with majority voting
+│   └── stego_cost.rs      # Pixel embedding cost computation (Laplacian-based)
 ├── jpeg_transcoder/       # JPEG-specific processing
 │   ├── header.rs          # JPEG header parser
 │   ├── entropy.rs         # Huffman entropy codec
@@ -55,20 +64,28 @@ src/
 - All struct fields on `ProtectionContext` and `StegoPayload` are private — use getter methods (e.g., `ctx.intensity()`, `ctx.seed()`)
 - `ProtectionContext` has `set_input_format()` (public) and `set_protection_level()` (crate-internal) for non-builder mutation
 
-## Architecture Documentation
-
-Architecture docs live in `architecture/` (19 files). All docs have been verified against source code.
-
 ## Build & Test Commands
 
 ```bash
 cargo check                              # Compilation
-cargo test                               # All tests (168 unit + 20 basic + 63 integration)
-cargo test --all-features                # Includes async tests (9 tests) — 264+ total
+cargo test                               # All tests (252 unit + 14 basic + 72 integration + 38 robustness)
+cargo test --all-features                # Includes async tests (9 tests)
 cargo clippy --all-targets -- -D warnings # Lint check
 cargo fmt --check                        # Format check
 cargo bench                              # Criterion benchmarks
 ```
+
+## CI Pipeline
+
+GitHub Actions (`.github/workflows/ci.yml`) runs:
+1. MSRV check (`cargo check --all-features` with Rust 1.87)
+2. Tests (`cargo test --all-features`)
+3. Doc tests (`cargo test --doc`)
+4. Format check (`cargo fmt --check`)
+5. Clippy lint (`cargo clippy --all-targets -- -D warnings`)
+6. Security audit (`cargo audit`)
+7. License/advisory check (`cargo deny check licenses && cargo deny check advisories`)
+8. Benchmarks (main branch only)
 
 ## Code Conventions
 
@@ -78,55 +95,41 @@ cargo bench                              # Criterion benchmarks
 - `pub(crate)` for internal modules (e.g., `jpeg_transcoder`)
 - Private fields with getter methods on `ProtectionContext`, `StegoPayload`, `LegalMetadata`
 
+## Architecture Documentation
+
+Architecture docs live in `architecture/` (19 files). All docs have been verified against source code.
+
+## Fuzzing
+
+Three fuzz targets in `fuzz/`:
+- `pipeline_bytes` — Full bytes-in/bytes-out path
+- `tiled_round_trip` — Tiled steganography end-to-end
+- `jpeg_parser` — JPEG header/entropy/DCT parsing
+
+Run with: `cargo +nightly fuzz run <target> -- -max_total_time=60`
+
 ## Things to Watch Out For
 
-- **`.gitignore`**: `.DS_Store` files exist on disk but are excluded by git
-- **Stego payload format**: 24-byte header + 4-byte CRC32 checksum (or 8-byte HMAC), always padded to 32 bytes total. Use `MIN_PAYLOAD_SIZE` (=28) and `MIN_PAYLOAD_BITS` (=224) constants in `steganography.rs`
-- **`generate_random_seed()`**: Uses `getrandom` (OS CSPRNG) for cryptographically secure randomness. Falls back to system-time-based mixing if `getrandom` fails. Guarantees non-zero output (`if x == 0 { 42 }`)
-- **`ProtectionContext::default()`**: Calls `generate_random_seed()` which is backed by `getrandom` (OS CSPRNG). The seed is unpredictable. For reproducible results across runs, use `ProtectionContext::new(intensity, seed)` with an explicit seed. In rare sandboxed environments where `getrandom` is unavailable, the function falls back to a time-based mix and logs a warning
-- **JPEG transcoder modules**: `header.rs` and `entropy.rs` have `#![allow(dead_code)]` for JPEG spec reference types (color spaces, standard Huffman tables) — keep these
-- **ISCC module** (`src/util/iscc.rs`): Content identification, exported from `lib.rs`. Uses `iscc-lib` crate (ISO 24138:2024) for standard-compliant ISCC generation. Produces interoperable ISCC identifiers with proper varnibble headers and Base32 encoding
-- **No `TargetModel`**: This concept was removed. `ProtectionContext::new` takes `(intensity, seed)` only
-- **Steganography seed derivation**: `embed_lsb` internally derives `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)` before using `stego_permutation`. When calling internal embed/extract functions directly (outside of `apply()`), ensure seeds match. The public API (`apply()` + `extract_payload()`) handles this correctly. (The legacy `embed_jpeg_stego` pixel-domain JPEG path was removed — JPEG output now goes through the DCT/Q-table fast path exclusively.)
-- **XorShiftRng — two separate implementations**: `src/util/image.rs` has `PixelSelectionRng` (general-purpose pixel selection for steganography) and `src/jpeg_transcoder/stego_f5.rs` has `DctCoefficientRng` (DCT coefficient shuffling). They use different algorithms and produce different sequences for the same seed. Do NOT interchange them — each is paired with their respective embed/extract code paths
-- **MetadataTrapProtector::apply()**: `apply()` returns `Cow::Borrowed(img)` unchanged. Metadata injection operates at the byte level and the `DynamicImage` API cannot preserve injected text chunks through encode/decode cycles. The pipeline routes `Light` level through `apply_light_bytes()` which encodes, injects metadata, then decodes (metadata survives in the byte output). For byte-level output with metadata intact, use `apply_bytes()` or `process_bytes()`
-- **`stego_redundancy` is `Option<usize>`**: Default is `None` (derive from intensity). Explicit `.with_stego_redundancy(n)` sets `Some(n)`. Internal code uses `ctx.effective_redundancy()` which maps intensity to redundancy when not explicitly set. The public `stego_redundancy()` getter returns `unwrap_or(2)` for backward compatibility. Valid range is 1-10.
-- **`verify_payload_with_key()` returns `VerificationStatus`**, not `Option<bool>` or `bool` — use `== VerificationStatus::Verified` in assertions. The old `Option<bool>` API was replaced because it was an API footgun (confusing `None` vs `Some(false)` semantics)
-- **`verify_image_bytes()` returns `VerificationStatus`** — same as `verify_payload_with_key()`. For richer information, use `verify_image_bytes_detailed()` which returns `VerificationResult` with payload data
-- **`VerificationStatus` enum**: `Verified`, `Invalid`, `NotFound`. Implements `From<Option<bool>>` and `Into<Option<bool>>` for backward compatibility with code that still uses `Option<bool>`
-- **JPEG stego redundancy bug** (`steganography.rs:788-841`): Fixed — `embedded = 0;` reset added between redundancy passes so all passes embed when `redundancy > 1`
-- **HuffmanDecoder/HuffmanEncoderTable caching**: In `entropy.rs`, Huffman decoders and encoder lookup tables are pre-built once before the MCU loop. `HuffmanEncoderTable` uses a `[(u16, u8); 256]` array for O(1) symbol→(code,length) lookup. These are internal types — do not rebuild per-MCU
-- **JPEG header parser bounds**: `header.rs:parse()` has guards for `data.len() < 2` (empty input) and `end_pos < 10` (too short for SOF). Segment data end uses `.max(segment_data_start)` to prevent inverted slice ranges when `segment_len` is malformed. Parse errors now include byte offset for debugging
-- **`subtle` crate for constant-time comparison**: `verify_payload_mac` in `steganography.rs` uses `subtle::ConstantTimeEq::ct_eq()` instead of `==` to prevent timing attacks on HMAC verification
-- **Pipeline intensity semantics**: Steganography and metadata injection run regardless of intensity value. When `stego_redundancy` is not explicitly set, `intensity` controls redundancy via `effective_redundancy()` (<0.3→1, 0.3-0.7→2, >=0.7→3). Explicit `with_stego_redundancy()` overrides this.
-- **F5 no-zero variant correctness**: `stego_f5.rs` implements a no-zero F5 variant that increments |coef| when |coef|=1 and LSB mismatches, avoiding detectable zero creation. The embed/extract position alignment is preserved because no coefficient is ever zeroed out. The implementation is correct
-- **F5 seed embedding Q-table edge case**: `stego_f5.rs` has a precondition check in `embed_seed_in_quantization_tables()` that fails if any quantization value in the first 2 tables is < 2. Values of 1 cannot represent a 0-bit (`1 & 0xFE = 0`, clamped back to 1). Use quantization values >= 2 for reliable seed embedding
-- **`#[serde(skip)]` on `config` field**: `ProtectionContext.config` (`Option<Arc<ProtectionConfig>>`) is skipped during serialization. MAC keys and legal metadata are lost in serde roundtrips. A test (`test_config_skipped_in_serde_roundtrip`) documents this behavior
-- **Async batch processing**: `process_images_parallel_async` and `process_images_bytes_parallel_async` run the entire batch inside a single `spawn_blocking`, delegating to the synchronous rayon-based parallel functions. This avoids per-image `spawn_blocking` calls that would cause thread pool overlap. Single-image async functions (`process_image_async`, `process_image_bytes_async`) still use one `spawn_blocking` per image
-- **Steganography fallback seeds**: Extracted to `FALLBACK_SEEDS` constant in `steganography.rs`. These are common test/dev seeds tried when metadata is stripped
-- **Format detection strictness**: `apply_bytes_pipeline` returns `Error::InvalidFormat` when the input format cannot be determined (from `ctx.input_format()` or magic bytes). Previously it silently defaulted to PNG
-- **JPEG segment length bounds**: `get_scan_data_start` now uses `checked_add` to prevent integer overflow when advancing past segments with malformed lengths
-- **Entropy decoder natural order**: The entropy decoder stores coefficients directly in natural (row-major) order via `block[ZIGZAG[k]] = magnitude`. The old reorder loop was redundant (identity operation) and has been removed
-- **JPEG quantization debug assertion**: `assemble_jpeg` has a `debug_assert!` for 8-bit quantization values exceeding 255
-- **`inject_metadata` / `inject_legal_claims` are `Option<bool>`**: Default is `None`, not `true`/`false`. The `None` semantics (use level default) vs explicit `false` (disable) are well-documented in `types.rs`. `with_metadata_injection(false)` and not calling it at all have different effects
-- **`process_bytes` dimension validation**: `process_bytes()` now validates `max_dimension` for both JPEG (via header parse) and non-JPEG paths. Previously only `process()` enforced this
-- **CLI batch filename collisions**: Batch mode in `stegoeggo-cli` detects duplicate output stems and appends `_protected_1`, `_protected_2`, etc. to prevent silent overwrites
-- **Pipeline flow order (JPEG output)**: For JPEG output, the pipeline applies encode → DCT stego → metadata (encode happens before stego). For non-JPEG output: pixel stego → encode → metadata. The JPEG→JPEG fast path bypasses pixel decode entirely and only applies DCT stego + metadata
-- **CLI file path**: The CLI binary lives at `stegoeggo-cli/src/main.rs`, not `src/bin/stegoeggo/main.rs`
-- **MIN_PAYLOAD_SIZE vs actual payload size**: `MIN_PAYLOAD_SIZE` (=28) is the minimum valid payload for parsing (24-byte header + 4-byte CRC32 checksum). In non-MAC mode, `generate_payload()` produces an ECC-encoded payload of 76 bytes (24 bytes × 3 replication + 4 CRC32). In MAC mode, it produces 32 bytes (24 header + 8 HMAC). These are different numbers — the constant is a parsing threshold, not the output size
-- **`PassthroughProtector::modifies_pixels()`**: Returns `false` (passthrough.rs:50-52) for efficiency. The default `Protector` trait implementation returns `true`, so other protectors that don't modify pixels should also override this
-- **`ImageTruncated` error variant**: Added to `error.rs` for handling truncated JPEG parsing. Used in `metadata_trap.rs` when JPEG segment parsing encounters truncated data.
-- **`extract_seed_from_jpeg` returns `Option<u64>`**: Returns `None` on truncated data or when no seed is found. Callers receive `Option` directly without needing `.ok()`.
-- **`bits_to_bytes` runtime check**: Now validates `bits.len() % 8 != 0` at runtime instead of only in debug builds. Returns empty Vec for invalid input.
-- **Three seed storage locations**: Seeds are stored in three redundant locations for maximum recovery: (1) Q-table LSBs in JPEG files (survives byte-preserving metadata insertion and the `stegoeggo` JPEG fast path; not arbitrary recompression, since generic encoders rebuild Q-tables), (2) metadata markers (survives pixel changes but can be stripped by any image tool), (3) fixed-position LSB pattern in first 64 pixel channels (`embed_seed_lsb_fallback`/`extract_seed_lsb_fallback`). The extraction chain tries metadata → LSB fallback → common test seeds (`FALLBACK_SEEDS`). The LSB fallback uses a deterministic fixed-position pattern (pixel 0 R/G/B, pixel 1 R/G/B, ...) — no PRNG involved. Note: a Q-table seed alone is detection, not verification — see the verification API docs.
-- **ECC on stego payload**: Non-MAC payloads are Reed-Solomon-like encoded (3× repetition with majority voting) before CRC32 checksumming. This allows recovery from bit corruption in the extracted payload. The `ecc` module (`src/protected/ecc.rs`) provides `ecc_encode`/`ecc_decode` functions
-- **Spread spectrum LSB**: Each payload bit is embedded across `STEGO_SPREAD_FACTOR` (=5) adjacent pixels via majority voting, replacing single-bit-per-pixel embedding. This makes LSB steganography survive localized noise and moderate filtering
-- **Content-adaptive amplitude (removed)**: The previous JPEG-amplitude pixel steganography path (with `compute_local_variance` / `compute_adaptive_amplitude` helpers and `STEGO_JPEG_MIN_AMPLITUDE` / `STEGO_JPEG_MAX_AMPLITUDE` constants) was removed when the pixel-domain JPEG fallback was retired in the stego-fidelity rework. JPEG output now uses the DCT fast path exclusively; the amplitude constants and helpers in `src/protected/steganography.rs` were deleted as part of that cleanup.
-- **Large-magnitude DCT coefficient preference**: F5 embedding sorts non-zero AC coefficients by |magnitude| descending before shuffling, so the largest (most robust to requantization) coefficients are used first
-- **F5 redundancy cap**: Maximum redundancy increased from 5 to 10. Extraction tries all 10 redundancy values when searching for valid payloads
-- **Payload version migration path**: `SteganographyProtector` writes `CURRENT_PAYLOAD_VERSION` (currently 1) into the payload header byte 0. The parser iterates `SUPPORTED_PAYLOAD_VERSIONS` and dispatches to a per-version parser (`parse_stego_payload_v1`). To add a v2 format: bump `CURRENT_PAYLOAD_VERSION` to 2, append 2 to `SUPPORTED_PAYLOAD_VERSIONS`, and add a `parse_stego_payload_v2` arm. Old v1 payloads keep parsing without re-protection.
-- **JPEG parsing bounds hardening**: Three fuzz-discovered slice/divide panics fixed: (1) `metadata_trap.rs::inject_text_chunks_jpeg` now validates `segment_end` (computed via `checked_add`) against buffer length before slicing — was OOB for unknown markers with bogus lengths; (2) `jpeg_transcoder/mod.rs::get_scan_data_start` SOS branch now validates `scan_start <= data.len()`; (3) `jpeg_transcoder/header.rs::parse_sof` now rejects sampling factors outside [1, 4] (was feeding 0 into the entropy decoder's `div_ceil`). All three are covered by regression tests in `tests/robustness.rs` and the source modules.
-- **Fuzz harness**: `fuzz/` workspace member with a `pipeline_bytes` target exercising the full public bytes-in / bytes-out path (`process_image_bytes` + `verify_image_bytes` over all three protection levels, with and without a MAC key). Run with `cargo +nightly fuzz run pipeline_bytes -- -max_total_time=300` from the repo root. The harness is the canary for any future regression in the JPEG parser or the format-detection path.
-- **Tiled steganography** (`with_tile_size(n)`): Crop-resistant mode that embeds the full payload in each `tile_size × tile_size` tile independently. Opt-in via `ProtectionContext::with_tile_size(64)`. Tiled LSB path for PNG/WebP (`embed_lsb_tiled` / `extract_lsb_tiled_candidates`), tiled F5 path for JPEG (`apply_dct_stego_bytes_tiled` / `extract_f5_tiled_candidates`). Per-tile seed derived via `tile_seed(master_seed, tile_x, tile_y)` using splitmix64. Extraction scans candidate origins (stride = `tile_size / 2`, bounded by `tile_extraction_max_origins`), tries grid coordinates around each origin, and verifies integrity. Tiled F5 is limited to tile-aligned crops without re-encode — crop + re-encode destroys DCT stego. The tiled paths are wired as fallbacks in the verification chain (non-tiled runs first). `embed_lsb_tiled` returns `img.clone()` unchanged when `tile_size == 0` (the "tiling disabled" sentinel).
-- **F5 tiled block set**: `DctStegoF5::tile_block_set()` computes the `(comp_id, block_idx)` pairs for a tile from the header and coefficient container. The MCU-interleaved block ordering means block_idx = `(mcu_y * mcus_per_row + mcu_x) * h * v + sub_y * h + sub_x`. Do NOT assume simple row-major block ordering — the coefficient container uses MCU-interleaved ordering within each component.
-- **ProtectionWarning variants**: The warning system has 7 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped` (image too small for LSB embedding), `DctCapacityInsufficient` (JPEG DCT coefficients insufficient for F5), `WebpLossyReencodeDestructive` (downstream lossy WebP will destroy stego). The `process_image_bytes_with_warnings` function detects and returns these warnings.
+- **Stego payload format**: 24-byte header + 4-byte CRC32 checksum (or 8-byte HMAC), always padded to 32 bytes total. Use `MIN_PAYLOAD_SIZE` (=28) and `MIN_PAYLOAD_BITS` (=224) constants in `steganography.rs`. Note: `MIN_PAYLOAD_SIZE` is a parsing threshold, not the output size — non-MAC payloads are 76 bytes (ECC-encoded), MAC payloads are 32 bytes
+- **`ProtectionContext::default()`**: Uses `getrandom` (CSPRNG) for an unpredictable seed. For reproducible results, use `ProtectionContext::new(intensity, seed)` with an explicit seed
+- **XorShiftRng — two separate implementations**: `src/util/image.rs` has `PixelSelectionRng` (pixel selection) and `src/jpeg_transcoder/stego_f5.rs` has `DctCoefficientRng` (DCT shuffling). Different algorithms, different sequences for same seed. Do NOT interchange them
+- **MetadataTrapProtector::apply()**: Returns `Cow::Borrowed(img)` unchanged — metadata injection is byte-level. The pipeline routes `Light` through `apply_light_bytes()` which encodes → injects → decodes. For byte-level output with metadata, use `apply_bytes()` or `process_bytes()`
+- **`stego_redundancy` is `Option<usize>`**: Default `None` derives from intensity via `effective_redundancy()` (<0.3→1, 0.3-0.7→2, >=0.7→3). Explicit `.with_stego_redundancy(n)` overrides this. Valid range 1-10
+- **Verification API**: `verify_payload_with_key()` and `verify_image_bytes()` return `VerificationStatus` (`Verified`, `Invalid`, `NotFound`), not `Option<bool>`. Use `== VerificationStatus::Verified` in assertions. For richer info, use `verify_image_bytes_detailed()` → `VerificationResult`
+- **`inject_metadata` / `inject_legal_claims` are `Option<bool>`**: Default `None` (use level default) vs explicit `false` (disable). `with_metadata_injection(false)` ≠ not calling it at all
+- **Pipeline flow order**: JPEG output: encode → DCT stego → metadata. Non-JPEG: pixel stego → encode → metadata. JPEG→JPEG fast path bypasses pixel decode entirely
+- **F5 seed embedding Q-table edge case**: `embed_seed_in_quantization_tables()` fails if any quantization value in the first 2 tables is < 2. Values of 1 cannot represent a 0-bit (`1 & 0xFE = 0`, clamped back to 1)
+- **`#[serde(skip)]` on `config` field**: `ProtectionContext.config` is skipped during serialization. MAC keys and legal metadata are lost in serde roundtrips
+- **Async batch processing**: `process_images_parallel_async` runs the entire batch inside a single `spawn_blocking`, delegating to rayon-based sync functions. Single-image async uses one `spawn_blocking` per image
+- **Three seed storage locations**: (1) Q-table LSBs in JPEG (survives byte-preserving metadata insertion; not arbitrary recompression), (2) metadata markers (strippable by any tool), (3) fixed-position LSB in first 64 pixel channels. Extraction chain: metadata → LSB fallback → `FALLBACK_SEEDS`
+- **ECC on stego payload**: Non-MAC payloads use 3× repetition with majority voting before CRC32. The `ecc` module provides `ecc_encode`/`ecc_decode`. MAC payloads use 8-byte HMAC instead
+- **Spread spectrum LSB**: Each payload bit embedded across `STEGO_SPREAD_FACTOR` (=5) adjacent pixels via majority voting
+- **Large-magnitude DCT coefficient preference**: F5 sorts non-zero AC coefficients by |magnitude| descending before shuffling
+- **F5 redundancy cap**: Max redundancy is 10. Extraction tries all 10 values
+- **Payload version migration**: Current version is 1. To add v2: bump `CURRENT_PAYLOAD_VERSION`, add to `SUPPORTED_PAYLOAD_VERSIONS`, add `parse_stego_payload_v2` arm
+- **CLI file path**: CLI binary lives at `stegoeggo-cli/src/main.rs`, not `src/bin/`
+- **CLI batch filename collisions**: Duplicate output stems get `_protected_1`, `_protected_2`, etc.
+- **Tiled steganography** (`with_tile_size(n)`): Crop-resistant mode. Embeds full payload per tile. Tiled F5 limited to tile-aligned crops without re-encode. `tile_seed(master_seed, tile_x, tile_y)` uses splitmix64. Tiled paths are verification fallbacks
+- **F5 tiled block set**: MCU-interleaved block ordering: `block_idx = (mcu_y * mcus_per_row + mcu_x) * h * v + sub_y * h + sub_x`. Do NOT assume row-major ordering
+- **ProtectionWarning variants**: 7 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped`, `DctCapacityInsufficient`, `WebpLossyReencodeDestructive`. Returned by `process_image_bytes_with_warnings`
+- **Fuzz harness**: 3 targets in `fuzz/`: `pipeline_bytes`, `tiled_round_trip`, `jpeg_parser`. Run with `cargo +nightly fuzz run <target> -- -max_total_time=60`. Add regression tests in `tests/robustness.rs` for findings

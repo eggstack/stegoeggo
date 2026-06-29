@@ -6,7 +6,8 @@
 //! # Protection Levels
 //!
 //! - `Disabled`: No protection applied
-//! - `Light`: Metadata injection only (tEXt chunks for PNG, COM markers for JPEG)
+//! - `Light`: Metadata injection plus minimal seed stego (Q-table seed for JPEG,
+//!   LSB redundancy=1 for PNG/WebP)
 //! - `Standard`: Steganography + metadata injection
 //!
 //! # Protection Layers
@@ -348,8 +349,12 @@ impl ProtectionPipeline {
 
         match output_format {
             crate::types::ImageOutputFormat::Jpeg => {
-                let encoded =
-                    crate::util::image::encode_image(img, output_format.to_image_format())?;
+                let encoded = crate::util::image::encode_image_with_options(
+                    img,
+                    Some(output_format),
+                    ctx.progressive_jpeg(),
+                    ctx.jpeg_quality(),
+                )?;
                 let with_metadata = self.metadata_trap.inject_bytes(&encoded, ctx)?;
                 let with_stego = self
                     .steganography
@@ -360,8 +365,12 @@ impl ProtectionPipeline {
                 let mut minimal_ctx = ctx.clone();
                 minimal_ctx.set_protection_level(crate::types::ProtectionLevel::Light);
                 let stego_img = self.steganography.embed_lsb_minimal(img, &minimal_ctx);
-                let encoded =
-                    crate::util::image::encode_image(&stego_img, output_format.to_image_format())?;
+                let encoded = crate::util::image::encode_image_with_options(
+                    &stego_img,
+                    Some(output_format),
+                    ctx.progressive_jpeg(),
+                    ctx.jpeg_quality(),
+                )?;
                 let with_metadata = self.metadata_trap.inject_bytes(&encoded, ctx)?;
                 Ok(image::load_from_memory(&with_metadata)?)
             }
@@ -385,33 +394,41 @@ impl ProtectionPipeline {
         match level {
             ProtectionLevel::Disabled => Ok(img_bytes.to_vec()),
             ProtectionLevel::Light => {
-                let format = ctx_with_level
-                    .output_format()
-                    .or(ctx_with_level.input_format())
-                    .unwrap_or_else(|| {
-                        crate::types::ImageOutputFormat::from_magic_bytes(img_bytes)
-                            .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT)
-                    });
-                match format {
-                    crate::types::ImageOutputFormat::Jpeg => {
-                        let with_metadata =
-                            self.metadata_trap.apply_bytes(img_bytes, &ctx_with_level)?;
-                        self.steganography
-                            .apply_qtable_seed_bytes(&with_metadata, ctx_with_level.seed())
-                    }
-                    _ => {
-                        let mut minimal_ctx = ctx_with_level.clone();
-                        minimal_ctx.set_protection_level(crate::types::ProtectionLevel::Light);
-                        let img = image::load_from_memory(img_bytes)?;
-                        let stego_img = self.steganography.embed_lsb_minimal(&img, &minimal_ctx);
-                        let encoded =
-                            crate::util::image::encode_image(&stego_img, format.to_image_format())?;
-                        self.metadata_trap.apply_bytes(&encoded, &ctx_with_level)
-                    }
+                let input_format = Self::input_format_from_bytes(img_bytes, &ctx_with_level)?;
+                if ctx_with_level.input_format().is_none() {
+                    ctx_with_level.set_input_format(input_format);
                 }
+                let output_format = Self::output_format_for_bytes(&ctx_with_level, input_format);
+                self.validate_input_dimensions_for_bytes(
+                    img_bytes,
+                    input_format,
+                    ctx_with_level.max_dimension(),
+                )?;
+                self.apply_light_bytes_pipeline(
+                    img_bytes,
+                    input_format,
+                    output_format,
+                    &ctx_with_level,
+                )
             }
             ProtectionLevel::Standard => self.apply_bytes_pipeline(img_bytes, &ctx_with_level),
         }
+    }
+
+    fn input_format_from_bytes(
+        img_bytes: &[u8],
+        ctx: &ProtectionContext,
+    ) -> Result<crate::types::ImageOutputFormat> {
+        ctx.input_format()
+            .or_else(|| crate::types::ImageOutputFormat::from_magic_bytes(img_bytes))
+            .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))
+    }
+
+    fn output_format_for_bytes(
+        ctx: &ProtectionContext,
+        input_format: crate::types::ImageOutputFormat,
+    ) -> crate::types::ImageOutputFormat {
+        ctx.output_format().unwrap_or(input_format)
     }
 
     fn validate_jpeg_dimensions_from_bytes(img_bytes: &[u8], max_dim: Option<u32>) -> Result<()> {
@@ -427,16 +444,65 @@ impl ProtectionPipeline {
         Ok(())
     }
 
-    fn apply_bytes_pipeline(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
-        let input_format = ctx
-            .input_format()
-            .or_else(|| crate::types::ImageOutputFormat::from_magic_bytes(img_bytes))
-            .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
+    fn validate_input_dimensions_for_bytes(
+        &self,
+        img_bytes: &[u8],
+        input_format: crate::types::ImageOutputFormat,
+        max_dim: Option<u32>,
+    ) -> Result<()> {
+        if max_dim.is_none() {
+            return Ok(());
+        }
 
-        let output_format = ctx
-            .output_format()
-            .or(ctx.input_format())
-            .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
+        if input_format == crate::types::ImageOutputFormat::Jpeg {
+            Self::validate_jpeg_dimensions_from_bytes(img_bytes, max_dim)
+        } else {
+            let img = load_image_from_bytes(img_bytes)?;
+            Self::validate_dimensions(&img, max_dim)
+        }
+    }
+
+    fn apply_light_bytes_pipeline(
+        &self,
+        img_bytes: &[u8],
+        input_format: crate::types::ImageOutputFormat,
+        output_format: crate::types::ImageOutputFormat,
+        ctx: &ProtectionContext,
+    ) -> Result<Vec<u8>> {
+        if output_format == crate::types::ImageOutputFormat::Jpeg {
+            let encoded = if input_format == crate::types::ImageOutputFormat::Jpeg {
+                img_bytes.to_vec()
+            } else {
+                let img = load_image_from_bytes(img_bytes)?;
+                crate::util::image::encode_image_with_options(
+                    &img,
+                    Some(output_format),
+                    ctx.progressive_jpeg(),
+                    ctx.jpeg_quality(),
+                )?
+            };
+            let with_metadata = self.metadata_trap.apply_bytes(&encoded, ctx)?;
+            return self
+                .steganography
+                .apply_qtable_seed_bytes(&with_metadata, ctx.seed());
+        }
+
+        let mut minimal_ctx = ctx.clone();
+        minimal_ctx.set_protection_level(crate::types::ProtectionLevel::Light);
+        let img = load_image_from_bytes(img_bytes)?;
+        let stego_img = self.steganography.embed_lsb_minimal(&img, &minimal_ctx);
+        let encoded = crate::util::image::encode_image_with_options(
+            &stego_img,
+            Some(output_format),
+            ctx.progressive_jpeg(),
+            ctx.jpeg_quality(),
+        )?;
+        self.metadata_trap.apply_bytes(&encoded, ctx)
+    }
+
+    fn apply_bytes_pipeline(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
+        let input_format = Self::input_format_from_bytes(img_bytes, ctx)?;
+        let output_format = Self::output_format_for_bytes(ctx, input_format);
 
         // JPEG-in, JPEG-out: byte-only path (DCT stego + metadata, no pixel decode).
         // This preserves quality and avoids lossy re-encode cycles.
@@ -1055,6 +1121,69 @@ mod tests {
         assert!(
             result.is_err(),
             "Should fail when image exceeds max dimension via process_bytes"
+        );
+    }
+
+    #[test]
+    fn pipeline_process_bytes_preserves_detected_jpeg_format() {
+        let pipeline = ProtectionPipeline::new();
+        let img = DynamicImage::new_rgb8(64, 64);
+        let jpeg_bytes = crate::util::image::encode_image(&img, image::ImageFormat::Jpeg).unwrap();
+
+        let ctx = ProtectionContext::new(0.5, 42);
+        let protected = pipeline
+            .process_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx)
+            .unwrap();
+
+        assert!(
+            protected.starts_with(&[0xFF, 0xD8, 0xFF]),
+            "direct byte pipeline should preserve detected JPEG output format"
+        );
+    }
+
+    #[test]
+    fn light_process_bytes_validates_max_dimension() {
+        use image::ImageEncoder;
+
+        let img = DynamicImage::new_rgb8(1000, 1000);
+        let mut buffer = Vec::new();
+        {
+            let encoder = image::codecs::png::PngEncoder::new(&mut buffer);
+            let rgb = img.to_rgb8();
+            encoder
+                .write_image(&rgb, 1000, 1000, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        }
+
+        let ctx = ProtectionContext::default().with_max_dimension(512);
+        let result = process_image_bytes(&buffer, ProtectionLevel::Light, &ctx);
+
+        assert!(
+            result.is_err(),
+            "Light byte processing should enforce max_dimension"
+        );
+    }
+
+    #[test]
+    fn light_process_bytes_can_convert_png_to_jpeg() {
+        use image::ImageEncoder;
+
+        let img = DynamicImage::new_rgb8(64, 64);
+        let mut png_bytes = Vec::new();
+        {
+            let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+            let rgb = img.to_rgb8();
+            encoder
+                .write_image(&rgb, 64, 64, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        }
+
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
+        let protected = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
+
+        assert!(
+            protected.starts_with(&[0xFF, 0xD8, 0xFF]),
+            "Light byte processing should convert PNG input to requested JPEG output"
         );
     }
 }

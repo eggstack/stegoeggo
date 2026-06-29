@@ -11,7 +11,7 @@ Enum with three variants:
 ```rust
 pub enum ProtectionLevel {
     Disabled,    // No protection (PassthroughProtector)
-    Light,       // Metadata injection only (MetadataTrapProtector)
+    Light,       // Metadata + minimal seed stego
     Standard,    // Noise + stego + metadata (default)
 }
 ```

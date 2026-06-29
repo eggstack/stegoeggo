@@ -75,6 +75,33 @@ impl MetadataTrapProtector {
         Self
     }
 
+    fn should_inject_metadata(
+        inject_metadata: Option<bool>,
+        protection_level: Option<ProtectionLevel>,
+    ) -> bool {
+        inject_metadata.unwrap_or(!matches!(protection_level, Some(ProtectionLevel::Disabled)))
+    }
+
+    fn resolved_dmi(
+        dmi_value: Option<DmiValue>,
+        protection_level: Option<ProtectionLevel>,
+        inject_metadata: Option<bool>,
+    ) -> Option<DmiValue> {
+        if !Self::should_inject_metadata(inject_metadata, protection_level) {
+            return None;
+        }
+
+        let dmi = dmi_value.or_else(|| {
+            protection_level.and_then(|level| match level {
+                ProtectionLevel::Light => Some(DmiValue::Prohibited),
+                ProtectionLevel::Standard => Some(DmiValue::ProhibitedAiMlTraining),
+                _ => None,
+            })
+        });
+
+        dmi.filter(|value| *value != DmiValue::Unspecified)
+    }
+
     fn generate_poison_metadata(
         &self,
         dmi_value: Option<DmiValue>,
@@ -87,7 +114,7 @@ impl MetadataTrapProtector {
         let mut metadata = Vec::new();
 
         let should_inject_metadata =
-            inject_metadata.unwrap_or(!matches!(protection_level, Some(ProtectionLevel::Disabled)));
+            Self::should_inject_metadata(inject_metadata, protection_level);
 
         let should_inject_claims = inject_legal_claims.unwrap_or(false);
 
@@ -99,18 +126,8 @@ impl MetadataTrapProtector {
                 ));
             }
 
-            let dmi = dmi_value.or_else(|| {
-                protection_level.and_then(|level| match level {
-                    ProtectionLevel::Light => Some(DmiValue::Prohibited),
-                    ProtectionLevel::Standard => Some(DmiValue::ProhibitedAiMlTraining),
-                    _ => None,
-                })
-            });
-
-            if let Some(dmi) = dmi {
-                if dmi != DmiValue::Unspecified {
-                    metadata.push((b"DMI-PROHIBITED".to_vec(), dmi.as_str().as_bytes().to_vec()));
-                }
+            if let Some(dmi) = Self::resolved_dmi(dmi_value, protection_level, inject_metadata) {
+                metadata.push((b"DMI-PROHIBITED".to_vec(), dmi.as_str().as_bytes().to_vec()));
             }
 
             metadata.push((b"noai".to_vec(), b"noindex".to_vec()));
@@ -1018,6 +1035,11 @@ impl MetadataTrapProtector {
 
     #[doc(hidden)]
     pub fn inject_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
+        let dmi = Self::resolved_dmi(
+            ctx.dmi_value(),
+            ctx.protection_level(),
+            ctx.inject_metadata(),
+        );
         let metadata = self.generate_poison_metadata(
             ctx.dmi_value(),
             ctx.protection_level(),
@@ -1042,17 +1064,13 @@ impl MetadataTrapProtector {
         let seed = Some(ctx.seed());
         let with_metadata = match format {
             ImageOutputFormat::Png => {
-                self.inject_text_chunks_png(img_bytes, &metadata, ctx.dmi_value(), seed)?
+                self.inject_text_chunks_png(img_bytes, &metadata, dmi, seed)?
             }
-            ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg(
-                img_bytes,
-                &metadata,
-                ctx.dmi_value(),
-                seed,
-                Some(ctx),
-            )?,
+            ImageOutputFormat::Jpeg => {
+                self.inject_text_chunks_jpeg(img_bytes, &metadata, dmi, seed, Some(ctx))?
+            }
             ImageOutputFormat::WebP => {
-                self.inject_text_chunks_webp(img_bytes, &metadata, ctx.dmi_value(), seed)?
+                self.inject_text_chunks_webp(img_bytes, &metadata, dmi, seed)?
             }
         };
 
@@ -1916,6 +1934,31 @@ mod tests {
         assert_eq!(
             MetadataTrapProtector::extract_seed_from_image(&injected),
             Some(42)
+        );
+    }
+
+    #[test]
+    fn jpeg_auto_dmi_injects_standard_markers() {
+        let protector = MetadataTrapProtector::new();
+        let img = make_test_image();
+        let jpeg = encode_jpeg(&img);
+        let mut ctx =
+            ProtectionContext::new(0.5, 42).with_format(crate::types::ImageOutputFormat::Jpeg);
+        ctx.set_protection_level(ProtectionLevel::Standard);
+
+        let injected = protector.inject_bytes(&jpeg, &ctx).unwrap();
+
+        assert!(
+            injected.windows(6).any(|w| w == b"Exif\x00\x00"),
+            "auto DMI should create EXIF metadata"
+        );
+        assert!(
+            injected.windows(14).any(|w| w == b"Photoshop 3.0\x00"),
+            "auto DMI should create IPTC metadata"
+        );
+        assert!(
+            injected.windows(15).any(|w| w == b"tdm:reserve_tdm"),
+            "auto DMI should create XMP/TDM metadata"
         );
     }
 

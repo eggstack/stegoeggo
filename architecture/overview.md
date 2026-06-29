@@ -51,10 +51,10 @@
 | Level | Perturbation | Stego | Metadata | Use Case |
 |-------|--------------|-------|----------|----------|
 | `Disabled` | None | None | None | Testing, passthrough |
-| `Light` | None | None | Seed + DMI | Minimal overhead |
+| `Light` | Minimal seed marker | Q-table seed (JPEG) or LSB redundancy=1 (PNG/WebP) | Seed + DMI | Minimal overhead |
 | `Standard` | Noise | LSB/DCT | Seed + DMI | General protection |
 
-Each level above `Disabled` activates metadata injection. Steganography (LSB or DCT) is applied for Standard. Light level only applies metadata injection without steganography.
+Each level above `Disabled` activates metadata injection. `Light` adds the cheapest recoverable seed marker for the output format. `Standard` applies the full LSB or DCT payload.
 
 ## Data Flow
 
@@ -68,7 +68,7 @@ ProtectionPipeline::process()
        │
        ├── [Disabled] → PassthroughProtector::apply() → return Cow::Borrowed
        │
-       ├── [Light]   → encode → MetadataTrapProtector::inject_bytes() → decode → return Cow::Owned
+       ├── [Light]   → minimal stego → encode → MetadataTrapProtector::inject_bytes() → decode → return Cow::Owned
        │
        └── [Standard]
               │
@@ -95,7 +95,7 @@ ProtectionPipeline::process_bytes()
        │
        ├── [Disabled] → return bytes.clone()
        │
-       ├── [Light]    → MetadataTrapProtector::apply_bytes() → return Vec<u8>
+       ├── [Light]    → preserve/convert format → minimal stego → MetadataTrapProtector::apply_bytes() → return Vec<u8>
        │
        └── [Standard]
               │
