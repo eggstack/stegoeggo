@@ -1,6 +1,6 @@
 # Metadata Trap Protector
 
-**Source:** `src/protected/metadata_trap.rs` (~1283 lines)
+**Source:** `src/protected/metadata_trap.rs` (~2026 lines)
 
 The largest module. Injects metadata into image files for the `Light` protection level. Operates at the byte level — the `DynamicImage` API cannot preserve injected text chunks through encode/decode cycles. Estimated latency: 2ms.
 

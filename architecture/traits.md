@@ -1,6 +1,6 @@
 # Traits
 
-**Source:** `src/traits.rs` (~154 lines)
+**Source:** `src/traits.rs` (~106 lines)
 
 Defines the core trait contracts that all protectors implement.
 

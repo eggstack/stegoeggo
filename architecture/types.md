@@ -1,6 +1,6 @@
 # Core Types
 
-**Source:** `src/types.rs` (~668 lines)
+**Source:** `src/types.rs` (~1297 lines)
 
 Defines all core data structures used across the codebase. Uses builder pattern with `#[must_use]` on builder methods.
 
@@ -73,9 +73,12 @@ ProtectionContext::new(intensity, seed)  // intensity clamped to [0.0, 1.0]
 | `max_dimension` | `Option<u32>` | None | Resize constraint |
 | `inject_metadata` | `Option<bool>` | None | Enable metadata injection |
 | `inject_legal_claims` | `Option<bool>` | None | Enable legal metadata |
-| `stego_redundancy` | `usize` | 2 | Stego passes (1–5) |
+| `stego_redundancy` | `Option<usize>` | None | Stego passes (1–10). Default derived from intensity: <0.3→1, 0.3-0.7→2, >=0.7→3 |
 | `jpeg_quality` | `u8` | 90 | JPEG encoding quality |
 | `progressive_jpeg` | `bool` | false | Progressive JPEG encoding |
+| `tile_size` | `Option<u32>` | None | Crop-resistant tile size (32..=1024). None/0 = disabled |
+| `tile_extraction_max_origins` | `u32` | 64 | Max candidate tile origins for extraction |
+| `content_hash` | `Option<[u8; 4]>` | None | Truncated content hash for provenance tracking (v2 payloads) |
 | `config` | `Option<Arc<ProtectionConfig>>` | None | `#[serde(skip)]` — MAC key + legal metadata |
 
 **Note:** `None` for `inject_metadata`/`inject_legal_claims` means "use level default" (enabled for Standard). Explicit `false` disables injection.
@@ -97,10 +100,12 @@ Shared heavy configuration wrapped in `Arc`:
 
 ```rust
 pub struct ProtectionConfig {
-    pub mac_key: Option<Vec<u8>>,
-    pub legal_metadata: Option<LegalMetadata>,
+    mac_key: Option<Vec<u8>>,
+    legal_metadata: Option<LegalMetadata>,
 }
 ```
+
+All fields are private — use builder methods (`with_mac_key`, `with_legal_metadata`) and getters (`mac_key()`, `legal_metadata()`).
 
 ## LegalMetadata
 

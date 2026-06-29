@@ -1,6 +1,6 @@
 # Passthrough Protector
 
-**Source:** `src/protected/passthrough.rs` (~94 lines)
+**Source:** `src/protected/passthrough.rs` (~91 lines)
 
 No-op protector for the `Disabled` protection level.
 

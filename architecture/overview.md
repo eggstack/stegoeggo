@@ -134,7 +134,9 @@ src/
 │   ├── constants.rs           Tuning constants (STEGO_*)
 │   ├── passthrough.rs        No-op for Disabled level
 │   ├── metadata_trap.rs      Metadata injection (tEXt/COM/XMP markers, seed, DMI)
-│   └── steganography.rs       LSB embedding (PNG/WebP) + DCT F5 (JPEG)
+│   ├── steganography.rs       LSB embedding (PNG/WebP) + DCT F5 (JPEG)
+│   ├── ecc.rs                3× repetition ECC with majority voting
+│   └── stego_cost.rs         Pixel embedding cost computation (Laplacian, fuzz-only)
 │
 ├── jpeg_transcoder/           JPEG-specific DCT coefficient processing
 │   ├── mod.rs                JpegTranscoder (decode/encode_coefficients, assemble_jpeg)
@@ -226,7 +228,7 @@ static DEFAULT_PIPELINE: LazyLock<ProtectionPipeline> = LazyLock::new(Protection
 
 - 24-byte header + 4-byte CRC32 checksum = 28 bytes minimum (`MIN_PAYLOAD_SIZE`)
 - With HMAC key: 24-byte header + 8-byte HMAC = 32 bytes total
-- Non-MAC mode produces 76-byte ECC-encoded payload (24 bytes × 3 replication + 4 CRC32)
+- Non-MAC mode produces 100-byte ECC-encoded payload (32 bytes V2 header × 3 replication + 4 CRC32)
 
 ### Metadata Injection Semantics
 

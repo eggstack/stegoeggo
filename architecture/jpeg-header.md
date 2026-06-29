@@ -1,6 +1,6 @@
 # JPEG Header Parser
 
-**Source:** `src/jpeg_transcoder/header.rs` (~513 lines)
+**Source:** `src/jpeg_transcoder/header.rs` (~642 lines)
 
 Parses JPEG file headers to extract quantization tables, Huffman tables, component definitions, and structural metadata.
 

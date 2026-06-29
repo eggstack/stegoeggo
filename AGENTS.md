@@ -126,7 +126,7 @@ Run with: `cargo +nightly fuzz run <target> -- -max_total_time=60`
 - **Spread spectrum LSB**: Each payload bit embedded across `STEGO_SPREAD_FACTOR` (=5) adjacent pixels via majority voting
 - **Large-magnitude DCT coefficient preference**: F5 sorts non-zero AC coefficients by |magnitude| descending before shuffling
 - **F5 redundancy cap**: Max redundancy is 10. Extraction tries all 10 values
-- **Payload version migration**: Current version is 1. To add v2: bump `CURRENT_PAYLOAD_VERSION`, add to `SUPPORTED_PAYLOAD_VERSIONS`, add `parse_stego_payload_v2` arm
+- **Payload version migration**: Current version is 2. V1 (24-byte) still supported for extraction. To add v3: bump `CURRENT_PAYLOAD_VERSION`, add to `SUPPORTED_PAYLOAD_VERSIONS`, add `parse_stego_payload_v3` arm
 - **CLI file path**: CLI binary lives at `stegoeggo-cli/src/main.rs`, not `src/bin/`
 - **CLI batch filename collisions**: Duplicate output stems get `_protected_1`, `_protected_2`, etc.
 - **Tiled steganography** (`with_tile_size(n)`): Crop-resistant mode. Embeds full payload per tile. Tiled F5 limited to tile-aligned crops without re-encode. `tile_seed(master_seed, tile_x, tile_y)` uses splitmix64. Tiled paths are verification fallbacks

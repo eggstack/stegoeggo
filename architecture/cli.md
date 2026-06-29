@@ -1,6 +1,6 @@
 # CLI Tool
 
-**Source:** `stegoeggo-cli/src/main.rs` (~545 lines)
+**Source:** `stegoeggo-cli/src/main.rs` (~623 lines)
 
 Command-line interface for `stegoeggo`. Built with `clap` 4 (derive).
 

@@ -1,6 +1,6 @@
 # Pipeline & Public API
 
-**Source:** `src/lib.rs` (~745 lines)
+**Source:** `src/lib.rs` (~1189 lines)
 
 The pipeline is the central orchestration layer. It selects and composes protectors based on the requested `ProtectionLevel`, handles format routing (JPEG fast path vs pixel path), and provides both sync and parallel entry points.
 
@@ -53,7 +53,7 @@ Free functions that use a `LazyLock<ProtectionPipeline>` singleton:
 - `process_images_parallel(images, level, &ctx)` — Rayon parallel batch
 - `process_images_bytes_parallel(images, level, &ctx)` — Parallel batch, byte path
 - `process_image_bytes_with_warnings(bytes, level, &ctx) -> (Vec<u8>, Vec<ProtectionWarning>)` — Recommended reverse-proxy API. Keeps processing byte-oriented and returns advisory/degradation warnings for proxy policy/logging.
-- `verify_image_bytes(bytes, mac_key) -> Option<bool>` — Free function (not a pipeline method). Checks DCT stego first, then metadata seed extraction, then falls back to LSB stego payload extraction for non-JPEG formats. Uses HMAC key via `verify_payload_integrity`.
+- `verify_image_bytes(bytes, mac_key) -> VerificationStatus` — Free function (not a pipeline method). Checks DCT stego first, then metadata seed extraction, then falls back to LSB stego payload extraction for non-JPEG formats. Returns `VerificationStatus` (`Verified`, `Invalid`, `NotFound`).
 - `verify_image_bytes_detailed(bytes, mac_key) -> VerificationResult` — Distinguishes verified payloads from metadata-only evidence.
 
 ## Dimension Validation

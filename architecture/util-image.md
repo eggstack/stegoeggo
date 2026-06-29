@@ -1,6 +1,6 @@
 # Image Utilities
 
-**Source:** `src/util/image.rs` (~221 lines)
+**Source:** `src/util/image.rs` (~210 lines)
 
 Core image processing utilities: PRNG, encoding, hashing, and format detection.
 

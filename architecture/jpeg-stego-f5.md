@@ -1,6 +1,6 @@
 # F5 DCT Steganography
 
-**Source:** `src/jpeg_transcoder/stego_f5.rs` (~658 lines)
+**Source:** `src/jpeg_transcoder/stego_f5.rs` (~1020 lines)
 
 F5-style steganographic embedding in JPEG DCT coefficients. The most sophisticated protection layer.
 

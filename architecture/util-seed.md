@@ -1,6 +1,6 @@
 # Seed Generation
 
-**Source:** `src/util/seed.rs` (~48 lines)
+**Source:** `src/util/seed.rs` (~43 lines)
 
 CSPRNG-backed random seed generation. Used to derive a fresh `u64` seed for `ProtectionContext::default()` and any other call site that needs an unpredictable per-instance seed.
 

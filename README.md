@@ -413,7 +413,7 @@ Protected: Yes
 Level: standard (id: 2)
 Seed: 1234567890
 Intensity: 0.50
-Version: 1
+Version: 2
 
 # Unprotected image
 Protected: No

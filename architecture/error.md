@@ -1,6 +1,6 @@
 # Error Types
 
-**Source:** `src/error.rs` (~69 lines)
+**Source:** `src/error.rs` (~230 lines)
 
 Uses `thiserror` for ergonomic error derivation.
 
@@ -21,6 +21,7 @@ pub enum Error {
     ImageTruncated(String),
     PayloadVerification(String),
     Crypto(String),
+    Iscc(String),
     #[cfg(feature = "async")]
     Task(String),
 }
@@ -42,6 +43,7 @@ pub enum Error {
 | `ImageTruncated` | Pipeline | Image data was truncated |
 | `PayloadVerification` | `SteganographyProtector` | HMAC/checksum verification failed |
 | `Crypto` | `SteganographyProtector` | Cryptographic operation failures |
+| `Iscc` | `util/iscc.rs` | ISCC content identifier generation failures |
 | `Task` | `async_api` | Tokio task join errors (async feature only) |
 
 ## Result Type

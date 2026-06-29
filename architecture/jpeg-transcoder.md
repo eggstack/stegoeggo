@@ -1,6 +1,6 @@
 # JPEG Transcoder
 
-**Source:** `src/jpeg_transcoder/mod.rs` (~325 lines)
+**Source:** `src/jpeg_transcoder/mod.rs` (~359 lines)
 
 JPEG-specific processing pipeline that operates directly on DCT coefficients, bypassing pixel decode/encode cycles. This is the core of the JPEG fast path.
 

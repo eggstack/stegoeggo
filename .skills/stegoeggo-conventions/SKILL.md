@@ -3,7 +3,7 @@ name: stegoeggo-conventions
 description: Use when writing, modifying, or reviewing Rust code in the stegoeggo codebase. Triggers on tasks like "write tests", "add feature", "fix bug", "refactor", or any code change in src/. Covers code style, patterns, and pitfalls specific to this project.
 ---
 
-# Cloakrs Code Conventions
+# Stegoeggo Code Conventions
 
 ## Formatting
 - Rustfmt: 4-space indentation, max width 100
@@ -54,20 +54,20 @@ fn get_scan_data_start(...) -> Option<usize>
 ```
 
 ## Constants
-- `MIN_PAYLOAD_SIZE = 26` (not 32 — 32 is the padded output size)
-- `MIN_PAYLOAD_BITS = 208` (not 256)
-- `SIN_TABLE_SIZE = 1024` (not 256)
+- `MIN_PAYLOAD_SIZE = 28` (24-byte header + 4-byte CRC32; parsing threshold, not output size)
+- `CURRENT_PAYLOAD_VERSION = 2` (V2 header is 32 bytes; V1 is 24 bytes, still supported for extraction)
+- `STEGO_SPREAD_FACTOR = 5` (adjacent pixels per LSB bit)
 - `estimated_latency_ms()` returns `u32` (not `f64`)
 
 ## Common Pitfalls
 
 1. **Two XorShiftRng implementations** — `XorShiftRng` in `util/image.rs` and `F5XorShiftRng` in `stego_f5.rs` use different algorithms. Never interchange.
 2. **Metadata injection survives only in byte paths** — `MetadataTrapProtector::apply()` returns `Cow::Borrowed` unchanged. Use `apply_bytes()` or `process_bytes()` for metadata.
-3. **`is_enabled()` is dead code** — defined in trait, never called by pipeline. `PassthroughProtector` returns `true` (not `false`).
-4. **Stego seed derivation** — embed/extract functions internally derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)`. Match seeds when calling directly.
-5. **`subtle` crate** — use `ConstantTimeEq::ct_eq()` for HMAC verification, not `==`
-6. **F5 seed embedding** — Precondition check fails if any quantization value < 2. Values of 1 cannot represent 0-bits reliably. Use values >= 2.
-7. **ISCC is not standard-compliant** — uses custom component codes (`0x12`, `0x33`), not interoperable with other ISCC implementations.
+3. **Stego seed derivation** — embed/extract functions internally derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)`. Match seeds when calling directly.
+4. **`subtle` crate** — use `ConstantTimeEq::ct_eq()` for HMAC verification, not `==`
+5. **F5 seed embedding** — Precondition check fails if any quantization value < 2. Values of 1 cannot represent 0-bits reliably. Use values >= 2.
+6. **ISCC is not standard-compliant** — uses custom component codes (`0x12`, `0x33`), not interoperable with other ISCC implementations.
+7. **V2 payload format** — 32-byte header (version, level, seed, intensity, timestamp, content_hash, dmi, flags, reserved). V1 (24-byte) still supported for extraction. MAC payloads: 40 bytes (32 header + 8 HMAC). ECC payloads: 100 bytes (32 × 3 + 4 CRC32).
 
 ## Build & Test
 ```bash

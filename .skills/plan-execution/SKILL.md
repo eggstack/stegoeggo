@@ -125,4 +125,4 @@ When done, report back with: what you changed, test results, and any issues enco
 
 ## Completed Plan Reference
 
-The plan in `plans/plan.md` was completed on 2026-05-30. All 11 items across 5 waves were implemented and verified. See `plans/plan.md` for the implementation summary.
+The plan in `plans/plan.md` was completed on 2026-05-30. All 11 items across 5 waves were implemented and verified. This workflow remains applicable for future multi-wave plans.

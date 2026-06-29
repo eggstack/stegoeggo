@@ -1,23 +1,45 @@
 # Steganography Protector
 
-**Source:** `src/protected/steganography.rs` (~1915 lines)
+**Source:** `src/protected/steganography.rs` (~3303 lines)
 
 The most complex module. Handles LSB and DCT-based steganographic embedding for payload storage and verification.
 
 ## Payload Format
 
+### V2 Header (32 bytes, current)
+
 ```
 Offset  Size  Field
-0       1     Version (currently 1)
+0       1     Version (=2)
+1       1     ProtectionLevel byte (0/1/2)
+2       8     Seed (u64, little-endian)
+10      2     Intensity (u16, scaled f32 * 100.0)
+12      8     Timestamp (u64, seconds since Unix epoch)
+20      4     Content hash (truncated ISCC or SHA-256)
+24      1     DMI value byte
+25      1     Flags byte (reserved)
+26      6     Reserved (zeroed)
+```
+
+### V1 Header (24 bytes, legacy, still supported for extraction)
+
+```
+Offset  Size  Field
+0       1     Version (=1)
 1       1     ProtectionLevel byte
 2       8     Seed (u64, little-endian)
 10      2     Intensity (u16, scaled f32)
 12      8     Timestamp (u64, seconds since epoch)
-20      4     CRC32 checksum (without MAC key, no ECC)
-20      8     HMAC-SHA256 first 8 bytes (with MAC key)
+20      4     CRC32 checksum (or 8-byte HMAC with MAC key)
 ```
 
-Without a MAC key, the payload uses a 4-byte CRC32 checksum. With a MAC key, the 8 trailing bytes are a truncated HMAC-SHA256. `MIN_PAYLOAD_SIZE = 28` (24-byte header + 4-byte CRC32), `MIN_PAYLOAD_BITS = 224`. In non-MAC mode, `generate_payload()` produces an ECC-encoded payload of 76 bytes (24 bytes × 3 replication + 4 CRC32). In MAC mode, the payload is 32 bytes (24 header + 8 HMAC).
+### Payload Sizes
+
+- **MAC mode**: 32-byte V2 header + 8-byte HMAC-SHA256 = 40 bytes total
+- **ECC mode (no MAC)**: 32 bytes × 3 (ECC replication) + 4 CRC32 = 100 bytes
+- **`MIN_PAYLOAD_SIZE = 28`**: Parsing threshold (24-byte V1 header + 4-byte CRC32), not the output size
+
+Constants: `ECC_PAYLOAD_SIZE_V2 = 100`, `ECC_PAYLOAD_BITS_V2 = 800`. Legacy V1: `ECC_PAYLOAD_SIZE_V1 = 76`, `ECC_PAYLOAD_BITS = 608`.
 
 ## StegoPayload (Extracted)
 

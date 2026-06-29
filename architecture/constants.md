@@ -1,6 +1,6 @@
 # Constants
 
-**Source:** `src/protected/constants.rs` (~24 lines)
+**Source:** `src/protected/constants.rs` (~13 lines)
 
 Tuning constants used across the protection modules.
 
@@ -11,7 +11,7 @@ Tuning constants used across the protection modules.
 | `STEGO_OFFSET_SEED_1` | `0x517cc1b727220a95` | `steganography.rs` | Multiplicative offset for stego pixel selection |
 | `STEGO_SPREAD_FACTOR` | `5` | `steganography.rs` | Number of adjacent pixels each LSB bit is spread across |
 | `XORSHIFT_SEED_OFFSET` | `0x123456789ABCDEF0` | `util/image.rs` | XOR offset for XorShiftRng initialization |
-| `SPLITMIX64_SEED` | `0x9e3779b97f4a7c15` | `util/seed.rs` | Splitmix64 mixing constant |
+| `SPLITMIX64_SEED` | `0x9e3779b97f4a7c15` | `steganography.rs`, `util/seed.rs` | Splitmix64 mixing constant |
 
 ## Design Notes
 
