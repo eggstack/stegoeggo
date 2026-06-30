@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Reject JPEG encoding when image dimensions exceed the encoder's 16-bit JPEG limits instead of silently truncating width or height.
 - Report LSB capacity warnings from the effective payload size, including the shorter MAC-protected payload form.
+- Return the first warning from `process_image_bytes_with_info()` instead of filtering out non-progressive advisories.
+- Keep `Disabled` byte processing as a byte-for-byte no-op, even for unrecognized input bytes.
+- Return JPEG entropy transcoder errors instead of panicking on missing pre-built Huffman tables.
 
 ### Changed
 - Reduced duplicated byte API format/context setup and centralized JPEG encoding.

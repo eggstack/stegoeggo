@@ -1030,7 +1030,9 @@ impl From<VerificationStatus> for Option<bool> {
 /// Warning about degraded protection during image processing.
 ///
 /// Returned by [`process_image_bytes_with_info`](crate::process_image_bytes_with_info)
-/// when the protection was applied but with reduced effectiveness.
+/// and [`process_image_bytes_with_warnings`](crate::process_image_bytes_with_warnings)
+/// when protection was applied with reduced effectiveness or with an advisory
+/// configuration.
 /// For legal defense use cases, callers should check for warnings to understand
 /// what level of protection was actually applied.
 #[derive(Debug, Clone, PartialEq, Eq)]

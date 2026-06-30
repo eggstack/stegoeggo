@@ -381,17 +381,16 @@ impl ProtectionPipeline {
         level: ProtectionLevel,
         ctx: &ProtectionContext,
     ) -> Result<Vec<u8>> {
-        let mut ctx_with_level = ctx.clone();
-        ctx_with_level.set_protection_level(level);
+        if level == ProtectionLevel::Disabled {
+            return Ok(img_bytes.to_vec());
+        }
+
+        let (ctx_with_level, input_format, output_format) =
+            Self::context_for_bytes(img_bytes, level, ctx)?;
 
         match level {
-            ProtectionLevel::Disabled => Ok(img_bytes.to_vec()),
+            ProtectionLevel::Disabled => unreachable!("disabled level returned above"),
             ProtectionLevel::Light => {
-                let input_format = Self::input_format_from_bytes(img_bytes, &ctx_with_level)?;
-                if ctx_with_level.input_format().is_none() {
-                    ctx_with_level.set_input_format(input_format);
-                }
-                let output_format = Self::output_format_for_bytes(&ctx_with_level, input_format);
                 self.validate_input_dimensions_for_bytes(
                     img_bytes,
                     input_format,
@@ -404,7 +403,12 @@ impl ProtectionPipeline {
                     &ctx_with_level,
                 )
             }
-            ProtectionLevel::Standard => self.apply_bytes_pipeline(img_bytes, &ctx_with_level),
+            ProtectionLevel::Standard => self.apply_bytes_pipeline_resolved(
+                img_bytes,
+                input_format,
+                output_format,
+                &ctx_with_level,
+            ),
         }
     }
 
@@ -422,6 +426,27 @@ impl ProtectionPipeline {
         input_format: crate::types::ImageOutputFormat,
     ) -> crate::types::ImageOutputFormat {
         ctx.output_format().unwrap_or(input_format)
+    }
+
+    fn context_for_bytes(
+        img_bytes: &[u8],
+        level: ProtectionLevel,
+        ctx: &ProtectionContext,
+    ) -> Result<(
+        ProtectionContext,
+        crate::types::ImageOutputFormat,
+        crate::types::ImageOutputFormat,
+    )> {
+        let mut ctx_with_level = ctx.clone();
+        ctx_with_level.set_protection_level(level);
+
+        let input_format = Self::input_format_from_bytes(img_bytes, &ctx_with_level)?;
+        if ctx_with_level.input_format().is_none() {
+            ctx_with_level.set_input_format(input_format);
+        }
+        let output_format = Self::output_format_for_bytes(&ctx_with_level, input_format);
+
+        Ok((ctx_with_level, input_format, output_format))
     }
 
     fn validate_jpeg_dimensions_from_bytes(img_bytes: &[u8], max_dim: Option<u32>) -> Result<()> {
@@ -493,10 +518,13 @@ impl ProtectionPipeline {
         self.metadata_trap.apply_bytes(&encoded, ctx)
     }
 
-    fn apply_bytes_pipeline(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
-        let input_format = Self::input_format_from_bytes(img_bytes, ctx)?;
-        let output_format = Self::output_format_for_bytes(ctx, input_format);
-
+    fn apply_bytes_pipeline_resolved(
+        &self,
+        img_bytes: &[u8],
+        input_format: crate::types::ImageOutputFormat,
+        output_format: crate::types::ImageOutputFormat,
+        ctx: &ProtectionContext,
+    ) -> Result<Vec<u8>> {
         // JPEG-in, JPEG-out: byte-only path (DCT stego + metadata, no pixel decode).
         // This preserves quality and avoids lossy re-encode cycles.
         if input_format == crate::types::ImageOutputFormat::Jpeg
@@ -615,7 +643,8 @@ pub fn process_images_bytes_parallel(
 /// Process image bytes with the specified protection level.
 ///
 /// Automatically detects the input format from magic bytes and preserves
-/// the output format. Returns the protected image as bytes.
+/// the output format. Returns the protected image as bytes. `Disabled`
+/// protection is a byte-for-byte no-op and does not require format detection.
 ///
 /// For JPEG-in/JPEG-out, this function takes a byte-only fast path that
 /// operates on DCT coefficients directly, avoiding pixel decode/encode cycles.
@@ -633,7 +662,8 @@ pub fn process_images_bytes_parallel(
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidFormat`] if the image format cannot be determined.
+/// Returns [`Error::InvalidFormat`] if the image format cannot be determined
+/// for `Light` or `Standard` protection.
 /// Returns [`Error::ImageDecode`], [`Error::ImageEncode`], or
 /// [`Error::Steganography`] if processing fails.
 #[must_use = "the protected image bytes should be saved or used"]
@@ -642,9 +672,7 @@ pub fn process_image_bytes(
     level: ProtectionLevel,
     ctx: &ProtectionContext,
 ) -> Result<Vec<u8>> {
-    let (ctx_with_format, _) = context_with_detected_format(img_bytes, ctx)?;
-
-    DEFAULT_PIPELINE.process_bytes(img_bytes, level, &ctx_with_format)
+    DEFAULT_PIPELINE.process_bytes(img_bytes, level, ctx)
 }
 
 /// Process image bytes with protection level and return warnings about
@@ -685,9 +713,7 @@ pub fn process_image_bytes_with_info(
     ctx: &ProtectionContext,
 ) -> Result<(Vec<u8>, Option<ProtectionWarning>)> {
     let (bytes, warnings) = process_image_bytes_with_warnings(img_bytes, level, ctx)?;
-    let warning = warnings
-        .into_iter()
-        .find(|w| matches!(w, ProtectionWarning::ProgressiveJpegFallback));
+    let warning = warnings.into_iter().next();
     Ok((bytes, warning))
 }
 
@@ -712,6 +738,11 @@ pub fn process_image_bytes_with_warnings(
     level: ProtectionLevel,
     ctx: &ProtectionContext,
 ) -> Result<(Vec<u8>, Vec<ProtectionWarning>)> {
+    if level == ProtectionLevel::Disabled {
+        let result = DEFAULT_PIPELINE.process_bytes(img_bytes, level, ctx)?;
+        return Ok((result, Vec::new()));
+    }
+
     let (ctx_with_format, format) = context_with_detected_format(img_bytes, ctx)?;
 
     let mut warnings = Vec::new();
@@ -945,6 +976,28 @@ mod tests {
             &ProtectionContext::default(),
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn disabled_process_image_bytes_is_byte_for_byte_noop() {
+        let input = b"not an image";
+        let ctx = ProtectionContext::default();
+
+        let result = process_image_bytes(input, ProtectionLevel::Disabled, &ctx).unwrap();
+
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn disabled_process_image_bytes_with_warnings_is_byte_for_byte_noop() {
+        let input = b"not an image";
+        let ctx = ProtectionContext::default().with_metadata_injection(false);
+
+        let (result, warnings) =
+            process_image_bytes_with_warnings(input, ProtectionLevel::Disabled, &ctx).unwrap();
+
+        assert_eq!(result, input);
+        assert!(warnings.is_empty());
     }
 
     #[test]

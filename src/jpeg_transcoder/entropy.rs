@@ -318,12 +318,24 @@ impl CoefficientDecoder {
             for mcu_x in 0..mcus_per_row {
                 // Process each component
                 for comp in &self.header.components {
-                    let dc_decoder = dc_decoders[comp.dc_table_id as usize]
-                        .as_ref()
-                        .expect("DC decoder pre-built above");
-                    let ac_decoder = ac_decoders[comp.ac_table_id as usize]
-                        .as_ref()
-                        .expect("AC decoder pre-built above");
+                    let dc_decoder =
+                        dc_decoders[comp.dc_table_id as usize]
+                            .as_ref()
+                            .ok_or_else(|| {
+                                TranscoderError::HuffmanDecode(format!(
+                                    "Missing pre-built DC decoder table {}",
+                                    comp.dc_table_id
+                                ))
+                            })?;
+                    let ac_decoder =
+                        ac_decoders[comp.ac_table_id as usize]
+                            .as_ref()
+                            .ok_or_else(|| {
+                                TranscoderError::HuffmanDecode(format!(
+                                    "Missing pre-built AC decoder table {}",
+                                    comp.ac_table_id
+                                ))
+                            })?;
 
                     // Number of blocks for this component in the MCU
                     for by in 0..comp.v_sampling {
@@ -550,17 +562,25 @@ impl CoefficientEncoder {
                 for comp in &self.header.components {
                     let dc_enc = dc_enc_tables[comp.dc_table_id as usize]
                         .as_ref()
-                        .expect("DC encoder table pre-built above");
+                        .ok_or_else(|| {
+                            TranscoderError::HuffmanEncode(format!(
+                                "Missing pre-built DC encoder table {}",
+                                comp.dc_table_id
+                            ))
+                        })?;
                     let ac_enc = ac_enc_tables[comp.ac_table_id as usize]
                         .as_ref()
-                        .expect("AC encoder table pre-built above");
+                        .ok_or_else(|| {
+                            TranscoderError::HuffmanEncode(format!(
+                                "Missing pre-built AC encoder table {}",
+                                comp.ac_table_id
+                            ))
+                        })?;
 
                     // Get blocks for this component
-                    let comp_blocks = coefficients.get(&comp.component_id);
-                    if comp_blocks.is_none() {
+                    let Some(blocks) = coefficients.get(&comp.component_id) else {
                         continue;
-                    }
-                    let blocks = comp_blocks.unwrap();
+                    };
 
                     // Number of blocks for this component in the MCU
                     for by in 0..comp.v_sampling {

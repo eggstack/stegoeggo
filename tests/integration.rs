@@ -1273,7 +1273,8 @@ mod progressive_jpeg_warning {
 
         let ctx = ProtectionContext::new(0.5, 42)
             .with_format(ImageOutputFormat::Jpeg)
-            .with_progressive_jpeg(true);
+            .with_progressive_jpeg(true)
+            .with_mac_key(b"shared-test-key".to_vec());
 
         let (protected, warning) =
             process_image_bytes_with_info(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -1287,16 +1288,22 @@ mod progressive_jpeg_warning {
     }
 
     #[test]
-    fn test_baseline_jpeg_no_warning() {
+    fn test_baseline_jpeg_warns_about_reencode_fragility() {
         let img = create_test_image(64, 64);
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
 
-        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_mac_key(b"shared-test-key".to_vec());
 
         let (_, warning) =
             process_image_bytes_with_info(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
-        assert_eq!(warning, None, "Baseline JPEG should not produce warning");
+        assert_eq!(
+            warning,
+            Some(ProtectionWarning::JpegReencodeFragile),
+            "Baseline JPEG output should warn about downstream re-encode fragility"
+        );
     }
 
     #[test]
@@ -1304,7 +1311,9 @@ mod progressive_jpeg_warning {
         let img = create_test_image(64, 64);
         let png_bytes = image_to_png_bytes(&img);
 
-        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Png);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_mac_key(b"shared-test-key".to_vec());
 
         let (_, warning) =
             process_image_bytes_with_info(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
@@ -1313,20 +1322,22 @@ mod progressive_jpeg_warning {
     }
 
     #[test]
-    fn test_light_level_no_warning_even_for_progressive() {
+    fn test_light_level_warns_only_about_jpeg_fragility_for_progressive() {
         let img = create_test_image(64, 64);
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
 
         let ctx = ProtectionContext::new(0.5, 42)
             .with_format(ImageOutputFormat::Jpeg)
-            .with_progressive_jpeg(true);
+            .with_progressive_jpeg(true)
+            .with_mac_key(b"shared-test-key".to_vec());
 
         let (_, warning) =
             process_image_bytes_with_info(&jpeg_bytes, ProtectionLevel::Light, &ctx).unwrap();
 
         assert_eq!(
-            warning, None,
-            "Light level should not warn about progressive JPEG (no DCT stego attempted)"
+            warning,
+            Some(ProtectionWarning::JpegReencodeFragile),
+            "Light level should not warn about progressive fallback because no DCT stego is attempted"
         );
     }
 
