@@ -1348,4 +1348,27 @@ mod progressive_jpeg_warning {
         assert!(warnings.contains(&ProtectionWarning::ProgressiveJpegFallback));
         assert!(warnings.contains(&ProtectionWarning::JpegReencodeFragile));
     }
+
+    #[test]
+    fn test_lsb_capacity_warning_uses_effective_payload_size() {
+        let img = create_test_image(30, 30);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let ctx_without_mac = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Png);
+        let (_, warnings_without_mac) = process_image_bytes_with_warnings(
+            &png_bytes,
+            ProtectionLevel::Standard,
+            &ctx_without_mac,
+        )
+        .unwrap();
+        assert!(warnings_without_mac.contains(&ProtectionWarning::LsbCapacitySkipped));
+
+        let ctx_with_mac = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_mac_key(b"shared-test-key".to_vec());
+        let (_, warnings_with_mac) =
+            process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Standard, &ctx_with_mac)
+                .unwrap();
+        assert!(!warnings_with_mac.contains(&ProtectionWarning::LsbCapacitySkipped));
+    }
 }

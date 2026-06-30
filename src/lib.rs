@@ -291,11 +291,7 @@ impl ProtectionPipeline {
         img: &DynamicImage,
         ctx: &ProtectionContext,
     ) -> Result<DynamicImage> {
-        let output_format = ctx
-            .output_format()
-            .or(ctx.input_format())
-            .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
-
+        let output_format = resolved_output_format(ctx);
         let final_bytes = self.apply_pipeline_bytes(img, ctx, output_format)?;
         Ok(image::load_from_memory(&final_bytes)?)
     }
@@ -342,10 +338,7 @@ impl ProtectionPipeline {
         img: &DynamicImage,
         ctx: &ProtectionContext,
     ) -> Result<DynamicImage> {
-        let output_format = ctx
-            .output_format()
-            .or(ctx.input_format())
-            .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
+        let output_format = resolved_output_format(ctx);
 
         match output_format {
             crate::types::ImageOutputFormat::Jpeg => {
@@ -649,16 +642,7 @@ pub fn process_image_bytes(
     level: ProtectionLevel,
     ctx: &ProtectionContext,
 ) -> Result<Vec<u8>> {
-    let format = ImageOutputFormat::from_magic_bytes(img_bytes)
-        .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
-
-    let ctx_with_format = {
-        let mut ctx = ctx.clone();
-        if ctx.input_format().is_none() {
-            ctx.set_input_format(format);
-        }
-        ctx
-    };
+    let (ctx_with_format, _) = context_with_detected_format(img_bytes, ctx)?;
 
     DEFAULT_PIPELINE.process_bytes(img_bytes, level, &ctx_with_format)
 }
@@ -728,16 +712,7 @@ pub fn process_image_bytes_with_warnings(
     level: ProtectionLevel,
     ctx: &ProtectionContext,
 ) -> Result<(Vec<u8>, Vec<ProtectionWarning>)> {
-    let format = ImageOutputFormat::from_magic_bytes(img_bytes)
-        .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
-
-    let ctx_with_format = {
-        let mut ctx = ctx.clone();
-        if ctx.input_format().is_none() {
-            ctx.set_input_format(format);
-        }
-        ctx
-    };
+    let (ctx_with_format, format) = context_with_detected_format(img_bytes, ctx)?;
 
     let mut warnings = Vec::new();
     if level != ProtectionLevel::Disabled && ctx_with_format.mac_key().is_none() {
@@ -747,10 +722,7 @@ pub fn process_image_bytes_with_warnings(
         warnings.push(ProtectionWarning::MetadataInjectionDisabled);
     }
 
-    let output_format = ctx_with_format
-        .output_format()
-        .or(ctx_with_format.input_format())
-        .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+    let output_format = resolved_output_format(&ctx_with_format);
 
     // Detect progressive JPEG fallback before processing — the pipeline silently
     // falls back to Q-table seed only for progressive JPEGs. If the caller
@@ -790,11 +762,7 @@ pub fn process_image_bytes_with_warnings(
         if let Ok(img) = image::load_from_memory(img_bytes) {
             let (w, h) = img.dimensions();
             let total_pixels = (w as usize) * (h as usize);
-            // Payload: 32-byte V2 header × 3 (ECC) + 4 CRC = 100 bytes = 800 bits
-            // Required pixels: ceil(800 / 3) × STEGO_SPREAD_FACTOR(5) ≈ 1340
-            let payload_bits: usize = 800;
-            let pixels_needed =
-                payload_bits.div_ceil(3) * crate::protected::constants::STEGO_SPREAD_FACTOR;
+            let pixels_needed = SteganographyProtector::lsb_pixels_needed(&ctx_with_format);
             if total_pixels < pixels_needed {
                 warnings.push(ProtectionWarning::LsbCapacitySkipped);
             }
@@ -813,7 +781,7 @@ pub fn process_image_bytes_with_warnings(
         // skipped (Q-table seed adds only ~100 bytes, metadata adds ~500-2000 bytes).
         // A real DCT embed typically changes size noticeably due to coefficient modification.
         // Heuristic: if the output is within 10% of input size, DCT capacity was likely insufficient.
-        if size_delta * 10 < img_bytes.len() as u64 / 20 {
+        if size_delta.saturating_mul(10) < img_bytes.len() as u64 {
             // Check if this is NOT a progressive JPEG (progressive gets its own warning)
             if !is_progressive_jpeg(img_bytes) {
                 warnings.push(ProtectionWarning::DctCapacityInsufficient);
@@ -822,6 +790,27 @@ pub fn process_image_bytes_with_warnings(
     }
 
     Ok((result, warnings))
+}
+
+fn context_with_detected_format(
+    img_bytes: &[u8],
+    ctx: &ProtectionContext,
+) -> Result<(ProtectionContext, ImageOutputFormat)> {
+    let format = ImageOutputFormat::from_magic_bytes(img_bytes)
+        .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
+
+    let mut ctx_with_format = ctx.clone();
+    if ctx_with_format.input_format().is_none() {
+        ctx_with_format.set_input_format(format);
+    }
+
+    Ok((ctx_with_format, format))
+}
+
+fn resolved_output_format(ctx: &ProtectionContext) -> ImageOutputFormat {
+    ctx.output_format()
+        .or(ctx.input_format())
+        .unwrap_or(DEFAULT_OUTPUT_FORMAT)
 }
 
 /// Verify that image bytes contain a protection payload whose integrity can be proved.

@@ -6,6 +6,8 @@ use digest::Digest;
 use image::{DynamicImage, GenericImageView, ImageEncoder, ImageFormat};
 use sha2::Sha256;
 
+const MAX_JPEG_DIMENSION: u32 = u16::MAX as u32;
+
 /// XorShift64 PRNG for stego pixel selection.
 /// Not interchangeable with the DCT-specific PRNG in `jpeg_transcoder/stego_f5.rs`.
 ///
@@ -86,12 +88,15 @@ pub fn encode_image_with_quality(
     format: ImageFormat,
     quality: u8,
 ) -> Result<Vec<u8>> {
+    if format == ImageFormat::Jpeg {
+        return encode_jpeg(img, quality, false);
+    }
+
     let (width, height) = img.dimensions();
     let mut buffer = Vec::with_capacity(match format {
-        ImageFormat::Png => (width as usize) * (height as usize) * 4,
-        ImageFormat::Jpeg => (width as usize) * (height as usize) * 3 / 2,
-        ImageFormat::WebP => (width as usize) * (height as usize) * 4,
-        _ => (width as usize) * (height as usize) * 4,
+        ImageFormat::Png => initial_capacity(width, height, 4),
+        ImageFormat::WebP => initial_capacity(width, height, 4),
+        _ => initial_capacity(width, height, 4),
     });
 
     match format {
@@ -101,15 +106,6 @@ pub fn encode_image_with_quality(
             let (w, h) = rgba.dimensions();
             encoder
                 .write_image(&rgba, w, h, image::ExtendedColorType::Rgba8)
-                .map_err(|e| Error::ImageEncode(e.to_string()))?;
-        }
-        ImageFormat::Jpeg => {
-            use jpeg_encoder::{ColorType, Encoder};
-            let rgb = img.to_rgb8();
-            let (w, h) = (rgb.width(), rgb.height());
-            let encoder = Encoder::new(&mut buffer, quality);
-            encoder
-                .encode(rgb.as_raw(), w as u16, h as u16, ColorType::Rgb)
                 .map_err(|e| Error::ImageEncode(e.to_string()))?;
         }
         ImageFormat::WebP => {
@@ -133,6 +129,45 @@ pub fn encode_image_with_quality(
     Ok(buffer)
 }
 
+fn initial_capacity(width: u32, height: u32, channels: usize) -> usize {
+    (width as usize)
+        .saturating_mul(height as usize)
+        .saturating_mul(channels)
+}
+
+fn ensure_jpeg_dimensions_supported(width: u32, height: u32) -> Result<()> {
+    if width == 0 || height == 0 {
+        return Err(Error::ImageEncode(
+            "JPEG encoder requires non-zero image dimensions".to_string(),
+        ));
+    }
+    if width > MAX_JPEG_DIMENSION || height > MAX_JPEG_DIMENSION {
+        return Err(Error::ImageEncode(format!(
+            "JPEG encoder supports dimensions up to {}x{}; got {}x{}",
+            MAX_JPEG_DIMENSION, MAX_JPEG_DIMENSION, width, height
+        )));
+    }
+    Ok(())
+}
+
+fn encode_jpeg(img: &DynamicImage, quality: u8, is_progressive: bool) -> Result<Vec<u8>> {
+    use jpeg_encoder::{ColorType, Encoder};
+
+    let rgb = img.to_rgb8();
+    let (width, height) = (rgb.width(), rgb.height());
+    ensure_jpeg_dimensions_supported(width, height)?;
+
+    let mut output = Vec::with_capacity(initial_capacity(width, height, 3) / 2);
+    let mut encoder = Encoder::new(&mut output, quality);
+    if is_progressive {
+        encoder.set_progressive(true);
+    }
+    encoder
+        .encode(rgb.as_raw(), width as u16, height as u16, ColorType::Rgb)
+        .map_err(|e| Error::ImageEncode(e.to_string()))?;
+    Ok(output)
+}
+
 /// Encode an image with format selection, progressive JPEG support, and quality control.
 ///
 /// When `format` is `None`, defaults to [`DEFAULT_OUTPUT_FORMAT`](crate::types::DEFAULT_OUTPUT_FORMAT).
@@ -146,20 +181,7 @@ pub fn encode_image_with_options(
     let output_format = format.unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
 
     match output_format {
-        crate::types::ImageOutputFormat::Jpeg => {
-            use jpeg_encoder::{ColorType, Encoder};
-            let rgb = img.to_rgb8();
-            let (width, height) = (rgb.width(), rgb.height());
-            let mut output = Vec::new();
-            let mut encoder = Encoder::new(&mut output, quality);
-            if is_progressive {
-                encoder.set_progressive(true);
-            }
-            encoder
-                .encode(rgb.as_raw(), width as u16, height as u16, ColorType::Rgb)
-                .map_err(|e| Error::ImageEncode(e.to_string()))?;
-            Ok(output)
-        }
+        crate::types::ImageOutputFormat::Jpeg => encode_jpeg(img, quality, is_progressive),
         crate::types::ImageOutputFormat::Png => encode_image(img, ImageFormat::Png),
         crate::types::ImageOutputFormat::WebP => encode_image(img, ImageFormat::WebP),
     }
@@ -206,5 +228,22 @@ mod tests {
         let hash2 = compute_image_hash(&dyn_img);
 
         assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn jpeg_encoding_rejects_dimensions_that_do_not_fit_jpeg_encoder() {
+        let too_wide = DynamicImage::new_rgb8(MAX_JPEG_DIMENSION + 1, 1);
+        let err = encode_image(&too_wide, ImageFormat::Jpeg).unwrap_err();
+        assert!(err.to_string().contains("supports dimensions up to"));
+
+        let too_tall = DynamicImage::new_rgb8(1, MAX_JPEG_DIMENSION + 1);
+        let err = encode_image_with_options(
+            &too_tall,
+            Some(crate::types::ImageOutputFormat::Jpeg),
+            true,
+            90,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("supports dimensions up to"));
     }
 }

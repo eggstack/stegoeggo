@@ -24,6 +24,8 @@ include = [
     "CHANGELOG.md",
     "SECURITY.md",
     "examples/**/*.rs",
+    "tests/**/*.rs",
+    "benches/**/*.rs",
 ]
 
 [features]

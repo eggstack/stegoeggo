@@ -110,7 +110,8 @@ use stegoeggo::{process_image_bytes, ProtectionContext, ProtectionLevel};
 // Read image from file
 let img_bytes = std::fs::read("image.png").unwrap();
 
-// Process with automatic format detection
+// Process with automatic format detection. The byte API preserves the detected
+// input format unless you set `ProtectionContext::with_format(...)`.
 let ctx = ProtectionContext::default();
 let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 ```
@@ -160,7 +161,7 @@ The library provides three protection levels:
 use stegoeggo::ProtectionLevel;
 
 // Use different levels
-let level = ProtectionLevel::Light;    // Metadata only
+let level = ProtectionLevel::Light;    // Metadata + minimal stego
 let level = ProtectionLevel::Standard; // Stego + Metadata (default)
 ```
 

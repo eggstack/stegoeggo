@@ -227,6 +227,23 @@ impl SteganographyProtector {
         }
     }
 
+    pub(crate) fn lsb_pixels_needed(ctx: &ProtectionContext) -> usize {
+        let payload_bits = Self::payload_bits_for_context(ctx);
+        Self::lsb_pixels_needed_for_bits(payload_bits)
+    }
+
+    fn payload_bits_for_context(ctx: &ProtectionContext) -> usize {
+        if ctx.mac_key().is_some() {
+            (V2_HEADER_SIZE + 8) * 8
+        } else {
+            ECC_PAYLOAD_BITS_V2
+        }
+    }
+
+    fn lsb_pixels_needed_for_bits(payload_bits: usize) -> usize {
+        payload_bits.div_ceil(3) * STEGO_SPREAD_FACTOR
+    }
+
     /// Embed only the seed in JPEG quantization tables (no DCT coefficient modification).
     /// Used for Light level JPEG protection — the seed is recoverable when the
     /// quantization tables themselves are preserved.
@@ -1457,7 +1474,7 @@ impl SteganographyProtector {
         let payload_bits = Self::bytes_to_bits(payload);
 
         let total_pixels = (width * height) as usize;
-        let total_pixels_needed = payload_bits.len().div_ceil(3) * STEGO_SPREAD_FACTOR;
+        let total_pixels_needed = Self::lsb_pixels_needed_for_bits(payload_bits.len());
 
         if total_pixels_needed > total_pixels {
             return output;

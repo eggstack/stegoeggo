@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Reject JPEG encoding when image dimensions exceed the encoder's 16-bit JPEG limits instead of silently truncating width or height.
+- Report LSB capacity warnings from the effective payload size, including the shorter MAC-protected payload form.
+
+### Changed
+- Reduced duplicated byte API format/context setup and centralized JPEG encoding.
+
 ## [0.2.0] - 2026-06-04
 
 ### Added
@@ -30,7 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - MSRV: 1.87
-- Default output format changed from format-conversion to PNG preservation
+- Byte APIs preserve detected input format by default; the CLI defaults to PNG output unless `--format` is set
 - Stego redundancy now 1-10 (was 1-5)
 - Default stego redundancy derived from intensity: 1 (<0.3), 2 (0.3-0.7), 3 (≥0.7)
 
