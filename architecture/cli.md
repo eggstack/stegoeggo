@@ -1,6 +1,6 @@
 # CLI Tool
 
-**Source:** `stegoeggo-cli/src/main.rs` (~841 lines)
+**Source:** `stegoeggo-cli/src/main.rs` (~848 lines)
 
 Command-line interface for `stegoeggo`. Built with `clap` 4 (derive).
 
@@ -39,7 +39,7 @@ stegoeggo [OPTIONS] <INPUT>...
 | | `--tdm-reserved` | Reserve TDM rights (DMI preset) | false |
 | `-k` | `--key` | Hex cryptographic key | none |
 | `-j` | `--jobs` | Parallel jobs | 1 |
-| | `--strict` | Exit with error if any warnings have Error severity | false |
+| | `--strict` | Exit with error if any warnings have error severity for the active evidence profile | false |
 
 ## Input Handling
 

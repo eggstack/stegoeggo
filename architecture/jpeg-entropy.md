@@ -1,6 +1,6 @@
 # JPEG Entropy Codec
 
-**Source:** `src/jpeg_transcoder/entropy.rs` (~796 lines)
+**Source:** `src/jpeg_transcoder/entropy.rs` (~816 lines)
 
 Huffman entropy encoding/decoding of JPEG DCT coefficients. This is the core compression layer.
 

@@ -420,7 +420,7 @@ Arguments:
 
 Options:
   -o, --output <OUTPUT>    Output directory (batch) or file (single)
-  -V, --verify             Verify if image contains protection signature
+  -V, --verify             Verify legal-notice report, evidence strength, and channels
   -l, --level <LEVEL>      Protection level: disabled, light, standard
   -p, --profile <PROFILE>  Evidence profile: legal-notice, legal-notice-stego,
                            authenticated-provenance, maximal (default: legal-notice)
@@ -445,7 +445,7 @@ Options:
   --tdm-reserved          Shorthand: reserve text and data mining rights
   -k, --key <KEY>          Optional cryptographic key (hex string) for HMAC-SHA256 verification
   -j, --jobs <N>           Parallel jobs for batch processing (default: 1)
-  --strict                 Exit with error if any warnings have Error severity
+  --strict                 Exit with error if any warnings have error severity for the active profile
   -h, --help               Print help
   --version                Print version
 ```

@@ -1,6 +1,6 @@
 # Steganography Protector
 
-**Source:** `src/protected/steganography.rs` (~3303 lines)
+**Source:** `src/protected/steganography.rs` (~3715 lines)
 
 The most complex module. Handles LSB and DCT-based steganographic embedding for payload storage and verification.
 

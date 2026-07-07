@@ -259,7 +259,7 @@ Three-state control (`Option<bool>`) for metadata injection:
 | `tokio` | 1.0 (opt) | Async runtime for WAF/CDN integration |
 | `clap` | 4 (CLI) | Command-line argument parsing |
 | `crc32fast` | 1.4 | CRC32 for PNG chunk checksums |
-| `thiserror` | 2 (error.rs) | Error enum derive |
+| `thiserror` | 1.0 | Error enum derive |
 
 ## Security Notes
 

@@ -14,7 +14,7 @@ repository = "https://github.com/eggstack/stegoeggo"
 homepage = "https://github.com/eggstack/stegoeggo"
 documentation = "https://docs.rs/stegoeggo"
 readme = "README.md"
-keywords = ["image", "steganography", "legal-notice", "ai-safety", "rights-metadata", "iptc", "tdm"]
+keywords = ["image", "steganography", "legal-notice", "ai-safety", "rights-metadata"]
 categories = ["graphics", "multimedia::images"]
 include = [
     "src/**/*.rs",

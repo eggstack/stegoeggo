@@ -23,7 +23,10 @@ struct Args {
     )]
     output: Option<PathBuf>,
 
-    #[arg(long, help = "Verify if image contains protection signature")]
+    #[arg(
+        long,
+        help = "Verify legal-notice report: check metadata fields, stego integrity, evidence strength, and channels"
+    )]
     verify: bool,
 
     #[arg(short, long, default_value = "standard", help = "Protection level")]
@@ -146,7 +149,10 @@ struct Args {
     )]
     jobs: usize,
 
-    #[arg(long, help = "Exit with error if any warnings have Error severity")]
+    #[arg(
+        long,
+        help = "Exit with error if any warnings have error severity for the active evidence profile"
+    )]
     strict: bool,
 }
 
