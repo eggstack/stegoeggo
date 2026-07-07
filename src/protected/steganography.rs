@@ -19,11 +19,11 @@ const MIN_PAYLOAD_SIZE: usize = 28;
 /// V1 ECC-encoded payload size: 72 bytes (24 data × 3 replication) + 4 bytes CRC32.
 const ECC_PAYLOAD_SIZE_V1: usize = ecc::TOTAL_ECC_LEN + 4;
 /// V2 header size: 32 bytes.
-const V2_HEADER_SIZE: usize = 32;
+pub(crate) const V2_HEADER_SIZE: usize = 32;
 /// V2 ECC-encoded payload size: 96 bytes (32 data × 3 replication) + 4 bytes CRC32.
 const ECC_PAYLOAD_SIZE_V2: usize = V2_HEADER_SIZE * ecc::REPLICATION_FACTOR + 4;
 /// Bit length of the V2 ECC-encoded payload.
-const ECC_PAYLOAD_BITS_V2: usize = ECC_PAYLOAD_SIZE_V2 * 8;
+pub(crate) const ECC_PAYLOAD_BITS_V2: usize = ECC_PAYLOAD_SIZE_V2 * 8;
 /// Legacy ECC payload bits (V1, kept for backward-compatible extraction).
 const ECC_PAYLOAD_BITS: usize = ECC_PAYLOAD_SIZE_V1 * 8;
 
@@ -689,7 +689,9 @@ impl SteganographyProtector {
         Ok(output)
     }
 
-    fn dct_payload_capacity(coefficients: &crate::jpeg_transcoder::Coefficients) -> usize {
+    pub(crate) fn dct_payload_capacity(
+        coefficients: &crate::jpeg_transcoder::Coefficients,
+    ) -> usize {
         coefficients
             .values()
             .flat_map(|blocks| blocks.iter())

@@ -799,21 +799,18 @@ pub fn process_image_bytes_with_warnings(
 
     let result = DEFAULT_PIPELINE.process_bytes(img_bytes, level, &ctx_with_format)?;
 
-    // Post-check DCT capacity: if the output is essentially unchanged (same length
-    // or within a small margin), DCT stego likely failed due to insufficient
-    // AC coefficients. This catches small JPEGs where the F5 embed silently falls
-    // back to Q-table seed only.
-    if level == ProtectionLevel::Standard && format == ImageOutputFormat::Jpeg {
-        let size_delta = (result.len() as i64 - img_bytes.len() as i64).unsigned_abs();
-        // If the output is smaller or nearly the same size, DCT stego was likely
-        // skipped (Q-table seed adds only ~100 bytes, metadata adds ~500-2000 bytes).
-        // A real DCT embed typically changes size noticeably due to coefficient modification.
-        // Heuristic: if the output is within 10% of input size, DCT capacity was likely insufficient.
-        if size_delta.saturating_mul(10) < img_bytes.len() as u64 {
-            // Check if this is NOT a progressive JPEG (progressive gets its own warning)
-            if !is_progressive_jpeg(img_bytes) {
-                warnings.push(ProtectionWarning::DctCapacityInsufficient);
-            }
+    // Post-check DCT capacity: check the encoded JPEG output directly for
+    // sufficient non-zero AC coefficients to host the stego payload. Applies
+    // whether the input was JPEG (DCT path) or non-JPEG (transcoded to JPEG
+    // before DCT embedding) — the encoded JPEG is what F5 embeds into either
+    // way, so its AC coefficient count is the right capacity signal.
+    if level == ProtectionLevel::Standard
+        && output_format == ImageOutputFormat::Jpeg
+        && !is_progressive_jpeg(img_bytes)
+    {
+        let required_bits = dct_required_bits_for_context(&ctx_with_format);
+        if dct_capacity_bits_from_jpeg(&result) < required_bits {
+            warnings.push(ProtectionWarning::DctCapacityInsufficient);
         }
     }
 
@@ -839,6 +836,27 @@ fn resolved_output_format(ctx: &ProtectionContext) -> ImageOutputFormat {
     ctx.output_format()
         .or(ctx.input_format())
         .unwrap_or(DEFAULT_OUTPUT_FORMAT)
+}
+
+/// Number of payload bits the DCT path needs to embed, including redundancy.
+fn dct_required_bits_for_context(ctx: &ProtectionContext) -> usize {
+    let payload_bits = if ctx.mac_key().is_some() {
+        (protected::steganography::V2_HEADER_SIZE + 8) * 8
+    } else {
+        protected::steganography::ECC_PAYLOAD_BITS_V2
+    };
+    payload_bits * ctx.effective_redundancy()
+}
+
+/// Count usable DCT AC coefficients (|coef| >= 2) in a JPEG byte stream.
+/// Returns 0 if the JPEG cannot be decoded.
+fn dct_capacity_bits_from_jpeg(jpeg_bytes: &[u8]) -> usize {
+    match jpeg_transcoder::JpegTranscoder::decode_coefficients(jpeg_bytes) {
+        Ok((_, coefficients)) => {
+            protected::steganography::SteganographyProtector::dct_payload_capacity(&coefficients)
+        }
+        Err(_) => 0,
+    }
 }
 
 /// Verify that image bytes contain a protection payload whose integrity can be proved.

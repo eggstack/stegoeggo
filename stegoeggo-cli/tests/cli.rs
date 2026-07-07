@@ -307,6 +307,43 @@ fn test_verify_unprotected_image() {
 }
 
 #[test]
+fn test_verify_metadata_only_does_not_report_verified() {
+    use stegoeggo::{MetadataTrapProtector, ProtectionContext};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+    let raw = fs::read(&input).unwrap();
+
+    let ctx = ProtectionContext::new(0.5, 42);
+    let metadata_only = MetadataTrapProtector::new()
+        .inject_bytes(&raw, &ctx)
+        .unwrap();
+
+    let metadata_path = tmp.path().join("metadata_only.png");
+    fs::write(&metadata_path, &metadata_only).unwrap();
+
+    let result = Command::new(cli_bin())
+        .arg(&metadata_path)
+        .arg("--verify")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(result.status.success());
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        !stdout.contains("verified"),
+        "Metadata-only file must not be reported as verified: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("metadata-only"),
+        "Metadata-only evidence should be reported explicitly: {}",
+        stdout
+    );
+}
+
+#[test]
 fn test_protect_light_level() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("input.png");

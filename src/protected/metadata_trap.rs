@@ -301,8 +301,20 @@ impl MetadataTrapProtector {
                 }
             }
 
-            output.extend_from_slice(&png_data[pos..pos + 12 + chunk_len]);
-            pos += 12 + chunk_len;
+            let chunk_end = pos
+                .checked_add(12)
+                .and_then(|p| p.checked_add(chunk_len))
+                .ok_or_else(|| Error::ImageTruncated("PNG chunk length overflow".to_string()))?;
+            if chunk_end > png_data.len() {
+                return Err(Error::ImageTruncated(format!(
+                    "PNG chunk at offset {} claims length {} but only {} bytes remain",
+                    pos,
+                    chunk_len,
+                    png_data.len().saturating_sub(pos)
+                )));
+            }
+            output.extend_from_slice(&png_data[pos..chunk_end]);
+            pos = chunk_end;
         }
 
         Ok(output)

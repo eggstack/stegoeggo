@@ -998,6 +998,50 @@ mod tiled_crop {
     }
 }
 
+mod malformed_input {
+    use super::*;
+
+    #[test]
+    fn png_metadata_injection_handles_oversized_chunk_len_without_panic() {
+        let mut malformed = Vec::from(b"\x89PNG\r\n\x1a\n" as &[u8]);
+        malformed.extend_from_slice(&u32::MAX.to_be_bytes());
+        malformed.extend_from_slice(b"tEXt");
+        malformed.extend_from_slice(&[0u8; 4]);
+
+        let protector = MetadataTrapProtector::new();
+        let ctx = ProtectionContext::new(0.5, 42);
+
+        let result = std::panic::catch_unwind(|| protector.inject_bytes(&malformed, &ctx));
+        match result {
+            Ok(Ok(_)) => {
+                panic!("Oversized PNG chunk length must produce an error, not a successful output")
+            }
+            Ok(Err(_)) => {}
+            Err(_) => panic!("Oversized PNG chunk length must not panic"),
+        }
+    }
+
+    #[test]
+    fn dct_capacity_warning_for_png_to_jpeg_conversion() {
+        let img = create_test_image(16, 16);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.5, 42).with_format(stegoeggo::ImageOutputFormat::Jpeg);
+
+        let (_, warnings) = stegoeggo::process_image_bytes_with_warnings(
+            &png_bytes,
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        assert!(
+            warnings.contains(&stegoeggo::ProtectionWarning::DctCapacityInsufficient),
+            "PNG→JPEG conversion on a small image must surface DctCapacityInsufficient, got: {:?}",
+            warnings
+        );
+    }
+}
+
 mod tiled_crop_jpeg {
     use super::*;
 

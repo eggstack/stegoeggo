@@ -4,8 +4,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use stegoeggo::Error;
 use stegoeggo::{
-    generate_random_seed, process_image_bytes, DmiValue, ImageOutputFormat, MetadataTrapProtector,
-    ProtectionContext, ProtectionLevel, SteganographyProtector, DEFAULT_OUTPUT_FORMAT,
+    generate_random_seed, process_image_bytes, verify_image_bytes_detailed, DmiValue,
+    ImageOutputFormat, ProtectionContext, ProtectionLevel, StegoPayload, VerificationResult,
+    DEFAULT_OUTPUT_FORMAT,
 };
 
 #[derive(Parser, Debug)]
@@ -279,6 +280,16 @@ fn process_single_file(
     Ok(output_path)
 }
 
+fn print_payload_info(payload: &StegoPayload) {
+    let level_str = ProtectionLevel::from_byte(payload.protection_level())
+        .map(|l: ProtectionLevel| l.as_str())
+        .unwrap_or("Unknown");
+    println!("Level: {} (id: {})", level_str, payload.protection_level());
+    println!("Seed: {}", payload.seed());
+    println!("Intensity: {:.2}", payload.intensity());
+    println!("Version: {}", payload.version());
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
@@ -321,73 +332,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fs::read(input_path)?
         };
 
-        let img = image::load_from_memory(&bytes_to_verify)
-            .map_err(|e| format!("Failed to load image: {}", e))?;
-
-        let stego = SteganographyProtector::new();
-
         if args.verbose {
-            let rgba = img.to_rgba8();
-            let (w, h) = rgba.dimensions();
-            eprintln!("Image dimensions: {}x{}", w, h);
-        }
-
-        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(&bytes_to_verify);
-
-        let is_jpeg = bytes_to_verify.starts_with(&[0xFF, 0xD8]);
-
-        if args.verbose {
-            if let Some(seed) = metadata_seed {
-                eprintln!("Found seed in metadata: {}", seed);
-                if is_jpeg {
-                    eprintln!("JPEG detected - using metadata verification");
-                }
-            } else {
-                eprintln!("No seed found in metadata, using stego-only verification");
+            if let Ok(img) = image::load_from_memory(&bytes_to_verify) {
+                let rgba = img.to_rgba8();
+                let (w, h) = rgba.dimensions();
+                eprintln!("Image dimensions: {}x{}", w, h);
             }
         }
 
-        let verified = if let Some(seed) = metadata_seed {
-            println!("Protected: Yes (verified via metadata)");
-            println!("Seed: {}", seed);
-            if is_jpeg {
-                println!("Note: JPEG - stego may not survive re-encoding");
-            }
-            true
-        } else {
-            // Try default extraction first
-            if stego.extract_payload(&img).is_some() {
-                true
-            } else if let Some(ref seeds_str) = args.known_seeds {
-                // Try user-provided seeds
-                let seeds: Vec<u64> = seeds_str
-                    .split(',')
-                    .filter_map(|s| s.trim().parse().ok())
-                    .collect();
-                seeds
-                    .iter()
-                    .any(|&s| stego.verify_payload_with_seed(&img, s))
-            } else {
-                false
-            }
-        };
+        let result = verify_image_bytes_detailed(&bytes_to_verify, &[]);
 
-        if verified {
-            if metadata_seed.is_none() {
-                println!("Protected: Yes");
-                if let Some(payload) = stego.extract_payload(&img) {
-                    let level_str = ProtectionLevel::from_byte(payload.protection_level())
-                        .map(|l: ProtectionLevel| l.as_str())
-                        .unwrap_or("Unknown");
-                    println!("Level: {} (id: {})", level_str, payload.protection_level());
-                    println!("Seed: {}", payload.seed());
-                    println!("Intensity: {:.2}", payload.intensity());
-                    println!("Version: {}", payload.version());
+        if args.verbose {
+            match &result {
+                VerificationResult::Verified { .. } => {
+                    eprintln!("Verified steganographic payload found")
                 }
+                VerificationResult::Corrupted { .. } => {
+                    eprintln!("Protection payload found but integrity check failed")
+                }
+                VerificationResult::MetadataOnly { seed } => {
+                    eprintln!("Metadata-only evidence found (seed {})", seed)
+                }
+                VerificationResult::NotFound => eprintln!("No protection evidence found"),
             }
-        } else {
-            println!("Protected: No");
-            println!("This image does not contain a protection signature.");
+        }
+
+        match result {
+            VerificationResult::Verified { payload } => {
+                println!("Protected: Yes (verified)");
+                print_payload_info(&payload);
+            }
+            VerificationResult::Corrupted { payload } => {
+                println!("Protected: Yes (corrupted)");
+                print_payload_info(&payload);
+            }
+            VerificationResult::MetadataOnly { seed } => {
+                println!("Protected: Maybe (metadata-only — steganographic payload not verified)");
+                println!("Seed: {}", seed);
+            }
+            VerificationResult::NotFound => {
+                println!("Protected: No");
+                println!("This image does not contain a protection signature.");
+            }
         }
         return Ok(());
     }
