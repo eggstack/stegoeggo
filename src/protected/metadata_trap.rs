@@ -7,6 +7,14 @@ use crc32fast::Hasher as Crc32Hasher;
 use image::DynamicImage;
 use std::borrow::Cow;
 
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
 /// Manual date computation from Unix epoch.
 /// Intentionally avoids adding a `chrono` dependency for this simple use case.
 fn is_leap_year(year: i32) -> bool {
@@ -201,11 +209,92 @@ impl MetadataTrapProtector {
              <x:xmpmeta xmlns:x=\"adobe:ns:meta/\" \
              xmlns:iptc4xmpExt=\"http://iptc.org/std/Iptc4xmpExt/2008-02-29/\" \
              xmlns:tdm=\"http://www.niso.org/schemas/tdm/\" \
-             xmlns:stegoeggo=\"https://github.com/anomalyco/stegoeggo\">\n\
+             xmlns:stegoeggo=\"https://github.com/eggstack/stegoeggo\">\n\
              <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
              <rdf:Description rdf:about=\"\"\n\
              {property}=\"{}\"\n\
              tdm:reserve_tdm=\"{tdm_value}\"{seed_attr}/>\n\
+             </rdf:RDF>\n\
+             </x:xmpmeta>\n\
+             <?xpacket end=\"w\"?>",
+            dmi.as_str()
+        );
+        xmp.into_bytes()
+    }
+
+    fn generate_xmp_notice(
+        dmi: DmiValue,
+        seed: Option<u64>,
+        legal: Option<&LegalMetadata>,
+    ) -> Vec<u8> {
+        let property = dmi.to_iptc_property();
+        let bom = "\u{feff}";
+        let seed_attr = seed
+            .map(|s| format!("\n             stegoeggo:ProtectionSeed=\"{}\"", s))
+            .unwrap_or_default();
+        let tdm_value = if dmi == DmiValue::Allowed { "0" } else { "1" };
+
+        let mut legal_props = String::new();
+        if let Some(legal) = legal {
+            if let Some(creator) = legal.creator() {
+                legal_props.push_str(&format!(
+                    "\n             <dc:creator><rdf:Seq><rdf:li>{}</rdf:li></rdf:Seq></dc:creator>",
+                    xml_escape(creator)
+                ));
+            }
+            if let Some(statement) = legal.web_statement_of_rights() {
+                legal_props.push_str(&format!(
+                    "\n             <xmpRights:WebStatement>{}</xmpRights:WebStatement>",
+                    xml_escape(statement)
+                ));
+            }
+            if let Some(terms) = legal.usage_terms() {
+                legal_props.push_str(&format!(
+                    "\n             <xmpRights:UsageTerms>{}</xmpRights:UsageTerms>",
+                    xml_escape(terms)
+                ));
+            }
+            if let Some(contact) = legal.contact_email() {
+                legal_props.push_str(&format!(
+                    "\n             <photoshop:Credit>{}</photoshop:Credit>",
+                    xml_escape(contact)
+                ));
+            }
+            if let Some(constraints) = legal.ai_constraints() {
+                legal_props.push_str(&format!(
+                    "\n             <stegoeggo:AIConstraints>{}</stegoeggo:AIConstraints>",
+                    xml_escape(constraints)
+                ));
+            }
+            let copyright = legal.copyright_holder().map(|h| {
+                if h.contains("Copyright") {
+                    h.to_string()
+                } else {
+                    format!("Copyright (c) {}", h)
+                }
+            });
+            if let Some(copyright) = copyright {
+                legal_props.push_str(&format!(
+                    "\n             <dc:rights>{}</dc:rights>",
+                    xml_escape(&copyright)
+                ));
+            }
+        }
+
+        let xmp = format!(
+            "<?xpacket begin=\"{bom}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
+             <x:xmpmeta xmlns:x=\"adobe:ns:meta/\" \
+             xmlns:iptc4xmpExt=\"http://iptc.org/std/Iptc4xmpExt/2008-02-29/\" \
+             xmlns:tdm=\"http://www.niso.org/schemas/tdm/\" \
+             xmlns:stegoeggo=\"https://github.com/eggstack/stegoeggo\" \
+             xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
+             xmlns:xmpRights=\"http://ns.adobe.com/xap/1.0/rights/\" \
+             xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n\
+             <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
+             <rdf:Description rdf:about=\"\"\n\
+             {property}=\"{}\"\n\
+              tdm:reserve_tdm=\"{tdm_value}\"{seed_attr}{legal_props}>\n\
+             </rdf:Description>\n\
              </rdf:RDF>\n\
              </x:xmpmeta>\n\
              <?xpacket end=\"w\"?>",
@@ -592,6 +681,7 @@ impl MetadataTrapProtector {
         metadata: &[(Vec<u8>, Vec<u8>)],
         dmi: Option<DmiValue>,
         seed: Option<u64>,
+        legal: Option<&LegalMetadata>,
     ) -> Result<Vec<u8>> {
         if metadata.is_empty() && dmi.is_none() {
             return Ok(webp_data.to_vec());
@@ -603,8 +693,9 @@ impl MetadataTrapProtector {
 
         let dmi_val = dmi.unwrap_or(DmiValue::Unspecified);
 
-        // Build XMP chunk with DMI and seed embedded as XMP properties
-        let xmp_chunk = Self::create_webp_xmp_chunk(&Self::generate_xmp_dmi(dmi_val, seed));
+        // Build XMP chunk with DMI, seed, and legal notice embedded as XMP properties
+        let xmp_chunk =
+            Self::create_webp_xmp_chunk(&Self::generate_xmp_notice(dmi_val, seed, legal));
 
         if xmp_chunk.is_empty() {
             return Ok(webp_data.to_vec());
@@ -1132,7 +1223,7 @@ impl MetadataTrapProtector {
                 self.inject_text_chunks_jpeg(img_bytes, &metadata, dmi, seed, Some(ctx))?
             }
             ImageOutputFormat::WebP => {
-                self.inject_text_chunks_webp(img_bytes, &metadata, dmi, seed)?
+                self.inject_text_chunks_webp(img_bytes, &metadata, dmi, seed, ctx.legal_metadata())?
             }
         };
 
@@ -1577,7 +1668,7 @@ mod tests {
         let webp = encode_webp(&make_test_image());
         let metadata = vec![(b"Test-Key".to_vec(), b"Test-Value".to_vec())];
         let result = protector
-            .inject_text_chunks_webp(&webp, &metadata, None, None)
+            .inject_text_chunks_webp(&webp, &metadata, None, None, None)
             .unwrap();
         assert!(result.starts_with(b"RIFF"));
         assert!(&result[8..12] == b"WEBP");
@@ -1589,7 +1680,7 @@ mod tests {
         let webp = encode_webp(&make_test_image());
         let metadata = vec![(b"X-Protection-Seed".to_vec(), b"99999".to_vec())];
         let result = protector
-            .inject_text_chunks_webp(&webp, &metadata, None, Some(99999))
+            .inject_text_chunks_webp(&webp, &metadata, None, Some(99999), None)
             .unwrap();
         let extracted = MetadataTrapProtector::extract_seed_from_webp(&result);
         assert_eq!(extracted, Some(99999));
@@ -1601,6 +1692,7 @@ mod tests {
         let result = protector.inject_text_chunks_webp(
             b"NOTWEBP",
             &[(b"key".to_vec(), b"val".to_vec())],
+            None,
             None,
             None,
         );
@@ -1643,7 +1735,7 @@ mod tests {
         let webp = encode_webp(&make_test_image());
         let metadata = vec![(b"X-Protection-Seed".to_vec(), b"300".to_vec())];
         let injected = protector
-            .inject_text_chunks_webp(&webp, &metadata, None, Some(300))
+            .inject_text_chunks_webp(&webp, &metadata, None, Some(300), None)
             .unwrap();
         assert_eq!(
             MetadataTrapProtector::extract_seed_from_image(&injected),
@@ -1784,7 +1876,7 @@ mod tests {
         let protector = MetadataTrapProtector::new();
         let webp = encode_webp(&make_test_image());
         let result = protector
-            .inject_text_chunks_webp(&webp, &[], None, None)
+            .inject_text_chunks_webp(&webp, &[], None, None, None)
             .unwrap();
         assert_eq!(result, webp);
     }
@@ -1873,7 +1965,7 @@ mod tests {
     fn xmp_contains_stegoeggo_namespace() {
         let xmp = MetadataTrapProtector::generate_xmp_dmi(DmiValue::ProhibitedAiMlTraining, None);
         let xmp_str = String::from_utf8_lossy(&xmp);
-        assert!(xmp_str.contains("xmlns:stegoeggo=\"https://github.com/anomalyco/stegoeggo\""));
+        assert!(xmp_str.contains("xmlns:stegoeggo=\"https://github.com/eggstack/stegoeggo\""));
     }
 
     #[test]

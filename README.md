@@ -844,18 +844,18 @@ cargo build --release -p stegoeggo-cli
 
 | Field | PNG | JPEG | WebP | Notes |
 |-------|-----|------|------|-------|
-| Copyright | exiftool `-Copyright` | exiftool `-Comment` (all COM) | not guaranteed | WebP parser-dependent |
-| Creator | exiftool `-Creator` | exiftool `-Comment` | not guaranteed | WebP parser-dependent |
-| Contact | exiftool `-Contact` | exiftool `-Comment` | not guaranteed | WebP parser-dependent |
-| UsageTerms | exiftool `-UsageTerms` | exiftool `-Comment` | not guaranteed | WebP parser-dependent |
-| AIConstraints | exiftool `-AIConstraints` | exiftool `-Comment` | not guaranteed | WebP parser-dependent |
+| Copyright | exiftool `-Copyright` | exiftool `-Comment` (all COM) | exiftool XMP `-Copyright` | XMP `dc:rights` in WebP |
+| Creator | exiftool `-Creator` | exiftool `-Comment` | exiftool XMP `-Creator` | XMP `dc:creator` in WebP |
+| Contact | exiftool `-Contact` | exiftool `-Comment` | exiftool XMP `-Contact` | XMP `photoshop:Credit` in WebP |
+| UsageTerms | exiftool `-UsageTerms` | exiftool `-Comment` | exiftool XMP `-UsageTerms` | XMP `xmpRights:UsageTerms` in WebP |
+| AIConstraints | exiftool `-AIConstraints` | exiftool `-Comment` | exiftool XMP `-AIConstraints` | XMP `stegoeggo:AIConstraints` in WebP |
 | DMI (no-AI-training) | exiftool XMP `-DataMining` | exiftool XMP `-DataMining` | exiftool XMP `-DataMining` | XMP-based, all formats |
 | TDM reservation | exiftool XMP `-TDM` | exiftool XMP `-TDM` | exiftool XMP `-TDM` | XMP-based, all formats |
 | Protection seed | exiftool `-ImageDescription` | exiftool `-Comment` | exiftool XMP | Diagnostic only, not legal notice |
 
 ### Conformance Caveats
 
-- **WebP legal fields**: Individual legal fields (Copyright, Creator, etc.) are injected as XMP DMI/TDM only, not as separate WebP chunks. External parsers may not expose them. The script documents this as a warning, not a failure.
+- **WebP legal fields in XMP**: WebP outputs now carry legal metadata (copyright, creator, contact, rights URL, usage terms, AI constraints) in standard XMP properties alongside DMI/TDM. External tool visibility depends on parser support for `dc:rights`, `dc:creator`, `xmpRights:*`, `photoshop:Credit`, and `stegoeggo:AIConstraints` namespaces. The conformance script checks for these in strict mode.
 - **Tool variability**: Metadata visibility depends on the external tool. The script targets `exiftool` as the primary tool. Other tools (ImageMagick, vips) may show different fields.
 - **Seed is not legal notice**: The protection seed is an internal diagnostic marker. The script does not treat it as sufficient legal notice — at least one real rights-reservation field must be present.
 - **Strict vs non-strict**: Strict mode requires `exiftool` and fails if fields are missing. Non-strict mode skips external checks cleanly when `exiftool` is not installed.

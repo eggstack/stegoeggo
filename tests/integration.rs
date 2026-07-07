@@ -1145,6 +1145,148 @@ mod webp_tests {
     }
 }
 
+mod webp_legal_xmp_tests {
+    use super::*;
+    use stegoeggo::{
+        verify_legal_notice, DmiValue, EvidenceChannel, ImageOutputFormat, LegalMetadata,
+        ProtectionContext, ProtectionLevel,
+    };
+
+    fn extract_xmp_from_webp(bytes: &[u8]) -> Option<String> {
+        let marker = b"XMP ";
+        let mut pos = 0;
+        while pos + 8 <= bytes.len() {
+            if &bytes[pos..pos + 4] == marker {
+                let size = u32::from_le_bytes([
+                    bytes[pos + 4],
+                    bytes[pos + 5],
+                    bytes[pos + 6],
+                    bytes[pos + 7],
+                ]) as usize;
+                let data_start = pos + 8;
+                let data_end = data_start + size;
+                if data_end <= bytes.len() {
+                    return String::from_utf8(bytes[data_start..data_end].to_vec()).ok();
+                }
+            }
+            pos += 1;
+        }
+        None
+    }
+
+    fn create_webp_with_legal(legal: LegalMetadata) -> Vec<u8> {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.7, 42)
+            .with_format(ImageOutputFormat::WebP)
+            .with_legal_metadata(legal)
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::ProhibitedAiMlTraining);
+        process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap()
+    }
+
+    #[test]
+    fn webp_xmp_includes_copyright_holder() {
+        let legal = LegalMetadata::new().with_copyright_holder("Test Corp");
+        let protected = create_webp_with_legal(legal);
+        let xmp = extract_xmp_from_webp(&protected).expect("XMP should be present in WebP");
+        assert!(
+            xmp.contains("dc:rights"),
+            "XMP should contain dc:rights, got: {}",
+            xmp
+        );
+        let report = verify_legal_notice(&protected, &[]);
+        assert_eq!(report.copyright_holder(), Some("Test Corp"));
+    }
+
+    #[test]
+    fn webp_xmp_includes_creator_and_rights_url() {
+        let legal = LegalMetadata::new()
+            .with_creator("Test Author")
+            .with_web_statement_of_rights("https://example.com/rights");
+        let protected = create_webp_with_legal(legal);
+        let report = verify_legal_notice(&protected, &[]);
+        assert_eq!(report.creator(), Some("Test Author"));
+        assert_eq!(report.rights_url(), Some("https://example.com/rights"));
+    }
+
+    #[test]
+    fn webp_xmp_includes_ai_constraints() {
+        let legal = LegalMetadata::new().with_ai_constraints("No AI training");
+        let protected = create_webp_with_legal(legal);
+        let report = verify_legal_notice(&protected, &[]);
+        assert_eq!(report.ai_constraints(), Some("No AI training"));
+    }
+
+    #[test]
+    fn webp_notice_verification_extracts_legal_fields() {
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("Test Corp")
+            .with_creator("Test Author")
+            .with_contact_email("contact@test.com")
+            .with_web_statement_of_rights("https://example.com/rights")
+            .with_usage_terms("All rights reserved")
+            .with_ai_constraints("No generative AI training");
+        let protected = create_webp_with_legal(legal);
+        let report = verify_legal_notice(&protected, &[]);
+        assert_eq!(report.copyright_holder(), Some("Test Corp"));
+        assert_eq!(report.creator(), Some("Test Author"));
+        assert_eq!(report.contact(), Some("contact@test.com"));
+        assert_eq!(report.rights_url(), Some("https://example.com/rights"));
+        assert_eq!(report.usage_terms(), Some("All rights reserved"));
+        assert_eq!(report.ai_constraints(), Some("No generative AI training"));
+        assert!(report.has_notice());
+    }
+
+    #[test]
+    fn webp_notice_verification_reports_webp_xmp_channel() {
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("Test Corp")
+            .with_ai_constraints("No AI training");
+        let protected = create_webp_with_legal(legal);
+        let report = verify_legal_notice(&protected, &[]);
+        let channels = report.channels();
+        assert!(
+            channels.contains(&EvidenceChannel::WebPXmp),
+            "WebP with legal metadata should report WebPXmp channel, got: {:?}",
+            channels
+        );
+    }
+
+    #[test]
+    fn webp_notice_verification_dmi_tdm_still_present() {
+        let legal = LegalMetadata::new().with_copyright_holder("Test Corp");
+        let protected = create_webp_with_legal(legal);
+        let report = verify_legal_notice(&protected, &[]);
+        assert!(report.has_notice());
+        assert_eq!(
+            report.dmi(),
+            Some(DmiValue::ProhibitedAiMlTraining),
+            "DMI should still be extractable from WebP"
+        );
+        assert_eq!(report.tdm_reserved(), Some(true));
+    }
+
+    #[test]
+    fn webp_xmp_namespace_uses_eggstack_repo() {
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("Test Corp")
+            .with_ai_constraints("No AI training");
+        let protected = create_webp_with_legal(legal);
+        let xmp = extract_xmp_from_webp(&protected).expect("XMP should be present in WebP");
+        assert!(
+            xmp.contains("eggstack/stegoeggo"),
+            "XMP should contain eggstack/stegoeggo namespace, got: {}",
+            xmp
+        );
+        assert!(
+            !xmp.contains("anomalyco/stegoeggo"),
+            "XMP should NOT contain anomalyco/stegoeggo, got: {}",
+            xmp
+        );
+    }
+}
+
 mod error_variant_tests {
     use super::*;
     use stegoeggo::Error;

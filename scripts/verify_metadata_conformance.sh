@@ -337,21 +337,47 @@ run_conformance_checks() {
                     fi
                 fi
             else
-                warn "Copyright not found in WebP metadata (parser-dependent)"
+                if $STRICT; then
+                    fail "Copyright not found in WebP XMP"
+                else
+                    warn "Copyright not found in WebP metadata (parser-dependent)"
+                fi
             fi
 
             XMP_DMI=$(exiftool -s3 -XMP-iptcExt:DMI-Prohibited "$image" 2>/dev/null || true)
             if [ -n "$XMP_DMI" ]; then
                 pass "XMP contains DMI-Prohibited: $XMP_DMI"
             else
-                warn "XMP DMI-Prohibited not found via exiftool (parser-dependent)"
+                if $STRICT; then
+                    fail "DMI-Prohibited not found in WebP XMP"
+                else
+                    warn "XMP DMI-Prohibited not found via exiftool (parser-dependent)"
+                fi
             fi
 
             TDM=$(exiftool -s3 -XMP-tdm:Reserve_tdm "$image" 2>/dev/null || true)
             if [ -n "$TDM" ] && [ "$TDM" = "1" ]; then
                 pass "XMP contains TDM reservation"
             else
-                warn "XMP TDM reservation not found via exiftool (parser-dependent)"
+                if $STRICT; then
+                    fail "TDM reservation not found in WebP XMP"
+                else
+                    warn "XMP TDM reservation not found via exiftool (parser-dependent)"
+                fi
+            fi
+
+            USAGE=$(exiftool -s3 -XMP-xmpRights:UsageTerms "$image" 2>/dev/null || true)
+            RIGHTS=$(exiftool -s3 -XMP-dc:Rights "$image" 2>/dev/null || true)
+            if [ -n "$USAGE" ] || [ -n "$RIGHTS" ]; then
+                if [ -n "$USAGE" ]; then
+                    pass "UsageTerms found in WebP XMP: $USAGE"
+                else
+                    pass "Rights found in WebP XMP: $RIGHTS"
+                fi
+            else
+                if $STRICT; then
+                    warn "No UsageTerms or Rights found in WebP XMP (optional)"
+                fi
             fi
             ;;
 

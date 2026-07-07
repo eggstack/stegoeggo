@@ -33,18 +33,18 @@ Metadata visibility depends on the image format and the external tool used to re
 
 | Field | PNG | JPEG | WebP | Notes |
 |-------|-----|------|------|-------|
-| Copyright | tEXt → exiftool `-Copyright` | COM → exiftool `-Comment` (all) | not guaranteed | WebP parser-dependent |
-| Creator | tEXt → exiftool `-Creator` | COM → exiftool `-Comment` | not guaranteed | WebP parser-dependent |
-| Contact | tEXt → exiftool `-Contact` | COM → exiftool `-Comment` | not guaranteed | WebP parser-dependent |
-| UsageTerms | tEXt → exiftool `-UsageTerms` | COM → exiftool `-Comment` | not guaranteed | WebP parser-dependent |
-| AIConstraints | tEXt → exiftool `-AIConstraints` | COM → exiftool `-Comment` | not guaranteed | WebP parser-dependent |
+| Copyright | tEXt → exiftool `-Copyright` | COM → exiftool `-Comment` (all) | XMP `dc:rights` → exiftool `-Copyright` | WebP XMP parity with PNG/JPEG |
+| Creator | tEXt → exiftool `-Creator` | COM → exiftool `-Comment` | XMP `dc:creator` → exiftool `-Creator` | WebP XMP parity with PNG/JPEG |
+| Contact | tEXt → exiftool `-Contact` | COM → exiftool `-Comment` | XMP `photoshop:Credit` → exiftool `-Contact` | WebP XMP parity with PNG/JPEG |
+| UsageTerms | tEXt → exiftool `-UsageTerms` | COM → exiftool `-Comment` | XMP `xmpRights:UsageTerms` → exiftool `-UsageTerms` | WebP XMP parity with PNG/JPEG |
+| AIConstraints | tEXt → exiftool `-AIConstraints` | COM → exiftool `-Comment` | XMP `stegoeggo:AIConstraints` → exiftool `-AIConstraints` | WebP XMP parity with PNG/JPEG |
 | DMI (no-AI-training) | XMP in iTXt → exiftool XMP | XMP in APP1 → exiftool XMP | XMP in META → exiftool XMP | Standards-based, all formats |
 | TDM reservation | XMP in iTXt → exiftool XMP | XMP in APP1 → exiftool XMP | XMP in META → exiftool XMP | Standards-based, all formats |
 | Protection seed | tEXt `X-Protection-Seed` or `Description` | COM structured, IPTC Object Name | XMP/EXIF | Internal diagnostic, not legal notice |
 
 **Caveats**:
 
-- WebP: stegoeggo injects legal fields as XMP DMI/TDM only, not as individual WebP chunks. External parsers may not expose individual fields like Copyright or Creator.
+- WebP: Legal fields are now embedded as standard XMP properties (`dc:rights`, `dc:creator`, `photoshop:Credit`, `xmpRights:UsageTerms`, `stegoeggo:AIConstraints`) alongside DMI/TDM. External parser visibility varies depending on namespace support.
 - JPEG: Legal fields are stored as separate COM markers (key-value pairs). The `-a` flag on exiftool is required to read all COM markers.
 - Tool variability: The table reflects `exiftool` behavior. Other tools may show different fields.
 

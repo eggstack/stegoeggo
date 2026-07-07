@@ -23,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CI clippy now runs with `--all-features`.
 
 ### Fixed
+- WebP outputs now carry legal metadata fields (copyright, creator, contact, rights URL, usage terms, AI constraints) in XMP, bringing WebP to parity with PNG/JPEG for external rights-reservation notice visibility.
+- Updated stegoeggo XMP namespace URL from `anomalyco/stegoeggo` to `eggstack/stegoeggo`.
 - Panic on truncated PNG iTXt chunks in `verify_legal_notice()` extraction path.
 - Single-file `--output` now correctly treats file paths as output files instead of directories.
 - JPEG XMP evidence channel reporting.
