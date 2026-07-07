@@ -4,7 +4,7 @@ members = [".", "stegoeggo-cli", "fuzz"]
 
 [package]
 name = "stegoeggo"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 rust-version = "1.87"
 description = "Rights-reservation metadata and AI-training restriction notices for images, with optional steganographic markers"
