@@ -101,8 +101,7 @@ pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> Notice
         }
     }
 
-    let evidence_strength =
-        compute_evidence_strength(has_notice, &stego_status, authenticated, &channels);
+    let evidence_strength = compute_evidence_strength(has_notice, authenticated, &channels);
 
     NoticeVerification::new(
         copyright_holder,
@@ -143,7 +142,6 @@ fn empty_report() -> NoticeVerification {
 
 fn compute_evidence_strength(
     has_notice: bool,
-    stego_status: &VerificationStatus,
     authenticated: bool,
     channels: &[EvidenceChannel],
 ) -> EvidenceStrength {
@@ -155,17 +153,8 @@ fn compute_evidence_strength(
         EvidenceStrength::MetadataNoticeAndAuthenticatedProvenance
     } else if has_notice && has_stego {
         EvidenceStrength::MetadataNoticeAndBestEffortStego
-    } else if has_notice
-        || matches!(
-            stego_status,
-            VerificationStatus::Verified | VerificationStatus::Invalid
-        )
-    {
-        if has_notice {
-            EvidenceStrength::MetadataNoticeOnly
-        } else {
-            EvidenceStrength::NoNoticeFound
-        }
+    } else if has_notice {
+        EvidenceStrength::MetadataNoticeOnly
     } else {
         EvidenceStrength::NoNoticeFound
     }
@@ -711,6 +700,21 @@ fn parse_com_kv(comment: &str) -> Option<ComField> {
 fn parse_xmp_for_dmi(xmp_str: &str, dmi: &mut Option<DmiValue>, tdm_reserved: &mut Option<bool>) {
     if dmi.is_none() {
         if let Some(val) = extract_xmp_attr(xmp_str, "Iptc4xmpExt:DataMiningAttribute") {
+            *dmi = parse_dmi_value(&val);
+        }
+    }
+    if dmi.is_none() {
+        if let Some(val) = extract_xmp_attr(xmp_str, "Iptc4xmpExt:DMI-Prohibited") {
+            *dmi = parse_dmi_value(&val);
+        }
+    }
+    if dmi.is_none() {
+        if let Some(val) = extract_xmp_attr(xmp_str, "Iptc4xmpExt:DMI-Allowed") {
+            *dmi = parse_dmi_value(&val);
+        }
+    }
+    if dmi.is_none() {
+        if let Some(val) = extract_xmp_attr(xmp_str, "Iptc4xmpExt:DMI") {
             *dmi = parse_dmi_value(&val);
         }
     }

@@ -42,6 +42,20 @@ fn image_to_jpeg_bytes(img: &DynamicImage, quality: u8) -> Vec<u8> {
     buffer
 }
 
+fn image_to_webp_bytes(img: &DynamicImage) -> Vec<u8> {
+    let mut buffer = Vec::new();
+    let encoder = image::codecs::webp::WebPEncoder::new_lossless(&mut buffer);
+    encoder
+        .write_image(
+            &img.to_rgb8(),
+            img.width(),
+            img.height(),
+            image::ExtendedColorType::Rgb8,
+        )
+        .unwrap();
+    buffer
+}
+
 fn create_colored_image(width: u32, height: u32, r: u8, g: u8, b: u8) -> DynamicImage {
     let mut img = DynamicImage::new_rgb8(width, height);
     let mut rgb_img = img.to_rgb8();
@@ -1453,8 +1467,8 @@ mod progressive_jpeg_warning {
 mod notice_verification_tests {
     use super::*;
     use stegoeggo::{
-        verify_legal_notice, DmiValue, EvidenceChannel, EvidenceStrength, LegalMetadata,
-        ProtectionContext, ProtectionLevel, VerificationStatus,
+        verify_legal_notice, DmiValue, EvidenceChannel, EvidenceStrength, ImageOutputFormat,
+        LegalMetadata, ProtectionContext, ProtectionLevel, VerificationStatus,
     };
 
     fn create_legal_metadata() -> LegalMetadata {
@@ -1700,6 +1714,110 @@ mod notice_verification_tests {
         let report = verify_legal_notice(&jpeg_bytes, &[]);
         assert!(!report.has_notice());
         assert_eq!(report.evidence_strength(), EvidenceStrength::NoNoticeFound);
+    }
+
+    #[test]
+    fn notice_verification_no_false_channels_jpeg() {
+        let img = create_test_image(64, 64);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+
+        let report = verify_legal_notice(&jpeg_bytes, &[]);
+        assert!(
+            report.channels().is_empty(),
+            "Unprotected JPEG should have no channels, got: {:?}",
+            report.channels()
+        );
+    }
+
+    #[test]
+    fn notice_verification_no_false_channels_webp() {
+        let img = create_test_image(64, 64);
+        let webp_bytes = image_to_webp_bytes(&img);
+
+        let report = verify_legal_notice(&webp_bytes, &[]);
+        assert!(
+            report.channels().is_empty(),
+            "Unprotected WebP should have no channels, got: {:?}",
+            report.channels()
+        );
+    }
+
+    #[test]
+    fn notice_verification_dmi_allowed_not_restriction() {
+        let img = create_test_image(64, 64);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::Allowed);
+        let protected =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Light, &ctx).unwrap();
+
+        let report = verify_legal_notice(&protected, &[]);
+        assert!(
+            report.has_notice(),
+            "DmiValue::Allowed should make has_notice true (DMI was found)"
+        );
+        assert_eq!(report.dmi(), Some(DmiValue::Allowed));
+    }
+
+    #[test]
+    fn notice_verification_dmi_unspecified_not_restriction() {
+        let img = create_test_image(64, 64);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::Unspecified);
+        let protected =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Light, &ctx).unwrap();
+
+        let report = verify_legal_notice(&protected, &[]);
+        assert_eq!(
+            report.dmi(),
+            None,
+            "DmiValue::Unspecified should not be injected as metadata"
+        );
+    }
+
+    #[test]
+    fn notice_verification_tdm_reserved_separate() {
+        let img = create_test_image(64, 64);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::ProhibitedAiMlTraining);
+        let protected =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Light, &ctx).unwrap();
+
+        let report = verify_legal_notice(&protected, &[]);
+        assert!(report.has_notice());
+        assert_eq!(report.tdm_reserved(), Some(true));
+        assert_eq!(report.dmi(), Some(DmiValue::ProhibitedAiMlTraining));
+    }
+
+    #[test]
+    fn cli_verify_prints_legal_fields_before_stego_status() {
+        let img = create_test_image(256, 256);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_legal_metadata(create_legal_metadata())
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::ProhibitedGenAiMlTraining);
+        let protected =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let report = verify_legal_notice(&protected, &[]);
+
+        assert!(report.has_notice());
+        assert_eq!(report.copyright_holder(), Some("Jane Artist"));
+        assert_eq!(report.creator(), Some("Jane Artist"));
+        assert_eq!(report.contact(), Some("legal@example.com"));
+        assert!(report.usage_terms().is_some());
+        assert!(report.ai_constraints().is_some());
+        assert_eq!(
+            report.evidence_strength(),
+            EvidenceStrength::MetadataNoticeAndBestEffortStego
+        );
     }
 }
 
