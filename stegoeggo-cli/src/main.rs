@@ -4,9 +4,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use stegoeggo::Error;
 use stegoeggo::{
-    generate_random_seed, process_image_bytes, verify_image_bytes_detailed, DmiValue,
-    EvidenceProfile, ImageOutputFormat, ProtectionContext, ProtectionLevel, StegoPayload,
-    VerificationResult, DEFAULT_OUTPUT_FORMAT,
+    generate_random_seed, process_image_bytes_with_warnings, verify_legal_notice, DmiValue,
+    EvidenceProfile, ImageOutputFormat, ProtectionContext, ProtectionLevel, ProtectionWarning,
+    StegoPayload, WarningSeverity, DEFAULT_OUTPUT_FORMAT,
 };
 
 #[derive(Parser, Debug)]
@@ -145,6 +145,9 @@ struct Args {
         help = "Number of parallel jobs for batch processing"
     )]
     jobs: usize,
+
+    #[arg(long, help = "Exit with error if any warnings have Error severity")]
+    strict: bool,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -285,6 +288,24 @@ fn compute_output_path(
     }
 }
 
+fn display_warnings(warnings: &[ProtectionWarning], ctx: &ProtectionContext, verbose: bool) {
+    if warnings.is_empty() {
+        return;
+    }
+    let profile = ctx.evidence_profile();
+    for w in warnings {
+        let severity = w.severity_for_profile(profile);
+        let prefix = match severity {
+            WarningSeverity::Error => "Error",
+            WarningSeverity::Warning => "Warning",
+            WarningSeverity::Info => "Info",
+        };
+        if verbose || severity != WarningSeverity::Info {
+            eprintln!("[{}] {}", prefix, w);
+        }
+    }
+}
+
 fn process_single_file(
     input_path: &PathBuf,
     output_dir: &Option<PathBuf>,
@@ -293,7 +314,7 @@ fn process_single_file(
     protection_level: ProtectionLevel,
     verbose: bool,
     override_output: Option<PathBuf>,
-) -> Result<PathBuf, Error> {
+) -> Result<(PathBuf, Vec<ProtectionWarning>), Error> {
     let input_bytes = fs::read(input_path).map_err(Error::Io)?;
 
     let detected_format =
@@ -309,7 +330,8 @@ fn process_single_file(
     let mut ctx = ctx_base.clone();
     ctx.set_input_format(detected_format);
 
-    let output_bytes = process_image_bytes(&input_bytes, protection_level, &ctx)?;
+    let (output_bytes, warnings) =
+        process_image_bytes_with_warnings(&input_bytes, protection_level, &ctx)?;
 
     let output_path = if let Some(override_path) = override_output {
         if let Some(parent) = override_path.parent() {
@@ -337,7 +359,7 @@ fn process_single_file(
         }
     };
 
-    Ok(output_path)
+    Ok((output_path, warnings))
 }
 
 fn print_payload_info(payload: &StegoPayload) {
@@ -462,41 +484,80 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        let result = verify_image_bytes_detailed(&bytes_to_verify, &[]);
+        let mac_key = args
+            .key
+            .as_ref()
+            .map(|k| hex::decode(k).map_err(|e| format!("Invalid hex key '{}': {}", k, e)))
+            .transpose()?
+            .unwrap_or_default();
 
-        if args.verbose {
-            match &result {
-                VerificationResult::Verified { .. } => {
-                    eprintln!("Verified steganographic payload found")
-                }
-                VerificationResult::Corrupted { .. } => {
-                    eprintln!("Protection payload found but integrity check failed")
-                }
-                VerificationResult::MetadataOnly { seed } => {
-                    eprintln!("Metadata-only evidence found (seed {})", seed)
-                }
-                VerificationResult::NotFound => eprintln!("No protection evidence found"),
+        let notice = verify_legal_notice(&bytes_to_verify, &mac_key);
+
+        println!(
+            "Rights notice: {}",
+            if notice.has_notice() {
+                "Found"
+            } else {
+                "Not found"
+            }
+        );
+        if let Some(holder) = notice.copyright_holder() {
+            println!("Copyright holder: {}", holder);
+        }
+        if let Some(creator) = notice.creator() {
+            println!("Creator: {}", creator);
+        }
+        if let Some(contact) = notice.contact() {
+            println!("Contact: {}", contact);
+        }
+        if let Some(url) = notice.rights_url() {
+            println!("Rights URL: {}", url);
+        }
+        if let Some(dmi) = notice.dmi() {
+            println!("AI training restriction: {}", dmi.as_str());
+        }
+        if let Some(reserved) = notice.tdm_reserved() {
+            println!(
+                "TDM reservation: {}",
+                if reserved { "reserved" } else { "not reserved" }
+            );
+        }
+        if let Some(terms) = notice.usage_terms() {
+            println!("Usage terms: {}", terms);
+        }
+        if let Some(seed) = notice.protection_seed() {
+            println!("Protection seed: {}", seed);
+        }
+
+        println!();
+
+        match notice.stego_status() {
+            stegoeggo::VerificationStatus::Verified => {
+                println!("Stego marker: Found, checksum verified");
+            }
+            stegoeggo::VerificationStatus::Invalid => {
+                println!("Stego marker: Found, but integrity check failed");
+            }
+            stegoeggo::VerificationStatus::NotFound => {
+                println!("Stego marker: Not found");
             }
         }
 
-        match result {
-            VerificationResult::Verified { payload } => {
-                println!("Protected: Yes (verified)");
-                print_payload_info(&payload);
-            }
-            VerificationResult::Corrupted { payload } => {
-                println!("Protected: Yes (corrupted)");
-                print_payload_info(&payload);
-            }
-            VerificationResult::MetadataOnly { seed } => {
-                println!("Protected: Maybe (metadata-only — steganographic payload not verified)");
-                println!("Seed: {}", seed);
-            }
-            VerificationResult::NotFound => {
-                println!("Protected: No");
-                println!("This image does not contain a protection signature.");
-            }
+        if notice.authenticated() {
+            println!("Authenticated provenance: Verified");
+        } else if args.key.is_some() {
+            println!("Authenticated provenance: Not verified (key provided but HMAC check failed)");
+        } else {
+            println!("Authenticated provenance: Not configured");
         }
+
+        println!("Evidence strength: {}", notice.evidence_strength());
+
+        if let Some(payload) = notice.stego_payload() {
+            println!();
+            print_payload_info(payload);
+        }
+
         return Ok(());
     }
 
@@ -621,71 +682,81 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
-        let results: Vec<Result<(PathBuf, PathBuf), (PathBuf, String)>> = if args.jobs > 1 {
-            let seen_paths: std::sync::Mutex<HashMap<PathBuf, usize>> =
-                std::sync::Mutex::new(HashMap::new());
+        let results: Vec<Result<(PathBuf, PathBuf, Vec<ProtectionWarning>), (PathBuf, String)>> =
+            if args.jobs > 1 {
+                let seen_paths: std::sync::Mutex<HashMap<PathBuf, usize>> =
+                    std::sync::Mutex::new(HashMap::new());
 
-            input_files
-                .par_iter()
-                .with_max_len(1)
-                .map(|input_path| {
-                    let mut seen = seen_paths.lock().unwrap();
-                    let override_output = compute_output_path(
-                        input_path,
-                        &output_dir,
-                        effective_output_format,
-                        &mut seen,
-                    );
-                    drop(seen);
+                input_files
+                    .par_iter()
+                    .with_max_len(1)
+                    .map(|input_path| {
+                        let mut seen = seen_paths.lock().unwrap();
+                        let override_output = compute_output_path(
+                            input_path,
+                            &output_dir,
+                            effective_output_format,
+                            &mut seen,
+                        );
+                        drop(seen);
 
-                    process_single_file(
-                        input_path,
-                        &output_dir,
-                        effective_output_format,
-                        &ctx,
-                        protection_level,
-                        args.verbose,
-                        override_output,
-                    )
-                    .map(|output| (input_path.clone(), output))
-                    .map_err(|e| (input_path.clone(), e.to_string()))
-                })
-                .collect()
-        } else {
-            let mut seen: HashMap<PathBuf, usize> = HashMap::new();
+                        process_single_file(
+                            input_path,
+                            &output_dir,
+                            effective_output_format,
+                            &ctx,
+                            protection_level,
+                            args.verbose,
+                            override_output,
+                        )
+                        .map(|(output, warnings)| (input_path.clone(), output, warnings))
+                        .map_err(|e| (input_path.clone(), e.to_string()))
+                    })
+                    .collect()
+            } else {
+                let mut seen: HashMap<PathBuf, usize> = HashMap::new();
 
-            input_files
-                .iter()
-                .map(|input_path| {
-                    let override_output = compute_output_path(
-                        input_path,
-                        &output_dir,
-                        effective_output_format,
-                        &mut seen,
-                    );
+                input_files
+                    .iter()
+                    .map(|input_path| {
+                        let override_output = compute_output_path(
+                            input_path,
+                            &output_dir,
+                            effective_output_format,
+                            &mut seen,
+                        );
 
-                    process_single_file(
-                        input_path,
-                        &output_dir,
-                        effective_output_format,
-                        &ctx,
-                        protection_level,
-                        args.verbose,
-                        override_output,
-                    )
-                    .map(|output| (input_path.clone(), output))
-                    .map_err(|e| (input_path.clone(), e.to_string()))
-                })
-                .collect()
-        };
+                        process_single_file(
+                            input_path,
+                            &output_dir,
+                            effective_output_format,
+                            &ctx,
+                            protection_level,
+                            args.verbose,
+                            override_output,
+                        )
+                        .map(|(output, warnings)| (input_path.clone(), output, warnings))
+                        .map_err(|e| (input_path.clone(), e.to_string()))
+                    })
+                    .collect()
+            };
 
         let mut success_count = 0;
         let mut failed_files: Vec<PathBuf> = Vec::new();
+        let mut has_errors = false;
 
         for result in results {
             match result {
-                Ok((input_path, output_path)) => {
+                Ok((input_path, output_path, warnings)) => {
                     success_count += 1;
+                    display_warnings(&warnings, &ctx, args.verbose);
+                    if args.strict
+                        && warnings.iter().any(|w| {
+                            w.severity_for_profile(ctx.evidence_profile()) == WarningSeverity::Error
+                        })
+                    {
+                        has_errors = true;
+                    }
                     if args.verbose {
                         println!("  {} -> {}", input_path.display(), output_path.display());
                     } else {
@@ -719,6 +790,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .into());
         }
+
+        if args.strict && has_errors {
+            return Err(
+                "Strict mode: one or more files produced errors (see warnings above)".into(),
+            );
+        }
     } else {
         let input_path = &input_files[0];
 
@@ -730,7 +807,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Detected format: {:?}", detected_format);
         }
 
-        let output_path = process_single_file(
+        let (output_path, warnings) = process_single_file(
             input_path,
             &args.output,
             effective_output_format,
@@ -740,11 +817,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
         )?;
 
+        display_warnings(&warnings, &ctx, args.verbose);
+
         if args.verbose {
             println!("Output: {:?}", output_path);
             println!("Done!");
         } else {
             println!("{}", output_path.display());
+        }
+
+        if args.strict
+            && warnings
+                .iter()
+                .any(|w| w.severity_for_profile(ctx.evidence_profile()) == WarningSeverity::Error)
+        {
+            return Err(
+                "Strict mode: one or more warnings with error severity (see warnings above)".into(),
+            );
         }
     }
 

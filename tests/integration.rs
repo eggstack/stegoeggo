@@ -1448,3 +1448,172 @@ mod progressive_jpeg_warning {
         assert!(!warnings_with_mac.contains(&ProtectionWarning::LsbCapacitySkipped));
     }
 }
+
+#[cfg(test)]
+mod notice_verification_tests {
+    use super::*;
+    use stegoeggo::{
+        verify_legal_notice, DmiValue, EvidenceChannel, EvidenceStrength, LegalMetadata,
+        ProtectionContext, ProtectionLevel, VerificationStatus,
+    };
+
+    fn create_legal_metadata() -> LegalMetadata {
+        LegalMetadata::new()
+            .with_copyright_holder("Jane Artist")
+            .with_contact_email("legal@example.com")
+            .with_license_url("https://example.com/rights")
+            .with_usage_terms("Copyrighted work. No AI training permitted.")
+            .with_ai_constraints("No generative AI training allowed")
+            .with_creator("Jane Artist")
+    }
+
+    fn create_full_context() -> ProtectionContext {
+        ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_legal_metadata(create_legal_metadata())
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::ProhibitedGenAiMlTraining)
+    }
+
+    #[test]
+    fn test_png_legal_notice_verifies_fields() {
+        let img = create_test_image(64, 64);
+        let ctx = create_full_context();
+        let protected =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Light, &ctx).unwrap();
+
+        let report = verify_legal_notice(&protected, &[]);
+        assert_eq!(report.copyright_holder(), Some("Jane Artist"));
+        assert_eq!(report.contact(), Some("legal@example.com"));
+        assert_eq!(report.rights_url(), Some("https://example.com/rights"));
+        assert!(report.usage_terms().is_some());
+        assert!(report.ai_constraints().is_some());
+        assert_eq!(report.creator(), Some("Jane Artist"));
+        assert!(report.protection_seed().is_some());
+        assert!(report.has_notice());
+    }
+
+    #[test]
+    fn test_jpeg_legal_notice_verifies_fields() {
+        let img = create_test_image(64, 64);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_legal_metadata(create_legal_metadata())
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::ProhibitedGenAiMlTraining);
+        let protected =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Light, &ctx).unwrap();
+
+        let report = verify_legal_notice(&protected, &[]);
+        assert!(report.has_notice());
+        assert!(!report.channels().is_empty());
+    }
+
+    #[test]
+    fn test_metadata_only_returns_metadata_notice_only() {
+        let img = create_test_image(32, 32);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_legal_metadata(create_legal_metadata())
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::ProhibitedGenAiMlTraining);
+        let protected =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Light, &ctx).unwrap();
+
+        let report = verify_legal_notice(&protected, &[]);
+        assert!(report.has_notice());
+        assert_ne!(report.stego_status(), VerificationStatus::Verified);
+        assert_eq!(
+            report.evidence_strength(),
+            EvidenceStrength::MetadataNoticeOnly
+        );
+    }
+
+    #[test]
+    fn test_metadata_plus_unkeyed_stego_returns_best_effort() {
+        let img = create_test_image(256, 256);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_legal_metadata(create_legal_metadata())
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::ProhibitedGenAiMlTraining);
+        let protected =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let report = verify_legal_notice(&protected, &[]);
+        assert!(report.has_notice());
+        assert!(report.stego_status() == VerificationStatus::Verified);
+        assert!(!report.authenticated());
+        assert_eq!(
+            report.evidence_strength(),
+            EvidenceStrength::MetadataNoticeAndBestEffortStego
+        );
+    }
+
+    #[test]
+    fn test_metadata_plus_keyed_stego_returns_authenticated() {
+        let img = create_test_image(256, 256);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_mac_key(b"test-mac-key".to_vec())
+            .with_legal_metadata(create_legal_metadata())
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::ProhibitedGenAiMlTraining);
+        let protected =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let report = verify_legal_notice(&protected, b"test-mac-key");
+        assert!(report.has_notice());
+        assert_eq!(report.stego_status(), VerificationStatus::Verified);
+        assert!(report.authenticated());
+        assert_eq!(
+            report.evidence_strength(),
+            EvidenceStrength::MetadataNoticeAndAuthenticatedProvenance
+        );
+    }
+
+    #[test]
+    fn test_wrong_key_reports_unauthenticated() {
+        let img = create_test_image(256, 256);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_mac_key(b"test-mac-key".to_vec())
+            .with_legal_metadata(create_legal_metadata())
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::ProhibitedGenAiMlTraining);
+        let protected =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let report = verify_legal_notice(&protected, b"wrong-key");
+        assert!(report.has_notice());
+        assert_eq!(report.stego_status(), VerificationStatus::Invalid);
+        assert!(!report.authenticated());
+    }
+
+    #[test]
+    fn test_unprotected_image_returns_no_notice() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let report = verify_legal_notice(&png_bytes, &[]);
+        assert!(!report.has_notice());
+        assert_eq!(report.evidence_strength(), EvidenceStrength::NoNoticeFound);
+        assert_ne!(report.stego_status(), VerificationStatus::Verified);
+    }
+
+    #[test]
+    fn test_evidence_channels_populated_for_png() {
+        let img = create_test_image(256, 256);
+        let ctx = create_full_context();
+        let protected =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let report = verify_legal_notice(&protected, &[]);
+        let channels = report.channels();
+        assert!(channels.contains(&EvidenceChannel::PngText));
+    }
+}

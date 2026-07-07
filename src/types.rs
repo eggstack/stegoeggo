@@ -1141,6 +1141,279 @@ impl From<VerificationStatus> for Option<bool> {
     }
 }
 
+/// Strength of legal-notice evidence found in an image.
+///
+/// Evidence strength increases as more independent verification channels agree.
+/// This enum is oriented toward legal deterrence, not cryptographic security.
+///
+/// # Interpretation
+///
+/// - [`NoNoticeFound`](Self::NoNoticeFound): No rights-reservation metadata detected.
+/// - [`MetadataNoticeOnly`](Self::MetadataNoticeOnly): Legal-notice fields found in
+///   metadata but no verified steganographic payload.
+/// - [`MetadataNoticeAndBestEffortStego`](Self::MetadataNoticeAndBestEffortStego):
+///   Legal-notice metadata plus a steganographic payload verified without
+///   cryptographic authentication (CRC32 or unmatched MAC).
+/// - [`MetadataNoticeAndAuthenticatedProvenance`](Self::MetadataNoticeAndAuthenticatedProvenance):
+///   Legal-notice metadata plus a steganographic payload verified with
+///   HMAC-SHA256 using the caller's MAC key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum EvidenceStrength {
+    /// No rights-reservation metadata found in the image.
+    NoNoticeFound,
+    /// Legal-notice metadata found but no verified steganographic payload.
+    MetadataNoticeOnly,
+    /// Legal-notice metadata plus a non-authenticated steganographic payload.
+    MetadataNoticeAndBestEffortStego,
+    /// Legal-notice metadata plus a MAC-authenticated steganographic payload.
+    MetadataNoticeAndAuthenticatedProvenance,
+}
+
+impl std::fmt::Display for EvidenceStrength {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvidenceStrength::NoNoticeFound => write!(f, "NoNoticeFound"),
+            EvidenceStrength::MetadataNoticeOnly => write!(f, "MetadataNoticeOnly"),
+            EvidenceStrength::MetadataNoticeAndBestEffortStego => {
+                write!(f, "MetadataNoticeAndBestEffortStego")
+            }
+            EvidenceStrength::MetadataNoticeAndAuthenticatedProvenance => {
+                write!(f, "MetadataNoticeAndAuthenticatedProvenance")
+            }
+        }
+    }
+}
+
+/// A channel through which legal-notice or steganographic evidence was detected.
+///
+/// Each variant corresponds to a specific metadata location or steganographic
+/// technique used by the protection pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum EvidenceChannel {
+    /// PNG tEXt/iTXt text chunk containing a key-value pair.
+    PngText,
+    /// PNG iTXt chunk containing XMP metadata.
+    PngXmp,
+    /// JPEG COM (comment) marker.
+    JpegComment,
+    /// JPEG APP1 marker containing XMP metadata.
+    JpegXmp,
+    /// JPEG APP13 marker containing IPTC-IIM data.
+    JpegIptc,
+    /// WebP RIFF chunk containing XMP metadata.
+    WebPXmp,
+    /// WebP RIFF chunk containing EXIF data.
+    WebPExif,
+    /// LSB steganographic payload embedded in pixel data.
+    LsbPayload,
+    /// F5-style DCT steganographic payload embedded in JPEG coefficients.
+    DctPayload,
+    /// Seed stored in JPEG quantization table LSBs.
+    QTableSeed,
+}
+
+impl std::fmt::Display for EvidenceChannel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvidenceChannel::PngText => write!(f, "PngText"),
+            EvidenceChannel::PngXmp => write!(f, "PngXmp"),
+            EvidenceChannel::JpegComment => write!(f, "JpegComment"),
+            EvidenceChannel::JpegXmp => write!(f, "JpegXmp"),
+            EvidenceChannel::JpegIptc => write!(f, "JpegIptc"),
+            EvidenceChannel::WebPXmp => write!(f, "WebPXmp"),
+            EvidenceChannel::WebPExif => write!(f, "WebPExif"),
+            EvidenceChannel::LsbPayload => write!(f, "LsbPayload"),
+            EvidenceChannel::DctPayload => write!(f, "DctPayload"),
+            EvidenceChannel::QTableSeed => write!(f, "QTableSeed"),
+        }
+    }
+}
+
+/// Legal-notice verification report for a protected image.
+///
+/// This struct reports the legal-notice metadata and steganographic status
+/// of an image, enabling callers to present a structured evidence report
+/// without interpreting legal conclusions.
+///
+/// # Fields
+///
+/// All metadata fields are `Option<String>`: `None` means the field was not
+/// found in the image. An empty string means the field was found but empty.
+///
+/// # Examples
+///
+/// ```no_run
+/// let img_bytes = std::fs::read("protected.png").unwrap();
+/// let report = stegoeggo::verify_legal_notice(&img_bytes, b"my-mac-key");
+/// println!("Evidence strength: {}", report.evidence_strength());
+/// ```
+#[derive(Debug, Clone)]
+pub struct NoticeVerification {
+    /// Copyright holder extracted from the image metadata.
+    copyright_holder: Option<String>,
+    /// Creator name extracted from the image metadata.
+    creator: Option<String>,
+    /// Contact email extracted from the image metadata.
+    contact: Option<String>,
+    /// Rights URL or web statement of rights extracted from the image metadata.
+    rights_url: Option<String>,
+    /// Usage terms extracted from the image metadata.
+    usage_terms: Option<String>,
+    /// AI training constraints extracted from the image metadata.
+    ai_constraints: Option<String>,
+    /// DMI (Data Mining) restriction value extracted from the image metadata.
+    dmi: Option<DmiValue>,
+    /// Whether TDM reservation was found in XMP metadata.
+    tdm_reserved: Option<bool>,
+    /// Protection seed extracted from metadata or steganographic payload.
+    protection_seed: Option<u64>,
+    /// Steganographic payload verification status.
+    stego_status: VerificationStatus,
+    /// The extracted steganographic payload, if verified.
+    stego_payload: Option<crate::StegoPayload>,
+    /// Whether the steganographic payload was authenticated via HMAC.
+    authenticated: bool,
+    /// Overall evidence strength combining metadata and stego channels.
+    evidence_strength: EvidenceStrength,
+    /// Evidence channels through which data was detected.
+    channels: Vec<EvidenceChannel>,
+}
+
+impl NoticeVerification {
+    /// Returns the copyright holder, if found.
+    #[must_use]
+    pub fn copyright_holder(&self) -> Option<&str> {
+        self.copyright_holder.as_deref()
+    }
+
+    /// Returns the creator name, if found.
+    #[must_use]
+    pub fn creator(&self) -> Option<&str> {
+        self.creator.as_deref()
+    }
+
+    /// Returns the contact email, if found.
+    #[must_use]
+    pub fn contact(&self) -> Option<&str> {
+        self.contact.as_deref()
+    }
+
+    /// Returns the rights URL, if found.
+    #[must_use]
+    pub fn rights_url(&self) -> Option<&str> {
+        self.rights_url.as_deref()
+    }
+
+    /// Returns the usage terms, if found.
+    #[must_use]
+    pub fn usage_terms(&self) -> Option<&str> {
+        self.usage_terms.as_deref()
+    }
+
+    /// Returns the AI training constraints, if found.
+    #[must_use]
+    pub fn ai_constraints(&self) -> Option<&str> {
+        self.ai_constraints.as_deref()
+    }
+
+    /// Returns the DMI restriction value, if found.
+    #[must_use]
+    pub fn dmi(&self) -> Option<DmiValue> {
+        self.dmi
+    }
+
+    /// Returns whether TDM reservation was found.
+    #[must_use]
+    pub fn tdm_reserved(&self) -> Option<bool> {
+        self.tdm_reserved
+    }
+
+    /// Returns the protection seed, if found.
+    #[must_use]
+    pub fn protection_seed(&self) -> Option<u64> {
+        self.protection_seed
+    }
+
+    /// Returns the steganographic verification status.
+    #[must_use]
+    pub fn stego_status(&self) -> VerificationStatus {
+        self.stego_status
+    }
+
+    /// Returns the extracted steganographic payload, if verified.
+    #[must_use]
+    pub fn stego_payload(&self) -> Option<&crate::StegoPayload> {
+        self.stego_payload.as_ref()
+    }
+
+    /// Returns whether the steganographic payload was authenticated.
+    #[must_use]
+    pub fn authenticated(&self) -> bool {
+        self.authenticated
+    }
+
+    /// Returns the evidence strength.
+    #[must_use]
+    pub fn evidence_strength(&self) -> EvidenceStrength {
+        self.evidence_strength
+    }
+
+    /// Returns the evidence channels detected.
+    #[must_use]
+    pub fn channels(&self) -> &[EvidenceChannel] {
+        &self.channels
+    }
+
+    /// Returns `true` if any legal-notice metadata was found.
+    #[must_use]
+    pub fn has_notice(&self) -> bool {
+        self.copyright_holder.is_some()
+            || self.creator.is_some()
+            || self.contact.is_some()
+            || self.rights_url.is_some()
+            || self.usage_terms.is_some()
+            || self.ai_constraints.is_some()
+            || self.dmi.is_some()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        copyright_holder: Option<String>,
+        creator: Option<String>,
+        contact: Option<String>,
+        rights_url: Option<String>,
+        usage_terms: Option<String>,
+        ai_constraints: Option<String>,
+        dmi: Option<DmiValue>,
+        tdm_reserved: Option<bool>,
+        protection_seed: Option<u64>,
+        stego_status: VerificationStatus,
+        stego_payload: Option<crate::StegoPayload>,
+        authenticated: bool,
+        evidence_strength: EvidenceStrength,
+        channels: Vec<EvidenceChannel>,
+    ) -> Self {
+        Self {
+            copyright_holder,
+            creator,
+            contact,
+            rights_url,
+            usage_terms,
+            ai_constraints,
+            dmi,
+            tdm_reserved,
+            protection_seed,
+            stego_status,
+            stego_payload,
+            authenticated,
+            evidence_strength,
+            channels,
+        }
+    }
+}
+
 /// Warning about degraded protection during image processing.
 ///
 /// Returned by [`process_image_bytes_with_info`](crate::process_image_bytes_with_info)
@@ -1222,6 +1495,83 @@ impl std::fmt::Display for ProtectionWarning {
                 "JPEG DCT coefficients insufficient for full F5 embedding: \
                  fell back to Q-table seed only. Weaker protection applied."
             ),
+        }
+    }
+}
+
+/// Categorizes protection warnings by their relevance to evidence profiles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WarningCategory {
+    /// Warnings relevant to legal-notice evidence models.
+    LegalNotice,
+    /// Warnings about steganographic capacity limitations (best-effort).
+    BestEffortStego,
+    /// Warnings relevant to authenticated provenance models.
+    AuthenticatedProvenance,
+    /// Warnings about format-specific fragility or fallbacks.
+    FormatFragility,
+}
+
+/// Severity level for a protection warning within a specific evidence profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WarningSeverity {
+    /// Informational — no action required; expected behavior for this profile.
+    Info,
+    /// Warning — protection is degraded; caller should be aware.
+    Warning,
+    /// Error — the evidence model cannot be satisfied with current configuration.
+    Error,
+}
+
+impl std::fmt::Display for WarningSeverity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WarningSeverity::Info => write!(f, "info"),
+            WarningSeverity::Warning => write!(f, "warning"),
+            WarningSeverity::Error => write!(f, "error"),
+        }
+    }
+}
+
+impl ProtectionWarning {
+    /// Returns the category this warning belongs to.
+    #[must_use]
+    pub fn category(&self) -> WarningCategory {
+        match self {
+            ProtectionWarning::MissingMacKey => WarningCategory::AuthenticatedProvenance,
+            ProtectionWarning::MetadataInjectionDisabled => WarningCategory::LegalNotice,
+            ProtectionWarning::ProgressiveJpegFallback => WarningCategory::FormatFragility,
+            ProtectionWarning::JpegReencodeFragile => WarningCategory::FormatFragility,
+            ProtectionWarning::LsbCapacitySkipped => WarningCategory::BestEffortStego,
+            ProtectionWarning::DctCapacityInsufficient => WarningCategory::BestEffortStego,
+        }
+    }
+
+    /// Returns the severity of this warning for the given evidence profile.
+    #[must_use]
+    pub fn severity_for_profile(&self, profile: EvidenceProfile) -> WarningSeverity {
+        match self {
+            ProtectionWarning::MissingMacKey => match profile {
+                EvidenceProfile::AuthenticatedProvenance | EvidenceProfile::Maximal => {
+                    WarningSeverity::Warning
+                }
+                _ => WarningSeverity::Info,
+            },
+            ProtectionWarning::MetadataInjectionDisabled => match profile {
+                EvidenceProfile::LegalNotice | EvidenceProfile::LegalNoticeWithStego => {
+                    WarningSeverity::Error
+                }
+                _ => WarningSeverity::Warning,
+            },
+            ProtectionWarning::ProgressiveJpegFallback | ProtectionWarning::JpegReencodeFragile => {
+                WarningSeverity::Warning
+            }
+            ProtectionWarning::LsbCapacitySkipped | ProtectionWarning::DctCapacityInsufficient => {
+                match profile {
+                    EvidenceProfile::LegalNotice => WarningSeverity::Info,
+                    _ => WarningSeverity::Warning,
+                }
+            }
         }
     }
 }
@@ -1485,5 +1835,131 @@ mod tests {
             ProtectionContext::maximal().evidence_profile(),
             EvidenceProfile::Maximal
         );
+    }
+
+    #[test]
+    fn warning_category_mapping() {
+        assert_eq!(
+            ProtectionWarning::MissingMacKey.category(),
+            WarningCategory::AuthenticatedProvenance
+        );
+        assert_eq!(
+            ProtectionWarning::MetadataInjectionDisabled.category(),
+            WarningCategory::LegalNotice
+        );
+        assert_eq!(
+            ProtectionWarning::ProgressiveJpegFallback.category(),
+            WarningCategory::FormatFragility
+        );
+        assert_eq!(
+            ProtectionWarning::JpegReencodeFragile.category(),
+            WarningCategory::FormatFragility
+        );
+        assert_eq!(
+            ProtectionWarning::LsbCapacitySkipped.category(),
+            WarningCategory::BestEffortStego
+        );
+        assert_eq!(
+            ProtectionWarning::DctCapacityInsufficient.category(),
+            WarningCategory::BestEffortStego
+        );
+    }
+
+    #[test]
+    fn missing_mac_key_severity_by_profile() {
+        let w = ProtectionWarning::MissingMacKey;
+        assert_eq!(
+            w.severity_for_profile(EvidenceProfile::AuthenticatedProvenance),
+            WarningSeverity::Warning
+        );
+        assert_eq!(
+            w.severity_for_profile(EvidenceProfile::Maximal),
+            WarningSeverity::Warning
+        );
+        assert_eq!(
+            w.severity_for_profile(EvidenceProfile::LegalNotice),
+            WarningSeverity::Info
+        );
+        assert_eq!(
+            w.severity_for_profile(EvidenceProfile::LegalNoticeWithStego),
+            WarningSeverity::Info
+        );
+    }
+
+    #[test]
+    fn metadata_injection_disabled_severity_by_profile() {
+        let w = ProtectionWarning::MetadataInjectionDisabled;
+        assert_eq!(
+            w.severity_for_profile(EvidenceProfile::LegalNotice),
+            WarningSeverity::Error
+        );
+        assert_eq!(
+            w.severity_for_profile(EvidenceProfile::LegalNoticeWithStego),
+            WarningSeverity::Error
+        );
+        assert_eq!(
+            w.severity_for_profile(EvidenceProfile::AuthenticatedProvenance),
+            WarningSeverity::Warning
+        );
+        assert_eq!(
+            w.severity_for_profile(EvidenceProfile::Maximal),
+            WarningSeverity::Warning
+        );
+    }
+
+    #[test]
+    fn format_fragility_severity_is_always_warning() {
+        for w in [
+            ProtectionWarning::ProgressiveJpegFallback,
+            ProtectionWarning::JpegReencodeFragile,
+        ] {
+            for profile in [
+                EvidenceProfile::LegalNotice,
+                EvidenceProfile::LegalNoticeWithStego,
+                EvidenceProfile::AuthenticatedProvenance,
+                EvidenceProfile::Maximal,
+            ] {
+                assert_eq!(
+                    w.severity_for_profile(profile),
+                    WarningSeverity::Warning,
+                    "{:?} should be Warning for {:?}",
+                    w,
+                    profile
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn stego_capacity_severity_by_profile() {
+        for w in [
+            ProtectionWarning::LsbCapacitySkipped,
+            ProtectionWarning::DctCapacityInsufficient,
+        ] {
+            assert_eq!(
+                w.severity_for_profile(EvidenceProfile::LegalNotice),
+                WarningSeverity::Info,
+                "{:?} should be Info for LegalNotice",
+                w
+            );
+            assert_eq!(
+                w.severity_for_profile(EvidenceProfile::LegalNoticeWithStego),
+                WarningSeverity::Warning,
+                "{:?} should be Warning for LegalNoticeWithStego",
+                w
+            );
+            assert_eq!(
+                w.severity_for_profile(EvidenceProfile::AuthenticatedProvenance),
+                WarningSeverity::Warning,
+                "{:?} should be Warning for AuthenticatedProvenance",
+                w
+            );
+            assert_eq!(
+                w.severity_for_profile(EvidenceProfile::Maximal),
+                WarningSeverity::Warning,
+                "{:?} should be Warning for Maximal",
+                w
+            );
+        }
     }
 }

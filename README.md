@@ -375,15 +375,33 @@ if warnings.iter().any(|w| matches!(w, ProtectionWarning::MissingMacKey)) {
 }
 ```
 
+Use `severity_for_profile()` to determine if a warning is actionable for your evidence model:
+
+```rust,ignore
+use stegoeggo::{process_image_bytes_with_warnings, EvidenceProfile, ProtectionContext, ProtectionLevel};
+
+let profile = EvidenceProfile::AuthenticatedProvenance;
+let (protected, warnings) =
+    process_image_bytes_with_warnings(&origin_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+for w in &warnings {
+    match w.severity_for_profile(profile) {
+        WarningSeverity::Error => eprintln!("FATAL: {w}"),
+        WarningSeverity::Warning => eprintln!("WARN: {w}"),
+        WarningSeverity::Info => {} // silently ignored
+    }
+}
+```
+
 Use `process_image_bytes_with_warnings()` rather than the `DynamicImage` API in
 the proxy path. For JPEG-in/JPEG-out, this keeps protection on the byte/DCT fast
 path. For PNG/WebP, the library must still decode and re-encode pixels to embed
 LSB payloads, so cache protected outputs aggressively at the proxy layer.
 
-For verification, prefer `verify_image_bytes_detailed()`. A
-`VerificationResult::MetadataOnly` result means metadata was found, but no
-steganographic payload was integrity-verified; treat that as weaker evidence
-than `VerificationResult::Verified`.
+For verification, prefer `verify_legal_notice()` for a comprehensive report of all
+evidence channels. It extracts legal notice fields (copyright, creator, contact, etc.),
+checks steganographic payload integrity, and returns an `EvidenceStrength` rating.
+Use `verify_image_bytes_detailed()` for lower-level payload-only verification.
 
 ## CLI Usage
 
@@ -422,6 +440,7 @@ Options:
   --tdm-reserved          Shorthand: reserve text and data mining rights
   -k, --key <KEY>          Optional cryptographic key (hex string) for HMAC-SHA256 verification
   -j, --jobs <N>           Parallel jobs for batch processing (default: 1)
+  --strict                 Exit with error if any warnings have Error severity
   -h, --help               Print help
   --version                Print version
 ```
@@ -596,7 +615,29 @@ let seed = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
 if let Some(seed) = seed {
     println!("Found protection seed: {}", seed);
 }
+
+// Method 3: Comprehensive legal notice verification (recommended)
+let report = stegoeggo::verify_legal_notice(&protected_bytes, b"my-mac-key");
+println!("Copyright holder: {:?}", report.copyright_holder());
+println!("Evidence strength: {}", report.evidence_strength());
+for channel in report.channels() {
+    println!("  Channel: {}", channel);
+}
 ```
+
+#### Evidence Strength Levels
+
+| Level | Meaning |
+|-------|---------|
+| `NoNoticeFound` | No metadata or steganographic markers detected |
+| `MetadataNoticeOnly` | Legal notice metadata found, no stego payload verified |
+| `MetadataNoticeAndBestEffortStego` | Metadata + unauthenticated stego payload verified |
+| `MetadataNoticeAndAuthenticatedProvenance` | Metadata + MAC-authenticated stego payload verified |
+
+#### Evidence Channels
+
+The `NoticeVerification` report lists which evidence channels were detected:
+`PngText`, `PngXmp`, `JpegComment`, `JpegXmp`, `JpegIptc`, `WebPXmp`, `WebPExif`, `LsbPayload`, `DctPayload`, `QTableSeed`.
 
 ### JPEG Limitations
 

@@ -45,6 +45,7 @@ src/
 │   ├── metadata_trap.rs   # Metadata injection (Light)
 │   ├── steganography.rs   # LSB/DCT steganographic embedding
 │   ├── ecc.rs             # 3x repetition ECC with majority voting
+│   ├── notice_verification.rs # Legal notice verification (verify_legal_notice)
 │   └── stego_cost.rs      # Pixel embedding cost computation (Laplacian-based)
 ├── jpeg_transcoder/       # JPEG-specific processing
 │   ├── header.rs          # JPEG header parser
@@ -117,7 +118,7 @@ Run with: `cargo +nightly fuzz run <target> -- -max_total_time=60`
 - **XorShiftRng — two separate implementations**: `src/util/image.rs` has `PixelSelectionRng` (pixel selection) and `src/jpeg_transcoder/stego_f5.rs` has `DctCoefficientRng` (DCT shuffling). Different algorithms, different sequences for same seed. Do NOT interchange them
 - **MetadataTrapProtector::apply()**: Returns `Cow::Borrowed(img)` unchanged — metadata injection is byte-level. The pipeline routes `Light` through `apply_light_bytes()` which encodes → injects → decodes. For byte-level output with metadata, use `apply_bytes()` or `process_bytes()`
 - **`stego_redundancy` is `Option<usize>`**: Default `None` derives from intensity via `effective_redundancy()` (<0.3→1, 0.3-0.7→2, >=0.7→3). Explicit `.with_stego_redundancy(n)` overrides this. Valid range 1-10
-- **Verification API**: `verify_payload_with_key()` and `verify_image_bytes()` return `VerificationStatus` (`Verified`, `Invalid`, `NotFound`), not `Option<bool>`. Use `== VerificationStatus::Verified` in assertions. For richer info, use `verify_image_bytes_detailed()` → `VerificationResult`
+- **Verification API**: `verify_payload_with_key()` and `verify_image_bytes()` return `VerificationStatus` (`Verified`, `Invalid`, `NotFound`), not `Option<bool>`. Use `== VerificationStatus::Verified` in assertions. For richer info, use `verify_image_bytes_detailed()` → `VerificationResult`. For comprehensive legal notice verification, use `verify_legal_notice()` → `NoticeVerification` with `EvidenceStrength` and `EvidenceChannel`
 - **`inject_metadata` / `inject_legal_claims` are `Option<bool>`**: Default `None` (use level default) vs explicit `false` (disable). `with_metadata_injection(false)` ≠ not calling it at all
 - **Pipeline flow order**: JPEG output: encode → DCT stego → metadata. Non-JPEG: pixel stego → encode → metadata. JPEG→JPEG fast path bypasses pixel decode entirely
 - **F5 seed embedding Q-table edge case**: `embed_seed_in_quantization_tables()` fails if any quantization value in the first 2 tables is < 2. Values of 1 cannot represent a 0-bit (`1 & 0xFE = 0`, clamped back to 1)
@@ -131,10 +132,13 @@ Run with: `cargo +nightly fuzz run <target> -- -max_total_time=60`
 - **Payload version migration**: Current version is 2. V1 (24-byte) still supported for extraction. To add v3: bump `CURRENT_PAYLOAD_VERSION`, add to `SUPPORTED_PAYLOAD_VERSIONS`, add `parse_stego_payload_v3` arm
 - **CLI file path**: CLI binary lives at `stegoeggo-cli/src/main.rs`, not `src/bin/`
 - **CLI batch filename collisions**: Duplicate output stems get `_protected_1`, `_protected_2`, etc.
-- **CLI legal metadata flags**: `--copyright-holder`, `--creator`, `--contact`, `--rights-url`, `--usage-terms`, `--ai-constraints` set `LegalMetadata` fields. `--no-ai-training`, `--no-genai-training`, `--tdm-reserved` are DMI presets that also set default `ai_constraints` text. Any legal flag auto-enables `--legal-claims`. `--metadata false` + legal flags → error
+- **CLI legal metadata flags**: `--copyright-holder`, `--creator`, `--contact`, `--rights-url`, `--usage-terms`, `--ai-constraints` set `LegalMetadata` fields. `--no-ai-training`, `--no-genai-training`, `--tdm-reserved` are DMI presets that also set default `ai_constraints` text. Any legal flag auto-enables `--legal-claims`. `--metadata false` + legal flags → error. `--strict` exits with error if any warnings have Error severity
 - **Tiled steganography** (`with_tile_size(n)`): Crop-resistant mode. Embeds full payload per tile. Tiled F5 limited to tile-aligned crops without re-encode. `tile_seed(master_seed, tile_x, tile_y)` uses splitmix64. Tiled paths are verification fallbacks
 - **F5 tiled block set**: MCU-interleaved block ordering: `block_idx = (mcu_y * mcus_per_row + mcu_x) * h * v + sub_y * h + sub_x`. Do NOT assume row-major ordering
-- **ProtectionWarning variants**: 7 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped`, `DctCapacityInsufficient`, `WebpLossyReencodeDestructive`. Returned by `process_image_bytes_with_warnings`
+- **ProtectionWarning variants**: 6 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped`, `DctCapacityInsufficient`. Returned by `process_image_bytes_with_warnings`
+- **WarningCategory / WarningSeverity**: `ProtectionWarning` has `category() -> WarningCategory` and `severity_for_profile(profile) -> WarningSeverity` methods. Categories: `LegalNotice`, `BestEffortStego`, `AuthenticatedProvenance`, `FormatFragility`. Severities: `Info`, `Warning`, `Error`
 - **Fuzz harness**: 3 targets in `fuzz/`: `pipeline_bytes`, `tiled_round_trip`, `jpeg_parser`. Run with `cargo +nightly fuzz run <target> -- -max_total_time=60`. Add regression tests in `tests/robustness.rs` for findings
 - **EvidenceProfile vs ProtectionLevel**: `ProtectionLevel` controls how much processing occurs (Disabled/Light/Standard). `EvidenceProfile` controls how warnings are interpreted and the default evidence posture. They are orthogonal — you can use any profile with any level
 - **MissingMacKey warning is profile-dependent**: Only emitted for `AuthenticatedProvenance` and `Maximal` profiles. `LegalNotice` and `LegalNoticeWithStego` do not warn about missing MAC keys
+- **`NoticeVerification`, `EvidenceStrength`, `EvidenceChannel`**: Types in `src/types.rs` for legal-notice conformance reporting. `verify_legal_notice()` in `src/protected/notice_verification.rs` extracts legal fields from PNG tEXt, JPEG COM, and WebP XMP markers, verifies stego payload integrity, and returns an evidence strength rating
+- **Creator metadata injection**: `add_legal_metadata()` in `metadata_trap.rs` injects `Creator` as a tEXt chunk (PNG) or COM marker (JPEG). Ensure `LegalMetadata::creator()` is wired into both injection and extraction paths

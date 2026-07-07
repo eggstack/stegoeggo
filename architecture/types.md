@@ -1,6 +1,6 @@
 # Core Types
 
-**Source:** `src/types.rs` (~1297 lines)
+**Source:** `src/types.rs` (~1964 lines)
 
 Defines all core data structures used across the codebase. Uses builder pattern with `#[must_use]` on builder methods.
 
@@ -136,7 +136,64 @@ All fields are private — use builder methods (`with_mac_key`, `with_legal_meta
 
 Builder-pattern struct for legal/copyright metadata:
 
-Fields: `copyright_holder`, `contact_email`, `license_url`, `usage_terms`, `creation_date`, `ai_constraints`, `web_statement_of_rights`.
+Fields: `copyright_holder`, `contact_email`, `license_url`, `usage_terms`, `creation_date`, `ai_constraints`, `web_statement_of_rights`, `creator`.
+
+## NoticeVerification
+
+Comprehensive legal-notice verification report returned by `verify_legal_notice()`:
+
+```rust
+pub struct NoticeVerification {
+    copyright_holder: Option<String>,
+    creator: Option<String>,
+    contact: Option<String>,
+    rights_url: Option<String>,
+    usage_terms: Option<String>,
+    ai_constraints: Option<String>,
+    dmi: Option<DmiValue>,
+    tdm_reserved: Option<bool>,
+    protection_seed: Option<u64>,
+    stego_status: VerificationStatus,
+    stego_payload: Option<StegoPayload>,
+    authenticated: bool,
+    evidence_strength: EvidenceStrength,
+    channels: Vec<EvidenceChannel>,
+}
+```
+
+All fields are private — use getter methods (e.g., `report.copyright_holder()`, `report.evidence_strength()`). `has_notice()` returns true if any legal field or DMI value is present.
+
+## EvidenceStrength
+
+Enum classifying the overall evidence posture of a protected image:
+
+```rust
+pub enum EvidenceStrength {
+    NoNoticeFound,                          // No metadata or stego
+    MetadataNoticeOnly,                     // Metadata present, no stego verified
+    MetadataNoticeAndBestEffortStego,       // Metadata + unauthenticated stego
+    MetadataNoticeAndAuthenticatedProvenance, // Metadata + MAC-authenticated stego
+}
+```
+
+## EvidenceChannel
+
+Enum identifying which evidence channels were detected during verification:
+
+```rust
+pub enum EvidenceChannel {
+    PngText,     // PNG tEXt chunks (copyright, contact, etc.)
+    PngXmp,      // PNG iTXt XMP data
+    JpegComment, // JPEG COM markers
+    JpegXmp,     // JPEG APP1 XMP data
+    JpegIptc,    // JPEG APP13 IPTC-IIM data
+    WebPXmp,     // WebP XMP chunk
+    WebPExif,    // WebP EXIF chunk
+    LsbPayload,  // LSB steganographic payload
+    DctPayload,  // DCT/F5 steganographic payload
+    QTableSeed,  // Quantization table seed (JPEG detection only)
+}
+```
 
 ## StegoPayload
 
@@ -146,6 +203,60 @@ Extracted stego data (returned from `SteganographyProtector::extract_payload`):
 - `seed() -> u64`
 - `intensity() -> f32`
 - `version() -> u8`
+
+## ProtectionWarning
+
+Enum with 6 variants emitted by `process_image_bytes_with_warnings`:
+
+| Variant | Category | Description |
+|---------|----------|-------------|
+| `MissingMacKey` | AuthenticatedProvenance | No MAC key configured |
+| `MetadataInjectionDisabled` | LegalNotice | Metadata injection explicitly disabled |
+| `ProgressiveJpegFallback` | FormatFragility | Progressive JPEG fell back to Q-table seed only |
+| `JpegReencodeFragile` | FormatFragility | JPEG output fragile under downstream re-encoding |
+| `LsbCapacitySkipped` | BestEffortStego | Image too small for LSB embedding |
+| `DctCapacityInsufficient` | BestEffortStego | JPEG has too few DCT coefficients for F5 |
+
+### Helper Methods
+
+- `category() -> WarningCategory` — Returns the warning's category
+- `severity_for_profile(profile) -> WarningSeverity` — Returns severity relative to a specific evidence profile
+
+## WarningCategory
+
+Enum classifying warnings by their relevance to evidence models:
+
+```rust
+pub enum WarningCategory {
+    LegalNotice,            // Metadata/injection warnings
+    BestEffortStego,       // Stego capacity limitations
+    AuthenticatedProvenance, // MAC/crypto warnings
+    FormatFragility,       // Format-specific fragility
+}
+```
+
+## WarningSeverity
+
+Enum indicating warning severity within an evidence profile:
+
+```rust
+pub enum WarningSeverity {
+    Info,     // Expected behavior for this profile
+    Warning,  // Protection is degraded
+    Error,    // Evidence model cannot be satisfied
+}
+```
+
+### Severity Mappings
+
+| Warning | LegalNotice | LegalNoticeWithStego | AuthenticatedProvenance | Maximal |
+|---------|-------------|---------------------|------------------------|---------|
+| MissingMacKey | Info | Info | Warning | Warning |
+| MetadataInjectionDisabled | Error | Error | Warning | Warning |
+| ProgressiveJpegFallback | Warning | Warning | Warning | Warning |
+| JpegReencodeFragile | Warning | Warning | Warning | Warning |
+| LsbCapacitySkipped | Info | Warning | Warning | Warning |
+| DctCapacityInsufficient | Info | Warning | Warning | Warning |
 
 ## Serialization Notes
 

@@ -176,6 +176,9 @@ impl MetadataTrapProtector {
                     statement.as_bytes().to_vec(),
                 ));
             }
+            if let Some(creator_name) = legal.creator() {
+                metadata.push((b"Creator".to_vec(), creator_name.as_bytes().to_vec()));
+            }
         } else {
             metadata.push((
                 b"UsageTerms".to_vec(),
@@ -716,7 +719,7 @@ impl MetadataTrapProtector {
         marker
     }
 
-    fn parse_structured_com_payload(data: &[u8]) -> Option<(u64, u8, u16)> {
+    pub(crate) fn parse_structured_com_payload(data: &[u8]) -> Option<(u64, u8, u16)> {
         if data.len() < 34 {
             return None;
         }

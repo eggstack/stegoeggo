@@ -185,8 +185,9 @@ pub mod async_api;
 
 pub use error::{Error, Result};
 pub use types::{
-    DmiValue, EvidenceProfile, ImageOutputFormat, LegalMetadata, ProtectionConfig,
-    ProtectionContext, ProtectionLevel, ProtectionWarning, VerificationResult, VerificationStatus,
+    DmiValue, EvidenceChannel, EvidenceProfile, EvidenceStrength, ImageOutputFormat, LegalMetadata,
+    NoticeVerification, ProtectionConfig, ProtectionContext, ProtectionLevel, ProtectionWarning,
+    VerificationResult, VerificationStatus, WarningCategory, WarningSeverity,
     DEFAULT_OUTPUT_FORMAT,
 };
 
@@ -952,6 +953,38 @@ pub fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> Verifica
     }
 
     VerificationResult::NotFound
+}
+
+/// Verify legal-notice metadata and steganographic status in a protected image.
+///
+/// Returns a [`NoticeVerification`] report containing the extracted legal-notice
+/// fields (copyright holder, rights URL, AI constraints, etc.), the steganographic
+/// verification status, and an evidence strength assessment.
+///
+/// Unlike [`verify_image_bytes`] and [`verify_image_bytes_detailed`], which focus
+/// on steganographic payload integrity, this function also parses the legal-notice
+/// metadata injected by the protection pipeline and reports which evidence channels
+/// were found.
+///
+/// # Arguments
+///
+/// * `img_bytes` - Raw image bytes (PNG, JPEG, or WebP)
+/// * `mac_key` - MAC key for HMAC-SHA256 authentication. Pass empty slice for
+///   checksum-only verification.
+///
+/// # Examples
+///
+/// ```no_run
+/// let img_bytes = std::fs::read("protected.png").unwrap();
+/// let report = stegoeggo::verify_legal_notice(&img_bytes, b"my-mac-key");
+///
+/// if let Some(holder) = report.copyright_holder() {
+///     println!("Copyright holder: {}", holder);
+/// }
+/// println!("Evidence strength: {}", report.evidence_strength());
+/// ```
+pub fn verify_legal_notice(img_bytes: &[u8], mac_key: &[u8]) -> NoticeVerification {
+    protected::notice_verification::verify_notice_metadata(img_bytes, mac_key)
 }
 
 #[cfg(test)]
