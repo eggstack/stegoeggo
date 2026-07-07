@@ -6,22 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Legal-notice verification API: `verify_legal_notice()` and `NoticeVerification`.
+- Evidence profiles (`EvidenceProfile`): `LegalNotice`, `LegalNoticeWithStego`, `AuthenticatedProvenance`, `Maximal`.
+- CLI legal metadata flags: `--copyright-holder`, `--creator`, `--contact`, `--rights-url`, `--usage-terms`, `--ai-constraints`, `--no-ai-training`, `--no-genai-training`, `--tdm-reserved`.
+- External metadata conformance script (`scripts/verify_metadata_conformance.sh`).
+- Evidence channel reporting via `NoticeVerification::channels()`.
+
 ### Changed
-- Repositioned project around legal-notice and rights-reservation metadata (plan 001)
-- README, crate docs, and CLI help text now lead with legal notice and AI-training restriction metadata
-- Steganographic markers documented as optional redundant evidence channel
-- MAC key documented as optional authenticated provenance, not baseline requirement
-- Added `docs/legal_notice_model.md` describing the evidence model
+- Default public framing is legal notice and rights-reservation metadata.
+- Missing MAC warning is profile-aware and no longer emitted for legal-notice mode.
+- CLI verification now reports legal-notice fields and evidence strength.
+- `QTableSeed` evidence channel marked as reserved (not emitted by current verification path).
+- CI clippy now runs with `--all-features`.
 
 ### Fixed
-- Reject JPEG encoding when image dimensions exceed the encoder's 16-bit JPEG limits instead of silently truncating width or height.
-- Report LSB capacity warnings from the effective payload size, including the shorter MAC-protected payload form.
-- Return the first warning from `process_image_bytes_with_info()` instead of filtering out non-progressive advisories.
-- Keep `Disabled` byte processing as a byte-for-byte no-op, even for unrecognized input bytes.
-- Return JPEG entropy transcoder errors instead of panicking on missing pre-built Huffman tables.
-
-### Changed
-- Reduced duplicated byte API format/context setup and centralized JPEG encoding.
+- Panic on truncated PNG iTXt chunks in `verify_legal_notice()` extraction path.
+- Single-file `--output` now correctly treats file paths as output files instead of directories.
+- JPEG XMP evidence channel reporting.
+- JPEG XMP namespace marker.
+- Evidence channel misclassification for payload type.
 
 ## [0.2.0] - 2026-06-04
 

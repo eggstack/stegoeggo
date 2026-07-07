@@ -348,8 +348,15 @@ fn process_single_file(
         let filename = format!("{}_protected.{}", stem, ext);
 
         if let Some(ref dir) = output_dir {
-            let out_path = dir.join(&filename);
-            fs::create_dir_all(dir)?;
+            let out_path = if dir.is_file() || (dir.extension().is_some() && is_image_file(dir)) {
+                if let Some(parent) = dir.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                dir.clone()
+            } else {
+                fs::create_dir_all(dir)?;
+                dir.join(&filename)
+            };
             fs::write(&out_path, &output_bytes)?;
             out_path
         } else {

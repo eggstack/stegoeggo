@@ -191,7 +191,7 @@ pub enum EvidenceChannel {
     WebPExif,    // WebP EXIF chunk
     LsbPayload,  // LSB steganographic payload
     DctPayload,  // DCT/F5 steganographic payload
-    QTableSeed,  // Quantization table seed (JPEG detection only)
+    QTableSeed,  // Quantization table seed (reserved, not currently emitted)
 }
 ```
 

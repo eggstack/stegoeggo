@@ -81,24 +81,29 @@ cargo install stegoeggo-cli
 # Embed legal-notice metadata with default settings (Standard level)
 stegoeggo input.png -o output.png
 
+# With explicit legal metadata (recommended for owned content)
+stegoeggo artwork.png -o artwork_protected.png \
+  --copyright-holder "Jane Artist" \
+  --creator "Jane Artist" \
+  --rights-url "https://example.com/rights/artwork" \
+  --no-genai-training
+
+# Quick AI-training restriction
+stegoeggo photo.jpg -o protected.jpg --no-ai-training
+
 # Light protection (metadata only, minimal stego)
 stegoeggo input.png -o output.png --level light
 
-# With legal metadata (for content you own!)
-stegoeggo input.png -o output.png --legal-claims
-
-# With AI-training restriction metadata (IPTC DMI)
-stegoeggo input.png -o output.png --dmi prohibited-ai
-
-# With optional cryptographic key for authenticated stego provenance
-stegoeggo input.png -o output.png --key deadbeef123456
+# Authenticated provenance (optional — requires MAC key)
+stegoeggo artwork.png -o artwork_auth.png \
+  --profile authenticated-provenance \
+  --key deadbeefcafebabe \
+  --copyright-holder "Jane Artist" \
+  --rights-url "https://example.com/rights/artwork" \
+  --no-ai-training
 
 # Verify if an image is protected
 stegoeggo protected.png -V
-
-# With explicit evidence profile
-stegoeggo input.png -o output.png --profile legal-notice
-stegoeggo input.png -o output.png --profile authenticated-provenance --key deadbeef
 ```
 
 ### Library

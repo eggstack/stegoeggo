@@ -334,9 +334,11 @@ fn extract_xmp_dmi_from_png(
                 let key = &data[..null_pos];
                 if key == b"XML:com.adobe.xmp" {
                     let value_raw = &data[null_pos + 1..];
-                    let value = &value_raw[3..]; // skip compression flag + method + null
-                    if let Ok(xmp_str) = std::str::from_utf8(value) {
-                        parse_xmp_for_dmi(xmp_str, dmi, tdm_reserved);
+                    if value_raw.len() >= 3 {
+                        let value = &value_raw[3..]; // skip compression flag + method + null
+                        if let Ok(xmp_str) = std::str::from_utf8(value) {
+                            parse_xmp_for_dmi(xmp_str, dmi, tdm_reserved);
+                        }
                     }
                 }
             }

@@ -1211,6 +1211,7 @@ pub enum EvidenceChannel {
     /// F5-style DCT steganographic payload embedded in JPEG coefficients.
     DctPayload,
     /// Seed stored in JPEG quantization table LSBs.
+    /// Reserved for future use — currently not emitted by `verify_legal_notice()`.
     QTableSeed,
 }
 
