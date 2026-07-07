@@ -185,8 +185,8 @@ pub mod async_api;
 
 pub use error::{Error, Result};
 pub use types::{
-    DmiValue, ImageOutputFormat, LegalMetadata, ProtectionConfig, ProtectionContext,
-    ProtectionLevel, ProtectionWarning, VerificationResult, VerificationStatus,
+    DmiValue, EvidenceProfile, ImageOutputFormat, LegalMetadata, ProtectionConfig,
+    ProtectionContext, ProtectionLevel, ProtectionWarning, VerificationResult, VerificationStatus,
     DEFAULT_OUTPUT_FORMAT,
 };
 
@@ -756,7 +756,13 @@ pub fn process_image_bytes_with_warnings(
     let (ctx_with_format, format) = context_with_detected_format(img_bytes, ctx)?;
 
     let mut warnings = Vec::new();
-    if level != ProtectionLevel::Disabled && ctx_with_format.mac_key().is_none() {
+    if level != ProtectionLevel::Disabled
+        && ctx_with_format.mac_key().is_none()
+        && matches!(
+            ctx_with_format.evidence_profile(),
+            EvidenceProfile::AuthenticatedProvenance | EvidenceProfile::Maximal
+        )
+    {
         warnings.push(ProtectionWarning::MissingMacKey);
     }
     if matches!(ctx_with_format.inject_metadata(), Some(false)) {

@@ -19,6 +19,30 @@ pub enum ProtectionLevel {
 - `to_byte()` / `from_byte()` — For stego payload serialization
 - `Default` returns `Standard`
 
+## EvidenceProfile
+
+Enum controlling how protection warnings are interpreted and the default evidence posture:
+
+```rust
+pub enum EvidenceProfile {
+    LegalNotice,           // default — metadata notice, no MAC required
+    LegalNoticeWithStego,  // metadata + best-effort stego, no MAC required
+    AuthenticatedProvenance, // MAC key expected, cryptographic proof
+    Maximal,               // all channels
+}
+```
+
+- `as_str()` — Returns lowercase string: `"legal-notice"`, `"legal-notice-stego"`, `"authenticated-provenance"`, `"maximal"`
+- `Default` returns `LegalNotice`
+- Serialized as serde-compatible enum variants
+
+### Interaction with ProtectionLevel
+
+`ProtectionLevel` controls *how much processing occurs*. `EvidenceProfile` controls *how warnings are interpreted*. They are orthogonal:
+- Any profile can be used with any protection level
+- `MissingMacKey` warning is only emitted for `AuthenticatedProvenance` and `Maximal` profiles
+- `LegalNotice` and `LegalNoticeWithStego` never warn about missing MAC keys
+
 ## ImageOutputFormat
 
 ```rust
@@ -79,6 +103,7 @@ ProtectionContext::new(intensity, seed)  // intensity clamped to [0.0, 1.0]
 | `tile_size` | `Option<u32>` | None | Crop-resistant tile size (32..=1024). None/0 = disabled |
 | `tile_extraction_max_origins` | `u32` | 64 | Max candidate tile origins for extraction |
 | `content_hash` | `Option<[u8; 4]>` | None | Truncated content hash for provenance tracking (v2 payloads) |
+| `evidence_profile` | `Option<EvidenceProfile>` | None | Warning interpretation and evidence posture (defaults to `LegalNotice` when not set) |
 | `config` | `Option<Arc<ProtectionConfig>>` | None | `#[serde(skip)]` — MAC key + legal metadata |
 
 **Note:** `None` for `inject_metadata`/`inject_legal_claims` means "use level default" (enabled for Standard). Explicit `false` disables injection.

@@ -95,6 +95,10 @@ stegoeggo input.png -o output.png --key deadbeef123456
 
 # Verify if an image is protected
 stegoeggo protected.png -V
+
+# With explicit evidence profile
+stegoeggo input.png -o output.png --profile legal-notice
+stegoeggo input.png -o output.png --profile authenticated-provenance --key deadbeef
 ```
 
 ### Library
@@ -177,6 +181,37 @@ use stegoeggo::ProtectionLevel;
 // Use different levels
 let level = ProtectionLevel::Light;    // Metadata + minimal stego
 let level = ProtectionLevel::Standard; // Stego + Metadata (default)
+```
+
+### Evidence Profiles
+
+Evidence profiles control how protection warnings are interpreted and the default evidence posture. While `ProtectionLevel` controls how much processing occurs, `EvidenceProfile` answers "what evidence model is the caller trying to express?"
+
+| Profile | MAC Key Required | Stego | Primary Use Case |
+|---------|-----------------|-------|------------------|
+| `LegalNotice` (default) | No | Optional | Standards-aligned metadata notice |
+| `LegalNoticeWithStego` | No | Yes | Metadata notice plus best-effort hidden marker |
+| `AuthenticatedProvenance` | Yes | Yes | Cryptographic proof of payload origin |
+| `Maximal` | Optional | Yes | All available evidence channels |
+
+```rust
+use stegoeggo::{ProtectionContext, EvidenceProfile, LegalMetadata, ProtectionLevel};
+
+// Legal notice only — no MAC key needed
+let ctx = ProtectionContext::legal_notice()
+    .with_legal_metadata(
+        LegalMetadata::new()
+            .with_copyright_holder("Jane Artist")
+            .with_ai_constraints("No AI training permitted.")
+    );
+
+// Authenticated provenance — MAC key expected
+let ctx = ProtectionContext::authenticated_provenance()
+    .with_mac_key(b"secret-key".to_vec());
+
+// Via builder
+let ctx = ProtectionContext::new(0.5, 42)
+    .with_evidence_profile(EvidenceProfile::Maximal);
 ```
 
 ### Legal Metadata Injection
@@ -364,6 +399,8 @@ Options:
   -o, --output <OUTPUT>    Output directory (batch) or file (single)
   -V, --verify             Verify if image contains protection signature
   -l, --level <LEVEL>      Protection level: disabled, light, standard
+  -p, --profile <PROFILE>  Evidence profile: legal-notice, legal-notice-stego,
+                           authenticated-provenance, maximal (default: legal-notice)
   -i, --intensity <FLOAT> Protection intensity 0.0-1.0 (default: 0.5)
   -s, --seed <SEED>        Seed for reproducible results
   -f, --format <FORMAT>   Output format: png, jpg, webp (default: png)

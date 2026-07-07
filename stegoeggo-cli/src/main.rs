@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use stegoeggo::Error;
 use stegoeggo::{
     generate_random_seed, process_image_bytes, verify_image_bytes_detailed, DmiValue,
-    ImageOutputFormat, ProtectionContext, ProtectionLevel, StegoPayload, VerificationResult,
-    DEFAULT_OUTPUT_FORMAT,
+    EvidenceProfile, ImageOutputFormat, ProtectionContext, ProtectionLevel, StegoPayload,
+    VerificationResult, DEFAULT_OUTPUT_FORMAT,
 };
 
 #[derive(Parser, Debug)]
@@ -28,6 +28,14 @@ struct Args {
 
     #[arg(short, long, default_value = "standard", help = "Protection level")]
     level: ProtectionLevelArg,
+
+    #[arg(
+        short,
+        long,
+        default_value = "legal-notice",
+        help = "Evidence profile: legal-notice, legal-notice-stego, authenticated-provenance, maximal"
+    )]
+    profile: ProfileArg,
 
     #[arg(
         short,
@@ -178,6 +186,25 @@ impl DmiArg {
             DmiArg::ProhibitedSe => Some(DmiValue::ProhibitedExceptSearchEngineIndexing),
             DmiArg::Prohibited => Some(DmiValue::Prohibited),
             DmiArg::ProhibitedConstraints => Some(DmiValue::ProhibitedSeeConstraints),
+        }
+    }
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+enum ProfileArg {
+    LegalNotice,
+    LegalNoticeStego,
+    AuthenticatedProvenance,
+    Maximal,
+}
+
+impl From<ProfileArg> for EvidenceProfile {
+    fn from(arg: ProfileArg) -> Self {
+        match arg {
+            ProfileArg::LegalNotice => EvidenceProfile::LegalNotice,
+            ProfileArg::LegalNoticeStego => EvidenceProfile::LegalNoticeWithStego,
+            ProfileArg::AuthenticatedProvenance => EvidenceProfile::AuthenticatedProvenance,
+            ProfileArg::Maximal => EvidenceProfile::Maximal,
         }
     }
 }
@@ -481,13 +508,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|k| hex::decode(k).map_err(|e| format!("Invalid hex key '{}': {}", k, e)))
         .transpose()?;
 
+    let (legal_metadata, legal_dmi_override) = build_legal_metadata(&args);
+
     let output_format = args.format.map(ImageOutputFormat::from);
     let effective_output_format = output_format.unwrap_or(DEFAULT_OUTPUT_FORMAT);
 
     let protection_level = ProtectionLevel::from(args.level);
+    let evidence_profile = EvidenceProfile::from(args.profile);
 
-    let dmi_value = args.dmi.and_then(|d| {
-        d.into_dmi_value().or({
+    let dmi_value = args.dmi.as_ref().and_then(|d| {
+        d.clone().into_dmi_value().or({
             // Auto-select DMI based on protection level
             Some(match protection_level {
                 ProtectionLevel::Disabled | ProtectionLevel::Light => DmiValue::Unspecified,
@@ -495,8 +525,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
         })
     });
-
-    let (legal_metadata, legal_dmi_override) = build_legal_metadata(&args);
 
     if args.metadata == Some(false) && legal_metadata.is_some() {
         eprintln!(
@@ -512,14 +540,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_format(effective_output_format)
         .with_stego_redundancy(args.stego_redundancy.clamp(1, 10))
         .with_jpeg_quality(args.jpeg_quality.clamp(1, 100))
-        .with_progressive_jpeg(args.progressive);
+        .with_progressive_jpeg(args.progressive)
+        .with_evidence_profile(evidence_profile);
 
     let effective_dmi = legal_dmi_override.or(dmi_value);
     if let Some(dmi) = effective_dmi {
         ctx = ctx.with_dmi(dmi);
     }
-    if args.metadata.is_some() {
-        ctx = ctx.with_metadata_injection(args.metadata.unwrap());
+    if let Some(val) = args.metadata {
+        ctx = ctx.with_metadata_injection(val);
     } else if legal_metadata.is_some() {
         ctx = ctx.with_metadata_injection(true);
     }
@@ -535,6 +564,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.verbose {
         println!("Protection level: {:?}", protection_level);
+        println!("Evidence profile: {:?}", evidence_profile);
         println!("Intensity: {}", ctx.intensity());
         println!("Seed: {}", ctx.seed());
         println!("Stego redundancy: {}", ctx.stego_redundancy());

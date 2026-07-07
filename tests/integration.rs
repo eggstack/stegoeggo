@@ -1,9 +1,9 @@
 use image::{DynamicImage, ImageEncoder};
 use stegoeggo::{
     process_image, process_image_bytes, process_images_bytes_parallel, process_images_parallel,
-    DmiValue, ImageOutputFormat, LegalMetadata, MetadataTrapProtector, PassthroughProtector,
-    ProtectionContext, ProtectionLevel, ProtectionPipeline, SteganographyProtector,
-    VerificationStatus,
+    DmiValue, EvidenceProfile, ImageOutputFormat, LegalMetadata, MetadataTrapProtector,
+    PassthroughProtector, ProtectionContext, ProtectionLevel, ProtectionPipeline,
+    SteganographyProtector, VerificationStatus,
 };
 
 fn create_test_image(width: u32, height: u32) -> DynamicImage {
@@ -1413,7 +1413,8 @@ mod progressive_jpeg_warning {
         let ctx = ProtectionContext::new(0.5, 42)
             .with_format(ImageOutputFormat::Jpeg)
             .with_progressive_jpeg(true)
-            .with_metadata_injection(false);
+            .with_metadata_injection(false)
+            .with_evidence_profile(EvidenceProfile::AuthenticatedProvenance);
 
         let (_, warnings) =
             process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();

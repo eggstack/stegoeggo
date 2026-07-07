@@ -17,6 +17,7 @@ stegoeggo [OPTIONS] <INPUT>...
 | `-o` | `--output` | Output directory (for batch) or output file (for single) | current directory |
 | `-V` | `--verify` | Verify protection signature | false |
 | `-l` | `--level` | Protection level | standard |
+| `-p` | `--profile` | Evidence profile | legal-notice |
 | `-i` | `--intensity` | Float 0.0–1.0 | 0.5 |
 | `-s` | `--seed` | Seed for reproducibility | random |
 | `-f` | `--format` | Output format (png/jpg/webp) | auto |
@@ -45,6 +46,16 @@ stegoeggo [OPTIONS] <INPUT>...
 - Multiple files / directory: batch mode, outputs to `-o` directory
 - Output filename is always `{stem}_protected.{ext}`
 - Exits with error when no input files are found
+
+## Profile Selection
+
+The `--profile` flag selects the evidence profile:
+- `legal-notice` (default): Metadata notice only. No MAC key required.
+- `legal-notice-stego`: Metadata + best-effort steganography. No MAC key required.
+- `authenticated-provenance`: Cryptographic payload verification. MAC key expected via `--key`.
+- `maximal`: All channels. MAC key optional.
+
+Legal metadata flags (`--copyright-holder`, etc.) auto-enable metadata injection. The profile affects which warnings are emitted, not the raw processing pipeline.
 
 ## Batch Processing
 

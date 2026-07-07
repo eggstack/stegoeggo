@@ -61,6 +61,8 @@ src/
 - `ProtectionContext::new(intensity: f32, seed: u64)` — intensity clamped to [0.0, 1.0]
 - `ProtectionConfig` — MAC key and legal metadata wrapped in `Arc`
 - `StegoPayload` — extracted stego data with `protection_level()`, `seed()`, `intensity()`, `version()` getters
+- `EvidenceProfile` — enum with 4 variants: `LegalNotice` (default), `LegalNoticeWithStego`, `AuthenticatedProvenance`, `Maximal`. Controls warning interpretation and evidence posture. Access via `ctx.evidence_profile()` (defaults to `LegalNotice` when not set)
+- `ProtectionContext` helper constructors: `::legal_notice()`, `::legal_notice_with_stego()`, `::authenticated_provenance()`, `::maximal()`
 - All struct fields on `ProtectionContext` and `StegoPayload` are private — use getter methods (e.g., `ctx.intensity()`, `ctx.seed()`)
 - `ProtectionContext` has `set_input_format()` (public) and `set_protection_level()` (crate-internal) for non-builder mutation
 
@@ -134,3 +136,5 @@ Run with: `cargo +nightly fuzz run <target> -- -max_total_time=60`
 - **F5 tiled block set**: MCU-interleaved block ordering: `block_idx = (mcu_y * mcus_per_row + mcu_x) * h * v + sub_y * h + sub_x`. Do NOT assume row-major ordering
 - **ProtectionWarning variants**: 7 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped`, `DctCapacityInsufficient`, `WebpLossyReencodeDestructive`. Returned by `process_image_bytes_with_warnings`
 - **Fuzz harness**: 3 targets in `fuzz/`: `pipeline_bytes`, `tiled_round_trip`, `jpeg_parser`. Run with `cargo +nightly fuzz run <target> -- -max_total_time=60`. Add regression tests in `tests/robustness.rs` for findings
+- **EvidenceProfile vs ProtectionLevel**: `ProtectionLevel` controls how much processing occurs (Disabled/Light/Standard). `EvidenceProfile` controls how warnings are interpreted and the default evidence posture. They are orthogonal — you can use any profile with any level
+- **MissingMacKey warning is profile-dependent**: Only emitted for `AuthenticatedProvenance` and `Maximal` profiles. `LegalNotice` and `LegalNoticeWithStego` do not warn about missing MAC keys
