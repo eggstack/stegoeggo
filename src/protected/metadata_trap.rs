@@ -238,31 +238,31 @@ impl MetadataTrapProtector {
         if let Some(legal) = legal {
             if let Some(creator) = legal.creator() {
                 legal_props.push_str(&format!(
-                    "\n             <dc:creator><rdf:Seq><rdf:li>{}</rdf:li></rdf:Seq></dc:creator>",
+                    "\n   <dc:creator>\n    <rdf:Seq>\n     <rdf:li>{}</rdf:li>\n    </rdf:Seq>\n   </dc:creator>",
                     xml_escape(creator)
                 ));
             }
             if let Some(statement) = legal.web_statement_of_rights() {
                 legal_props.push_str(&format!(
-                    "\n             <xmpRights:WebStatement>{}</xmpRights:WebStatement>",
+                    "\n   <xmpRights:WebStatement>{}</xmpRights:WebStatement>",
                     xml_escape(statement)
                 ));
             }
             if let Some(terms) = legal.usage_terms() {
                 legal_props.push_str(&format!(
-                    "\n             <xmpRights:UsageTerms>{}</xmpRights:UsageTerms>",
+                    "\n   <xmpRights:UsageTerms>\n    <rdf:Alt>\n     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n    </rdf:Alt>\n   </xmpRights:UsageTerms>",
                     xml_escape(terms)
                 ));
             }
             if let Some(contact) = legal.contact_email() {
                 legal_props.push_str(&format!(
-                    "\n             <photoshop:Credit>{}</photoshop:Credit>",
+                    "\n   <photoshop:Credit>{}</photoshop:Credit>",
                     xml_escape(contact)
                 ));
             }
             if let Some(constraints) = legal.ai_constraints() {
                 legal_props.push_str(&format!(
-                    "\n             <stegoeggo:AIConstraints>{}</stegoeggo:AIConstraints>",
+                    "\n   <stegoeggo:AIConstraints>{}</stegoeggo:AIConstraints>",
                     xml_escape(constraints)
                 ));
             }
@@ -275,7 +275,7 @@ impl MetadataTrapProtector {
             });
             if let Some(copyright) = copyright {
                 legal_props.push_str(&format!(
-                    "\n             <dc:rights>{}</dc:rights>",
+                    "\n   <dc:rights>\n    <rdf:Alt>\n     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n    </rdf:Alt>\n   </dc:rights>",
                     xml_escape(&copyright)
                 ));
             }
@@ -292,9 +292,8 @@ impl MetadataTrapProtector {
              xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n\
              <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
              <rdf:Description rdf:about=\"\"\n\
-             {property}=\"{}\"\n\
-              tdm:reserve_tdm=\"{tdm_value}\"{seed_attr}{legal_props}>\n\
-             </rdf:Description>\n\
+              {property}=\"{}\"\n\
+              tdm:reserve_tdm=\"{tdm_value}\"{seed_attr}>{legal_props}\n   </rdf:Description>\n\
              </rdf:RDF>\n\
              </x:xmpmeta>\n\
              <?xpacket end=\"w\"?>",
@@ -1905,6 +1904,165 @@ mod tests {
         let xmp = MetadataTrapProtector::generate_xmp_dmi(dmi, None);
         let xmp_str = String::from_utf8_lossy(&xmp);
         assert!(!xmp_str.contains("stegoeggo:ProtectionSeed"));
+    }
+
+    #[test]
+    fn webp_xmp_legal_children_after_description_start_tag() {
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("Test Corp")
+            .with_creator("Test Author")
+            .with_usage_terms("All rights reserved");
+        let xmp = MetadataTrapProtector::generate_xmp_notice(
+            DmiValue::ProhibitedAiMlTraining,
+            Some(42),
+            Some(&legal),
+        );
+        let xmp_str = String::from_utf8_lossy(&xmp);
+
+        let desc_open = xmp_str
+            .find("<rdf:Description")
+            .expect("rdf:Description must be present");
+        let desc_close_offset = xmp_str[desc_open..]
+            .find('>')
+            .expect("rdf:Description must have a closing >");
+        let desc_close = desc_open + desc_close_offset;
+
+        for needle in ["<dc:creator>", "<dc:rights>", "<xmpRights:UsageTerms>"] {
+            let pos = xmp_str
+                .find(needle)
+                .unwrap_or_else(|| panic!("expected {needle} in XMP"));
+            assert!(
+                desc_close < pos,
+                "{needle} must appear after the > of <rdf:Description ...> (desc_close={desc_close}, pos={pos})"
+            );
+        }
+
+        let end_desc = xmp_str
+            .find("</rdf:Description>")
+            .expect("must close rdf:Description");
+        for needle in ["<dc:creator>", "<dc:rights>", "<xmpRights:UsageTerms>"] {
+            let pos = xmp_str.find(needle).unwrap();
+            assert!(
+                pos < end_desc,
+                "{needle} must appear before </rdf:Description> (pos={pos}, end_desc={end_desc})"
+            );
+        }
+    }
+
+    #[test]
+    fn webp_xmp_rdf_description_is_well_ordered() {
+        let legal = LegalMetadata::new().with_copyright_holder("Test Corp");
+        let xmp = MetadataTrapProtector::generate_xmp_notice(
+            DmiValue::ProhibitedAiMlTraining,
+            Some(7),
+            Some(&legal),
+        );
+        let xmp_str = String::from_utf8_lossy(&xmp);
+
+        let rdf_desc_open = xmp_str.find("<rdf:Description").unwrap();
+        assert!(
+            rdf_desc_open < xmp_str.find("tdm:reserve_tdm").unwrap(),
+            "<rdf:Description must precede tdm:reserve_tdm"
+        );
+
+        let desc_close_rel = xmp_str[rdf_desc_open..].find('>').unwrap();
+        let desc_close = rdf_desc_open + desc_close_rel;
+        assert!(
+            desc_close < xmp_str.find("<dc:rights>").unwrap(),
+            "<rdf:Description ...> must close before any legal child element"
+        );
+    }
+
+    #[test]
+    fn webp_xmp_dc_rights_uses_rdf_alt() {
+        let legal = LegalMetadata::new().with_copyright_holder("Test Corp");
+        let xmp = MetadataTrapProtector::generate_xmp_notice(
+            DmiValue::ProhibitedAiMlTraining,
+            None,
+            Some(&legal),
+        );
+        let xmp_str = String::from_utf8_lossy(&xmp);
+
+        let rights_start = xmp_str.find("<dc:rights>").unwrap();
+        let rights_end = xmp_str.find("</dc:rights>").unwrap();
+        let slice = &xmp_str[rights_start..rights_end];
+        assert!(
+            slice.contains("<rdf:Alt>"),
+            "dc:rights must contain <rdf:Alt> container"
+        );
+        assert!(
+            slice.contains("xml:lang=\"x-default\""),
+            "rdf:Alt must include xml:lang x-default"
+        );
+        assert!(
+            slice.contains("Copyright (c) Test Corp"),
+            "rdf:Alt must wrap the copyright text"
+        );
+    }
+
+    #[test]
+    fn webp_xmp_usage_terms_uses_rdf_alt() {
+        let legal = LegalMetadata::new().with_usage_terms("All rights reserved");
+        let xmp = MetadataTrapProtector::generate_xmp_notice(
+            DmiValue::ProhibitedAiMlTraining,
+            None,
+            Some(&legal),
+        );
+        let xmp_str = String::from_utf8_lossy(&xmp);
+
+        let start = xmp_str.find("<xmpRights:UsageTerms>").unwrap();
+        let end = xmp_str.find("</xmpRights:UsageTerms>").unwrap();
+        let slice = &xmp_str[start..end];
+        assert!(slice.contains("<rdf:Alt>"));
+        assert!(slice.contains("All rights reserved"));
+    }
+
+    #[test]
+    fn webp_xmp_exiftool_tag_shape_regression() {
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("Test Corp")
+            .with_creator("Test Author")
+            .with_contact_email("legal@test.com")
+            .with_web_statement_of_rights("https://example.com/rights")
+            .with_usage_terms("All rights reserved")
+            .with_ai_constraints("No AI training");
+        let xmp = MetadataTrapProtector::generate_xmp_notice(
+            DmiValue::ProhibitedAiMlTraining,
+            Some(99),
+            Some(&legal),
+        );
+        let xmp_str = String::from_utf8_lossy(&xmp);
+
+        for required in [
+            "<rdf:Description",
+            "<dc:creator>",
+            "<rdf:Seq>",
+            "<dc:rights>",
+            "<rdf:Alt>",
+            "<xmpRights:UsageTerms>",
+            "<xmpRights:WebStatement>",
+            "<photoshop:Credit>",
+            "<stegoeggo:AIConstraints>",
+            "stegoeggo:ProtectionSeed=\"99\"",
+            "tdm:reserve_tdm=\"1\"",
+            "</rdf:Description>",
+        ] {
+            assert!(
+                xmp_str.contains(required),
+                "XMP must contain {required}, got: {xmp_str}"
+            );
+        }
+
+        let desc_close = xmp_str.find("</rdf:Description>").unwrap();
+        let start_tag_close = xmp_str.find("<rdf:Description").unwrap();
+        let after_open = xmp_str[start_tag_close..]
+            .find('>')
+            .map(|p| start_tag_close + p)
+            .unwrap();
+        assert!(
+            after_open < desc_close,
+            "rdf:Description opening tag must close before its closing tag"
+        );
     }
 
     #[test]

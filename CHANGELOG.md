@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - WebP outputs now carry legal metadata fields (copyright, creator, contact, rights URL, usage terms, AI constraints) in XMP, bringing WebP to parity with PNG/JPEG for external rights-reservation notice visibility.
+- WebP XMP RDF structure: legal child elements (`dc:creator`, `dc:rights`, `xmpRights:UsageTerms`, `xmpRights:WebStatement`, `photoshop:Credit`, `stegoeggo:AIConstraints`) now appear inside the closed `<rdf:Description>` element, with `dc:rights` and `xmpRights:UsageTerms` wrapped in `<rdf:Alt>` containers. `exiftool` and other RDF-aware parsers now expose every legal field. WebP conformance script accepts `XMP-dc:Rights` as a parser-visible alias for copyright.
 - Updated stegoeggo XMP namespace URL from `anomalyco/stegoeggo` to `eggstack/stegoeggo`.
 - Panic on truncated PNG iTXt chunks in `verify_legal_notice()` extraction path.
 - Single-file `--output` now correctly treats file paths as output files instead of directories.

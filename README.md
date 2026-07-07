@@ -844,7 +844,7 @@ cargo build --release -p stegoeggo-cli
 
 | Field | PNG | JPEG | WebP | Notes |
 |-------|-----|------|------|-------|
-| Copyright | exiftool `-Copyright` | exiftool `-Comment` (all COM) | exiftool XMP `-Copyright` | XMP `dc:rights` in WebP |
+| Copyright | exiftool `-Copyright` | exiftool `-Comment` (all COM) | exiftool XMP `-XMP-dc:Rights` | XMP `dc:rights` (rdf:Alt) in WebP |
 | Creator | exiftool `-Creator` | exiftool `-Comment` | exiftool XMP `-Creator` | XMP `dc:creator` in WebP |
 | Contact | exiftool `-Contact` | exiftool `-Comment` | exiftool XMP `-Contact` | XMP `photoshop:Credit` in WebP |
 | UsageTerms | exiftool `-UsageTerms` | exiftool `-Comment` | exiftool XMP `-UsageTerms` | XMP `xmpRights:UsageTerms` in WebP |
@@ -855,7 +855,7 @@ cargo build --release -p stegoeggo-cli
 
 ### Conformance Caveats
 
-- **WebP legal fields in XMP**: WebP outputs now carry legal metadata (copyright, creator, contact, rights URL, usage terms, AI constraints) in standard XMP properties alongside DMI/TDM. External tool visibility depends on parser support for `dc:rights`, `dc:creator`, `xmpRights:*`, `photoshop:Credit`, and `stegoeggo:AIConstraints` namespaces. The conformance script checks for these in strict mode.
+- **WebP legal fields in XMP**: WebP outputs carry legal metadata (copyright, creator, contact, rights URL, usage terms, AI constraints) in standard XMP properties alongside DMI/TDM. Legal child elements live inside `<rdf:Description>...</rdf:Description>` (not as attributes on its opening tag). `dc:rights` and `xmpRights:UsageTerms` are wrapped in `<rdf:Alt><rdf:li xml:lang="x-default">…</rdf:li></rdf:Alt>` containers, and `dc:creator` uses `<rdf:Seq>`. `exiftool` resolves WebP copyright via `XMP-dc:Rights` rather than the `-Copyright` shortcut. The conformance script accepts `XMP-dc:Rights` as a parser-visible alias for copyright.
 - **Tool variability**: Metadata visibility depends on the external tool. The script targets `exiftool` as the primary tool. Other tools (ImageMagick, vips) may show different fields.
 - **Seed is not legal notice**: The protection seed is an internal diagnostic marker. The script does not treat it as sufficient legal notice — at least one real rights-reservation field must be present.
 - **Strict vs non-strict**: Strict mode requires `exiftool` and fails if fields are missing. Non-strict mode skips external checks cleanly when `exiftool` is not installed.

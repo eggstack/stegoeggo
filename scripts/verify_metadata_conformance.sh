@@ -327,20 +327,25 @@ run_conformance_checks() {
             XMP_RAW=$(exiftool -s3 -XMP "$image" 2>/dev/null || true)
 
             COPYRIGHT=$(exiftool -s3 -Copyright "$image" 2>/dev/null || true)
+            DC_RIGHTS=$(exiftool -s3 -XMP-dc:Rights "$image" 2>/dev/null || true)
             if [ -n "$COPYRIGHT" ]; then
                 pass "Copyright found: $COPYRIGHT"
-                if [ -n "$expected_copyright" ]; then
-                    if echo "$COPYRIGHT" | grep -q "$expected_copyright"; then
-                        pass "Copyright matches expected: $expected_copyright"
-                    else
-                        fail "Copyright '$COPYRIGHT' does not contain expected '$expected_copyright'"
-                    fi
-                fi
+            elif [ -n "$DC_RIGHTS" ]; then
+                pass "Rights found in XMP dc:rights: $DC_RIGHTS"
             else
                 if $STRICT; then
                     fail "Copyright not found in WebP XMP"
                 else
                     warn "Copyright not found in WebP metadata (parser-dependent)"
+                fi
+            fi
+            if [ -n "$expected_copyright" ]; then
+                if echo "$COPYRIGHT" | grep -q "$expected_copyright"; then
+                    pass "Copyright matches expected: $expected_copyright"
+                elif echo "$DC_RIGHTS" | grep -q "$expected_copyright"; then
+                    pass "Rights matches expected: $expected_copyright"
+                else
+                    fail "Copyright/Rights '$COPYRIGHT$DC_RIGHTS' does not contain expected '$expected_copyright'"
                 fi
             fi
 

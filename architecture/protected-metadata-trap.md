@@ -84,13 +84,36 @@ Used by the verification pipeline to recover the seed for stego extraction.
 
 ## XMP Generation
 
-Generates IPTC-compliant XMP packets:
+Generates IPTC-compliant XMP packets. The `<rdf:Description>` opening tag is closed
+before any legal child elements are inserted, and `dc:rights` / `xmpRights:UsageTerms`
+are wrapped in `<rdf:Alt><rdf:li xml:lang="x-default">…</rdf:li></rdf:Alt>` containers
+so external RDF parsers (e.g. `exiftool`) can read the legal fields:
 
 ```xml
-<x:xmpmeta xmlns:Iptc4xmpExt="..."/>
+<x:xmpmeta xmlns:Iptc4xmpExt="..." xmlns:dc="..." xmlns:xmpRights="..." xmlns:photoshop="...">
   <rdf:RDF>
-    <rdf:Description Iptc4xmpExt:DMI_ProhibitedAiMlTraining="">
-      ...
+    <rdf:Description rdf:about=""
+      Iptc4xmpExt:DMI-Prohibited="ProhibitedAiMlTraining"
+      tdm:reserve_tdm="1"
+      stegoeggo:ProtectionSeed="...">
+      <dc:creator>
+        <rdf:Seq>
+          <rdf:li>Test Author</rdf:li>
+        </rdf:Seq>
+      </dc:creator>
+      <dc:rights>
+        <rdf:Alt>
+          <rdf:li xml:lang="x-default">Copyright (c) Test Corp</rdf:li>
+        </rdf:Alt>
+      </dc:rights>
+      <xmpRights:UsageTerms>
+        <rdf:Alt>
+          <rdf:li xml:lang="x-default">All rights reserved</rdf:li>
+        </rdf:Alt>
+      </xmpRights:UsageTerms>
+      <xmpRights:WebStatement>https://example.com/rights</xmpRights:WebStatement>
+      <photoshop:Credit>legal@test.com</photoshop:Credit>
+      <stegoeggo:AIConstraints>No AI training</stegoeggo:AIConstraints>
     </rdf:Description>
   </rdf:RDF>
 </x:xmpmeta>

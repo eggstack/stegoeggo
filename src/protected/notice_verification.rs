@@ -573,6 +573,29 @@ fn extract_xmp_seq_property(xmp: &str, tag: &str) -> Option<String> {
     None
 }
 
+fn extract_xmp_alt_property(xmp: &str, tag: &str) -> Option<String> {
+    let open = format!("<{}>", tag);
+    let close = format!("</{}>", tag);
+    let start = xmp.find(&open)?;
+    let value_start = start + open.len();
+    let end = xmp[value_start..].find(&close)?;
+    let container = &xmp[value_start..value_start + end];
+    let li_open = "<rdf:li";
+    let li_close = "</rdf:li>";
+    let li_start = container.find(li_open)?;
+    let after_open = li_start + li_open.len();
+    let li_content_start = container[after_open..]
+        .find('>')
+        .map(|p| after_open + p + 1)?;
+    let li_end = container[li_content_start..].find(li_close)?;
+    let value = &container[li_content_start..li_content_start + li_end];
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
 fn extract_webp_notice(
     webp_data: &[u8],
     channels: &mut Vec<EvidenceChannel>,
@@ -615,7 +638,7 @@ fn extract_webp_notice(
                     }
                 }
 
-                copyright_holder = extract_xmp_text_property(xmp_str, "dc:rights").map(|s| {
+                copyright_holder = extract_xmp_alt_property(xmp_str, "dc:rights").map(|s| {
                     s.trim()
                         .strip_prefix("Copyright (c) ")
                         .unwrap_or(&s)
@@ -624,7 +647,7 @@ fn extract_webp_notice(
                 creator = extract_xmp_seq_property(xmp_str, "dc:creator");
                 contact = extract_xmp_text_property(xmp_str, "photoshop:Credit");
                 rights_url = extract_xmp_text_property(xmp_str, "xmpRights:WebStatement");
-                usage_terms = extract_xmp_text_property(xmp_str, "xmpRights:UsageTerms");
+                usage_terms = extract_xmp_alt_property(xmp_str, "xmpRights:UsageTerms");
                 ai_constraints = extract_xmp_text_property(xmp_str, "stegoeggo:AIConstraints");
             }
         }

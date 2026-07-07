@@ -1285,6 +1285,66 @@ mod webp_legal_xmp_tests {
             xmp
         );
     }
+
+    #[test]
+    fn webp_xmp_pipeline_rdf_structure_is_valid() {
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("Test Corp")
+            .with_creator("Test Author")
+            .with_usage_terms("All rights reserved");
+        let protected = create_webp_with_legal(legal);
+        let xmp = extract_xmp_from_webp(&protected).expect("XMP should be present in WebP");
+
+        let desc_open = xmp
+            .find("<rdf:Description")
+            .expect("rdf:Description must be present");
+        let desc_close = desc_open
+            + xmp[desc_open..]
+                .find('>')
+                .expect("rdf:Description must close");
+        let end_desc = xmp
+            .find("</rdf:Description>")
+            .expect("rdf:Description must close");
+
+        for needle in ["<dc:creator>", "<dc:rights>", "<xmpRights:UsageTerms>"] {
+            let pos = xmp
+                .find(needle)
+                .unwrap_or_else(|| panic!("XMP missing {needle}: {xmp}"));
+            assert!(
+                desc_close < pos && pos < end_desc,
+                "{needle} must appear inside <rdf:Description>...</rdf:Description>, not as an attribute ({xmp})"
+            );
+        }
+
+        let rights_start = xmp.find("<dc:rights>").unwrap();
+        let rights_end = xmp.find("</dc:rights>").unwrap();
+        let rights_body = &xmp[rights_start..rights_end];
+        assert!(
+            rights_body.contains("<rdf:Alt>") && rights_body.contains("Test Corp"),
+            "dc:rights must use an rdf:Alt container wrapping the copyright text, got: {rights_body}"
+        );
+
+        let usage_start = xmp.find("<xmpRights:UsageTerms>").unwrap();
+        let usage_end = xmp.find("</xmpRights:UsageTerms>").unwrap();
+        let usage_body = &xmp[usage_start..usage_end];
+        assert!(
+            usage_body.contains("<rdf:Alt>") && usage_body.contains("All rights reserved"),
+            "xmpRights:UsageTerms must use an rdf:Alt container, got: {usage_body}"
+        );
+    }
+
+    #[test]
+    fn webp_notice_verification_extracts_fields_after_rdf_fix() {
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("Test Corp")
+            .with_creator("Test Author")
+            .with_usage_terms("All rights reserved");
+        let protected = create_webp_with_legal(legal);
+        let report = verify_legal_notice(&protected, &[]);
+        assert_eq!(report.copyright_holder(), Some("Test Corp"));
+        assert_eq!(report.creator(), Some("Test Author"));
+        assert_eq!(report.usage_terms(), Some("All rights reserved"));
+    }
 }
 
 mod error_variant_tests {

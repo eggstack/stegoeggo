@@ -1,5 +1,9 @@
 # Plan 014: WebP XMP RDF Structure Patch
 
+**Status**: Completed 2026-07-07. All acceptance criteria met. WebP conformance
+now passes `--strict` mode across all three formats. See commit history for the
+implementation commit.
+
 ## Goal
 
 Fix the remaining WebP external conformance failure where `exiftool` sees WebP DMI/TDM fields but does not see copyright/rights fields. The current WebP XMP implementation appears to emit the legal child elements in the wrong XML location: inside the `<rdf:Description ...>` opening tag rather than after the start tag has closed.

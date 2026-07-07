@@ -33,7 +33,7 @@ Metadata visibility depends on the image format and the external tool used to re
 
 | Field | PNG | JPEG | WebP | Notes |
 |-------|-----|------|------|-------|
-| Copyright | tEXt → exiftool `-Copyright` | COM → exiftool `-Comment` (all) | XMP `dc:rights` → exiftool `-Copyright` | WebP XMP parity with PNG/JPEG |
+| Copyright | tEXt → exiftool `-Copyright` | COM → exiftool `-Comment` (all) | XMP `dc:rights` → exiftool `-XMP-dc:Rights` | WebP XMP parity with PNG/JPEG |
 | Creator | tEXt → exiftool `-Creator` | COM → exiftool `-Comment` | XMP `dc:creator` → exiftool `-Creator` | WebP XMP parity with PNG/JPEG |
 | Contact | tEXt → exiftool `-Contact` | COM → exiftool `-Comment` | XMP `photoshop:Credit` → exiftool `-Contact` | WebP XMP parity with PNG/JPEG |
 | UsageTerms | tEXt → exiftool `-UsageTerms` | COM → exiftool `-Comment` | XMP `xmpRights:UsageTerms` → exiftool `-UsageTerms` | WebP XMP parity with PNG/JPEG |
@@ -44,7 +44,7 @@ Metadata visibility depends on the image format and the external tool used to re
 
 **Caveats**:
 
-- WebP: Legal fields are now embedded as standard XMP properties (`dc:rights`, `dc:creator`, `photoshop:Credit`, `xmpRights:UsageTerms`, `stegoeggo:AIConstraints`) alongside DMI/TDM. External parser visibility varies depending on namespace support.
+- WebP: Legal fields are embedded as standard XMP properties (`dc:rights`, `dc:creator`, `photoshop:Credit`, `xmpRights:UsageTerms`, `stegoeggo:AIConstraints`) alongside DMI/TDM. Child elements appear inside `<rdf:Description>...</rdf:Description>` (not as attributes on its opening tag); `dc:rights` and `xmpRights:UsageTerms` are wrapped in `<rdf:Alt>` containers, `dc:creator` in `<rdf:Seq>`. External parser visibility varies depending on namespace support.
 - JPEG: Legal fields are stored as separate COM markers (key-value pairs). The `-a` flag on exiftool is required to read all COM markers.
 - Tool variability: The table reflects `exiftool` behavior. Other tools may show different fields.
 
