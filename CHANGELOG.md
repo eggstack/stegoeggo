@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Repositioned project around legal-notice and rights-reservation metadata (plan 001)
+- README, crate docs, and CLI help text now lead with legal notice and AI-training restriction metadata
+- Steganographic markers documented as optional redundant evidence channel
+- MAC key documented as optional authenticated provenance, not baseline requirement
+- Added `docs/legal_notice_model.md` describing the evidence model
+
 ### Fixed
 - Reject JPEG encoding when image dimensions exceed the encoder's 16-bit JPEG limits instead of silently truncating width or height.
 - Report LSB capacity warnings from the effective payload size, including the shorter MAC-protected payload form.

@@ -1,6 +1,6 @@
 # Architecture Overview
 
-`stegoeggo` is a Rust library and CLI for protecting images from unauthorized AI model training through steganographic watermarking and metadata injection for legal deterrence. It applies multiple layers of protection — metadata injection and steganographic embedding — to serve as legal evidence of image ownership.
+`stegoeggo` is a Rust library and CLI for protecting images from unauthorized AI model training through rights-reservation metadata and steganographic markers. It applies multiple layers of protection — metadata injection and steganographic embedding — to serve as legal evidence of image ownership.
 
 ## System Architecture
 

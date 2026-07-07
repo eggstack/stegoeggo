@@ -1,6 +1,6 @@
 # stegoeggo
 
-A modular Rust library for protecting images from AI scraping through steganographic watermarking and metadata injection for legal deterrence.
+Embed rights-reservation metadata and AI-training restriction notices into images, with optional best-effort steganographic markers for redundant evidence.
 
 [![CI](https://github.com/eggstack/stegoeggo/actions/workflows/ci.yml/badge.svg)](https://github.com/eggstack/stegoeggo/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/stegoeggo)](https://crates.io/crates/stegoeggo)
@@ -8,21 +8,32 @@ A modular Rust library for protecting images from AI scraping through steganogra
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MSRV](https://img.shields.io/badge/MSRV-1.87-blue.svg)](https://blog.rust-lang.org/)
 
-## What is stegoeggo?
+## What stegoeggo is
 
-stegoeggo implements **image protection through steganographic watermarking and metadata injection** — techniques to protect images from being used to train AI models without the owner's consent. When AI systems scrape images from the web, protected images can:
+stegoeggo is:
 
-- Carry visible metadata markers (XMP, IPTC DMI, EXIF) that serve as legal deterrents
-- Contain hidden steganographic payloads (best-effort evidence channel; see [Robustness & Survival](#robustness--survival))
-- Embed legal metadata (copyright, usage terms) directly into the image file
-- Survive casual modification while retaining protection evidence
+- A **legal-notice and rights-reservation metadata tool** for images.
+- A way to make copyright and AI-training restrictions visible to metadata-aware systems.
+- A best-effort redundant marking system when optional steganographic payloads are enabled.
 
-The library provides multiple **layers of protection** that work together:
+## What stegoeggo is not
+
+stegoeggo is **not**:
+
+- A forensic watermarking system.
+- A DRM system.
+- A guarantee that marks survive arbitrary resizing, re-encoding, screenshots, cropping, or metadata stripping.
+- A cryptographic proof that a model trained on a specific image.
+- A data-poisoning tool.
+
+## What it does
+
+stegoeggo embeds multiple layers of rights-reservation and AI-training restriction metadata into images:
 
 | Layer | Description |
 |-------|-------------|
-| **Metadata Injection** | Embeds anti-scraping markers in image headers using XMP, IPTC DMI, and EXIF |
-| **Steganography** | Hidden payloads embedded in image pixels (LSB) or DCT coefficients (JPEG) for verification |
+| **Metadata Injection** | Embeds rights-reservation and AI-training restriction markers in image headers using XMP, IPTC DMI, and EXIF |
+| **Steganography** | Optional hidden payloads embedded in image pixels (LSB) or DCT coefficients (JPEG) for redundant evidence |
 
 ### External Standards
 
@@ -67,17 +78,20 @@ cargo install stegoeggo-cli
 ### CLI
 
 ```bash
-# Protect an image with default settings (Standard level)
+# Embed legal-notice metadata with default settings (Standard level)
 stegoeggo input.png -o output.png
 
-# Specify protection level
+# Light protection (metadata only, minimal stego)
 stegoeggo input.png -o output.png --level light
-
-# With cryptographic key for HMAC-verified payloads
-stegoeggo input.png -o output.png --key deadbeef123456
 
 # With legal metadata (for content you own!)
 stegoeggo input.png -o output.png --legal-claims
+
+# With AI-training restriction metadata (IPTC DMI)
+stegoeggo input.png -o output.png --dmi prohibited-ai
+
+# With optional cryptographic key for authenticated stego provenance
+stegoeggo input.png -o output.png --key deadbeef123456
 
 # Verify if an image is protected
 stegoeggo protected.png -V
@@ -93,7 +107,7 @@ use image::DynamicImage;
 let pipeline = ProtectionPipeline::new();
 let ctx = ProtectionContext::default();
 
-// Process an image
+// Process an image — embeds metadata and optional steganographic markers
 let img = DynamicImage::new_rgb8(512, 512);
 let protected = pipeline.process(&img, ProtectionLevel::Standard, &ctx).unwrap();
 ```
@@ -151,10 +165,10 @@ let protected = process_images_bytes_parallel(&image_bytes, ProtectionLevel::Sta
 
 The library provides three protection levels:
 
-| Level | Strategy | Latency (512×512) | Use Case |
+| Level | Strategy | Latency (512x512) | Use Case |
 |-------|----------|-------------------|----------|
 | `Disabled` | No protection | ~20 ns | Testing, whitelisted clients |
-| `Light` | Metadata + minimal stego (Q-table seed for JPEG, LSB redundancy=1 for PNG/WebP) | ~0.8 ms | Minimal visible markers, low cost |
+| `Light` | Metadata + minimal stego (Q-table seed for JPEG, LSB redundancy=1 for PNG/WebP) | ~0.8 ms | Metadata-only, low cost |
 | `Standard` | Full stego (DCT F5 + metadata for JPEG, LSB + metadata for PNG/WebP) | ~0.8 ms | Default for most endpoints |
 
 ```rust
@@ -164,33 +178,6 @@ use stegoeggo::ProtectionLevel;
 let level = ProtectionLevel::Light;    // Metadata + minimal stego
 let level = ProtectionLevel::Standard; // Stego + Metadata (default)
 ```
-
-### Cryptographic Key Support
-
-Provide a hex key for keyed HMAC-SHA256 payload verification:
-
-```rust
-use stegoeggo::{ProtectionContext, ProtectionLevel};
-
-// With MAC key - steganographic payloads are cryptographically verified
-let key = vec![0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78];
-let ctx = ProtectionContext::new(0.8, 42)
-    .with_mac_key(key);
-
-// Without key - same seed produces same output (checksum-based verification)
-let ctx = ProtectionContext::new(0.8, 42);
-```
-
-> **Note:** `ProtectionContext::default()` uses `generate_random_seed()`, which is backed by the OS CSPRNG via the `getrandom` crate. The seed is unpredictable by design. For **reproducible** protection across runs, pass an explicit seed via `ProtectionContext::new(intensity, seed)`. In rare sandboxed environments where `getrandom` is unavailable, a time-based fallback is used and a warning is logged.
-
-> **Security Notice:** Without a MAC key, steganographic payloads use a non-cryptographic
-> CRC32 checksum that can be trivially forged by anyone who reads the source code. For
-> production deployments (CDN protection, adversarial settings), **always** set a MAC key
-> via `.with_mac_key()`. The default configuration without a key is suitable for
-> development and testing only.
-
-The MAC key affects:
-- Steganography payload verification (HMAC-SHA256 instead of simple checksum)
 
 ### Legal Metadata Injection
 
@@ -215,6 +202,52 @@ let ctx = ProtectionContext::default()
 let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 ```
 
+### DMI (Data Mining Inhibitor) Values
+
+Set IPTC-standard DMI metadata values for AI-training restrictions:
+
+```rust
+use stegoeggo::{ProtectionContext, DmiValue, ProtectionLevel};
+
+let ctx = ProtectionContext::default()
+    .with_dmi(DmiValue::ProhibitedAiMlTraining);
+```
+
+Available values:
+- `Unspecified` - No restriction specified
+- `Allowed` - Content may be used for AI/ML training
+- `ProhibitedAiMlTraining` - Prohibited for AI/ML training
+- `ProhibitedGenAiMlTraining` - Prohibited for generative AI training
+- `ProhibitedExceptSearchEngineIndexing` - Prohibited except for search indexing
+- `Prohibited` - All uses prohibited
+- `ProhibitedSeeConstraints` - Prohibited, see constraints for details
+
+### Optional: Authenticated Stego Provenance (MAC Key)
+
+Provide a hex key for HMAC-SHA256 payload verification. Without a key, steganographic payloads use a non-cryptographic CRC32 checksum suitable for development and testing.
+
+```rust
+use stegoeggo::{ProtectionContext, ProtectionLevel};
+
+// With MAC key — steganographic payloads are cryptographically verified
+let key = vec![0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78];
+let ctx = ProtectionContext::new(0.8, 42)
+    .with_mac_key(key);
+
+// Without key — same seed produces same output (checksum-based verification)
+let ctx = ProtectionContext::new(0.8, 42);
+```
+
+> **Note:** `ProtectionContext::default()` uses `generate_random_seed()`, which is backed by the OS CSPRNG via the `getrandom` crate. The seed is unpredictable by design. For **reproducible** protection across runs, pass an explicit seed via `ProtectionContext::new(intensity, seed)`. In rare sandboxed environments where `getrandom` is unavailable, a time-based fallback is used and a warning is logged.
+
+**Verification profiles:**
+
+- **Without a MAC key** (legal-notice mode): Steganographic payload verification uses a non-cryptographic CRC32 checksum with ECC redundancy. Visible metadata markers prove intent and rights reservation. No MAC key is required for the legal-notice use case.
+- **With a MAC key** (authenticated provenance mode): The library uses HMAC-SHA256 for cryptographic payload verification. This proves the hidden payload was generated by a party with the configured secret. Use this when you need cryptographic integrity for the steganographic channel.
+
+The MAC key affects:
+- Steganography payload verification (HMAC-SHA256 instead of simple checksum)
+
 ### Granular Control
 
 Control individual protection components:
@@ -237,26 +270,6 @@ let ctx = ProtectionContext::new(0.5, 42)
     .with_max_dimension(2048);
 ```
 
-### DMI (Data Mining Inhibitor) Values
-
-Set IPTC-standard DMI metadata values:
-
-```rust
-use stegoeggo::{ProtectionContext, DmiValue, ProtectionLevel};
-
-let ctx = ProtectionContext::default()
-    .with_dmi(DmiValue::ProhibitedAiMlTraining);
-```
-
-Available values:
-- `Unspecified` - No restriction specified
-- `Allowed` - Content may be used for AI/ML training
-- `ProhibitedAiMlTraining` - Prohibited for AI/ML training
-- `ProhibitedGenAiMlTraining` - Prohibited for generative AI training
-- `ProhibitedExceptSearchEngineIndexing` - Prohibited except for search indexing
-- `Prohibited` - All uses prohibited
-- `ProhibitedSeeConstraints` - Prohibited, see constraints for details
-
 ### Performance Tuning
 
 For latency-sensitive deployments:
@@ -272,7 +285,7 @@ let mac_key = b"your-secret-key".to_vec();
 let input_bytes = std::fs::read("image.png").unwrap();
 let ctx = ProtectionContext::new(0.5, seed)
     .with_format(ImageOutputFormat::Png)      // or Jpeg for smaller files
-    .with_mac_key(mac_key)                     // required for adversarial serving
+    .with_mac_key(mac_key)                     // for authenticated provenance
     .with_stego_redundancy(2)                  // 1-10, lower = faster
     .with_jpeg_quality(85)                     // 1-100, lower = faster
     .with_progressive_jpeg(true);              // Progressive rendering for web
@@ -358,10 +371,10 @@ Options:
   --jpeg-quality <N>       JPEG quality 1-100 (default: 90)
   --progressive            Use progressive JPEG encoding
   -v, --verbose            Print verbose output
-  -d, --dmi <DMI>          DMI metadata value
+  -d, --dmi <DMI>          AI-training restriction metadata (IPTC DMI value)
   --metadata               Inject metadata (seed, DMI). Default: true for Light and Standard
-  --legal-claims          Inject legal claims (copyright). WARNING: only for content you own
-  -k, --key <KEY>          Cryptographic key (hex string) for HMAC-SHA256 verification
+  --legal-claims          Inject legal claims (copyright, usage terms) — only for content you own
+  -k, --key <KEY>          Optional cryptographic key (hex string) for HMAC-SHA256 verification
   -j, --jobs <N>           Parallel jobs for batch processing (default: 1)
   -h, --help               Print help
   --version                Print version
@@ -391,7 +404,7 @@ stegoeggo image.png -o protected.png --stego-redundancy 1
 # With legal metadata
 stegoeggo my_art.png -o protected.png --legal-claims --level standard
 
-# With cryptographic key
+# With cryptographic key for authenticated provenance
 stegoeggo image.png -o output.png --key a1b2c3d4e5f6
 
 # Verify protection
@@ -425,7 +438,7 @@ This image does not contain a protection signature.
 
 ### 1. Metadata Injection
 
-The library injects metadata into image headers:
+The library injects rights-reservation and AI-training restriction metadata into image headers:
 
 **PNG:** tEXt and iTXt chunks
 - `X-Protection-Seed`: Unique identifier for reproducibility
@@ -439,9 +452,9 @@ The library injects metadata into image headers:
 **WebP:** EXIF and XML chunks
 - Similar metadata injection
 
-### 2. Steganography
+### 2. Steganography (Optional)
 
-Hidden payloads embedded in images for verification and proof of protection:
+Hidden payloads embedded in images for redundant verification evidence:
 
 **PNG/WebP:** LSB (Least Significant Bit) embedding
 - Payload embedded in the lowest bits of RGB channels
@@ -475,25 +488,25 @@ Offset  Size  Field
 *Default mode (100 bytes, no MAC key — uses ECC for error recovery):*
 ```
 Offset  Size  Field
-0       96    Reed-Solomon-like 3× repetition ECC encoding of the 32-byte header
+0       96    Reed-Solomon-like 3x repetition ECC encoding of the 32-byte header
 96      4     CRC32 checksum of bytes 0-95
 ```
 
-Without a MAC key, the payload uses 3× repetition coding with majority-vote decoding (`src/protected/ecc.rs`) so it can recover from bit corruption. With a MAC key, the 8-byte truncated HMAC-SHA256 provides cryptographic integrity.
+Without a MAC key, the payload uses 3x repetition coding with majority-vote decoding (`src/protected/ecc.rs`) so it can recover from bit corruption. With a MAC key, the 8-byte truncated HMAC-SHA256 provides cryptographic integrity.
 
 ## Integration Architecture
 
 ### Architecture Overview
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Image Source  │────▶│   Protection    │────▶│   Distribution  │
-└─────────────────┘     │   Pipeline      │     └─────────────────┘
-                        └─────────────────┘
-                                │
-                                │  1. Embed steganographic watermark
-                                │  2. Inject metadata markers
-                                │  3. Add legal claims (optional)
++-----------------+     +-----------------+     +-----------------+
+|   Image Source  |---->|   Protection    |---->|   Distribution  |
++-----------------+     |   Pipeline      |     +-----------------+
+                        +-----------------+
+                                |
+                                |  1. Inject metadata markers (primary)
+                                |  2. Embed steganographic markers (redundant)
+                                |  3. Add legal claims (optional)
 ```
 
 ## Verification
@@ -552,19 +565,19 @@ Different protection layers survive different image transformations. The truth, 
 
 | Transformation | Visible metadata (DMI, XMP, EXIF, COM) | Q-table seed (JPEG) | LSB stego payload (PNG/WebP) | DCT stego payload (JPEG) |
 |----------------|-----------------------------------------|---------------------|------------------------------|--------------------------|
-| **File copy / re-hosting** | ✓ | ✓ | ✓ | ✓ |
-| **PNG ↔ PNG re-encode** | ✓ | n/a | ✓ (spread-spectrum + ECC + majority vote) | n/a |
-| **WebP lossless ↔ WebP lossless** | ✓ | n/a | ✓ (same as PNG) | n/a |
-| **WebP lossy (any re-encode)** | ✓ | n/a | ✗ (lossy codec destroys LSBs) | n/a |
-| **JPEG → JPEG via `image` crate encoder** | ✗ (encoder strips COM/APP1) | ✗ (encoder rebuilds Q-tables) | ✗ (decoded to pixels) | ✗ |
-| **JPEG → JPEG via `stegoeggo` fast path** | ✓ (re-injected) | ✓ (re-injected) | n/a | ✓ (DCT coeffs preserved) |
-| **Format conversion (PNG ↔ JPEG) via `image` crate** | ✗ | ✗ | ✗ | ✗ |
-| **Format conversion (WebP ↔ JPEG) via `image` crate** | ✗ | n/a | ✗ | n/a |
-| **Crop** | ✗ (clipped) | ✗ | ✓ with `with_tile_size()` (≥1 intact tile) | partial (tile-aligned crops without re-encode) |
-| **Resize** | ✗ (resampled) | ✗ | ✗ | ✗ |
-| **Naive metadata strip** | ✗ | n/a | ✓ (still extractable) | partial |
-| **LSB-preserving noise** (e.g. contrast, brightness) | ✓ | n/a | ✓ | n/a |
-| **LSB-flipping noise** (e.g. random LSB overwrites) | ✓ | n/a | ✗ without ECC / partial with ECC | n/a |
+| **File copy / re-hosting** | Yes | Yes | Yes | Yes |
+| **PNG <-> PNG re-encode** | Yes | n/a | Yes (spread-spectrum + ECC + majority vote) | n/a |
+| **WebP lossless <-> WebP lossless** | Yes | n/a | Yes (same as PNG) | n/a |
+| **WebP lossy (any re-encode)** | Yes | n/a | No (lossy codec destroys LSBs) | n/a |
+| **JPEG -> JPEG via `image` crate encoder** | No (encoder strips COM/APP1) | No (encoder rebuilds Q-tables) | No (decoded to pixels) | No |
+| **JPEG -> JPEG via `stegoeggo` fast path** | Yes (re-injected) | Yes (re-injected) | n/a | Yes (DCT coeffs preserved) |
+| **Format conversion (PNG <-> JPEG) via `image` crate** | No | No | No | No |
+| **Format conversion (WebP <-> JPEG) via `image` crate** | No | n/a | No | n/a |
+| **Crop** | No (clipped) | No | Yes with `with_tile_size()` (>=1 intact tile) | partial (tile-aligned crops without re-encode) |
+| **Resize** | No (resampled) | No | No | No |
+| **Naive metadata strip** | No | n/a | Yes (still extractable) | partial |
+| **LSB-preserving noise** (e.g. contrast, brightness) | Yes | n/a | Yes | n/a |
+| **LSB-flipping noise** (e.g. random LSB overwrites) | Yes | n/a | No without ECC / partial with ECC | n/a |
 
 ### Encoder reality check
 
@@ -576,9 +589,9 @@ The `image` crate (and most general-purpose JPEG encoders) **do not preserve** C
 
 ### Recommendations
 
-- **For maximum legal evidence**: Use PNG output. The visible metadata + LSB stego payload survive almost everything except cropping, resizing, and re-encoding through a non-`stegoeggo` JPEG encoder. For crop resistance, add `.with_tile_size(64)` to the protection context — this embeds the payload in every 64×64 tile so any crop containing at least one full tile is recoverable.
+- **For maximum legal evidence**: Use PNG output. The visible metadata + LSB stego payload survive almost everything except cropping, resizing, and re-encoding through a non-`stegoeggo` JPEG encoder. For crop resistance, add `.with_tile_size(64)` to the protection context — this embeds the payload in every 64x64 tile so any crop containing at least one full tile is recoverable.
 - **For CDN/WAF deployment**: Use `Standard` level with PNG output. JPEG output discards the LSB payload and visible metadata on every re-compression.
-- **For maximum robustness against stripping**: Set a MAC key via `with_mac_key()`. Without it, the embedded checksum can be trivially forged by anyone who reads this source.
+- **For authenticated provenance**: Set a MAC key via `with_mac_key()` to cryptographically sign steganographic payloads.
 - **For the strongest claims about evidence**: Serve the protected image directly and reference its ISCC code. Don't rely on downstream consumers to preserve any of the embedded channels.
 
 ### Honest threat model
@@ -593,11 +606,11 @@ Benchmarked on Apple M4 Pro (12 cores), version 0.2.0.
 
 | Image Size | Light | Standard |
 |------------|-------|----------|
-| 256×256 | 0.2 ms | 0.2 ms |
-| 512×512 | 0.8 ms | 0.8 ms |
-| 1024×1024 | 3.2 ms | 3.1 ms |
-| 2560×2560 (2K) | 18 ms | 20 ms |
-| 3840×3840 (4K) | 35 ms | 40 ms |
+| 256x256 | 0.2 ms | 0.2 ms |
+| 512x512 | 0.8 ms | 0.8 ms |
+| 1024x1024 | 3.2 ms | 3.1 ms |
+| 2560x2560 (2K) | 18 ms | 20 ms |
+| 3840x3840 (4K) | 35 ms | 40 ms |
 
 ### Bytes-in/Bytes-out Processing (production path for WAF/CDN)
 
@@ -605,9 +618,9 @@ PNG in / PNG out — the "maximum legal evidence" path:
 
 | Image Size | Light | Standard |
 |------------|-------|----------|
-| 512×512 | 0.7 ms | 0.7 ms |
-| 2560×2560 (2K) | 11 ms | 13 ms |
-| 3840×3840 (4K) | 25 ms | 29 ms |
+| 512x512 | 0.7 ms | 0.7 ms |
+| 2560x2560 (2K) | 11 ms | 13 ms |
+| 3840x3840 (4K) | 25 ms | 29 ms |
 
 ### JPEG Fast Path
 
@@ -615,8 +628,8 @@ JPEG-in / JPEG-out bypasses pixel decode entirely and operates directly on DCT c
 
 | Image Size | Time |
 |------------|------|
-| 256×256 | **1.3 µs** |
-| 512×512 | 1.6 ms |
+| 256x256 | **1.3 us** |
+| 512x512 | 1.6 ms |
 
 ### Tiled Embedding (crop-resistant mode)
 
@@ -624,17 +637,17 @@ JPEG with `with_tile_size(64)`:
 
 | Image Size | Embed | Extract |
 |------------|-------|---------|
-| 256×256 | 1.5 ms | 270 ms |
-| 1024×1024 | 253 ms | — |
+| 256x256 | 1.5 ms | 270 ms |
+| 1024x1024 | 253 ms | — |
 
 ### Allocations
 
-Standard protection at 512×512: 60 allocations, 5.7 MB peak.
+Standard protection at 512x512: 60 allocations, 5.7 MB peak.
 
 ### Summary
 
-- **<1 ms** for images up to 512×512
-- **<5 ms** for images up to 1024×1024
+- **<1 ms** for images up to 512x512
+- **<5 ms** for images up to 1024x1024
 - **<30 ms** for 4K images (bytes path, Standard level)
 - JPEG fast path is sub-millisecond for small images
 
@@ -696,19 +709,23 @@ Common errors:
 - [jpeg-encoder](https://crates.io/crates/jpeg-encoder) - JPEG encoding used
 - [image crate](https://image.rs/) - Image processing foundation
 
+## Legal Notice Model
+
+See [docs/legal_notice_model.md](docs/legal_notice_model.md) for a detailed description of the legal notice and evidence model, including what metadata channels are embedded, what transformations commonly remove notices, and operational recommendations.
+
 ## Architecture
 
 ```
 stegoeggo
-├── ProtectionPipeline        # Main orchestration
-├── Protector trait           # Strategy pattern for protectors
-│   ├── PassthroughProtector      # No-op (Disabled level)
-│   ├── MetadataTrapProtector     # Metadata injection (always)
-│   └── SteganographyProtector    # LSB/DCT embedding (Light: minimal, Standard: full)
-├── ProtectionLevel          # disabled → light → standard
-├── LegalMetadata            # Configurable legal metadata
-├── ProtectionContext        # Configuration for protection
-└── StegoPayload             # Extracted stego data
++-- ProtectionPipeline        # Main orchestration
++-- Protector trait           # Strategy pattern for protectors
+|   +-- PassthroughProtector      # No-op (Disabled level)
+|   +-- MetadataTrapProtector     # Metadata injection (always)
+|   +-- SteganographyProtector    # LSB/DCT embedding (Light: minimal, Standard: full)
++-- ProtectionLevel          # disabled -> light -> standard
++-- LegalMetadata            # Configurable legal metadata
++-- ProtectionContext        # Configuration for protection
++-- StegoPayload             # Extracted stego data
 ```
 
 **Steganography intensity by level:**
@@ -730,12 +747,10 @@ This library is designed to protect intellectual property from unauthorized AI t
 **We do not endorse:**
 - Using this library for malicious purposes
 - Circumventing legitimate AI services' terms of service
-- Poisoning images you do not own or have rights to
+- Applying restrictions to images you do not own or have rights to
 - Any use that violates applicable laws
 
 This is a defensive tool for content protection, not an offensive weapon against AI systems.
-
-**Production use requires MAC keys:** Without a cryptographic MAC key, steganographic payloads use a non-cryptographic CRC32 checksum that can be forged. For adversarial or production deployments (e.g., CDN protection), always set a MAC key via `.with_mac_key()` to ensure payload integrity.
 
 ## License
 

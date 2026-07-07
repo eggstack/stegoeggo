@@ -22,7 +22,7 @@ Please include:
 ## Security Considerations
 
 ### Without a MAC key
-Steganographic payload verification uses a non-cryptographic CRC32 checksum. An attacker who can read the image bytes can forge valid-looking payloads. For adversarial settings (e.g., CDN protection against malicious scrapers), **always set a MAC key** via `.with_mac_key()`.
+Steganographic payload verification uses a non-cryptographic CRC32 checksum. An attacker who can read the image bytes can forge valid-looking payloads. For production deployments (e.g., CDN protection against malicious scrapers), **always set a MAC key** via `.with_mac_key()`.
 
 ### Metadata stripping
 All image metadata (XMP, IPTC, EXIF, tEXt chunks) can be stripped by any image processing tool. The steganographic layer provides a secondary evidence channel. For maximum legal deterrence, serve protected images byte-identical and reference their ISCC code.

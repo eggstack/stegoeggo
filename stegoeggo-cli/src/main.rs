@@ -11,7 +11,7 @@ use stegoeggo::{
 
 #[derive(Parser, Debug)]
 #[command(name = "stegoeggo")]
-#[command(about = "Image protection CLI for protecting against AI scraping", long_about = None)]
+#[command(about = "Embed legal-notice and rights-reservation metadata into images, with optional steganographic markers", long_about = None)]
 struct Args {
     #[arg(help = "Input image file(s). Use multiple files or a directory for batch processing")]
     input: Vec<PathBuf>,
@@ -69,7 +69,7 @@ struct Args {
     #[arg(
         short,
         long,
-        help = "DMI metadata value (auto|unspecified|allowed|prohibited-ai|prohibited-genai|prohibited-se|prohibited|prohibited-constraints)"
+        help = "AI-training restriction metadata (IPTC DMI value)"
     )]
     dmi: Option<DmiArg>,
 
@@ -81,13 +81,13 @@ struct Args {
 
     #[arg(
         long,
-        help = "Inject legal claims (copyright, artist). WARNING: only for content you own"
+        help = "Inject legal claims (copyright, usage terms) into image metadata — only for content you own"
     )]
     legal_claims: bool,
 
     #[arg(
         long,
-        help = "Cryptographic key for keyed perturbations (hex string). Provides extra protection."
+        help = "Optional cryptographic key for HMAC-verified steganographic payloads (authenticated provenance mode)"
     )]
     key: Option<String>,
 
