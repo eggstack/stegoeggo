@@ -1022,6 +1022,147 @@ mod malformed_input {
     }
 
     #[test]
+    fn legal_metadata_validate_rejects_oversized_fields() {
+        let oversized = "x".repeat(stegoeggo::LegalMetadata::MAX_FIELD_LEN + 1);
+        let meta = stegoeggo::LegalMetadata::new().with_copyright_holder(&oversized);
+        let result = meta.validate();
+        assert!(
+            result.is_err(),
+            "validate() must reject fields exceeding MAX_FIELD_LEN"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("copyright_holder"),
+            "Error should name the offending field: {}",
+            err
+        );
+        assert!(
+            err.contains("8192"),
+            "Error should mention the limit: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn legal_metadata_validate_passes_within_limit() {
+        let just_right = "x".repeat(stegoeggo::LegalMetadata::MAX_FIELD_LEN);
+        let meta = stegoeggo::LegalMetadata::new()
+            .with_copyright_holder(&just_right)
+            .with_creator("Alice")
+            .with_ai_constraints("No training");
+        assert!(
+            meta.validate().is_ok(),
+            "Fields within MAX_FIELD_LEN must pass validation"
+        );
+    }
+
+    #[test]
+    fn legal_metadata_validate_passes_empty() {
+        let meta = stegoeggo::LegalMetadata::new();
+        assert!(
+            meta.validate().is_ok(),
+            "Empty metadata must pass validation"
+        );
+    }
+
+    #[test]
+    fn oversized_metadata_field_rejected_by_pipeline() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let oversized = "x".repeat(stegoeggo::LegalMetadata::MAX_FIELD_LEN + 1);
+        let meta = stegoeggo::LegalMetadata::new().with_copyright_holder(&oversized);
+        let ctx = ProtectionContext::new(0.5, 42).with_legal_metadata(meta);
+
+        let result = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx);
+        assert!(
+            result.is_err(),
+            "Pipeline must reject oversized metadata fields"
+        );
+    }
+
+    #[test]
+    fn empty_input_bytes_handled_gracefully() {
+        let ctx = ProtectionContext::new(0.5, 42);
+        let result = process_image_bytes(&[], ProtectionLevel::Standard, &ctx);
+        assert!(
+            result.is_err(),
+            "Empty input must produce an error, not panic"
+        );
+    }
+
+    #[test]
+    fn single_byte_input_handled_gracefully() {
+        let ctx = ProtectionContext::new(0.5, 42);
+        let result = process_image_bytes(&[0x00], ProtectionLevel::Standard, &ctx);
+        assert!(
+            result.is_err(),
+            "Single-byte input must produce an error, not panic"
+        );
+    }
+
+    #[test]
+    fn png_magic_only_input_handled_gracefully() {
+        let ctx = ProtectionContext::new(0.5, 42);
+        let input = b"\x89PNG\r\n\x1a\n".to_vec();
+        let result = process_image_bytes(&input, ProtectionLevel::Standard, &ctx);
+        assert!(
+            result.is_err(),
+            "PNG magic-only input must produce an error, not panic"
+        );
+    }
+
+    #[test]
+    fn jpeg_magic_only_input_handled_gracefully() {
+        let ctx = ProtectionContext::new(0.5, 42);
+        let input = b"\xFF\xD8\xFF".to_vec();
+        let result = process_image_bytes(&input, ProtectionLevel::Standard, &ctx);
+        assert!(
+            result.is_err(),
+            "JPEG magic-only input must produce an error, not panic"
+        );
+    }
+
+    #[test]
+    fn webp_magic_only_input_handled_gracefully() {
+        let ctx = ProtectionContext::new(0.5, 42);
+        let input = b"RIFF\x00\x00\x00\x00WEBP".to_vec();
+        let result = process_image_bytes(&input, ProtectionLevel::Standard, &ctx);
+        assert!(
+            result.is_err(),
+            "WebP magic-only input must produce an error, not panic"
+        );
+    }
+
+    #[test]
+    fn truncated_jpeg_with_oversized_marker_length() {
+        let mut jpeg = Vec::new();
+        jpeg.extend_from_slice(b"\xFF\xD8\xFF");
+        jpeg.push(0xE0);
+        jpeg.extend_from_slice(&u16::MAX.to_be_bytes());
+        jpeg.extend_from_slice(&[0u8; 10]);
+
+        let ctx = ProtectionContext::new(0.5, 42);
+        let result = process_image_bytes(&jpeg, ProtectionLevel::Standard, &ctx);
+        assert!(
+            result.is_err(),
+            "Truncated JPEG with oversized marker must not panic"
+        );
+    }
+
+    #[test]
+    fn verify_empty_input_returns_not_found() {
+        let result = verify_image_bytes(&[], &[]);
+        assert_eq!(result, VerificationStatus::NotFound);
+    }
+
+    #[test]
+    fn verify_garbage_bytes_returns_not_found() {
+        let garbage: Vec<u8> = (0..256).map(|i| i as u8).collect();
+        let result = verify_image_bytes(&garbage, &[]);
+        assert_eq!(result, VerificationStatus::NotFound);
+    }
+
+    #[test]
     fn dct_capacity_warning_for_png_to_jpeg_conversion() {
         let img = create_test_image(16, 16);
         let png_bytes = image_to_png_bytes(&img);
@@ -1096,6 +1237,187 @@ mod tiled_crop_jpeg {
             result,
             VerificationStatus::NotFound,
             "Tiled F5 stego does NOT survive crop + JPEG re-encode (DCT coefficients rebuilt from pixels)"
+        );
+    }
+}
+
+mod format_smoke {
+    use super::*;
+
+    #[test]
+    fn png_round_trip_standard_protection() {
+        let img = create_test_image(128, 128);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.7, 42).with_format(ImageOutputFormat::Png);
+
+        let protected = process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+        let decoded = image::load_from_memory(&protected).unwrap();
+        assert_eq!(decoded.width(), 128);
+        assert_eq!(decoded.height(), 128);
+
+        let status = verify_image_bytes(&protected, &[]);
+        assert_eq!(status, VerificationStatus::Verified);
+    }
+
+    #[test]
+    fn jpeg_round_trip_standard_protection() {
+        let img = create_test_image(128, 128);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+        let ctx = ProtectionContext::new(0.7, 42).with_format(ImageOutputFormat::Jpeg);
+
+        let protected = process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+        let decoded = image::load_from_memory(&protected).unwrap();
+        assert_eq!(decoded.width(), 128);
+        assert_eq!(decoded.height(), 128);
+
+        let status = verify_image_bytes(&protected, &[]);
+        assert_eq!(status, VerificationStatus::Verified);
+    }
+
+    #[test]
+    fn png_round_trip_light_protection() {
+        let img = create_test_image(128, 128);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Png);
+
+        let protected = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
+        let decoded = image::load_from_memory(&protected).unwrap();
+        assert_eq!(decoded.width(), 128);
+        assert_eq!(decoded.height(), 128);
+    }
+
+    #[test]
+    fn jpeg_round_trip_light_protection() {
+        let img = create_test_image(128, 128);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
+
+        let protected = process_image_bytes(&jpeg_bytes, ProtectionLevel::Light, &ctx).unwrap();
+        let decoded = image::load_from_memory(&protected).unwrap();
+        assert_eq!(decoded.width(), 128);
+        assert_eq!(decoded.height(), 128);
+    }
+
+    #[test]
+    fn disabled_level_passthrough_png() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.5, 42);
+
+        let output = process_image_bytes(&png_bytes, ProtectionLevel::Disabled, &ctx).unwrap();
+        assert_eq!(
+            output, png_bytes,
+            "Disabled level must be byte-for-byte passthrough"
+        );
+    }
+
+    #[test]
+    fn disabled_level_passthrough_jpeg() {
+        let img = create_test_image(64, 64);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 85);
+        let ctx = ProtectionContext::new(0.5, 42);
+
+        let output = process_image_bytes(&jpeg_bytes, ProtectionLevel::Disabled, &ctx).unwrap();
+        assert_eq!(
+            output, jpeg_bytes,
+            "Disabled level must be byte-for-byte passthrough"
+        );
+    }
+
+    #[test]
+    fn png_with_metadata_and_legal_claims() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let meta = stegoeggo::LegalMetadata::new()
+            .with_copyright_holder("Test Owner")
+            .with_creator("Test Author")
+            .with_ai_constraints("No AI training");
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_legal_metadata(meta)
+            .with_legal_claims(true);
+
+        let protected = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
+        let notice = stegoeggo::verify_legal_notice(&protected, &[]);
+        assert!(
+            notice.has_notice(),
+            "Legal notice must be present after injection"
+        );
+        assert_eq!(notice.copyright_holder(), Some("Test Owner"));
+        assert_eq!(notice.creator(), Some("Test Author"));
+    }
+
+    #[test]
+    fn jpeg_with_metadata_and_legal_claims() {
+        let img = create_test_image(64, 64);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+        let meta = stegoeggo::LegalMetadata::new()
+            .with_copyright_holder("JPEG Owner")
+            .with_creator("JPEG Author");
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_legal_metadata(meta)
+            .with_legal_claims(true);
+
+        let protected = process_image_bytes(&jpeg_bytes, ProtectionLevel::Light, &ctx).unwrap();
+        let notice = stegoeggo::verify_legal_notice(&protected, &[]);
+        assert!(
+            notice.has_notice(),
+            "Legal notice must be present after JPEG injection"
+        );
+        assert_eq!(notice.copyright_holder(), Some("JPEG Owner"));
+    }
+}
+
+mod fuzz_regression {
+    use super::*;
+
+    #[test]
+    fn pipeline_handles_all_zero_bytes() {
+        let input = vec![0u8; 1024];
+        let ctx = ProtectionContext::new(0.5, 42);
+        let result = process_image_bytes(&input, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err(), "All-zero input must not panic");
+    }
+
+    #[test]
+    fn pipeline_handles_random_bytes() {
+        let input: Vec<u8> = (0u16..2048)
+            .map(|i| (i.wrapping_mul(73) ^ 0xAB) as u8)
+            .collect();
+        let ctx = ProtectionContext::new(0.5, 42);
+        let result = process_image_bytes(&input, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err(), "Random bytes must not panic");
+    }
+
+    #[test]
+    fn pipeline_handles_max_length_short_input() {
+        let input = vec![0xFF; 16];
+        let ctx = ProtectionContext::new(0.5, 42);
+        let result = process_image_bytes(&input, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err(), "Short max-byte input must not panic");
+    }
+
+    #[test]
+    fn verify_handles_adversarial_input() {
+        let adversarial: Vec<u8> = vec![
+            0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00,
+            0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+        ];
+        let result = verify_image_bytes(&adversarial, &[]);
+        assert_eq!(result, VerificationStatus::NotFound);
+    }
+
+    #[test]
+    fn pipeline_handles_extremely_large_capacity_hint() {
+        let img = create_test_image(2, 2);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(1.0, u64::MAX);
+        let result = process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx);
+        assert!(
+            result.is_ok(),
+            "Max seed value must not cause issues: {:?}",
+            result.err()
         );
     }
 }

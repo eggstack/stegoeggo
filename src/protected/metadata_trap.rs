@@ -289,17 +289,17 @@ impl MetadataTrapProtector {
             if chunk_type == b"IEND" {
                 if let Some(dmi_val) = dmi {
                     let xmp_chunk =
-                        Self::create_png_xmp_chunk(&Self::generate_xmp_dmi(dmi_val, seed));
+                        Self::create_png_xmp_chunk(&Self::generate_xmp_dmi(dmi_val, seed))?;
                     output.extend_from_slice(&xmp_chunk);
                 }
                 for (key, value) in metadata {
-                    let text_chunk = Self::create_png_text_chunk(key, value);
+                    let text_chunk = Self::create_png_text_chunk(key, value)?;
                     output.extend_from_slice(&text_chunk);
                 }
                 if let Some(s) = seed {
                     let desc_value = format!("Protected image. Seed: {}", s);
                     let desc_chunk =
-                        Self::create_png_text_chunk(b"Description", desc_value.as_bytes());
+                        Self::create_png_text_chunk(b"Description", desc_value.as_bytes())?;
                     output.extend_from_slice(&desc_chunk);
                 }
             }
@@ -323,7 +323,7 @@ impl MetadataTrapProtector {
         Ok(output)
     }
 
-    fn create_png_xmp_chunk(xmp_data: &[u8]) -> Vec<u8> {
+    fn create_png_xmp_chunk(xmp_data: &[u8]) -> Result<Vec<u8>> {
         // PNG iTXt chunk format (spec-compliant):
         //   keyword\0 compression_flag(1) compression_method(1)
         //   language_tag\0 translated_keyword\0 text
@@ -337,14 +337,19 @@ impl MetadataTrapProtector {
         chunk_data.push(0); // null separator (empty translated keyword)
         chunk_data.extend_from_slice(xmp_data);
 
-        let len = chunk_data.len() as u32;
+        let len = u32::try_from(chunk_data.len()).map_err(|_| {
+            Error::Metadata(format!(
+                "PNG iTXt chunk data length {} exceeds u32::MAX",
+                chunk_data.len()
+            ))
+        })?;
         let mut chunk = Vec::new();
         chunk.extend_from_slice(&len.to_be_bytes());
         chunk.extend_from_slice(b"iTXt");
         chunk.extend_from_slice(&chunk_data);
         let crc = Self::crc32(b"iTXt", &chunk_data);
         chunk.extend_from_slice(&crc.to_be_bytes());
-        chunk
+        Ok(chunk)
     }
 
     fn inject_text_chunks_jpeg(
@@ -379,7 +384,7 @@ impl MetadataTrapProtector {
 
             if marker == 0xD9 {
                 if !inserted {
-                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx);
+                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx)?;
                     inserted = true;
                 }
                 output.extend_from_slice(&jpeg_data[pos..]);
@@ -388,7 +393,7 @@ impl MetadataTrapProtector {
 
             if marker == 0xDA {
                 if !inserted {
-                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx);
+                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx)?;
                     inserted = true;
                 }
                 output.extend_from_slice(&jpeg_data[pos..]);
@@ -433,7 +438,7 @@ impl MetadataTrapProtector {
         }
 
         if !inserted {
-            self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx);
+            self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx)?;
         }
 
         Ok(output)
@@ -448,21 +453,21 @@ impl MetadataTrapProtector {
         metadata: &[(Vec<u8>, Vec<u8>)],
         seed: Option<u64>,
         ctx: Option<&ProtectionContext>,
-    ) {
+    ) -> Result<()> {
         if let Some(dmi_val) = dmi {
-            let exif_marker = Self::create_jpeg_exif_marker(&Self::generate_exif_dmi(dmi_val));
+            let exif_marker = Self::create_jpeg_exif_marker(&Self::generate_exif_dmi(dmi_val))?;
             output.extend_from_slice(&exif_marker);
 
             let iptc_marker =
-                Self::create_jpeg_iptc_marker(&Self::generate_iptc_iim_dmi(dmi_val, seed));
+                Self::create_jpeg_iptc_marker(&Self::generate_iptc_iim_dmi(dmi_val, seed))?;
             output.extend_from_slice(&iptc_marker);
 
-            let xmp_marker = Self::create_jpeg_xmp_marker(&Self::generate_xmp_dmi(dmi_val, seed));
+            let xmp_marker = Self::create_jpeg_xmp_marker(&Self::generate_xmp_dmi(dmi_val, seed))?;
             output.extend_from_slice(&xmp_marker);
         }
 
         for (key, value) in metadata {
-            let com_chunk = Self::create_jpeg_comment(key, value);
+            let com_chunk = Self::create_jpeg_comment(key, value)?;
             output.extend_from_slice(&com_chunk);
         }
 
@@ -470,18 +475,25 @@ impl MetadataTrapProtector {
             let structured_com = Self::generate_structured_com_marker(dmi, seed, context);
             output.extend_from_slice(&structured_com);
         }
+        Ok(())
     }
 
-    fn create_jpeg_xmp_marker(xmp_data: &[u8]) -> Vec<u8> {
+    fn create_jpeg_xmp_marker(xmp_data: &[u8]) -> Result<Vec<u8>> {
         let namespace = b"http://ns.adobe.com/xap/1.0/\0";
         let total_len = namespace.len() + xmp_data.len() + 2;
+        let len_u16 = u16::try_from(total_len).map_err(|_| {
+            Error::Metadata(format!(
+                "JPEG XMP marker length {} exceeds u16::MAX (65535)",
+                total_len
+            ))
+        })?;
         let mut marker = Vec::with_capacity(4 + total_len);
         marker.push(0xFF);
         marker.push(0xE1);
-        marker.extend_from_slice(&(total_len as u16).to_be_bytes());
+        marker.extend_from_slice(&len_u16.to_be_bytes());
         marker.extend_from_slice(namespace);
         marker.extend_from_slice(xmp_data);
-        marker
+        Ok(marker)
     }
 
     /// Creates an EXIF APP1 marker (0xFFE1) with DMI data in UserComment tag.
@@ -493,7 +505,7 @@ impl MetadataTrapProtector {
     /// - TIFF header: byte order "II" (little-endian) + magic 42 + IFD0 offset (8)
     /// - IFD0: 1 entry for UserComment (tag 0x9286)
     /// - UserComment data: ASCII charset identifier (8 bytes) + text
-    fn create_jpeg_exif_marker(exif_data: &[u8]) -> Vec<u8> {
+    fn create_jpeg_exif_marker(exif_data: &[u8]) -> Result<Vec<u8>> {
         let tiff_prefix = b"Exif\x00\x00";
 
         // TIFF header: "II" (little-endian) + magic 42 + IFD0 offset
@@ -507,27 +519,39 @@ impl MetadataTrapProtector {
         ifd.extend_from_slice(&1u16.to_le_bytes()); // entry count
         ifd.extend_from_slice(&0x9286u16.to_le_bytes()); // tag: UserComment
         ifd.extend_from_slice(&2u16.to_le_bytes()); // type: ASCII (2)
-        ifd.extend_from_slice(&(exif_data.len() as u32).to_le_bytes()); // count
-                                                                        // Value: if <= 4 bytes, stored inline; otherwise offset from TIFF start.
-                                                                        // Our data is always > 4 bytes, so use offset = 8 (header) + 2 (count) + 12 (entry) = 22
+        let count = u32::try_from(exif_data.len()).map_err(|_| {
+            Error::Metadata(format!(
+                "JPEG EXIF UserComment count {} exceeds u32::MAX",
+                exif_data.len()
+            ))
+        })?;
+        ifd.extend_from_slice(&count.to_le_bytes()); // count
+                                                     // Value: if <= 4 bytes, stored inline; otherwise offset from TIFF start.
+                                                     // Our data is always > 4 bytes, so use offset = 8 (header) + 2 (count) + 12 (entry) = 22
         ifd.extend_from_slice(&22u32.to_le_bytes()); // offset to data
 
         let total_len = tiff_prefix.len() + tiff_header.len() + ifd.len() + exif_data.len();
+        let len_u16 = u16::try_from(total_len + 2).map_err(|_| {
+            Error::Metadata(format!(
+                "JPEG EXIF marker length {} exceeds u16::MAX (65535)",
+                total_len + 2
+            ))
+        })?;
         let mut marker = Vec::with_capacity(4 + total_len);
         marker.push(0xFF);
         marker.push(0xE1);
-        marker.extend_from_slice(&((total_len + 2) as u16).to_be_bytes());
+        marker.extend_from_slice(&len_u16.to_be_bytes());
         marker.extend_from_slice(tiff_prefix);
         marker.extend_from_slice(&tiff_header);
         marker.extend_from_slice(&ifd);
         marker.extend_from_slice(exif_data);
-        marker
+        Ok(marker)
     }
 
     /// Creates an IPTC-IIM APP13 marker (0xFFED) containing DMI data.
     /// Wraps the IPTC data in a valid Photoshop resource envelope:
     /// "Photoshop 3.0\0" + Resource ID (0x0404) + Pascal string + data size + data.
-    fn create_jpeg_iptc_marker(iptc_data: &[u8]) -> Vec<u8> {
+    fn create_jpeg_iptc_marker(iptc_data: &[u8]) -> Result<Vec<u8>> {
         let photoshop_id = b"Photoshop 3.0\0";
 
         // Photoshop resource envelope
@@ -535,20 +559,31 @@ impl MetadataTrapProtector {
         resource.extend_from_slice(&0x0404u16.to_be_bytes()); // Resource ID: IPTC-IIM
         resource.push(0x00); // Pascal string length (0 = empty)
         resource.push(0x00); // padding byte (even alignment)
-        resource.extend_from_slice(&(iptc_data.len() as u32).to_be_bytes()); // data size
+        let data_size = u32::try_from(iptc_data.len()).map_err(|_| {
+            Error::Metadata(format!(
+                "JPEG IPTC data size {} exceeds u32::MAX",
+                iptc_data.len()
+            ))
+        })?;
+        resource.extend_from_slice(&data_size.to_be_bytes()); // data size
         resource.extend_from_slice(iptc_data); // IPTC-IIM data
 
         let mut data = Vec::new();
         data.extend_from_slice(photoshop_id);
         data.extend_from_slice(&resource);
 
+        let len = u16::try_from(data.len() + 2).map_err(|_| {
+            Error::Metadata(format!(
+                "JPEG IPTC marker length {} exceeds u16::MAX (65535)",
+                data.len() + 2
+            ))
+        })?;
         let mut marker = Vec::new();
         marker.push(0xFF);
         marker.push(0xED);
-        let len = (data.len() + 2) as u16;
         marker.extend_from_slice(&len.to_be_bytes());
         marker.extend_from_slice(&data);
-        marker
+        Ok(marker)
     }
 
     fn inject_text_chunks_webp(
@@ -644,13 +679,18 @@ impl MetadataTrapProtector {
         chunk
     }
 
-    fn create_png_text_chunk(key: &[u8], value: &[u8]) -> Vec<u8> {
+    fn create_png_text_chunk(key: &[u8], value: &[u8]) -> Result<Vec<u8>> {
         let mut data = Vec::new();
         data.extend_from_slice(key);
         data.push(0);
         data.extend_from_slice(value);
 
-        let len = data.len() as u32;
+        let len = u32::try_from(data.len()).map_err(|_| {
+            Error::Metadata(format!(
+                "PNG tEXt chunk data length {} exceeds u32::MAX",
+                data.len()
+            ))
+        })?;
         let mut chunk = Vec::new();
 
         chunk.extend_from_slice(&len.to_be_bytes());
@@ -660,16 +700,21 @@ impl MetadataTrapProtector {
         let crc = Self::crc32(b"tEXt", &data);
         chunk.extend_from_slice(&crc.to_be_bytes());
 
-        chunk
+        Ok(chunk)
     }
 
-    fn create_jpeg_comment(key: &[u8], value: &[u8]) -> Vec<u8> {
+    fn create_jpeg_comment(key: &[u8], value: &[u8]) -> Result<Vec<u8>> {
         let mut comment = Vec::new();
         comment.extend_from_slice(key);
         comment.extend_from_slice(b": ");
         comment.extend_from_slice(value);
 
-        let len = (comment.len() + 2) as u16;
+        let len = u16::try_from(comment.len() + 2).map_err(|_| {
+            Error::Metadata(format!(
+                "JPEG COM marker length {} exceeds u16::MAX (65535)",
+                comment.len() + 2
+            ))
+        })?;
 
         let mut chunk = Vec::new();
         chunk.push(0xFF);
@@ -677,7 +722,7 @@ impl MetadataTrapProtector {
         chunk.extend_from_slice(&len.to_be_bytes());
         chunk.extend_from_slice(&comment);
 
-        chunk
+        Ok(chunk)
     }
 
     const STRUCTURED_COM_MAGIC: &'static [u8] = b"cloakrs:v1:";
@@ -1773,7 +1818,7 @@ mod tests {
     #[test]
     fn jpeg_exif_marker_has_tiff_header() {
         let exif_data = b"Exif test data";
-        let marker = MetadataTrapProtector::create_jpeg_exif_marker(exif_data);
+        let marker = MetadataTrapProtector::create_jpeg_exif_marker(exif_data).unwrap();
         assert_eq!(marker[0], 0xFF);
         assert_eq!(marker[1], 0xE1);
         let exif_pos = marker
@@ -1789,7 +1834,7 @@ mod tests {
     #[test]
     fn jpeg_exif_marker_length_matches_payload() {
         let exif_data = b"DMI: ProhibitedAiMlTraining";
-        let marker = MetadataTrapProtector::create_jpeg_exif_marker(exif_data);
+        let marker = MetadataTrapProtector::create_jpeg_exif_marker(exif_data).unwrap();
         let segment_len = u16::from_be_bytes([marker[2], marker[3]]) as usize;
         assert_eq!(segment_len, marker.len() - 2);
     }
@@ -1797,7 +1842,7 @@ mod tests {
     #[test]
     fn jpeg_exif_marker_has_ifd_usercomment() {
         let exif_data = b"DMI: ProhibitedAiMlTraining";
-        let marker = MetadataTrapProtector::create_jpeg_exif_marker(exif_data);
+        let marker = MetadataTrapProtector::create_jpeg_exif_marker(exif_data).unwrap();
         let exif_pos = marker
             .windows(6)
             .position(|w| w == b"Exif\x00\x00")
@@ -1812,7 +1857,7 @@ mod tests {
     #[test]
     fn jpeg_iptc_marker_has_photoshop_resource_envelope() {
         let iptc_data = vec![0x1C, 0x02, 0x78, 0x00, 0x05, b'D', b'M', b'I', b':', b' '];
-        let marker = MetadataTrapProtector::create_jpeg_iptc_marker(&iptc_data);
+        let marker = MetadataTrapProtector::create_jpeg_iptc_marker(&iptc_data).unwrap();
         assert_eq!(marker[0], 0xFF);
         assert_eq!(marker[1], 0xED);
         let photoshop_pos = marker
@@ -2027,7 +2072,8 @@ mod tests {
                 let text_chunk = MetadataTrapProtector::create_png_text_chunk(
                     b"Description",
                     b"Protected image. Seed: 99",
-                );
+                )
+                .unwrap();
                 output.extend_from_slice(&text_chunk);
             }
             if keep || chunk_type == b"IEND" {

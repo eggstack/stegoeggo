@@ -260,10 +260,51 @@ pub struct LegalMetadata {
 }
 
 impl LegalMetadata {
+    /// Maximum byte length for any single metadata field.
+    ///
+    /// This limit ensures field values fit safely within JPEG segment length fields
+    /// (u16: 65535 bytes max) and PNG chunk length fields (u32: 4 GiB max) after
+    /// accounting for overhead bytes in the marker/chunk structure. The 8 KiB limit
+    /// is generous for all practical metadata fields while preventing overflow.
+    pub const MAX_FIELD_LEN: usize = 8192;
+
     /// Creates a new `LegalMetadata` with all fields unset.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Validates that all set fields are within the allowed byte length.
+    ///
+    /// Returns `Ok(())` if all fields are valid, or `Err` with a description
+    /// of the first oversized field found.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Config`] if any field exceeds [`Self::MAX_FIELD_LEN`] bytes.
+    pub fn validate(&self) -> crate::Result<()> {
+        let check = |name: &str, val: &Option<String>| -> crate::Result<()> {
+            if let Some(v) = val {
+                if v.len() > Self::MAX_FIELD_LEN {
+                    return Err(crate::Error::Config(format!(
+                        "Legal metadata field '{}' exceeds maximum length of {} bytes (got {})",
+                        name,
+                        Self::MAX_FIELD_LEN,
+                        v.len()
+                    )));
+                }
+            }
+            Ok(())
+        };
+        check("copyright_holder", &self.copyright_holder)?;
+        check("contact_email", &self.contact_email)?;
+        check("license_url", &self.license_url)?;
+        check("usage_terms", &self.usage_terms)?;
+        check("creation_date", &self.creation_date)?;
+        check("ai_constraints", &self.ai_constraints)?;
+        check("web_statement_of_rights", &self.web_statement_of_rights)?;
+        check("creator", &self.creator)?;
+        Ok(())
     }
 
     /// Returns the copyright holder name, if set.

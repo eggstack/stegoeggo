@@ -71,7 +71,7 @@ src/
 
 ```bash
 cargo check                              # Compilation
-cargo test                               # All tests (448 passed, 7 ignored)
+cargo test                               # All tests (462 passed, 7 ignored)
 cargo test --all-features                # Includes async tests (9 tests)
 cargo clippy --all-targets -- -D warnings # Lint check
 cargo fmt --check                        # Format check
@@ -164,3 +164,5 @@ Run with: `cargo +nightly fuzz run <target> -- -max_total_time=60`
 - **`has_notice()` includes DMI**: `has_notice()` returns true when any legal field OR `dmi.is_some()` is found. `DmiValue::Allowed` and `DmiValue::Unspecified` will make `has_notice()` true — this means "legal metadata was found" not "restrictions were imposed"
 - **WebP legal fields limited**: WebP extraction only reads DMI/TDM from XMP. Copyright, Creator, Contact, UsageTerms, AIConstraints are not injected as individual WebP chunks by stegoeggo, so `has_notice()` may be false for WebP even with legal metadata flags
 - **`--verify` exits 0**: CLI verify mode always exits 0 regardless of stego status. Use output text to determine protection state, not exit code
+- **`LegalMetadata::MAX_FIELD_LEN`**: 8192 bytes. `validate()` checks all 8 fields and returns `Error::Config` on violation. Called by library pipeline entry points (`process_image_bytes`, `process_image_bytes_with_warnings`). `Disabled` level skips validation
+- **Metadata overflow checks**: PNG chunk lengths use `u32::try_from()`, JPEG marker lengths use `u16::try_from()`. All 6 helper functions in `metadata_trap.rs` return `Result<Vec<u8>>` — `create_png_xmp_chunk`, `create_png_text_chunk`, `create_jpeg_xmp_marker`, `create_jpeg_exif_marker`, `create_jpeg_iptc_marker`, `create_jpeg_comment`. Overflow returns `Error::Metadata`

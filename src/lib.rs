@@ -683,6 +683,11 @@ pub fn process_image_bytes(
     level: ProtectionLevel,
     ctx: &ProtectionContext,
 ) -> Result<Vec<u8>> {
+    if level != ProtectionLevel::Disabled {
+        if let Some(meta) = ctx.legal_metadata() {
+            meta.validate()?;
+        }
+    }
     DEFAULT_PIPELINE.process_bytes(img_bytes, level, ctx)
 }
 
@@ -752,6 +757,10 @@ pub fn process_image_bytes_with_warnings(
     if level == ProtectionLevel::Disabled {
         let result = DEFAULT_PIPELINE.process_bytes(img_bytes, level, ctx)?;
         return Ok((result, Vec::new()));
+    }
+
+    if let Some(meta) = ctx.legal_metadata() {
+        meta.validate()?;
     }
 
     let (ctx_with_format, format) = context_with_detected_format(img_bytes, ctx)?;
