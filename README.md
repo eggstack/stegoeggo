@@ -816,6 +816,50 @@ Common errors:
 
 See [docs/legal_notice_model.md](docs/legal_notice_model.md) for a detailed description of the legal notice and evidence model, including what metadata channels are embedded, what transformations commonly remove notices, and operational recommendations.
 
+## External Metadata Conformance
+
+stegoeggo includes a conformance script that verifies protected images expose legal-notice metadata to external tools (e.g., `exiftool`), not only to stegoeggo's own parser. This matters because evidentiary value depends on rights-reservation notice being discoverable by ordinary metadata-aware systems.
+
+### Running the Conformance Script
+
+```bash
+# Build the CLI first
+cargo build --release -p stegoeggo-cli
+
+# Default: generates a PNG fixture, checks with exiftool if available
+./scripts/verify_metadata_conformance.sh
+
+# Per-format checks
+./scripts/verify_metadata_conformance.sh --format png
+./scripts/verify_metadata_conformance.sh --format jpg
+./scripts/verify_metadata_conformance.sh --format web-p
+./scripts/verify_metadata_conformance.sh --all-formats
+
+# Strict mode: fails if exiftool is missing or fields are not visible
+./scripts/verify_metadata_conformance.sh --strict
+./scripts/verify_metadata_conformance.sh --all-formats --strict
+```
+
+### Expected Field Visibility by Format
+
+| Field | PNG | JPEG | WebP | Notes |
+|-------|-----|------|------|-------|
+| Copyright | exiftool `-Copyright` | exiftool `-Comment` (all COM) | not guaranteed | WebP parser-dependent |
+| Creator | exiftool `-Creator` | exiftool `-Comment` | not guaranteed | WebP parser-dependent |
+| Contact | exiftool `-Contact` | exiftool `-Comment` | not guaranteed | WebP parser-dependent |
+| UsageTerms | exiftool `-UsageTerms` | exiftool `-Comment` | not guaranteed | WebP parser-dependent |
+| AIConstraints | exiftool `-AIConstraints` | exiftool `-Comment` | not guaranteed | WebP parser-dependent |
+| DMI (no-AI-training) | exiftool XMP `-DataMining` | exiftool XMP `-DataMining` | exiftool XMP `-DataMining` | XMP-based, all formats |
+| TDM reservation | exiftool XMP `-TDM` | exiftool XMP `-TDM` | exiftool XMP `-TDM` | XMP-based, all formats |
+| Protection seed | exiftool `-ImageDescription` | exiftool `-Comment` | exiftool XMP | Diagnostic only, not legal notice |
+
+### Conformance Caveats
+
+- **WebP legal fields**: Individual legal fields (Copyright, Creator, etc.) are injected as XMP DMI/TDM only, not as separate WebP chunks. External parsers may not expose them. The script documents this as a warning, not a failure.
+- **Tool variability**: Metadata visibility depends on the external tool. The script targets `exiftool` as the primary tool. Other tools (ImageMagick, vips) may show different fields.
+- **Seed is not legal notice**: The protection seed is an internal diagnostic marker. The script does not treat it as sufficient legal notice — at least one real rights-reservation field must be present.
+- **Strict vs non-strict**: Strict mode requires `exiftool` and fails if fields are missing. Non-strict mode skips external checks cleanly when `exiftool` is not installed.
+
 ## Architecture
 
 ```

@@ -48,20 +48,26 @@ Injects four marker types:
 1. **EXIF (APP1)** — Basic EXIF orientation
 2. **IPTC-IIM (APP13)** — Photoshop 3.0 identifier + IPTC dataset records
 3. **XMP (APP1)** — Full XMP packet with IPTC extension properties
-4. **COM** — Human-readable comment with protection seed
+4. **COM** — Human-readable key-value pairs (Copyright, Creator, Contact, UsageTerms, AIConstraints) + structured binary COM (`cloakrs:v1:`)
+
+**External visibility**: Legal fields are stored as separate COM markers. External tools like `exiftool` require the `-a` flag to read all COM markers (not just the first). XMP DMI/TDM fields are visible via standard XMP extraction.
 
 ### PNG
 
 Injects two chunk types:
-1. **tEXt** — Key-value text chunks (e.g., `X-Protection-Seed: <seed>`)
+1. **tEXt** — Key-value text chunks (Copyright, Creator, Contact, UsageTerms, AIConstraints, X-Protection-Seed, Description, etc.)
 2. **iTXt** — International text chunks (for XMP data, UTF-8 encoded)
+
+**External visibility**: tEXt chunks map to standard exiftool fields (e.g., `exiftool -Copyright`). XMP in iTXt is extractable via standard XMP tools.
 
 ### WebP
 
 Injects:
-1. **META chunk** — Contains XMP data
-2. **XML chunk** — Additional metadata
+1. **META chunk** — Contains XMP data (DMI + TDM + seed)
+2. **EXIF chunk** — UserComment with seed
 3. Updates RIFF file size header
+
+**External visibility**: XMP DMI/TDM fields are visible via `exiftool`. Individual legal fields (Copyright, Creator, etc.) are not injected as separate WebP chunks — external parsers may not expose them.
 
 ## Seed Extraction
 

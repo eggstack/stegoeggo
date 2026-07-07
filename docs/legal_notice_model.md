@@ -27,6 +27,27 @@ stegoeggo embeds metadata through multiple channels:
 | tEXt/iTXt chunks | PNG spec | PNG-aware tools | Text metadata in PNG files |
 | XML chunks | WebP spec | WebP-aware tools | Text metadata in WebP files |
 
+## External Visibility by Format
+
+Metadata visibility depends on the image format and the external tool used to read it. The conformance script (`scripts/verify_metadata_conformance.sh`) validates externally visible fields using `exiftool`.
+
+| Field | PNG | JPEG | WebP | Notes |
+|-------|-----|------|------|-------|
+| Copyright | tEXt → exiftool `-Copyright` | COM → exiftool `-Comment` (all) | not guaranteed | WebP parser-dependent |
+| Creator | tEXt → exiftool `-Creator` | COM → exiftool `-Comment` | not guaranteed | WebP parser-dependent |
+| Contact | tEXt → exiftool `-Contact` | COM → exiftool `-Comment` | not guaranteed | WebP parser-dependent |
+| UsageTerms | tEXt → exiftool `-UsageTerms` | COM → exiftool `-Comment` | not guaranteed | WebP parser-dependent |
+| AIConstraints | tEXt → exiftool `-AIConstraints` | COM → exiftool `-Comment` | not guaranteed | WebP parser-dependent |
+| DMI (no-AI-training) | XMP in iTXt → exiftool XMP | XMP in APP1 → exiftool XMP | XMP in META → exiftool XMP | Standards-based, all formats |
+| TDM reservation | XMP in iTXt → exiftool XMP | XMP in APP1 → exiftool XMP | XMP in META → exiftool XMP | Standards-based, all formats |
+| Protection seed | tEXt `X-Protection-Seed` or `Description` | COM structured, IPTC Object Name | XMP/EXIF | Internal diagnostic, not legal notice |
+
+**Caveats**:
+
+- WebP: stegoeggo injects legal fields as XMP DMI/TDM only, not as individual WebP chunks. External parsers may not expose individual fields like Copyright or Creator.
+- JPEG: Legal fields are stored as separate COM markers (key-value pairs). The `-a` flag on exiftool is required to read all COM markers.
+- Tool variability: The table reflects `exiftool` behavior. Other tools may show different fields.
+
 ## Optional Steganographic Markers
 
 When enabled, steganographic markers provide a redundant evidence channel:
