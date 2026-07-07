@@ -1,6 +1,6 @@
 # CLI Tool
 
-**Source:** `stegoeggo-cli/src/main.rs` (~623 lines)
+**Source:** `stegoeggo-cli/src/main.rs` (~700 lines)
 
 Command-line interface for `stegoeggo`. Built with `clap` 4 (derive).
 
@@ -27,6 +27,15 @@ stegoeggo [OPTIONS] <INPUT>...
 | `-d` | `--dmi` | DMI metadata value | auto |
 | | `--metadata` | Inject metadata (None = use level default) | None |
 | | `--legal-claims` | Inject legal claims | false |
+| | `--copyright-holder` | Copyright holder name | none |
+| | `--creator` | Creator/author name | none |
+| | `--contact` | Contact email or URL | none |
+| | `--rights-url` | URL to full usage terms | none |
+| | `--usage-terms` | Brief usage terms summary | none |
+| | `--ai-constraints` | AI-specific constraints text | none |
+| | `--no-ai-training` | Prohibit AI/ML training (DMI preset) | false |
+| | `--no-genai-training` | Prohibit generative AI training (DMI preset) | false |
+| | `--tdm-reserved` | Reserve TDM rights (DMI preset) | false |
 | `-k` | `--key` | Hex cryptographic key | none |
 | `-j` | `--jobs` | Parallel jobs | 1 |
 

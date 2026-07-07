@@ -209,6 +209,7 @@ pub struct LegalMetadata {
     creation_date: Option<String>,
     ai_constraints: Option<String>,
     web_statement_of_rights: Option<String>,
+    creator: Option<String>,
 }
 
 impl LegalMetadata {
@@ -260,6 +261,12 @@ impl LegalMetadata {
         self.web_statement_of_rights.as_deref()
     }
 
+    /// Returns the creator name, if set.
+    #[must_use]
+    pub fn creator(&self) -> Option<&str> {
+        self.creator.as_deref()
+    }
+
     /// Sets the copyright holder name.
     #[must_use]
     pub fn with_copyright_holder(mut self, holder: impl Into<String>) -> Self {
@@ -306,6 +313,13 @@ impl LegalMetadata {
     #[must_use]
     pub fn with_web_statement_of_rights(mut self, statement: impl Into<String>) -> Self {
         self.web_statement_of_rights = Some(statement.into());
+        self
+    }
+
+    /// Sets the creator name.
+    #[must_use]
+    pub fn with_creator(mut self, creator: impl Into<String>) -> Self {
+        self.creator = Some(creator.into());
         self
     }
 }

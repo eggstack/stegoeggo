@@ -85,6 +85,39 @@ struct Args {
     )]
     legal_claims: bool,
 
+    #[arg(long, help = "Copyright holder name (e.g., 'Jane Doe' or 'Acme Corp')")]
+    copyright_holder: Option<String>,
+
+    #[arg(long, help = "Creator/author name (e.g., 'Jane Doe')")]
+    creator: Option<String>,
+
+    #[arg(long, help = "Contact email or URL for rights inquiries")]
+    contact: Option<String>,
+
+    #[arg(long, help = "URL to full usage terms or license text")]
+    rights_url: Option<String>,
+
+    #[arg(long, help = "Brief usage terms summary (e.g., 'All rights reserved')")]
+    usage_terms: Option<String>,
+
+    #[arg(
+        long,
+        help = "AI-specific constraints (e.g., 'No training, no generation')"
+    )]
+    ai_constraints: Option<String>,
+
+    #[arg(
+        long,
+        help = "Shorthand: prohibit AI/ML training and set default AI constraints"
+    )]
+    no_ai_training: bool,
+
+    #[arg(long, help = "Shorthand: prohibit generative AI training only")]
+    no_genai_training: bool,
+
+    #[arg(long, help = "Shorthand: reserve text and data mining rights")]
+    tdm_reserved: bool,
+
     #[arg(
         long,
         help = "Optional cryptographic key for HMAC-verified steganographic payloads (authenticated provenance mode)"
@@ -290,6 +323,68 @@ fn print_payload_info(payload: &StegoPayload) {
     println!("Version: {}", payload.version());
 }
 
+fn build_legal_metadata(args: &Args) -> (Option<stegoeggo::LegalMetadata>, Option<DmiValue>) {
+    let has_legal_flags = args.copyright_holder.is_some()
+        || args.creator.is_some()
+        || args.contact.is_some()
+        || args.rights_url.is_some()
+        || args.usage_terms.is_some()
+        || args.ai_constraints.is_some()
+        || args.no_ai_training
+        || args.no_genai_training
+        || args.tdm_reserved;
+
+    if !has_legal_flags {
+        return (None, None);
+    }
+
+    let mut meta = stegoeggo::LegalMetadata::default();
+    let mut dmi_override: Option<DmiValue> = None;
+
+    if let Some(ref v) = args.copyright_holder {
+        meta = meta.with_copyright_holder(v);
+    }
+    if let Some(ref v) = args.creator {
+        meta = meta.with_creator(v);
+    }
+    if let Some(ref v) = args.contact {
+        meta = meta.with_contact_email(v);
+    }
+    if let Some(ref v) = args.rights_url {
+        meta = meta.with_web_statement_of_rights(v);
+    }
+    if let Some(ref v) = args.usage_terms {
+        meta = meta.with_usage_terms(v);
+    }
+    if let Some(ref v) = args.ai_constraints {
+        meta = meta.with_ai_constraints(v);
+    }
+
+    // DMI presets (--no-ai-training, --no-genai-training, --tdm-reserved)
+    if args.no_ai_training {
+        dmi_override = Some(DmiValue::ProhibitedAiMlTraining);
+        if args.ai_constraints.is_none() {
+            meta = meta.with_ai_constraints(
+                "Training for artificial intelligence and machine learning is prohibited",
+            );
+        }
+    } else if args.no_genai_training {
+        dmi_override = Some(DmiValue::ProhibitedGenAiMlTraining);
+        if args.ai_constraints.is_none() {
+            meta = meta.with_ai_constraints(
+                "Training for generative artificial intelligence is prohibited",
+            );
+        }
+    } else if args.tdm_reserved {
+        dmi_override = Some(DmiValue::ProhibitedSeeConstraints);
+        if args.ai_constraints.is_none() {
+            meta = meta.with_ai_constraints("Text and data mining rights reserved");
+        }
+    }
+
+    (Some(meta), dmi_override)
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
@@ -401,20 +496,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     });
 
+    let (legal_metadata, legal_dmi_override) = build_legal_metadata(&args);
+
+    if args.metadata == Some(false) && legal_metadata.is_some() {
+        eprintln!(
+            "Error: Cannot use --no-metadata (or -m false) together with legal metadata flags \
+             (--copyright-holder, --creator, --contact, --rights-url, --usage-terms, \
+             --ai-constraints, --no-ai-training, --no-genai-training, --tdm-reserved). \
+             Legal metadata requires metadata injection to be enabled."
+        );
+        std::process::exit(1);
+    }
+
     let mut ctx = ProtectionContext::new(args.intensity.clamp(0.0, 1.0), seed)
         .with_format(effective_output_format)
         .with_stego_redundancy(args.stego_redundancy.clamp(1, 10))
         .with_jpeg_quality(args.jpeg_quality.clamp(1, 100))
         .with_progressive_jpeg(args.progressive);
 
-    if let Some(dmi) = dmi_value {
+    let effective_dmi = legal_dmi_override.or(dmi_value);
+    if let Some(dmi) = effective_dmi {
         ctx = ctx.with_dmi(dmi);
     }
-    if let Some(metadata) = args.metadata {
-        ctx = ctx.with_metadata_injection(metadata);
+    if args.metadata.is_some() {
+        ctx = ctx.with_metadata_injection(args.metadata.unwrap());
+    } else if legal_metadata.is_some() {
+        ctx = ctx.with_metadata_injection(true);
     }
     if args.legal_claims {
         ctx = ctx.with_legal_claims(true);
+    }
+    if let Some(meta) = legal_metadata {
+        ctx = ctx.with_legal_metadata(meta);
     }
     if let Some(key) = mac_key {
         ctx = ctx.with_mac_key(key);

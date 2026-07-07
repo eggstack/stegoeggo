@@ -374,6 +374,15 @@ Options:
   -d, --dmi <DMI>          AI-training restriction metadata (IPTC DMI value)
   --metadata               Inject metadata (seed, DMI). Default: true for Light and Standard
   --legal-claims          Inject legal claims (copyright, usage terms) — only for content you own
+  --copyright-holder <NAME>  Copyright holder name (e.g., 'Jane Doe' or 'Acme Corp')
+  --creator <NAME>        Creator/author name (e.g., 'Jane Doe')
+  --contact <EMAIL_OR_URL>  Contact email or URL for rights inquiries
+  --rights-url <URL>      URL to full usage terms or license text
+  --usage-terms <TEXT>    Brief usage terms summary (e.g., 'All rights reserved')
+  --ai-constraints <TEXT>  AI-specific constraints (e.g., 'No training, no generation')
+  --no-ai-training        Shorthand: prohibit AI/ML training and set default AI constraints
+  --no-genai-training     Shorthand: prohibit generative AI training only
+  --tdm-reserved          Shorthand: reserve text and data mining rights
   -k, --key <KEY>          Optional cryptographic key (hex string) for HMAC-SHA256 verification
   -j, --jobs <N>           Parallel jobs for batch processing (default: 1)
   -h, --help               Print help
@@ -401,8 +410,19 @@ stegoeggo image.png -o image.jpg -f jpg --stego-redundancy 1 --jpeg-quality 85 -
 # WAF-optimized: PNG output, minimal latency
 stegoeggo image.png -o protected.png --stego-redundancy 1
 
-# With legal metadata
+# With legal metadata (explicit claims)
 stegoeggo my_art.png -o protected.png --legal-claims --level standard
+
+# With full legal metadata — auto-enables legal claims
+stegoeggo my_art.png -o protected.png \
+  --copyright-holder "Jane Doe" \
+  --contact "jane@example.com" \
+  --rights-url "https://example.com/license" \
+  --usage-terms "All rights reserved" \
+  --no-ai-training
+
+# Quick AI-training restriction
+stegoeggo photo.jpg -o protected.jpg --no-genai-training
 
 # With cryptographic key for authenticated provenance
 stegoeggo image.png -o output.png --key a1b2c3d4e5f6
