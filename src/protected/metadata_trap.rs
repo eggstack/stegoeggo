@@ -61,7 +61,7 @@ fn current_date_iso() -> String {
 
 /// Metadata injection protector for the Light protection level.
 ///
-/// Injects anti-scraping markers into image headers: tEXt/iTXt chunks for PNG,
+/// Injects rights-reservation markers into image headers: tEXt/iTXt chunks for PNG,
 /// COM/XMP markers for JPEG, and EXIF/XML for WebP. Also embeds the protection
 /// seed in metadata for later extraction.
 ///
@@ -473,11 +473,13 @@ impl MetadataTrapProtector {
     }
 
     fn create_jpeg_xmp_marker(xmp_data: &[u8]) -> Vec<u8> {
-        let mut marker = Vec::new();
+        let namespace = b"http://ns.adobe.com/xap/1.0/\0";
+        let total_len = namespace.len() + xmp_data.len() + 2;
+        let mut marker = Vec::with_capacity(4 + total_len);
         marker.push(0xFF);
         marker.push(0xE1);
-        let len = (xmp_data.len() + 2) as u16;
-        marker.extend_from_slice(&len.to_be_bytes());
+        marker.extend_from_slice(&(total_len as u16).to_be_bytes());
+        marker.extend_from_slice(namespace);
         marker.extend_from_slice(xmp_data);
         marker
     }

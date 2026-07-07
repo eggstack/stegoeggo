@@ -71,7 +71,7 @@ src/
 
 ```bash
 cargo check                              # Compilation
-cargo test                               # All tests (252 unit + 14 basic + 72 integration + 38 robustness)
+cargo test                               # All tests (448 passed, 7 ignored)
 cargo test --all-features                # Includes async tests (9 tests)
 cargo clippy --all-targets -- -D warnings # Lint check
 cargo fmt --check                        # Format check
@@ -140,5 +140,5 @@ Run with: `cargo +nightly fuzz run <target> -- -max_total_time=60`
 - **Fuzz harness**: 3 targets in `fuzz/`: `pipeline_bytes`, `tiled_round_trip`, `jpeg_parser`. Run with `cargo +nightly fuzz run <target> -- -max_total_time=60`. Add regression tests in `tests/robustness.rs` for findings
 - **EvidenceProfile vs ProtectionLevel**: `ProtectionLevel` controls how much processing occurs (Disabled/Light/Standard). `EvidenceProfile` controls how warnings are interpreted and the default evidence posture. They are orthogonal — you can use any profile with any level
 - **MissingMacKey warning is profile-dependent**: Only emitted for `AuthenticatedProvenance` and `Maximal` profiles. `LegalNotice` and `LegalNoticeWithStego` do not warn about missing MAC keys
-- **`NoticeVerification`, `EvidenceStrength`, `EvidenceChannel`**: Types in `src/types.rs` for legal-notice conformance reporting. `verify_legal_notice()` in `src/protected/notice_verification.rs` extracts legal fields from PNG tEXt, JPEG COM, and WebP XMP markers, verifies stego payload integrity, and returns an evidence strength rating
+- **`NoticeVerification`, `EvidenceStrength`, `EvidenceChannel`**: Types in `src/types.rs` for legal-notice conformance reporting. `verify_legal_notice()` in `src/protected/notice_verification.rs` extracts legal fields from PNG tEXt, JPEG COM, and WebP XMP markers, identifies evidence channels (JpegXmp, JpegIptc, PngXmp, etc.), verifies stego payload integrity (LsbPayload for non-JPEG, DctPayload for JPEG), and returns an evidence strength rating
 - **Creator metadata injection**: `add_legal_metadata()` in `metadata_trap.rs` injects `Creator` as a tEXt chunk (PNG) or COM marker (JPEG). Ensure `LegalMetadata::creator()` is wired into both injection and extraction paths

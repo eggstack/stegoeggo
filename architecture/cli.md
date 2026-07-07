@@ -1,6 +1,6 @@
 # CLI Tool
 
-**Source:** `stegoeggo-cli/src/main.rs` (~700 lines)
+**Source:** `stegoeggo-cli/src/main.rs` (~841 lines)
 
 Command-line interface for `stegoeggo`. Built with `clap` 4 (derive).
 
@@ -39,6 +39,7 @@ stegoeggo [OPTIONS] <INPUT>...
 | | `--tdm-reserved` | Reserve TDM rights (DMI preset) | false |
 | `-k` | `--key` | Hex cryptographic key | none |
 | `-j` | `--jobs` | Parallel jobs | 1 |
+| | `--strict` | Exit with error if any warnings have Error severity | false |
 
 ## Input Handling
 
@@ -68,12 +69,16 @@ When multiple inputs are provided:
 
 ## Verification Mode (`-V`)
 
-1. Load image bytes
-2. Extract seed from metadata (PNG tEXt, JPEG COM, WebP META)
-3. If seed found: report it and print protection details
-4. If no seed: fall back to LSB stego payload extraction (pixel stego)
-5. Report protection details (level, seed, intensity) from extracted payload
-6. No HMAC key handling in verify path — verification is informational only
+1. Load image bytes (from `-o` output file if specified, otherwise input)
+2. Call `verify_legal_notice()` which:
+   - Extracts legal fields from metadata (PNG tEXt, JPEG COM, WebP)
+   - Verifies steganographic payload integrity (DCT for JPEG, LSB for PNG/WebP)
+   - Computes `EvidenceStrength` rating
+3. Print legal fields (copyright, creator, contact, usage terms, AI constraints, DMI)
+4. Print stego status and authentication status
+5. Print evidence strength and channels
+
+When `--key` is provided, HMAC-SHA256 is used for stego payload verification.
 
 ## Format Auto-Detection
 

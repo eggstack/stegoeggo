@@ -136,6 +136,7 @@ src/
 │   ├── metadata_trap.rs      Metadata injection (tEXt/COM/XMP markers, seed, DMI)
 │   ├── steganography.rs       LSB embedding (PNG/WebP) + DCT F5 (JPEG)
 │   ├── ecc.rs                3× repetition ECC with majority voting
+│   ├── notice_verification.rs Legal notice verification and evidence strength rating
 │   └── stego_cost.rs         Pixel embedding cost computation (Laplacian, fuzz-only)
 │
 ├── jpeg_transcoder/           JPEG-specific DCT coefficient processing
@@ -166,7 +167,7 @@ Each component has a detailed deep-dive document in `architecture/`:
 | **ISCC Identifiers** | [util-iscc.md](util-iscc.md) | Perceptual content hashing (non-standard ISCC-like) |
 | **Seed Generation** | [util-seed.md](util-seed.md) | getrandom (OS CSPRNG), with time-based splitmix64 fallback |
 | **Passthrough** | [protected-passthrough.md](protected-passthrough.md) | No-op for Disabled level |
-| **Metadata Trap** | [protected-metadata-trap.md](protected-metadata-trap.md) | IPTC/XMP/EXIF injection, seed embedding |
+| **Metadata Trap** | [protected-metadata-trap.md](protected-metadata-trap.md) | IPTC/XMP/EXIF injection, seed embedding; notice_verification.rs handles legal-notice verification and evidence strength rating |
 | **Steganography** | [protected-steganography.md](protected-steganography.md) | LSB + DCT F5, payload generation/verification |
 | **JPEG Transcoder** | [jpeg-transcoder.md](jpeg-transcoder.md) | DCT decode/encode, assemble, scan data utilities |
 | **JPEG Header** | [jpeg-header.md](jpeg-header.md) | Marker parsing (DQT/SOF/DHT/SOS), component extraction |

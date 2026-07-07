@@ -58,6 +58,8 @@ pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> Notice
 
     let stego = SteganographyProtector::new();
 
+    let is_jpeg = img_bytes.starts_with(&[0xFF, 0xD8]);
+
     if !mac_key.is_empty() {
         let result = stego.verify_payload_from_bytes_with_key(img_bytes, mac_key);
         match result {
@@ -67,7 +69,11 @@ pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> Notice
                 let payload = stego.extract_payload_from_bytes_with_key(img_bytes, mac_key);
                 stego_payload = payload;
                 if stego_payload.is_some() {
-                    channels.push(EvidenceChannel::LsbPayload);
+                    if is_jpeg {
+                        channels.push(EvidenceChannel::DctPayload);
+                    } else {
+                        channels.push(EvidenceChannel::LsbPayload);
+                    }
                 }
             }
             VerificationStatus::Invalid => {
@@ -87,7 +93,11 @@ pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> Notice
         authenticated = false;
         stego_payload = None;
         if result == VerificationStatus::Verified {
-            channels.push(EvidenceChannel::LsbPayload);
+            if is_jpeg {
+                channels.push(EvidenceChannel::DctPayload);
+            } else {
+                channels.push(EvidenceChannel::LsbPayload);
+            }
         }
     }
 
@@ -349,6 +359,7 @@ fn extract_jpeg_notice(
     let mut ai_constraints: Option<String> = None;
     let mut found_comment = false;
     let mut found_iptc = false;
+    let mut found_xmp = false;
 
     let mut pos = 2;
     while pos + 2 <= jpeg_data.len() {
@@ -461,7 +472,7 @@ fn extract_jpeg_notice(
                 .windows(29)
                 .any(|w| w == b"http://ns.adobe.com/xap/1.0/")
             {
-                // XMP detection noted; DMI/TDM extraction handled separately
+                found_xmp = true;
             }
         }
 
@@ -473,6 +484,9 @@ fn extract_jpeg_notice(
     }
     if found_iptc {
         channels.push(EvidenceChannel::JpegIptc);
+    }
+    if found_xmp {
+        channels.push(EvidenceChannel::JpegXmp);
     }
 
     (

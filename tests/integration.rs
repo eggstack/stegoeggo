@@ -1616,4 +1616,261 @@ mod notice_verification_tests {
         let channels = report.channels();
         assert!(channels.contains(&EvidenceChannel::PngText));
     }
+
+    #[test]
+    fn test_jpeg_xmp_channel_detected() {
+        let img = create_test_image(64, 64);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_legal_metadata(create_legal_metadata())
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::ProhibitedGenAiMlTraining);
+        let protected = process_image_bytes(&jpeg_bytes, ProtectionLevel::Light, &ctx).unwrap();
+
+        let report = verify_legal_notice(&protected, &[]);
+        let channels = report.channels();
+        assert!(
+            channels.contains(&EvidenceChannel::JpegXmp)
+                || channels.contains(&EvidenceChannel::JpegComment),
+            "JPEG with DMI should have at least JpegXmp or JpegComment channel, got: {:?}",
+            channels
+        );
+    }
+
+    #[test]
+    fn test_jpeg_legal_notice_with_metadata() {
+        let img = create_colored_image(64, 64, 128, 64, 32);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 95);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_legal_metadata(create_legal_metadata())
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::ProhibitedGenAiMlTraining);
+        let protected = process_image_bytes(&jpeg_bytes, ProtectionLevel::Light, &ctx).unwrap();
+
+        let report = verify_legal_notice(&protected, &[]);
+        assert!(report.has_notice());
+        assert_eq!(report.copyright_holder(), Some("Jane Artist"));
+        assert_eq!(report.creator(), Some("Jane Artist"));
+        assert_eq!(report.contact(), Some("legal@example.com"));
+    }
+
+    #[test]
+    fn test_wrong_key_preserves_metadata() {
+        let img = create_test_image(256, 256);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_mac_key(b"correct-key".to_vec())
+            .with_legal_metadata(create_legal_metadata())
+            .with_legal_claims(true)
+            .with_dmi(DmiValue::ProhibitedGenAiMlTraining);
+        let protected =
+            process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        let report = verify_legal_notice(&protected, b"wrong-key");
+        assert!(
+            report.has_notice(),
+            "Legal metadata should still be present even with wrong key"
+        );
+        assert_eq!(report.copyright_holder(), Some("Jane Artist"));
+        assert_eq!(report.stego_status(), VerificationStatus::Invalid);
+        assert!(!report.authenticated());
+    }
+
+    #[test]
+    fn test_no_false_channels_for_unprotected() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let report = verify_legal_notice(&png_bytes, &[]);
+        assert!(
+            report.channels().is_empty(),
+            "Unprotected image should have no channels, got: {:?}",
+            report.channels()
+        );
+    }
+
+    #[test]
+    fn test_unprotected_jpeg_no_notice() {
+        let img = create_test_image(64, 64);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+
+        let report = verify_legal_notice(&jpeg_bytes, &[]);
+        assert!(!report.has_notice());
+        assert_eq!(report.evidence_strength(), EvidenceStrength::NoNoticeFound);
+    }
+}
+
+#[cfg(test)]
+mod warning_severity_tests {
+    use super::*;
+    use stegoeggo::{
+        process_image_bytes_with_warnings, EvidenceProfile, ProtectionWarning, WarningSeverity,
+    };
+
+    #[test]
+    fn test_missing_mac_not_error_for_legal_notice() {
+        let img = create_test_image(256, 256);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_evidence_profile(EvidenceProfile::LegalNotice)
+            .with_legal_claims(true);
+        let (_, warnings) = process_image_bytes_with_warnings(
+            &image_to_png_bytes(&img),
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        if warnings.contains(&ProtectionWarning::MissingMacKey) {
+            let severity =
+                ProtectionWarning::MissingMacKey.severity_for_profile(EvidenceProfile::LegalNotice);
+            assert_eq!(
+                severity,
+                WarningSeverity::Info,
+                "MissingMacKey should be Info for LegalNotice profile"
+            );
+        }
+    }
+
+    #[test]
+    fn test_missing_mac_warning_for_authenticated_provenance() {
+        let severity = ProtectionWarning::MissingMacKey
+            .severity_for_profile(EvidenceProfile::AuthenticatedProvenance);
+        assert_eq!(
+            severity,
+            WarningSeverity::Warning,
+            "MissingMacKey should be Warning for AuthenticatedProvenance"
+        );
+    }
+
+    #[test]
+    fn test_metadata_disabled_error_for_legal_notice() {
+        let severity = ProtectionWarning::MetadataInjectionDisabled
+            .severity_for_profile(EvidenceProfile::LegalNotice);
+        assert_eq!(
+            severity,
+            WarningSeverity::Error,
+            "MetadataInjectionDisabled should be Error for LegalNotice"
+        );
+    }
+
+    #[test]
+    fn test_metadata_disabled_error_for_legal_notice_with_stego() {
+        let severity = ProtectionWarning::MetadataInjectionDisabled
+            .severity_for_profile(EvidenceProfile::LegalNoticeWithStego);
+        assert_eq!(
+            severity,
+            WarningSeverity::Error,
+            "MetadataInjectionDisabled should be Error for LegalNoticeWithStego"
+        );
+    }
+
+    #[test]
+    fn test_lsb_capacity_info_for_legal_notice() {
+        let severity = ProtectionWarning::LsbCapacitySkipped
+            .severity_for_profile(EvidenceProfile::LegalNotice);
+        assert_eq!(
+            severity,
+            WarningSeverity::Info,
+            "LsbCapacitySkipped should be Info for LegalNotice"
+        );
+    }
+
+    #[test]
+    fn test_lsb_capacity_warning_for_maximal() {
+        let severity =
+            ProtectionWarning::LsbCapacitySkipped.severity_for_profile(EvidenceProfile::Maximal);
+        assert_eq!(
+            severity,
+            WarningSeverity::Warning,
+            "LsbCapacitySkipped should be Warning for Maximal"
+        );
+    }
+
+    #[test]
+    fn test_progressive_jpeg_always_warning() {
+        for profile in &[
+            EvidenceProfile::LegalNotice,
+            EvidenceProfile::LegalNoticeWithStego,
+            EvidenceProfile::AuthenticatedProvenance,
+            EvidenceProfile::Maximal,
+        ] {
+            let severity =
+                ProtectionWarning::ProgressiveJpegFallback.severity_for_profile(*profile);
+            assert_eq!(
+                severity,
+                WarningSeverity::Warning,
+                "ProgressiveJpegFallback should be Warning for {:?}",
+                profile
+            );
+        }
+    }
+
+    #[test]
+    fn test_jpeg_reencode_fragile_always_warning() {
+        for profile in &[
+            EvidenceProfile::LegalNotice,
+            EvidenceProfile::LegalNoticeWithStego,
+            EvidenceProfile::AuthenticatedProvenance,
+            EvidenceProfile::Maximal,
+        ] {
+            let severity = ProtectionWarning::JpegReencodeFragile.severity_for_profile(*profile);
+            assert_eq!(
+                severity,
+                WarningSeverity::Warning,
+                "JpegReencodeFragile should be Warning for {:?}",
+                profile
+            );
+        }
+    }
+
+    #[test]
+    fn test_strict_legal_notice_no_error_on_missing_mac() {
+        let img = create_test_image(256, 256);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_evidence_profile(EvidenceProfile::LegalNotice)
+            .with_legal_claims(true);
+        let (_, warnings) = process_image_bytes_with_warnings(
+            &image_to_png_bytes(&img),
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        let has_error = warnings.iter().any(|w| {
+            w.severity_for_profile(EvidenceProfile::LegalNotice) == WarningSeverity::Error
+        });
+        assert!(
+            !has_error,
+            "LegalNotice profile should not have Error-level warnings for normal usage"
+        );
+    }
+
+    #[test]
+    fn test_category_mappings() {
+        assert_eq!(
+            ProtectionWarning::MissingMacKey.category(),
+            stegoeggo::WarningCategory::AuthenticatedProvenance
+        );
+        assert_eq!(
+            ProtectionWarning::MetadataInjectionDisabled.category(),
+            stegoeggo::WarningCategory::LegalNotice
+        );
+        assert_eq!(
+            ProtectionWarning::ProgressiveJpegFallback.category(),
+            stegoeggo::WarningCategory::FormatFragility
+        );
+        assert_eq!(
+            ProtectionWarning::LsbCapacitySkipped.category(),
+            stegoeggo::WarningCategory::BestEffortStego
+        );
+        assert_eq!(
+            ProtectionWarning::DctCapacityInsufficient.category(),
+            stegoeggo::WarningCategory::BestEffortStego
+        );
+    }
 }
