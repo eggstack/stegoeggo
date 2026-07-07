@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Evidence channel reporting via `NoticeVerification::channels()`.
 
 ### Changed
+- CI now includes package dry-run check and manual-dispatch benchmarks.
+- `cargo-deny` configuration tightened (template comments removed).
 - Default public framing is legal notice and rights-reservation metadata.
 - Missing MAC warning is profile-aware and no longer emitted for legal-notice mode.
 - CLI verification now reports legal-notice fields and evidence strength.

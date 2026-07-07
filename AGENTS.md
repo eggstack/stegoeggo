@@ -75,20 +75,38 @@ cargo test                               # All tests (448 passed, 7 ignored)
 cargo test --all-features                # Includes async tests (9 tests)
 cargo clippy --all-targets -- -D warnings # Lint check
 cargo fmt --check                        # Format check
+cargo package --workspace --allow-dirty  # Package dry-run
 cargo bench                              # Criterion benchmarks
 ```
 
 ## CI Pipeline
 
 GitHub Actions (`.github/workflows/ci.yml`) runs:
+- Concurrency control (cancel superseded runs)
+- `workflow_dispatch` trigger for manual runs
 1. MSRV check (`cargo check --all-features` with Rust 1.87)
-2. Tests (`cargo test --all-features`)
-3. Doc tests (`cargo test --doc`)
-4. Format check (`cargo fmt --check`)
-5. Clippy lint (`cargo clippy --all-targets -- -D warnings`)
-6. Security audit (`cargo audit`)
-7. License/advisory check (`cargo deny check licenses && cargo deny check advisories`)
-8. Benchmarks (main branch only)
+2. Tests + doc tests (`cargo test --all-features`, `cargo test --doc`)
+3. Format + clippy lint (`cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`)
+4. Security audit (`cargo audit`)
+5. License/advisory check (`cargo deny check licenses && cargo deny check advisories`)
+6. Package dry-run (`cargo package --workspace --allow-dirty`)
+7. Benchmarks (manual dispatch only)
+
+## Release Gate
+
+Before any release, verify locally:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
+cargo test --doc
+cargo package --workspace --allow-dirty
+cargo deny check licenses
+cargo deny check advisories
+```
+
+All checks must pass. MSRV is verified by CI (Rust 1.87). Benchmarks are run via manual workflow dispatch.
 
 ## Code Conventions
 
