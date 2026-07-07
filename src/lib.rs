@@ -778,9 +778,6 @@ pub fn process_image_bytes_with_warnings(
     if level != ProtectionLevel::Disabled && output_format == ImageOutputFormat::Jpeg {
         warnings.push(ProtectionWarning::JpegReencodeFragile);
     }
-    if level != ProtectionLevel::Disabled && output_format == ImageOutputFormat::WebP {
-        warnings.push(ProtectionWarning::WebpLossyReencodeDestructive);
-    }
 
     // Pre-check LSB capacity for PNG/WebP Standard level — the pipeline silently
     // skips embedding when the image has too few pixels.
@@ -912,7 +909,6 @@ pub fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> Verifica
             if let Some(payload) = stego.extract_payload_from_bytes_with_key(img_bytes, mac_key) {
                 return VerificationResult::Corrupted { payload };
             }
-            return VerificationResult::NotFound;
         }
         VerificationStatus::NotFound => {}
     }

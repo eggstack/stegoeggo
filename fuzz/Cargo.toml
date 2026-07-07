@@ -8,7 +8,7 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-stegoeggo = { path = "..", features = ["fuzz"] }
+stegoeggo = { path = "..", version = "0.2", features = ["fuzz"] }
 libfuzzer-sys = "0.4"
 
 [[bin]]

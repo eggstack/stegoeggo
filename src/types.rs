@@ -1075,12 +1075,6 @@ pub enum ProtectionWarning {
     /// quantization tables. This provides weaker protection than the standard
     /// DCT steganography path.
     DctCapacityInsufficient,
-    /// WebP lossy re-encoding will destroy steganographic payloads.
-    ///
-    /// WebP lossy compression modifies pixel values, which destroys LSB
-    /// steganographic data. Use lossless WebP or another format to preserve
-    /// steganographic protection.
-    WebpLossyReencodeDestructive,
 }
 
 impl std::fmt::Display for ProtectionWarning {
@@ -1113,11 +1107,6 @@ impl std::fmt::Display for ProtectionWarning {
                 f,
                 "JPEG DCT coefficients insufficient for full F5 embedding: \
                  fell back to Q-table seed only. Weaker protection applied."
-            ),
-            ProtectionWarning::WebpLossyReencodeDestructive => write!(
-                f,
-                "WebP lossy re-encoding will destroy LSB steganographic payloads. \
-                 Use lossless WebP or another format to preserve steganographic protection."
             ),
         }
     }

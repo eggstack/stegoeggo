@@ -61,6 +61,18 @@ const FALLBACK_SEEDS: &[u64] = &[42, 0, 1, 12345, 99999, 123456789];
 /// `STEGO_SPREAD_FACTOR = 5` majority-vote redundancy.
 pub const DEFAULT_TILE_SIZE: u32 = 64;
 
+/// Tri-state outcome for stego payload candidate extraction used by the
+/// verification path. Distinguishing `Invalid` from `NotFound` lets
+/// [`VerificationStatus::Invalid`] actually surface when a structurally
+/// plausible payload is present but its HMAC/checksum fails (e.g. wrong
+/// MAC key, bit-level corruption).
+#[derive(Debug)]
+enum CandidateOutcome {
+    Valid(Vec<u8>),
+    Invalid(Vec<u8>),
+    NotFound,
+}
+
 /// Minimum tile size that reliably fits an ECC payload in non-MAC mode.
 /// Smaller tiles would fail the `embed_lsb` capacity check and the payload
 /// would silently be skipped.
@@ -459,6 +471,109 @@ impl SteganographyProtector {
         None
     }
 
+    /// Verification-path variant of `extract_f5_tiled_candidates` that
+    /// returns a tri-state. See [`Self::verify_extract_with_redundancy`].
+    fn verify_extract_f5_tiled(
+        &self,
+        jpeg_bytes: &[u8],
+        master_seed: u64,
+        tile_size: u32,
+        max_origins: u32,
+        mac_key: &[u8],
+    ) -> CandidateOutcome {
+        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
+            return CandidateOutcome::NotFound;
+        }
+
+        let Ok((header, coefficients)) = JpegTranscoder::decode_coefficients(jpeg_bytes) else {
+            return CandidateOutcome::NotFound;
+        };
+
+        let max_h = header
+            .components
+            .iter()
+            .map(|c| c.h_sampling as u32)
+            .max()
+            .unwrap_or(1);
+        let max_v = header
+            .components
+            .iter()
+            .map(|c| c.v_sampling as u32)
+            .max()
+            .unwrap_or(1);
+        let luma_blocks_x = (header.width as u32 + max_h * 7) / (max_h * 8);
+        let luma_blocks_y = (header.height as u32 + max_v * 7) / (max_v * 8);
+        let blocks_per_tile = tile_size / 8;
+        let tiles_x = luma_blocks_x / blocks_per_tile;
+        let tiles_y = luma_blocks_y / blocks_per_tile;
+
+        let max_grid = 16u32;
+        let mut origins_tried = 0u32;
+        let mut last_invalid: Option<Vec<u8>> = None;
+
+        'outer: for ty in 0..tiles_y {
+            for tx in 0..tiles_x {
+                if origins_tried >= max_origins {
+                    break 'outer;
+                }
+                origins_tried += 1;
+
+                let tile_blocks =
+                    DctStegoF5::tile_block_set(&header, &coefficients, tx, ty, tile_size);
+                if tile_blocks.is_empty() {
+                    continue;
+                }
+
+                let base_x = tx;
+                let base_y = ty;
+                for dy in 0..=2u32 {
+                    if base_y + dy >= max_grid {
+                        break;
+                    }
+                    for dx in 0..=2u32 {
+                        if base_x + dx >= max_grid {
+                            break;
+                        }
+                        let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
+
+                        for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                            for redundancy in 1..=10 {
+                                let stego = DctStegoF5::with_redundancy(redundancy);
+                                let extracted = stego.extract_f5_from_blocks(
+                                    &coefficients,
+                                    ecc_bits,
+                                    local_seed,
+                                    &tile_blocks,
+                                );
+
+                                if extracted.len() < ecc_bits {
+                                    continue;
+                                }
+
+                                let payload_bytes = Self::bits_to_bytes(&extracted);
+                                if Self::verify_payload_integrity(&payload_bytes, mac_key) {
+                                    return CandidateOutcome::Valid(payload_bytes);
+                                }
+                                if Self::try_ecc_decode(&payload_bytes).is_some() {
+                                    return CandidateOutcome::Valid(payload_bytes);
+                                }
+                                if last_invalid.is_none() {
+                                    last_invalid = Some(payload_bytes);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(payload) = last_invalid {
+            CandidateOutcome::Invalid(payload)
+        } else {
+            CandidateOutcome::NotFound
+        }
+    }
+
     /// Embed a minimal LSB stego payload with redundancy=1.
     /// Used for Light level PNG/WebP protection — embeds the seed and protection
     /// metadata with minimal visual impact.
@@ -613,6 +728,41 @@ impl SteganographyProtector {
         None
     }
 
+    /// Verification-path variant of `extract_with_redundancy` that returns a
+    /// tri-state. Used by [`Self::verify_payload_from_bytes_with_key`] so that
+    /// a structurally plausible payload whose integrity check fails (e.g.
+    /// wrong MAC key, bit corruption) can be reported as
+    /// [`VerificationStatus::Invalid`] instead of falling through to `NotFound`.
+    fn verify_extract_with_redundancy(
+        &self,
+        img: &RgbaImage,
+        seed: u64,
+        mac_key: &[u8],
+    ) -> CandidateOutcome {
+        let mut last_invalid: Option<Vec<u8>> = None;
+        for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+            for pass in 0..5 {
+                let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
+
+                if let Some(payload) = self.extract_lsb(img, ecc_bits, offset_seed) {
+                    if Self::try_ecc_decode(&payload).is_some() {
+                        return CandidateOutcome::Valid(payload);
+                    }
+                    if Self::verify_payload_integrity(&payload, mac_key) {
+                        return CandidateOutcome::Valid(payload);
+                    }
+                    if last_invalid.is_none() {
+                        last_invalid = Some(payload);
+                    }
+                }
+            }
+        }
+        match last_invalid {
+            Some(p) => CandidateOutcome::Invalid(p),
+            None => CandidateOutcome::NotFound,
+        }
+    }
+
     /// Verify protection using a MAC key for HMAC-SHA256 validation.
     ///
     /// Returns [`VerificationStatus::Verified`] if the payload is found and HMAC is valid,
@@ -646,15 +796,17 @@ impl SteganographyProtector {
 
         // JPEG: check DCT stego directly (no re-encode needed)
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
-            if self.verify_dct_stego(img_bytes, mac_key) == VerificationStatus::Verified {
-                return VerificationStatus::Verified;
+            match self.verify_extract_verified_dct(img_bytes, mac_key) {
+                CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
+                CandidateOutcome::Invalid(_) => return VerificationStatus::Invalid,
+                CandidateOutcome::NotFound => {}
             }
 
             if let Some(metadata_seed) = metadata_seed {
-                if self.verify_dct_stego_with_seed(img_bytes, metadata_seed, mac_key)
-                    == VerificationStatus::Verified
-                {
-                    return VerificationStatus::Verified;
+                match self.verify_extract_dct_with_seed(img_bytes, metadata_seed, mac_key) {
+                    CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
+                    CandidateOutcome::Invalid(_) => return VerificationStatus::Invalid,
+                    CandidateOutcome::NotFound => {}
                 }
             }
 
@@ -667,8 +819,10 @@ impl SteganographyProtector {
         // Extract metadata seed directly from bytes (works for PNG, JPEG, WebP)
         if let Some(metadata_seed) = metadata_seed {
             if let Ok(img) = image::load_from_memory(img_bytes) {
-                if self.verify_payload_with_seed(&img, metadata_seed) {
-                    return VerificationStatus::Verified;
+                match self.verify_payload_with_seed_outcome(&img, metadata_seed, mac_key) {
+                    CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
+                    CandidateOutcome::Invalid(_) => return VerificationStatus::Invalid,
+                    CandidateOutcome::NotFound => {}
                 }
             }
         }
@@ -677,8 +831,10 @@ impl SteganographyProtector {
         if let Ok(img) = image::load_from_memory(img_bytes) {
             let rgba = img.to_rgba8();
             if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
-                if self.verify_payload_with_seed(&img, fallback_seed) {
-                    return VerificationStatus::Verified;
+                match self.verify_payload_with_seed_outcome(&img, fallback_seed, mac_key) {
+                    CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
+                    CandidateOutcome::Invalid(_) => return VerificationStatus::Invalid,
+                    CandidateOutcome::NotFound => {}
                 }
             }
 
@@ -687,8 +843,16 @@ impl SteganographyProtector {
             // to the same small set used by payload extraction so verification
             // remains predictable.
             for &seed in &[42u64, 0, 1, 12345, 99999, 123456789] {
-                if self.try_tiled_extraction_verify(&rgba, seed, DEFAULT_TILE_SIZE, 64, mac_key) {
-                    return VerificationStatus::Verified;
+                match self.verify_tiled_extraction_outcome(
+                    &rgba,
+                    seed,
+                    DEFAULT_TILE_SIZE,
+                    64,
+                    mac_key,
+                ) {
+                    CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
+                    CandidateOutcome::Invalid(_) => return VerificationStatus::Invalid,
+                    CandidateOutcome::NotFound => {}
                 }
             }
         }
@@ -697,8 +861,10 @@ impl SteganographyProtector {
         #[cfg(feature = "test-seeds")]
         if let Ok(img) = image::load_from_memory(img_bytes) {
             for &seed in FALLBACK_SEEDS {
-                if self.verify_payload_with_seed(&img, seed) {
-                    return VerificationStatus::Verified;
+                match self.verify_payload_with_seed_outcome(&img, seed, mac_key) {
+                    CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
+                    CandidateOutcome::Invalid(_) => return VerificationStatus::Invalid,
+                    CandidateOutcome::NotFound => {}
                 }
             }
         }
@@ -812,6 +978,118 @@ impl SteganographyProtector {
             return false;
         };
         Self::verify_embedded_seed_matches(&payload, seed)
+    }
+
+    /// Tri-state variant of the non-tiled LSB extraction used by verification.
+    fn verify_payload_with_seed_outcome(
+        &self,
+        img: &DynamicImage,
+        seed: u64,
+        mac_key: &[u8],
+    ) -> CandidateOutcome {
+        let rgba = img.to_rgba8();
+
+        match self.verify_extract_with_redundancy(&rgba, seed, mac_key) {
+            CandidateOutcome::Valid(payload) => {
+                if Self::verify_embedded_seed_matches(&payload, seed) {
+                    return CandidateOutcome::Valid(payload);
+                }
+            }
+            CandidateOutcome::Invalid(payload) => {
+                if Self::verify_embedded_seed_matches(&payload, seed) {
+                    return CandidateOutcome::Invalid(payload);
+                }
+            }
+            CandidateOutcome::NotFound => {}
+        }
+
+        if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
+            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image(&encoded) {
+                if metadata_seed != seed {
+                    match self.verify_extract_with_redundancy(&rgba, metadata_seed, mac_key) {
+                        CandidateOutcome::Valid(payload) => {
+                            if Self::verify_embedded_seed_matches(&payload, seed) {
+                                return CandidateOutcome::Valid(payload);
+                            }
+                        }
+                        CandidateOutcome::Invalid(payload) => {
+                            if Self::verify_embedded_seed_matches(&payload, seed) {
+                                return CandidateOutcome::Invalid(payload);
+                            }
+                        }
+                        CandidateOutcome::NotFound => {}
+                    }
+                }
+            }
+        }
+
+        self.verify_tiled_extraction_outcome(&rgba, seed, DEFAULT_TILE_SIZE, 64, mac_key)
+    }
+
+    /// Tri-state variant of `try_tiled_extraction_verify`.
+    fn verify_tiled_extraction_outcome(
+        &self,
+        rgba: &RgbaImage,
+        seed: u64,
+        tile_size: u32,
+        max_origins: u32,
+        mac_key: &[u8],
+    ) -> CandidateOutcome {
+        let outcome = self.verify_extract_lsb_tiled(rgba, seed, tile_size, max_origins, mac_key);
+        match outcome {
+            CandidateOutcome::Valid(payload) => {
+                if Self::verify_embedded_seed_matches(&payload, seed) {
+                    CandidateOutcome::Valid(payload)
+                } else {
+                    CandidateOutcome::NotFound
+                }
+            }
+            CandidateOutcome::Invalid(payload) => {
+                if Self::verify_embedded_seed_matches(&payload, seed) {
+                    CandidateOutcome::Invalid(payload)
+                } else {
+                    CandidateOutcome::NotFound
+                }
+            }
+            CandidateOutcome::NotFound => CandidateOutcome::NotFound,
+        }
+    }
+
+    /// Tri-state variant of `verify_dct_stego_with_seed`. Encapsulates the
+    /// same coefficient + tiled F5 fallback chain but distinguishes
+    /// `Invalid` from `NotFound`.
+    fn verify_extract_dct_with_seed(
+        &self,
+        jpeg_bytes: &[u8],
+        seed: u64,
+        mac_key: &[u8],
+    ) -> CandidateOutcome {
+        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
+            return CandidateOutcome::NotFound;
+        }
+
+        if let Ok((_, coefficients)) = JpegTranscoder::decode_coefficients(jpeg_bytes) {
+            let coeffs_outcome =
+                self.verify_extract_dct_from_coefficients(&coefficients, seed, mac_key);
+            if let CandidateOutcome::Valid(payload) = &coeffs_outcome {
+                return CandidateOutcome::Valid(payload.clone());
+            }
+
+            let tiled_outcome =
+                self.verify_extract_f5_tiled(jpeg_bytes, seed, DEFAULT_TILE_SIZE, 64, mac_key);
+            if let CandidateOutcome::Valid(payload) = &tiled_outcome {
+                return CandidateOutcome::Valid(payload.clone());
+            }
+
+            match (&coeffs_outcome, &tiled_outcome) {
+                (CandidateOutcome::Invalid(p), _) | (_, CandidateOutcome::Invalid(p)) => {
+                    return CandidateOutcome::Invalid(p.clone());
+                }
+                _ => {}
+            }
+        }
+
+        CandidateOutcome::NotFound
     }
 
     /// Verify that an integrity-checked payload's embedded seed field matches
@@ -1190,6 +1468,48 @@ impl SteganographyProtector {
         None
     }
 
+    /// Verification-path tri-state variant of `extract_verified_dct_payload`.
+    fn verify_extract_verified_dct(&self, jpeg_bytes: &[u8], mac_key: &[u8]) -> CandidateOutcome {
+        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
+            return CandidateOutcome::NotFound;
+        }
+
+        if let Ok((header, coefficients)) = JpegTranscoder::decode_coefficients(jpeg_bytes) {
+            if let Some(extracted_seed) =
+                DctStegoF5::new().extract_seed_from_quantization_tables(&header)
+            {
+                let coeffs_outcome = self.verify_extract_dct_from_coefficients(
+                    &coefficients,
+                    extracted_seed,
+                    mac_key,
+                );
+                if let CandidateOutcome::Valid(payload) = &coeffs_outcome {
+                    return CandidateOutcome::Valid(payload.clone());
+                }
+
+                let tiled_outcome = self.verify_extract_f5_tiled(
+                    jpeg_bytes,
+                    extracted_seed,
+                    DEFAULT_TILE_SIZE,
+                    64,
+                    mac_key,
+                );
+                if let CandidateOutcome::Valid(payload) = &tiled_outcome {
+                    return CandidateOutcome::Valid(payload.clone());
+                }
+
+                match (&coeffs_outcome, &tiled_outcome) {
+                    (CandidateOutcome::Invalid(p), _) | (_, CandidateOutcome::Invalid(p)) => {
+                        return CandidateOutcome::Invalid(p.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        CandidateOutcome::NotFound
+    }
+
     fn extract_verified_dct_payload_from_coefficients(
         &self,
         coefficients: &crate::jpeg_transcoder::Coefficients,
@@ -1219,44 +1539,39 @@ impl SteganographyProtector {
         None
     }
 
-    fn verify_dct_stego_with_seed(
+    /// Verification-path variant of `extract_verified_dct_payload_from_coefficients`.
+    /// See [`Self::verify_extract_with_redundancy`].
+    fn verify_extract_dct_from_coefficients(
         &self,
-        jpeg_bytes: &[u8],
+        coefficients: &crate::jpeg_transcoder::Coefficients,
         seed: u64,
         mac_key: &[u8],
-    ) -> VerificationStatus {
-        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
-            return VerificationStatus::NotFound;
-        }
+    ) -> CandidateOutcome {
+        let mut last_invalid: Option<Vec<u8>> = None;
+        for &bits_needed in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+            for redundancy in 1..=10 {
+                let stego_f5 = DctStegoF5::with_redundancy(redundancy);
+                let extracted = stego_f5.extract_f5(coefficients, bits_needed, seed);
 
-        if let Ok((_, coefficients)) = JpegTranscoder::decode_coefficients(jpeg_bytes) {
-            if self
-                .extract_verified_dct_payload_from_coefficients(&coefficients, seed, mac_key)
-                .is_some()
-            {
-                return VerificationStatus::Verified;
+                if extracted.len() < bits_needed {
+                    continue;
+                }
+
+                let payload_bytes = Self::bits_to_bytes(&extracted);
+                if Self::verify_payload_integrity(&payload_bytes, mac_key) {
+                    return CandidateOutcome::Valid(payload_bytes);
+                }
+                if Self::try_ecc_decode(&payload_bytes).is_some() {
+                    return CandidateOutcome::Valid(payload_bytes);
+                }
+                if last_invalid.is_none() {
+                    last_invalid = Some(payload_bytes);
+                }
             }
         }
-
-        // Tiled F5 fallback
-        if self
-            .extract_f5_tiled_candidates(jpeg_bytes, seed, DEFAULT_TILE_SIZE, 64, mac_key)
-            .is_some()
-        {
-            return VerificationStatus::Verified;
-        }
-
-        VerificationStatus::NotFound
-    }
-
-    fn verify_dct_stego(&self, jpeg_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus {
-        if self
-            .extract_verified_dct_payload(jpeg_bytes, mac_key)
-            .is_some()
-        {
-            VerificationStatus::Verified
-        } else {
-            VerificationStatus::NotFound
+        match last_invalid {
+            Some(p) => CandidateOutcome::Invalid(p),
+            None => CandidateOutcome::NotFound,
         }
     }
 
@@ -1708,6 +2023,84 @@ impl SteganographyProtector {
             }
         }
         payload
+    }
+
+    /// Verification-path variant of `extract_lsb_tiled_candidates` that
+    /// returns a tri-state. See [`Self::verify_extract_with_redundancy`].
+    fn verify_extract_lsb_tiled(
+        &self,
+        img: &RgbaImage,
+        master_seed: u64,
+        tile_size: u32,
+        max_origins: u32,
+        mac_key: &[u8],
+    ) -> CandidateOutcome {
+        if tile_size == 0 {
+            return CandidateOutcome::NotFound;
+        }
+        let (width, height) = img.dimensions();
+        if width < tile_size || height < tile_size {
+            return CandidateOutcome::NotFound;
+        }
+
+        let ecc_bits_list = [ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS];
+        let stride = (tile_size / 2).max(1);
+        let mut origins: Vec<(u32, u32)> = Vec::new();
+        let mut y = 0u32;
+        while y + tile_size <= height {
+            let mut x = 0u32;
+            while x + tile_size <= width {
+                origins.push((x, y));
+                if origins.len() as u32 >= max_origins {
+                    break;
+                }
+                x = x.saturating_add(stride);
+            }
+            if origins.len() as u32 >= max_origins {
+                break;
+            }
+            y = y.saturating_add(stride);
+        }
+        let max_grid = 16u32;
+        let mut last_invalid: Option<Vec<u8>> = None;
+
+        for &(x0, y0) in &origins {
+            let sub = Self::crop_rgba(img, x0, y0, tile_size, tile_size);
+            let base_x = x0 / tile_size;
+            let base_y = y0 / tile_size;
+            for dy in 0..=2u32 {
+                if base_y + dy >= max_grid {
+                    break;
+                }
+                for dx in 0..=2u32 {
+                    if base_x + dx >= max_grid {
+                        break;
+                    }
+                    let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
+                    for &ecc_bits in &ecc_bits_list {
+                        for pass in 0..5 {
+                            let offset_seed = local_seed
+                                .wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
+                            if let Some(candidate) = self.extract_lsb(&sub, ecc_bits, offset_seed) {
+                                if Self::try_ecc_decode(&candidate).is_some() {
+                                    return CandidateOutcome::Valid(candidate);
+                                }
+                                if Self::verify_payload_integrity(&candidate, mac_key) {
+                                    return CandidateOutcome::Valid(candidate);
+                                }
+                                if last_invalid.is_none() {
+                                    last_invalid = Some(candidate);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        match last_invalid {
+            Some(p) => CandidateOutcome::Invalid(p),
+            None => CandidateOutcome::NotFound,
+        }
     }
 
     /// Crop a sub-rectangle out of an `RgbaImage` without depending on the
