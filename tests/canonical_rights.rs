@@ -178,3 +178,134 @@ fn conflict_detection_canonical_vs_legacy() {
     assert!(!report.has_dmi_conflict());
     assert_eq!(report.canonical_dmi(), Some(DmiValue::Prohibited));
 }
+
+fn canonical_xmp_element_form(vocab_key: &str) -> Vec<u8> {
+    format!(
+        r#"<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about=""
+    xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/">
+    <plus:DataMining>{vocab_key}</plus:DataMining>
+</rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>"#
+    )
+    .into_bytes()
+}
+
+#[test]
+fn canonical_plus_element_form() {
+    let xmp = canonical_xmp_element_form("DMI-PROHIBITED-AIMLTRAINING");
+    let png = make_png_with_xmp(&xmp);
+    let report = verify_legal_notice(&png, b"");
+    assert_eq!(
+        report.canonical_dmi(),
+        Some(DmiValue::ProhibitedAiMlTraining)
+    );
+    assert_eq!(
+        report.rights_signal_kind(),
+        RightsSignalKind::CanonicalPlusDataMining
+    );
+}
+
+fn canonical_xmp_alternate_prefix(vocab_key: &str) -> Vec<u8> {
+    format!(
+        r#"<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about=""
+    xmlns:myplus="http://ns.useplus.org/ldf/xmp/1.0/"
+    myplus:DataMining="{vocab_key}">
+</rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>"#
+    )
+    .into_bytes()
+}
+
+#[test]
+fn alternate_namespace_prefix_resolves() {
+    let xmp = canonical_xmp_alternate_prefix("DMI-PROHIBITED-AIMLTRAINING");
+    let png = make_png_with_xmp(&xmp);
+    let report = verify_legal_notice(&png, b"");
+    assert_eq!(
+        report.canonical_dmi(),
+        Some(DmiValue::ProhibitedAiMlTraining)
+    );
+    assert_eq!(
+        report.rights_signal_kind(),
+        RightsSignalKind::CanonicalPlusDataMining
+    );
+}
+
+fn canonical_and_legacy_xmp(canonical_key: &str, legacy_value: &str) -> Vec<u8> {
+    format!(
+        r#"<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about=""
+    xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/"
+    xmlns:iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/"
+    plus:DataMining="{canonical_key}"
+    Iptc4xmpExt:DMI-Prohibited="{legacy_value}">
+</rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>"#
+    )
+    .into_bytes()
+}
+
+#[test]
+fn canonical_and_legacy_agreeing_no_conflict() {
+    let xmp = canonical_and_legacy_xmp("DMI-PROHIBITED-AIMLTRAINING", "ProhibitedAiMlTraining");
+    let png = make_png_with_xmp(&xmp);
+    let report = verify_legal_notice(&png, b"");
+    assert_eq!(
+        report.canonical_dmi(),
+        Some(DmiValue::ProhibitedAiMlTraining)
+    );
+    assert_eq!(report.legacy_dmi(), Some(DmiValue::ProhibitedAiMlTraining));
+    assert!(!report.has_dmi_conflict());
+    assert_eq!(
+        report.rights_signal_kind(),
+        RightsSignalKind::CanonicalPlusDataMining
+    );
+}
+
+#[test]
+fn canonical_and_legacy_conflicting_detected() {
+    let xmp = canonical_and_legacy_xmp("DMI-ALLOWED", "ProhibitedAiMlTraining");
+    let png = make_png_with_xmp(&xmp);
+    let report = verify_legal_notice(&png, b"");
+    assert_eq!(report.canonical_dmi(), Some(DmiValue::Allowed));
+    assert_eq!(report.legacy_dmi(), Some(DmiValue::ProhibitedAiMlTraining));
+    assert!(report.has_dmi_conflict());
+    assert_eq!(
+        report.rights_signal_kind(),
+        RightsSignalKind::CanonicalPlusDataMining
+    );
+}
+
+fn malformed_xmp() -> Vec<u8> {
+    "<?xpacket begin=\"﻿\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
+      <x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n\
+      <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
+      <rdf:Description rdf:about=\"\"\n\
+      <plus:DataMining>unclosed\n\
+      </x:xmpmeta>\n\
+      <?xpacket end=\"w\"?>"
+        .as_bytes()
+        .to_vec()
+}
+
+#[test]
+fn malformed_xmp_does_not_panic() {
+    let png = make_png_with_xmp(&malformed_xmp());
+    let report = verify_legal_notice(&png, b"");
+    assert_eq!(report.dmi(), None);
+    assert_eq!(report.canonical_dmi(), None);
+}

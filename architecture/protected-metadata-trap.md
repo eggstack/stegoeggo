@@ -35,10 +35,17 @@ When no explicit DMI value is set, the protector auto-maps from `ProtectionLevel
 
 ### Legal Metadata
 
-When `inject_legal_claims` is enabled, injects:
-- Copyright holder, contact email, license URL
-- Usage terms, creation date, AI training constraints
-- Web statement of rights
+When `inject_legal_claims` is enabled (or auto-enabled by the presence of `LegalMetadata`), injects only the fields explicitly provided:
+- Copyright holder (if set)
+- Contact email (PNG tEXt / JPEG COM only — not mapped to `photoshop:Credit` in XMP)
+- License URL
+- Usage terms (if set)
+- Creation date (only if caller-supplied — never synthesized from processing time)
+- AI training constraints (if set)
+- Web statement of rights (if set)
+- Creator (if set)
+
+No synthetic defaults are emitted when no `LegalMetadata` is provided — no "All Rights Reserved", no default usage terms, no processing-time DateCreated.
 
 ## Format-Specific Injection
 
@@ -67,7 +74,7 @@ Injects:
 2. **EXIF chunk** — UserComment with seed
 3. Updates RIFF file size header
 
-**External visibility**: XMP DMI fields use canonical `plus:DataMining` and are visible via `exiftool`. Legal fields (Copyright, Creator, Contact, UsageTerms, AIConstraints) are embedded as standard XMP properties (`dc:rights`, `dc:creator`, `photoshop:Credit`, `xmpRights:UsageTerms`, `stegoeggo:AIConstraints`) — external parser support for these namespaces determines visibility. TDM reservation is no longer emitted by default.
+**External visibility**: XMP DMI fields use canonical `plus:DataMining` and are visible via `exiftool`. Legal fields (Copyright, Creator, UsageTerms, AIConstraints) are embedded as standard XMP properties (`dc:rights`, `dc:creator`, `xmpRights:UsageTerms`, `stegoeggo:AIConstraints`) — external parser support for these namespaces determines visibility. Contact is NOT written to `photoshop:Credit`; it is only available in PNG tEXt and JPEG COM markers. TDM reservation is no longer emitted by default.
 
 ## Seed Extraction
 
@@ -111,7 +118,6 @@ so external RDF parsers (e.g. `exiftool`) can read the legal fields:
         </rdf:Alt>
       </xmpRights:UsageTerms>
       <xmpRights:WebStatement>https://example.com/rights</xmpRights:WebStatement>
-      <photoshop:Credit>legal@test.com</photoshop:Credit>
       <stegoeggo:AIConstraints>No AI training</stegoeggo:AIConstraints>
     </rdf:Description>
   </rdf:RDF>
@@ -120,7 +126,7 @@ so external RDF parsers (e.g. `exiftool`) can read the legal fields:
 
 ## Utility Functions
 
-- `current_date_iso()` — Manual ISO date computation (no chrono dependency)
+- `current_date_iso()` — Manual ISO date computation (test-only, no chrono dependency)
 - CRC32 computation for PNG chunk checksums
 
 ## Module Interactions

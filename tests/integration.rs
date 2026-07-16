@@ -1231,7 +1231,6 @@ mod webp_legal_xmp_tests {
         let report = verify_legal_notice(&protected, &[]);
         assert_eq!(report.copyright_holder(), Some("Test Corp"));
         assert_eq!(report.creator(), Some("Test Author"));
-        assert_eq!(report.contact(), Some("contact@test.com"));
         assert_eq!(report.rights_url(), Some("https://example.com/rights"));
         assert_eq!(report.usage_terms(), Some("All rights reserved"));
         assert_eq!(report.ai_constraints(), Some("No generative AI training"));
@@ -1529,7 +1528,7 @@ mod inject_legal_claims_toggle {
     }
 
     #[test]
-    fn test_legal_claims_absent_by_default() {
+    fn test_legal_claims_auto_enabled_when_metadata_present() {
         let img = create_test_image(32, 32);
         let png_bytes = image_to_png_bytes(&img);
         let ctx = legal_ctx(None);
@@ -1538,8 +1537,8 @@ mod inject_legal_claims_toggle {
 
         let has_copyright = protected.windows(9).any(|w| w == b"Copyright");
         assert!(
-            !has_copyright,
-            "Copyright metadata should be absent by default (None)"
+            has_copyright,
+            "Copyright metadata should be auto-enabled when legal metadata is provided"
         );
     }
 }

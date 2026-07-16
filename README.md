@@ -223,7 +223,7 @@ let ctx = ProtectionContext::new(0.5, 42)
 
 Inject real legal metadata (copyright, contact info, usage terms). **Only use for content you own.**
 
-Both `with_legal_metadata(...)` (provides the content) and `with_legal_claims(true)` (enables injection) are required — metadata will not be injected without both:
+`with_legal_metadata(...)` provides the content. When legal metadata is provided, `with_legal_claims(true)` is **auto-enabled** — you no longer need to call it explicitly. The explicit call is still supported but no longer required:
 
 ```rust,ignore
 use stegoeggo::{process_image_bytes, ProtectionContext, LegalMetadata, ProtectionLevel};
@@ -302,8 +302,9 @@ let ctx = ProtectionContext::new(0.5, 42)
     .with_metadata_injection(false);
 
 // Full - metadata + legal claims (for owned content)
+// Legal claims are auto-enabled when LegalMetadata is provided,
+// but you can still pass `true` explicitly if desired.
 let ctx = ProtectionContext::new(0.5, 42)
-    .with_legal_claims(true)
     .with_legal_metadata(LegalMetadata::new()
         .with_copyright_holder("My Company"));
 
@@ -476,7 +477,7 @@ stegoeggo image.png -o protected.png --stego-redundancy 1
 # With legal metadata (explicit claims)
 stegoeggo my_art.png -o protected.png --legal-claims --level standard
 
-# With full legal metadata — auto-enables legal claims
+# With full legal metadata — auto-enables legal claims (no --legal-claims needed)
 stegoeggo my_art.png -o protected.png \
   --copyright-holder "Jane Doe" \
   --contact "jane@example.com" \
@@ -849,7 +850,7 @@ cargo build --release -p stegoeggo-cli
 |-------|-----|------|------|-------|
 | Copyright | exiftool `-Copyright` | exiftool `-Comment` (all COM) | exiftool XMP `-XMP-dc:Rights` | XMP `dc:rights` (rdf:Alt) in WebP |
 | Creator | exiftool `-Creator` | exiftool `-Comment` | exiftool XMP `-Creator` | XMP `dc:creator` in WebP |
-| Contact | exiftool `-Contact` | exiftool `-Comment` | exiftool XMP `-Contact` | XMP `photoshop:Credit` in WebP |
+| Contact | exiftool `-Contact` | exiftool `-Comment` | exiftool XMP `-Contact` | XMP `photoshop:Credit` is **not** used for contact in WebP; contact is not mapped to `photoshop:Credit` |
 | UsageTerms | exiftool `-UsageTerms` | exiftool `-Comment` | exiftool XMP `-UsageTerms` | XMP `xmpRights:UsageTerms` in WebP |
 | AIConstraints | exiftool `-AIConstraints` | exiftool `-Comment` | exiftool XMP `-AIConstraints` | XMP `stegoeggo:AIConstraints` in WebP |
 | DMI (no-AI-training) | exiftool XMP `-DataMining` | exiftool XMP `-DataMining` | exiftool XMP `-DataMining` | XMP-based, all formats; canonical `plus:DataMining` emitted |
@@ -858,7 +859,7 @@ cargo build --release -p stegoeggo-cli
 
 ### Conformance Caveats
 
-- **WebP legal fields in XMP**: WebP outputs carry legal metadata (copyright, creator, contact, rights URL, usage terms, AI constraints) in standard XMP properties alongside DMI/TDM. Legal child elements live inside `<rdf:Description>...</rdf:Description>` (not as attributes on its opening tag). `dc:rights` and `xmpRights:UsageTerms` are wrapped in `<rdf:Alt><rdf:li xml:lang="x-default">…</rdf:li></rdf:Alt>` containers, and `dc:creator` uses `<rdf:Seq>`. `exiftool` resolves WebP copyright via `XMP-dc:Rights` rather than the `-Copyright` shortcut. The conformance script accepts `XMP-dc:Rights` as a parser-visible alias for copyright.
+- **WebP legal fields in XMP**: WebP outputs carry legal metadata (copyright, creator, contact, rights URL, usage terms, AI constraints) in standard XMP properties alongside DMI/TDM. Legal child elements live inside `<rdf:Description>...</rdf:Description>` (not as attributes on its opening tag). `dc:rights` and `xmpRights:UsageTerms` are wrapped in `<rdf:Alt><rdf:li xml:lang="x-default">…</rdf:li></rdf:Alt>` containers, and `dc:creator` uses `<rdf:Seq>`. `exiftool` resolves WebP copyright via `XMP-dc:Rights` rather than the `-Copyright` shortcut. Contact is not mapped to `photoshop:Credit`. The conformance script accepts `XMP-dc:Rights` as a parser-visible alias for copyright.
 - **Tool variability**: Metadata visibility depends on the external tool. The script targets `exiftool` as the primary tool. Other tools (ImageMagick, vips) may show different fields.
 - **Seed is not legal notice**: The protection seed is an internal diagnostic marker. The script does not treat it as sufficient legal notice — at least one real rights-reservation field must be present.
 - **Strict vs non-strict**: Strict mode requires `exiftool` and fails if fields are missing. Non-strict mode skips external checks cleanly when `exiftool` is not installed.

@@ -28,6 +28,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CLI verification now reports legal-notice fields and evidence strength.
 - `QTableSeed` evidence channel marked as reserved (not emitted by current verification path).
 - CI clippy now runs with `--all-features`.
+- Legal metadata semantic corrections: `LegalMetadata` now auto-enables claim injection when provided (no need for explicit `with_legal_claims(true)`).
+- No synthetic defaults: when no `LegalMetadata` is provided, no "All Rights Reserved", default usage terms, or DateCreated are emitted. Only explicitly provided fields are written.
+- Contact information is no longer written to `photoshop:Credit` in XMP — it remains in PNG tEXt and JPEG COM markers only.
+- `DateCreated` is no longer populated from the current processing time. Only caller-supplied creation dates are emitted.
+- Each legal metadata field is now emitted only when explicitly provided, eliminating silent synthesis.
 
 ### Fixed
 - WebP outputs now carry legal metadata fields (copyright, creator, contact, rights URL, usage terms, AI constraints) in XMP, bringing WebP to parity with PNG/JPEG for external rights-reservation notice visibility.
@@ -38,6 +43,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - JPEG XMP evidence channel reporting.
 - JPEG XMP namespace marker.
 - Evidence channel misclassification for payload type.
+- Semantic correctness: copyright notice, creator, contact, and credit-line concepts are no longer conflated across format writers.
+- WebP XMP no longer maps contact to `photoshop:Credit` (wrong semantics).
 
 ## [0.2.0] - 2026-06-04
 

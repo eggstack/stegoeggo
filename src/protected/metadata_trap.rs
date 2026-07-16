@@ -18,10 +18,12 @@ fn xml_escape(s: &str) -> String {
 
 /// Manual date computation from Unix epoch.
 /// Intentionally avoids adding a `chrono` dependency for this simple use case.
+#[cfg(test)]
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
+#[cfg(test)]
 fn current_date_iso() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -125,7 +127,7 @@ impl MetadataTrapProtector {
         let should_inject_metadata =
             Self::should_inject_metadata(inject_metadata, protection_level);
 
-        let should_inject_claims = inject_legal_claims.unwrap_or(false);
+        let should_inject_claims = inject_legal_claims.unwrap_or(legal.is_some());
 
         if should_inject_metadata {
             if let Some(s) = seed {
@@ -142,7 +144,7 @@ impl MetadataTrapProtector {
             metadata.push((b"noai".to_vec(), b"noindex".to_vec()));
         }
 
-        if should_inject_claims {
+        if should_inject_claims && legal.is_some() {
             Self::add_legal_metadata(&mut metadata, legal);
         }
 
@@ -150,51 +152,42 @@ impl MetadataTrapProtector {
     }
 
     fn add_legal_metadata(metadata: &mut Vec<(Vec<u8>, Vec<u8>)>, legal: Option<&LegalMetadata>) {
-        let copyright = legal
-            .and_then(|l| l.copyright_holder())
-            .map(|h| format!("Copyright (c) {}", h))
-            .unwrap_or_else(|| "All Rights Reserved".to_string());
+        let Some(legal) = legal else {
+            return;
+        };
 
-        metadata.push((b"Copyright".to_vec(), copyright.as_bytes().to_vec()));
-
-        if let Some(legal) = legal {
-            if let Some(email) = legal.contact_email() {
-                metadata.push((b"Contact".to_vec(), email.as_bytes().to_vec()));
-            }
-            if let Some(url) = legal.license_url() {
-                metadata.push((b"License".to_vec(), url.as_bytes().to_vec()));
-            }
-            let terms = legal
-                .usage_terms()
-                .unwrap_or("All Rights Reserved. No AI training.");
-            metadata.push((b"UsageTerms".to_vec(), terms.as_bytes().to_vec()));
-
-            if let Some(date) = legal.creation_date() {
-                metadata.push((b"DateCreated".to_vec(), date.as_bytes().to_vec()));
+        if let Some(holder) = legal.copyright_holder() {
+            let copyright = if holder.contains("Copyright") {
+                holder.to_string()
             } else {
-                let now = current_date_iso();
-                metadata.push((b"DateCreated".to_vec(), now.as_bytes().to_vec()));
-            }
+                format!("Copyright (c) {}", holder)
+            };
+            metadata.push((b"Copyright".to_vec(), copyright.as_bytes().to_vec()));
+        }
 
-            if let Some(constraints) = legal.ai_constraints() {
-                metadata.push((b"AIConstraints".to_vec(), constraints.as_bytes().to_vec()));
-            }
-            if let Some(statement) = legal.web_statement_of_rights() {
-                metadata.push((
-                    b"WebStatementOfRights".to_vec(),
-                    statement.as_bytes().to_vec(),
-                ));
-            }
-            if let Some(creator_name) = legal.creator() {
-                metadata.push((b"Creator".to_vec(), creator_name.as_bytes().to_vec()));
-            }
-        } else {
+        if let Some(email) = legal.contact_email() {
+            metadata.push((b"Contact".to_vec(), email.as_bytes().to_vec()));
+        }
+        if let Some(url) = legal.license_url() {
+            metadata.push((b"License".to_vec(), url.as_bytes().to_vec()));
+        }
+        if let Some(terms) = legal.usage_terms() {
+            metadata.push((b"UsageTerms".to_vec(), terms.as_bytes().to_vec()));
+        }
+        if let Some(date) = legal.creation_date() {
+            metadata.push((b"DateCreated".to_vec(), date.as_bytes().to_vec()));
+        }
+        if let Some(constraints) = legal.ai_constraints() {
+            metadata.push((b"AIConstraints".to_vec(), constraints.as_bytes().to_vec()));
+        }
+        if let Some(statement) = legal.web_statement_of_rights() {
             metadata.push((
-                b"UsageTerms".to_vec(),
-                b"All Rights Reserved. No AI training.".to_vec(),
+                b"WebStatementOfRights".to_vec(),
+                statement.as_bytes().to_vec(),
             ));
-            let now = current_date_iso();
-            metadata.push((b"DateCreated".to_vec(), now.as_bytes().to_vec()));
+        }
+        if let Some(creator_name) = legal.creator() {
+            metadata.push((b"Creator".to_vec(), creator_name.as_bytes().to_vec()));
         }
     }
 
@@ -250,26 +243,18 @@ impl MetadataTrapProtector {
                     xml_escape(terms)
                 ));
             }
-            if let Some(contact) = legal.contact_email() {
-                legal_props.push_str(&format!(
-                    "\n   <photoshop:Credit>{}</photoshop:Credit>",
-                    xml_escape(contact)
-                ));
-            }
             if let Some(constraints) = legal.ai_constraints() {
                 legal_props.push_str(&format!(
                     "\n   <stegoeggo:AIConstraints>{}</stegoeggo:AIConstraints>",
                     xml_escape(constraints)
                 ));
             }
-            let copyright = legal.copyright_holder().map(|h| {
-                if h.contains("Copyright") {
-                    h.to_string()
+            if let Some(holder) = legal.copyright_holder() {
+                let copyright = if holder.contains("Copyright") {
+                    holder.to_string()
                 } else {
-                    format!("Copyright (c) {}", h)
-                }
-            });
-            if let Some(copyright) = copyright {
+                    format!("Copyright (c) {}", holder)
+                };
                 legal_props.push_str(&format!(
                     "\n   <dc:rights>\n    <rdf:Alt>\n     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n    </rdf:Alt>\n   </dc:rights>",
                     xml_escape(&copyright)
@@ -1843,12 +1828,14 @@ mod tests {
     }
 
     #[test]
-    fn legal_metadata_none_uses_defaults() {
+    fn legal_metadata_none_produces_no_output() {
         let mut metadata = Vec::new();
         MetadataTrapProtector::add_legal_metadata(&mut metadata, None);
 
-        let copyright = metadata.iter().find(|(k, _)| k == b"Copyright").unwrap();
-        assert_eq!(copyright.1, b"All Rights Reserved");
+        assert!(
+            metadata.is_empty(),
+            "no fields should be emitted when legal metadata is None"
+        );
     }
 
     // ── Edge cases ────────────────────────────────────────────────────
@@ -2034,7 +2021,6 @@ mod tests {
             "<rdf:Alt>",
             "<xmpRights:UsageTerms>",
             "<xmpRights:WebStatement>",
-            "<photoshop:Credit>",
             "<stegoeggo:AIConstraints>",
             "stegoeggo:ProtectionSeed=\"99\"",
             "plus:DataMining=\"DMI-PROHIBITED-AIMLTRAINING\"",
