@@ -236,18 +236,16 @@ run_conformance_checks() {
                 warn "AIConstraints not found in JPEG COM markers"
             fi
 
-            XMP_DMI=$(exiftool -s3 -XMP-iptcExt:DMI-Prohibited "$image" 2>/dev/null || true)
+            XMP_DMI=$(exiftool -s3 -XMP-plus:DataMining "$image" 2>/dev/null || true)
             if [ -n "$XMP_DMI" ]; then
-                pass "XMP contains DMI-Prohibited: $XMP_DMI"
+                pass "XMP contains canonical plus:DataMining: $XMP_DMI"
             else
-                warn "XMP DMI-Prohibited not found via exiftool"
-            fi
-
-            TDM=$(exiftool -s3 -XMP-tdm:Reserve_tdm "$image" 2>/dev/null || true)
-            if [ -n "$TDM" ] && [ "$TDM" = "1" ]; then
-                pass "XMP contains TDM reservation"
-            else
-                warn "XMP TDM reservation not found via exiftool"
+                XMP_DMI_LEGACY=$(exiftool -s3 -XMP-iptcExt:DMI-Prohibited "$image" 2>/dev/null || true)
+                if [ -n "$XMP_DMI_LEGACY" ]; then
+                    warn "XMP contains legacy DMI-Prohibited (not canonical plus:DataMining): $XMP_DMI_LEGACY"
+                else
+                    warn "XMP DMI not found via exiftool"
+                fi
             fi
 
             SEED=$(echo "$COM_ALL" | grep "^X-Protection-Seed:" | head -1 || true)
@@ -301,18 +299,16 @@ run_conformance_checks() {
                 warn "AIConstraints not found via exiftool"
             fi
 
-            XMP_DMI=$(exiftool -s3 -XMP-iptcExt:DMI-Prohibited "$image" 2>/dev/null || true)
+            XMP_DMI=$(exiftool -s3 -XMP-plus:DataMining "$image" 2>/dev/null || true)
             if [ -n "$XMP_DMI" ]; then
-                pass "XMP contains DMI-Prohibited: $XMP_DMI"
+                pass "XMP contains canonical plus:DataMining: $XMP_DMI"
             else
-                warn "XMP DMI-Prohibited not found via exiftool"
-            fi
-
-            TDM=$(exiftool -s3 -XMP-tdm:Reserve_tdm "$image" 2>/dev/null || true)
-            if [ -n "$TDM" ] && [ "$TDM" = "1" ]; then
-                pass "XMP contains TDM reservation"
-            else
-                warn "XMP TDM reservation not found via exiftool"
+                XMP_DMI_LEGACY=$(exiftool -s3 -XMP-iptcExt:DMI-Prohibited "$image" 2>/dev/null || true)
+                if [ -n "$XMP_DMI_LEGACY" ]; then
+                    warn "XMP contains legacy DMI-Prohibited (not canonical plus:DataMining): $XMP_DMI_LEGACY"
+                else
+                    warn "XMP DMI not found via exiftool"
+                fi
             fi
 
             SEED=$(exiftool -s3 -Description "$image" 2>/dev/null || true)
@@ -349,25 +345,19 @@ run_conformance_checks() {
                 fi
             fi
 
-            XMP_DMI=$(exiftool -s3 -XMP-iptcExt:DMI-Prohibited "$image" 2>/dev/null || true)
+            XMP_DMI=$(exiftool -s3 -XMP-plus:DataMining "$image" 2>/dev/null || true)
             if [ -n "$XMP_DMI" ]; then
-                pass "XMP contains DMI-Prohibited: $XMP_DMI"
+                pass "XMP contains canonical plus:DataMining: $XMP_DMI"
             else
-                if $STRICT; then
-                    fail "DMI-Prohibited not found in WebP XMP"
+                XMP_DMI_LEGACY=$(exiftool -s3 -XMP-iptcExt:DMI-Prohibited "$image" 2>/dev/null || true)
+                if [ -n "$XMP_DMI_LEGACY" ]; then
+                    warn "XMP contains legacy DMI-Prohibited (not canonical plus:DataMining): $XMP_DMI_LEGACY"
                 else
-                    warn "XMP DMI-Prohibited not found via exiftool (parser-dependent)"
-                fi
-            fi
-
-            TDM=$(exiftool -s3 -XMP-tdm:Reserve_tdm "$image" 2>/dev/null || true)
-            if [ -n "$TDM" ] && [ "$TDM" = "1" ]; then
-                pass "XMP contains TDM reservation"
-            else
-                if $STRICT; then
-                    fail "TDM reservation not found in WebP XMP"
-                else
-                    warn "XMP TDM reservation not found via exiftool (parser-dependent)"
+                    if $STRICT; then
+                        fail "DMI not found in WebP XMP"
+                    else
+                        warn "XMP DMI not found via exiftool (parser-dependent)"
+                    fi
                 fi
             fi
 

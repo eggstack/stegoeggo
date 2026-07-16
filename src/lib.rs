@@ -187,8 +187,8 @@ pub use error::{Error, Result};
 pub use types::{
     DmiValue, EvidenceChannel, EvidenceProfile, EvidenceStrength, ImageOutputFormat, LegalMetadata,
     NoticeVerification, ProtectionConfig, ProtectionContext, ProtectionLevel, ProtectionWarning,
-    VerificationResult, VerificationStatus, WarningCategory, WarningSeverity,
-    DEFAULT_OUTPUT_FORMAT,
+    RightsSignalKind, VerificationResult, VerificationStatus, WarningCategory, WarningSeverity,
+    DEFAULT_OUTPUT_FORMAT, PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
 };
 
 pub use traits::Protector;

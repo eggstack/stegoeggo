@@ -32,12 +32,12 @@ stegoeggo embeds multiple layers of rights-reservation and AI-training restricti
 
 | Layer | Description |
 |-------|-------------|
-| **Metadata Injection** | Embeds rights-reservation and AI-training restriction markers in image headers using XMP, IPTC DMI, and EXIF |
+| **Metadata Injection** | Embeds rights-reservation and AI-training restriction markers in image headers using canonical `plus:DataMining` rights signals, XMP, and EXIF |
 | **Steganography** | Optional hidden payloads embedded in image pixels (LSB) or DCT coefficients (JPEG) for redundant evidence |
 
 ### External Standards
 
-- **IPTC Photo Metadata Standard** - Uses the DMI (Data Mining Inhibitor) tags from the [IPTC Photo Metadata Standard](https://iptc.org/standards/photo-metadata/) to communicate AI training restrictions
+- **PLUS License Data Format** - Emits `plus:DataMining` with official PLUS LDF controlled-vocabulary URIs for machine-readable rights signals (canonical per the [PLUS License Data Format](https://www.useplus.com/) specification). Legacy `Iptc4xmpExt:DMI-*` properties are still parsed for backward compatibility but not emitted by default.
 - **ISCC** - Computes [Immutable Self-Certifying Constituent Content](https://iscc-project.github.io/) identifiers for content identification
 
 ## Installation
@@ -244,7 +244,7 @@ let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx)
 
 ### DMI (Data Mining Inhibitor) Values
 
-Set IPTC-standard DMI metadata values for AI-training restrictions:
+Set DMI metadata values for AI-training restrictions. The XMP writer emits canonical `plus:DataMining` properties with PLUS LDF vocabulary keys. Legacy `Iptc4xmpExt:DMI-*` properties are still parsed for backward compatibility but not emitted by default:
 
 ```rust
 use stegoeggo::{ProtectionContext, DmiValue, ProtectionLevel};
@@ -261,6 +261,8 @@ Available values:
 - `ProhibitedExceptSearchEngineIndexing` - Prohibited except for search indexing
 - `Prohibited` - All uses prohibited
 - `ProhibitedSeeConstraints` - Prohibited, see constraints for details
+
+Each variant maps to a canonical PLUS vocabulary key via `DmiValue::plus_vocab_key()` (e.g., `DMI-PROHIBITED-AIMLTRAINING`). Legacy IPTC keys can be parsed back via `DmiValue::from_plus_vocab_key()`.
 
 ### Optional: Authenticated Stego Provenance (MAC Key)
 
@@ -431,7 +433,7 @@ Options:
   --jpeg-quality <N>       JPEG quality 1-100 (default: 90)
   --progressive            Use progressive JPEG encoding
   -v, --verbose            Print verbose output
-  -d, --dmi <DMI>          AI-training restriction metadata (IPTC DMI value)
+  -d, --dmi <DMI>          AI-training restriction metadata (DMI value; emitted as canonical plus:DataMining)
   --metadata               Inject metadata (seed, DMI). Default: true for Light and Standard
   --legal-claims          Inject legal claims (copyright, usage terms) — only for content you own
   --copyright-holder <NAME>  Copyright holder name (e.g., 'Jane Doe' or 'Acme Corp')
@@ -523,15 +525,15 @@ The library injects rights-reservation and AI-training restriction metadata into
 
 **PNG:** tEXt and iTXt chunks
 - `X-Protection-Seed`: Unique identifier for reproducibility
-- `DMI-PROHIBITED`: IPTC DMI tag value
+- `plus:DataMining`: Canonical PLUS LDF DMI value (e.g., `DMI-PROHIBITED-AIMLTRAINING`)
 - Copyright/Contact/License: When legal claims enabled
 
 **JPEG:** Comment markers and XMP packets
 - COM markers for text metadata
-- APP1 XMP packets for IPTC DMI tags
+- APP1 XMP packets with `plus:DataMining` (canonical) and legacy `Iptc4xmpExt:DMI-*` (parsed only)
 
 **WebP:** EXIF and XML chunks
-- Similar metadata injection
+- Similar metadata injection with XMP-based DMI
 
 ### 2. Steganography (Optional)
 
@@ -699,7 +701,7 @@ The `image` crate (and most general-purpose JPEG encoders) **do not preserve** C
 
 ### Honest threat model
 
-The primary deterrence mechanism is **visible metadata injection** — DMI tags, TDM reservation, copyright, and structured COM markers. These are detectable by IPTC/XMP-aware scrapers and provide the strongest legal evidence *when preserved*. The steganographic payload is a **bonus evidence channel**: useful for proving the image was processed by this library at the point of distribution, but it is not designed to survive re-encoding through a general-purpose image pipeline. The library is a deterrent, not a forensic watermark.
+The primary deterrence mechanism is **visible metadata injection** — canonical `plus:DataMining` rights signals, copyright, and structured COM markers. These are detectable by PLUS/XMP-aware scrapers and provide the strongest legal evidence *when preserved*. The steganographic payload is a **bonus evidence channel**: useful for proving the image was processed by this library at the point of distribution, but it is not designed to survive re-encoding through a general-purpose image pipeline. The library is a deterrent, not a forensic watermark.
 
 ## Performance
 
@@ -806,7 +808,8 @@ Common errors:
 
 ## External References
 
-- [IPTC Photo Metadata Standard](https://iptc.org/standards/photo-metadata/) - DMI tag specification
+- [PLUS License Data Format](https://www.useplus.com/) - Canonical rights metadata standard (PLUS LDF controlled-vocabulary URIs)
+- [IPTC Photo Metadata Standard](https://iptc.org/standards/photo-metadata/) - Legacy DMI tag specification (still parsed for backward compatibility)
 - [ISCC Project](https://iscc-project.github.io/) - Content identification standard
 - [F5 Steganography](https://en.wikipedia.org/wiki/Steganography#Embedding) - DCT-based steganographic technique
 - [jpeg-encoder](https://crates.io/crates/jpeg-encoder) - JPEG encoding used
@@ -849,8 +852,8 @@ cargo build --release -p stegoeggo-cli
 | Contact | exiftool `-Contact` | exiftool `-Comment` | exiftool XMP `-Contact` | XMP `photoshop:Credit` in WebP |
 | UsageTerms | exiftool `-UsageTerms` | exiftool `-Comment` | exiftool XMP `-UsageTerms` | XMP `xmpRights:UsageTerms` in WebP |
 | AIConstraints | exiftool `-AIConstraints` | exiftool `-Comment` | exiftool XMP `-AIConstraints` | XMP `stegoeggo:AIConstraints` in WebP |
-| DMI (no-AI-training) | exiftool XMP `-DataMining` | exiftool XMP `-DataMining` | exiftool XMP `-DataMining` | XMP-based, all formats |
-| TDM reservation | exiftool XMP `-TDM` | exiftool XMP `-TDM` | exiftool XMP `-TDM` | XMP-based, all formats |
+| DMI (no-AI-training) | exiftool XMP `-DataMining` | exiftool XMP `-DataMining` | exiftool XMP `-DataMining` | XMP-based, all formats; canonical `plus:DataMining` emitted |
+| TDM reservation | exiftool XMP `-TDM` | exiftool XMP `-TDM` | exiftool XMP `-TDM` | Legacy only; no longer emitted by default |
 | Protection seed | exiftool `-ImageDescription` | exiftool `-Comment` | exiftool XMP | Diagnostic only, not legal notice |
 
 ### Conformance Caveats

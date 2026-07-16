@@ -36,7 +36,7 @@ stegoeggo [OPTIONS] <INPUT>...
 | | `--ai-constraints` | AI-specific constraints text | none |
 | | `--no-ai-training` | Prohibit AI/ML training (DMI preset) | false |
 | | `--no-genai-training` | Prohibit generative AI training (DMI preset) | false |
-| | `--tdm-reserved` | Reserve TDM rights (DMI preset) | false |
+| | `--tdm-reserved` | Reserve TDM rights (DMI preset) — legacy; no longer emitted in image metadata | false |
 | `-k` | `--key` | Hex cryptographic key | none |
 | `-j` | `--jobs` | Parallel jobs | 1 |
 | | `--strict` | Exit with error if any warnings have error severity for the active evidence profile | false |

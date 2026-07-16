@@ -12,8 +12,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CLI legal metadata flags: `--copyright-holder`, `--creator`, `--contact`, `--rights-url`, `--usage-terms`, `--ai-constraints`, `--no-ai-training`, `--no-genai-training`, `--tdm-reserved`.
 - External metadata conformance script (`scripts/verify_metadata_conformance.sh`).
 - Evidence channel reporting via `NoticeVerification::channels()`.
+- `RightsSignalKind` enum for classifying rights-signal source (canonical, legacy, unknown).
+- `PLUS_NAMESPACE` and `PLUS_DATA_MINING_PROPERTY` constants.
 
 ### Changed
+- **Canonical rights metadata**: XMP writer now emits `plus:DataMining` with official PLUS LDF controlled-vocabulary URIs (`DMI-PROHIBITED-AIMLTRAINING`, etc.) instead of legacy `Iptc4xmpExt:DMI-*` properties. This is the canonical machine-readable rights signal per the PLUS License Data Format specification.
+- TDM reservation (`tdm:reserve_tdm`) is no longer emitted in image metadata by default. TDMRep is a web-distribution mechanism, not an image-metadata signal. Legacy files containing `tdm:reserve_tdm` remain parseable.
+- `DmiValue` now has `plus_vocab_key()` and `from_plus_vocab_key()` methods for canonical PLUS vocabulary mapping.
+- `NoticeVerification` now reports `canonical_dmi()`, `legacy_dmi()`, `rights_signal_kind()`, and `has_dmi_conflict()` for detailed rights-signal diagnostics.
+- Metadata conformance script checks canonical `plus:DataMining` by default, with legacy fallback.
 - CI now includes package dry-run check and manual-dispatch benchmarks.
 - `cargo-deny` configuration tightened (template comments removed).
 - Default public framing is legal notice and rights-reservation metadata.

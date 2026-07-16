@@ -2,6 +2,7 @@ use crate::error::{Error, Result};
 use crate::traits::Protector;
 use crate::types::{
     DmiValue, ImageOutputFormat, LegalMetadata, ProtectionContext, ProtectionLevel,
+    PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
 };
 use crc32fast::Hasher as Crc32Hasher;
 use image::DynamicImage;
@@ -198,26 +199,22 @@ impl MetadataTrapProtector {
     }
 
     fn generate_xmp_dmi(dmi: DmiValue, seed: Option<u64>) -> Vec<u8> {
-        let property = dmi.to_iptc_property();
+        let vocab_key = dmi.plus_vocab_key();
         let bom = "\u{feff}";
         let seed_attr = seed
             .map(|s| format!("\n             stegoeggo:ProtectionSeed=\"{}\"", s))
             .unwrap_or_default();
-        let tdm_value = if dmi == DmiValue::Allowed { "0" } else { "1" };
         let xmp = format!(
             "<?xpacket begin=\"{bom}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
              <x:xmpmeta xmlns:x=\"adobe:ns:meta/\" \
-             xmlns:iptc4xmpExt=\"http://iptc.org/std/Iptc4xmpExt/2008-02-29/\" \
-             xmlns:tdm=\"http://www.niso.org/schemas/tdm/\" \
+             xmlns:plus=\"{PLUS_NAMESPACE}\" \
              xmlns:stegoeggo=\"https://github.com/eggstack/stegoeggo\">\n\
              <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
              <rdf:Description rdf:about=\"\"\n\
-             {property}=\"{}\"\n\
-             tdm:reserve_tdm=\"{tdm_value}\"{seed_attr}/>\n\
+             {PLUS_DATA_MINING_PROPERTY}=\"{vocab_key}\"{seed_attr}/>\n\
              </rdf:RDF>\n\
              </x:xmpmeta>\n\
-             <?xpacket end=\"w\"?>",
-            dmi.as_str()
+             <?xpacket end=\"w\"?>"
         );
         xmp.into_bytes()
     }
@@ -227,12 +224,11 @@ impl MetadataTrapProtector {
         seed: Option<u64>,
         legal: Option<&LegalMetadata>,
     ) -> Vec<u8> {
-        let property = dmi.to_iptc_property();
+        let vocab_key = dmi.plus_vocab_key();
         let bom = "\u{feff}";
         let seed_attr = seed
             .map(|s| format!("\n             stegoeggo:ProtectionSeed=\"{}\"", s))
             .unwrap_or_default();
-        let tdm_value = if dmi == DmiValue::Allowed { "0" } else { "1" };
 
         let mut legal_props = String::new();
         if let Some(legal) = legal {
@@ -284,20 +280,17 @@ impl MetadataTrapProtector {
         let xmp = format!(
             "<?xpacket begin=\"{bom}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
              <x:xmpmeta xmlns:x=\"adobe:ns:meta/\" \
-             xmlns:iptc4xmpExt=\"http://iptc.org/std/Iptc4xmpExt/2008-02-29/\" \
-             xmlns:tdm=\"http://www.niso.org/schemas/tdm/\" \
+             xmlns:plus=\"{PLUS_NAMESPACE}\" \
              xmlns:stegoeggo=\"https://github.com/eggstack/stegoeggo\" \
              xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
              xmlns:xmpRights=\"http://ns.adobe.com/xap/1.0/rights/\" \
              xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n\
              <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
              <rdf:Description rdf:about=\"\"\n\
-              {property}=\"{}\"\n\
-              tdm:reserve_tdm=\"{tdm_value}\"{seed_attr}>{legal_props}\n   </rdf:Description>\n\
+              {PLUS_DATA_MINING_PROPERTY}=\"{vocab_key}\"{seed_attr}>{legal_props}\n   </rdf:Description>\n\
              </rdf:RDF>\n\
              </x:xmpmeta>\n\
-             <?xpacket end=\"w\"?>",
-            dmi.as_str()
+             <?xpacket end=\"w\"?>"
         );
         xmp.into_bytes()
     }
@@ -1961,8 +1954,8 @@ mod tests {
 
         let rdf_desc_open = xmp_str.find("<rdf:Description").unwrap();
         assert!(
-            rdf_desc_open < xmp_str.find("tdm:reserve_tdm").unwrap(),
-            "<rdf:Description must precede tdm:reserve_tdm"
+            rdf_desc_open < xmp_str.find("plus:DataMining").unwrap(),
+            "<rdf:Description must precede plus:DataMining"
         );
 
         let desc_close_rel = xmp_str[rdf_desc_open..].find('>').unwrap();
@@ -2044,7 +2037,7 @@ mod tests {
             "<photoshop:Credit>",
             "<stegoeggo:AIConstraints>",
             "stegoeggo:ProtectionSeed=\"99\"",
-            "tdm:reserve_tdm=\"1\"",
+            "plus:DataMining=\"DMI-PROHIBITED-AIMLTRAINING\"",
             "</rdf:Description>",
         ] {
             assert!(
@@ -2131,10 +2124,13 @@ mod tests {
         let xmp = MetadataTrapProtector::generate_xmp_dmi(DmiValue::ProhibitedAiMlTraining, None);
         let xmp_str = String::from_utf8_lossy(&xmp);
         assert!(
-            xmp_str.contains("tdm:reserve_tdm=\"1\""),
-            "TDM reservation should be '1' for prohibited values"
+            !xmp_str.contains("tdm:reserve_tdm"),
+            "TDM reservation should not be present in default output"
         );
-        assert!(xmp_str.contains("xmlns:tdm=\"http://www.niso.org/schemas/tdm/\""));
+        assert!(
+            xmp_str.contains("plus:DataMining=\"DMI-PROHIBITED-AIMLTRAINING\""),
+            "XMP should contain canonical plus:DataMining"
+        );
     }
 
     #[test]
@@ -2142,8 +2138,12 @@ mod tests {
         let xmp = MetadataTrapProtector::generate_xmp_dmi(DmiValue::Allowed, None);
         let xmp_str = String::from_utf8_lossy(&xmp);
         assert!(
-            xmp_str.contains("tdm:reserve_tdm=\"0\""),
-            "TDM reservation should be '0' for Allowed"
+            !xmp_str.contains("tdm:reserve_tdm"),
+            "TDM reservation should not be present in default output"
+        );
+        assert!(
+            xmp_str.contains("plus:DataMining=\"DMI-ALLOWED\""),
+            "XMP should contain canonical plus:DataMining"
         );
     }
 
@@ -2269,8 +2269,8 @@ mod tests {
             "auto DMI should create IPTC metadata"
         );
         assert!(
-            injected.windows(15).any(|w| w == b"tdm:reserve_tdm"),
-            "auto DMI should create XMP/TDM metadata"
+            injected.windows(15).any(|w| w == b"plus:DataMining"),
+            "auto DMI should create XMP/PLUS metadata"
         );
     }
 

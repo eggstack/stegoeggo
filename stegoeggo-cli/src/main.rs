@@ -529,6 +529,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(dmi) = notice.dmi() {
             println!("AI training restriction: {}", dmi.as_str());
         }
+        if let Some(canonical) = notice.canonical_dmi() {
+            println!("Canonical DMI: {}", canonical.as_str());
+        }
+        if let Some(legacy) = notice.legacy_dmi() {
+            println!("Legacy DMI: {}", legacy.as_str());
+        }
+        if notice.has_dmi_conflict() {
+            println!("DMI conflict: YES (canonical and legacy values disagree)");
+        }
         if let Some(reserved) = notice.tdm_reserved() {
             println!(
                 "TDM reservation: {}",

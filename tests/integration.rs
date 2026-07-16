@@ -1264,7 +1264,11 @@ mod webp_legal_xmp_tests {
             Some(DmiValue::ProhibitedAiMlTraining),
             "DMI should still be extractable from WebP"
         );
-        assert_eq!(report.tdm_reserved(), Some(true));
+        assert_eq!(
+            report.tdm_reserved(),
+            None,
+            "TDM reservation is no longer emitted by default"
+        );
     }
 
     #[test]
@@ -1992,7 +1996,11 @@ mod notice_verification_tests {
 
         let report = verify_legal_notice(&protected, &[]);
         assert!(report.has_notice());
-        assert_eq!(report.tdm_reserved(), Some(true));
+        assert_eq!(
+            report.tdm_reserved(),
+            None,
+            "TDM reservation is no longer emitted by default"
+        );
         assert_eq!(report.dmi(), Some(DmiValue::ProhibitedAiMlTraining));
     }
 

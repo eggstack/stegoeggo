@@ -62,7 +62,46 @@ impl DmiValue {
             DmiValue::ProhibitedSeeConstraints => "Iptc4xmpExt:DMI-Prohibited",
         }
     }
+
+    /// Returns the canonical PLUS controlled-vocabulary key identifier for this DMI value.
+    #[must_use]
+    pub fn plus_vocab_key(self) -> &'static str {
+        match self {
+            DmiValue::Unspecified => "DMI-UNSPECIFIED",
+            DmiValue::Allowed => "DMI-ALLOWED",
+            DmiValue::ProhibitedAiMlTraining => "DMI-PROHIBITED-AIMLTRAINING",
+            DmiValue::ProhibitedGenAiMlTraining => "DMI-PROHIBITED-GENAIMLTRAINING",
+            DmiValue::ProhibitedExceptSearchEngineIndexing => {
+                "DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING"
+            }
+            DmiValue::Prohibited => "DMI-PROHIBITED",
+            DmiValue::ProhibitedSeeConstraints => "DMI-PROHIBITED-SEECONSTRAINT",
+        }
+    }
+
+    /// Parse a canonical PLUS vocabulary key identifier into a `DmiValue`.
+    /// Returns `None` for unknown or malformed values.
+    #[must_use]
+    pub fn from_plus_vocab_key(key: &str) -> Option<Self> {
+        match key {
+            "DMI-UNSPECIFIED" => Some(DmiValue::Unspecified),
+            "DMI-ALLOWED" => Some(DmiValue::Allowed),
+            "DMI-PROHIBITED-AIMLTRAINING" => Some(DmiValue::ProhibitedAiMlTraining),
+            "DMI-PROHIBITED-GENAIMLTRAINING" => Some(DmiValue::ProhibitedGenAiMlTraining),
+            "DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING" => {
+                Some(DmiValue::ProhibitedExceptSearchEngineIndexing)
+            }
+            "DMI-PROHIBITED" => Some(DmiValue::Prohibited),
+            "DMI-PROHIBITED-SEECONSTRAINT" => Some(DmiValue::ProhibitedSeeConstraints),
+            _ => None,
+        }
+    }
 }
+
+/// PLUS LDF namespace URI for the `plus` prefix.
+pub const PLUS_NAMESPACE: &str = "http://ns.useplus.org/ldf/xmp/1.0/";
+/// PLUS Data Mining property name (without prefix).
+pub const PLUS_DATA_MINING_PROPERTY: &str = "plus:DataMining";
 
 /// Evidence profile controlling the interpretation of protection warnings
 /// and the default evidence posture.
@@ -1273,6 +1312,31 @@ impl std::fmt::Display for EvidenceChannel {
     }
 }
 
+/// Classification of the source and conformance of an extracted rights signal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum RightsSignalKind {
+    /// Canonical `plus:DataMining` property with a recognized PLUS vocabulary key.
+    CanonicalPlusDataMining,
+    /// Legacy StegoEggo `Iptc4xmpExt:DMI-*` property (v0.2 era).
+    LegacyStegoEggoDmi,
+    /// Legacy `tdm:reserve_tdm` property.
+    LegacyTdmReservation,
+    /// Unknown property or unrecognized value.
+    Unknown,
+}
+
+impl std::fmt::Display for RightsSignalKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RightsSignalKind::CanonicalPlusDataMining => write!(f, "CanonicalPlusDataMining"),
+            RightsSignalKind::LegacyStegoEggoDmi => write!(f, "LegacyStegoEggoDmi"),
+            RightsSignalKind::LegacyTdmReservation => write!(f, "LegacyTdmReservation"),
+            RightsSignalKind::Unknown => write!(f, "Unknown"),
+        }
+    }
+}
+
 /// Legal-notice verification report for a protected image.
 ///
 /// This struct reports the legal-notice metadata and steganographic status
@@ -1309,6 +1373,12 @@ pub struct NoticeVerification {
     dmi: Option<DmiValue>,
     /// Whether TDM reservation was found in XMP metadata.
     tdm_reserved: Option<bool>,
+    /// Classification of the rights signal source.
+    rights_signal_kind: RightsSignalKind,
+    /// DMI value from canonical `plus:DataMining` property.
+    canonical_dmi: Option<DmiValue>,
+    /// DMI value from legacy `Iptc4xmpExt:DMI-*` property.
+    legacy_dmi: Option<DmiValue>,
     /// Protection seed extracted from metadata or steganographic payload.
     protection_seed: Option<u64>,
     /// Steganographic payload verification status.
@@ -1372,6 +1442,34 @@ impl NoticeVerification {
         self.tdm_reserved
     }
 
+    /// Returns the classification of the rights signal source.
+    #[must_use]
+    pub fn rights_signal_kind(&self) -> RightsSignalKind {
+        self.rights_signal_kind
+    }
+
+    /// Returns the DMI value from canonical `plus:DataMining`, if found.
+    #[must_use]
+    pub fn canonical_dmi(&self) -> Option<DmiValue> {
+        self.canonical_dmi
+    }
+
+    /// Returns the DMI value from legacy `Iptc4xmpExt:DMI-*`, if found.
+    #[must_use]
+    pub fn legacy_dmi(&self) -> Option<DmiValue> {
+        self.legacy_dmi
+    }
+
+    /// Returns true if canonical and legacy DMI values were both found and disagree.
+    #[must_use]
+    pub fn has_dmi_conflict(&self) -> bool {
+        if let (Some(canonical), Some(legacy)) = (self.canonical_dmi, self.legacy_dmi) {
+            canonical != legacy
+        } else {
+            false
+        }
+    }
+
     /// Returns the protection seed, if found.
     #[must_use]
     pub fn protection_seed(&self) -> Option<u64> {
@@ -1430,6 +1528,9 @@ impl NoticeVerification {
         ai_constraints: Option<String>,
         dmi: Option<DmiValue>,
         tdm_reserved: Option<bool>,
+        rights_signal_kind: RightsSignalKind,
+        canonical_dmi: Option<DmiValue>,
+        legacy_dmi: Option<DmiValue>,
         protection_seed: Option<u64>,
         stego_status: VerificationStatus,
         stego_payload: Option<crate::StegoPayload>,
@@ -1446,6 +1547,9 @@ impl NoticeVerification {
             ai_constraints,
             dmi,
             tdm_reserved,
+            rights_signal_kind,
+            canonical_dmi,
+            legacy_dmi,
             protection_seed,
             stego_status,
             stego_payload,
@@ -2003,5 +2107,47 @@ mod tests {
                 w
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod plus_mapping_tests {
+    use super::*;
+
+    #[test]
+    fn all_variants_have_plus_vocab_key() {
+        let variants = [
+            DmiValue::Unspecified,
+            DmiValue::Allowed,
+            DmiValue::ProhibitedAiMlTraining,
+            DmiValue::ProhibitedGenAiMlTraining,
+            DmiValue::ProhibitedExceptSearchEngineIndexing,
+            DmiValue::Prohibited,
+            DmiValue::ProhibitedSeeConstraints,
+        ];
+        for v in variants {
+            let key = v.plus_vocab_key();
+            assert!(key.starts_with("DMI-"), "key must start with DMI-: {key}");
+            assert_eq!(DmiValue::from_plus_vocab_key(key), Some(v));
+        }
+    }
+
+    #[test]
+    fn from_plus_vocab_key_rejects_unknown() {
+        assert_eq!(DmiValue::from_plus_vocab_key("DMI-UNKNOWN"), None);
+        assert_eq!(DmiValue::from_plus_vocab_key(""), None);
+        assert_eq!(DmiValue::from_plus_vocab_key("Prohibited"), None);
+    }
+
+    #[test]
+    fn plus_vocab_keys_match_exiftool() {
+        assert_eq!(
+            DmiValue::ProhibitedSeeConstraints.plus_vocab_key(),
+            "DMI-PROHIBITED-SEECONSTRAINT"
+        );
+        assert_eq!(
+            DmiValue::ProhibitedAiMlTraining.plus_vocab_key(),
+            "DMI-PROHIBITED-AIMLTRAINING"
+        );
     }
 }

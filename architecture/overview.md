@@ -133,7 +133,7 @@ src/
 ├── protected/                 Protection strategies (all implement Protector trait)
 │   ├── constants.rs           Tuning constants (STEGO_*)
 │   ├── passthrough.rs        No-op for Disabled level
-│   ├── metadata_trap.rs      Metadata injection (tEXt/COM/XMP markers, seed, DMI)
+│   ├── metadata_trap.rs      Metadata injection (tEXt/COM/XMP markers, seed, canonical plus:DataMining DMI)
 │   ├── steganography.rs       LSB embedding (PNG/WebP) + DCT F5 (JPEG)
 │   ├── ecc.rs                3× repetition ECC with majority voting
 │   ├── notice_verification.rs Legal notice verification and evidence strength rating
@@ -167,7 +167,7 @@ Each component has a detailed deep-dive document in `architecture/`:
 | **ISCC Identifiers** | [util-iscc.md](util-iscc.md) | Perceptual content hashing (non-standard ISCC-like) |
 | **Seed Generation** | [util-seed.md](util-seed.md) | getrandom (OS CSPRNG), with time-based splitmix64 fallback |
 | **Passthrough** | [protected-passthrough.md](protected-passthrough.md) | No-op for Disabled level |
-| **Metadata Trap** | [protected-metadata-trap.md](protected-metadata-trap.md) | IPTC/XMP/EXIF injection, seed embedding; notice_verification.rs handles legal-notice verification and evidence strength rating |
+| **Metadata Trap** | [protected-metadata-trap.md](protected-metadata-trap.md) | Canonical `plus:DataMining` XMP injection, seed embedding, legacy IPTC DMI parsing; notice_verification.rs handles legal-notice verification and evidence strength rating |
 | **Steganography** | [protected-steganography.md](protected-steganography.md) | LSB + DCT F5, payload generation/verification |
 | **JPEG Transcoder** | [jpeg-transcoder.md](jpeg-transcoder.md) | DCT decode/encode, assemble, scan data utilities |
 | **JPEG Header** | [jpeg-header.md](jpeg-header.md) | Marker parsing (DQT/SOF/DHT/SOS), component extraction |
@@ -265,7 +265,7 @@ Three-state control (`Option<bool>`) for metadata injection:
 
 - **Default seed is CSPRNG-backed**: `ProtectionContext::default()` calls `generate_random_seed()` which uses `getrandom` (OS CSPRNG). Use `ProtectionContext::new(intensity, seed)` when you need reproducible results across runs.
 - **Without MAC key**: Stego verification uses a non-cryptographic CRC32 checksum, not HMAC. Payloads are forgeable.
-- **Primary deterrence is metadata**: Visible XMP/IPTC/EXIF markers remain even if stego payload is stripped. Metadata provides legal evidence of intent.
+- **Primary deterrence is metadata**: Visible XMP/EXIF markers (including canonical `plus:DataMining` rights signals) remain even if stego payload is stripped. Metadata provides legal evidence of intent.
 - **JPEG stego limitations**: F5 DCT embedding may not survive re-compression. Quantization-table seed embedding is only reliable when the tables themselves are preserved.
 
 ## Verification Priority (JPEG)

@@ -1,6 +1,7 @@
 use crate::protected::steganography::SteganographyProtector;
 use crate::types::{
-    DmiValue, EvidenceChannel, EvidenceStrength, NoticeVerification, VerificationStatus,
+    DmiValue, EvidenceChannel, EvidenceStrength, NoticeVerification, RightsSignalKind,
+    VerificationStatus,
 };
 
 type NoticeFields = (
@@ -23,22 +24,46 @@ pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> Notice
     let mut seed: Option<u64> = None;
     let mut dmi: Option<DmiValue> = None;
     let mut tdm_reserved: Option<bool> = None;
+    let mut canonical_dmi: Option<DmiValue> = None;
+    let mut legacy_dmi: Option<DmiValue> = None;
+    let mut detected_rights_signal: Option<RightsSignalKind> = None;
 
     let (copyright_holder, creator, contact, rights_url, usage_terms, ai_constraints) = match format
     {
         Some(Format::Png) => {
             let result = extract_png_notice(img_bytes, &mut channels, &mut seed);
-            extract_xmp_dmi_from_png(img_bytes, &mut dmi, &mut tdm_reserved);
+            extract_xmp_dmi_from_png(
+                img_bytes,
+                &mut dmi,
+                &mut tdm_reserved,
+                &mut canonical_dmi,
+                &mut legacy_dmi,
+                &mut detected_rights_signal,
+            );
             result
         }
         Some(Format::Jpeg) => {
             let result = extract_jpeg_notice(img_bytes, &mut channels, &mut seed);
-            extract_xmp_dmi_from_jpeg(img_bytes, &mut dmi, &mut tdm_reserved);
+            extract_xmp_dmi_from_jpeg(
+                img_bytes,
+                &mut dmi,
+                &mut tdm_reserved,
+                &mut canonical_dmi,
+                &mut legacy_dmi,
+                &mut detected_rights_signal,
+            );
             result
         }
         Some(Format::WebP) => {
             let result = extract_webp_notice(img_bytes, &mut channels, &mut seed);
-            extract_xmp_dmi_from_webp(img_bytes, &mut dmi, &mut tdm_reserved);
+            extract_xmp_dmi_from_webp(
+                img_bytes,
+                &mut dmi,
+                &mut tdm_reserved,
+                &mut canonical_dmi,
+                &mut legacy_dmi,
+                &mut detected_rights_signal,
+            );
             result
         }
         None => return empty_report(),
@@ -103,6 +128,8 @@ pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> Notice
 
     let evidence_strength = compute_evidence_strength(has_notice, authenticated, &channels);
 
+    let rights_signal_kind = detected_rights_signal.unwrap_or(RightsSignalKind::Unknown);
+
     NoticeVerification::new(
         copyright_holder,
         creator,
@@ -112,6 +139,9 @@ pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> Notice
         ai_constraints,
         dmi,
         tdm_reserved,
+        rights_signal_kind,
+        canonical_dmi,
+        legacy_dmi,
         seed,
         stego_status,
         stego_payload,
@@ -129,6 +159,9 @@ fn empty_report() -> NoticeVerification {
         None,
         None,
         None,
+        None,
+        None,
+        RightsSignalKind::Unknown,
         None,
         None,
         None,
@@ -299,6 +332,9 @@ fn extract_xmp_dmi_from_png(
     png_data: &[u8],
     dmi: &mut Option<DmiValue>,
     tdm_reserved: &mut Option<bool>,
+    canonical_dmi: &mut Option<DmiValue>,
+    legacy_dmi: &mut Option<DmiValue>,
+    rights_signal_kind: &mut Option<RightsSignalKind>,
 ) {
     let mut pos = 8;
     while pos + 12 <= png_data.len() {
@@ -326,7 +362,14 @@ fn extract_xmp_dmi_from_png(
                     if value_raw.len() >= 3 {
                         let value = &value_raw[3..]; // skip compression flag + method + null
                         if let Ok(xmp_str) = std::str::from_utf8(value) {
-                            parse_xmp_for_dmi(xmp_str, dmi, tdm_reserved);
+                            parse_xmp_for_dmi(
+                                xmp_str,
+                                dmi,
+                                tdm_reserved,
+                                canonical_dmi,
+                                legacy_dmi,
+                                rights_signal_kind,
+                            );
                         }
                     }
                 }
@@ -494,6 +537,9 @@ fn extract_xmp_dmi_from_jpeg(
     jpeg_data: &[u8],
     dmi: &mut Option<DmiValue>,
     tdm_reserved: &mut Option<bool>,
+    canonical_dmi: &mut Option<DmiValue>,
+    legacy_dmi: &mut Option<DmiValue>,
+    rights_signal_kind: &mut Option<RightsSignalKind>,
 ) {
     let mut pos = 2;
     while pos + 2 <= jpeg_data.len() {
@@ -530,7 +576,14 @@ fn extract_xmp_dmi_from_jpeg(
                 .any(|w| w == b"http://ns.adobe.com/xap/1.0/")
             {
                 if let Ok(xmp_str) = std::str::from_utf8(segment_data) {
-                    parse_xmp_for_dmi(xmp_str, dmi, tdm_reserved);
+                    parse_xmp_for_dmi(
+                        xmp_str,
+                        dmi,
+                        tdm_reserved,
+                        canonical_dmi,
+                        legacy_dmi,
+                        rights_signal_kind,
+                    );
                 }
             }
         }
@@ -697,6 +750,9 @@ fn extract_xmp_dmi_from_webp(
     webp_data: &[u8],
     dmi: &mut Option<DmiValue>,
     tdm_reserved: &mut Option<bool>,
+    canonical_dmi: &mut Option<DmiValue>,
+    legacy_dmi: &mut Option<DmiValue>,
+    rights_signal_kind: &mut Option<RightsSignalKind>,
 ) {
     let mut pos = 12;
     while pos + 8 <= webp_data.len() {
@@ -714,7 +770,14 @@ fn extract_xmp_dmi_from_webp(
         if chunk_type == b"XMP " && data_end > data_start {
             let data = &webp_data[data_start..data_end];
             if let Ok(xmp_str) = std::str::from_utf8(data) {
-                parse_xmp_for_dmi(xmp_str, dmi, tdm_reserved);
+                parse_xmp_for_dmi(
+                    xmp_str,
+                    dmi,
+                    tdm_reserved,
+                    canonical_dmi,
+                    legacy_dmi,
+                    rights_signal_kind,
+                );
             }
         }
 
@@ -762,30 +825,130 @@ fn parse_com_kv(comment: &str) -> Option<ComField> {
     None
 }
 
-fn parse_xmp_for_dmi(xmp_str: &str, dmi: &mut Option<DmiValue>, tdm_reserved: &mut Option<bool>) {
-    if dmi.is_none() {
+fn extract_xmp_element(xmp_str: &str, tag: &str) -> Option<String> {
+    let open = format!("<{}>", tag);
+    let close = format!("</{}>", tag);
+    if let Some(start) = xmp_str.find(&open) {
+        let value_start = start + open.len();
+        if let Some(end) = xmp_str[value_start..].find(&close) {
+            let value = &xmp_str[value_start..value_start + end];
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn find_prefix_for_namespace(xmp_str: &str, namespace_url: &str) -> Option<String> {
+    let ns_decl = format!("=\"{}\"", namespace_url);
+    if let Some(pos) = xmp_str.find(&ns_decl) {
+        let before = &xmp_str[..pos];
+        if let Some(colon_pos) = before.rfind("xmlns:") {
+            let prefix_start = colon_pos + 6;
+            let prefix = &before[prefix_start..];
+            if !prefix.is_empty() {
+                return Some(prefix.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn parse_xmp_for_dmi(
+    xmp_str: &str,
+    dmi: &mut Option<DmiValue>,
+    tdm_reserved: &mut Option<bool>,
+    canonical_dmi: &mut Option<DmiValue>,
+    legacy_dmi: &mut Option<DmiValue>,
+    rights_signal_kind: &mut Option<RightsSignalKind>,
+) {
+    if canonical_dmi.is_none() {
+        let found = if let Some(val) = extract_xmp_attr(xmp_str, "plus:DataMining") {
+            DmiValue::from_plus_vocab_key(&val)
+        } else if let Some(prefix) =
+            find_prefix_for_namespace(xmp_str, crate::types::PLUS_NAMESPACE)
+        {
+            let tag = format!("{}:DataMining", prefix);
+            if let Some(val) = extract_xmp_element(xmp_str, &tag) {
+                DmiValue::from_plus_vocab_key(&val)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if let Some(v) = found {
+            *canonical_dmi = Some(v);
+            if rights_signal_kind.is_none() {
+                *rights_signal_kind = Some(RightsSignalKind::CanonicalPlusDataMining);
+            }
+        }
+    }
+
+    if dmi.is_none() && canonical_dmi.is_some() {
+        *dmi = *canonical_dmi;
+    }
+
+    if legacy_dmi.is_none() {
         if let Some(val) = extract_xmp_attr(xmp_str, "Iptc4xmpExt:DataMiningAttribute") {
-            *dmi = parse_dmi_value(&val);
+            if let Some(v) = parse_dmi_value(&val) {
+                *legacy_dmi = Some(v);
+                if dmi.is_none() {
+                    *dmi = Some(v);
+                }
+                if rights_signal_kind.is_none() {
+                    *rights_signal_kind = Some(RightsSignalKind::LegacyStegoEggoDmi);
+                }
+            }
         }
     }
-    if dmi.is_none() {
+    if legacy_dmi.is_none() {
         if let Some(val) = extract_xmp_attr(xmp_str, "Iptc4xmpExt:DMI-Prohibited") {
-            *dmi = parse_dmi_value(&val);
+            if let Some(v) = parse_dmi_value(&val) {
+                *legacy_dmi = Some(v);
+                if dmi.is_none() {
+                    *dmi = Some(v);
+                }
+                if rights_signal_kind.is_none() {
+                    *rights_signal_kind = Some(RightsSignalKind::LegacyStegoEggoDmi);
+                }
+            }
         }
     }
-    if dmi.is_none() {
+    if legacy_dmi.is_none() {
         if let Some(val) = extract_xmp_attr(xmp_str, "Iptc4xmpExt:DMI-Allowed") {
-            *dmi = parse_dmi_value(&val);
+            if let Some(v) = parse_dmi_value(&val) {
+                *legacy_dmi = Some(v);
+                if dmi.is_none() {
+                    *dmi = Some(v);
+                }
+                if rights_signal_kind.is_none() {
+                    *rights_signal_kind = Some(RightsSignalKind::LegacyStegoEggoDmi);
+                }
+            }
         }
     }
-    if dmi.is_none() {
+    if legacy_dmi.is_none() {
         if let Some(val) = extract_xmp_attr(xmp_str, "Iptc4xmpExt:DMI") {
-            *dmi = parse_dmi_value(&val);
+            if let Some(v) = parse_dmi_value(&val) {
+                *legacy_dmi = Some(v);
+                if dmi.is_none() {
+                    *dmi = Some(v);
+                }
+                if rights_signal_kind.is_none() {
+                    *rights_signal_kind = Some(RightsSignalKind::LegacyStegoEggoDmi);
+                }
+            }
         }
     }
+
     if tdm_reserved.is_none() {
         if let Some(val) = extract_xmp_attr(xmp_str, "tdm:reserve_tdm") {
             *tdm_reserved = Some(val == "1");
+            if rights_signal_kind.is_none() {
+                *rights_signal_kind = Some(RightsSignalKind::LegacyTdmReservation);
+            }
         }
     }
 }
@@ -813,5 +976,174 @@ fn parse_dmi_value(val: &str) -> Option<DmiValue> {
         "Prohibited" => Some(DmiValue::Prohibited),
         "ProhibitedSeeConstraints" => Some(DmiValue::ProhibitedSeeConstraints),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn helper_parse_dmi(xmp_str: &str) -> (Option<DmiValue>, Option<DmiValue>, RightsSignalKind) {
+        let mut dmi = None;
+        let mut tdm_reserved = None;
+        let mut canonical_dmi = None;
+        let mut legacy_dmi = None;
+        let mut rights_signal_kind = None;
+        parse_xmp_for_dmi(
+            xmp_str,
+            &mut dmi,
+            &mut tdm_reserved,
+            &mut canonical_dmi,
+            &mut legacy_dmi,
+            &mut rights_signal_kind,
+        );
+        (
+            canonical_dmi,
+            legacy_dmi,
+            rights_signal_kind.unwrap_or(RightsSignalKind::Unknown),
+        )
+    }
+
+    #[test]
+    fn canonical_plus_datamining_attribute_form() {
+        let xmp = r#"plus:DataMining="DMI-PROHIBITED-AIMLTRAINING""#;
+        let (canonical, legacy, kind) = helper_parse_dmi(xmp);
+        assert_eq!(canonical, Some(DmiValue::ProhibitedAiMlTraining));
+        assert_eq!(legacy, None);
+        assert_eq!(kind, RightsSignalKind::CanonicalPlusDataMining);
+    }
+
+    #[test]
+    fn canonical_plus_datamining_element_form() {
+        let xmp = r#"xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/" <plus:DataMining>DMI-PROHIBITED-AIMLTRAINING</plus:DataMining>"#;
+        let (canonical, legacy, kind) = helper_parse_dmi(xmp);
+        assert_eq!(canonical, Some(DmiValue::ProhibitedAiMlTraining));
+        assert_eq!(legacy, None);
+        assert_eq!(kind, RightsSignalKind::CanonicalPlusDataMining);
+    }
+
+    #[test]
+    fn legacy_iptc_dmi_prohibited() {
+        let xmp = r#"Iptc4xmpExt:DMI-Prohibited="ProhibitedAiMlTraining""#;
+        let (canonical, legacy, kind) = helper_parse_dmi(xmp);
+        assert_eq!(canonical, None);
+        assert_eq!(legacy, Some(DmiValue::ProhibitedAiMlTraining));
+        assert_eq!(kind, RightsSignalKind::LegacyStegoEggoDmi);
+    }
+
+    #[test]
+    fn legacy_iptc_dmi_allowed() {
+        let xmp = r#"Iptc4xmpExt:DMI-Allowed="Allowed""#;
+        let (canonical, legacy, kind) = helper_parse_dmi(xmp);
+        assert_eq!(canonical, None);
+        assert_eq!(legacy, Some(DmiValue::Allowed));
+        assert_eq!(kind, RightsSignalKind::LegacyStegoEggoDmi);
+    }
+
+    #[test]
+    fn unknown_plus_vocab_key_ignored() {
+        let xmp = r#"plus:DataMining="DMI-UNKNOWN-VALUE""#;
+        let (canonical, legacy, kind) = helper_parse_dmi(xmp);
+        assert_eq!(canonical, None);
+        assert_eq!(legacy, None);
+        assert_eq!(kind, RightsSignalKind::Unknown);
+    }
+
+    #[test]
+    fn conflict_between_canonical_and_legacy() {
+        let nv = NoticeVerification::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(DmiValue::ProhibitedAiMlTraining),
+            None,
+            RightsSignalKind::CanonicalPlusDataMining,
+            Some(DmiValue::ProhibitedAiMlTraining),
+            Some(DmiValue::Allowed),
+            None,
+            VerificationStatus::NotFound,
+            None,
+            false,
+            EvidenceStrength::NoNoticeFound,
+            Vec::new(),
+        );
+        assert!(nv.has_dmi_conflict());
+    }
+
+    #[test]
+    fn no_conflict_when_same_value() {
+        let nv = NoticeVerification::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(DmiValue::ProhibitedAiMlTraining),
+            None,
+            RightsSignalKind::CanonicalPlusDataMining,
+            Some(DmiValue::ProhibitedAiMlTraining),
+            Some(DmiValue::ProhibitedAiMlTraining),
+            None,
+            VerificationStatus::NotFound,
+            None,
+            false,
+            EvidenceStrength::NoNoticeFound,
+            Vec::new(),
+        );
+        assert!(!nv.has_dmi_conflict());
+    }
+
+    #[test]
+    fn no_conflict_when_only_canonical() {
+        let nv = NoticeVerification::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(DmiValue::ProhibitedAiMlTraining),
+            None,
+            RightsSignalKind::CanonicalPlusDataMining,
+            Some(DmiValue::ProhibitedAiMlTraining),
+            None,
+            None,
+            VerificationStatus::NotFound,
+            None,
+            false,
+            EvidenceStrength::NoNoticeFound,
+            Vec::new(),
+        );
+        assert!(!nv.has_dmi_conflict());
+    }
+
+    #[test]
+    fn rights_signal_kind_canonical_preferred_over_legacy() {
+        let xmp =
+            r#"plus:DataMining="DMI-ALLOWED" Iptc4xmpExt:DMI-Prohibited="ProhibitedAiMlTraining""#;
+        let (canonical, legacy, kind) = helper_parse_dmi(xmp);
+        assert_eq!(canonical, Some(DmiValue::Allowed));
+        assert_eq!(legacy, Some(DmiValue::ProhibitedAiMlTraining));
+        assert_eq!(kind, RightsSignalKind::CanonicalPlusDataMining);
+    }
+
+    #[test]
+    fn tdm_reservation_fallback() {
+        let xmp = r#"tdm:reserve_tdm="1""#;
+        let (canonical, legacy, kind) = helper_parse_dmi(xmp);
+        assert_eq!(canonical, None);
+        assert_eq!(legacy, None);
+        assert_eq!(kind, RightsSignalKind::LegacyTdmReservation);
+    }
+
+    #[test]
+    fn canonical_dmi_prefers_attribute_over_element() {
+        let xmp = r#"plus:DataMining="DMI-ALLOWED""#;
+        let (canonical, _, _) = helper_parse_dmi(xmp);
+        assert_eq!(canonical, Some(DmiValue::Allowed));
     }
 }
