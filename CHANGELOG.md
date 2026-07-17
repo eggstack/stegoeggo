@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - Unreleased
+
+### Added
+- `LegalMetadata` fields: `credit_line`, `copyright_owner`, `licensor_name`, `licensor_email`, `licensor_url`, `metadata_date`, `notice_applied_at`
+- `NoticeVerification` fields: `license_url`, `web_statement_of_rights`, `credit_line`, `copyright_owner`, `licensor_name`, `licensor_email`, `licensor_url`, `metadata_date`, `notice_applied_at`
+- `MetadataUpdatePolicy` enum (`ReplaceStegoOwned`, `FailOnConflict`, `PreserveExisting`) for controlling behavior on repeated processing
+- CLI flags: `--credit-line`, `--copyright-owner`, `--licensor-name`, `--licensor-email`, `--licensor-url`, `--content-created-at`
+- Auto-computed `notice_applied_at` timestamp (RFC 3339) when not explicitly provided
+- Cross-format semantic-equivalence test suite (19 scenarios)
+- Merge policy tests (11 tests)
+- Field-mapping audit architecture document
+
+### Fixed
+- WebP extraction now reads `photoshop:Credit` as `credit_line` (was incorrectly mapped to `contact`)
+- `creation_date` now extracts from WebP XMP `photoshop:DateCreated`
+- `license_url` now emits to WebP XMP `xmpRights:WebStatement` (was missing)
+- `rights_url` collision split: `license_url` and `web_statement_of_rights` are now distinct in `NoticeVerification`
+- JPEG XMP namespace matching fix: `windows(28)` instead of `windows(29)` for `http://ns.adobe.com/xap/1.0/`
+- Auto-enable legal claims when `LegalMetadata` is provided (no explicit `with_legal_claims(true)` needed)
+
+### Changed
+- Version bumped to 0.3.0 (new public API)
+- `photoshop:Credit` in XMP now maps to `credit_line` (semantically correct), not `contact_email`
+
 ## [Unreleased]
 
 ### Added
@@ -14,6 +38,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Evidence channel reporting via `NoticeVerification::channels()`.
 - `RightsSignalKind` enum for classifying rights-signal source (canonical, legacy, unknown).
 - `PLUS_NAMESPACE` and `PLUS_DATA_MINING_PROPERTY` constants.
+- Added `src/conformance.rs` module with `ConformanceReport`, `CheckSeverity`, `ExternalExtraction`, and `InternalExtraction` types for machine-readable conformance reporting
+- Added `stegoeggo-conformance` binary — independent interoperability and conformance harness that validates metadata against ExifTool and xmllint
+- Added conformance fixture taxonomy in `tests/fixtures/conformance/` (canonical, legacy, malformed, conflicting, preservation categories)
+- Converted `scripts/verify_metadata_conformance.sh` to a thin wrapper delegating to the Rust conformance harness
+- Added mandatory `External Conformance` CI job that installs exiftool + xmllint, runs the harness in strict mode, and uploads JSON reports as artifacts
+- Added conformance gating to the release workflow — publication blocked unless conformance passes
+- Cross-format semantic equivalence tests now cover 15 legal metadata scenarios across PNG, JPEG, and WebP
+- External tool integration tests validate ExifTool extraction, XML validation, and ImageMagick smoke checks
 
 ### Changed
 - **Canonical rights metadata**: XMP writer now emits `plus:DataMining` with official PLUS LDF controlled-vocabulary URIs (`DMI-PROHIBITED-AIMLTRAINING`, etc.) instead of legacy `Iptc4xmpExt:DMI-*` properties. This is the canonical machine-readable rights signal per the PLUS License Data Format specification.
@@ -84,6 +116,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Initial release.
 
-[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/eggstack/stegoeggo/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/eggstack/stegoeggo/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/eggstack/stegoeggo/releases/tag/v0.1.0

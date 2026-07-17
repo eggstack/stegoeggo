@@ -11,6 +11,15 @@ type NoticeFields = (
     Option<String>,
     Option<String>,
     Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
 );
 
 pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> NoticeVerification {
@@ -28,8 +37,23 @@ pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> Notice
     let mut legacy_dmi: Option<DmiValue> = None;
     let mut detected_rights_signal: Option<RightsSignalKind> = None;
 
-    let (copyright_holder, creator, contact, rights_url, usage_terms, ai_constraints) = match format
-    {
+    let (
+        copyright_holder,
+        creator,
+        contact,
+        rights_url,
+        usage_terms,
+        ai_constraints,
+        license_url,
+        web_statement_of_rights,
+        credit_line,
+        copyright_owner,
+        licensor_name,
+        licensor_email,
+        licensor_url,
+        metadata_date,
+        notice_applied_at,
+    ) = match format {
         Some(Format::Png) => {
             let result = extract_png_notice(img_bytes, &mut channels, &mut seed);
             extract_xmp_dmi_from_png(
@@ -75,7 +99,16 @@ pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> Notice
         || rights_url.is_some()
         || usage_terms.is_some()
         || ai_constraints.is_some()
-        || dmi.is_some();
+        || dmi.is_some()
+        || license_url.is_some()
+        || web_statement_of_rights.is_some()
+        || credit_line.is_some()
+        || copyright_owner.is_some()
+        || licensor_name.is_some()
+        || licensor_email.is_some()
+        || licensor_url.is_some()
+        || metadata_date.is_some()
+        || notice_applied_at.is_some();
 
     let stego_status;
     let stego_payload;
@@ -148,6 +181,15 @@ pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> Notice
         authenticated,
         evidence_strength,
         channels,
+        license_url,
+        web_statement_of_rights,
+        credit_line,
+        copyright_owner,
+        licensor_name,
+        licensor_email,
+        licensor_url,
+        metadata_date,
+        notice_applied_at,
     )
 }
 
@@ -170,6 +212,15 @@ fn empty_report() -> NoticeVerification {
         false,
         EvidenceStrength::NoNoticeFound,
         Vec::new(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
     )
 }
 
@@ -225,6 +276,15 @@ fn extract_png_notice(
     let mut rights_url: Option<String> = None;
     let mut usage_terms: Option<String> = None;
     let mut ai_constraints: Option<String> = None;
+    let mut license_url: Option<String> = None;
+    let mut web_statement_of_rights: Option<String> = None;
+    let mut credit_line: Option<String> = None;
+    let mut copyright_owner: Option<String> = None;
+    let mut licensor_name: Option<String> = None;
+    let mut licensor_email: Option<String> = None;
+    let mut licensor_url: Option<String> = None;
+    let mut metadata_date: Option<String> = None;
+    let mut notice_applied_at: Option<String> = None;
     let mut found_text = false;
 
     let mut pos = 8;
@@ -274,7 +334,8 @@ fn extract_png_notice(
                         found_text = true;
                     }
                     b"License" => {
-                        rights_url = Some(value_str);
+                        rights_url = Some(value_str.clone());
+                        license_url = Some(value_str);
                         found_text = true;
                     }
                     b"UsageTerms" => {
@@ -286,11 +347,40 @@ fn extract_png_notice(
                         found_text = true;
                     }
                     b"WebStatementOfRights" => {
-                        rights_url = Some(value_str);
+                        rights_url = Some(value_str.clone());
+                        web_statement_of_rights = Some(value_str);
                         found_text = true;
                     }
                     b"Creator" => {
                         creator = Some(value_str);
+                        found_text = true;
+                    }
+                    b"CreditLine" => {
+                        credit_line = Some(value_str);
+                        found_text = true;
+                    }
+                    b"CopyrightOwner" => {
+                        copyright_owner = Some(value_str);
+                        found_text = true;
+                    }
+                    b"LicensorName" => {
+                        licensor_name = Some(value_str);
+                        found_text = true;
+                    }
+                    b"LicensorEmail" => {
+                        licensor_email = Some(value_str);
+                        found_text = true;
+                    }
+                    b"LicensorURL" => {
+                        licensor_url = Some(value_str);
+                        found_text = true;
+                    }
+                    b"MetadataDate" => {
+                        metadata_date = Some(value_str);
+                        found_text = true;
+                    }
+                    b"NoticeAppliedAt" => {
+                        notice_applied_at = Some(value_str);
                         found_text = true;
                     }
                     b"DMI-PROHIBITED" => {
@@ -325,6 +415,15 @@ fn extract_png_notice(
         rights_url,
         usage_terms,
         ai_constraints,
+        license_url,
+        web_statement_of_rights,
+        credit_line,
+        copyright_owner,
+        licensor_name,
+        licensor_email,
+        licensor_url,
+        metadata_date,
+        notice_applied_at,
     )
 }
 
@@ -391,6 +490,15 @@ fn extract_jpeg_notice(
     let mut rights_url: Option<String> = None;
     let mut usage_terms: Option<String> = None;
     let mut ai_constraints: Option<String> = None;
+    let mut license_url: Option<String> = None;
+    let mut web_statement_of_rights: Option<String> = None;
+    let mut credit_line: Option<String> = None;
+    let mut copyright_owner: Option<String> = None;
+    let mut licensor_name: Option<String> = None;
+    let mut licensor_email: Option<String> = None;
+    let mut licensor_url: Option<String> = None;
+    let mut metadata_date: Option<String> = None;
+    let mut notice_applied_at: Option<String> = None;
     let mut found_comment = false;
     let mut found_iptc = false;
     let mut found_xmp = false;
@@ -454,7 +562,8 @@ fn extract_jpeg_notice(
                         found_comment = true;
                     }
                     Some(ComField::License(v)) => {
-                        rights_url = Some(v);
+                        rights_url = Some(v.clone());
+                        license_url = Some(v);
                         found_comment = true;
                     }
                     Some(ComField::UsageTerms(v)) => {
@@ -466,11 +575,40 @@ fn extract_jpeg_notice(
                         found_comment = true;
                     }
                     Some(ComField::WebStatementOfRights(v)) => {
-                        rights_url = Some(v);
+                        rights_url = Some(v.clone());
+                        web_statement_of_rights = Some(v);
                         found_comment = true;
                     }
                     Some(ComField::Creator(v)) => {
                         creator = Some(v);
+                        found_comment = true;
+                    }
+                    Some(ComField::CreditLine(v)) => {
+                        credit_line = Some(v);
+                        found_comment = true;
+                    }
+                    Some(ComField::CopyrightOwner(v)) => {
+                        copyright_owner = Some(v);
+                        found_comment = true;
+                    }
+                    Some(ComField::LicensorName(v)) => {
+                        licensor_name = Some(v);
+                        found_comment = true;
+                    }
+                    Some(ComField::LicensorEmail(v)) => {
+                        licensor_email = Some(v);
+                        found_comment = true;
+                    }
+                    Some(ComField::LicensorURL(v)) => {
+                        licensor_url = Some(v);
+                        found_comment = true;
+                    }
+                    Some(ComField::MetadataDate(v)) => {
+                        metadata_date = Some(v);
+                        found_comment = true;
+                    }
+                    Some(ComField::NoticeAppliedAt(v)) => {
+                        notice_applied_at = Some(v);
                         found_comment = true;
                     }
                     None => {}
@@ -503,7 +641,7 @@ fn extract_jpeg_notice(
             // APP1 — could be XMP
             let segment_data = &jpeg_data[pos + 4..segment_end];
             if segment_data
-                .windows(29)
+                .windows(28)
                 .any(|w| w == b"http://ns.adobe.com/xap/1.0/")
             {
                 found_xmp = true;
@@ -530,6 +668,15 @@ fn extract_jpeg_notice(
         rights_url,
         usage_terms,
         ai_constraints,
+        license_url,
+        web_statement_of_rights,
+        credit_line,
+        copyright_owner,
+        licensor_name,
+        licensor_email,
+        licensor_url,
+        metadata_date,
+        notice_applied_at,
     )
 }
 
@@ -572,7 +719,7 @@ fn extract_xmp_dmi_from_jpeg(
         if marker == 0xE1 {
             let segment_data = &jpeg_data[pos + 4..segment_end];
             if segment_data
-                .windows(29)
+                .windows(28)
                 .any(|w| w == b"http://ns.adobe.com/xap/1.0/")
             {
                 if let Ok(xmp_str) = std::str::from_utf8(segment_data) {
@@ -600,7 +747,7 @@ fn extract_xmp_text_property(xmp: &str, tag: &str) -> Option<String> {
         if let Some(end) = xmp[value_start..].find(&close) {
             let value = &xmp[value_start..value_start + end];
             if !value.is_empty() {
-                return Some(value.to_string());
+                return Some(unescape_xml(value));
             }
         }
     }
@@ -618,12 +765,20 @@ fn extract_xmp_seq_property(xmp: &str, tag: &str) -> Option<String> {
             if let Some(li_end) = rest[value_start..].find(li_close) {
                 let value = &rest[value_start..value_start + li_end];
                 if !value.is_empty() {
-                    return Some(value.to_string());
+                    return Some(unescape_xml(value));
                 }
             }
         }
     }
     None
+}
+
+fn unescape_xml(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
 }
 
 fn extract_xmp_alt_property(xmp: &str, tag: &str) -> Option<String> {
@@ -645,7 +800,7 @@ fn extract_xmp_alt_property(xmp: &str, tag: &str) -> Option<String> {
     if value.is_empty() {
         None
     } else {
-        Some(value.to_string())
+        Some(unescape_xml(value))
     }
 }
 
@@ -660,6 +815,15 @@ fn extract_webp_notice(
     let mut rights_url: Option<String> = None;
     let mut usage_terms: Option<String> = None;
     let mut ai_constraints: Option<String> = None;
+    let license_url: Option<String> = None;
+    let mut web_statement_of_rights: Option<String> = None;
+    let mut credit_line: Option<String> = None;
+    let mut copyright_owner: Option<String> = None;
+    let mut licensor_name: Option<String> = None;
+    let mut licensor_email: Option<String> = None;
+    let mut licensor_url: Option<String> = None;
+    let mut metadata_date: Option<String> = None;
+    let mut notice_applied_at: Option<String> = None;
 
     let mut pos = 12;
     while pos + 8 <= webp_data.len() {
@@ -699,9 +863,24 @@ fn extract_webp_notice(
                 });
                 creator = extract_xmp_seq_property(xmp_str, "dc:creator");
                 contact = extract_xmp_text_property(xmp_str, "photoshop:Credit");
-                rights_url = extract_xmp_text_property(xmp_str, "xmpRights:WebStatement");
+                if let Some(v) = extract_xmp_text_property(xmp_str, "xmpRights:WebStatement") {
+                    rights_url = Some(v.clone());
+                    web_statement_of_rights = Some(v);
+                }
                 usage_terms = extract_xmp_alt_property(xmp_str, "xmpRights:UsageTerms");
                 ai_constraints = extract_xmp_text_property(xmp_str, "stegoeggo:AIConstraints");
+                credit_line = extract_xmp_text_property(xmp_str, "photoshop:Credit");
+                if let Some(v) = extract_xmp_text_property(xmp_str, "photoshop:DateCreated") {
+                    if copyright_holder.is_none() {
+                        copyright_holder = Some(v);
+                    }
+                }
+                copyright_owner = extract_xmp_text_property(xmp_str, "stegoeggo:CopyrightOwner");
+                licensor_name = extract_xmp_text_property(xmp_str, "stegoeggo:LicensorName");
+                licensor_email = extract_xmp_text_property(xmp_str, "stegoeggo:LicensorEmail");
+                licensor_url = extract_xmp_text_property(xmp_str, "stegoeggo:LicensorURL");
+                metadata_date = extract_xmp_text_property(xmp_str, "xmp:MetadataDate");
+                notice_applied_at = extract_xmp_text_property(xmp_str, "stegoeggo:NoticeAppliedAt");
             }
         }
 
@@ -743,6 +922,15 @@ fn extract_webp_notice(
         rights_url,
         usage_terms,
         ai_constraints,
+        license_url,
+        web_statement_of_rights,
+        credit_line,
+        copyright_owner,
+        licensor_name,
+        licensor_email,
+        licensor_url,
+        metadata_date,
+        notice_applied_at,
     )
 }
 
@@ -796,6 +984,13 @@ enum ComField {
     AIConstraints(String),
     WebStatementOfRights(String),
     Creator(String),
+    CreditLine(String),
+    CopyrightOwner(String),
+    LicensorName(String),
+    LicensorEmail(String),
+    LicensorURL(String),
+    MetadataDate(String),
+    NoticeAppliedAt(String),
 }
 
 fn parse_com_kv(comment: &str) -> Option<ComField> {
@@ -821,6 +1016,27 @@ fn parse_com_kv(comment: &str) -> Option<ComField> {
     }
     if let Some(v) = comment.strip_prefix("Creator: ") {
         return Some(ComField::Creator(v.to_string()));
+    }
+    if let Some(v) = comment.strip_prefix("CreditLine: ") {
+        return Some(ComField::CreditLine(v.to_string()));
+    }
+    if let Some(v) = comment.strip_prefix("CopyrightOwner: ") {
+        return Some(ComField::CopyrightOwner(v.to_string()));
+    }
+    if let Some(v) = comment.strip_prefix("LicensorName: ") {
+        return Some(ComField::LicensorName(v.to_string()));
+    }
+    if let Some(v) = comment.strip_prefix("LicensorEmail: ") {
+        return Some(ComField::LicensorEmail(v.to_string()));
+    }
+    if let Some(v) = comment.strip_prefix("LicensorURL: ") {
+        return Some(ComField::LicensorURL(v.to_string()));
+    }
+    if let Some(v) = comment.strip_prefix("MetadataDate: ") {
+        return Some(ComField::MetadataDate(v.to_string()));
+    }
+    if let Some(v) = comment.strip_prefix("NoticeAppliedAt: ") {
+        return Some(ComField::NoticeAppliedAt(v.to_string()));
     }
     None
 }
@@ -1069,6 +1285,15 @@ mod tests {
             false,
             EvidenceStrength::NoNoticeFound,
             Vec::new(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         );
         assert!(nv.has_dmi_conflict());
     }
@@ -1093,6 +1318,15 @@ mod tests {
             false,
             EvidenceStrength::NoNoticeFound,
             Vec::new(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         );
         assert!(!nv.has_dmi_conflict());
     }
@@ -1117,6 +1351,15 @@ mod tests {
             false,
             EvidenceStrength::NoNoticeFound,
             Vec::new(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         );
         assert!(!nv.has_dmi_conflict());
     }

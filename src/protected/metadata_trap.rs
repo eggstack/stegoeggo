@@ -1,8 +1,8 @@
 use crate::error::{Error, Result};
 use crate::traits::Protector;
 use crate::types::{
-    DmiValue, ImageOutputFormat, LegalMetadata, ProtectionContext, ProtectionLevel,
-    PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
+    DmiValue, ImageOutputFormat, LegalMetadata, MetadataUpdatePolicy, ProtectionContext,
+    ProtectionLevel, RightsNotice, PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
 };
 use crc32fast::Hasher as Crc32Hasher;
 use image::DynamicImage;
@@ -18,7 +18,6 @@ fn xml_escape(s: &str) -> String {
 
 /// Manual date computation from Unix epoch.
 /// Intentionally avoids adding a `chrono` dependency for this simple use case.
-#[cfg(test)]
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
@@ -70,6 +69,66 @@ fn current_date_iso() -> String {
     format!("{:04}-{:02}-{:02}", year, month + 1, day)
 }
 
+pub(crate) fn current_timestamp_iso8601() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let secs_in_day = 86400u64;
+    let mut remaining_days = now / secs_in_day;
+    let mut year = 1970i32;
+
+    loop {
+        let year_days: u64 = if is_leap_year(year) { 366 } else { 365 };
+        if remaining_days < year_days {
+            break;
+        }
+        remaining_days -= year_days;
+        year += 1;
+    }
+
+    let month_lengths = [
+        31u64,
+        if is_leap_year(year) { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
+
+    let mut month = 0usize;
+    for &days_in_month in &month_lengths {
+        if remaining_days < days_in_month {
+            break;
+        }
+        remaining_days -= days_in_month;
+        month += 1;
+    }
+
+    let day = remaining_days + 1;
+    let day_secs = now % secs_in_day;
+    let hours = day_secs / 3600;
+    let minutes = (day_secs % 3600) / 60;
+    let seconds = day_secs % 60;
+
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        year,
+        month + 1,
+        day,
+        hours,
+        minutes,
+        seconds
+    )
+}
+
 /// Metadata injection protector for the Light protection level.
 ///
 /// Injects rights-reservation markers into image headers: tEXt/iTXt chunks for PNG,
@@ -93,6 +152,7 @@ impl MetadataTrapProtector {
         inject_metadata.unwrap_or(!matches!(protection_level, Some(ProtectionLevel::Disabled)))
     }
 
+    #[allow(dead_code)]
     fn resolved_dmi(
         dmi_value: Option<DmiValue>,
         protection_level: Option<ProtectionLevel>,
@@ -113,6 +173,7 @@ impl MetadataTrapProtector {
         dmi.filter(|value| *value != DmiValue::Unspecified)
     }
 
+    #[allow(dead_code)]
     fn generate_poison_metadata(
         &self,
         dmi_value: Option<DmiValue>,
@@ -151,6 +212,7 @@ impl MetadataTrapProtector {
         metadata
     }
 
+    #[allow(dead_code)]
     fn add_legal_metadata(metadata: &mut Vec<(Vec<u8>, Vec<u8>)>, legal: Option<&LegalMetadata>) {
         let Some(legal) = legal else {
             return;
@@ -189,6 +251,449 @@ impl MetadataTrapProtector {
         if let Some(creator_name) = legal.creator() {
             metadata.push((b"Creator".to_vec(), creator_name.as_bytes().to_vec()));
         }
+        if let Some(line) = legal.credit_line() {
+            metadata.push((b"CreditLine".to_vec(), line.as_bytes().to_vec()));
+        }
+        if let Some(owner) = legal.copyright_owner() {
+            metadata.push((b"CopyrightOwner".to_vec(), owner.as_bytes().to_vec()));
+        }
+        if let Some(name) = legal.licensor_name() {
+            metadata.push((b"LicensorName".to_vec(), name.as_bytes().to_vec()));
+        }
+        if let Some(email) = legal.licensor_email() {
+            metadata.push((b"LicensorEmail".to_vec(), email.as_bytes().to_vec()));
+        }
+        if let Some(url) = legal.licensor_url() {
+            metadata.push((b"LicensorURL".to_vec(), url.as_bytes().to_vec()));
+        }
+        if let Some(date) = legal.metadata_date() {
+            metadata.push((b"MetadataDate".to_vec(), date.as_bytes().to_vec()));
+        }
+        if let Some(ts) = legal.notice_applied_at() {
+            metadata.push((b"NoticeAppliedAt".to_vec(), ts.as_bytes().to_vec()));
+        }
+    }
+
+    fn generate_poison_metadata_from_notice(
+        &self,
+        notice: &RightsNotice,
+        should_inject_metadata: bool,
+        inject_legal_claims: Option<bool>,
+    ) -> Vec<(Vec<u8>, Vec<u8>)> {
+        let mut metadata = Vec::new();
+
+        if should_inject_metadata {
+            if let Some(s) = notice.seed() {
+                metadata.push((
+                    b"X-Protection-Seed".to_vec(),
+                    s.to_string().as_bytes().to_vec(),
+                ));
+            }
+
+            if let Some(dmi) = notice.dmi() {
+                metadata.push((b"DMI-PROHIBITED".to_vec(), dmi.as_str().as_bytes().to_vec()));
+            }
+
+            metadata.push((b"noai".to_vec(), b"noindex".to_vec()));
+        }
+
+        let should_inject_claims = inject_legal_claims.unwrap_or(notice.has_legal_content());
+        if should_inject_claims && notice.has_legal_content() {
+            Self::add_legal_metadata_from_notice(&mut metadata, notice);
+        }
+
+        metadata
+    }
+
+    fn add_legal_metadata_from_notice(
+        metadata: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        notice: &RightsNotice,
+    ) {
+        if let Some(holder) = notice.copyright_holder() {
+            let copyright = if holder.contains("Copyright") {
+                holder.to_string()
+            } else {
+                format!("Copyright (c) {}", holder)
+            };
+            metadata.push((b"Copyright".to_vec(), copyright.as_bytes().to_vec()));
+        }
+
+        if let Some(email) = notice.contact_email() {
+            metadata.push((b"Contact".to_vec(), email.as_bytes().to_vec()));
+        }
+        if let Some(url) = notice.license_url() {
+            metadata.push((b"License".to_vec(), url.as_bytes().to_vec()));
+        }
+        if let Some(terms) = notice.usage_terms() {
+            metadata.push((b"UsageTerms".to_vec(), terms.as_bytes().to_vec()));
+        }
+        if let Some(date) = notice.creation_date() {
+            metadata.push((b"DateCreated".to_vec(), date.as_bytes().to_vec()));
+        }
+        if let Some(constraints) = notice.ai_constraints() {
+            metadata.push((b"AIConstraints".to_vec(), constraints.as_bytes().to_vec()));
+        }
+        if let Some(statement) = notice.web_statement_of_rights() {
+            metadata.push((
+                b"WebStatementOfRights".to_vec(),
+                statement.as_bytes().to_vec(),
+            ));
+        }
+        if let Some(creator_name) = notice.creator() {
+            metadata.push((b"Creator".to_vec(), creator_name.as_bytes().to_vec()));
+        }
+        if let Some(line) = notice.credit_line() {
+            metadata.push((b"CreditLine".to_vec(), line.as_bytes().to_vec()));
+        }
+        if let Some(owner) = notice.copyright_owner() {
+            metadata.push((b"CopyrightOwner".to_vec(), owner.as_bytes().to_vec()));
+        }
+        if let Some(name) = notice.licensor_name() {
+            metadata.push((b"LicensorName".to_vec(), name.as_bytes().to_vec()));
+        }
+        if let Some(email) = notice.licensor_email() {
+            metadata.push((b"LicensorEmail".to_vec(), email.as_bytes().to_vec()));
+        }
+        if let Some(url) = notice.licensor_url() {
+            metadata.push((b"LicensorURL".to_vec(), url.as_bytes().to_vec()));
+        }
+        if let Some(date) = notice.metadata_date() {
+            metadata.push((b"MetadataDate".to_vec(), date.as_bytes().to_vec()));
+        }
+        if let Some(ts) = notice.notice_applied_at() {
+            metadata.push((b"NoticeAppliedAt".to_vec(), ts.as_bytes().to_vec()));
+        }
+    }
+
+    fn inject_text_chunks_webp_from_notice(
+        &self,
+        webp_data: &[u8],
+        notice: &RightsNotice,
+    ) -> Result<Vec<u8>> {
+        if !notice.has_legal_content() && notice.dmi().is_none() {
+            return Ok(webp_data.to_vec());
+        }
+
+        if webp_data.len() < 12 || &webp_data[0..4] != b"RIFF" || &webp_data[8..12] != b"WEBP" {
+            return Err(Error::Metadata("Invalid WebP signature".to_string()));
+        }
+
+        let dmi_val = notice.dmi().unwrap_or(DmiValue::Unspecified);
+
+        let xmp_chunk =
+            Self::create_webp_xmp_chunk(&Self::generate_xmp_notice_from_notice(dmi_val, notice));
+
+        if xmp_chunk.is_empty() {
+            return Ok(webp_data.to_vec());
+        }
+
+        let exif_chunk = notice.seed().map(Self::create_webp_exif_chunk);
+
+        let extra_len = xmp_chunk.len() + exif_chunk.as_ref().map_or(0, |c| c.len());
+        let new_len = webp_data.len() + extra_len;
+        if new_len > u32::MAX as usize + 8 {
+            return Err(Error::Metadata(
+                "WebP file would exceed 4 GiB limit after metadata injection".to_string(),
+            ));
+        }
+        let mut output = Vec::with_capacity(new_len);
+        output.extend_from_slice(webp_data);
+        output.extend_from_slice(&xmp_chunk);
+        if let Some(exif) = exif_chunk {
+            output.extend_from_slice(&exif);
+        }
+
+        let new_riff_size = (output.len() - 8) as u32;
+        output[4] = new_riff_size as u8;
+        output[5] = (new_riff_size >> 8) as u8;
+        output[6] = (new_riff_size >> 16) as u8;
+        output[7] = (new_riff_size >> 24) as u8;
+
+        Ok(output)
+    }
+
+    fn generate_xmp_notice_from_notice(dmi: DmiValue, notice: &RightsNotice) -> Vec<u8> {
+        let vocab_key = dmi.plus_vocab_key();
+        let bom = "\u{feff}";
+        let seed_attr = notice
+            .seed()
+            .map(|s| format!("\n             stegoeggo:ProtectionSeed=\"{}\"", s))
+            .unwrap_or_default();
+
+        let mut legal_props = String::new();
+        if notice.has_legal_content() {
+            if let Some(creator) = notice.creator() {
+                legal_props.push_str(&format!(
+                    "\n   <dc:creator>\n    <rdf:Seq>\n     <rdf:li>{}</rdf:li>\n    </rdf:Seq>\n   </dc:creator>",
+                    xml_escape(creator)
+                ));
+            }
+            if let Some(statement) = notice.web_statement_of_rights() {
+                legal_props.push_str(&format!(
+                    "\n   <xmpRights:WebStatement>{}</xmpRights:WebStatement>",
+                    xml_escape(statement)
+                ));
+            } else if let Some(url) = notice.license_url() {
+                legal_props.push_str(&format!(
+                    "\n   <xmpRights:WebStatement>{}</xmpRights:WebStatement>",
+                    xml_escape(url)
+                ));
+            }
+            if let Some(terms) = notice.usage_terms() {
+                let lang = notice.usage_terms_lang().unwrap_or("x-default");
+                legal_props.push_str(&format!(
+                    "\n   <xmpRights:UsageTerms>\n    <rdf:Alt>\n     <rdf:li xml:lang=\"{}\">{}</rdf:li>\n    </rdf:Alt>\n   </xmpRights:UsageTerms>",
+                    xml_escape(lang),
+                    xml_escape(terms)
+                ));
+            }
+            if let Some(constraints) = notice.ai_constraints() {
+                legal_props.push_str(&format!(
+                    "\n   <stegoeggo:AIConstraints>{}</stegoeggo:AIConstraints>",
+                    xml_escape(constraints)
+                ));
+            }
+            if let Some(holder) = notice.copyright_holder() {
+                let copyright = if holder.contains("Copyright") {
+                    holder.to_string()
+                } else {
+                    format!("Copyright (c) {}", holder)
+                };
+                legal_props.push_str(&format!(
+                    "\n   <dc:rights>\n    <rdf:Alt>\n     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n    </rdf:Alt>\n   </dc:rights>",
+                    xml_escape(&copyright)
+                ));
+            }
+            if let Some(line) = notice.credit_line() {
+                legal_props.push_str(&format!(
+                    "\n   <photoshop:Credit>{}</photoshop:Credit>",
+                    xml_escape(line)
+                ));
+            }
+            if let Some(date) = notice.creation_date() {
+                legal_props.push_str(&format!(
+                    "\n   <photoshop:DateCreated>{}</photoshop:DateCreated>",
+                    xml_escape(date)
+                ));
+            }
+            if let Some(owner) = notice.copyright_owner() {
+                legal_props.push_str(&format!(
+                    "\n   <stegoeggo:CopyrightOwner>{}</stegoeggo:CopyrightOwner>",
+                    xml_escape(owner)
+                ));
+            }
+            if let Some(name) = notice.licensor_name() {
+                legal_props.push_str(&format!(
+                    "\n   <stegoeggo:LicensorName>{}</stegoeggo:LicensorName>",
+                    xml_escape(name)
+                ));
+            }
+            if let Some(email) = notice.licensor_email() {
+                legal_props.push_str(&format!(
+                    "\n   <stegoeggo:LicensorEmail>{}</stegoeggo:LicensorEmail>",
+                    xml_escape(email)
+                ));
+            }
+            if let Some(url) = notice.licensor_url() {
+                legal_props.push_str(&format!(
+                    "\n   <stegoeggo:LicensorURL>{}</stegoeggo:LicensorURL>",
+                    xml_escape(url)
+                ));
+            }
+            if let Some(date) = notice.metadata_date() {
+                legal_props.push_str(&format!(
+                    "\n   <xmp:MetadataDate>{}</xmp:MetadataDate>",
+                    xml_escape(date)
+                ));
+            }
+            if let Some(ts) = notice.notice_applied_at() {
+                legal_props.push_str(&format!(
+                    "\n   <stegoeggo:NoticeAppliedAt>{}</stegoeggo:NoticeAppliedAt>",
+                    xml_escape(ts)
+                ));
+            }
+        }
+
+        let xmp = format!(
+            "<?xpacket begin=\"{bom}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
+             <x:xmpmeta xmlns:x=\"adobe:ns:meta/\" \
+             xmlns:plus=\"{PLUS_NAMESPACE}\" \
+             xmlns:stegoeggo=\"https://github.com/eggstack/stegoeggo\" \
+             xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
+             xmlns:xmpRights=\"http://ns.adobe.com/xap/1.0/rights/\" \
+             xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" \
+             xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n\
+             <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
+             <rdf:Description rdf:about=\"\"\n\
+              {PLUS_DATA_MINING_PROPERTY}=\"{vocab_key}\"{seed_attr}>{legal_props}\n   </rdf:Description>\n\
+             </rdf:RDF>\n\
+             </x:xmpmeta>\n\
+             <?xpacket end=\"w\"?>"
+        );
+        xmp.into_bytes()
+    }
+
+    fn has_stego_owned_metadata(&self, img_bytes: &[u8], format: ImageOutputFormat) -> bool {
+        match format {
+            ImageOutputFormat::Png => self.png_has_stego_metadata(img_bytes),
+            ImageOutputFormat::Jpeg => self.jpeg_has_stego_metadata(img_bytes),
+            ImageOutputFormat::WebP => self.webp_has_stego_metadata(img_bytes),
+        }
+    }
+
+    fn png_has_stego_metadata(&self, png_data: &[u8]) -> bool {
+        if png_data.len() < 8 || &png_data[0..8] != b"\x89PNG\r\n\x1a\n" {
+            return false;
+        }
+        let mut pos = 8;
+        while pos + 12 <= png_data.len() {
+            let chunk_len = u32::from_be_bytes([
+                png_data[pos],
+                png_data[pos + 1],
+                png_data[pos + 2],
+                png_data[pos + 3],
+            ]) as usize;
+            let chunk_type = &png_data[pos + 4..pos + 8];
+
+            if chunk_type == b"IEND" {
+                break;
+            }
+
+            if chunk_type == b"tEXt" || chunk_type == b"iTXt" {
+                let data_start = pos + 8;
+                let data_end = (data_start + chunk_len).min(png_data.len());
+                let data = &png_data[data_start..data_end];
+                if let Some(null_pos) = data.iter().position(|&b| b == 0) {
+                    let key = &data[..null_pos];
+                    if key == b"X-Protection-Seed"
+                        || key == b"DMI-PROHIBITED"
+                        || key == b"noai"
+                        || key == b"Copyright"
+                        || key == b"Contact"
+                        || key == b"License"
+                        || key == b"UsageTerms"
+                        || key == b"DateCreated"
+                        || key == b"AIConstraints"
+                        || key == b"WebStatementOfRights"
+                        || key == b"Creator"
+                        || key == b"CreditLine"
+                        || key == b"CopyrightOwner"
+                        || key == b"LicensorName"
+                        || key == b"LicensorEmail"
+                        || key == b"LicensorURL"
+                        || key == b"MetadataDate"
+                        || key == b"NoticeAppliedAt"
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            pos += 12 + chunk_len;
+        }
+        false
+    }
+
+    fn jpeg_has_stego_metadata(&self, jpeg_data: &[u8]) -> bool {
+        if jpeg_data.len() < 2 || jpeg_data[0] != 0xFF || jpeg_data[1] != 0xD8 {
+            return false;
+        }
+        let mut pos = 2;
+        while pos + 2 <= jpeg_data.len() {
+            if jpeg_data[pos] != 0xFF {
+                pos += 1;
+                continue;
+            }
+            let marker = jpeg_data[pos + 1];
+            if marker == 0xD9 || marker == 0xDA {
+                break;
+            }
+            if marker == 0x00 {
+                pos += 1;
+                continue;
+            }
+            if marker == 0xFE {
+                if pos + 4 > jpeg_data.len() {
+                    return false;
+                }
+                let comment_len =
+                    u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
+                let comment_start = pos + 4;
+                let comment_end = (comment_start + comment_len - 2).min(jpeg_data.len());
+                let comment = &jpeg_data[comment_start..comment_end];
+                if comment.starts_with(Self::STRUCTURED_COM_MAGIC) {
+                    return true;
+                }
+                if let Ok(comment_str) = String::from_utf8(comment.to_vec()) {
+                    if comment_str.starts_with("X-Protection-Seed: ")
+                        || comment_str.starts_with("DMI-PROHIBITED: ")
+                        || comment_str.starts_with("noai: ")
+                        || comment_str.starts_with("Copyright: ")
+                        || comment_str.starts_with("Contact: ")
+                        || comment_str.starts_with("License: ")
+                        || comment_str.starts_with("UsageTerms: ")
+                        || comment_str.starts_with("DateCreated: ")
+                        || comment_str.starts_with("AIConstraints: ")
+                        || comment_str.starts_with("WebStatementOfRights: ")
+                        || comment_str.starts_with("Creator: ")
+                        || comment_str.starts_with("CreditLine: ")
+                        || comment_str.starts_with("CopyrightOwner: ")
+                        || comment_str.starts_with("LicensorName: ")
+                        || comment_str.starts_with("LicensorEmail: ")
+                        || comment_str.starts_with("LicensorURL: ")
+                        || comment_str.starts_with("MetadataDate: ")
+                        || comment_str.starts_with("NoticeAppliedAt: ")
+                    {
+                        return true;
+                    }
+                }
+                pos += 2 + comment_len;
+                continue;
+            }
+            if pos + 4 > jpeg_data.len() {
+                return false;
+            }
+            let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
+            if marker == 0xED {
+                return true;
+            }
+            if marker == 0xE1 {
+                let seg_end = pos + 2 + segment_len;
+                if seg_end > jpeg_data.len() {
+                    break;
+                }
+                let seg_data = &jpeg_data[pos + 4..seg_end];
+                if seg_data.starts_with(b"http://ns.adobe.com/xap/1.0/\0") {
+                    return true;
+                }
+            }
+            pos += 2 + segment_len;
+        }
+        false
+    }
+
+    fn webp_has_stego_metadata(&self, webp_data: &[u8]) -> bool {
+        if webp_data.len() < 12 || &webp_data[0..4] != b"RIFF" || &webp_data[8..12] != b"WEBP" {
+            return false;
+        }
+        let mut pos = 12;
+        while pos + 8 <= webp_data.len() {
+            let chunk_id = &webp_data[pos..pos + 4];
+            let chunk_size = u32::from_le_bytes([
+                webp_data[pos + 4],
+                webp_data[pos + 5],
+                webp_data[pos + 6],
+                webp_data[pos + 7],
+            ]) as usize;
+            let padded_size = chunk_size + (chunk_size & 1);
+
+            if chunk_id == b"XMP " || chunk_id == b"EXIF" {
+                return true;
+            }
+
+            pos += 8 + padded_size;
+        }
+        false
     }
 
     fn generate_xmp_dmi(dmi: DmiValue, seed: Option<u64>) -> Vec<u8> {
@@ -212,6 +717,7 @@ impl MetadataTrapProtector {
         xmp.into_bytes()
     }
 
+    #[allow(dead_code)]
     fn generate_xmp_notice(
         dmi: DmiValue,
         seed: Option<u64>,
@@ -236,10 +742,17 @@ impl MetadataTrapProtector {
                     "\n   <xmpRights:WebStatement>{}</xmpRights:WebStatement>",
                     xml_escape(statement)
                 ));
+            } else if let Some(url) = legal.license_url() {
+                legal_props.push_str(&format!(
+                    "\n   <xmpRights:WebStatement>{}</xmpRights:WebStatement>",
+                    xml_escape(url)
+                ));
             }
             if let Some(terms) = legal.usage_terms() {
+                let lang = legal.usage_terms_lang().unwrap_or("x-default");
                 legal_props.push_str(&format!(
-                    "\n   <xmpRights:UsageTerms>\n    <rdf:Alt>\n     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n    </rdf:Alt>\n   </xmpRights:UsageTerms>",
+                    "\n   <xmpRights:UsageTerms>\n    <rdf:Alt>\n     <rdf:li xml:lang=\"{}\">{}</rdf:li>\n    </rdf:Alt>\n   </xmpRights:UsageTerms>",
+                    xml_escape(lang),
                     xml_escape(terms)
                 ));
             }
@@ -260,6 +773,60 @@ impl MetadataTrapProtector {
                     xml_escape(&copyright)
                 ));
             }
+            if let Some(line) = legal.credit_line() {
+                legal_props.push_str(&format!(
+                    "\n   <photoshop:Credit>{}</photoshop:Credit>",
+                    xml_escape(line)
+                ));
+            }
+            if let Some(date) = legal.creation_date() {
+                legal_props.push_str(&format!(
+                    "\n   <photoshop:DateCreated>{}</photoshop:DateCreated>",
+                    xml_escape(date)
+                ));
+            }
+            if let Some(owner) = legal.copyright_owner() {
+                legal_props.push_str(&format!(
+                    "\n   <stegoeggo:CopyrightOwner>{}</stegoeggo:CopyrightOwner>",
+                    xml_escape(owner)
+                ));
+            }
+            if let Some(name) = legal.licensor_name() {
+                legal_props.push_str(&format!(
+                    "\n   <stegoeggo:LicensorName>{}</stegoeggo:LicensorName>",
+                    xml_escape(name)
+                ));
+            }
+            if let Some(email) = legal.licensor_email() {
+                legal_props.push_str(&format!(
+                    "\n   <stegoeggo:LicensorEmail>{}</stegoeggo:LicensorEmail>",
+                    xml_escape(email)
+                ));
+            }
+            if let Some(url) = legal.licensor_url() {
+                legal_props.push_str(&format!(
+                    "\n   <stegoeggo:LicensorURL>{}</stegoeggo:LicensorURL>",
+                    xml_escape(url)
+                ));
+            }
+            if let Some(date) = legal.metadata_date() {
+                legal_props.push_str(&format!(
+                    "\n   <xmp:MetadataDate>{}</xmp:MetadataDate>",
+                    xml_escape(date)
+                ));
+            }
+            if let Some(ts) = legal.notice_applied_at() {
+                legal_props.push_str(&format!(
+                    "\n   <stegoeggo:NoticeAppliedAt>{}</stegoeggo:NoticeAppliedAt>",
+                    xml_escape(ts)
+                ));
+            } else {
+                let now = current_timestamp_iso8601();
+                legal_props.push_str(&format!(
+                    "\n   <stegoeggo:NoticeAppliedAt>{}</stegoeggo:NoticeAppliedAt>",
+                    xml_escape(&now)
+                ));
+            }
         }
 
         let xmp = format!(
@@ -269,6 +836,7 @@ impl MetadataTrapProtector {
              xmlns:stegoeggo=\"https://github.com/eggstack/stegoeggo\" \
              xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
              xmlns:xmpRights=\"http://ns.adobe.com/xap/1.0/rights/\" \
+             xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" \
              xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n\
              <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
              <rdf:Description rdf:about=\"\"\n\
@@ -652,6 +1220,7 @@ impl MetadataTrapProtector {
         Ok(marker)
     }
 
+    #[allow(dead_code)]
     fn inject_text_chunks_webp(
         &self,
         webp_data: &[u8],
@@ -1165,17 +1734,14 @@ impl MetadataTrapProtector {
 
     #[doc(hidden)]
     pub fn inject_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
-        let dmi = Self::resolved_dmi(
-            ctx.dmi_value(),
-            ctx.protection_level(),
-            ctx.inject_metadata(),
-        );
-        let metadata = self.generate_poison_metadata(
-            ctx.dmi_value(),
-            ctx.protection_level(),
-            Some(ctx.seed()),
-            ctx.legal_metadata(),
-            ctx.inject_metadata(),
+        let should_inject_metadata =
+            Self::should_inject_metadata(ctx.inject_metadata(), ctx.protection_level());
+
+        let notice = ctx.normalize_rights_notice();
+
+        let metadata = self.generate_poison_metadata_from_notice(
+            &notice,
+            should_inject_metadata,
             ctx.inject_legal_claims(),
         );
 
@@ -1191,16 +1757,37 @@ impl MetadataTrapProtector {
                     .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT)
             });
 
-        let seed = Some(ctx.seed());
+        match ctx.metadata_update_policy() {
+            MetadataUpdatePolicy::FailOnConflict => {
+                if self.has_stego_owned_metadata(img_bytes, format) {
+                    return Err(Error::Metadata(
+                        "MetadataUpdatePolicy::FailOnConflict: \
+                         image already contains StegoEggo metadata"
+                            .to_string(),
+                    ));
+                }
+            }
+            MetadataUpdatePolicy::PreserveExisting => {
+                if self.has_stego_owned_metadata(img_bytes, format) {
+                    return Ok(img_bytes.to_vec());
+                }
+            }
+            MetadataUpdatePolicy::ReplaceStegoOwned => {}
+        }
+
         let with_metadata = match format {
             ImageOutputFormat::Png => {
-                self.inject_text_chunks_png(img_bytes, &metadata, dmi, seed)?
+                self.inject_text_chunks_png(img_bytes, &metadata, notice.dmi(), notice.seed())?
             }
-            ImageOutputFormat::Jpeg => {
-                self.inject_text_chunks_jpeg(img_bytes, &metadata, dmi, seed, Some(ctx))?
-            }
+            ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg(
+                img_bytes,
+                &metadata,
+                notice.dmi(),
+                notice.seed(),
+                Some(ctx),
+            )?,
             ImageOutputFormat::WebP => {
-                self.inject_text_chunks_webp(img_bytes, &metadata, dmi, seed, ctx.legal_metadata())?
+                self.inject_text_chunks_webp_from_notice(img_bytes, &notice)?
             }
         };
 
@@ -2320,6 +2907,147 @@ mod tests {
         assert_eq!(
             MetadataTrapProtector::extract_seed_from_image(&output),
             Some(99)
+        );
+    }
+
+    #[test]
+    fn xml_escape_ampersand() {
+        assert_eq!(xml_escape("A & B"), "A &amp; B");
+    }
+
+    #[test]
+    fn xml_escape_less_than() {
+        assert_eq!(xml_escape("a < b"), "a &lt; b");
+    }
+
+    #[test]
+    fn xml_escape_greater_than() {
+        assert_eq!(xml_escape("a > b"), "a &gt; b");
+    }
+
+    #[test]
+    fn xml_escape_quotes() {
+        assert_eq!(
+            xml_escape(r#"he said "hello""#),
+            "he said &quot;hello&quot;"
+        );
+    }
+
+    #[test]
+    fn xml_escape_apostrophe() {
+        assert_eq!(xml_escape("it's"), "it&apos;s");
+    }
+
+    #[test]
+    fn xml_escape_mixed_special_chars() {
+        let input = "Copyright (c) 2024 <Corp> & \"Friends\" — it's fine";
+        let escaped = xml_escape(input);
+        assert!(escaped.contains("&amp;"));
+        assert!(escaped.contains("&lt;"));
+        assert!(escaped.contains("&gt;"));
+        assert!(escaped.contains("&quot;"));
+        assert!(escaped.contains("&apos;"));
+    }
+
+    #[test]
+    fn xml_escape_no_change_for_plain_text() {
+        let input = "Simple copyright notice 2024";
+        assert_eq!(xml_escape(input), input);
+    }
+
+    #[test]
+    fn webp_xmp_round_trip_special_chars() {
+        let protector = MetadataTrapProtector::new();
+        let img = make_test_image();
+        let webp = encode_webp(&img);
+
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("A < B & C")
+            .with_usage_terms("Terms with \"quotes\" and 'apostrophes'")
+            .with_creator("O'Brien & Sons");
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::WebP)
+            .with_legal_metadata(legal)
+            .with_metadata_injection(true);
+
+        let result = protector.inject_bytes(&webp, &ctx).unwrap();
+        let report = crate::verify_legal_notice(&result, b"");
+
+        assert_eq!(
+            report.copyright_holder(),
+            Some("A < B & C"),
+            "Copyright should survive XML escaping round-trip"
+        );
+        assert_eq!(
+            report.usage_terms(),
+            Some("Terms with \"quotes\" and 'apostrophes'"),
+            "Usage terms should survive XML escaping round-trip"
+        );
+        assert_eq!(
+            report.creator(),
+            Some("O'Brien & Sons"),
+            "Creator should survive XML escaping round-trip"
+        );
+    }
+
+    #[test]
+    fn png_text_round_trip_special_chars() {
+        let protector = MetadataTrapProtector::new();
+        let img = make_test_image();
+        let png = encode_png(&img);
+
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("A < B & C")
+            .with_usage_terms("Terms with \"quotes\"");
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_legal_metadata(legal)
+            .with_metadata_injection(true);
+
+        let result = protector.inject_bytes(&png, &ctx).unwrap();
+        let report = crate::verify_legal_notice(&result, b"");
+
+        assert_eq!(
+            report.copyright_holder(),
+            Some("A < B & C"),
+            "Copyright should survive tEXt round-trip"
+        );
+        assert_eq!(
+            report.usage_terms(),
+            Some("Terms with \"quotes\""),
+            "Usage terms should survive tEXt round-trip"
+        );
+    }
+
+    #[test]
+    fn jpeg_com_round_trip_special_chars() {
+        let protector = MetadataTrapProtector::new();
+        let img = make_test_image();
+        let jpeg = encode_jpeg(&img);
+
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("A < B & C")
+            .with_usage_terms("Terms with \"quotes\"");
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_legal_metadata(legal)
+            .with_metadata_injection(true);
+
+        let result = protector.inject_bytes(&jpeg, &ctx).unwrap();
+        let report = crate::verify_legal_notice(&result, b"");
+
+        assert_eq!(
+            report.copyright_holder(),
+            Some("A < B & C"),
+            "Copyright should survive COM round-trip"
+        );
+        assert_eq!(
+            report.usage_terms(),
+            Some("Terms with \"quotes\""),
+            "Usage terms should survive COM round-trip"
         );
     }
 }

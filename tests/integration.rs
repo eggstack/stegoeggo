@@ -255,6 +255,7 @@ mod image_formats {
     }
 }
 
+#[allow(deprecated)]
 mod metadata_injection {
     use super::*;
 
@@ -1145,6 +1146,7 @@ mod webp_tests {
     }
 }
 
+#[allow(deprecated)]
 mod webp_legal_xmp_tests {
     use super::*;
     use stegoeggo::{
@@ -1481,8 +1483,10 @@ mod inject_metadata_toggle {
     }
 }
 
+#[allow(deprecated)]
 mod inject_legal_claims_toggle {
     use super::*;
+    use stegoeggo::process_image_bytes_with_warnings;
 
     fn legal_ctx(inject: Option<bool>) -> ProtectionContext {
         let legal = stegoeggo::LegalMetadata::new()
@@ -1539,6 +1543,24 @@ mod inject_legal_claims_toggle {
         assert!(
             has_copyright,
             "Copyright metadata should be auto-enabled when legal metadata is provided"
+        );
+    }
+
+    #[test]
+    fn test_contradictory_claims_emits_warning() {
+        let img = create_test_image(32, 32);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = legal_ctx(Some(false));
+
+        let (_protected, warnings) =
+            process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
+
+        assert!(
+            warnings.iter().any(|w| matches!(
+                w,
+                stegoeggo::ProtectionWarning::ContradictoryLegalClaims
+            )),
+            "Expected ContradictoryLegalClaims warning when inject_legal_claims=false with legal metadata"
         );
     }
 }
@@ -1669,6 +1691,7 @@ mod progressive_jpeg_warning {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod notice_verification_tests {
     use super::*;
     use stegoeggo::{
@@ -2031,6 +2054,7 @@ mod notice_verification_tests {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod warning_severity_tests {
     use super::*;
     use stegoeggo::{

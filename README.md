@@ -88,6 +88,13 @@ stegoeggo artwork.png -o artwork_protected.png \
   --rights-url "https://example.com/rights/artwork" \
   --no-genai-training
 
+# With full legal metadata including new v0.3.0 fields
+stegoeggo photo.jpg --copyright-holder "Acme Corp" --creator "Jane Doe" \
+  --credit-line "Photo by Jane Doe / Acme Corp" \
+  --copyright-owner "Acme Corp" \
+  --licensor-name "Acme Corp" --licensor-email "legal@acme.com" \
+  --content-created-at "2024-01-15"
+
 # Quick AI-training restriction
 stegoeggo photo.jpg -o protected.jpg --no-ai-training
 
@@ -822,47 +829,51 @@ See [docs/legal_notice_model.md](docs/legal_notice_model.md) for a detailed desc
 
 ## External Metadata Conformance
 
-stegoeggo includes a conformance script that verifies protected images expose legal-notice metadata to external tools (e.g., `exiftool`), not only to stegoeggo's own parser. This matters because evidentiary value depends on rights-reservation notice being discoverable by ordinary metadata-aware systems.
+The conformance suite validates that protected images expose correct
+rights metadata to external tools. It uses a layered approach:
 
-### Running the Conformance Script
+1. **Internal extraction** — `verify_legal_notice()` parses the image
+2. **External extraction** — ExifTool extracts metadata independently
+3. **Namespace-aware XMP validation** — xmllint validates XML structure
+4. **Normalized comparison** — internal and external results are compared field-by-field
+5. **Machine-readable report** — JSON output with per-check pass/fail/warn
+
+### Running Conformance Checks
 
 ```bash
-# Build the CLI first
-cargo build --release -p stegoeggo-cli
+# Build the conformance harness
+cargo build --release --bin stegoeggo-conformance
 
-# Default: generates a PNG fixture, checks with exiftool if available
-./scripts/verify_metadata_conformance.sh
+# Run all fixtures (requires exiftool + xmllint)
+./target/release/stegoeggo-conformance --fixtures tests/fixtures/conformance --strict
 
-# Per-format checks
-./scripts/verify_metadata_conformance.sh --format png
-./scripts/verify_metadata_conformance.sh --format jpg
-./scripts/verify_metadata_conformance.sh --format web-p
-./scripts/verify_metadata_conformance.sh --all-formats
+# Generate JSON report
+./target/release/stegoeggo-conformance --fixtures tests/fixtures/conformance --strict --json report.json
 
-# Strict mode: fails if exiftool is missing or fields are not visible
-./scripts/verify_metadata_conformance.sh --strict
+# Or use the shell wrapper
 ./scripts/verify_metadata_conformance.sh --all-formats --strict
 ```
 
 ### Expected Field Visibility by Format
 
-| Field | PNG | JPEG | WebP | Notes |
-|-------|-----|------|------|-------|
-| Copyright | exiftool `-Copyright` | exiftool `-Comment` (all COM) | exiftool XMP `-XMP-dc:Rights` | XMP `dc:rights` (rdf:Alt) in WebP |
-| Creator | exiftool `-Creator` | exiftool `-Comment` | exiftool XMP `-Creator` | XMP `dc:creator` in WebP |
-| Contact | exiftool `-Contact` | exiftool `-Comment` | exiftool XMP `-Contact` | XMP `photoshop:Credit` is **not** used for contact in WebP; contact is not mapped to `photoshop:Credit` |
-| UsageTerms | exiftool `-UsageTerms` | exiftool `-Comment` | exiftool XMP `-UsageTerms` | XMP `xmpRights:UsageTerms` in WebP |
-| AIConstraints | exiftool `-AIConstraints` | exiftool `-Comment` | exiftool XMP `-AIConstraints` | XMP `stegoeggo:AIConstraints` in WebP |
-| DMI (no-AI-training) | exiftool XMP `-DataMining` | exiftool XMP `-DataMining` | exiftool XMP `-DataMining` | XMP-based, all formats; canonical `plus:DataMining` emitted |
-| TDM reservation | exiftool XMP `-TDM` | exiftool XMP `-TDM` | exiftool XMP `-TDM` | Legacy only; no longer emitted by default |
-| Protection seed | exiftool `-ImageDescription` | exiftool `-Comment` | exiftool XMP | Diagnostic only, not legal notice |
+| Field | PNG (tEXt/XMP) | JPEG (COM/XMP) | WebP (XMP) |
+|-------|-----------------|-----------------|-------------|
+| Copyright | `Copyright` | `Comment: Copyright (c) ...` | `dc:rights` |
+| Creator | `Creator` | `Comment: Creator: ...` | `dc:creator` |
+| Usage Terms | `UsageTerms` | `Comment: UsageTerms: ...` | `xmpRights:UsageTerms` |
+| Rights URL | `WebStatement` | `Comment: WebStatement: ...` | `xmpRights:WebStatement` |
+| AI Constraints | `AIConstraints` | `Comment: AIConstraints: ...` | `stegoeggo:AIConstraints` |
+| DMI Policy | `XMP-plus:DataMining` | `XMP-plus:DataMining` | `XMP-plus:DataMining` |
 
-### Conformance Caveats
+### Caveats
 
-- **WebP legal fields in XMP**: WebP outputs carry legal metadata (copyright, creator, contact, rights URL, usage terms, AI constraints) in standard XMP properties alongside DMI/TDM. Legal child elements live inside `<rdf:Description>...</rdf:Description>` (not as attributes on its opening tag). `dc:rights` and `xmpRights:UsageTerms` are wrapped in `<rdf:Alt><rdf:li xml:lang="x-default">…</rdf:li></rdf:Alt>` containers, and `dc:creator` uses `<rdf:Seq>`. `exiftool` resolves WebP copyright via `XMP-dc:Rights` rather than the `-Copyright` shortcut. Contact is not mapped to `photoshop:Credit`. The conformance script accepts `XMP-dc:Rights` as a parser-visible alias for copyright.
-- **Tool variability**: Metadata visibility depends on the external tool. The script targets `exiftool` as the primary tool. Other tools (ImageMagick, vips) may show different fields.
-- **Seed is not legal notice**: The protection seed is an internal diagnostic marker. The script does not treat it as sufficient legal notice — at least one real rights-reservation field must be present.
-- **Strict vs non-strict**: Strict mode requires `exiftool` and fails if fields are missing. Non-strict mode skips external checks cleanly when `exiftool` is not installed.
+- ExifTool is the authoritative external parser. Other tools may not expose
+  all XMP properties depending on namespace support.
+- PNG tEXt `XML:com.adobe.xmp` requires ExifTool to decode — plain `xmllint`
+  cannot extract XMP from PNG containers.
+- JPEG COM markers are stegoeggo-specific and may not be visible in all tools.
+- WebP XMP visibility depends on the tool's support for `dc:rights`,
+  `dc:creator`, `xmpRights:*`, and `stegoeggo:*` namespaces.
 
 ## Architecture
 

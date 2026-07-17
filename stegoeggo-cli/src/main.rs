@@ -96,8 +96,12 @@ struct Args {
     )]
     legal_claims: bool,
 
-    #[arg(long, help = "Copyright holder name (e.g., 'Jane Doe' or 'Acme Corp')")]
-    copyright_holder: Option<String>,
+    #[arg(
+        long,
+        alias = "copyright-holder",
+        help = "Copyright notice text (e.g., '© 2024 Jane Doe. All rights reserved.')"
+    )]
+    copyright_notice: Option<String>,
 
     #[arg(long, help = "Creator/author name (e.g., 'Jane Doe')")]
     creator: Option<String>,
@@ -128,6 +132,30 @@ struct Args {
 
     #[arg(long, help = "Shorthand: reserve text and data mining rights")]
     tdm_reserved: bool,
+
+    #[arg(
+        long,
+        help = "Required credit line text (e.g., 'Photo by Jane Doe / Acme Corp')"
+    )]
+    credit_line: Option<String>,
+
+    #[arg(
+        long,
+        help = "Copyright owner name (distinct from copyright holder notice text)"
+    )]
+    copyright_owner: Option<String>,
+
+    #[arg(long, help = "Licensor name for PLUS structured rights")]
+    licensor_name: Option<String>,
+
+    #[arg(long, help = "Licensor email for PLUS structured rights")]
+    licensor_email: Option<String>,
+
+    #[arg(long, help = "Licensor URL for PLUS structured rights")]
+    licensor_url: Option<String>,
+
+    #[arg(long, help = "Content creation date (ISO 8601, e.g., '2024-01-15')")]
+    content_created_at: Option<String>,
 
     #[arg(
         long,
@@ -386,7 +414,7 @@ fn print_payload_info(payload: &StegoPayload) {
 }
 
 fn build_legal_metadata(args: &Args) -> (Option<stegoeggo::LegalMetadata>, Option<DmiValue>) {
-    let has_legal_flags = args.copyright_holder.is_some()
+    let has_legal_flags = args.copyright_notice.is_some()
         || args.creator.is_some()
         || args.contact.is_some()
         || args.rights_url.is_some()
@@ -394,7 +422,13 @@ fn build_legal_metadata(args: &Args) -> (Option<stegoeggo::LegalMetadata>, Optio
         || args.ai_constraints.is_some()
         || args.no_ai_training
         || args.no_genai_training
-        || args.tdm_reserved;
+        || args.tdm_reserved
+        || args.credit_line.is_some()
+        || args.copyright_owner.is_some()
+        || args.licensor_name.is_some()
+        || args.licensor_email.is_some()
+        || args.licensor_url.is_some()
+        || args.content_created_at.is_some();
 
     if !has_legal_flags {
         return (None, None);
@@ -403,7 +437,7 @@ fn build_legal_metadata(args: &Args) -> (Option<stegoeggo::LegalMetadata>, Optio
     let mut meta = stegoeggo::LegalMetadata::default();
     let mut dmi_override: Option<DmiValue> = None;
 
-    if let Some(ref v) = args.copyright_holder {
+    if let Some(ref v) = args.copyright_notice {
         meta = meta.with_copyright_holder(v);
     }
     if let Some(ref v) = args.creator {
@@ -420,6 +454,24 @@ fn build_legal_metadata(args: &Args) -> (Option<stegoeggo::LegalMetadata>, Optio
     }
     if let Some(ref v) = args.ai_constraints {
         meta = meta.with_ai_constraints(v);
+    }
+    if let Some(ref v) = args.credit_line {
+        meta = meta.with_credit_line(v);
+    }
+    if let Some(ref v) = args.copyright_owner {
+        meta = meta.with_copyright_owner(v);
+    }
+    if let Some(ref v) = args.licensor_name {
+        meta = meta.with_licensor_name(v);
+    }
+    if let Some(ref v) = args.licensor_email {
+        meta = meta.with_licensor_email(v);
+    }
+    if let Some(ref v) = args.licensor_url {
+        meta = meta.with_licensor_url(v);
+    }
+    if let Some(ref v) = args.content_created_at {
+        meta = meta.with_creation_date(v);
     }
 
     // DMI presets (--no-ai-training, --no-genai-training, --tdm-reserved)
@@ -547,6 +599,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(terms) = notice.usage_terms() {
             println!("Usage terms: {}", terms);
         }
+        if let Some(line) = notice.credit_line() {
+            println!("Credit line: {}", line);
+        }
+        if let Some(owner) = notice.copyright_owner() {
+            println!("Copyright owner: {}", owner);
+        }
+        if let Some(name) = notice.licensor_name() {
+            println!("Licensor name: {}", name);
+        }
+        if let Some(email) = notice.licensor_email() {
+            println!("Licensor email: {}", email);
+        }
+        if let Some(url) = notice.licensor_url() {
+            println!("Licensor URL: {}", url);
+        }
+        if let Some(date) = notice.metadata_date() {
+            println!("Metadata date: {}", date);
+        }
+        if let Some(ts) = notice.notice_applied_at() {
+            println!("Notice applied at: {}", ts);
+        }
         if let Some(seed) = notice.protection_seed() {
             println!("Protection seed: {}", seed);
         }
@@ -612,7 +685,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.metadata == Some(false) && legal_metadata.is_some() {
         eprintln!(
             "Error: Cannot use --no-metadata (or -m false) together with legal metadata flags \
-             (--copyright-holder, --creator, --contact, --rights-url, --usage-terms, \
+             (--copyright-notice, --creator, --contact, --rights-url, --usage-terms, \
              --ai-constraints, --no-ai-training, --no-genai-training, --tdm-reserved). \
              Legal metadata requires metadata injection to be enabled."
         );
@@ -635,6 +708,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if legal_metadata.is_some() {
         ctx = ctx.with_metadata_injection(true);
     }
+    #[allow(deprecated)]
     if args.legal_claims {
         ctx = ctx.with_legal_claims(true);
     }

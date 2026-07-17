@@ -100,8 +100,7 @@
 //!             .with_copyright_holder("Example Corp")
 //!             .with_contact_email("legal@example.com")
 //!             .with_usage_terms("All Rights Reserved. No AI training permitted.")
-//!     )
-//!     .with_legal_claims(true);
+//!     );
 //! ```
 //!
 //! # Feature Flags
@@ -171,6 +170,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod conformance;
 pub mod error;
 pub mod traits;
 /// Core types: protection levels, configuration, legal metadata, and verification results.
@@ -186,9 +186,10 @@ pub mod async_api;
 pub use error::{Error, Result};
 pub use types::{
     DmiValue, EvidenceChannel, EvidenceProfile, EvidenceStrength, ImageOutputFormat, LegalMetadata,
-    NoticeVerification, ProtectionConfig, ProtectionContext, ProtectionLevel, ProtectionWarning,
-    RightsSignalKind, VerificationResult, VerificationStatus, WarningCategory, WarningSeverity,
-    DEFAULT_OUTPUT_FORMAT, PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
+    LocalizedText, MetadataUpdatePolicy, NoticeVerification, ProtectionConfig, ProtectionContext,
+    ProtectionLevel, ProtectionWarning, RightsNotice, RightsSignalKind, VerificationResult,
+    VerificationStatus, WarningCategory, WarningSeverity, DEFAULT_OUTPUT_FORMAT,
+    PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
 };
 
 pub use traits::Protector;
@@ -777,6 +778,13 @@ pub fn process_image_bytes_with_warnings(
     }
     if matches!(ctx_with_format.inject_metadata(), Some(false)) {
         warnings.push(ProtectionWarning::MetadataInjectionDisabled);
+    }
+    if matches!(ctx_with_format.inject_legal_claims(), Some(false))
+        && ctx_with_format
+            .legal_metadata()
+            .is_some_and(|m| m.has_content())
+    {
+        warnings.push(ProtectionWarning::ContradictoryLegalClaims);
     }
 
     let output_format = resolved_output_format(&ctx_with_format);

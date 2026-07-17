@@ -115,6 +115,41 @@ jobs:
       - name: Check advisories
         run: cargo deny check advisories
 
+  conformance:
+    name: External Conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install exiftool
+        run: sudo apt-get update && sudo apt-get install -y libimage-exiftool-perl
+
+      - name: Install xmllint
+        run: sudo apt-get install -y libxml2-utils
+
+      - name: Build conformance harness
+        run: cargo build --release --bin stegoeggo-conformance
+
+      - name: Run conformance checks
+        run: |
+          ./target/release/stegoeggo-conformance \
+            --fixtures tests/fixtures/conformance \
+            --strict \
+            --json conformance-report.json
+
+      - name: Upload conformance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-report
+          path: conformance-report.json
+
   bench:
     name: Benchmark
     runs-on: ubuntu-latest

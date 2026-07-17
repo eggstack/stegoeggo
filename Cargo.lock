@@ -1037,7 +1037,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "stegoeggo"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "crc32fast",
  "criterion",
@@ -1053,13 +1053,14 @@ dependencies = [
  "serde_json",
  "sha2",
  "subtle",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
 ]
 
 [[package]]
 name = "stegoeggo-cli"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "clap",
  "hex",

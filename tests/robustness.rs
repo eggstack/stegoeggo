@@ -1241,6 +1241,7 @@ mod tiled_crop_jpeg {
     }
 }
 
+#[allow(deprecated)]
 mod format_smoke {
     use super::*;
 

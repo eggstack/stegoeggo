@@ -12,8 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }));
 
     // Configure protection with legal metadata.
-    // Both with_legal_metadata() AND with_legal_claims(true) are required —
-    // one provides the content, the other enables injection.
+    // Providing LegalMetadata automatically enables legal claim injection.
     let ctx = ProtectionContext::new(0.5, 42)
         .with_dmi(stegoeggo::DmiValue::ProhibitedAiMlTraining)
         .with_legal_metadata(
@@ -22,8 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_contact_email("legal@example.com")
                 .with_usage_terms("All Rights Reserved. No AI training permitted.")
                 .with_license_url("https://example.com/license"),
-        )
-        .with_legal_claims(true);
+        );
 
     // Process at Standard level (noise + stego + metadata)
     let protected = stegoeggo::process_image(img, ProtectionLevel::Standard, &ctx)?;

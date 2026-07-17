@@ -150,6 +150,46 @@ impl EvidenceProfile {
     }
 }
 
+/// Policy for updating metadata on repeated image processing.
+///
+/// Controls how the protection pipeline handles existing metadata when
+/// re-processing an already-protected image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum MetadataUpdatePolicy {
+    /// Replace all StegoEggo-owned metadata properties. Preserve unrelated
+    /// metadata (camera EXIF, color profiles, etc.). This is the default.
+    #[default]
+    ReplaceStegoOwned,
+    /// Fail with an error if conflicting StegoEggo metadata already exists.
+    FailOnConflict,
+    /// Preserve existing StegoEggo metadata and only add new fields.
+    /// Never overwrites existing values.
+    PreserveExisting,
+}
+
+impl MetadataUpdatePolicy {
+    /// Returns the lowercase string representation of this policy.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MetadataUpdatePolicy::ReplaceStegoOwned => "replace-stego-owned",
+            MetadataUpdatePolicy::FailOnConflict => "fail-on-conflict",
+            MetadataUpdatePolicy::PreserveExisting => "preserve-existing",
+        }
+    }
+}
+
+impl std::fmt::Display for MetadataUpdatePolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MetadataUpdatePolicy::ReplaceStegoOwned => write!(f, "ReplaceStegoOwned"),
+            MetadataUpdatePolicy::FailOnConflict => write!(f, "FailOnConflict"),
+            MetadataUpdatePolicy::PreserveExisting => write!(f, "PreserveExisting"),
+        }
+    }
+}
+
 /// Protection level determining the protection strategy applied to images.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[non_exhaustive]
@@ -284,6 +324,244 @@ impl ImageOutputFormat {
     }
 }
 
+/// A text value with an associated language tag.
+///
+/// Used for metadata fields that support localization, such as
+/// `xmpRights:UsageTerms`. The default language is `"x-default"`.
+///
+/// # Examples
+///
+/// ```ignore
+/// use stegoeggo::LocalizedText;
+///
+/// let terms = LocalizedText::new("All rights reserved.");
+/// assert_eq!(terms.text(), "All rights reserved.");
+/// assert_eq!(terms.lang(), "x-default");
+///
+/// let french = LocalizedText::with_lang("Tous droits réservés.", "fr");
+/// assert_eq!(french.lang(), "fr");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalizedText {
+    text: String,
+    #[serde(default = "default_lang")]
+    lang: String,
+}
+
+fn default_lang() -> String {
+    "x-default".to_string()
+}
+
+impl LocalizedText {
+    /// Creates a new `LocalizedText` with the default language (`"x-default"`).
+    #[must_use]
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            lang: default_lang(),
+        }
+    }
+
+    /// Creates a new `LocalizedText` with an explicit language tag.
+    #[must_use]
+    pub fn with_lang(text: impl Into<String>, lang: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            lang: lang.into(),
+        }
+    }
+
+    /// Returns the text content.
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// Returns the language tag.
+    #[must_use]
+    pub fn lang(&self) -> &str {
+        &self.lang
+    }
+}
+
+impl From<String> for LocalizedText {
+    fn from(s: String) -> Self {
+        Self::new(s)
+    }
+}
+
+impl From<&str> for LocalizedText {
+    fn from(s: &str) -> Self {
+        Self::new(s)
+    }
+}
+
+impl std::fmt::Display for LocalizedText {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.text)
+    }
+}
+
+/// Normalized rights notice produced by the pipeline before format encoding.
+///
+/// All format writers (PNG tEXt, JPEG COM, WebP XMP) consume the same
+/// `RightsNotice` instance, ensuring semantically equivalent metadata
+/// regardless of output format.
+///
+/// Created by [`ProtectionContext::normalize_rights_notice`] or
+/// [`MetadataTrapProtector::normalize_rights_notice`](crate::MetadataTrapProtector::normalize_rights_notice).
+#[derive(Debug, Clone, Default)]
+pub struct RightsNotice {
+    copyright_holder: Option<String>,
+    contact_email: Option<String>,
+    license_url: Option<String>,
+    usage_terms: Option<String>,
+    usage_terms_lang: Option<String>,
+    creation_date: Option<String>,
+    ai_constraints: Option<String>,
+    web_statement_of_rights: Option<String>,
+    creator: Option<String>,
+    credit_line: Option<String>,
+    copyright_owner: Option<String>,
+    licensor_name: Option<String>,
+    licensor_email: Option<String>,
+    licensor_url: Option<String>,
+    metadata_date: Option<String>,
+    notice_applied_at: Option<String>,
+    dmi: Option<DmiValue>,
+    seed: Option<u64>,
+}
+
+impl RightsNotice {
+    /// Returns the copyright holder name, if set.
+    #[must_use]
+    pub fn copyright_holder(&self) -> Option<&str> {
+        self.copyright_holder.as_deref()
+    }
+
+    /// Returns the contact email, if set.
+    #[must_use]
+    pub fn contact_email(&self) -> Option<&str> {
+        self.contact_email.as_deref()
+    }
+
+    /// Returns the license URL, if set.
+    #[must_use]
+    pub fn license_url(&self) -> Option<&str> {
+        self.license_url.as_deref()
+    }
+
+    /// Returns the usage terms, if set.
+    #[must_use]
+    pub fn usage_terms(&self) -> Option<&str> {
+        self.usage_terms.as_deref()
+    }
+
+    /// Returns the usage terms language tag, if set.
+    #[must_use]
+    pub fn usage_terms_lang(&self) -> Option<&str> {
+        self.usage_terms_lang.as_deref()
+    }
+
+    /// Returns the creation date, if set.
+    #[must_use]
+    pub fn creation_date(&self) -> Option<&str> {
+        self.creation_date.as_deref()
+    }
+
+    /// Returns the AI constraints, if set.
+    #[must_use]
+    pub fn ai_constraints(&self) -> Option<&str> {
+        self.ai_constraints.as_deref()
+    }
+
+    /// Returns the web statement of rights URL, if set.
+    #[must_use]
+    pub fn web_statement_of_rights(&self) -> Option<&str> {
+        self.web_statement_of_rights.as_deref()
+    }
+
+    /// Returns the creator name, if set.
+    #[must_use]
+    pub fn creator(&self) -> Option<&str> {
+        self.creator.as_deref()
+    }
+
+    /// Returns the credit line, if set.
+    #[must_use]
+    pub fn credit_line(&self) -> Option<&str> {
+        self.credit_line.as_deref()
+    }
+
+    /// Returns the copyright owner name, if set.
+    #[must_use]
+    pub fn copyright_owner(&self) -> Option<&str> {
+        self.copyright_owner.as_deref()
+    }
+
+    /// Returns the licensor name, if set.
+    #[must_use]
+    pub fn licensor_name(&self) -> Option<&str> {
+        self.licensor_name.as_deref()
+    }
+
+    /// Returns the licensor email, if set.
+    #[must_use]
+    pub fn licensor_email(&self) -> Option<&str> {
+        self.licensor_email.as_deref()
+    }
+
+    /// Returns the licensor URL, if set.
+    #[must_use]
+    pub fn licensor_url(&self) -> Option<&str> {
+        self.licensor_url.as_deref()
+    }
+
+    /// Returns the metadata date, if set.
+    #[must_use]
+    pub fn metadata_date(&self) -> Option<&str> {
+        self.metadata_date.as_deref()
+    }
+
+    /// Returns the notice-applied-at timestamp, if set.
+    #[must_use]
+    pub fn notice_applied_at(&self) -> Option<&str> {
+        self.notice_applied_at.as_deref()
+    }
+
+    /// Returns the resolved DMI value, if any.
+    #[must_use]
+    pub fn dmi(&self) -> Option<DmiValue> {
+        self.dmi
+    }
+
+    /// Returns the protection seed, if any.
+    #[must_use]
+    pub fn seed(&self) -> Option<u64> {
+        self.seed
+    }
+
+    /// Returns `true` if any legal field is set.
+    #[must_use]
+    pub fn has_legal_content(&self) -> bool {
+        self.copyright_holder.is_some()
+            || self.contact_email.is_some()
+            || self.license_url.is_some()
+            || self.usage_terms.is_some()
+            || self.creation_date.is_some()
+            || self.ai_constraints.is_some()
+            || self.web_statement_of_rights.is_some()
+            || self.creator.is_some()
+            || self.credit_line.is_some()
+            || self.copyright_owner.is_some()
+            || self.licensor_name.is_some()
+            || self.licensor_email.is_some()
+            || self.licensor_url.is_some()
+            || self.metadata_date.is_some()
+            || self.notice_applied_at.is_some()
+    }
+}
+
 /// Legal metadata for copyright and AI training restrictions.
 /// This information is embedded in the image for legal discovery and proof of intent.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -292,10 +570,18 @@ pub struct LegalMetadata {
     contact_email: Option<String>,
     license_url: Option<String>,
     usage_terms: Option<String>,
+    usage_terms_lang: Option<String>,
     creation_date: Option<String>,
     ai_constraints: Option<String>,
     web_statement_of_rights: Option<String>,
     creator: Option<String>,
+    credit_line: Option<String>,
+    copyright_owner: Option<String>,
+    licensor_name: Option<String>,
+    licensor_email: Option<String>,
+    licensor_url: Option<String>,
+    metadata_date: Option<String>,
+    notice_applied_at: Option<String>,
 }
 
 impl LegalMetadata {
@@ -321,6 +607,9 @@ impl LegalMetadata {
     /// # Errors
     ///
     /// Returns [`Error::Config`] if any field exceeds [`Self::MAX_FIELD_LEN`] bytes.
+    ///
+    /// URL fields (`license_url`, `web_statement_of_rights`, `licensor_url`)
+    /// are also validated for basic syntactic correctness (scheme + authority).
     pub fn validate(&self) -> crate::Result<()> {
         let check = |name: &str, val: &Option<String>| -> crate::Result<()> {
             if let Some(v) = val {
@@ -335,15 +624,145 @@ impl LegalMetadata {
             }
             Ok(())
         };
+        let check_url = |name: &str, val: &Option<String>| -> crate::Result<()> {
+            if let Some(v) = val {
+                Self::validate_url_syntax(name, v)?;
+            }
+            Ok(())
+        };
         check("copyright_holder", &self.copyright_holder)?;
         check("contact_email", &self.contact_email)?;
-        check("license_url", &self.license_url)?;
+        check_url("license_url", &self.license_url)?;
         check("usage_terms", &self.usage_terms)?;
         check("creation_date", &self.creation_date)?;
         check("ai_constraints", &self.ai_constraints)?;
-        check("web_statement_of_rights", &self.web_statement_of_rights)?;
+        check_url("web_statement_of_rights", &self.web_statement_of_rights)?;
         check("creator", &self.creator)?;
+        check("credit_line", &self.credit_line)?;
+        check("copyright_owner", &self.copyright_owner)?;
+        check("licensor_name", &self.licensor_name)?;
+        check("licensor_email", &self.licensor_email)?;
+        check_url("licensor_url", &self.licensor_url)?;
+        check("metadata_date", &self.metadata_date)?;
+        check("notice_applied_at", &self.notice_applied_at)?;
+
+        let check_date = |name: &str, val: &Option<String>| -> crate::Result<()> {
+            if let Some(v) = val {
+                Self::validate_date(name, v)?;
+            }
+            Ok(())
+        };
+        check_date("creation_date", &self.creation_date)?;
+        check_date("metadata_date", &self.metadata_date)?;
+        check_date("notice_applied_at", &self.notice_applied_at)?;
+
         Ok(())
+    }
+
+    fn validate_url_syntax(field_name: &str, url: &str) -> crate::Result<()> {
+        if url.is_empty() {
+            return Err(crate::Error::Config(format!(
+                "URL field '{}' must not be empty",
+                field_name
+            )));
+        }
+        let has_scheme = url.contains("://");
+        if !has_scheme {
+            return Err(crate::Error::Config(format!(
+                "URL field '{}' must include a scheme (e.g., https://): {}",
+                field_name, url
+            )));
+        }
+        let after_scheme = &url[url.find("://").unwrap() + 3..];
+        if after_scheme.is_empty() {
+            return Err(crate::Error::Config(format!(
+                "URL field '{}' must include an authority after the scheme: {}",
+                field_name, url
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_date(field_name: &str, value: &str) -> crate::Result<()> {
+        if value.is_empty() {
+            return Err(crate::Error::Config(format!(
+                "Date field '{}' must not be empty",
+                field_name
+            )));
+        }
+        let valid = match value.len() {
+            10 => {
+                // YYYY-MM-DD
+                value.as_bytes()[4] == b'-'
+                    && value.as_bytes()[7] == b'-'
+                    && value.bytes().enumerate().all(|(i, b)| match i {
+                        4 | 7 => b == b'-',
+                        _ => b.is_ascii_digit(),
+                    })
+            }
+            20 => {
+                // YYYY-MM-DDTHH:MM:SSZ
+                value.as_bytes()[4] == b'-'
+                    && value.as_bytes()[7] == b'-'
+                    && value.as_bytes()[10] == b'T'
+                    && value.as_bytes()[13] == b':'
+                    && value.as_bytes()[16] == b':'
+                    && value.as_bytes()[19] == b'Z'
+                    && value.bytes().enumerate().all(|(i, b)| match i {
+                        4 | 7 => b == b'-',
+                        10 => b == b'T',
+                        13 | 16 => b == b':',
+                        19 => b == b'Z',
+                        _ => b.is_ascii_digit(),
+                    })
+            }
+            25 => {
+                // YYYY-MM-DDTHH:MM:SS+HH:MM
+                value.as_bytes()[4] == b'-'
+                    && value.as_bytes()[7] == b'-'
+                    && value.as_bytes()[10] == b'T'
+                    && value.as_bytes()[13] == b':'
+                    && value.as_bytes()[16] == b':'
+                    && (value.as_bytes()[19] == b'+' || value.as_bytes()[19] == b'-')
+                    && value.as_bytes()[22] == b':'
+                    && value.bytes().enumerate().all(|(i, b)| match i {
+                        4 | 7 => b == b'-',
+                        10 => b == b'T',
+                        13 | 16 | 22 => b == b':',
+                        19 => b == b'+' || b == b'-',
+                        _ => b.is_ascii_digit(),
+                    })
+            }
+            _ => false,
+        };
+        if !valid {
+            return Err(crate::Error::Config(format!(
+                "Date field '{}' must be ISO 8601 format (YYYY-MM-DD, YYYY-MM-DDTHH:MM:SSZ, \
+                 or YYYY-MM-DDTHH:MM:SS+HH:MM): {}",
+                field_name, value
+            )));
+        }
+        Ok(())
+    }
+
+    /// Returns `true` if any legal metadata field is set.
+    #[must_use]
+    pub fn has_content(&self) -> bool {
+        self.copyright_holder.is_some()
+            || self.contact_email.is_some()
+            || self.license_url.is_some()
+            || self.usage_terms.is_some()
+            || self.creation_date.is_some()
+            || self.ai_constraints.is_some()
+            || self.web_statement_of_rights.is_some()
+            || self.creator.is_some()
+            || self.credit_line.is_some()
+            || self.copyright_owner.is_some()
+            || self.licensor_name.is_some()
+            || self.licensor_email.is_some()
+            || self.licensor_url.is_some()
+            || self.metadata_date.is_some()
+            || self.notice_applied_at.is_some()
     }
 
     /// Returns the copyright holder name, if set.
@@ -370,6 +789,14 @@ impl LegalMetadata {
         self.usage_terms.as_deref()
     }
 
+    /// Returns the usage terms language tag, if set.
+    ///
+    /// Defaults to `"x-default"` when using [`with_usage_terms_localized`].
+    #[must_use]
+    pub fn usage_terms_lang(&self) -> Option<&str> {
+        self.usage_terms_lang.as_deref()
+    }
+
     /// Returns the creation date string, if set.
     #[must_use]
     pub fn creation_date(&self) -> Option<&str> {
@@ -392,6 +819,48 @@ impl LegalMetadata {
     #[must_use]
     pub fn creator(&self) -> Option<&str> {
         self.creator.as_deref()
+    }
+
+    /// Returns the credit line, if set.
+    #[must_use]
+    pub fn credit_line(&self) -> Option<&str> {
+        self.credit_line.as_deref()
+    }
+
+    /// Returns the copyright owner name, if set.
+    #[must_use]
+    pub fn copyright_owner(&self) -> Option<&str> {
+        self.copyright_owner.as_deref()
+    }
+
+    /// Returns the licensor name, if set.
+    #[must_use]
+    pub fn licensor_name(&self) -> Option<&str> {
+        self.licensor_name.as_deref()
+    }
+
+    /// Returns the licensor email, if set.
+    #[must_use]
+    pub fn licensor_email(&self) -> Option<&str> {
+        self.licensor_email.as_deref()
+    }
+
+    /// Returns the licensor URL, if set.
+    #[must_use]
+    pub fn licensor_url(&self) -> Option<&str> {
+        self.licensor_url.as_deref()
+    }
+
+    /// Returns the metadata date, if set.
+    #[must_use]
+    pub fn metadata_date(&self) -> Option<&str> {
+        self.metadata_date.as_deref()
+    }
+
+    /// Returns the notice-applied-at timestamp, if set.
+    #[must_use]
+    pub fn notice_applied_at(&self) -> Option<&str> {
+        self.notice_applied_at.as_deref()
     }
 
     /// Sets the copyright holder name.
@@ -422,6 +891,18 @@ impl LegalMetadata {
         self
     }
 
+    /// Sets the usage terms with an explicit language tag.
+    ///
+    /// The language tag is emitted as `xml:lang` in XMP `rdf:Alt` containers.
+    /// Defaults to `"x-default"` if not specified.
+    #[must_use]
+    pub fn with_usage_terms_localized(mut self, terms: impl Into<LocalizedText>) -> Self {
+        let lt = terms.into();
+        self.usage_terms = Some(lt.text().to_string());
+        self.usage_terms_lang = Some(lt.lang().to_string());
+        self
+    }
+
     /// Sets the creation date string.
     #[must_use]
     pub fn with_creation_date(mut self, date: impl Into<String>) -> Self {
@@ -447,6 +928,55 @@ impl LegalMetadata {
     #[must_use]
     pub fn with_creator(mut self, creator: impl Into<String>) -> Self {
         self.creator = Some(creator.into());
+        self
+    }
+
+    /// Sets the credit line.
+    #[must_use]
+    pub fn with_credit_line(mut self, line: impl Into<String>) -> Self {
+        self.credit_line = Some(line.into());
+        self
+    }
+
+    /// Sets the copyright owner name.
+    #[must_use]
+    pub fn with_copyright_owner(mut self, owner: impl Into<String>) -> Self {
+        self.copyright_owner = Some(owner.into());
+        self
+    }
+
+    /// Sets the licensor name.
+    #[must_use]
+    pub fn with_licensor_name(mut self, name: impl Into<String>) -> Self {
+        self.licensor_name = Some(name.into());
+        self
+    }
+
+    /// Sets the licensor email.
+    #[must_use]
+    pub fn with_licensor_email(mut self, email: impl Into<String>) -> Self {
+        self.licensor_email = Some(email.into());
+        self
+    }
+
+    /// Sets the licensor URL.
+    #[must_use]
+    pub fn with_licensor_url(mut self, url: impl Into<String>) -> Self {
+        self.licensor_url = Some(url.into());
+        self
+    }
+
+    /// Sets the metadata date.
+    #[must_use]
+    pub fn with_metadata_date(mut self, date: impl Into<String>) -> Self {
+        self.metadata_date = Some(date.into());
+        self
+    }
+
+    /// Sets the notice-applied-at timestamp.
+    #[must_use]
+    pub fn with_notice_applied_at(mut self, ts: impl Into<String>) -> Self {
+        self.notice_applied_at = Some(ts.into());
         self
     }
 }
@@ -567,6 +1097,14 @@ pub struct ProtectionContext {
     /// zeroed in the payload (v2 payloads without a content hash still carry the
     /// DMI value and flags fields).
     content_hash: Option<[u8; 4]>,
+    /// Policy for updating metadata when re-processing an already-protected image.
+    metadata_update_policy: Option<MetadataUpdatePolicy>,
+    /// Override for auto-computed timestamps (notice_applied_at).
+    ///
+    /// When set, this value is used instead of `current_timestamp_iso8601()`.
+    /// Intended for testing; not serialized.
+    #[serde(skip)]
+    timestamp_override: Option<String>,
     #[serde(skip)]
     config: Option<Arc<ProtectionConfig>>,
 }
@@ -577,7 +1115,7 @@ impl Serialize for ProtectionContext {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut fields = 16;
+        let mut fields = 17;
         if self.config.is_some() {
             fields += 1;
         }
@@ -601,6 +1139,7 @@ impl Serialize for ProtectionContext {
             &self.tile_extraction_max_origins,
         )?;
         s.serialize_field("content_hash", &self.content_hash)?;
+        s.serialize_field("metadata_update_policy", &self.metadata_update_policy)?;
         if self.config.is_some() {
             s.serialize_field(
                 "_config_dropped_warning",
@@ -633,6 +1172,8 @@ impl Default for ProtectionContext {
             tile_size: None,
             tile_extraction_max_origins: 64,
             content_hash: None,
+            metadata_update_policy: None,
+            timestamp_override: None,
             config: None,
         }
     }
@@ -675,6 +1216,8 @@ impl ProtectionContext {
             tile_size: None,
             tile_extraction_max_origins: 64,
             content_hash: None,
+            metadata_update_policy: None,
+            timestamp_override: None,
             config: None,
         }
     }
@@ -824,18 +1367,34 @@ impl ProtectionContext {
     ///
     /// When `enable` is `true`, legal claims (copyright, artist) are injected
     /// into the image metadata. When `enable` is `false`, legal claim injection
-    /// is disabled (same as the default).
+    /// is disabled even if [`LegalMetadata`] is present.
     ///
     /// Legal claims require [`LegalMetadata`] to be set via
     /// [`with_legal_metadata`](ProtectionContext::with_legal_metadata).
     ///
-    /// If this method is **not** called, legal claims are never injected
-    /// regardless of protection level.
+    /// If this method is **not** called, legal claims are automatically
+    /// enabled when [`LegalMetadata`] is present, and disabled otherwise.
+    ///
+    /// # Deprecated
+    ///
+    /// This method is deprecated. Legal claims are now automatically
+    /// enabled when [`LegalMetadata`] is provided. Calling this method
+    /// with `true` is redundant, and calling it with `false` while
+    /// legal metadata is present produces a
+    /// [`ContradictoryLegalClaims`](ProtectionWarning::ContradictoryLegalClaims)
+    /// warning.
     ///
     /// # Warning
     ///
     /// Only enable for content you own. May create legal liability otherwise.
     #[must_use]
+    #[deprecated(
+        since = "0.3.0",
+        note = "Legal claims are auto-enabled when LegalMetadata is present. \
+                This method is redundant for the normal case and produces a \
+                ContradictoryLegalClaims warning when used with `false` \
+                while legal metadata is set."
+    )]
     pub fn with_legal_claims(mut self, enable: bool) -> Self {
         self.inject_legal_claims = Some(enable);
         self
@@ -938,6 +1497,37 @@ impl ProtectionContext {
         self
     }
 
+    /// Set the metadata update policy for repeated image processing.
+    ///
+    /// Controls how the pipeline handles existing StegoEggo metadata when
+    /// re-processing an already-protected image.
+    #[must_use]
+    pub fn with_metadata_update_policy(mut self, policy: MetadataUpdatePolicy) -> Self {
+        self.metadata_update_policy = Some(policy);
+        self
+    }
+
+    /// Get the metadata update policy.
+    ///
+    /// Returns the caller's explicit policy, if any. Defaults to
+    /// [`MetadataUpdatePolicy::ReplaceStegoOwned`] when not set.
+    #[must_use]
+    pub fn metadata_update_policy(&self) -> MetadataUpdatePolicy {
+        self.metadata_update_policy
+            .unwrap_or(MetadataUpdatePolicy::ReplaceStegoOwned)
+    }
+
+    /// Override the auto-computed `notice_applied_at` timestamp.
+    ///
+    /// When set, this value replaces the wall-clock timestamp that would
+    /// otherwise be auto-computed. Intended for testing to produce
+    /// deterministic output. Not serialized.
+    #[must_use]
+    pub fn with_timestamp_override(mut self, ts: impl Into<String>) -> Self {
+        self.timestamp_override = Some(ts.into());
+        self
+    }
+
     /// Get the intensity value.
     #[must_use]
     pub fn intensity(&self) -> f32 {
@@ -991,11 +1581,11 @@ impl ProtectionContext {
         self.inject_metadata
     }
 
-    /// Get whether legal claim injection is enabled.
+    /// Get whether legal claim injection is explicitly overridden.
     ///
     /// Returns the caller's explicit override, if any. `None` means the
-    /// pipeline will **not** inject legal claims (default is off).
-    /// The pipeline resolves this by calling `inject_legal_claims.unwrap_or(false)`.
+    /// pipeline will auto-enable legal claims when [`LegalMetadata`] is
+    /// present and disable them otherwise.
     #[must_use]
     pub fn inject_legal_claims(&self) -> Option<bool> {
         self.inject_legal_claims
@@ -1081,6 +1671,64 @@ impl ProtectionContext {
     /// Set the protection level (non-consuming, crate-internal).
     pub(crate) fn set_protection_level(&mut self, level: ProtectionLevel) {
         self.protection_level = Some(level);
+    }
+
+    /// Normalize legal metadata and context into a format-independent [`RightsNotice`].
+    ///
+    /// This is called once per processing invocation. All format writers
+    /// (PNG tEXt, JPEG COM, WebP XMP) consume the same `RightsNotice`,
+    /// ensuring semantically equivalent metadata regardless of output format.
+    ///
+    /// The normalization resolves DMI defaults, applies auto-computed timestamps,
+    /// and merges `LegalMetadata` fields with context-level overrides.
+    #[must_use]
+    pub fn normalize_rights_notice(&self) -> RightsNotice {
+        let legal = self.legal_metadata();
+        let dmi = self
+            .dmi_value()
+            .or_else(|| {
+                self.protection_level().and_then(|level| match level {
+                    ProtectionLevel::Light => Some(DmiValue::Prohibited),
+                    ProtectionLevel::Standard => Some(DmiValue::ProhibitedAiMlTraining),
+                    _ => None,
+                })
+            })
+            .filter(|v| *v != DmiValue::Unspecified);
+
+        let notice_applied_at =
+            legal
+                .and_then(|l| l.notice_applied_at().map(String::from))
+                .or_else(|| {
+                    if legal.is_some() {
+                        Some(self.timestamp_override.clone().unwrap_or_else(
+                            crate::protected::metadata_trap::current_timestamp_iso8601,
+                        ))
+                    } else {
+                        None
+                    }
+                });
+
+        RightsNotice {
+            copyright_holder: legal.and_then(|l| l.copyright_holder().map(String::from)),
+            contact_email: legal.and_then(|l| l.contact_email().map(String::from)),
+            license_url: legal.and_then(|l| l.license_url().map(String::from)),
+            usage_terms: legal.and_then(|l| l.usage_terms().map(String::from)),
+            usage_terms_lang: legal.and_then(|l| l.usage_terms_lang().map(String::from)),
+            creation_date: legal.and_then(|l| l.creation_date().map(String::from)),
+            ai_constraints: legal.and_then(|l| l.ai_constraints().map(String::from)),
+            web_statement_of_rights: legal
+                .and_then(|l| l.web_statement_of_rights().map(String::from)),
+            creator: legal.and_then(|l| l.creator().map(String::from)),
+            credit_line: legal.and_then(|l| l.credit_line().map(String::from)),
+            copyright_owner: legal.and_then(|l| l.copyright_owner().map(String::from)),
+            licensor_name: legal.and_then(|l| l.licensor_name().map(String::from)),
+            licensor_email: legal.and_then(|l| l.licensor_email().map(String::from)),
+            licensor_url: legal.and_then(|l| l.licensor_url().map(String::from)),
+            metadata_date: legal.and_then(|l| l.metadata_date().map(String::from)),
+            notice_applied_at,
+            dmi,
+            seed: Some(self.seed()),
+        }
     }
 }
 
@@ -1391,6 +2039,24 @@ pub struct NoticeVerification {
     evidence_strength: EvidenceStrength,
     /// Evidence channels through which data was detected.
     channels: Vec<EvidenceChannel>,
+    /// License URL extracted from the image metadata.
+    license_url: Option<String>,
+    /// Web statement of rights URL extracted from the image metadata.
+    web_statement_of_rights: Option<String>,
+    /// Credit line extracted from the image metadata.
+    credit_line: Option<String>,
+    /// Copyright owner extracted from the image metadata.
+    copyright_owner: Option<String>,
+    /// Licensor name extracted from the image metadata.
+    licensor_name: Option<String>,
+    /// Licensor email extracted from the image metadata.
+    licensor_email: Option<String>,
+    /// Licensor URL extracted from the image metadata.
+    licensor_url: Option<String>,
+    /// Metadata date extracted from the image metadata.
+    metadata_date: Option<String>,
+    /// Notice-applied-at timestamp extracted from the image metadata.
+    notice_applied_at: Option<String>,
 }
 
 impl NoticeVerification {
@@ -1415,7 +2081,10 @@ impl NoticeVerification {
     /// Returns the rights URL, if found.
     #[must_use]
     pub fn rights_url(&self) -> Option<&str> {
-        self.rights_url.as_deref()
+        self.rights_url
+            .as_deref()
+            .or(self.web_statement_of_rights.as_deref())
+            .or(self.license_url.as_deref())
     }
 
     /// Returns the usage terms, if found.
@@ -1506,6 +2175,60 @@ impl NoticeVerification {
         &self.channels
     }
 
+    /// Returns the license URL, if found.
+    #[must_use]
+    pub fn license_url(&self) -> Option<&str> {
+        self.license_url.as_deref()
+    }
+
+    /// Returns the web statement of rights URL, if found.
+    #[must_use]
+    pub fn web_statement_of_rights(&self) -> Option<&str> {
+        self.web_statement_of_rights.as_deref()
+    }
+
+    /// Returns the credit line, if found.
+    #[must_use]
+    pub fn credit_line(&self) -> Option<&str> {
+        self.credit_line.as_deref()
+    }
+
+    /// Returns the copyright owner, if found.
+    #[must_use]
+    pub fn copyright_owner(&self) -> Option<&str> {
+        self.copyright_owner.as_deref()
+    }
+
+    /// Returns the licensor name, if found.
+    #[must_use]
+    pub fn licensor_name(&self) -> Option<&str> {
+        self.licensor_name.as_deref()
+    }
+
+    /// Returns the licensor email, if found.
+    #[must_use]
+    pub fn licensor_email(&self) -> Option<&str> {
+        self.licensor_email.as_deref()
+    }
+
+    /// Returns the licensor URL, if found.
+    #[must_use]
+    pub fn licensor_url(&self) -> Option<&str> {
+        self.licensor_url.as_deref()
+    }
+
+    /// Returns the metadata date, if found.
+    #[must_use]
+    pub fn metadata_date(&self) -> Option<&str> {
+        self.metadata_date.as_deref()
+    }
+
+    /// Returns the notice-applied-at timestamp, if found.
+    #[must_use]
+    pub fn notice_applied_at(&self) -> Option<&str> {
+        self.notice_applied_at.as_deref()
+    }
+
     /// Returns `true` if any legal-notice metadata was found.
     #[must_use]
     pub fn has_notice(&self) -> bool {
@@ -1516,6 +2239,15 @@ impl NoticeVerification {
             || self.usage_terms.is_some()
             || self.ai_constraints.is_some()
             || self.dmi.is_some()
+            || self.license_url.is_some()
+            || self.web_statement_of_rights.is_some()
+            || self.credit_line.is_some()
+            || self.copyright_owner.is_some()
+            || self.licensor_name.is_some()
+            || self.licensor_email.is_some()
+            || self.licensor_url.is_some()
+            || self.metadata_date.is_some()
+            || self.notice_applied_at.is_some()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1537,6 +2269,15 @@ impl NoticeVerification {
         authenticated: bool,
         evidence_strength: EvidenceStrength,
         channels: Vec<EvidenceChannel>,
+        license_url: Option<String>,
+        web_statement_of_rights: Option<String>,
+        credit_line: Option<String>,
+        copyright_owner: Option<String>,
+        licensor_name: Option<String>,
+        licensor_email: Option<String>,
+        licensor_url: Option<String>,
+        metadata_date: Option<String>,
+        notice_applied_at: Option<String>,
     ) -> Self {
         Self {
             copyright_holder,
@@ -1556,6 +2297,15 @@ impl NoticeVerification {
             authenticated,
             evidence_strength,
             channels,
+            license_url,
+            web_statement_of_rights,
+            credit_line,
+            copyright_owner,
+            licensor_name,
+            licensor_email,
+            licensor_url,
+            metadata_date,
+            notice_applied_at,
         }
     }
 }
@@ -1608,6 +2358,13 @@ pub enum ProtectionWarning {
     /// quantization tables. This provides weaker protection than the standard
     /// DCT steganography path.
     DctCapacityInsufficient,
+    /// Legal claims were explicitly disabled while legal metadata is present.
+    ///
+    /// The caller set `inject_legal_claims` to `false` but also provided
+    /// non-empty [`LegalMetadata`]. This is contradictory: legal metadata
+    /// should not be provided if injection is not desired. The legal metadata
+    /// will be silently ignored.
+    ContradictoryLegalClaims,
 }
 
 impl std::fmt::Display for ProtectionWarning {
@@ -1640,6 +2397,12 @@ impl std::fmt::Display for ProtectionWarning {
                 f,
                 "JPEG DCT coefficients insufficient for full F5 embedding: \
                  fell back to Q-table seed only. Weaker protection applied."
+            ),
+            ProtectionWarning::ContradictoryLegalClaims => write!(
+                f,
+                "Legal claims explicitly disabled but legal metadata is present: \
+                 the legal metadata will be ignored. Remove the legal metadata or \
+                 stop disabling legal claims."
             ),
         }
     }
@@ -1690,6 +2453,7 @@ impl ProtectionWarning {
             ProtectionWarning::JpegReencodeFragile => WarningCategory::FormatFragility,
             ProtectionWarning::LsbCapacitySkipped => WarningCategory::BestEffortStego,
             ProtectionWarning::DctCapacityInsufficient => WarningCategory::BestEffortStego,
+            ProtectionWarning::ContradictoryLegalClaims => WarningCategory::LegalNotice,
         }
     }
 
@@ -1718,6 +2482,7 @@ impl ProtectionWarning {
                     _ => WarningSeverity::Warning,
                 }
             }
+            ProtectionWarning::ContradictoryLegalClaims => WarningSeverity::Warning,
         }
     }
 }
@@ -2149,5 +2914,213 @@ mod plus_mapping_tests {
             DmiValue::ProhibitedAiMlTraining.plus_vocab_key(),
             "DMI-PROHIBITED-AIMLTRAINING"
         );
+    }
+}
+
+#[cfg(test)]
+mod url_validation_tests {
+    use super::*;
+
+    #[test]
+    fn valid_https_url_passes() {
+        let meta = LegalMetadata::new().with_license_url("https://example.com/license");
+        assert!(meta.validate().is_ok());
+    }
+
+    #[test]
+    fn valid_http_url_passes() {
+        let meta = LegalMetadata::new().with_license_url("http://example.com/license");
+        assert!(meta.validate().is_ok());
+    }
+
+    #[test]
+    fn valid_ftp_url_passes() {
+        let meta = LegalMetadata::new().with_license_url("ftp://files.example.com/doc");
+        assert!(meta.validate().is_ok());
+    }
+
+    #[test]
+    fn missing_scheme_fails() {
+        let meta = LegalMetadata::new().with_license_url("example.com/license");
+        let err = meta.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("must include a scheme"),
+            "Expected scheme error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn empty_url_fails() {
+        let meta = LegalMetadata::new().with_license_url("");
+        let err = meta.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("must not be empty"),
+            "Expected empty error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn scheme_only_fails() {
+        let meta = LegalMetadata::new().with_license_url("https://");
+        let err = meta.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("must include an authority"),
+            "Expected authority error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn web_statement_validates() {
+        let meta = LegalMetadata::new().with_web_statement_of_rights("not-a-url");
+        let err = meta.validate().unwrap_err();
+        assert!(err.to_string().contains("web_statement_of_rights"));
+    }
+
+    #[test]
+    fn licensor_url_validates() {
+        let meta = LegalMetadata::new().with_licensor_url("missing-scheme");
+        let err = meta.validate().unwrap_err();
+        assert!(err.to_string().contains("licensor_url"));
+    }
+
+    #[test]
+    fn non_url_fields_not_affected() {
+        let meta = LegalMetadata::new()
+            .with_copyright_holder("Test")
+            .with_creator("Author");
+        assert!(meta.validate().is_ok());
+    }
+}
+
+#[cfg(test)]
+mod localized_text_tests {
+    use super::*;
+
+    #[test]
+    fn new_defaults_to_x_default() {
+        let lt = LocalizedText::new("All rights reserved");
+        assert_eq!(lt.text(), "All rights reserved");
+        assert_eq!(lt.lang(), "x-default");
+    }
+
+    #[test]
+    fn with_lang_sets_language() {
+        let lt = LocalizedText::with_lang("Tous droits réservés.", "fr");
+        assert_eq!(lt.text(), "Tous droits réservés.");
+        assert_eq!(lt.lang(), "fr");
+    }
+
+    #[test]
+    fn from_string_uses_default_lang() {
+        let lt: LocalizedText = "test".into();
+        assert_eq!(lt.lang(), "x-default");
+    }
+
+    #[test]
+    fn display_returns_text() {
+        let lt = LocalizedText::new("hello");
+        assert_eq!(format!("{}", lt), "hello");
+    }
+
+    #[test]
+    fn usage_terms_localized_sets_both_fields() {
+        let meta = LegalMetadata::new()
+            .with_usage_terms_localized(LocalizedText::with_lang("Tous droits réservés.", "fr"));
+        assert_eq!(meta.usage_terms(), Some("Tous droits réservés."));
+        assert_eq!(meta.usage_terms_lang(), Some("fr"));
+    }
+
+    #[test]
+    fn usage_terms_localized_from_string_uses_default_lang() {
+        let meta = LegalMetadata::new().with_usage_terms_localized("All rights reserved");
+        assert_eq!(meta.usage_terms(), Some("All rights reserved"));
+        assert_eq!(meta.usage_terms_lang(), Some("x-default"));
+    }
+
+    #[test]
+    fn usage_terms_plain_has_no_lang() {
+        let meta = LegalMetadata::new().with_usage_terms("All rights reserved");
+        assert_eq!(meta.usage_terms(), Some("All rights reserved"));
+        assert_eq!(meta.usage_terms_lang(), None);
+    }
+}
+
+#[cfg(test)]
+mod date_validation_tests {
+    use super::*;
+
+    #[test]
+    fn valid_date_only() {
+        let meta = LegalMetadata::new().with_creation_date("2024-01-15");
+        assert!(meta.validate().is_ok());
+    }
+
+    #[test]
+    fn valid_datetime_utc() {
+        let meta = LegalMetadata::new().with_notice_applied_at("2024-01-15T12:30:45Z");
+        assert!(meta.validate().is_ok());
+    }
+
+    #[test]
+    fn valid_datetime_offset() {
+        let meta = LegalMetadata::new().with_metadata_date("2024-01-15T12:30:45+05:30");
+        assert!(meta.validate().is_ok());
+    }
+
+    #[test]
+    fn valid_datetime_negative_offset() {
+        let meta = LegalMetadata::new().with_creation_date("2024-01-15T12:30:45-08:00");
+        assert!(meta.validate().is_ok());
+    }
+
+    #[test]
+    fn invalid_date_too_short() {
+        let meta = LegalMetadata::new().with_creation_date("2024-01");
+        let err = meta.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("ISO 8601"),
+            "Expected ISO 8601 error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn invalid_date_wrong_separator() {
+        let meta = LegalMetadata::new().with_creation_date("2024/01/15");
+        let err = meta.validate().unwrap_err();
+        assert!(err.to_string().contains("ISO 8601"));
+    }
+
+    #[test]
+    fn invalid_datetime_missing_t() {
+        let meta = LegalMetadata::new().with_notice_applied_at("2024-01-15 12:30:45Z");
+        let err = meta.validate().unwrap_err();
+        assert!(err.to_string().contains("ISO 8601"));
+    }
+
+    #[test]
+    fn empty_date_fails() {
+        let meta = LegalMetadata::new().with_creation_date("");
+        let err = meta.validate().unwrap_err();
+        assert!(err.to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn date_only_with_time_component_fails() {
+        let meta = LegalMetadata::new().with_creation_date("2024-01-15T");
+        let err = meta.validate().unwrap_err();
+        assert!(err.to_string().contains("ISO 8601"));
+    }
+
+    #[test]
+    fn all_date_fields_valid() {
+        let meta = LegalMetadata::new()
+            .with_creation_date("2024-01-15")
+            .with_metadata_date("2024-01-15T12:30:45Z")
+            .with_notice_applied_at("2024-01-15T12:30:45+05:30");
+        assert!(meta.validate().is_ok());
     }
 }
