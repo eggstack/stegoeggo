@@ -837,12 +837,15 @@ The conformance suite validates that protected images expose correct
 rights metadata to external tools. It uses a layered approach:
 
 1. **Fixture manifest** — machine-readable TOML manifest with SHA-256 digests, expected values, and provenance
-2. **Internal extraction** — `verify_legal_notice()` parses the image
-3. **External extraction** — ExifTool extracts metadata independently
-4. **Namespace-aware XMP validation** — xmllint validates XML structure
-5. **Normalized comparison** — internal and external results are compared field-by-field
-6. **Coverage enforcement** — strict mode requires minimum fixtures per format and category
-7. **Machine-readable report** — JSON output with per-check pass/fail/warn
+2. **Manifest validation** — structural checks (duplicate IDs, path traversal, invalid formats/categories, SHA-256 validity) run before any fixtures are processed
+3. **Internal extraction** — `verify_legal_notice()` parses the image
+4. **External extraction** — ExifTool extracts metadata independently
+5. **Namespace-aware XMP validation** — xmllint validates XML structure
+6. **Normalized comparison** — internal and external results are compared field-by-field
+7. **Coverage enforcement** — strict mode requires explicit per-category and per-format minimums
+8. **Machine-readable report** — JSON output with per-check pass/fail/warn
+
+Strict mode requires `--manifest` and evaluates per-fixture expectations from the manifest. The harness returns stable exit codes (0–5) for scripting.
 
 ### Running Conformance Checks
 

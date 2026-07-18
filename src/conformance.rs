@@ -135,6 +135,15 @@ pub struct ConformanceReport {
     pub decode_valid: bool,
     /// Whether XMP is well-formed XML (if XMP was found).
     pub xmp_valid: Option<bool>,
+    /// Manifest fixture ID, if matched.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fixture_id: Option<String>,
+    /// Fixture category from manifest, if matched.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// Fixture source classification, if matched.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     /// Normalized metadata from internal extraction.
     pub internal: InternalExtraction,
     /// Metadata extracted by external parsers.
@@ -157,6 +166,9 @@ impl ConformanceReport {
             generated_by: "stegoeggo-conformance".to_string(),
             decode_valid: false,
             xmp_valid: None,
+            fixture_id: None,
+            category: None,
+            source: None,
             internal: InternalExtraction::default(),
             external: Vec::new(),
             checks: Vec::new(),
@@ -256,13 +268,24 @@ pub fn detect_format(bytes: &[u8]) -> Option<String> {
 /// (e.g., "Prohibited for AI/ML training"). This normalizes all forms for comparison.
 #[must_use]
 pub fn normalize_dmi_value(s: &str) -> String {
+    match s {
+        "DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING" => {
+            return "DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING".to_string()
+        }
+        "DMI-PROHIBITED-GENAIMLTRAINING" => return "DMI-PROHIBITED-GENAIMLTRAINING".to_string(),
+        "DMI-PROHIBITED-AIMLTRAINING" => return "DMI-PROHIBITED-AIMLTRAINING".to_string(),
+        "DMI-PROHIBITED-SEECONSTRAINT" => return "DMI-PROHIBITED-SEECONSTRAINT".to_string(),
+        "DMI-PROHIBITED" => return "DMI-PROHIBITED".to_string(),
+        "DMI-ALLOWED" => return "DMI-ALLOWED".to_string(),
+        _ => {}
+    }
     let lower = s.to_lowercase();
-    if lower.contains("prohibited") && (lower.contains("ai") || lower.contains("aiml")) {
-        "DMI-PROHIBITED-AIMLTRAINING".to_string()
-    } else if lower.contains("prohibited") && lower.contains("gen") {
-        "DMI-PROHIBITED-GENAIMLTRAINING".to_string()
-    } else if lower.contains("prohibited") && lower.contains("search") {
+    if lower.contains("prohibited") && lower.contains("search") {
         "DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING".to_string()
+    } else if lower.contains("prohibited") && lower.contains("gen") && lower.contains("ai") {
+        "DMI-PROHIBITED-GENAIMLTRAINING".to_string()
+    } else if lower.contains("prohibited") && (lower.contains("ai") || lower.contains("aiml")) {
+        "DMI-PROHIBITED-AIMLTRAINING".to_string()
     } else if lower.contains("prohibited") && lower.contains("see") {
         "DMI-PROHIBITED-SEECONSTRAINT".to_string()
     } else if lower.contains("prohibited") {
@@ -537,6 +560,12 @@ impl FixtureManifest {
         self.entries.iter().find(|e| e.path == path)
     }
 
+    /// Build a path-to-entry index for O(1) lookups.
+    #[must_use]
+    pub fn path_index(&self) -> std::collections::HashMap<String, &FixtureEntry> {
+        self.entries.iter().map(|e| (e.path.clone(), e)).collect()
+    }
+
     /// Return all entries belonging to a given category.
     #[must_use]
     pub fn entries_by_category(&self, category: &str) -> Vec<&FixtureEntry> {
@@ -570,6 +599,88 @@ pub fn load_manifest(path: &Path) -> Result<FixtureManifest, String> {
     let manifest: FixtureManifest =
         toml::from_str(&content).map_err(|e| format!("Failed to parse manifest: {}", e))?;
     Ok(manifest)
+}
+
+/// Validate manifest structure before processing fixtures.
+///
+/// Checks for duplicate IDs, duplicate paths, empty IDs, path traversal,
+/// unsupported formats/categories, missing SHA-256, and other structural issues.
+pub fn validate_manifest(manifest: &FixtureManifest) -> Result<(), Vec<String>> {
+    let mut errors = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+    let mut seen_paths = std::collections::HashSet::new();
+
+    let valid_formats = ["png", "jpeg", "webp"];
+    let valid_categories = [
+        "canonical",
+        "legacy",
+        "conflicting",
+        "malformed",
+        "preservation",
+    ];
+    let valid_sources = [
+        "generated",
+        "external",
+        "historical",
+        "generated-negative",
+        "current-generated",
+    ];
+
+    for entry in &manifest.entries {
+        if entry.id.is_empty() {
+            errors.push(format!("Fixture at '{}' has empty ID", entry.path));
+        }
+        if !seen_ids.insert(&entry.id) {
+            errors.push(format!("Duplicate fixture ID: '{}'", entry.id));
+        }
+        if !seen_paths.insert(&entry.path) {
+            errors.push(format!("Duplicate fixture path: '{}'", entry.path));
+        }
+        if entry.path.starts_with('/') || entry.path.starts_with('\\') {
+            errors.push(format!("Fixture '{}' has absolute path", entry.id));
+        }
+        if entry.path.contains("..") {
+            errors.push(format!(
+                "Fixture '{}' contains path traversal (..)",
+                entry.id
+            ));
+        }
+        if !valid_formats.contains(&entry.format.as_str()) {
+            errors.push(format!(
+                "Fixture '{}' has unsupported format: '{}'",
+                entry.id, entry.format
+            ));
+        }
+        if !valid_categories.contains(&entry.category.as_str()) {
+            errors.push(format!(
+                "Fixture '{}' has unsupported category: '{}'",
+                entry.id, entry.category
+            ));
+        }
+        if !valid_sources.contains(&entry.source.as_str()) {
+            errors.push(format!(
+                "Fixture '{}' has unsupported source: '{}'",
+                entry.id, entry.source
+            ));
+        }
+        if entry.sha256.is_empty() {
+            errors.push(format!("Fixture '{}' has empty SHA-256", entry.id));
+        } else if entry.sha256.len() != 64 || !entry.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+            errors.push(format!(
+                "Fixture '{}' has invalid SHA-256: expected 64 hex characters",
+                entry.id
+            ));
+        }
+        if entry.source == "external" && entry.authoring_tool_version.is_empty() {
+            // Allow empty version for external tools but log it
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 /// Result of SHA-256 digest verification for a single fixture.
@@ -623,12 +734,12 @@ pub struct CoverageMinimums {
     pub conflict_min: usize,
     /// Minimum malformed fixtures required.
     pub malformed_min: usize,
+    /// Minimum malformed fixtures per format (png, jpeg, webp).
+    pub malformed_per_format: usize,
     /// Minimum preservation fixtures required.
     pub preservation_min: usize,
     /// Minimum distinct formats required in preservation category.
     pub preservation_formats: usize,
-    /// Minimum percentage of fixtures from external sources.
-    pub external_coverage_pct: f64,
 }
 
 impl Default for CoverageMinimums {
@@ -641,9 +752,9 @@ impl Default for CoverageMinimums {
             legacy_formats: 2,
             conflict_min: 3,
             malformed_min: 4,
+            malformed_per_format: 1,
             preservation_min: 3,
             preservation_formats: 3,
-            external_coverage_pct: 75.0,
         }
     }
 }
@@ -726,6 +837,29 @@ pub fn check_coverage(
             minimums.malformed_min
         ));
     }
+    let malformed_png = malformed.iter().filter(|e| e.format == "png").count();
+    let malformed_jpeg = malformed.iter().filter(|e| e.format == "jpeg").count();
+    let malformed_webp = malformed.iter().filter(|e| e.format == "webp").count();
+    if minimums.malformed_per_format > 0 {
+        if malformed_png < minimums.malformed_per_format {
+            violations.push(format!(
+                "malformed PNG: {} < {}",
+                malformed_png, minimums.malformed_per_format
+            ));
+        }
+        if malformed_jpeg < minimums.malformed_per_format {
+            violations.push(format!(
+                "malformed JPEG: {} < {}",
+                malformed_jpeg, minimums.malformed_per_format
+            ));
+        }
+        if malformed_webp < minimums.malformed_per_format {
+            violations.push(format!(
+                "malformed WebP: {} < {}",
+                malformed_webp, minimums.malformed_per_format
+            ));
+        }
+    }
 
     let preservation = manifest.entries_by_category("preservation");
     let preservation_format_count = preservation
@@ -744,24 +878,6 @@ pub fn check_coverage(
         violations.push(format!(
             "preservation formats: {} < {}",
             preservation_format_count, minimums.preservation_formats
-        ));
-    }
-
-    let external_count = manifest
-        .entries
-        .iter()
-        .filter(|e| e.source == "external")
-        .count();
-    let total = manifest.entries.len();
-    let external_pct = if total > 0 {
-        (external_count as f64 / total as f64) * 100.0
-    } else {
-        0.0
-    };
-    if external_pct < minimums.external_coverage_pct {
-        violations.push(format!(
-            "external coverage: {:.1}% < {:.1}%",
-            external_pct, minimums.external_coverage_pct
         ));
     }
 

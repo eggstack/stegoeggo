@@ -10,7 +10,6 @@
 #
 # Options:
 #   --strict          Fail if required tools are missing (default: skip external checks)
-#   --require-complete  Fail if any required tool suite is unavailable
 #   --format FMT      Filter by format (png, jpeg, webp)
 #   --all-formats     Check all formats (default behavior)
 #   --json PATH       Write machine-readable JSON report to PATH
@@ -31,7 +30,6 @@ NC='\033[0m'
 
 HARNESS=""
 STRICT=""
-REQUIRE_COMPLETE=""
 JSON_PATH=""
 FIXTURES_DIR="tests/fixtures/conformance"
 MANIFEST_PATH="tests/fixtures/conformance/manifest.toml"
@@ -40,7 +38,6 @@ FORMAT_FILTER=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --strict) STRICT="--strict"; shift ;;
-        --require-complete) REQUIRE_COMPLETE="--require-complete"; shift ;;
         --json)
             if [ -z "${2:-}" ]; then
                 echo "Error: --json requires a path"
@@ -67,7 +64,7 @@ while [ $# -gt 0 ]; do
             FORMAT_FILTER="--format $2"; shift 2 ;;
         --all-formats) FORMAT_FILTER=""; shift ;;
         -h|--help)
-            echo "Usage: $0 [--strict] [--require-complete] [--json PATH] [--fixtures PATH] [--manifest PATH] [--format FMT] [--all-formats]"
+            echo "Usage: $0 [--strict] [--json PATH] [--fixtures PATH] [--manifest PATH] [--format FMT] [--all-formats]"
             exit 0
             ;;
         *)
@@ -95,8 +92,8 @@ check_tool() {
     if command -v "$tool" &>/dev/null; then
         return 0
     fi
-    if [ -n "$STRICT" ] || [ -n "$REQUIRE_COMPLETE" ]; then
-        echo "Error: $tool is required in strict/require-complete mode but not found."
+    if [ -n "$STRICT" ]; then
+        echo "Error: $tool is required in strict mode but not found."
         echo "Install with: $install_hint"
         exit 2
     fi
@@ -141,7 +138,7 @@ echo "Running conformance harness..."
 echo ""
 
 set +e
-$HARNESS --fixtures "$FIXTURES_DIR" $STRICT $REQUIRE_COMPLETE $FORMAT_FILTER $EXTRA_ARGS
+$HARNESS --fixtures "$FIXTURES_DIR" $STRICT $FORMAT_FILTER $EXTRA_ARGS
 EXIT_CODE=$?
 set -e
 

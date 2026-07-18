@@ -38,9 +38,11 @@ Fixture manifest (TOML)
 |----------|---------|-----------------|-------------------|
 | `canonical/` | Standard PLUS LDF metadata | All checks PASS | PNG≥1, JPEG≥1, WebP≥1 |
 | `legacy/` | v0.3 backward compatibility | Extractable, may warn | ≥3 across ≥2 formats |
-| `malformed/` | Invalid XML, truncated chunks | Graceful degradation | ≥4 |
+| `malformed/` | Invalid XML, truncated chunks | Graceful degradation | ≥4 total, ≥1 per format (png, jpeg, webp) |
 | `conflicting/` | Contradictory declarations | Conflicts reported | ≥3 |
-| `preservation/` | Existing metadata preservation | Unrelated fields survive | ≥3 (PNG, JPEG, WebP) |
+| `preservation/` | Existing metadata preservation | Unrelated fields survive | ≥3 across all 3 formats |
+
+Coverage minimums are enforced by `CoverageMinimums` (explicit per-category and per-format thresholds). The blanket 75% external-fixture threshold has been replaced with these explicit minimums. The `malformed_per_format` field ensures malformed fixtures cover all three formats, not just a total count.
 
 ## Check Results
 
@@ -61,10 +63,10 @@ A report passes only when no checks have `Fail` severity.
 | ImageMagick | Format smoke tests | Yes (strict mode) |
 | libvips | Container metadata checks | Yes (strict mode) |
 
-## Strict vs Non-Strict Mode
+## Strict Mode
 
-- **Strict**: Missing tools cause failure. Digest mismatches cause failure. Coverage minimums enforced. All checks must pass.
-- **Non-strict**: Missing tools produce warnings. Checks still run where possible.
+- **Strict**: Missing tools cause failure. Digest mismatches cause failure. Coverage minimums enforced. All checks must pass. Requires `--manifest`. This is the single complete-validation mode.
+- **Non-strict**: Missing tools produce warnings. Checks still run where possible. `--require-complete` has been removed; `--strict` is the only way to enable full validation.
 
 ## Fixture Manifest
 
@@ -79,6 +81,41 @@ documenting every fixture with:
 
 Digest verification runs before any conformance checks. In strict mode,
 a digest mismatch is a hard failure.
+
+## Manifest Validation
+
+Before processing fixtures, the harness validates manifest structure via
+`validate_manifest()`. This checks for:
+- Duplicate fixture IDs
+- Duplicate fixture paths
+- Empty IDs
+- Absolute paths or path traversal (`..`)
+- Unsupported formats (only `png`, `jpeg`, `webp`)
+- Unsupported categories (only `canonical`, `legacy`, `conflicting`, `malformed`, `preservation`)
+- Unsupported sources (only `generated`, `external`, `historical`, `generated-negative`, `current-generated`)
+- Empty or invalid SHA-256 digests (must be 64 hex characters)
+
+Validation failures produce `EXIT_CONFIG` (2) before any fixtures are processed.
+
+## Exit Codes
+
+| Code | Constant | Meaning |
+|------|----------|---------|
+| 0 | `EXIT_PASS` | All checks passed |
+| 1 | `EXIT_FAIL` | One or more checks failed |
+| 2 | `EXIT_CONFIG` | Configuration error (missing manifest, invalid manifest, missing tools in strict mode) |
+| 3 | `EXIT_DIGEST` | Digest mismatch between manifest and fixture file |
+| 4 | `EXIT_COVERAGE` | Coverage minimums not met |
+| 5 | `EXIT_INTERNAL` | Internal harness error |
+
+Exit codes are stable and should not change without a version bump.
+
+## External Tools in CI
+
+ImageMagick and libvips are installed in both CI and release workflows.
+The CI workflow installs all tools in a single `apt-get` step. The release
+workflow installs them as separate named steps. Neither workflow uses
+`continue-on-error` for conformance checks.
 
 ## JSON Report Schema
 

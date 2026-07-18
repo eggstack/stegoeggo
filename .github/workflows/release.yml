@@ -52,15 +52,23 @@ jobs:
       - name: Package dry-run
         run: cargo package --workspace --allow-dirty --no-verify
 
+      - name: Install cargo-deny
+        run: cargo install cargo-deny
+
       - name: License check
         run: cargo deny check licenses
-        continue-on-error: true
 
       - name: Install exiftool
         run: sudo apt-get update && sudo apt-get install -y libimage-exiftool-perl
 
       - name: Install xmllint
         run: sudo apt-get install -y libxml2-utils
+
+      - name: Install ImageMagick
+        run: sudo apt-get install -y imagemagick
+
+      - name: Install libvips
+        run: sudo apt-get install -y libvips-tools
 
       - name: Build conformance harness
         run: cargo build --release --bin stegoeggo-conformance
@@ -69,6 +77,7 @@ jobs:
         run: |
           ./target/release/stegoeggo-conformance \
             --fixtures tests/fixtures/conformance \
+            --manifest tests/fixtures/conformance/manifest.toml \
             --strict \
             --json conformance-report.json
 
@@ -76,5 +85,24 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-conformance-report
+          name: conformance-report
           path: conformance-report.json
+
+      - name: Write tool version manifest
+        if: always()
+        run: |
+          {
+            echo "exiftool $(exiftool -ver)"
+            echo "xmllint $(xmllint --version 2>&1 | head -1)"
+            echo "imagemagick $(convert --version 2>&1 | head -1)"
+            echo "libvips $(vips --version 2>&1 | head -1)"
+            echo "rustc $(rustc --version)"
+            echo "cargo $(cargo --version)"
+          } > tool-versions.txt
+
+      - name: Upload tool versions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-tool-versions
+          path: tool-versions.txt

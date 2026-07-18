@@ -3,10 +3,18 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use stegoeggo::conformance::{
-    self, check_coverage, load_manifest, verify_fixtures, CheckSeverity, ConformanceReport,
-    ConformanceSummary, CoverageCheckResult, CoverageMinimums, DigestCheckResult,
-    ExternalExtraction, InternalExtraction,
+    self, CheckSeverity, ConformanceReport, ConformanceSummary, CoverageCheckResult,
+    DigestCheckResult, ExternalExtraction, InternalExtraction,
 };
+
+#[allow(dead_code)]
+const EXIT_PASS: i32 = 0;
+const EXIT_FAIL: i32 = 1;
+const EXIT_CONFIG: i32 = 2;
+const EXIT_DIGEST: i32 = 3;
+const EXIT_COVERAGE: i32 = 4;
+#[allow(dead_code)]
+const EXIT_INTERNAL: i32 = 5;
 
 const MAX_XMP_BYTES: usize = 65536;
 const MAX_PROPERTIES: usize = 100;
@@ -481,6 +489,138 @@ pub struct HarnessResult {
     pub coverage: Option<CoverageCheckResult>,
 }
 
+fn evaluate_manifest_expectations(
+    entry: &conformance::FixtureEntry,
+    report: &mut ConformanceReport,
+) {
+    if !entry.expected_dmi.is_empty() {
+        let normalized_expected = conformance::normalize_dmi_value(&entry.expected_dmi);
+        if let Some(ref canonical) = report.internal.canonical_data_mining {
+            let normalized_actual = conformance::normalize_dmi_value(canonical);
+            if normalized_expected != normalized_actual {
+                report.add_check_with_details(
+                    "expected_dmi",
+                    CheckSeverity::Fail,
+                    "Observed DMI differs from manifest expectation",
+                    &format!(
+                        "expected={:?}, observed={:?}",
+                        entry.expected_dmi, canonical
+                    ),
+                );
+            } else {
+                report.add_check(
+                    "expected_dmi",
+                    CheckSeverity::Pass,
+                    "DMI matches manifest expectation",
+                );
+            }
+        } else if !entry.expected_malformed {
+            report.add_check(
+                "expected_dmi",
+                CheckSeverity::Fail,
+                "Expected DMI but none found internally",
+            );
+        }
+    }
+
+    let has_conflict = !report.conflicts.is_empty();
+    if entry.expected_conflict && !has_conflict {
+        report.add_check(
+            "expected_conflict",
+            CheckSeverity::Fail,
+            "Expected conflict but none detected",
+        );
+    } else if !entry.expected_conflict && has_conflict {
+        report.add_check(
+            "expected_conflict",
+            CheckSeverity::Fail,
+            "Unexpected conflict detected",
+        );
+    } else if entry.expected_conflict {
+        report.add_check(
+            "expected_conflict",
+            CheckSeverity::Pass,
+            "Conflict correctly detected",
+        );
+    }
+
+    let ef = &entry.expected_legal_fields;
+
+    macro_rules! check_expected_field {
+        ($name:expr, $expected:expr, $actual:expr) => {
+            if let Some(ref exp) = $expected {
+                if let Some(ref act) = $actual {
+                    if exp == act {
+                        report.add_check($name, CheckSeverity::Pass, "Field matches expectation");
+                    } else {
+                        report.add_check_with_details(
+                            $name,
+                            CheckSeverity::Fail,
+                            "Field differs from expectation",
+                            &format!("expected={:?}, observed={:?}", exp, act),
+                        );
+                    }
+                } else {
+                    report.add_check_with_details(
+                        $name,
+                        CheckSeverity::Fail,
+                        "Expected field not found",
+                        &format!("expected={:?}", exp),
+                    );
+                }
+            }
+        };
+    }
+
+    check_expected_field!(
+        "expected_copyright_holder",
+        ef.copyright_holder,
+        report.internal.copyright_holder
+    );
+    let creator_actual = report.internal.creators.first().cloned();
+    check_expected_field!("expected_creator", ef.creator, creator_actual);
+    check_expected_field!(
+        "expected_copyright_owner",
+        ef.copyright_owner,
+        report.internal.copyright_owner
+    );
+    check_expected_field!(
+        "expected_usage_terms",
+        ef.usage_terms,
+        report.internal.usage_terms
+    );
+    check_expected_field!(
+        "expected_rights_url",
+        ef.web_statement_of_rights,
+        report.internal.web_statement_of_rights
+    );
+    check_expected_field!(
+        "expected_ai_constraints",
+        ef.ai_constraints,
+        report.internal.ai_constraints
+    );
+    check_expected_field!(
+        "expected_credit_line",
+        ef.credit_line,
+        report.internal.credit_line
+    );
+    check_expected_field!(
+        "expected_licensor_name",
+        ef.licensor_name,
+        report.internal.licensor_name
+    );
+    check_expected_field!(
+        "expected_licensor_email",
+        ef.licensor_email,
+        report.internal.licensor_email
+    );
+    check_expected_field!(
+        "expected_licensor_url",
+        ef.licensor_url,
+        report.internal.licensor_url
+    );
+}
+
 pub fn run_harness(
     fixtures_dir: &Path,
     strict: bool,
@@ -493,7 +633,7 @@ pub fn run_harness(
         None => {
             if strict {
                 eprintln!("Error: exiftool required in strict mode but not found");
-                std::process::exit(2);
+                std::process::exit(EXIT_CONFIG);
             }
             eprintln!("Warning: exiftool not found, skipping external validation");
             return HarnessResult {
@@ -504,23 +644,42 @@ pub fn run_harness(
         }
     };
 
-    let mut reports = Vec::new();
+    if strict && manifest_path.is_none() {
+        eprintln!("Error: --manifest required in strict mode");
+        std::process::exit(EXIT_CONFIG);
+    }
 
     if !fixtures_dir.exists() {
+        if strict {
+            eprintln!(
+                "Error: fixtures directory not found at {}",
+                fixtures_dir.display()
+            );
+            std::process::exit(EXIT_CONFIG);
+        }
         eprintln!(
             "Warning: fixtures directory not found at {}",
             fixtures_dir.display()
         );
         return HarnessResult {
-            reports,
+            reports: Vec::new(),
             digest_results: None,
             coverage: None,
         };
     }
 
+    let mut reports = Vec::new();
+
     let fixture_files = conformance::collect_fixture_files(fixtures_dir, format_filter);
 
     if fixture_files.is_empty() {
+        if strict {
+            eprintln!(
+                "Error: no fixture images found in {}",
+                fixtures_dir.display()
+            );
+            std::process::exit(EXIT_CONFIG);
+        }
         eprintln!("No fixture images found in {}", fixtures_dir.display());
         return HarnessResult {
             reports,
@@ -528,6 +687,47 @@ pub fn run_harness(
             coverage: None,
         };
     }
+
+    let manifest = if let Some(mpath) = manifest_path {
+        match conformance::load_manifest(mpath) {
+            Ok(m) => {
+                if strict && m.entries.is_empty() {
+                    eprintln!("Error: manifest contains no entries");
+                    std::process::exit(EXIT_CONFIG);
+                }
+                match conformance::validate_manifest(&m) {
+                    Ok(()) => {
+                        eprintln!(
+                            "Loaded and validated manifest with {} entries",
+                            m.entries.len()
+                        );
+                        Some(m)
+                    }
+                    Err(errors) => {
+                        for e in &errors {
+                            eprintln!("Manifest validation error: {}", e);
+                        }
+                        if strict {
+                            std::process::exit(EXIT_DIGEST);
+                        }
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                if strict {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(EXIT_DIGEST);
+                }
+                eprintln!("Warning: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let path_index = manifest.as_ref().map(|m| m.path_index());
 
     for file in &fixture_files {
         let file_name = file
@@ -554,21 +754,58 @@ pub fn run_harness(
 
         let mut report = ConformanceReport::new(&file_name, &format);
 
+        if let Some(ref index) = path_index {
+            if let Some(entry) = index.get(&file_name) {
+                report.fixture_id = Some(entry.id.clone());
+                report.category = Some(entry.category.clone());
+                report.source = Some(entry.source.clone());
+            } else if strict {
+                report.add_check(
+                    "manifest_entry",
+                    CheckSeverity::Fail,
+                    "File has no manifest entry",
+                );
+            }
+        }
+
         let is_valid = image::load_from_memory(&bytes).is_ok();
         report.decode_valid = is_valid;
-        report.add_check(
-            "decode",
+
+        let expected_malformed = path_index
+            .as_ref()
+            .and_then(|idx| idx.get(&file_name))
+            .map(|e| e.expected_malformed)
+            .unwrap_or(false);
+
+        if expected_malformed {
             if is_valid {
-                CheckSeverity::Pass
+                report.add_check(
+                    "decode",
+                    CheckSeverity::Warn,
+                    "Malformed fixture decoded successfully (unexpected)",
+                );
             } else {
-                CheckSeverity::Fail
-            },
-            if is_valid {
-                "Image decodes successfully"
-            } else {
-                "Image failed to decode"
-            },
-        );
+                report.add_check(
+                    "decode",
+                    CheckSeverity::Pass,
+                    "Expected decode failure for malformed fixture",
+                );
+            }
+        } else {
+            report.add_check(
+                "decode",
+                if is_valid {
+                    CheckSeverity::Pass
+                } else {
+                    CheckSeverity::Fail
+                },
+                if is_valid {
+                    "Image decodes successfully"
+                } else {
+                    "Image failed to decode"
+                },
+            );
+        }
 
         if let Some(xmp) = extract_xmp_from_image(file) {
             report.xmp_valid = xmllint_validate(&xmp);
@@ -617,8 +854,43 @@ pub fn run_harness(
 
         conformance::compare_extractions(&report.internal.clone(), &external, &mut report);
 
+        if let Some(ref index) = path_index {
+            if let Some(entry) = index.get(&file_name) {
+                evaluate_manifest_expectations(entry, &mut report);
+            }
+        }
+
         report.evaluate();
         reports.push(report);
+    }
+
+    if let Some(ref m) = manifest {
+        let exercised: std::collections::HashSet<_> =
+            reports.iter().map(|r| r.fixture.as_str()).collect();
+        let unexercised: Vec<_> = m
+            .entries
+            .iter()
+            .filter(|entry| !exercised.contains(entry.path.as_str()))
+            .cloned()
+            .collect();
+        for entry in &unexercised {
+            if strict {
+                eprintln!(
+                    "Error: manifest entry '{}' ({}) was not exercised",
+                    entry.id, entry.path
+                );
+                reports.push({
+                    let mut r = ConformanceReport::new(&entry.path, &entry.format);
+                    r.add_check(
+                        "manifest_coverage",
+                        CheckSeverity::Fail,
+                        &format!("Manifest entry '{}' was not exercised", entry.id),
+                    );
+                    r.evaluate();
+                    r
+                });
+            }
+        }
     }
 
     if let Some(path) = json_path {
@@ -630,55 +902,46 @@ pub fn run_harness(
     let mut digest_results = None;
     let mut coverage = None;
 
-    if let Some(mpath) = manifest_path {
-        match load_manifest(mpath) {
-            Ok(manifest) => {
-                eprintln!("Loaded manifest with {} entries", manifest.entries.len());
-
-                let dr = verify_fixtures(&manifest, fixtures_dir);
-                let all_match = dr.iter().all(|d| d.matches);
-                if !all_match {
-                    let mismatch_count = dr.iter().filter(|d| !d.matches).count();
-                    eprintln!("Digest verification: {} mismatches", mismatch_count);
-                    if strict {
-                        for d in &dr {
-                            if !d.matches {
-                                eprintln!(
-                                    "  {} expected={} actual={}",
-                                    d.fixture_path, d.expected_sha256, d.actual_sha256
-                                );
-                            }
-                        }
-                        std::process::exit(3);
+    if let Some(ref m) = manifest {
+        let dr = conformance::verify_fixtures(m, fixtures_dir);
+        let all_match = dr.iter().all(|d| d.matches);
+        if !all_match {
+            let mismatch_count = dr.iter().filter(|d| !d.matches).count();
+            eprintln!("Digest verification: {} mismatches", mismatch_count);
+            if strict {
+                for d in &dr {
+                    if !d.matches {
+                        eprintln!(
+                            "  {} expected={} actual={}",
+                            d.fixture_path, d.expected_sha256, d.actual_sha256
+                        );
                     }
-                } else {
-                    eprintln!("Digest verification: all {} digests match", dr.len());
                 }
-                digest_results = Some(dr);
-
-                let cov = check_coverage(&manifest, &CoverageMinimums::default());
-                if !cov.passed {
-                    eprintln!("Coverage check failed:");
-                    for v in &cov.violations {
-                        eprintln!("  - {}", v);
-                    }
-                    if strict {
-                        std::process::exit(4);
-                    }
-                } else {
-                    eprintln!("Coverage check: PASS");
-                }
-                coverage = Some(cov);
-
-                let tool_counts = manifest.count_by_authoring_tool();
-                eprintln!("Authoring tool breakdown:");
-                for (tool, count) in &tool_counts {
-                    eprintln!("  {}: {}", tool, count);
-                }
+                std::process::exit(EXIT_DIGEST);
             }
-            Err(e) => {
-                eprintln!("Warning: {}", e);
+        } else {
+            eprintln!("Digest verification: all {} digests match", dr.len());
+        }
+        digest_results = Some(dr);
+
+        let cov = conformance::check_coverage(m, &conformance::CoverageMinimums::default());
+        if !cov.passed {
+            eprintln!("Coverage check failed:");
+            for v in &cov.violations {
+                eprintln!("  - {}", v);
             }
+            if strict {
+                std::process::exit(EXIT_COVERAGE);
+            }
+        } else {
+            eprintln!("Coverage check: PASS");
+        }
+        coverage = Some(cov);
+
+        let tool_counts = m.count_by_authoring_tool();
+        eprintln!("Authoring tool breakdown:");
+        for (tool, count) in &tool_counts {
+            eprintln!("  {}: {}", tool, count);
         }
     }
 
@@ -737,7 +1000,11 @@ fn main() {
                 }
             }
             _ => {
-                i += 1;
+                eprintln!(
+                    "Error: unknown argument '{}'. Use --help for usage.",
+                    args[i]
+                );
+                std::process::exit(EXIT_CONFIG);
             }
         }
     }
@@ -783,6 +1050,6 @@ fn main() {
     eprintln!("libvips version: {}", vips_ver);
 
     if failed > 0 {
-        std::process::exit(1);
+        std::process::exit(EXIT_FAIL);
     }
 }

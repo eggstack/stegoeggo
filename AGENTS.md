@@ -152,15 +152,18 @@ JSON reports and is a mandatory CI gate.
 
 The harness performs:
 1. Fixture manifest loading and SHA-256 digest verification
-2. Format detection via magic bytes
-3. Internal extraction via `verify_legal_notice()`
-4. External extraction via ExifTool
-5. XMP well-formedness validation via xmllint
-6. Normalized field-by-field comparison
-7. Coverage enforcement (minimum fixtures per format/category)
-8. JSON and human-readable output
+2. Manifest structural validation (duplicate IDs, duplicate paths, empty IDs, path traversal, invalid formats/categories, SHA-256 validity)
+3. Format detection via magic bytes
+4. Internal extraction via `verify_legal_notice()`
+5. External extraction via ExifTool
+6. XMP well-formedness validation via xmllint
+7. Normalized field-by-field comparison
+8. Coverage enforcement (explicit per-category and per-format minimums)
+9. JSON and human-readable output
 
-Required external tools: `exiftool`, `xmllint`, `imagemagick`, `libvips`
+Required external tools: `exiftool`, `xmllint`, `imagemagick`, `libvips` (installed in both CI and release workflows)
+
+Stable exit codes: 0=pass, 1=fail, 2=config error, 3=digest mismatch, 4=coverage violation, 5=internal error
 
 ## Things to Watch Out For
 
@@ -208,3 +211,8 @@ Required external tools: `exiftool`, `xmllint`, `imagemagick`, `libvips`
 - **`NoticeVerification::new()` positional arguments**: `NoticeVerification::new()` now takes 26 positional arguments (was 18 in v0.2.0). The additional fields are: `license_url`, `web_statement_of_rights`, `credit_line`, `copyright_owner`, `licensor_name`, `licensor_email`, `licensor_url`, `metadata_date`, `notice_applied_at`. **Deprecated** in favor of `NoticeVerification::builder()` pattern for field-named construction
 - **`photoshop:Credit` maps to `credit_line`**: In WebP XMP, `photoshop:Credit` now maps to `credit_line`, not `contact`. The previous mapping was semantically incorrect
 - **Metadata overflow checks**: PNG chunk lengths use `u32::try_from()`, JPEG marker lengths use `u16::try_from()`. All 6 helper functions in `metadata_trap.rs` return `Result<Vec<u8>>` — `create_png_xmp_chunk`, `create_png_text_chunk`, `create_jpeg_xmp_marker`, `create_jpeg_exif_marker`, `create_jpeg_iptc_marker`, `create_jpeg_comment`. Overflow returns `Error::Metadata`
+- **`--require-complete` is removed**: `--strict` is the single complete-validation mode. `--require-complete` no longer exists
+- **`CoverageMinimums` no longer has `external_coverage_pct`**: Uses `malformed_per_format` (=1 per format) instead. Coverage is enforced via explicit per-category and per-format minimums, not a blanket percentage
+- **`ConformanceReport` has `fixture_id`, `category`, `source` fields**: These `Option<String>` fields link reports to manifest entries. They are populated from the manifest and skipped in JSON serialization when `None`
+- **`validate_manifest()` checks structure before processing**: Validates duplicate IDs, duplicate paths, empty IDs, path traversal, unsupported formats/categories/sources, and SHA-256 validity. Returns `Err(Vec<String>)` on violations. Called before any fixtures are processed
+- **DMI normalization precedence**: `normalize_dmi_value()` matches in order: search engine indexing > gen AI/ML training > AI/ML training > see constraints > generic prohibited > allowed. This ordering ensures the most specific prohibition is returned

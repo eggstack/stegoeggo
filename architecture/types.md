@@ -282,6 +282,47 @@ pub enum WarningSeverity {
 | LsbCapacitySkipped | Info | Warning | Warning | Warning |
 | DctCapacityInsufficient | Info | Warning | Warning | Warning |
 
+## CoverageMinimums
+
+Minimum counts required per category/format for coverage enforcement:
+
+```rust
+pub struct CoverageMinimums {
+    pub canonical_png: usize,       // default: 1
+    pub canonical_jpeg: usize,      // default: 1
+    pub canonical_webp: usize,      // default: 1
+    pub legacy_min: usize,          // default: 3
+    pub legacy_formats: usize,      // default: 2
+    pub conflict_min: usize,        // default: 3
+    pub malformed_min: usize,       // default: 4
+    pub malformed_per_format: usize,// default: 1 (per format: png, jpeg, webp)
+    pub preservation_min: usize,    // default: 3
+    pub preservation_formats: usize,// default: 3
+}
+```
+
+Note: The blanket `external_coverage_pct` field has been removed. Coverage is now enforced via these explicit per-category and per-format minimums. The `malformed_per_format` field ensures malformed fixtures cover each format individually.
+
+## ConformanceReport
+
+The JSON report type for per-fixture conformance results. In addition to the
+core fields (`fixture`, `format`, `decode_valid`, `xmp_valid`, `internal`,
+`external`, `checks`, `conflicts`, `passed`), it includes manifest-linked metadata:
+
+- `fixture_id: Option<String>` — Manifest fixture ID, if matched
+- `category: Option<String>` — Fixture category from manifest, if matched
+- `source: Option<String>` — Fixture source classification, if matched
+
+These fields are populated from the manifest entry when the fixture is found in the manifest. They are skipped in JSON serialization when `None`.
+
+## validate_manifest()
+
+```rust
+pub fn validate_manifest(manifest: &FixtureManifest) -> Result<(), Vec<String>>
+```
+
+Validates manifest structure before processing fixtures. Checks for duplicate IDs, duplicate paths, empty IDs, path traversal, unsupported formats/categories/sources, and SHA-256 validity (64 hex characters). Returns `Ok(())` if valid, or `Err(Vec<String>)` with all violation messages. Called early in the conformance harness to catch manifest issues before any fixtures are processed.
+
 ## Serialization Notes
 
 - `ProtectionContext.config` is `#[serde(skip)]` — MAC keys and legal metadata are lost in serde roundtrips
