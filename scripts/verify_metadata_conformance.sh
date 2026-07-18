@@ -31,6 +31,7 @@ HARNESS=""
 STRICT=""
 JSON_PATH=""
 FIXTURES_DIR="tests/fixtures/conformance"
+FORMAT_FILTER=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -47,7 +48,13 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             FIXTURES_DIR="$2"; shift 2 ;;
-        --format|--all-formats) shift ;;
+        --format)
+            if [ -z "${2:-}" ]; then
+                echo "Error: --format requires a format (png, jpeg, webp)"
+                exit 1
+            fi
+            FORMAT_FILTER="--format $2"; shift 2 ;;
+        --all-formats) FORMAT_FILTER=""; shift ;;
         -h|--help)
             echo "Usage: $0 [--strict] [--json PATH] [--fixtures PATH] [--format FMT] [--all-formats]"
             exit 0
@@ -115,7 +122,7 @@ echo "Running conformance harness..."
 echo ""
 
 set +e
-$HARNESS --fixtures "$FIXTURES_DIR" $STRICT $EXTRA_ARGS
+$HARNESS --fixtures "$FIXTURES_DIR" $STRICT $FORMAT_FILTER $EXTRA_ARGS
 EXIT_CODE=$?
 set -e
 

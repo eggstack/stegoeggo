@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::path::{Path, PathBuf};
 
 /// Severity of a conformance check result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -227,4 +228,225 @@ impl ConformanceReport {
         }
         lines.join("\n")
     }
+}
+
+/// Detect image format from magic bytes.
+///
+/// Returns `"png"`, `"jpeg"`, or `"webp"`, or `None` if unrecognized.
+#[must_use]
+pub fn detect_format(bytes: &[u8]) -> Option<String> {
+    if bytes.len() < 4 {
+        return None;
+    }
+    if bytes.starts_with(b"\x89PNG") {
+        Some("png".to_string())
+    } else if bytes.starts_with(b"\xFF\xD8\xFF") {
+        Some("jpeg".to_string())
+    } else if bytes.len() >= 12 && &bytes[8..12] == b"WEBP" {
+        Some("webp".to_string())
+    } else {
+        None
+    }
+}
+
+/// Normalize a DMI value string for comparison.
+///
+/// Internal extraction returns `DmiValue::as_str()` values (e.g., "ProhibitedAiMlTraining").
+/// ExifTool returns PLUS vocab keys (e.g., "DMI-PROHIBITED-AIMLTRAINING") or display values
+/// (e.g., "Prohibited for AI/ML training"). This normalizes all forms for comparison.
+#[must_use]
+pub fn normalize_dmi_value(s: &str) -> String {
+    let lower = s.to_lowercase();
+    if lower.contains("prohibited") && (lower.contains("ai") || lower.contains("aiml")) {
+        "DMI-PROHIBITED-AIMLTRAINING".to_string()
+    } else if lower.contains("prohibited") && lower.contains("gen") {
+        "DMI-PROHIBITED-GENAIMLTRAINING".to_string()
+    } else if lower.contains("prohibited") && lower.contains("search") {
+        "DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING".to_string()
+    } else if lower.contains("prohibited") && lower.contains("see") {
+        "DMI-PROHIBITED-SEECONSTRAINT".to_string()
+    } else if lower.contains("prohibited") {
+        "DMI-PROHIBITED".to_string()
+    } else if lower.contains("allowed") || lower.contains("permitted") {
+        "DMI-ALLOWED".to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+/// Compare internal and external metadata extractions, adding check results
+/// to the report.
+pub fn compare_extractions(
+    internal: &InternalExtraction,
+    external: &ExternalExtraction,
+    report: &mut ConformanceReport,
+) {
+    let check = |name: &str,
+                 internal_val: &Option<String>,
+                 external_val: &Option<String>,
+                 report: &mut ConformanceReport| {
+        match (internal_val, external_val) {
+            (Some(i), Some(e)) => {
+                if i == e {
+                    report.add_check(name, CheckSeverity::Pass, "Internal and external agree");
+                } else if e.contains(i) || i.contains(e) {
+                    report.add_check(
+                        name,
+                        CheckSeverity::Pass,
+                        "Values overlap (format-specific wrapping)",
+                    );
+                } else {
+                    report.add_check_with_details(
+                        name,
+                        CheckSeverity::Fail,
+                        "Internal and external disagree",
+                        &format!("internal={:?}, external={:?}", i, e),
+                    );
+                }
+            }
+            (Some(i), None) => {
+                report.add_check_with_details(
+                    name,
+                    CheckSeverity::Warn,
+                    "Found internally but not via external parser",
+                    &format!("internal={:?}", i),
+                );
+            }
+            (None, Some(e)) => {
+                report.add_check_with_details(
+                    name,
+                    CheckSeverity::Warn,
+                    "Found via external parser but not internally",
+                    &format!("external={:?}", e),
+                );
+            }
+            (None, None) => {
+                report.add_check(name, CheckSeverity::Pass, "Both absent");
+            }
+        }
+    };
+
+    check(
+        "copyright",
+        &internal.copyright_holder,
+        &external.copyright,
+        report,
+    );
+    check(
+        "usage_terms",
+        &internal.usage_terms,
+        &external.usage_terms,
+        report,
+    );
+    check(
+        "rights_url",
+        &internal.web_statement_of_rights,
+        &external.rights_url,
+        report,
+    );
+    check(
+        "credit_line",
+        &internal.credit_line,
+        &external.credit_line,
+        report,
+    );
+    check(
+        "ai_constraints",
+        &internal.ai_constraints,
+        &external.ai_constraints,
+        report,
+    );
+
+    match (
+        &internal.canonical_data_mining,
+        &external.canonical_data_mining,
+    ) {
+        (Some(i), Some(e)) => {
+            let ni = normalize_dmi_value(i);
+            let ne = normalize_dmi_value(e);
+            if ni == ne {
+                report.add_check(
+                    "canonical_dmi",
+                    CheckSeverity::Pass,
+                    "DMI values agree (normalized)",
+                );
+            } else {
+                report.add_check_with_details(
+                    "canonical_dmi",
+                    CheckSeverity::Fail,
+                    "DMI values disagree",
+                    &format!(
+                        "internal={:?} (normalized={:?}), external={:?} (normalized={:?})",
+                        i, ni, e, ne
+                    ),
+                );
+            }
+        }
+        (Some(i), None) => {
+            report.add_check_with_details(
+                "canonical_dmi",
+                CheckSeverity::Warn,
+                "DMI found internally but not externally",
+                &format!("internal={:?}", i),
+            );
+        }
+        (None, Some(e)) => {
+            report.add_check_with_details(
+                "canonical_dmi",
+                CheckSeverity::Warn,
+                "DMI found externally but not internally",
+                &format!("external={:?}", e),
+            );
+        }
+        (None, None) => {
+            report.add_check("canonical_dmi", CheckSeverity::Pass, "Both absent");
+        }
+    }
+
+    if internal.creators != external.creators {
+        report.add_check_with_details(
+            "creators",
+            CheckSeverity::Warn,
+            "Creator lists differ",
+            &format!(
+                "internal={:?}, external={:?}",
+                internal.creators, external.creators
+            ),
+        );
+    } else {
+        report.add_check("creators", CheckSeverity::Pass, "Creator lists match");
+    }
+}
+
+/// Recursively collect image fixture files from a directory.
+///
+/// Returns files matching supported image extensions (png, jpg, jpeg, webp),
+/// optionally filtered by format name.
+#[must_use]
+pub fn collect_fixture_files(dir: &Path, format_filter: &Option<String>) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    if !dir.exists() {
+        return files;
+    }
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                files.extend(collect_fixture_files(&path, format_filter));
+            } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                let fmt = match ext {
+                    "png" => Some("png"),
+                    "jpg" | "jpeg" => Some("jpeg"),
+                    "webp" => Some("webp"),
+                    _ => None,
+                };
+                if let Some(f) = fmt {
+                    if format_filter.as_ref().is_none_or(|filter| filter == f) {
+                        files.push(path);
+                    }
+                }
+            }
+        }
+    }
+    files
 }

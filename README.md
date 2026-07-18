@@ -875,6 +875,66 @@ cargo build --release --bin stegoeggo-conformance
 - WebP XMP visibility depends on the tool's support for `dc:rights`,
   `dc:creator`, `xmpRights:*`, and `stegoeggo:*` namespaces.
 
+### What Conformance Does and Does Not Prove
+
+**Proves:**
+- Protected images expose correct rights metadata to external parsers (ExifTool)
+- XMP is well-formed and namespace-correct
+- Internal extraction matches external extraction field-by-field
+- Metadata survives re-processing (idempotence)
+- Unrelated metadata is preserved through the update path
+- Format writers produce semantically equivalent metadata (PNG vs JPEG vs WebP)
+
+**Does not prove:**
+- Legal enforceability of embedded rights statements
+- That all external tools will parse every XMP namespace
+- That metadata survives arbitrary transformations (social media re-encoding, screenshots, aggressive cropping)
+- That steganographic payloads survive lossy compression
+- Compliance with any specific legal jurisdiction
+
+### Installing External Tools
+
+The conformance suite requires `exiftool` and `xmllint`.
+
+**macOS (Homebrew):**
+```bash
+brew install exiftool libxml2
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get install libimage-exiftool-perl libxml2-utils
+```
+
+**Fedora/RHEL:**
+```bash
+sudo dnf install perl-Image-ExifTool libxml2
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S perl-image-exiftool libxml2
+```
+
+### Adding Fixtures
+
+1. Place the image in the appropriate `tests/fixtures/conformance/<category>/` directory
+2. Document provenance in `tests/fixtures/conformance/README.md`
+3. Regenerate fixtures: `cargo test --test generate_conformance_fixtures`
+4. Verify: `cargo run --bin stegoeggo-conformance -- --fixtures tests/fixtures/conformance --strict`
+
+## Contributor Checklist
+
+Before submitting a change that affects metadata output:
+
+- [ ] Canonical writer test updated
+- [ ] Legacy reader test preserved
+- [ ] External fixture added or reviewed (`tests/fixtures/conformance/`)
+- [ ] Namespace-aware validation passes
+- [ ] Cross-format matrix passes (PNG, JPEG, WebP)
+- [ ] Preservation/idempotence passes
+- [ ] Strict external conformance passes (`./scripts/verify_metadata_conformance.sh --strict`)
+
 ## Architecture
 
 ```

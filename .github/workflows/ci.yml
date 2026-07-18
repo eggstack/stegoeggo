@@ -133,6 +133,14 @@ jobs:
       - name: Install xmllint
         run: sudo apt-get install -y libxml2-utils
 
+      - name: Log tool versions
+        run: |
+          echo "=== External Tool Versions ==="
+          exiftool -ver
+          xmllint --version 2>&1 | head -1
+          rustc --version
+          cargo --version
+
       - name: Build conformance harness
         run: cargo build --release --bin stegoeggo-conformance
 

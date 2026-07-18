@@ -3,8 +3,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use stegoeggo::conformance::{
-    CheckSeverity, ConformanceReport, ExternalExtraction, InternalExtraction,
+    self, CheckSeverity, ConformanceReport, ExternalExtraction, InternalExtraction,
 };
+
+const MAX_XMP_BYTES: usize = 65536;
+const MAX_PROPERTIES: usize = 100;
+const MAX_TEXT_LEN: usize = 8192;
 
 fn find_exiftool() -> Option<PathBuf> {
     Command::new("which")
@@ -39,23 +43,17 @@ fn exiftool_version(exiftool: &Path) -> Option<String> {
         })
 }
 
-fn exiftool_extract(file: &Path, exiftool: &Path, tag: &str) -> Option<String> {
-    let output = Command::new(exiftool)
-        .arg("-s3")
-        .arg(tag)
-        .arg(file)
+fn xmllint_version() -> Option<String> {
+    Command::new("xmllint")
+        .arg("--version")
         .output()
-        .ok()?;
-    if output.status.success() {
-        let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if val.is_empty() {
-            None
-        } else {
-            Some(val)
-        }
-    } else {
-        None
-    }
+        .ok()
+        .and_then(|o| {
+            let err = String::from_utf8_lossy(&o.stderr);
+            let line = err.lines().next()?;
+            let ver = line.split_whitespace().last()?;
+            Some(ver.to_string())
+        })
 }
 
 fn xmllint_validate(xmp_content: &str) -> Option<bool> {
@@ -76,9 +74,255 @@ fn xmllint_validate(xmp_content: &str) -> Option<bool> {
     Some(result.status.success())
 }
 
+fn exiftool_json_extract(file: &Path, exiftool: &Path) -> Option<serde_json::Value> {
+    let output = Command::new(exiftool)
+        .arg("-json")
+        .arg("-G")
+        .arg("-n")
+        .arg(file)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let arr: Vec<serde_json::Value> = serde_json::from_str(&stdout).ok()?;
+    arr.into_iter().next()
+}
+
+fn resolve_tag(obj: &serde_json::Value, _group_prefix: &str, tag_names: &[&str]) -> Option<String> {
+    if let Some(map) = obj.as_object() {
+        for tag in tag_names {
+            for (key, val) in map {
+                if key.ends_with(&format!(":{}", tag)) || key == *tag {
+                    if let Some(s) = val.as_str() {
+                        if !s.is_empty() {
+                            return Some(s.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn resolve_array_tag(
+    obj: &serde_json::Value,
+    _group_prefix: &str,
+    tag_names: &[&str],
+) -> Vec<String> {
+    if let Some(map) = obj.as_object() {
+        for tag in tag_names {
+            for (key, val) in map {
+                if key.ends_with(&format!(":{}", tag)) || key == *tag {
+                    match val {
+                        serde_json::Value::String(s) => {
+                            if !s.is_empty() {
+                                return s.split(", ").map(|s| s.to_string()).collect();
+                            }
+                        }
+                        serde_json::Value::Array(arr) => {
+                            return arr
+                                .iter()
+                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                .collect();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn external_extract_json(file: &Path, exiftool: &Path) -> ExternalExtraction {
+    let version = exiftool_version(exiftool);
+    match exiftool_json_extract(file, exiftool) {
+        Some(obj) => {
+            let group = obj
+                .as_object()
+                .and_then(|m| m.keys().next())
+                .and_then(|k| k.split(':').next())
+                .unwrap_or("XMP");
+            ExternalExtraction {
+                tool: "exiftool".to_string(),
+                version,
+                copyright: resolve_tag(&obj, group, &["Copyright", "Rights", "XMP-dc:Rights"]),
+                creators: resolve_array_tag(&obj, group, &["Creator", "XMP-dc:Creator"]),
+                usage_terms: resolve_tag(&obj, group, &["UsageTerms", "XMP-xmpRights:UsageTerms"]),
+                rights_url: resolve_tag(
+                    &obj,
+                    group,
+                    &[
+                        "WebStatementOfRights",
+                        "WebStatement",
+                        "XMP-xmpRights:WebStatement",
+                    ],
+                ),
+                credit_line: resolve_tag(
+                    &obj,
+                    group,
+                    &["CreditLine", "Credit", "photoshop:Credit"],
+                ),
+                copyright_owner: resolve_tag(
+                    &obj,
+                    group,
+                    &["CopyrightOwner", "IPTC:CopyrightOwner"],
+                ),
+                licensor_name: resolve_tag(&obj, group, &["LicensorName", "IPTC:LicensorName"]),
+                licensor_email: resolve_tag(&obj, group, &["LicensorEmail", "IPTC:LicensorEmail"]),
+                licensor_url: resolve_tag(
+                    &obj,
+                    group,
+                    &["LicensorURL", "LicensorUrl", "IPTC:LicensorUrl"],
+                ),
+                content_creation_date: resolve_tag(
+                    &obj,
+                    group,
+                    &["DateCreated", "ContentCreationDate", "DateTimeOriginal"],
+                ),
+                ai_constraints: resolve_tag(
+                    &obj,
+                    group,
+                    &["AIConstraints", "XMP-stegoeggo:AIConstraints"],
+                ),
+                canonical_data_mining: resolve_tag(
+                    &obj,
+                    group,
+                    &["DataMining", "XMP-plus:DataMining"],
+                ),
+                legacy_data_mining: resolve_array_tag(
+                    &obj,
+                    group,
+                    &["DMI-Prohibited", "XMP-iptcExt:DMI-Prohibited"],
+                ),
+                tdm_reserved: resolve_tag(&obj, group, &["TDMReserve"])
+                    .and_then(|v| v.parse().ok()),
+                extra: {
+                    let mut extra = HashMap::new();
+                    if let Some(map) = obj.as_object() {
+                        for (k, v) in map {
+                            if let Some(s) = v.as_str() {
+                                if !s.is_empty() {
+                                    extra.insert(k.clone(), s.to_string());
+                                }
+                            }
+                        }
+                    }
+                    extra
+                },
+            }
+        }
+        None => ExternalExtraction {
+            tool: "exiftool".to_string(),
+            version,
+            ..Default::default()
+        },
+    }
+}
+
+fn validate_xmp_structure(xmp: &str) -> Vec<(String, CheckSeverity, String)> {
+    let mut results = Vec::new();
+
+    if xmp.len() > MAX_XMP_BYTES {
+        results.push((
+            "xmp_size".to_string(),
+            CheckSeverity::Fail,
+            format!(
+                "XMP exceeds maximum size: {} > {} bytes",
+                xmp.len(),
+                MAX_XMP_BYTES
+            ),
+        ));
+    } else {
+        results.push((
+            "xmp_size".to_string(),
+            CheckSeverity::Pass,
+            format!("XMP size within bounds: {} bytes", xmp.len()),
+        ));
+    }
+
+    let depth = xmp.matches('<').count();
+    if depth > MAX_PROPERTIES {
+        results.push((
+            "xmp_property_count".to_string(),
+            CheckSeverity::Fail,
+            format!(
+                "XMP property count exceeds limit: {} > {}",
+                depth, MAX_PROPERTIES
+            ),
+        ));
+    } else {
+        results.push((
+            "xmp_property_count".to_string(),
+            CheckSeverity::Pass,
+            format!("XMP property count within bounds: {}", depth),
+        ));
+    }
+
+    let has_rdf_rdf = xmp.contains("<rdf:RDF") || xmp.contains("<rdf:Description");
+    if has_rdf_rdf {
+        results.push((
+            "xmp_rdf_structure".to_string(),
+            CheckSeverity::Pass,
+            "XMP contains RDF structure".to_string(),
+        ));
+    } else if xmp.contains("x:xmpmeta") {
+        results.push((
+            "xmp_rdf_structure".to_string(),
+            CheckSeverity::Warn,
+            "XMP has x:xmpmeta wrapper but no RDF structure detected".to_string(),
+        ));
+    }
+
+    let nesting = xmp.matches("rdf:Description").count();
+    if nesting > 5 {
+        results.push((
+            "xmp_depth".to_string(),
+            CheckSeverity::Warn,
+            format!("Unusual number of rdf:Description elements: {}", nesting),
+        ));
+    }
+
+    for line in xmp.lines() {
+        if line.len() > MAX_TEXT_LEN {
+            results.push((
+                "xmp_text_length".to_string(),
+                CheckSeverity::Fail,
+                format!(
+                    "XMP text line exceeds maximum length: {} > {}",
+                    line.len(),
+                    MAX_TEXT_LEN
+                ),
+            ));
+            break;
+        }
+    }
+
+    let has_dmi_property = xmp.contains("DataMining") || xmp.contains("dataMining");
+    let has_plus_namespace = xmp.contains("http://ns.useplus.org/ldf/xmp/1.0/");
+    if has_dmi_property && !has_plus_namespace {
+        results.push((
+            "xmp_plus_namespace".to_string(),
+            CheckSeverity::Fail,
+            "XMP contains DataMining property but missing PLUS namespace URI".to_string(),
+        ));
+    } else if has_dmi_property && has_plus_namespace {
+        results.push((
+            "xmp_plus_namespace".to_string(),
+            CheckSeverity::Pass,
+            "PLUS namespace URI present for DataMining property".to_string(),
+        ));
+    }
+
+    results
+}
+
 fn extract_xmp_from_image(file: &Path) -> Option<String> {
     let bytes = std::fs::read(file).ok()?;
-    detect_format(&bytes).and_then(|fmt| match fmt.as_str() {
+    conformance::detect_format(&bytes).and_then(|fmt| match fmt.as_str() {
         "webp" => extract_xmp_from_webp(&bytes),
         "png" => extract_xmp_from_png(&bytes),
         "jpeg" => extract_xmp_from_jpeg(&bytes),
@@ -123,7 +367,11 @@ fn extract_xmp_from_png(bytes: &[u8]) -> Option<String> {
                 let key = &data[..null_pos];
                 if key == b"XML:com.adobe.xmp" {
                     let val = &data[null_pos + 1..];
-                    return String::from_utf8(val.to_vec()).ok();
+                    let xmp_str = String::from_utf8(val.to_vec()).ok()?;
+                    if let Some(start) = xmp_str.find("<?xpacket") {
+                        return Some(xmp_str[start..].to_string());
+                    }
+                    return Some(xmp_str);
                 }
             }
         }
@@ -154,21 +402,6 @@ fn extract_xmp_from_jpeg(bytes: &[u8]) -> Option<String> {
         pos += 2 + length;
     }
     None
-}
-
-fn detect_format(bytes: &[u8]) -> Option<String> {
-    if bytes.len() < 4 {
-        return None;
-    }
-    if bytes.starts_with(b"\x89PNG") {
-        Some("png".to_string())
-    } else if bytes.starts_with(b"\xFF\xD8\xFF") {
-        Some("jpeg".to_string())
-    } else if bytes.len() >= 12 && &bytes[8..12] == b"WEBP" {
-        Some("webp".to_string())
-    } else {
-        None
-    }
 }
 
 fn internal_extract(file: &Path) -> Option<InternalExtraction> {
@@ -205,144 +438,11 @@ fn internal_extract(file: &Path) -> Option<InternalExtraction> {
     })
 }
 
-fn external_extract(file: &Path, exiftool: &Path) -> ExternalExtraction {
-    ExternalExtraction {
-        tool: "exiftool".to_string(),
-        version: exiftool_version(exiftool),
-        copyright: exiftool_extract(file, exiftool, "-Copyright")
-            .or_else(|| exiftool_extract(file, exiftool, "-XMP-dc:Rights")),
-        creators: exiftool_extract(file, exiftool, "-Creator")
-            .or_else(|| exiftool_extract(file, exiftool, "-XMP-dc:Creator"))
-            .map(|v| v.split(", ").map(|s| s.to_string()).collect())
-            .unwrap_or_default(),
-        usage_terms: exiftool_extract(file, exiftool, "-UsageTerms")
-            .or_else(|| exiftool_extract(file, exiftool, "-XMP-xmpRights:UsageTerms")),
-        rights_url: exiftool_extract(file, exiftool, "-WebStatement")
-            .or_else(|| exiftool_extract(file, exiftool, "-XMP-xmpRights:WebStatement")),
-        credit_line: exiftool_extract(file, exiftool, "-Credit")
-            .or_else(|| exiftool_extract(file, exiftool, "-photoshop:Credit")),
-        copyright_owner: exiftool_extract(file, exiftool, "-CopyrightOwner"),
-        licensor_name: exiftool_extract(file, exiftool, "-LicensorName"),
-        licensor_email: exiftool_extract(file, exiftool, "-LicensorEmail"),
-        licensor_url: exiftool_extract(file, exiftool, "-LicensorUrl"),
-        content_creation_date: exiftool_extract(file, exiftool, "-ContentCreationDate")
-            .or_else(|| exiftool_extract(file, exiftool, "-DateTimeOriginal")),
-        ai_constraints: exiftool_extract(file, exiftool, "-AIConstraints"),
-        canonical_data_mining: exiftool_extract(file, exiftool, "-XMP-plus:DataMining"),
-        legacy_data_mining: exiftool_extract(file, exiftool, "-XMP-iptcExt:DMI-Prohibited")
-            .map(|v| vec![v])
-            .unwrap_or_default(),
-        tdm_reserved: exiftool_extract(file, exiftool, "-TDMReserve").and_then(|v| v.parse().ok()),
-        extra: HashMap::new(),
-    }
-}
-
-fn compare_extractions(
-    internal: &InternalExtraction,
-    external: &ExternalExtraction,
-    report: &mut ConformanceReport,
-) {
-    let check = |name: &str,
-                 internal_val: &Option<String>,
-                 external_val: &Option<String>,
-                 report: &mut ConformanceReport| {
-        match (internal_val, external_val) {
-            (Some(i), Some(e)) => {
-                if i == e {
-                    report.add_check(name, CheckSeverity::Pass, "Internal and external agree");
-                } else if e.contains(i) || i.contains(e) {
-                    report.add_check(
-                        name,
-                        CheckSeverity::Pass,
-                        "Values overlap (format-specific wrapping)",
-                    );
-                } else {
-                    report.add_check_with_details(
-                        name,
-                        CheckSeverity::Fail,
-                        "Internal and external disagree",
-                        &format!("internal={:?}, external={:?}", i, e),
-                    );
-                }
-            }
-            (Some(i), None) => {
-                report.add_check_with_details(
-                    name,
-                    CheckSeverity::Warn,
-                    "Found internally but not via external parser",
-                    &format!("internal={:?}", i),
-                );
-            }
-            (None, Some(e)) => {
-                report.add_check_with_details(
-                    name,
-                    CheckSeverity::Warn,
-                    "Found via external parser but not internally",
-                    &format!("external={:?}", e),
-                );
-            }
-            (None, None) => {
-                report.add_check(name, CheckSeverity::Pass, "Both absent");
-            }
-        }
-    };
-
-    check(
-        "copyright",
-        &internal.copyright_holder,
-        &external.copyright,
-        report,
-    );
-    check(
-        "usage_terms",
-        &internal.usage_terms,
-        &external.usage_terms,
-        report,
-    );
-    check(
-        "rights_url",
-        &internal.web_statement_of_rights,
-        &external.rights_url,
-        report,
-    );
-    check(
-        "credit_line",
-        &internal.credit_line,
-        &external.credit_line,
-        report,
-    );
-    check(
-        "ai_constraints",
-        &internal.ai_constraints,
-        &external.ai_constraints,
-        report,
-    );
-    check(
-        "canonical_dmi",
-        &internal.canonical_data_mining,
-        &external.canonical_data_mining,
-        report,
-    );
-
-    if internal.creators != external.creators {
-        report.add_check_with_details(
-            "creators",
-            CheckSeverity::Warn,
-            "Creator lists differ",
-            &format!(
-                "internal={:?}, external={:?}",
-                internal.creators, external.creators
-            ),
-        );
-    } else {
-        report.add_check("creators", CheckSeverity::Pass, "Creator lists match");
-    }
-}
-
-fn run_harness(
+pub fn run_harness(
     fixtures_dir: &Path,
     strict: bool,
     json_path: Option<&Path>,
+    format_filter: &Option<String>,
 ) -> Vec<ConformanceReport> {
     let exiftool = match find_exiftool() {
         Some(et) => et,
@@ -366,29 +466,21 @@ fn run_harness(
         return reports;
     }
 
-    let entries: Vec<_> = std::fs::read_dir(fixtures_dir)
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| matches!(ext, "png" | "jpg" | "jpeg" | "webp"))
-                .unwrap_or(false)
-        })
-        .collect();
+    let fixture_files = conformance::collect_fixture_files(fixtures_dir, format_filter);
 
-    if entries.is_empty() {
+    if fixture_files.is_empty() {
         eprintln!("No fixture images found in {}", fixtures_dir.display());
         return reports;
     }
 
-    for entry in &entries {
-        let file = entry.path();
-        let file_name = file.file_name().unwrap().to_string_lossy().to_string();
+    for file in &fixture_files {
+        let file_name = file
+            .strip_prefix(fixtures_dir)
+            .unwrap_or(file)
+            .to_string_lossy()
+            .to_string();
 
-        let bytes = match std::fs::read(&file) {
+        let bytes = match std::fs::read(file) {
             Ok(b) => b,
             Err(e) => {
                 eprintln!("Warning: cannot read {}: {}", file.display(), e);
@@ -396,7 +488,7 @@ fn run_harness(
             }
         };
 
-        let format = match detect_format(&bytes) {
+        let format = match conformance::detect_format(&bytes) {
             Some(f) => f,
             None => {
                 eprintln!("Warning: cannot detect format for {}", file.display());
@@ -422,7 +514,7 @@ fn run_harness(
             },
         );
 
-        if let Some(xmp) = extract_xmp_from_image(&file) {
+        if let Some(xmp) = extract_xmp_from_image(file) {
             report.xmp_valid = xmllint_validate(&xmp);
             let valid = report.xmp_valid.unwrap_or(false);
             report.add_check(
@@ -438,9 +530,13 @@ fn run_harness(
                     "XMP is not well-formed XML"
                 },
             );
+
+            for (name, severity, message) in validate_xmp_structure(&xmp) {
+                report.add_check(&name, severity, &message);
+            }
         }
 
-        if let Some(internal) = internal_extract(&file) {
+        if let Some(internal) = internal_extract(file) {
             report.internal = internal;
             report.add_check(
                 "internal_extraction",
@@ -455,7 +551,7 @@ fn run_harness(
             );
         }
 
-        let external = external_extract(&file, &exiftool);
+        let external = external_extract_json(file, &exiftool);
         report.external.push(external.clone());
         report.add_check(
             "external_extraction",
@@ -463,7 +559,7 @@ fn run_harness(
             "External extraction succeeded",
         );
 
-        compare_extractions(&report.internal.clone(), &external, &mut report);
+        conformance::compare_extractions(&report.internal.clone(), &external, &mut report);
 
         report.evaluate();
         reports.push(report);
@@ -483,6 +579,7 @@ fn main() {
     let mut strict = false;
     let mut json_path: Option<PathBuf> = None;
     let mut fixtures_dir: Option<PathBuf> = None;
+    let mut format_filter: Option<String> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -505,8 +602,16 @@ fn main() {
                     i += 1;
                 }
             }
-            "--format" | "--all-formats" => {
-                i += 2;
+            "--format" => {
+                i += 1;
+                if i < args.len() {
+                    format_filter = Some(args[i].clone());
+                    i += 1;
+                }
+            }
+            "--all-formats" => {
+                format_filter = None;
+                i += 1;
             }
             _ => {
                 i += 1;
@@ -515,7 +620,7 @@ fn main() {
     }
 
     let dir = fixtures_dir.unwrap_or_else(|| PathBuf::from("tests/fixtures/conformance"));
-    let reports = run_harness(&dir, strict, json_path.as_deref());
+    let reports = run_harness(&dir, strict, json_path.as_deref(), &format_filter);
 
     let total = reports.len();
     let passed = reports.iter().filter(|r| r.passed).count();
@@ -528,6 +633,13 @@ fn main() {
 
     eprintln!("=== Conformance Summary ===");
     eprintln!("Total: {}, Passed: {}, Failed: {}", total, passed, failed);
+
+    let et_ver = find_exiftool()
+        .and_then(|et| exiftool_version(&et))
+        .unwrap_or_else(|| "not found".to_string());
+    let xl_ver = xmllint_version().unwrap_or_else(|| "not found".to_string());
+    eprintln!("ExifTool version: {}", et_ver);
+    eprintln!("xmllint version: {}", xl_ver);
 
     if failed > 0 {
         std::process::exit(1);

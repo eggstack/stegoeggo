@@ -625,3 +625,97 @@ fn cross_format_dmi_value_consistency() {
         }
     }
 }
+
+#[test]
+fn cross_format_external_parser_comparison() {
+    let has_exiftool = std::process::Command::new("which")
+        .arg("exiftool")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !has_exiftool {
+        return;
+    }
+
+    let png_bytes = make_test_image_png(64, 64);
+    let legal = LegalMetadata::new()
+        .with_copyright_holder("External Compare Holder")
+        .with_creator("External Creator")
+        .with_usage_terms("External Terms")
+        .with_web_statement_of_rights("https://example.com/rights")
+        .with_ai_constraints("No AI training")
+        .with_credit_line("Photo by External")
+        .with_copyright_owner("External Owner")
+        .with_licensor_name("External Licensor")
+        .with_licensor_email("ext@licensor.com")
+        .with_licensor_url("https://ext.licensor.com");
+    let dmi = DmiValue::ProhibitedAiMlTraining;
+
+    for (fmt, label) in [
+        (ImageOutputFormat::Png, "PNG"),
+        (ImageOutputFormat::Jpeg, "JPEG"),
+        (ImageOutputFormat::WebP, "WebP"),
+    ] {
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(fmt)
+            .with_legal_metadata(legal.clone())
+            .with_dmi(dmi);
+        let (output, _) =
+            process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let ext = match fmt {
+            ImageOutputFormat::Png => "png",
+            ImageOutputFormat::Jpeg => "jpg",
+            ImageOutputFormat::WebP => "webp",
+            _ => "bin",
+        };
+        let path = dir.path().join(format!("test.{}", ext));
+        std::fs::write(&path, &output).unwrap();
+
+        let exif_output = std::process::Command::new("exiftool")
+            .arg("-json")
+            .arg("-G")
+            .arg("-n")
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            exif_output.status.success(),
+            "{}: ExifTool should succeed",
+            label
+        );
+        let json_str = String::from_utf8_lossy(&exif_output.stdout);
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap();
+        let obj = &arr[0];
+
+        let copyright = obj
+            .as_object()
+            .unwrap()
+            .iter()
+            .find(|(k, _)| {
+                k.ends_with(":Copyright") || k.ends_with(":Comment") || k.ends_with(":Rights")
+            })
+            .map(|(_, v)| v.as_str().unwrap_or("").to_string());
+        assert!(
+            copyright.is_some(),
+            "{}: ExifTool should find Copyright/Comment/Rights, got keys: {:?}",
+            label,
+            obj.as_object().unwrap().keys().collect::<Vec<_>>()
+        );
+
+        let internal = verify_legal_notice(&output, b"");
+        assert_eq!(
+            internal.copyright_holder(),
+            Some("External Compare Holder"),
+            "{}: internal copyright should match",
+            label
+        );
+        assert_eq!(
+            internal.canonical_dmi(),
+            Some(DmiValue::ProhibitedAiMlTraining),
+            "{}: internal DMI should be present",
+            label
+        );
+    }
+}
