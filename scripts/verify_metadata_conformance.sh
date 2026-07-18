@@ -9,11 +9,13 @@
 #   ./scripts/verify_metadata_conformance.sh [OPTIONS]
 #
 # Options:
-#   --strict          Fail if exiftool is not installed (default: skip external checks)
+#   --strict          Fail if required tools are missing (default: skip external checks)
+#   --require-complete  Fail if any required tool suite is unavailable
 #   --format FMT      Filter by format (png, jpeg, webp)
 #   --all-formats     Check all formats (default behavior)
 #   --json PATH       Write machine-readable JSON report to PATH
 #   --fixtures PATH   Path to fixtures directory (default: tests/fixtures/conformance)
+#   --manifest PATH   Path to fixture manifest (default: tests/fixtures/conformance/manifest.toml)
 #
 # Exit codes:
 #   0 — All checks passed
@@ -29,13 +31,16 @@ NC='\033[0m'
 
 HARNESS=""
 STRICT=""
+REQUIRE_COMPLETE=""
 JSON_PATH=""
 FIXTURES_DIR="tests/fixtures/conformance"
+MANIFEST_PATH="tests/fixtures/conformance/manifest.toml"
 FORMAT_FILTER=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --strict) STRICT="--strict"; shift ;;
+        --require-complete) REQUIRE_COMPLETE="--require-complete"; shift ;;
         --json)
             if [ -z "${2:-}" ]; then
                 echo "Error: --json requires a path"
@@ -48,6 +53,12 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             FIXTURES_DIR="$2"; shift 2 ;;
+        --manifest)
+            if [ -z "${2:-}" ]; then
+                echo "Error: --manifest requires a path"
+                exit 1
+            fi
+            MANIFEST_PATH="$2"; shift 2 ;;
         --format)
             if [ -z "${2:-}" ]; then
                 echo "Error: --format requires a format (png, jpeg, webp)"
@@ -56,7 +67,7 @@ while [ $# -gt 0 ]; do
             FORMAT_FILTER="--format $2"; shift 2 ;;
         --all-formats) FORMAT_FILTER=""; shift ;;
         -h|--help)
-            echo "Usage: $0 [--strict] [--json PATH] [--fixtures PATH] [--format FMT] [--all-formats]"
+            echo "Usage: $0 [--strict] [--require-complete] [--json PATH] [--fixtures PATH] [--manifest PATH] [--format FMT] [--all-formats]"
             exit 0
             ;;
         *)
@@ -78,16 +89,18 @@ find_harness() {
     fi
 }
 
-check_exiftool() {
-    if command -v exiftool &>/dev/null; then
+check_tool() {
+    local tool="$1"
+    local install_hint="$2"
+    if command -v "$tool" &>/dev/null; then
         return 0
     fi
-    if [ -n "$STRICT" ]; then
-        echo "Error: exiftool is required in strict mode but not found."
-        echo "Install with: brew install exiftool (macOS) or apt install libimage-exiftool-perl (Linux)"
+    if [ -n "$STRICT" ] || [ -n "$REQUIRE_COMPLETE" ]; then
+        echo "Error: $tool is required in strict/require-complete mode but not found."
+        echo "Install with: $install_hint"
         exit 2
     fi
-    echo -e "${YELLOW}Warning: exiftool not found. External parser validation will be skipped.${NC}"
+    echo -e "${YELLOW}Warning: $tool not found. Some checks will be skipped.${NC}"
     return 0
 }
 
@@ -103,7 +116,10 @@ check_harness() {
     fi
 }
 
-check_exiftool
+check_tool "exiftool" "brew install exiftool (macOS) or apt install libimage-exiftool-perl (Linux)"
+check_tool "xmllint" "brew install libxml2 (macOS) or apt install libxml2-utils (Linux)"
+check_tool "convert" "brew install imagemagick (macOS) or apt install imagemagick (Linux)"
+check_tool "vips" "brew install vips (macOS) or apt install libvips-tools (Linux)"
 
 if [ ! -d "$FIXTURES_DIR" ]; then
     echo -e "${YELLOW}Warning: fixtures directory not found at $FIXTURES_DIR${NC}"
@@ -117,12 +133,15 @@ EXTRA_ARGS=""
 if [ -n "$JSON_PATH" ]; then
     EXTRA_ARGS="$EXTRA_ARGS --json $JSON_PATH"
 fi
+if [ -f "$MANIFEST_PATH" ]; then
+    EXTRA_ARGS="$EXTRA_ARGS --manifest $MANIFEST_PATH"
+fi
 
 echo "Running conformance harness..."
 echo ""
 
 set +e
-$HARNESS --fixtures "$FIXTURES_DIR" $STRICT $FORMAT_FILTER $EXTRA_ARGS
+$HARNESS --fixtures "$FIXTURES_DIR" $STRICT $REQUIRE_COMPLETE $FORMAT_FILTER $EXTRA_ARGS
 EXIT_CODE=$?
 set -e
 
@@ -136,6 +155,12 @@ elif [ "$EXIT_CODE" -eq 1 ]; then
     if [ -n "$JSON_PATH" ] && [ -f "$JSON_PATH" ]; then
         echo "JSON report: $JSON_PATH"
     fi
+    exit 2
+elif [ "$EXIT_CODE" -eq 3 ]; then
+    echo -e "${RED}Fixture digest verification failed.${NC}"
+    exit 2
+elif [ "$EXIT_CODE" -eq 4 ]; then
+    echo -e "${RED}Coverage minimums not met.${NC}"
     exit 2
 else
     echo -e "${RED}Conformance harness encountered an error (exit code $EXIT_CODE).${NC}"

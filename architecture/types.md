@@ -154,13 +154,35 @@ pub struct NoticeVerification {
     ai_constraints: Option<String>,
     dmi: Option<DmiValue>,
     tdm_reserved: Option<bool>,
+    rights_signal_kind: RightsSignalKind,
+    canonical_dmi: Option<DmiValue>,
+    legacy_dmi: Option<DmiValue>,
     protection_seed: Option<u64>,
     stego_status: VerificationStatus,
     stego_payload: Option<StegoPayload>,
     authenticated: bool,
     evidence_strength: EvidenceStrength,
     channels: Vec<EvidenceChannel>,
+    license_url: Option<String>,
+    web_statement_of_rights: Option<String>,
+    credit_line: Option<String>,
+    copyright_owner: Option<String>,
+    licensor_name: Option<String>,
+    licensor_email: Option<String>,
+    licensor_url: Option<String>,
+    metadata_date: Option<String>,
+    notice_applied_at: Option<String>,
 }
+```
+
+**Construction**: Use `NoticeVerification::builder()` for field-named construction. The 26-argument positional `new()` is deprecated.
+
+```rust
+let nv = NoticeVerification::builder()
+    .copyright_holder(Some("Jane Doe".into()))
+    .dmi(Some(DmiValue::ProhibitedAiMlTraining))
+    .evidence_strength(EvidenceStrength::MetadataNoticeOnly)
+    .build();
 ```
 
 All fields are private — use getter methods (e.g., `report.copyright_holder()`, `report.evidence_strength()`). `has_notice()` returns true if any legal field or DMI value is present. Additional diagnostics: `canonical_dmi()`, `legacy_dmi()`, `rights_signal_kind()`, `has_dmi_conflict()`.

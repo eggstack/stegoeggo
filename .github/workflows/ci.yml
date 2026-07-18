@@ -127,19 +127,31 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install exiftool
-        run: sudo apt-get update && sudo apt-get install -y libimage-exiftool-perl
-
-      - name: Install xmllint
-        run: sudo apt-get install -y libxml2-utils
+      - name: Install external tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libimage-exiftool-perl libxml2-utils imagemagick libvips-dev
 
       - name: Log tool versions
         run: |
           echo "=== External Tool Versions ==="
           exiftool -ver
           xmllint --version 2>&1 | head -1
+          convert --version 2>&1 | head -1
+          vips --version 2>&1 | head -1
           rustc --version
           cargo --version
+
+      - name: Write tool version manifest
+        run: |
+          {
+            echo "exiftool $(exiftool -ver)"
+            echo "xmllint $(xmllint --version 2>&1 | head -1)"
+            echo "imagemagick $(convert --version 2>&1 | head -1)"
+            echo "libvips $(vips --version 2>&1 | head -1)"
+            echo "rustc $(rustc --version)"
+            echo "cargo $(cargo --version)"
+          } > tool-versions.txt
 
       - name: Build conformance harness
         run: cargo build --release --bin stegoeggo-conformance
@@ -148,6 +160,7 @@ jobs:
         run: |
           ./target/release/stegoeggo-conformance \
             --fixtures tests/fixtures/conformance \
+            --manifest tests/fixtures/conformance/manifest.toml \
             --strict \
             --json conformance-report.json
 
@@ -157,6 +170,13 @@ jobs:
         with:
           name: conformance-report
           path: conformance-report.json
+
+      - name: Upload tool versions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-versions
+          path: tool-versions.txt
 
   bench:
     name: Benchmark

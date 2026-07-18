@@ -2250,7 +2250,8 @@ impl NoticeVerification {
             || self.notice_applied_at.is_some()
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[deprecated(since = "0.3.0", note = "use NoticeVerificationBuilder instead")]
+    #[allow(clippy::too_many_arguments, dead_code)]
     pub(crate) fn new(
         copyright_holder: Option<String>,
         creator: Option<String>,
@@ -2306,6 +2307,296 @@ impl NoticeVerification {
             licensor_url,
             metadata_date,
             notice_applied_at,
+        }
+    }
+
+    /// Creates a new [`NoticeVerificationBuilder`] with default values.
+    #[must_use]
+    pub fn builder() -> NoticeVerificationBuilder {
+        NoticeVerificationBuilder::default()
+    }
+}
+
+/// Builder for [`NoticeVerification`].
+///
+/// Construct via [`NoticeVerification::builder()`], chain setter methods, then
+/// call [`build()`](NoticeVerificationBuilder::build).
+#[derive(Debug, Clone)]
+pub struct NoticeVerificationBuilder {
+    copyright_holder: Option<String>,
+    creator: Option<String>,
+    contact: Option<String>,
+    rights_url: Option<String>,
+    usage_terms: Option<String>,
+    ai_constraints: Option<String>,
+    dmi: Option<DmiValue>,
+    tdm_reserved: Option<bool>,
+    rights_signal_kind: RightsSignalKind,
+    canonical_dmi: Option<DmiValue>,
+    legacy_dmi: Option<DmiValue>,
+    protection_seed: Option<u64>,
+    stego_status: VerificationStatus,
+    stego_payload: Option<crate::StegoPayload>,
+    authenticated: bool,
+    evidence_strength: EvidenceStrength,
+    channels: Vec<EvidenceChannel>,
+    license_url: Option<String>,
+    web_statement_of_rights: Option<String>,
+    credit_line: Option<String>,
+    copyright_owner: Option<String>,
+    licensor_name: Option<String>,
+    licensor_email: Option<String>,
+    licensor_url: Option<String>,
+    metadata_date: Option<String>,
+    notice_applied_at: Option<String>,
+}
+
+impl Default for NoticeVerificationBuilder {
+    fn default() -> Self {
+        Self {
+            copyright_holder: None,
+            creator: None,
+            contact: None,
+            rights_url: None,
+            usage_terms: None,
+            ai_constraints: None,
+            dmi: None,
+            tdm_reserved: None,
+            rights_signal_kind: RightsSignalKind::Unknown,
+            canonical_dmi: None,
+            legacy_dmi: None,
+            protection_seed: None,
+            stego_status: VerificationStatus::NotFound,
+            stego_payload: None,
+            authenticated: false,
+            evidence_strength: EvidenceStrength::NoNoticeFound,
+            channels: Vec::new(),
+            license_url: None,
+            web_statement_of_rights: None,
+            credit_line: None,
+            copyright_owner: None,
+            licensor_name: None,
+            licensor_email: None,
+            licensor_url: None,
+            metadata_date: None,
+            notice_applied_at: None,
+        }
+    }
+}
+
+impl NoticeVerificationBuilder {
+    /// Sets the copyright holder.
+    #[must_use]
+    pub fn copyright_holder(mut self, v: Option<String>) -> Self {
+        self.copyright_holder = v;
+        self
+    }
+
+    /// Sets the creator name.
+    #[must_use]
+    pub fn creator(mut self, v: Option<String>) -> Self {
+        self.creator = v;
+        self
+    }
+
+    /// Sets the contact email.
+    #[must_use]
+    pub fn contact(mut self, v: Option<String>) -> Self {
+        self.contact = v;
+        self
+    }
+
+    /// Sets the rights URL.
+    #[must_use]
+    pub fn rights_url(mut self, v: Option<String>) -> Self {
+        self.rights_url = v;
+        self
+    }
+
+    /// Sets the usage terms.
+    #[must_use]
+    pub fn usage_terms(mut self, v: Option<String>) -> Self {
+        self.usage_terms = v;
+        self
+    }
+
+    /// Sets the AI training constraints.
+    #[must_use]
+    pub fn ai_constraints(mut self, v: Option<String>) -> Self {
+        self.ai_constraints = v;
+        self
+    }
+
+    /// Sets the DMI restriction value.
+    #[must_use]
+    pub fn dmi(mut self, v: Option<DmiValue>) -> Self {
+        self.dmi = v;
+        self
+    }
+
+    /// Sets the TDM reservation flag.
+    #[must_use]
+    pub fn tdm_reserved(mut self, v: Option<bool>) -> Self {
+        self.tdm_reserved = v;
+        self
+    }
+
+    /// Sets the rights signal kind.
+    #[must_use]
+    pub fn rights_signal_kind(mut self, v: RightsSignalKind) -> Self {
+        self.rights_signal_kind = v;
+        self
+    }
+
+    /// Sets the canonical DMI value.
+    #[must_use]
+    pub fn canonical_dmi(mut self, v: Option<DmiValue>) -> Self {
+        self.canonical_dmi = v;
+        self
+    }
+
+    /// Sets the legacy DMI value.
+    #[must_use]
+    pub fn legacy_dmi(mut self, v: Option<DmiValue>) -> Self {
+        self.legacy_dmi = v;
+        self
+    }
+
+    /// Sets the protection seed.
+    #[must_use]
+    pub fn protection_seed(mut self, v: Option<u64>) -> Self {
+        self.protection_seed = v;
+        self
+    }
+
+    /// Sets the steganographic verification status.
+    #[must_use]
+    pub fn stego_status(mut self, v: VerificationStatus) -> Self {
+        self.stego_status = v;
+        self
+    }
+
+    /// Sets the extracted steganographic payload.
+    #[must_use]
+    pub fn stego_payload(mut self, v: Option<crate::StegoPayload>) -> Self {
+        self.stego_payload = v;
+        self
+    }
+
+    /// Sets whether the payload was authenticated via HMAC.
+    #[must_use]
+    pub fn authenticated(mut self, v: bool) -> Self {
+        self.authenticated = v;
+        self
+    }
+
+    /// Sets the overall evidence strength.
+    #[must_use]
+    pub fn evidence_strength(mut self, v: EvidenceStrength) -> Self {
+        self.evidence_strength = v;
+        self
+    }
+
+    /// Sets the evidence channels.
+    #[must_use]
+    pub fn channels(mut self, v: Vec<EvidenceChannel>) -> Self {
+        self.channels = v;
+        self
+    }
+
+    /// Sets the license URL.
+    #[must_use]
+    pub fn license_url(mut self, v: Option<String>) -> Self {
+        self.license_url = v;
+        self
+    }
+
+    /// Sets the web statement of rights URL.
+    #[must_use]
+    pub fn web_statement_of_rights(mut self, v: Option<String>) -> Self {
+        self.web_statement_of_rights = v;
+        self
+    }
+
+    /// Sets the credit line.
+    #[must_use]
+    pub fn credit_line(mut self, v: Option<String>) -> Self {
+        self.credit_line = v;
+        self
+    }
+
+    /// Sets the copyright owner.
+    #[must_use]
+    pub fn copyright_owner(mut self, v: Option<String>) -> Self {
+        self.copyright_owner = v;
+        self
+    }
+
+    /// Sets the licensor name.
+    #[must_use]
+    pub fn licensor_name(mut self, v: Option<String>) -> Self {
+        self.licensor_name = v;
+        self
+    }
+
+    /// Sets the licensor email.
+    #[must_use]
+    pub fn licensor_email(mut self, v: Option<String>) -> Self {
+        self.licensor_email = v;
+        self
+    }
+
+    /// Sets the licensor URL.
+    #[must_use]
+    pub fn licensor_url(mut self, v: Option<String>) -> Self {
+        self.licensor_url = v;
+        self
+    }
+
+    /// Sets the metadata date.
+    #[must_use]
+    pub fn metadata_date(mut self, v: Option<String>) -> Self {
+        self.metadata_date = v;
+        self
+    }
+
+    /// Sets the notice-applied-at timestamp.
+    #[must_use]
+    pub fn notice_applied_at(mut self, v: Option<String>) -> Self {
+        self.notice_applied_at = v;
+        self
+    }
+
+    /// Builds the [`NoticeVerification`] from the accumulated fields.
+    #[must_use]
+    pub fn build(self) -> NoticeVerification {
+        NoticeVerification {
+            copyright_holder: self.copyright_holder,
+            creator: self.creator,
+            contact: self.contact,
+            rights_url: self.rights_url,
+            usage_terms: self.usage_terms,
+            ai_constraints: self.ai_constraints,
+            dmi: self.dmi,
+            tdm_reserved: self.tdm_reserved,
+            rights_signal_kind: self.rights_signal_kind,
+            canonical_dmi: self.canonical_dmi,
+            legacy_dmi: self.legacy_dmi,
+            protection_seed: self.protection_seed,
+            stego_status: self.stego_status,
+            stego_payload: self.stego_payload,
+            authenticated: self.authenticated,
+            evidence_strength: self.evidence_strength,
+            channels: self.channels,
+            license_url: self.license_url,
+            web_statement_of_rights: self.web_statement_of_rights,
+            credit_line: self.credit_line,
+            copyright_owner: self.copyright_owner,
+            licensor_name: self.licensor_name,
+            licensor_email: self.licensor_email,
+            licensor_url: self.licensor_url,
+            metadata_date: self.metadata_date,
+            notice_applied_at: self.notice_applied_at,
         }
     }
 }

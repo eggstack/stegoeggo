@@ -186,10 +186,10 @@ pub mod async_api;
 pub use error::{Error, Result};
 pub use types::{
     DmiValue, EvidenceChannel, EvidenceProfile, EvidenceStrength, ImageOutputFormat, LegalMetadata,
-    LocalizedText, MetadataUpdatePolicy, NoticeVerification, ProtectionConfig, ProtectionContext,
-    ProtectionLevel, ProtectionWarning, RightsNotice, RightsSignalKind, VerificationResult,
-    VerificationStatus, WarningCategory, WarningSeverity, DEFAULT_OUTPUT_FORMAT,
-    PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
+    LocalizedText, MetadataUpdatePolicy, NoticeVerification, NoticeVerificationBuilder,
+    ProtectionConfig, ProtectionContext, ProtectionLevel, ProtectionWarning, RightsNotice,
+    RightsSignalKind, VerificationResult, VerificationStatus, WarningCategory, WarningSeverity,
+    DEFAULT_OUTPUT_FORMAT, PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
 };
 
 pub use traits::Protector;

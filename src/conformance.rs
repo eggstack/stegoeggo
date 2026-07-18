@@ -450,3 +450,441 @@ pub fn collect_fixture_files(dir: &Path, format_filter: &Option<String>) -> Vec<
     }
     files
 }
+
+/// Legal field values expected for a fixture.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ExpectedLegalFields {
+    /// Expected copyright holder.
+    pub copyright_holder: Option<String>,
+    /// Expected creator.
+    pub creator: Option<String>,
+    /// Expected copyright owner.
+    pub copyright_owner: Option<String>,
+    /// Expected usage terms.
+    pub usage_terms: Option<String>,
+    /// Expected web statement of rights.
+    pub web_statement_of_rights: Option<String>,
+    /// Expected AI constraints text.
+    pub ai_constraints: Option<String>,
+    /// Expected credit line.
+    pub credit_line: Option<String>,
+    /// Expected licensor name.
+    pub licensor_name: Option<String>,
+    /// Expected licensor email.
+    pub licensor_email: Option<String>,
+    /// Expected licensor URL.
+    pub licensor_url: Option<String>,
+}
+
+/// A single fixture entry in the TOML manifest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureEntry {
+    /// Unique identifier for this fixture.
+    pub id: String,
+    /// Relative path from the fixtures directory root.
+    pub path: String,
+    /// Detected image format (png, jpeg, webp).
+    pub format: String,
+    /// Fixture category (canonical, legacy, conflicting, malformed, preservation).
+    pub category: String,
+    /// Tool used to generate this fixture.
+    pub authoring_tool: String,
+    /// Version of the authoring tool.
+    pub authoring_tool_version: String,
+    /// Command used to generate this fixture.
+    pub generation_command: String,
+    /// Source of the fixture (generated, external).
+    pub source: String,
+    /// License identifier.
+    pub license: String,
+    /// SHA-256 hex digest of the fixture file.
+    pub sha256: String,
+    /// Expected DMI value string.
+    pub expected_dmi: String,
+    /// Whether this fixture is expected to have conflicting metadata.
+    pub expected_conflict: bool,
+    /// Expected legal field values.
+    #[serde(default)]
+    pub expected_legal_fields: ExpectedLegalFields,
+    /// Whether this fixture is expected to be malformed.
+    pub expected_malformed: bool,
+    /// Expected preserved field names after re-processing.
+    #[serde(default)]
+    pub expected_preservation: Vec<String>,
+}
+
+/// The full fixture manifest loaded from TOML.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureManifest {
+    /// All fixture entries.
+    #[serde(default = "Vec::new", rename = "fixture")]
+    pub entries: Vec<FixtureEntry>,
+}
+
+impl FixtureManifest {
+    /// Compute SHA-256 hex digest for a file on disk.
+    pub fn compute_sha256(path: &Path) -> std::io::Result<String> {
+        use sha2::{Digest, Sha256};
+        let bytes = std::fs::read(path)?;
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        Ok(hex::encode(hasher.finalize()))
+    }
+
+    /// Find a fixture entry by its relative path within the fixtures directory.
+    #[must_use]
+    pub fn find_by_path(&self, path: &str) -> Option<&FixtureEntry> {
+        self.entries.iter().find(|e| e.path == path)
+    }
+
+    /// Return all entries belonging to a given category.
+    #[must_use]
+    pub fn entries_by_category(&self, category: &str) -> Vec<&FixtureEntry> {
+        self.entries
+            .iter()
+            .filter(|e| e.category == category)
+            .collect()
+    }
+
+    /// Return all entries matching a given format.
+    #[must_use]
+    pub fn entries_by_format(&self, format: &str) -> Vec<&FixtureEntry> {
+        self.entries.iter().filter(|e| e.format == format).collect()
+    }
+
+    /// Count entries grouped by authoring tool.
+    #[must_use]
+    pub fn count_by_authoring_tool(&self) -> std::collections::HashMap<String, usize> {
+        let mut counts = std::collections::HashMap::new();
+        for entry in &self.entries {
+            *counts.entry(entry.authoring_tool.clone()).or_insert(0) += 1;
+        }
+        counts
+    }
+}
+
+/// Load a fixture manifest from a TOML file.
+pub fn load_manifest(path: &Path) -> Result<FixtureManifest, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read manifest {}: {}", path.display(), e))?;
+    let manifest: FixtureManifest =
+        toml::from_str(&content).map_err(|e| format!("Failed to parse manifest: {}", e))?;
+    Ok(manifest)
+}
+
+/// Result of SHA-256 digest verification for a single fixture.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DigestCheckResult {
+    /// Relative path of the fixture file.
+    pub fixture_path: String,
+    /// Expected SHA-256 hex digest from the manifest.
+    pub expected_sha256: String,
+    /// Actual SHA-256 hex digest computed from the file.
+    pub actual_sha256: String,
+    /// Whether the digests match.
+    pub matches: bool,
+}
+
+/// Verify SHA-256 digests of all fixtures referenced by the manifest.
+///
+/// Returns a `DigestCheckResult` for each entry. Callers should check
+/// `matches` to determine if verification passed.
+pub fn verify_fixtures(manifest: &FixtureManifest, fixtures_dir: &Path) -> Vec<DigestCheckResult> {
+    manifest
+        .entries
+        .iter()
+        .map(|entry| {
+            let full_path = fixtures_dir.join(&entry.path);
+            let actual = FixtureManifest::compute_sha256(&full_path).unwrap_or_default();
+            DigestCheckResult {
+                fixture_path: entry.path.clone(),
+                expected_sha256: entry.sha256.clone(),
+                actual_sha256: actual.clone(),
+                matches: actual == entry.sha256,
+            }
+        })
+        .collect()
+}
+
+/// Minimum counts required per category/format for coverage enforcement.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoverageMinimums {
+    /// Minimum canonical PNG fixtures required.
+    pub canonical_png: usize,
+    /// Minimum canonical JPEG fixtures required.
+    pub canonical_jpeg: usize,
+    /// Minimum canonical WebP fixtures required.
+    pub canonical_webp: usize,
+    /// Minimum total legacy fixtures required.
+    pub legacy_min: usize,
+    /// Minimum distinct formats required in legacy category.
+    pub legacy_formats: usize,
+    /// Minimum conflicting fixtures required.
+    pub conflict_min: usize,
+    /// Minimum malformed fixtures required.
+    pub malformed_min: usize,
+    /// Minimum preservation fixtures required.
+    pub preservation_min: usize,
+    /// Minimum distinct formats required in preservation category.
+    pub preservation_formats: usize,
+    /// Minimum percentage of fixtures from external sources.
+    pub external_coverage_pct: f64,
+}
+
+impl Default for CoverageMinimums {
+    fn default() -> Self {
+        Self {
+            canonical_png: 1,
+            canonical_jpeg: 1,
+            canonical_webp: 1,
+            legacy_min: 3,
+            legacy_formats: 2,
+            conflict_min: 3,
+            malformed_min: 4,
+            preservation_min: 3,
+            preservation_formats: 3,
+            external_coverage_pct: 75.0,
+        }
+    }
+}
+
+/// Result of coverage enforcement.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoverageCheckResult {
+    /// Whether all coverage minimums are met.
+    pub passed: bool,
+    /// List of coverage violation descriptions.
+    pub violations: Vec<String>,
+}
+
+/// Enforce coverage minimums against a manifest.
+#[must_use]
+pub fn check_coverage(
+    manifest: &FixtureManifest,
+    minimums: &CoverageMinimums,
+) -> CoverageCheckResult {
+    let mut violations = Vec::new();
+
+    let canonical = manifest.entries_by_category("canonical");
+    let canonical_png = canonical.iter().filter(|e| e.format == "png").count();
+    let canonical_jpeg = canonical.iter().filter(|e| e.format == "jpeg").count();
+    let canonical_webp = canonical.iter().filter(|e| e.format == "webp").count();
+
+    if canonical_png < minimums.canonical_png {
+        violations.push(format!(
+            "canonical PNG: {} < {}",
+            canonical_png, minimums.canonical_png
+        ));
+    }
+    if canonical_jpeg < minimums.canonical_jpeg {
+        violations.push(format!(
+            "canonical JPEG: {} < {}",
+            canonical_jpeg, minimums.canonical_jpeg
+        ));
+    }
+    if canonical_webp < minimums.canonical_webp {
+        violations.push(format!(
+            "canonical WebP: {} < {}",
+            canonical_webp, minimums.canonical_webp
+        ));
+    }
+
+    let legacy = manifest.entries_by_category("legacy");
+    let legacy_format_count = legacy
+        .iter()
+        .map(|e| e.format.as_str())
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    if legacy.len() < minimums.legacy_min {
+        violations.push(format!(
+            "legacy: {} < {}",
+            legacy.len(),
+            minimums.legacy_min
+        ));
+    }
+    if legacy_format_count < minimums.legacy_formats {
+        violations.push(format!(
+            "legacy formats: {} < {}",
+            legacy_format_count, minimums.legacy_formats
+        ));
+    }
+
+    let conflict = manifest.entries_by_category("conflicting");
+    if conflict.len() < minimums.conflict_min {
+        violations.push(format!(
+            "conflict: {} < {}",
+            conflict.len(),
+            minimums.conflict_min
+        ));
+    }
+
+    let malformed = manifest.entries_by_category("malformed");
+    if malformed.len() < minimums.malformed_min {
+        violations.push(format!(
+            "malformed: {} < {}",
+            malformed.len(),
+            minimums.malformed_min
+        ));
+    }
+
+    let preservation = manifest.entries_by_category("preservation");
+    let preservation_format_count = preservation
+        .iter()
+        .map(|e| e.format.as_str())
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    if preservation.len() < minimums.preservation_min {
+        violations.push(format!(
+            "preservation: {} < {}",
+            preservation.len(),
+            minimums.preservation_min
+        ));
+    }
+    if preservation_format_count < minimums.preservation_formats {
+        violations.push(format!(
+            "preservation formats: {} < {}",
+            preservation_format_count, minimums.preservation_formats
+        ));
+    }
+
+    let external_count = manifest
+        .entries
+        .iter()
+        .filter(|e| e.source == "external")
+        .count();
+    let total = manifest.entries.len();
+    let external_pct = if total > 0 {
+        (external_count as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
+    if external_pct < minimums.external_coverage_pct {
+        violations.push(format!(
+            "external coverage: {:.1}% < {:.1}%",
+            external_pct, minimums.external_coverage_pct
+        ));
+    }
+
+    CoverageCheckResult {
+        passed: violations.is_empty(),
+        violations,
+    }
+}
+
+/// Aggregate summary across multiple conformance reports.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConformanceSummary {
+    /// Total number of reports.
+    pub total: usize,
+    /// Number of passing reports.
+    pub passed: usize,
+    /// Number of failing reports.
+    pub failed: usize,
+    /// Report counts grouped by image format.
+    pub by_format: std::collections::HashMap<String, usize>,
+    /// Report counts grouped by fixture category.
+    pub by_category: std::collections::HashMap<String, usize>,
+    /// Digest verification results, if performed.
+    pub digest_verification: Option<Vec<DigestCheckResult>>,
+    /// Coverage check results, if performed.
+    pub coverage: Option<CoverageCheckResult>,
+}
+
+impl ConformanceSummary {
+    /// Build a summary from a slice of conformance reports.
+    #[must_use]
+    pub fn from_reports(reports: &[ConformanceReport]) -> Self {
+        let total = reports.len();
+        let passed = reports.iter().filter(|r| r.passed).count();
+        let failed = total - passed;
+
+        let mut by_format = std::collections::HashMap::new();
+        for report in reports {
+            *by_format.entry(report.format.clone()).or_insert(0) += 1;
+        }
+
+        Self {
+            total,
+            passed,
+            failed,
+            by_format,
+            by_category: std::collections::HashMap::new(),
+            digest_verification: None,
+            coverage: None,
+        }
+    }
+
+    /// Attach digest verification results.
+    pub fn with_digest_verification(&mut self, results: Vec<DigestCheckResult>) {
+        self.digest_verification = Some(results);
+    }
+
+    /// Attach coverage check results.
+    pub fn with_coverage(&mut self, result: CoverageCheckResult) {
+        self.coverage = Some(result);
+    }
+
+    /// Human-readable summary string.
+    #[must_use]
+    pub fn summary(&self) -> String {
+        let mut lines = Vec::new();
+        lines.push(format!(
+            "Conformance Summary: {} total, {} passed, {} failed",
+            self.total, self.passed, self.failed
+        ));
+
+        if !self.by_format.is_empty() {
+            lines.push("By format:".to_string());
+            for (fmt, count) in &self.by_format {
+                lines.push(format!("  {}: {}", fmt, count));
+            }
+        }
+
+        if let Some(ref digest) = self.digest_verification {
+            let matching = digest.iter().filter(|d| d.matches).count();
+            lines.push(format!(
+                "Digest verification: {}/{} passed",
+                matching,
+                digest.len()
+            ));
+        }
+
+        if let Some(ref coverage) = self.coverage {
+            if coverage.passed {
+                lines.push("Coverage: PASS".to_string());
+            } else {
+                lines.push("Coverage: FAIL".to_string());
+                for v in &coverage.violations {
+                    lines.push(format!("  - {}", v));
+                }
+            }
+        }
+
+        lines.join("\n")
+    }
+}
+
+/// Detect whether a JPEG file uses progressive encoding.
+#[must_use]
+pub fn is_progressive_jpeg(bytes: &[u8]) -> bool {
+    if bytes.len() < 4 || !bytes.starts_with(b"\xFF\xD8\xFF") {
+        return false;
+    }
+    let mut pos = 2;
+    while pos + 4 <= bytes.len() {
+        if bytes[pos] != 0xFF {
+            break;
+        }
+        let marker = bytes[pos + 1];
+        if marker == 0xD8 || marker == 0xD9 {
+            pos += 2;
+            continue;
+        }
+        if marker == 0xC0 || marker == 0xC2 {
+            return marker == 0xC2;
+        }
+        let length = u16::from_be_bytes([bytes[pos + 2], bytes[pos + 3]]) as usize;
+        pos += 2 + length;
+    }
+    false
+}

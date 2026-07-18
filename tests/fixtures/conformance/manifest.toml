@@ -1,0 +1,700 @@
+# Conformance fixture manifest
+# Generated from fixture files and README.md provenance documentation.
+# Each entry documents a fixture's identity, provenance, and expected extraction results.
+
+[[fixture]]
+id = "canonical_complete_png"
+path = "canonical/canonical_complete.png"
+format = "png"
+category = "canonical"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_canonical_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "ac5b1952bda008c98b404c4c7b0b337263d6e2b9ce4d79fe92f300965b20876a"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Conformance Test Holder", creator = "Conformance Creator", copyright_owner = "Conformance Owner", usage_terms = "All rights reserved for conformance testing", web_statement_of_rights = "https://conformance.test/rights", ai_constraints = "No AI training permitted", credit_line = "Photo by Conformance Creator", licensor_name = "Conformance Licensor", licensor_email = "licensor@conformance.test", licensor_url = "https://licensor.conformance.test" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_complete_jpg"
+path = "canonical/canonical_complete.jpg"
+format = "jpeg"
+category = "canonical"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_canonical_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "df5701e6d6f6a8ec9fb26cb75c978fe5e8fceed4b2f44e9741fb7bd7cf89a496"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Conformance Test Holder", creator = "Conformance Creator", copyright_owner = "Conformance Owner", usage_terms = "All rights reserved for conformance testing", web_statement_of_rights = "https://conformance.test/rights", ai_constraints = "No AI training permitted", credit_line = "Photo by Conformance Creator", licensor_name = "Conformance Licensor", licensor_email = "licensor@conformance.test", licensor_url = "https://licensor.conformance.test" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_complete_webp"
+path = "canonical/canonical_complete.webp"
+format = "webp"
+category = "canonical"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_canonical_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "e16d5ab77c4480af2ca239451fecdd4d5bb205cfe8c3cf4d4f050e3820699345"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Conformance Test Holder", creator = "Conformance Creator", copyright_owner = "Conformance Owner", usage_terms = "All rights reserved for conformance testing", web_statement_of_rights = "https://conformance.test/rights", ai_constraints = "No AI training permitted", credit_line = "Photo by Conformance Creator", licensor_name = "Conformance Licensor", licensor_email = "licensor@conformance.test", licensor_url = "https://licensor.conformance.test" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_policy_only_png"
+path = "canonical/canonical_policy_only.png"
+format = "png"
+category = "canonical"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_canonical_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "7ec356a9902aacfb62a2bb7b98f0ab99a3b08d313203e9fc235200af92749590"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = {}
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_policy_only_jpg"
+path = "canonical/canonical_policy_only.jpg"
+format = "jpeg"
+category = "canonical"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_canonical_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "8c4695336150048875a74747eb1d4d8e433094348b531f22aa96bf54a6f7c5ae"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = {}
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_policy_only_webp"
+path = "canonical/canonical_policy_only.webp"
+format = "webp"
+category = "canonical"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_canonical_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "77ed5dc12b4a1e29786d225cd8244428435442c04c5528065f095325cca7735c"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = {}
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_copyright_only_png"
+path = "canonical/canonical_copyright_only.png"
+format = "png"
+category = "canonical"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_canonical_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "293dc76e8a0d348ff4a9bb60dc3dc0ca9fd4591e0e5ef1185690669ec3789a64"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Jane Doe" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_unicode_png"
+path = "canonical/canonical_unicode.png"
+format = "png"
+category = "canonical"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_canonical_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "78e22a7e2a684d6ce6e6bc602b5022724e992f8b349a044586caec0cdff32e0b"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "日本テスト株式会社", usage_terms = "Alle Rechte vorbehalten. 版權所有。" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_unicode_webp"
+path = "canonical/canonical_unicode.webp"
+format = "webp"
+category = "canonical"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_canonical_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "d7aeae0eb3c1371b0cf716e853ceefe9ca6297e09a148887a2db3d4e15467f65"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "日本テスト株式会社", usage_terms = "Alle Rechte vorbehalten. 版權所有。" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_independent_png"
+path = "canonical/canonical_independent.png"
+format = "png"
+category = "canonical"
+authoring_tool = "exiftool"
+authoring_tool_version = ""
+generation_command = "raw iTXt injection"
+source = "external"
+license = "MIT"
+sha256 = "f16ee8a35d423a20136e88e7af0b2c09e865f1844d369cd91e097b2116a185d0"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Independent Author. All rights reserved.", web_statement_of_rights = "https://example.com/rights" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_independent_jpg"
+path = "canonical/canonical_independent.jpg"
+format = "jpeg"
+category = "canonical"
+authoring_tool = "exiftool"
+authoring_tool_version = ""
+generation_command = "ExifTool -XMP-dc:Rights injection"
+source = "external"
+license = "MIT"
+sha256 = "aa44e7b6f673ca981a2900c2dcac34bea7d9d5f89ce28e65afe7e666a3896227"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Independent Author. All rights reserved.", web_statement_of_rights = "https://example.com/rights" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_independent_webp"
+path = "canonical/canonical_independent.webp"
+format = "webp"
+category = "canonical"
+authoring_tool = "exiftool"
+authoring_tool_version = ""
+generation_command = "ExifTool -XMP-dc:Rights injection"
+source = "external"
+license = "MIT"
+sha256 = "69600a42e3f71fa97651bd1fa974728b16de63a4b9661a6507d8cb895896d8c3"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Independent Author. All rights reserved.", web_statement_of_rights = "https://example.com/rights" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_alt_prefix_png"
+path = "canonical/canonical_alt_prefix.png"
+format = "png"
+category = "canonical"
+authoring_tool = "exiftool"
+authoring_tool_version = ""
+generation_command = "raw iTXt injection with PLUS: prefix"
+source = "external"
+license = "MIT"
+sha256 = "bdedc96c049c7c37bc985c1b0fd9365d62aea818c2652346ed55cab7a3d32a79"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Alt Prefix Test" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_alt_prefix_jpg"
+path = "canonical/canonical_alt_prefix.jpg"
+format = "jpeg"
+category = "canonical"
+authoring_tool = "exiftool"
+authoring_tool_version = ""
+generation_command = "raw APP1 XMP injection with PLUS: prefix"
+source = "external"
+license = "MIT"
+sha256 = "2ce690174d2bd285f8b78261a2175d9a9bd4ec02a8783934004f5c44360bc66c"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Alt Prefix Test" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_multi_creator_png"
+path = "canonical/canonical_multi_creator.png"
+format = "png"
+category = "canonical"
+authoring_tool = "exiftool"
+authoring_tool_version = ""
+generation_command = "raw iTXt injection with multi-creator XMP"
+source = "external"
+license = "MIT"
+sha256 = "45ea92e192e82ded41ddcd734d51500e9ceef976eeacef20107ec41858b2ed3a"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Multi Creator Corp. All rights reserved.", web_statement_of_rights = "https://example.com/rights", copyright_owner = "Multi Creator Corp", licensor_name = "License Admin", licensor_email = "admin@multi-creator.test", licensor_url = "https://multi-creator.test/license" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_multi_creator_jpg"
+path = "canonical/canonical_multi_creator.jpg"
+format = "jpeg"
+category = "canonical"
+authoring_tool = "exiftool"
+authoring_tool_version = ""
+generation_command = "raw APP1 XMP injection with multi-creator XMP"
+source = "external"
+license = "MIT"
+sha256 = "e762ec68de23707df9c8c0cee85d127d245e9fb39080c1af15718a0552e9904d"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Multi Creator Corp. All rights reserved.", web_statement_of_rights = "https://example.com/rights", copyright_owner = "Multi Creator Corp", licensor_name = "License Admin", licensor_email = "admin@multi-creator.test", licensor_url = "https://multi-creator.test/license" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "canonical_multi_creator_webp"
+path = "canonical/canonical_multi_creator.webp"
+format = "webp"
+category = "canonical"
+authoring_tool = "exiftool"
+authoring_tool_version = ""
+generation_command = "raw WebP XMP chunk injection with multi-creator XMP"
+source = "external"
+license = "MIT"
+sha256 = "c443d42adb0cb73ff0bdbcbd2ba2a4eaf345265cbd3e84c90b1f832d48d874a3"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Multi Creator Corp. All rights reserved.", web_statement_of_rights = "https://example.com/rights", copyright_owner = "Multi Creator Corp", licensor_name = "License Admin", licensor_email = "admin@multi-creator.test", licensor_url = "https://multi-creator.test/license" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "legacy_v02_dmi_prohibited_png"
+path = "legacy/legacy_v02_dmi_prohibited.png"
+format = "png"
+category = "legacy"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_legacy_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "8a4e1093a56f2863d9b6c4614d56ac1b2d29fcefca69b533e86f565a4181ae83"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Legacy Holder", usage_terms = "Legacy Terms" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "legacy_v02_dmi_prohibited_jpg"
+path = "legacy/legacy_v02_dmi_prohibited.jpg"
+format = "jpeg"
+category = "legacy"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_legacy_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "884e4cb568bb45b37837628551c72a6a114a933e29a2e0be4f3523b8f197d97b"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Legacy Holder", usage_terms = "Legacy Terms" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "legacy_v02_dmi_prohibited_webp"
+path = "legacy/legacy_v02_dmi_prohibited.webp"
+format = "webp"
+category = "legacy"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_legacy_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "8a3912fd1f170ee8750f5a2896cf167241b482e930ddcd6310b077ed8c42be6d"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Legacy Holder", usage_terms = "Legacy Terms" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "malformed_truncated_png"
+path = "malformed/truncated.png"
+format = "png"
+category = "malformed"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_malformed_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "4bb142621986d2b2f2736c0e27e84d32a6e9f349570667f755c1986326ec8aca"
+expected_dmi = ""
+expected_conflict = false
+expected_legal_fields = {}
+expected_malformed = true
+expected_preservation = []
+
+[[fixture]]
+id = "malformed_truncated_jpg"
+path = "malformed/truncated.jpg"
+format = "jpeg"
+category = "malformed"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_malformed_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "ef00c367a43dcac5a9ccc02b73b6ebf3ee00144f3d9aff9f97ff7190390cf861"
+expected_dmi = ""
+expected_conflict = false
+expected_legal_fields = {}
+expected_malformed = true
+expected_preservation = []
+
+[[fixture]]
+id = "malformed_truncated_xmp_png"
+path = "malformed/truncated_xmp.png"
+format = "png"
+category = "malformed"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_malformed_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "d2534cd0fdf69b68ac714765edee8ca813db4ceb2514c0ffa29867e7bf327718"
+expected_dmi = ""
+expected_conflict = false
+expected_legal_fields = {}
+expected_malformed = true
+expected_preservation = []
+
+[[fixture]]
+id = "malformed_invalid_xml_entity_png"
+path = "malformed/invalid_xml_entity.png"
+format = "png"
+category = "malformed"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_malformed_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "0952555bd1011ed29a15551ea6838dc52538b85c3a2fb739d7e5401cbc56b4e0"
+expected_dmi = ""
+expected_conflict = false
+expected_legal_fields = {}
+expected_malformed = true
+expected_preservation = []
+
+[[fixture]]
+id = "malformed_invalid_namespace_png"
+path = "malformed/invalid_namespace.png"
+format = "png"
+category = "malformed"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_malformed_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "6e640af05632081eff80ac70eb5bf923af95c0fbd41098caef425b82a0057fa6"
+expected_dmi = ""
+expected_conflict = false
+expected_legal_fields = {}
+expected_malformed = true
+expected_preservation = []
+
+[[fixture]]
+id = "malformed_unknown_cv_uri_png"
+path = "malformed/unknown_cv_uri.png"
+format = "png"
+category = "malformed"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_malformed_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "9e70d145429c8036ee01e06cf0f9bd21d83c7554c4066e0a1147506ae00e0fa9"
+expected_dmi = ""
+expected_conflict = false
+expected_legal_fields = {}
+expected_malformed = true
+expected_preservation = []
+
+[[fixture]]
+id = "malformed_oversized_metadata_png"
+path = "malformed/oversized_metadata.png"
+format = "png"
+category = "malformed"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_malformed_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "fd845398a1abf523c1b648fcdb48eb2377f9503efa2b57c410a0ab3d03f1e01b"
+expected_dmi = ""
+expected_conflict = false
+expected_legal_fields = {}
+expected_malformed = true
+expected_preservation = []
+
+[[fixture]]
+id = "malformed_invalid_marker_length_jpg"
+path = "malformed/invalid_marker_length.jpg"
+format = "jpeg"
+category = "malformed"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_malformed_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "45ab010dca38c6bd2cb8e14c25837f2131f8baa61ac4bf17d2e3e7e8c03bca00"
+expected_dmi = ""
+expected_conflict = false
+expected_legal_fields = {}
+expected_malformed = true
+expected_preservation = []
+
+[[fixture]]
+id = "malformed_invalid_riff_length_webp"
+path = "malformed/invalid_riff_length.webp"
+format = "webp"
+category = "malformed"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_malformed_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "3c4406b3b20e32f13e2ff2d0ede1307824a1151cc7d9cabd321f71b52143f6d6"
+expected_dmi = ""
+expected_conflict = false
+expected_legal_fields = {}
+expected_malformed = true
+expected_preservation = []
+
+[[fixture]]
+id = "conflicting_dmi_allowed_then_prohibited"
+path = "conflicting/dmi_allowed_then_prohibited.png"
+format = "png"
+category = "conflicting"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_conflicting_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "d0ec8b72a5b0d13ae896467fac232092eb2bf5cbe01660968e9b28d68189840b"
+expected_dmi = "DMI-ALLOWED"
+expected_conflict = true
+expected_legal_fields = { copyright_holder = "Allowed Holder" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "conflicting_dmi_prohibited_then_allowed"
+path = "conflicting/dmi_prohibited_then_allowed.png"
+format = "png"
+category = "conflicting"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_conflicting_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "f15f43f6e2305c837f41d2e4fa3b2216b930b88a29ef5bf057211fe3e4747f46"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = true
+expected_legal_fields = { copyright_holder = "Prohibited Holder" }
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "conflicting_copyright_owners"
+path = "conflicting/conflicting_copyright_owners.png"
+format = "png"
+category = "conflicting"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_conflicting_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "178c3346fce79d3fad13d5a370ee8f7032199b705b71346463085ef3f160e3a5"
+expected_dmi = ""
+expected_conflict = true
+expected_legal_fields = {}
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "conflicting_rights_urls"
+path = "conflicting/conflicting_rights_urls.png"
+format = "png"
+category = "conflicting"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_conflicting_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "fc8eec891688a85e31339e0cab7d47a134ce1c2f16ce1de29430c6d9aed68df8"
+expected_dmi = ""
+expected_conflict = true
+expected_legal_fields = {}
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "conflicting_tdm_conflicts_dmi"
+path = "conflicting/tdm_conflicts_dmi.png"
+format = "png"
+category = "conflicting"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "raw XMP injection"
+source = "generated"
+license = "MIT"
+sha256 = "cef39d3098fd2089a93241307ab6bfe754a82ea982b6b9bd28665b597a0e801f"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = true
+expected_legal_fields = {}
+expected_malformed = false
+expected_preservation = []
+
+[[fixture]]
+id = "preservation_plain_png"
+path = "preservation/preservation_plain.png"
+format = "png"
+category = "preservation"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_preservation_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "ea0f9676f9b2ba529a585d0002d42e3d0ba2e748a29e912db9ea014f5e5be804"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Preservation Holder", usage_terms = "Preservation Terms" }
+expected_malformed = false
+expected_preservation = ["copyright_holder", "usage_terms"]
+
+[[fixture]]
+id = "preservation_plain_jpg"
+path = "preservation/preservation_plain.jpg"
+format = "jpeg"
+category = "preservation"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_preservation_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "1b6217c08e8616c88177f94a1c4275a88740812d540c74690919880cfd54f2fd"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Preservation Holder", usage_terms = "Preservation Terms" }
+expected_malformed = false
+expected_preservation = ["copyright_holder", "usage_terms"]
+
+[[fixture]]
+id = "preservation_plain_webp"
+path = "preservation/preservation_plain.webp"
+format = "webp"
+category = "preservation"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_preservation_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "c576f1359c48be37d1d41649b00eb18eb9a1b275e8f77d6460459c24a3ed7851"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Preservation Holder", usage_terms = "Preservation Terms" }
+expected_malformed = false
+expected_preservation = ["copyright_holder", "usage_terms"]
+
+[[fixture]]
+id = "preservation_with_creator_png"
+path = "preservation/preservation_with_creator.png"
+format = "png"
+category = "preservation"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_preservation_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "32a7f0de31dd0793e6f3fc91d234623bba076478b4ca631d7baaca68fd278ef2"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "New Holder" }
+expected_malformed = false
+expected_preservation = ["copyright_holder"]
+
+[[fixture]]
+id = "preservation_unrelated_text_png"
+path = "preservation/preservation_unrelated_text.png"
+format = "png"
+category = "preservation"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_preservation_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "cd22968278fe5baf0de43b45089797c66ba19181e9709fa6937b0064a636b069"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Auth Holder", usage_terms = "Auth Terms" }
+expected_malformed = false
+expected_preservation = ["copyright_holder", "usage_terms"]
+
+[[fixture]]
+id = "preservation_unrelated_xmp_png"
+path = "preservation/preservation_unrelated_xmp.png"
+format = "png"
+category = "preservation"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_preservation_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "e67060b481e2a074537cc0dd8d91954a5e7d1700bd0e6d218569fdabd092368a"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "XMP Holder" }
+expected_malformed = false
+expected_preservation = ["copyright_holder"]
+
+[[fixture]]
+id = "preservation_idempotent_png"
+path = "preservation/preservation_idempotent.png"
+format = "png"
+category = "preservation"
+authoring_tool = "stegoeggo"
+authoring_tool_version = "0.3.0"
+generation_command = "cargo test generate_preservation_fixtures -- --ignored"
+source = "generated"
+license = "MIT"
+sha256 = "136d84de6e949cc67477810118f37bf47fcb0cf266df285f3cb80270c738edc9"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "Idempotent Holder", usage_terms = "Idempotent Terms" }
+expected_malformed = false
+expected_preservation = ["copyright_holder", "usage_terms"]

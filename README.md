@@ -271,6 +271,10 @@ Available values:
 
 Each variant maps to a canonical PLUS vocabulary key via `DmiValue::plus_vocab_key()` (e.g., `DMI-PROHIBITED-AIMLTRAINING`). Legacy IPTC keys can be parsed back via `DmiValue::from_plus_vocab_key()`.
 
+### TDMRep Status
+
+TDMRep (W3C Text and Data Mining Reservation Protocol) deployment artifacts (HTTP headers, `/.well-known/tdmrep.json`) are **deferred** from Release 1. StegoEggo currently emits PLUS image metadata only. Legacy `tdm:reserve_tdm` image properties are still parsed for backward compatibility diagnostics but are not emitted by default. The CLI `--tdm-reserved` flag is deprecated and now sets DMI to `ProhibitedSeeConstraints`.
+
 ### Optional: Authenticated Stego Provenance (MAC Key)
 
 Provide a hex key for HMAC-SHA256 payload verification. Without a key, steganographic payloads use a non-cryptographic CRC32 checksum suitable for development and testing.
@@ -452,7 +456,7 @@ Options:
   --ai-constraints <TEXT>  AI-specific constraints (e.g., 'No training, no generation')
   --no-ai-training        Shorthand: prohibit AI/ML training and set default AI constraints
   --no-genai-training     Shorthand: prohibit generative AI training only
-  --tdm-reserved          Shorthand: reserve text and data mining rights
+  --tdm-reserved          [DEPRECATED] Sets DMI ProhibitedSeeConstraints (TDMRep deferred)
   -k, --key <KEY>          Optional cryptographic key (hex string) for HMAC-SHA256 verification
   -j, --jobs <N>           Parallel jobs for batch processing (default: 1)
   --strict                 Exit with error if any warnings have error severity for the active profile
@@ -832,11 +836,13 @@ See [docs/legal_notice_model.md](docs/legal_notice_model.md) for a detailed desc
 The conformance suite validates that protected images expose correct
 rights metadata to external tools. It uses a layered approach:
 
-1. **Internal extraction** — `verify_legal_notice()` parses the image
-2. **External extraction** — ExifTool extracts metadata independently
-3. **Namespace-aware XMP validation** — xmllint validates XML structure
-4. **Normalized comparison** — internal and external results are compared field-by-field
-5. **Machine-readable report** — JSON output with per-check pass/fail/warn
+1. **Fixture manifest** — machine-readable TOML manifest with SHA-256 digests, expected values, and provenance
+2. **Internal extraction** — `verify_legal_notice()` parses the image
+3. **External extraction** — ExifTool extracts metadata independently
+4. **Namespace-aware XMP validation** — xmllint validates XML structure
+5. **Normalized comparison** — internal and external results are compared field-by-field
+6. **Coverage enforcement** — strict mode requires minimum fixtures per format and category
+7. **Machine-readable report** — JSON output with per-check pass/fail/warn
 
 ### Running Conformance Checks
 
@@ -844,14 +850,15 @@ rights metadata to external tools. It uses a layered approach:
 # Build the conformance harness
 cargo build --release --bin stegoeggo-conformance
 
-# Run all fixtures (requires exiftool + xmllint)
-./target/release/stegoeggo-conformance --fixtures tests/fixtures/conformance --strict
+# Run all fixtures with manifest verification (requires exiftool + xmllint)
+./target/release/stegoeggo-conformance \
+  --fixtures tests/fixtures/conformance \
+  --manifest tests/fixtures/conformance/manifest.toml \
+  --strict \
+  --json report.json
 
-# Generate JSON report
-./target/release/stegoeggo-conformance --fixtures tests/fixtures/conformance --strict --json report.json
-
-# Or use the shell wrapper
-./scripts/verify_metadata_conformance.sh --all-formats --strict
+# Or use the shell wrapper (checks for all required tools)
+./scripts/verify_metadata_conformance.sh --strict --json report.json
 ```
 
 ### Expected Field Visibility by Format
@@ -919,9 +926,9 @@ sudo pacman -S perl-image-exiftool libxml2
 ### Adding Fixtures
 
 1. Place the image in the appropriate `tests/fixtures/conformance/<category>/` directory
-2. Document provenance in `tests/fixtures/conformance/README.md`
-3. Regenerate fixtures: `cargo test --test generate_conformance_fixtures`
-4. Verify: `cargo run --bin stegoeggo-conformance -- --fixtures tests/fixtures/conformance --strict`
+2. Add an entry to `tests/fixtures/conformance/manifest.toml` with provenance, SHA-256 digest, and expected values
+3. Document provenance in `tests/fixtures/conformance/README.md`
+4. Verify: `cargo run --bin stegoeggo-conformance -- --fixtures tests/fixtures/conformance --manifest tests/fixtures/conformance/manifest.toml --strict`
 
 ## Contributor Checklist
 

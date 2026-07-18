@@ -66,6 +66,7 @@ src/
 - `StegoPayload` — extracted stego data with `protection_level()`, `seed()`, `intensity()`, `version()` getters
 - `EvidenceProfile` — enum with 4 variants: `LegalNotice` (default), `LegalNoticeWithStego`, `AuthenticatedProvenance`, `Maximal`. Controls warning interpretation and evidence posture. Access via `ctx.evidence_profile()` (defaults to `LegalNotice` when not set)
 - `MetadataUpdatePolicy` — controls merge behavior on repeated processing: `ReplaceStegoOwned` (default), `FailOnConflict`, `PreserveExisting`
+- `NoticeVerification` — use `NoticeVerification::builder()` for construction (26-field builder pattern). Deprecated `new()` positional constructor still available for backward compatibility
 - `ProtectionContext` helper constructors: `::legal_notice()`, `::legal_notice_with_stego()`, `::authenticated_provenance()`, `::maximal()`
 - All struct fields on `ProtectionContext` and `StegoPayload` are private — use getter methods (e.g., `ctx.intensity()`, `ctx.seed()`)
 - `ProtectionContext` has `set_input_format()` (public) and `set_protection_level()` (crate-internal) for non-builder mutation
@@ -74,14 +75,14 @@ src/
 
 ```bash
 cargo check                              # Compilation
-cargo test                               # All tests (462 passed, 7 ignored)
-cargo test --all-features                # Includes async tests (9 tests)
+cargo test                               # All tests (724 passed, 8 ignored)
+cargo test --all-features                # Includes async tests
 cargo clippy --all-targets -- -D warnings # Lint check
 cargo fmt --check                        # Format check
 cargo package --workspace --allow-dirty  # Package dry-run
 cargo bench                              # Criterion benchmarks
 cargo build --release --bin stegoeggo-conformance  # Build conformance harness
-./target/release/stegoeggo-conformance --fixtures tests/fixtures/conformance --strict  # Run conformance
+./target/release/stegoeggo-conformance --fixtures tests/fixtures/conformance --manifest tests/fixtures/conformance/manifest.toml --strict  # Run conformance
 ```
 
 ## CI Pipeline
@@ -111,7 +112,7 @@ cargo package --workspace --allow-dirty
 cargo deny check licenses
 cargo deny check advisories
 cargo build --release --bin stegoeggo-conformance
-./target/release/stegoeggo-conformance --fixtures tests/fixtures/conformance --strict
+./target/release/stegoeggo-conformance --fixtures tests/fixtures/conformance --manifest tests/fixtures/conformance/manifest.toml --strict
 ```
 
 All checks must pass. MSRV is verified by CI (Rust 1.87). Benchmarks are run via manual workflow dispatch.
@@ -143,20 +144,23 @@ The independent conformance suite (`src/bin/stegoeggo-conformance.rs`) validates
 metadata interoperability against external parsers. It produces machine-readable
 JSON reports and is a mandatory CI gate.
 
-- `src/conformance.rs` — Report types (`ConformanceReport`, `CheckSeverity`, etc.)
+- `src/conformance.rs` — Report types (`ConformanceReport`, `CheckSeverity`, `FixtureManifest`, etc.)
 - `src/bin/stegoeggo-conformance.rs` — Harness binary (CLI + internal/external extraction)
 - `tests/fixtures/conformance/` — Fixture taxonomy (canonical, legacy, malformed, conflicting, preservation)
+- `tests/fixtures/conformance/manifest.toml` — Machine-readable manifest with SHA-256 digests and expected values
 - `scripts/verify_metadata_conformance.sh` — Shell wrapper for operator convenience
 
 The harness performs:
-1. Format detection via magic bytes
-2. Internal extraction via `verify_legal_notice()`
-3. External extraction via ExifTool
-4. XMP well-formedness validation via xmllint
-5. Normalized field-by-field comparison
-6. JSON and human-readable output
+1. Fixture manifest loading and SHA-256 digest verification
+2. Format detection via magic bytes
+3. Internal extraction via `verify_legal_notice()`
+4. External extraction via ExifTool
+5. XMP well-formedness validation via xmllint
+6. Normalized field-by-field comparison
+7. Coverage enforcement (minimum fixtures per format/category)
+8. JSON and human-readable output
 
-Required external tools: `exiftool`, `xmllint`
+Required external tools: `exiftool`, `xmllint`, `imagemagick`, `libvips`
 
 ## Things to Watch Out For
 
@@ -185,7 +189,7 @@ Required external tools: `exiftool`, `xmllint`
 - **Payload version migration**: Current version is 2. V1 (24-byte) still supported for extraction. To add v3: bump `CURRENT_PAYLOAD_VERSION`, add to `SUPPORTED_PAYLOAD_VERSIONS`, add `parse_stego_payload_v3` arm
 - **CLI file path**: CLI binary lives at `stegoeggo-cli/src/main.rs`, not `src/bin/`
 - **CLI batch filename collisions**: Duplicate output stems get `_protected_1`, `_protected_2`, etc.
-- **CLI legal metadata flags**: `--copyright-holder`, `--creator`, `--contact`, `--rights-url`, `--usage-terms`, `--ai-constraints`, `--credit-line`, `--copyright-owner`, `--licensor-name`, `--licensor-email`, `--licensor-url`, `--content-created-at` set `LegalMetadata` fields. `--no-ai-training`, `--no-genai-training`, `--tdm-reserved` are DMI presets that also set default `ai_constraints` text. Any legal flag auto-enables legal claims (no explicit `--legal-claims` needed). `--metadata false` + legal flags → error. `--strict` exits with error if any warnings have Error severity
+- **CLI legal metadata flags**: `--copyright-holder`, `--creator`, `--contact`, `--rights-url`, `--usage-terms`, `--ai-constraints`, `--credit-line`, `--copyright-owner`, `--licensor-name`, `--licensor-email`, `--licensor-url`, `--content-created-at` set `LegalMetadata` fields. `--no-ai-training`, `--no-genai-training`, `--tdm-reserved` are DMI presets that also set default `ai_constraints` text. Any legal flag auto-enables legal claims (no explicit `--legal-claims` needed). `--metadata false` + legal flags → error. `--strict` exits with error if any warnings have Error severity. `--tdm-reserved` is deprecated (TDMRep deployment deferred)
 - **Tiled steganography** (`with_tile_size(n)`): Crop-resistant mode. Embeds full payload per tile. Tiled F5 limited to tile-aligned crops without re-encode. `tile_seed(master_seed, tile_x, tile_y)` uses splitmix64. Tiled paths are verification fallbacks
 - **F5 tiled block set**: MCU-interleaved block ordering: `block_idx = (mcu_y * mcus_per_row + mcu_x) * h * v + sub_y * h + sub_x`. Do NOT assume row-major ordering
 - **ProtectionWarning variants**: 6 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped`, `DctCapacityInsufficient`. Returned by `process_image_bytes_with_warnings`
@@ -201,6 +205,6 @@ Required external tools: `exiftool`, `xmllint`
 - **WebP XMP exiftool field aliases**: `exiftool -Copyright` does not resolve `dc:rights` for WebP — use `exiftool -XMP-dc:Rights`. The conformance script accepts `XMP-dc:Rights` as a parser-visible alias for copyright so external viewers see the rights statement
 - **`--verify` exits 0**: CLI verify mode always exits 0 regardless of stego status. Use output text to determine protection state, not exit code
 - **`LegalMetadata::MAX_FIELD_LEN`**: 8192 bytes. `validate()` checks all 8 fields and returns `Error::Config` on violation. Called by library pipeline entry points (`process_image_bytes`, `process_image_bytes_with_warnings`). `Disabled` level skips validation
-- **`NoticeVerification::new()` positional arguments**: `NoticeVerification::new()` now takes 26 positional arguments (was 18 in v0.2.0). The additional fields are: `license_url`, `web_statement_of_rights`, `credit_line`, `copyright_owner`, `licensor_name`, `licensor_email`, `licensor_url`, `metadata_date`, `notice_applied_at`
+- **`NoticeVerification::new()` positional arguments**: `NoticeVerification::new()` now takes 26 positional arguments (was 18 in v0.2.0). The additional fields are: `license_url`, `web_statement_of_rights`, `credit_line`, `copyright_owner`, `licensor_name`, `licensor_email`, `licensor_url`, `metadata_date`, `notice_applied_at`. **Deprecated** in favor of `NoticeVerification::builder()` pattern for field-named construction
 - **`photoshop:Credit` maps to `credit_line`**: In WebP XMP, `photoshop:Credit` now maps to `credit_line`, not `contact`. The previous mapping was semantically incorrect
 - **Metadata overflow checks**: PNG chunk lengths use `u32::try_from()`, JPEG marker lengths use `u16::try_from()`. All 6 helper functions in `metadata_trap.rs` return `Result<Vec<u8>>` — `create_png_xmp_chunk`, `create_png_text_chunk`, `create_jpeg_xmp_marker`, `create_jpeg_exif_marker`, `create_jpeg_iptc_marker`, `create_jpeg_comment`. Overflow returns `Error::Metadata`

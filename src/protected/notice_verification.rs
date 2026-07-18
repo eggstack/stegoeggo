@@ -163,65 +163,38 @@ pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> Notice
 
     let rights_signal_kind = detected_rights_signal.unwrap_or(RightsSignalKind::Unknown);
 
-    NoticeVerification::new(
-        copyright_holder,
-        creator,
-        contact,
-        rights_url,
-        usage_terms,
-        ai_constraints,
-        dmi,
-        tdm_reserved,
-        rights_signal_kind,
-        canonical_dmi,
-        legacy_dmi,
-        seed,
-        stego_status,
-        stego_payload,
-        authenticated,
-        evidence_strength,
-        channels,
-        license_url,
-        web_statement_of_rights,
-        credit_line,
-        copyright_owner,
-        licensor_name,
-        licensor_email,
-        licensor_url,
-        metadata_date,
-        notice_applied_at,
-    )
+    NoticeVerification::builder()
+        .copyright_holder(copyright_holder)
+        .creator(creator)
+        .contact(contact)
+        .rights_url(rights_url)
+        .usage_terms(usage_terms)
+        .ai_constraints(ai_constraints)
+        .dmi(dmi)
+        .tdm_reserved(tdm_reserved)
+        .rights_signal_kind(rights_signal_kind)
+        .canonical_dmi(canonical_dmi)
+        .legacy_dmi(legacy_dmi)
+        .protection_seed(seed)
+        .stego_status(stego_status)
+        .stego_payload(stego_payload)
+        .authenticated(authenticated)
+        .evidence_strength(evidence_strength)
+        .channels(channels)
+        .license_url(license_url)
+        .web_statement_of_rights(web_statement_of_rights)
+        .credit_line(credit_line)
+        .copyright_owner(copyright_owner)
+        .licensor_name(licensor_name)
+        .licensor_email(licensor_email)
+        .licensor_url(licensor_url)
+        .metadata_date(metadata_date)
+        .notice_applied_at(notice_applied_at)
+        .build()
 }
 
 fn empty_report() -> NoticeVerification {
-    NoticeVerification::new(
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        RightsSignalKind::Unknown,
-        None,
-        None,
-        None,
-        VerificationStatus::NotFound,
-        None,
-        false,
-        EvidenceStrength::NoNoticeFound,
-        Vec::new(),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
+    NoticeVerification::builder().build()
 }
 
 fn compute_evidence_strength(
@@ -1267,100 +1240,33 @@ mod tests {
 
     #[test]
     fn conflict_between_canonical_and_legacy() {
-        let nv = NoticeVerification::new(
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(DmiValue::ProhibitedAiMlTraining),
-            None,
-            RightsSignalKind::CanonicalPlusDataMining,
-            Some(DmiValue::ProhibitedAiMlTraining),
-            Some(DmiValue::Allowed),
-            None,
-            VerificationStatus::NotFound,
-            None,
-            false,
-            EvidenceStrength::NoNoticeFound,
-            Vec::new(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let nv = NoticeVerification::builder()
+            .dmi(Some(DmiValue::ProhibitedAiMlTraining))
+            .rights_signal_kind(RightsSignalKind::CanonicalPlusDataMining)
+            .canonical_dmi(Some(DmiValue::ProhibitedAiMlTraining))
+            .legacy_dmi(Some(DmiValue::Allowed))
+            .build();
         assert!(nv.has_dmi_conflict());
     }
 
     #[test]
     fn no_conflict_when_same_value() {
-        let nv = NoticeVerification::new(
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(DmiValue::ProhibitedAiMlTraining),
-            None,
-            RightsSignalKind::CanonicalPlusDataMining,
-            Some(DmiValue::ProhibitedAiMlTraining),
-            Some(DmiValue::ProhibitedAiMlTraining),
-            None,
-            VerificationStatus::NotFound,
-            None,
-            false,
-            EvidenceStrength::NoNoticeFound,
-            Vec::new(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let nv = NoticeVerification::builder()
+            .dmi(Some(DmiValue::ProhibitedAiMlTraining))
+            .rights_signal_kind(RightsSignalKind::CanonicalPlusDataMining)
+            .canonical_dmi(Some(DmiValue::ProhibitedAiMlTraining))
+            .legacy_dmi(Some(DmiValue::ProhibitedAiMlTraining))
+            .build();
         assert!(!nv.has_dmi_conflict());
     }
 
     #[test]
     fn no_conflict_when_only_canonical() {
-        let nv = NoticeVerification::new(
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(DmiValue::ProhibitedAiMlTraining),
-            None,
-            RightsSignalKind::CanonicalPlusDataMining,
-            Some(DmiValue::ProhibitedAiMlTraining),
-            None,
-            None,
-            VerificationStatus::NotFound,
-            None,
-            false,
-            EvidenceStrength::NoNoticeFound,
-            Vec::new(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let nv = NoticeVerification::builder()
+            .dmi(Some(DmiValue::ProhibitedAiMlTraining))
+            .rights_signal_kind(RightsSignalKind::CanonicalPlusDataMining)
+            .canonical_dmi(Some(DmiValue::ProhibitedAiMlTraining))
+            .build();
         assert!(!nv.has_dmi_conflict());
     }
 
@@ -1388,5 +1294,60 @@ mod tests {
         let xmp = r#"plus:DataMining="DMI-ALLOWED""#;
         let (canonical, _, _) = helper_parse_dmi(xmp);
         assert_eq!(canonical, Some(DmiValue::Allowed));
+    }
+
+    #[test]
+    fn builder_produces_correct_result_regardless_of_field_order() {
+        let a = NoticeVerification::builder()
+            .copyright_holder(Some("Alice".into()))
+            .dmi(Some(DmiValue::ProhibitedAiMlTraining))
+            .rights_signal_kind(RightsSignalKind::CanonicalPlusDataMining)
+            .authenticated(true)
+            .stego_status(VerificationStatus::Verified)
+            .evidence_strength(EvidenceStrength::MetadataNoticeAndAuthenticatedProvenance)
+            .channels(vec![EvidenceChannel::DctPayload])
+            .build();
+
+        let b = NoticeVerification::builder()
+            .evidence_strength(EvidenceStrength::MetadataNoticeAndAuthenticatedProvenance)
+            .channels(vec![EvidenceChannel::DctPayload])
+            .stego_status(VerificationStatus::Verified)
+            .authenticated(true)
+            .rights_signal_kind(RightsSignalKind::CanonicalPlusDataMining)
+            .dmi(Some(DmiValue::ProhibitedAiMlTraining))
+            .copyright_holder(Some("Alice".into()))
+            .build();
+
+        assert_eq!(a.copyright_holder(), b.copyright_holder());
+        assert_eq!(a.dmi(), b.dmi());
+        assert_eq!(a.rights_signal_kind(), b.rights_signal_kind());
+        assert_eq!(a.authenticated(), b.authenticated());
+        assert_eq!(a.stego_status(), b.stego_status());
+        assert_eq!(a.evidence_strength(), b.evidence_strength());
+        assert_eq!(a.channels(), b.channels());
+    }
+
+    #[test]
+    fn builder_defaults_are_sensible() {
+        let nv = NoticeVerification::builder().build();
+        assert!(nv.copyright_holder().is_none());
+        assert!(nv.creator().is_none());
+        assert!(nv.contact().is_none());
+        assert!(nv.rights_url().is_none());
+        assert!(nv.usage_terms().is_none());
+        assert!(nv.ai_constraints().is_none());
+        assert!(nv.dmi().is_none());
+        assert!(nv.tdm_reserved().is_none());
+        assert_eq!(nv.rights_signal_kind(), RightsSignalKind::Unknown);
+        assert!(nv.canonical_dmi().is_none());
+        assert!(nv.legacy_dmi().is_none());
+        assert!(nv.protection_seed().is_none());
+        assert_eq!(nv.stego_status(), VerificationStatus::NotFound);
+        assert!(nv.stego_payload().is_none());
+        assert!(!nv.authenticated());
+        assert_eq!(nv.evidence_strength(), EvidenceStrength::NoNoticeFound);
+        assert!(nv.channels().is_empty());
+        assert!(!nv.has_notice());
+        assert!(!nv.has_dmi_conflict());
     }
 }

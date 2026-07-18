@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use stegoeggo::conformance::{
-    self, CheckSeverity, ConformanceReport, ExternalExtraction, InternalExtraction,
+    self, check_coverage, load_manifest, verify_fixtures, CheckSeverity, ConformanceReport,
+    ConformanceSummary, CoverageCheckResult, CoverageMinimums, DigestCheckResult,
+    ExternalExtraction, InternalExtraction,
 };
 
 const MAX_XMP_BYTES: usize = 65536;
@@ -53,6 +55,40 @@ fn xmllint_version() -> Option<String> {
             let line = err.lines().next()?;
             let ver = line.split_whitespace().last()?;
             Some(ver.to_string())
+        })
+}
+
+fn imagemagick_version() -> Option<String> {
+    Command::new("identify")
+        .arg("--version")
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                let line = stdout.lines().next()?;
+                let ver = line.split_whitespace().nth(2)?;
+                Some(ver.trim_end_matches('.').to_string())
+            } else {
+                None
+            }
+        })
+}
+
+fn libvips_version() -> Option<String> {
+    Command::new("vips")
+        .arg("--version")
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                let line = stdout.lines().next()?;
+                let ver = line.split_whitespace().nth(1)?;
+                Some(ver.to_string())
+            } else {
+                None
+            }
         })
 }
 
@@ -438,12 +474,20 @@ fn internal_extract(file: &Path) -> Option<InternalExtraction> {
     })
 }
 
+/// Return type from the harness, bundling reports with verification results.
+pub struct HarnessResult {
+    pub reports: Vec<ConformanceReport>,
+    pub digest_results: Option<Vec<DigestCheckResult>>,
+    pub coverage: Option<CoverageCheckResult>,
+}
+
 pub fn run_harness(
     fixtures_dir: &Path,
     strict: bool,
     json_path: Option<&Path>,
     format_filter: &Option<String>,
-) -> Vec<ConformanceReport> {
+    manifest_path: Option<&Path>,
+) -> HarnessResult {
     let exiftool = match find_exiftool() {
         Some(et) => et,
         None => {
@@ -452,7 +496,11 @@ pub fn run_harness(
                 std::process::exit(2);
             }
             eprintln!("Warning: exiftool not found, skipping external validation");
-            return Vec::new();
+            return HarnessResult {
+                reports: Vec::new(),
+                digest_results: None,
+                coverage: None,
+            };
         }
     };
 
@@ -463,14 +511,22 @@ pub fn run_harness(
             "Warning: fixtures directory not found at {}",
             fixtures_dir.display()
         );
-        return reports;
+        return HarnessResult {
+            reports,
+            digest_results: None,
+            coverage: None,
+        };
     }
 
     let fixture_files = conformance::collect_fixture_files(fixtures_dir, format_filter);
 
     if fixture_files.is_empty() {
         eprintln!("No fixture images found in {}", fixtures_dir.display());
-        return reports;
+        return HarnessResult {
+            reports,
+            digest_results: None,
+            coverage: None,
+        };
     }
 
     for file in &fixture_files {
@@ -571,7 +627,66 @@ pub fn run_harness(
         eprintln!("JSON report written to {}", path.display());
     }
 
-    reports
+    let mut digest_results = None;
+    let mut coverage = None;
+
+    if let Some(mpath) = manifest_path {
+        match load_manifest(mpath) {
+            Ok(manifest) => {
+                eprintln!("Loaded manifest with {} entries", manifest.entries.len());
+
+                let dr = verify_fixtures(&manifest, fixtures_dir);
+                let all_match = dr.iter().all(|d| d.matches);
+                if !all_match {
+                    let mismatch_count = dr.iter().filter(|d| !d.matches).count();
+                    eprintln!("Digest verification: {} mismatches", mismatch_count);
+                    if strict {
+                        for d in &dr {
+                            if !d.matches {
+                                eprintln!(
+                                    "  {} expected={} actual={}",
+                                    d.fixture_path, d.expected_sha256, d.actual_sha256
+                                );
+                            }
+                        }
+                        std::process::exit(3);
+                    }
+                } else {
+                    eprintln!("Digest verification: all {} digests match", dr.len());
+                }
+                digest_results = Some(dr);
+
+                let cov = check_coverage(&manifest, &CoverageMinimums::default());
+                if !cov.passed {
+                    eprintln!("Coverage check failed:");
+                    for v in &cov.violations {
+                        eprintln!("  - {}", v);
+                    }
+                    if strict {
+                        std::process::exit(4);
+                    }
+                } else {
+                    eprintln!("Coverage check: PASS");
+                }
+                coverage = Some(cov);
+
+                let tool_counts = manifest.count_by_authoring_tool();
+                eprintln!("Authoring tool breakdown:");
+                for (tool, count) in &tool_counts {
+                    eprintln!("  {}: {}", tool, count);
+                }
+            }
+            Err(e) => {
+                eprintln!("Warning: {}", e);
+            }
+        }
+    }
+
+    HarnessResult {
+        reports,
+        digest_results,
+        coverage,
+    }
 }
 
 fn main() {
@@ -580,6 +695,7 @@ fn main() {
     let mut json_path: Option<PathBuf> = None;
     let mut fixtures_dir: Option<PathBuf> = None;
     let mut format_filter: Option<String> = None;
+    let mut manifest_path: Option<PathBuf> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -613,6 +729,13 @@ fn main() {
                 format_filter = None;
                 i += 1;
             }
+            "--manifest" => {
+                i += 1;
+                if i < args.len() {
+                    manifest_path = Some(PathBuf::from(&args[i]));
+                    i += 1;
+                }
+            }
             _ => {
                 i += 1;
             }
@@ -620,26 +743,44 @@ fn main() {
     }
 
     let dir = fixtures_dir.unwrap_or_else(|| PathBuf::from("tests/fixtures/conformance"));
-    let reports = run_harness(&dir, strict, json_path.as_deref(), &format_filter);
+    let result = run_harness(
+        &dir,
+        strict,
+        json_path.as_deref(),
+        &format_filter,
+        manifest_path.as_deref(),
+    );
 
-    let total = reports.len();
-    let passed = reports.iter().filter(|r| r.passed).count();
+    let total = result.reports.len();
+    let passed = result.reports.iter().filter(|r| r.passed).count();
     let failed = total - passed;
 
-    for report in &reports {
+    for report in &result.reports {
         println!("{}", report.summary());
         println!();
     }
 
+    let mut summary = ConformanceSummary::from_reports(&result.reports);
+    if let Some(dr) = result.digest_results {
+        summary.with_digest_verification(dr);
+    }
+    if let Some(cov) = result.coverage {
+        summary.with_coverage(cov);
+    }
+
     eprintln!("=== Conformance Summary ===");
-    eprintln!("Total: {}, Passed: {}, Failed: {}", total, passed, failed);
+    eprintln!("{}", summary.summary());
 
     let et_ver = find_exiftool()
         .and_then(|et| exiftool_version(&et))
         .unwrap_or_else(|| "not found".to_string());
     let xl_ver = xmllint_version().unwrap_or_else(|| "not found".to_string());
+    let im_ver = imagemagick_version().unwrap_or_else(|| "not found".to_string());
+    let vips_ver = libvips_version().unwrap_or_else(|| "not found".to_string());
     eprintln!("ExifTool version: {}", et_ver);
     eprintln!("xmllint version: {}", xl_ver);
+    eprintln!("ImageMagick version: {}", im_ver);
+    eprintln!("libvips version: {}", vips_ver);
 
     if failed > 0 {
         std::process::exit(1);

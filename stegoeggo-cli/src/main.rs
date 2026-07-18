@@ -130,7 +130,10 @@ struct Args {
     #[arg(long, help = "Shorthand: prohibit generative AI training only")]
     no_genai_training: bool,
 
-    #[arg(long, help = "Shorthand: reserve text and data mining rights")]
+    #[arg(
+        long,
+        help = "Shorthand: reserve text and data mining rights [DEPRECATED: TDMRep deployment artifacts deferred; sets DMI ProhibitedSeeConstraints instead]"
+    )]
     tdm_reserved: bool,
 
     #[arg(
@@ -501,6 +504,15 @@ fn build_legal_metadata(args: &Args) -> (Option<stegoeggo::LegalMetadata>, Optio
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    if args.tdm_reserved {
+        eprintln!(
+            "Warning: --tdm-reserved is deprecated. TDMRep deployment artifacts (HTTP headers, \
+             /.well-known/tdmrep.json) are deferred. This flag now sets DMI to \
+             ProhibitedSeeConstraints with a default AI constraints message. Image-level \
+             tdm:reserve_tdm metadata is no longer emitted."
+        );
+    }
 
     let input_files = collect_input_files(&args.input);
 
