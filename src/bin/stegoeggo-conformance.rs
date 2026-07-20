@@ -4,7 +4,8 @@ use std::process::Command;
 
 use stegoeggo::conformance::{
     self, CheckSeverity, ConformanceReport, ConformanceSummary, CoverageCheckResult,
-    DigestCheckResult, ExternalExtraction, InternalExtraction,
+    DecodeExpectation, DigestCheckResult, ExternalExtraction, ExtractionExpectation,
+    InternalExtraction, XmpExpectation,
 };
 
 #[allow(dead_code)]
@@ -100,6 +101,105 @@ fn libvips_version() -> Option<String> {
         })
 }
 
+fn find_imagemagick() -> Option<PathBuf> {
+    if let Ok(output) = Command::new("which").arg("identify").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Some(PathBuf::from(path));
+            }
+        }
+    }
+    if let Ok(output) = Command::new("which").arg("magick").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Some(PathBuf::from(path));
+            }
+        }
+    }
+    None
+}
+
+fn imagemagick_identify(file: &Path) -> Result<String, String> {
+    let identify_cmd = if find_imagemagick().is_some() {
+        if Command::new("magick")
+            .arg("--version")
+            .output()
+            .ok()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            "magick".to_string()
+        } else {
+            "identify".to_string()
+        }
+    } else {
+        "identify".to_string()
+    };
+
+    let args: Vec<String> = if identify_cmd == "magick" {
+        vec![
+            "identify".to_string(),
+            "-format".to_string(),
+            "%m %wx%h".to_string(),
+            file.display().to_string(),
+        ]
+    } else {
+        vec![
+            "-format".to_string(),
+            "%m %wx%h".to_string(),
+            file.display().to_string(),
+        ]
+    };
+
+    let output = Command::new(&identify_cmd)
+        .args(&args)
+        .output()
+        .map_err(|e| format!("Failed to run {}: {}", identify_cmd, e))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!(
+            "{} failed: {}",
+            identify_cmd,
+            stderr.lines().next().unwrap_or("unknown error")
+        ))
+    }
+}
+
+fn find_vipsheader() -> Option<PathBuf> {
+    if let Ok(output) = Command::new("which").arg("vipsheader").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Some(PathBuf::from(path));
+            }
+        }
+    }
+    None
+}
+
+fn vipsheader_validate(file: &Path) -> Result<String, String> {
+    let vipsheader = find_vipsheader().ok_or_else(|| "vipsheader not found".to_string())?;
+    let output = Command::new(&vipsheader)
+        .arg(file)
+        .output()
+        .map_err(|e| format!("Failed to run vipsheader: {}", e))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!(
+            "vipsheader failed: {}",
+            stderr.lines().next().unwrap_or("unknown error")
+        ))
+    }
+}
+
 fn xmllint_validate(xmp_content: &str) -> Option<bool> {
     use std::io::Write;
     let mut child = Command::new("xmllint")
@@ -118,20 +218,65 @@ fn xmllint_validate(xmp_content: &str) -> Option<bool> {
     Some(result.status.success())
 }
 
-fn exiftool_json_extract(file: &Path, exiftool: &Path) -> Option<serde_json::Value> {
+fn exiftool_json_extract(
+    file: &Path,
+    exiftool: &Path,
+) -> Result<serde_json::Value, conformance::ExternalToolError> {
     let output = Command::new(exiftool)
         .arg("-json")
         .arg("-G")
         .arg("-n")
         .arg(file)
         .output()
-        .ok()?;
+        .map_err(|e| conformance::ExternalToolError {
+            tool: "exiftool".to_string(),
+            executable: exiftool.display().to_string(),
+            exit_status: None,
+            stderr_summary: e.to_string(),
+            output_empty: true,
+            json_parse_failed: false,
+        })?;
     if !output.status.success() {
-        return None;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(conformance::ExternalToolError {
+            tool: "exiftool".to_string(),
+            executable: exiftool.display().to_string(),
+            exit_status: output.status.code(),
+            stderr_summary: stderr.lines().take(3).collect::<Vec<_>>().join("; "),
+            output_empty: output.stdout.is_empty(),
+            json_parse_failed: false,
+        });
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let arr: Vec<serde_json::Value> = serde_json::from_str(&stdout).ok()?;
-    arr.into_iter().next()
+    if stdout.trim().is_empty() {
+        return Err(conformance::ExternalToolError {
+            tool: "exiftool".to_string(),
+            executable: exiftool.display().to_string(),
+            exit_status: output.status.code(),
+            stderr_summary: String::new(),
+            output_empty: true,
+            json_parse_failed: false,
+        });
+    }
+    let arr: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).map_err(|_e| conformance::ExternalToolError {
+            tool: "exiftool".to_string(),
+            executable: exiftool.display().to_string(),
+            exit_status: output.status.code(),
+            stderr_summary: String::new(),
+            output_empty: false,
+            json_parse_failed: true,
+        })?;
+    arr.into_iter()
+        .next()
+        .ok_or_else(|| conformance::ExternalToolError {
+            tool: "exiftool".to_string(),
+            executable: exiftool.display().to_string(),
+            exit_status: output.status.code(),
+            stderr_summary: "Empty JSON array".to_string(),
+            output_empty: true,
+            json_parse_failed: false,
+        })
 }
 
 fn resolve_tag(obj: &serde_json::Value, _group_prefix: &str, tag_names: &[&str]) -> Option<String> {
@@ -181,90 +326,72 @@ fn resolve_array_tag(
     Vec::new()
 }
 
-fn external_extract_json(file: &Path, exiftool: &Path) -> ExternalExtraction {
+fn external_extract_json(
+    file: &Path,
+    exiftool: &Path,
+) -> Result<ExternalExtraction, conformance::ExternalToolError> {
     let version = exiftool_version(exiftool);
-    match exiftool_json_extract(file, exiftool) {
-        Some(obj) => {
-            let group = obj
-                .as_object()
-                .and_then(|m| m.keys().next())
-                .and_then(|k| k.split(':').next())
-                .unwrap_or("XMP");
-            ExternalExtraction {
-                tool: "exiftool".to_string(),
-                version,
-                copyright: resolve_tag(&obj, group, &["Copyright", "Rights", "XMP-dc:Rights"]),
-                creators: resolve_array_tag(&obj, group, &["Creator", "XMP-dc:Creator"]),
-                usage_terms: resolve_tag(&obj, group, &["UsageTerms", "XMP-xmpRights:UsageTerms"]),
-                rights_url: resolve_tag(
-                    &obj,
-                    group,
-                    &[
-                        "WebStatementOfRights",
-                        "WebStatement",
-                        "XMP-xmpRights:WebStatement",
-                    ],
-                ),
-                credit_line: resolve_tag(
-                    &obj,
-                    group,
-                    &["CreditLine", "Credit", "photoshop:Credit"],
-                ),
-                copyright_owner: resolve_tag(
-                    &obj,
-                    group,
-                    &["CopyrightOwner", "IPTC:CopyrightOwner"],
-                ),
-                licensor_name: resolve_tag(&obj, group, &["LicensorName", "IPTC:LicensorName"]),
-                licensor_email: resolve_tag(&obj, group, &["LicensorEmail", "IPTC:LicensorEmail"]),
-                licensor_url: resolve_tag(
-                    &obj,
-                    group,
-                    &["LicensorURL", "LicensorUrl", "IPTC:LicensorUrl"],
-                ),
-                content_creation_date: resolve_tag(
-                    &obj,
-                    group,
-                    &["DateCreated", "ContentCreationDate", "DateTimeOriginal"],
-                ),
-                ai_constraints: resolve_tag(
-                    &obj,
-                    group,
-                    &["AIConstraints", "XMP-stegoeggo:AIConstraints"],
-                ),
-                canonical_data_mining: resolve_tag(
-                    &obj,
-                    group,
-                    &["DataMining", "XMP-plus:DataMining"],
-                ),
-                legacy_data_mining: resolve_array_tag(
-                    &obj,
-                    group,
-                    &["DMI-Prohibited", "XMP-iptcExt:DMI-Prohibited"],
-                ),
-                tdm_reserved: resolve_tag(&obj, group, &["TDMReserve"])
-                    .and_then(|v| v.parse().ok()),
-                extra: {
-                    let mut extra = HashMap::new();
-                    if let Some(map) = obj.as_object() {
-                        for (k, v) in map {
-                            if let Some(s) = v.as_str() {
-                                if !s.is_empty() {
-                                    extra.insert(k.clone(), s.to_string());
-                                }
-                            }
+    let obj = exiftool_json_extract(file, exiftool)?;
+    let group = obj
+        .as_object()
+        .and_then(|m| m.keys().next())
+        .and_then(|k| k.split(':').next())
+        .unwrap_or("XMP");
+    Ok(ExternalExtraction {
+        tool: "exiftool".to_string(),
+        version,
+        copyright: resolve_tag(&obj, group, &["Copyright", "Rights", "XMP-dc:Rights"]),
+        creators: resolve_array_tag(&obj, group, &["Creator", "XMP-dc:Creator"]),
+        usage_terms: resolve_tag(&obj, group, &["UsageTerms", "XMP-xmpRights:UsageTerms"]),
+        rights_url: resolve_tag(
+            &obj,
+            group,
+            &[
+                "WebStatementOfRights",
+                "WebStatement",
+                "XMP-xmpRights:WebStatement",
+            ],
+        ),
+        credit_line: resolve_tag(&obj, group, &["CreditLine", "Credit", "photoshop:Credit"]),
+        copyright_owner: resolve_tag(&obj, group, &["CopyrightOwner", "IPTC:CopyrightOwner"]),
+        licensor_name: resolve_tag(&obj, group, &["LicensorName", "IPTC:LicensorName"]),
+        licensor_email: resolve_tag(&obj, group, &["LicensorEmail", "IPTC:LicensorEmail"]),
+        licensor_url: resolve_tag(
+            &obj,
+            group,
+            &["LicensorURL", "LicensorUrl", "IPTC:LicensorUrl"],
+        ),
+        content_creation_date: resolve_tag(
+            &obj,
+            group,
+            &["DateCreated", "ContentCreationDate", "DateTimeOriginal"],
+        ),
+        ai_constraints: resolve_tag(
+            &obj,
+            group,
+            &["AIConstraints", "XMP-stegoeggo:AIConstraints"],
+        ),
+        canonical_data_mining: resolve_tag(&obj, group, &["DataMining", "XMP-plus:DataMining"]),
+        legacy_data_mining: resolve_array_tag(
+            &obj,
+            group,
+            &["DMI-Prohibited", "XMP-iptcExt:DMI-Prohibited"],
+        ),
+        tdm_reserved: resolve_tag(&obj, group, &["TDMReserve"]).and_then(|v| v.parse().ok()),
+        extra: {
+            let mut extra = HashMap::new();
+            if let Some(map) = obj.as_object() {
+                for (k, v) in map {
+                    if let Some(s) = v.as_str() {
+                        if !s.is_empty() {
+                            extra.insert(k.clone(), s.to_string());
                         }
                     }
-                    extra
-                },
+                }
             }
-        }
-        None => ExternalExtraction {
-            tool: "exiftool".to_string(),
-            version,
-            ..Default::default()
+            extra
         },
-    }
+    })
 }
 
 fn validate_xmp_structure(xmp: &str) -> Vec<(String, CheckSeverity, String)> {
@@ -487,6 +614,7 @@ pub struct HarnessResult {
     pub reports: Vec<ConformanceReport>,
     pub digest_results: Option<Vec<DigestCheckResult>>,
     pub coverage: Option<CoverageCheckResult>,
+    pub coverage_minimums: Option<conformance::CoverageMinimums>,
 }
 
 fn evaluate_manifest_expectations(
@@ -514,7 +642,7 @@ fn evaluate_manifest_expectations(
                     "DMI matches manifest expectation",
                 );
             }
-        } else if !entry.expected_malformed {
+        } else if entry.expected_decode != DecodeExpectation::Fail {
             report.add_check(
                 "expected_dmi",
                 CheckSeverity::Fail,
@@ -640,6 +768,7 @@ pub fn run_harness(
                 reports: Vec::new(),
                 digest_results: None,
                 coverage: None,
+                coverage_minimums: None,
             };
         }
     };
@@ -665,6 +794,7 @@ pub fn run_harness(
             reports: Vec::new(),
             digest_results: None,
             coverage: None,
+            coverage_minimums: None,
         };
     }
 
@@ -685,6 +815,7 @@ pub fn run_harness(
             reports,
             digest_results: None,
             coverage: None,
+            coverage_minimums: None,
         };
     }
 
@@ -771,88 +902,344 @@ pub fn run_harness(
         let is_valid = image::load_from_memory(&bytes).is_ok();
         report.decode_valid = is_valid;
 
-        let expected_malformed = path_index
-            .as_ref()
-            .and_then(|idx| idx.get(&file_name))
-            .map(|e| e.expected_malformed)
-            .unwrap_or(false);
+        let manifest_entry = path_index.as_ref().and_then(|idx| idx.get(&file_name));
 
-        if expected_malformed {
-            if is_valid {
+        let (
+            expected_decode,
+            expected_xmp,
+            expected_internal,
+            expected_external,
+            required_ext_fields,
+        ) = if let Some(entry) = manifest_entry {
+            (
+                entry.expected_decode,
+                entry.expected_xmp,
+                entry.expected_internal,
+                entry.expected_external,
+                entry.required_external_fields.clone(),
+            )
+        } else {
+            (
+                DecodeExpectation::Pass,
+                XmpExpectation::Valid,
+                ExtractionExpectation::Success,
+                ExtractionExpectation::Success,
+                Vec::new(),
+            )
+        };
+
+        match expected_decode {
+            DecodeExpectation::Pass => {
                 report.add_check(
                     "decode",
-                    CheckSeverity::Warn,
-                    "Malformed fixture decoded successfully (unexpected)",
+                    if is_valid {
+                        CheckSeverity::Pass
+                    } else {
+                        CheckSeverity::Fail
+                    },
+                    if is_valid {
+                        "Image decodes successfully"
+                    } else {
+                        "Image failed to decode"
+                    },
                 );
-            } else {
+            }
+            DecodeExpectation::Fail => {
+                if is_valid {
+                    report.add_check(
+                        "decode",
+                        CheckSeverity::Fail,
+                        "Malformed fixture decoded successfully (unexpected)",
+                    );
+                } else {
+                    report.add_check(
+                        "decode",
+                        CheckSeverity::Pass,
+                        "Expected decode failure for malformed fixture",
+                    );
+                }
+            }
+            DecodeExpectation::Either => {
                 report.add_check(
                     "decode",
                     CheckSeverity::Pass,
-                    "Expected decode failure for malformed fixture",
+                    if is_valid {
+                        "Image decodes (either outcome acceptable)"
+                    } else {
+                        "Image fails to decode (either outcome acceptable)"
+                    },
                 );
             }
-        } else {
-            report.add_check(
-                "decode",
-                if is_valid {
-                    CheckSeverity::Pass
-                } else {
-                    CheckSeverity::Fail
-                },
-                if is_valid {
-                    "Image decodes successfully"
-                } else {
-                    "Image failed to decode"
-                },
-            );
         }
 
         if let Some(xmp) = extract_xmp_from_image(file) {
             report.xmp_valid = xmllint_validate(&xmp);
             let valid = report.xmp_valid.unwrap_or(false);
-            report.add_check(
-                "xmp_well-formed",
-                if valid {
-                    CheckSeverity::Pass
-                } else {
-                    CheckSeverity::Fail
-                },
-                if valid {
-                    "XMP is well-formed XML"
-                } else {
-                    "XMP is not well-formed XML"
-                },
-            );
+            match expected_xmp {
+                XmpExpectation::Valid => {
+                    report.add_check(
+                        "xmp_well-formed",
+                        if valid {
+                            CheckSeverity::Pass
+                        } else {
+                            CheckSeverity::Fail
+                        },
+                        if valid {
+                            "XMP is well-formed XML"
+                        } else {
+                            "XMP is not well-formed XML"
+                        },
+                    );
+                }
+                XmpExpectation::Invalid => {
+                    if valid {
+                        report.add_check(
+                            "xmp_well-formed",
+                            CheckSeverity::Fail,
+                            "Expected invalid XMP but found valid XML",
+                        );
+                    } else {
+                        report.add_check(
+                            "xmp_well-formed",
+                            CheckSeverity::Pass,
+                            "Expected invalid XMP and found invalid XML",
+                        );
+                    }
+                }
+                XmpExpectation::Absent => {
+                    report.add_check(
+                        "xmp_well-formed",
+                        CheckSeverity::Fail,
+                        "Expected no XMP but found XMP content",
+                    );
+                }
+                XmpExpectation::Either => {
+                    report.add_check(
+                        "xmp_well-formed",
+                        CheckSeverity::Pass,
+                        if valid {
+                            "XMP present and valid (either acceptable)"
+                        } else {
+                            "XMP present but invalid (either acceptable)"
+                        },
+                    );
+                }
+            }
 
             for (name, severity, message) in validate_xmp_structure(&xmp) {
                 report.add_check(&name, severity, &message);
             }
+        } else if expected_xmp == XmpExpectation::Absent {
+            report.add_check(
+                "xmp_well-formed",
+                CheckSeverity::Pass,
+                "Expected no XMP and none found",
+            );
+        } else if expected_xmp == XmpExpectation::Valid || expected_xmp == XmpExpectation::Invalid {
+            report.add_check(
+                "xmp_well-formed",
+                CheckSeverity::Fail,
+                "Expected XMP but none found",
+            );
         }
 
         if let Some(internal) = internal_extract(file) {
             report.internal = internal;
-            report.add_check(
-                "internal_extraction",
-                CheckSeverity::Pass,
-                "Internal extraction succeeded",
-            );
+            match expected_internal {
+                ExtractionExpectation::Success => {
+                    report.add_check(
+                        "internal_extraction",
+                        CheckSeverity::Pass,
+                        "Internal extraction succeeded",
+                    );
+                }
+                ExtractionExpectation::NoNotice => {
+                    report.add_check(
+                        "internal_extraction",
+                        CheckSeverity::Pass,
+                        "Internal extraction returned no notice (expected)",
+                    );
+                }
+                ExtractionExpectation::Reject => {
+                    report.add_check(
+                        "internal_extraction",
+                        CheckSeverity::Fail,
+                        "Expected rejection but extraction succeeded",
+                    );
+                }
+            }
         } else {
-            report.add_check(
-                "internal_extraction",
-                CheckSeverity::Fail,
-                "Internal extraction failed",
-            );
+            match expected_internal {
+                ExtractionExpectation::Success => {
+                    report.add_check(
+                        "internal_extraction",
+                        CheckSeverity::Fail,
+                        "Internal extraction failed",
+                    );
+                }
+                ExtractionExpectation::NoNotice => {
+                    report.add_check(
+                        "internal_extraction",
+                        CheckSeverity::Pass,
+                        "Internal extraction returned no notice (expected)",
+                    );
+                }
+                ExtractionExpectation::Reject => {
+                    report.add_check(
+                        "internal_extraction",
+                        CheckSeverity::Pass,
+                        "Expected rejection and extraction failed",
+                    );
+                }
+            }
         }
 
-        let external = external_extract_json(file, &exiftool);
-        report.external.push(external.clone());
-        report.add_check(
-            "external_extraction",
-            CheckSeverity::Pass,
-            "External extraction succeeded",
-        );
+        let external_result = external_extract_json(file, &exiftool);
+        let external = match &external_result {
+            Ok(ext) => {
+                report.external.push(ext.clone());
+                match expected_external {
+                    ExtractionExpectation::Success => {
+                        let tool_ran = ext.version.is_some();
+                        if tool_ran {
+                            report.add_check(
+                                "external_extraction",
+                                CheckSeverity::Pass,
+                                "External extraction succeeded",
+                            );
+                        } else {
+                            report.add_check(
+                                "external_extraction",
+                                CheckSeverity::Fail,
+                                "External extraction tool did not run",
+                            );
+                        }
+                    }
+                    ExtractionExpectation::NoNotice => {
+                        report.add_check(
+                            "external_extraction",
+                            CheckSeverity::Pass,
+                            "External extraction returned no notice (expected)",
+                        );
+                    }
+                    ExtractionExpectation::Reject => {
+                        report.add_check(
+                            "external_extraction",
+                            CheckSeverity::Fail,
+                            "Expected rejection but extraction succeeded",
+                        );
+                    }
+                }
+                ext.clone()
+            }
+            Err(err) => {
+                let fallback = ExternalExtraction {
+                    tool: err.tool.clone(),
+                    version: None,
+                    ..Default::default()
+                };
+                report.external.push(fallback.clone());
+                match expected_external {
+                    ExtractionExpectation::Reject => {
+                        report.add_check(
+                            "external_extraction",
+                            CheckSeverity::Pass,
+                            &format!("Expected rejection: {}", err.stderr_summary),
+                        );
+                    }
+                    _ => {
+                        report.add_check_with_details(
+                            "external_extraction",
+                            CheckSeverity::Fail,
+                            &format!("External extraction failed: {}", err.stderr_summary),
+                            &format!(
+                                "tool={}, exit={:?}, stderr_empty={}, json_failed={}",
+                                err.tool, err.exit_status, err.output_empty, err.json_parse_failed
+                            ),
+                        );
+                    }
+                }
+                fallback
+            }
+        };
+
+        for field in &required_ext_fields {
+            let found = match field.as_str() {
+                "canonical_data_mining" => external.canonical_data_mining.is_some(),
+                "copyright" => external.copyright.is_some(),
+                "usage_terms" => external.usage_terms.is_some(),
+                "rights_url" => external.rights_url.is_some(),
+                "credit_line" => external.credit_line.is_some(),
+                "copyright_owner" => external.copyright_owner.is_some(),
+                "ai_constraints" => external.ai_constraints.is_some(),
+                _ => external.extra.contains_key(field),
+            };
+            if !found {
+                report.add_check_with_details(
+                    "required_external_field",
+                    CheckSeverity::Fail,
+                    &format!("Required external field '{}' not found", field),
+                    &format!("field={}", field),
+                );
+            }
+        }
 
         conformance::compare_extractions(&report.internal.clone(), &external, &mut report);
+
+        if is_valid {
+            let has_im = find_imagemagick().is_some();
+            let has_vips = find_vipsheader().is_some();
+            if strict && !has_im {
+                report.add_check(
+                    "imagemagick",
+                    CheckSeverity::Fail,
+                    "ImageMagick (identify) required in strict mode but not found",
+                );
+            } else if has_im {
+                match imagemagick_identify(file) {
+                    Ok(output) => {
+                        report.add_check(
+                            "imagemagick",
+                            CheckSeverity::Pass,
+                            &format!("ImageMagick identify: {}", output),
+                        );
+                    }
+                    Err(e) => {
+                        report.add_check_with_details(
+                            "imagemagick",
+                            CheckSeverity::Fail,
+                            "ImageMagick identify failed",
+                            &e,
+                        );
+                    }
+                }
+            }
+            if strict && !has_vips {
+                report.add_check(
+                    "libvips",
+                    CheckSeverity::Fail,
+                    "libvips (vipsheader) required in strict mode but not found",
+                );
+            } else if has_vips {
+                match vipsheader_validate(file) {
+                    Ok(output) => {
+                        report.add_check(
+                            "libvips",
+                            CheckSeverity::Pass,
+                            &format!("vipsheader: {}", output),
+                        );
+                    }
+                    Err(e) => {
+                        report.add_check_with_details(
+                            "libvips",
+                            CheckSeverity::Fail,
+                            "vipsheader failed",
+                            &e,
+                        );
+                    }
+                }
+            }
+        }
 
         if let Some(ref index) = path_index {
             if let Some(entry) = index.get(&file_name) {
@@ -945,10 +1332,13 @@ pub fn run_harness(
         }
     }
 
+    let coverage_minimums = conformance::CoverageMinimums::default();
+
     HarnessResult {
         reports,
         digest_results,
         coverage,
+        coverage_minimums: Some(coverage_minimums),
     }
 }
 
@@ -1033,6 +1423,9 @@ fn main() {
     }
     if let Some(cov) = result.coverage {
         summary.with_coverage(cov);
+    }
+    if let Some(mins) = result.coverage_minimums {
+        summary.with_coverage_minimums(mins);
     }
 
     eprintln!("=== Conformance Summary ===");

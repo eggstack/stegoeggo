@@ -43,6 +43,23 @@ pub struct CheckResult {
     pub details: Option<String>,
 }
 
+/// Error from an external tool invocation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalToolError {
+    /// Name of the tool (e.g., "exiftool").
+    pub tool: String,
+    /// Path to the executable.
+    pub executable: String,
+    /// Process exit status code, if available.
+    pub exit_status: Option<i32>,
+    /// Summary of stderr output.
+    pub stderr_summary: String,
+    /// Whether stdout was empty.
+    pub output_empty: bool,
+    /// Whether JSON parsing failed.
+    pub json_parse_failed: bool,
+}
+
 /// Format-specific metadata extracted by an external parser (e.g., ExifTool).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ExternalExtraction {
@@ -474,6 +491,47 @@ pub fn collect_fixture_files(dir: &Path, format_filter: &Option<String>) -> Vec<
     files
 }
 
+/// Expected decode outcome for a fixture.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecodeExpectation {
+    /// Image should decode successfully.
+    #[default]
+    Pass,
+    /// Image should fail to decode.
+    Fail,
+    /// Either outcome is acceptable.
+    Either,
+}
+
+/// Expected XMP validity for a fixture.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum XmpExpectation {
+    /// XMP should be present and valid XML.
+    #[default]
+    Valid,
+    /// XMP should be present but invalid XML.
+    Invalid,
+    /// No XMP should be present.
+    Absent,
+    /// Any XMP state is acceptable.
+    Either,
+}
+
+/// Expected extraction outcome for a fixture.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtractionExpectation {
+    /// Extraction should succeed with metadata.
+    #[default]
+    Success,
+    /// Extraction should find no notice.
+    NoNotice,
+    /// Fixture should be rejected.
+    Reject,
+}
+
 /// Legal field values expected for a fixture.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ExpectedLegalFields {
@@ -529,8 +587,23 @@ pub struct FixtureEntry {
     /// Expected legal field values.
     #[serde(default)]
     pub expected_legal_fields: ExpectedLegalFields,
-    /// Whether this fixture is expected to be malformed.
+    /// Whether this fixture is expected to be malformed (legacy, use expected_decode instead).
     pub expected_malformed: bool,
+    /// Expected decode outcome.
+    #[serde(default)]
+    pub expected_decode: DecodeExpectation,
+    /// Expected XMP validity.
+    #[serde(default)]
+    pub expected_xmp: XmpExpectation,
+    /// Expected internal extraction outcome.
+    #[serde(default)]
+    pub expected_internal: ExtractionExpectation,
+    /// Expected external extraction outcome.
+    #[serde(default)]
+    pub expected_external: ExtractionExpectation,
+    /// Fields required to be present in external extraction.
+    #[serde(default)]
+    pub required_external_fields: Vec<String>,
     /// Expected preserved field names after re-processing.
     #[serde(default)]
     pub expected_preservation: Vec<String>,
@@ -904,6 +977,9 @@ pub struct ConformanceSummary {
     pub digest_verification: Option<Vec<DigestCheckResult>>,
     /// Coverage check results, if performed.
     pub coverage: Option<CoverageCheckResult>,
+    /// Coverage minimums used for this run, if applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coverage_minimums: Option<CoverageMinimums>,
 }
 
 impl ConformanceSummary {
@@ -927,6 +1003,7 @@ impl ConformanceSummary {
             by_category: std::collections::HashMap::new(),
             digest_verification: None,
             coverage: None,
+            coverage_minimums: None,
         }
     }
 
@@ -938,6 +1015,11 @@ impl ConformanceSummary {
     /// Attach coverage check results.
     pub fn with_coverage(&mut self, result: CoverageCheckResult) {
         self.coverage = Some(result);
+    }
+
+    /// Attach coverage minimums for the report envelope.
+    pub fn with_coverage_minimums(&mut self, minimums: CoverageMinimums) {
+        self.coverage_minimums = Some(minimums);
     }
 
     /// Human-readable summary string.

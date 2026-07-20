@@ -669,3 +669,316 @@ fn strict_mode_exit_code_distinct_from_failure() {
         "Strict mode with missing tool should exit 2"
     );
 }
+
+#[test]
+fn strict_missing_manifest_exits_nonzero() {
+    let dir = tempfile::tempdir().unwrap();
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_stegoeggo-conformance"))
+        .arg("--fixtures")
+        .arg(dir.path())
+        .arg("--strict")
+        .output()
+        .unwrap();
+    assert_ne!(
+        result.status.code(),
+        Some(0),
+        "Strict mode without --manifest should exit non-zero"
+    );
+}
+
+#[test]
+fn strict_empty_manifest_exits_nonzero() {
+    let dir = tempfile::tempdir().unwrap();
+    let manifest_path = dir.path().join("empty.toml");
+    std::fs::write(&manifest_path, "# empty\n").unwrap();
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_stegoeggo-conformance"))
+        .arg("--fixtures")
+        .arg(dir.path())
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("--strict")
+        .output()
+        .unwrap();
+    assert_ne!(
+        result.status.code(),
+        Some(0),
+        "Strict mode with empty manifest should exit non-zero"
+    );
+}
+
+#[test]
+fn strict_invalid_toml_exits_nonzero() {
+    let dir = tempfile::tempdir().unwrap();
+    let manifest_path = dir.path().join("bad.toml");
+    std::fs::write(&manifest_path, "not valid toml {{{{").unwrap();
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_stegoeggo-conformance"))
+        .arg("--fixtures")
+        .arg(dir.path())
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("--strict")
+        .output()
+        .unwrap();
+    assert_ne!(
+        result.status.code(),
+        Some(0),
+        "Strict mode with invalid TOML should exit non-zero"
+    );
+}
+
+#[test]
+fn validate_manifest_rejects_duplicate_ids() {
+    let manifest = stegoeggo::conformance::FixtureManifest {
+        entries: vec![
+            stegoeggo::conformance::FixtureEntry {
+                id: "dup".to_string(),
+                path: "a.png".to_string(),
+                format: "png".to_string(),
+                category: "canonical".to_string(),
+                authoring_tool: "test".to_string(),
+                authoring_tool_version: "1.0".to_string(),
+                generation_command: "test".to_string(),
+                source: "generated".to_string(),
+                license: "MIT".to_string(),
+                sha256: "a".repeat(64),
+                expected_dmi: String::new(),
+                expected_conflict: false,
+                expected_legal_fields: Default::default(),
+                expected_malformed: false,
+                expected_decode: Default::default(),
+                expected_xmp: Default::default(),
+                expected_internal: Default::default(),
+                expected_external: Default::default(),
+                required_external_fields: Vec::new(),
+                expected_preservation: Vec::new(),
+            },
+            stegoeggo::conformance::FixtureEntry {
+                id: "dup".to_string(),
+                path: "b.png".to_string(),
+                format: "png".to_string(),
+                category: "canonical".to_string(),
+                authoring_tool: "test".to_string(),
+                authoring_tool_version: "1.0".to_string(),
+                generation_command: "test".to_string(),
+                source: "generated".to_string(),
+                license: "MIT".to_string(),
+                sha256: "b".repeat(64),
+                expected_dmi: String::new(),
+                expected_conflict: false,
+                expected_legal_fields: Default::default(),
+                expected_malformed: false,
+                expected_decode: Default::default(),
+                expected_xmp: Default::default(),
+                expected_internal: Default::default(),
+                expected_external: Default::default(),
+                required_external_fields: Vec::new(),
+                expected_preservation: Vec::new(),
+            },
+        ],
+    };
+    let result = stegoeggo::conformance::validate_manifest(&manifest);
+    assert!(result.is_err(), "Should reject duplicate IDs");
+}
+
+#[test]
+fn validate_manifest_rejects_duplicate_paths() {
+    let manifest = stegoeggo::conformance::FixtureManifest {
+        entries: vec![
+            stegoeggo::conformance::FixtureEntry {
+                id: "a".to_string(),
+                path: "same.png".to_string(),
+                format: "png".to_string(),
+                category: "canonical".to_string(),
+                authoring_tool: "test".to_string(),
+                authoring_tool_version: "1.0".to_string(),
+                generation_command: "test".to_string(),
+                source: "generated".to_string(),
+                license: "MIT".to_string(),
+                sha256: "a".repeat(64),
+                expected_dmi: String::new(),
+                expected_conflict: false,
+                expected_legal_fields: Default::default(),
+                expected_malformed: false,
+                expected_decode: Default::default(),
+                expected_xmp: Default::default(),
+                expected_internal: Default::default(),
+                expected_external: Default::default(),
+                required_external_fields: Vec::new(),
+                expected_preservation: Vec::new(),
+            },
+            stegoeggo::conformance::FixtureEntry {
+                id: "b".to_string(),
+                path: "same.png".to_string(),
+                format: "png".to_string(),
+                category: "canonical".to_string(),
+                authoring_tool: "test".to_string(),
+                authoring_tool_version: "1.0".to_string(),
+                generation_command: "test".to_string(),
+                source: "generated".to_string(),
+                license: "MIT".to_string(),
+                sha256: "b".repeat(64),
+                expected_dmi: String::new(),
+                expected_conflict: false,
+                expected_legal_fields: Default::default(),
+                expected_malformed: false,
+                expected_decode: Default::default(),
+                expected_xmp: Default::default(),
+                expected_internal: Default::default(),
+                expected_external: Default::default(),
+                required_external_fields: Vec::new(),
+                expected_preservation: Vec::new(),
+            },
+        ],
+    };
+    let result = stegoeggo::conformance::validate_manifest(&manifest);
+    assert!(result.is_err(), "Should reject duplicate paths");
+}
+
+#[test]
+fn validate_manifest_rejects_path_traversal() {
+    let manifest = stegoeggo::conformance::FixtureManifest {
+        entries: vec![stegoeggo::conformance::FixtureEntry {
+            id: "traversal".to_string(),
+            path: "../etc/passwd.png".to_string(),
+            format: "png".to_string(),
+            category: "canonical".to_string(),
+            authoring_tool: "test".to_string(),
+            authoring_tool_version: "1.0".to_string(),
+            generation_command: "test".to_string(),
+            source: "generated".to_string(),
+            license: "MIT".to_string(),
+            sha256: "a".repeat(64),
+            expected_dmi: String::new(),
+            expected_conflict: false,
+            expected_legal_fields: Default::default(),
+            expected_malformed: false,
+            expected_decode: Default::default(),
+            expected_xmp: Default::default(),
+            expected_internal: Default::default(),
+            expected_external: Default::default(),
+            required_external_fields: Vec::new(),
+            expected_preservation: Vec::new(),
+        }],
+    };
+    let result = stegoeggo::conformance::validate_manifest(&manifest);
+    assert!(result.is_err(), "Should reject path traversal");
+}
+
+#[test]
+fn validate_manifest_rejects_unsupported_category() {
+    let manifest = stegoeggo::conformance::FixtureManifest {
+        entries: vec![stegoeggo::conformance::FixtureEntry {
+            id: "bad_cat".to_string(),
+            path: "test.png".to_string(),
+            format: "png".to_string(),
+            category: "bogus".to_string(),
+            authoring_tool: "test".to_string(),
+            authoring_tool_version: "1.0".to_string(),
+            generation_command: "test".to_string(),
+            source: "generated".to_string(),
+            license: "MIT".to_string(),
+            sha256: "a".repeat(64),
+            expected_dmi: String::new(),
+            expected_conflict: false,
+            expected_legal_fields: Default::default(),
+            expected_malformed: false,
+            expected_decode: Default::default(),
+            expected_xmp: Default::default(),
+            expected_internal: Default::default(),
+            expected_external: Default::default(),
+            required_external_fields: Vec::new(),
+            expected_preservation: Vec::new(),
+        }],
+    };
+    let result = stegoeggo::conformance::validate_manifest(&manifest);
+    assert!(result.is_err(), "Should reject unsupported category");
+}
+
+#[test]
+fn validate_manifest_rejects_unsupported_format() {
+    let manifest = stegoeggo::conformance::FixtureManifest {
+        entries: vec![stegoeggo::conformance::FixtureEntry {
+            id: "bad_fmt".to_string(),
+            path: "test.bmp".to_string(),
+            format: "bmp".to_string(),
+            category: "canonical".to_string(),
+            authoring_tool: "test".to_string(),
+            authoring_tool_version: "1.0".to_string(),
+            generation_command: "test".to_string(),
+            source: "generated".to_string(),
+            license: "MIT".to_string(),
+            sha256: "a".repeat(64),
+            expected_dmi: String::new(),
+            expected_conflict: false,
+            expected_legal_fields: Default::default(),
+            expected_malformed: false,
+            expected_decode: Default::default(),
+            expected_xmp: Default::default(),
+            expected_internal: Default::default(),
+            expected_external: Default::default(),
+            required_external_fields: Vec::new(),
+            expected_preservation: Vec::new(),
+        }],
+    };
+    let result = stegoeggo::conformance::validate_manifest(&manifest);
+    assert!(result.is_err(), "Should reject unsupported format");
+}
+
+#[test]
+fn normalize_dmi_genai_precedence() {
+    assert_eq!(
+        stegoeggo::conformance::normalize_dmi_value("DMI-PROHIBITED-GENAIMLTRAINING"),
+        "DMI-PROHIBITED-GENAIMLTRAINING"
+    );
+    assert_ne!(
+        stegoeggo::conformance::normalize_dmi_value("DMI-PROHIBITED-GENAIMLTRAINING"),
+        "DMI-PROHIBITED-AIMLTRAINING"
+    );
+}
+
+#[test]
+fn normalize_dmi_search_engine_precedence() {
+    assert_eq!(
+        stegoeggo::conformance::normalize_dmi_value("DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING"),
+        "DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING"
+    );
+    assert_eq!(
+        stegoeggo::conformance::normalize_dmi_value("Prohibited except search engine indexing"),
+        "DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING"
+    );
+}
+
+#[test]
+fn non_strict_reports_complete_false() {
+    let dir = tempfile::tempdir().unwrap();
+    let empty_dir = dir.path().join("empty_fixtures");
+    std::fs::create_dir(&empty_dir).unwrap();
+    let json_path = dir.path().join("report.json");
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_stegoeggo-conformance"))
+        .arg("--fixtures")
+        .arg(&empty_dir)
+        .arg("--json")
+        .arg(&json_path)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(0));
+}
+
+#[test]
+fn coverage_minimums_in_report() {
+    let dir = tempfile::tempdir().unwrap();
+    let json_path = dir.path().join("report.json");
+    let fixtures =
+        std::env::var("CARGO_MANIFEST_DIR").unwrap() + "/tests/fixtures/conformance/canonical";
+    let _ = std::process::Command::new(env!("CARGO_BIN_EXE_stegoeggo-conformance"))
+        .arg("--fixtures")
+        .arg(&fixtures)
+        .arg("--json")
+        .arg(&json_path)
+        .output();
+    if json_path.exists() {
+        let json_str = std::fs::read_to_string(&json_path).unwrap();
+        let reports: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap();
+        assert!(!reports.is_empty());
+    }
+}

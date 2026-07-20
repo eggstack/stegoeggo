@@ -17,6 +17,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Conformance Test Holder", creator = "Conformance Creator", copyright_owner = "Conformance Owner", usage_terms = "All rights reserved for conformance testing", web_statement_of_rights = "https://conformance.test/rights", ai_constraints = "No AI training permitted", credit_line = "Photo by Conformance Creator", licensor_name = "Conformance Licensor", licensor_email = "licensor@conformance.test", licensor_url = "https://licensor.conformance.test" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = ["canonical_data_mining"]
 expected_preservation = []
 
 [[fixture]]
@@ -34,6 +39,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Conformance Test Holder", creator = "Conformance Creator", copyright_owner = "Conformance Owner", usage_terms = "All rights reserved for conformance testing", web_statement_of_rights = "https://conformance.test/rights", ai_constraints = "No AI training permitted", credit_line = "Photo by Conformance Creator", licensor_name = "Conformance Licensor", licensor_email = "licensor@conformance.test", licensor_url = "https://licensor.conformance.test" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = ["canonical_data_mining"]
 expected_preservation = []
 
 [[fixture]]
@@ -51,6 +61,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Conformance Test Holder", creator = "Conformance Creator", copyright_owner = "Conformance Owner", usage_terms = "All rights reserved for conformance testing", web_statement_of_rights = "https://conformance.test/rights", ai_constraints = "No AI training permitted", credit_line = "Photo by Conformance Creator", licensor_name = "Conformance Licensor", licensor_email = "licensor@conformance.test", licensor_url = "https://licensor.conformance.test" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = ["canonical_data_mining"]
 expected_preservation = []
 
 [[fixture]]
@@ -68,6 +83,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = ["canonical_data_mining"]
 expected_preservation = []
 
 [[fixture]]
@@ -85,6 +105,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = ["canonical_data_mining"]
 expected_preservation = []
 
 [[fixture]]
@@ -102,6 +127,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = ["canonical_data_mining"]
 expected_preservation = []
 
 [[fixture]]
@@ -119,6 +149,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Jane Doe" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = ["canonical_data_mining"]
 expected_preservation = []
 
 [[fixture]]
@@ -134,8 +169,13 @@ license = "MIT"
 sha256 = "78e22a7e2a684d6ce6e6bc602b5022724e992f8b349a044586caec0cdff32e0b"
 expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
-expected_legal_fields = { copyright_holder = "日本テスト株式会社", usage_terms = "Alle Rechte vorbehalten. 版權所有。" }
+expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = ["canonical_data_mining"]
 expected_preservation = []
 
 [[fixture]]
@@ -151,8 +191,13 @@ license = "MIT"
 sha256 = "d7aeae0eb3c1371b0cf716e853ceefe9ca6297e09a148887a2db3d4e15467f65"
 expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
-expected_legal_fields = { copyright_holder = "日本テスト株式会社", usage_terms = "Alle Rechte vorbehalten. 版權所有。" }
+expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = ["canonical_data_mining"]
 expected_preservation = []
 
 [[fixture]]
@@ -161,15 +206,20 @@ path = "canonical/canonical_independent.png"
 format = "png"
 category = "canonical"
 authoring_tool = "exiftool"
-authoring_tool_version = ""
+authoring_tool_version = "13.00"
 generation_command = "raw iTXt injection"
 source = "external"
 license = "MIT"
 sha256 = "f16ee8a35d423a20136e88e7af0b2c09e865f1844d369cd91e097b2116a185d0"
-expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_dmi = ""
 expected_conflict = false
-expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Independent Author. All rights reserved.", web_statement_of_rights = "https://example.com/rights" }
+expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -178,15 +228,20 @@ path = "canonical/canonical_independent.jpg"
 format = "jpeg"
 category = "canonical"
 authoring_tool = "exiftool"
-authoring_tool_version = ""
+authoring_tool_version = "13.00"
 generation_command = "ExifTool -XMP-dc:Rights injection"
 source = "external"
 license = "MIT"
 sha256 = "aa44e7b6f673ca981a2900c2dcac34bea7d9d5f89ce28e65afe7e666a3896227"
-expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_dmi = ""
 expected_conflict = false
-expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Independent Author. All rights reserved.", web_statement_of_rights = "https://example.com/rights" }
+expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -195,15 +250,20 @@ path = "canonical/canonical_independent.webp"
 format = "webp"
 category = "canonical"
 authoring_tool = "exiftool"
-authoring_tool_version = ""
+authoring_tool_version = "13.00"
 generation_command = "ExifTool -XMP-dc:Rights injection"
 source = "external"
 license = "MIT"
 sha256 = "69600a42e3f71fa97651bd1fa974728b16de63a4b9661a6507d8cb895896d8c3"
-expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_dmi = ""
 expected_conflict = false
-expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Independent Author. All rights reserved.", web_statement_of_rights = "https://example.com/rights" }
+expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -212,15 +272,20 @@ path = "canonical/canonical_alt_prefix.png"
 format = "png"
 category = "canonical"
 authoring_tool = "exiftool"
-authoring_tool_version = ""
+authoring_tool_version = "13.00"
 generation_command = "raw iTXt injection with PLUS: prefix"
 source = "external"
 license = "MIT"
 sha256 = "bdedc96c049c7c37bc985c1b0fd9365d62aea818c2652346ed55cab7a3d32a79"
-expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_dmi = ""
 expected_conflict = false
-expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Alt Prefix Test" }
+expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -229,15 +294,20 @@ path = "canonical/canonical_alt_prefix.jpg"
 format = "jpeg"
 category = "canonical"
 authoring_tool = "exiftool"
-authoring_tool_version = ""
+authoring_tool_version = "13.00"
 generation_command = "raw APP1 XMP injection with PLUS: prefix"
 source = "external"
 license = "MIT"
 sha256 = "2ce690174d2bd285f8b78261a2175d9a9bd4ec02a8783934004f5c44360bc66c"
-expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_dmi = ""
 expected_conflict = false
-expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Alt Prefix Test" }
+expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -246,15 +316,20 @@ path = "canonical/canonical_multi_creator.png"
 format = "png"
 category = "canonical"
 authoring_tool = "exiftool"
-authoring_tool_version = ""
+authoring_tool_version = "13.00"
 generation_command = "raw iTXt injection with multi-creator XMP"
 source = "external"
 license = "MIT"
 sha256 = "45ea92e192e82ded41ddcd734d51500e9ceef976eeacef20107ec41858b2ed3a"
-expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_dmi = ""
 expected_conflict = false
-expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Multi Creator Corp. All rights reserved.", web_statement_of_rights = "https://example.com/rights", copyright_owner = "Multi Creator Corp", licensor_name = "License Admin", licensor_email = "admin@multi-creator.test", licensor_url = "https://multi-creator.test/license" }
+expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -263,15 +338,20 @@ path = "canonical/canonical_multi_creator.jpg"
 format = "jpeg"
 category = "canonical"
 authoring_tool = "exiftool"
-authoring_tool_version = ""
+authoring_tool_version = "13.00"
 generation_command = "raw APP1 XMP injection with multi-creator XMP"
 source = "external"
 license = "MIT"
 sha256 = "e762ec68de23707df9c8c0cee85d127d245e9fb39080c1af15718a0552e9904d"
-expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_dmi = ""
 expected_conflict = false
-expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Multi Creator Corp. All rights reserved.", web_statement_of_rights = "https://example.com/rights", copyright_owner = "Multi Creator Corp", licensor_name = "License Admin", licensor_email = "admin@multi-creator.test", licensor_url = "https://multi-creator.test/license" }
+expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -280,15 +360,20 @@ path = "canonical/canonical_multi_creator.webp"
 format = "webp"
 category = "canonical"
 authoring_tool = "exiftool"
-authoring_tool_version = ""
+authoring_tool_version = "13.00"
 generation_command = "raw WebP XMP chunk injection with multi-creator XMP"
 source = "external"
 license = "MIT"
 sha256 = "c443d42adb0cb73ff0bdbcbd2ba2a4eaf345265cbd3e84c90b1f832d48d874a3"
-expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_dmi = ""
 expected_conflict = false
-expected_legal_fields = { copyright_holder = "Copyright (c) 2025 Multi Creator Corp. All rights reserved.", web_statement_of_rights = "https://example.com/rights", copyright_owner = "Multi Creator Corp", licensor_name = "License Admin", licensor_email = "admin@multi-creator.test", licensor_url = "https://multi-creator.test/license" }
+expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -306,6 +391,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Legacy Holder", usage_terms = "Legacy Terms" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -323,6 +413,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Legacy Holder", usage_terms = "Legacy Terms" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -340,6 +435,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Legacy Holder", usage_terms = "Legacy Terms" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -357,6 +457,11 @@ expected_dmi = ""
 expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = true
+expected_decode = "fail"
+expected_xmp = "absent"
+expected_internal = "no_notice"
+expected_external = "no_notice"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -374,6 +479,11 @@ expected_dmi = ""
 expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = true
+expected_decode = "fail"
+expected_xmp = "absent"
+expected_internal = "no_notice"
+expected_external = "no_notice"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -391,6 +501,11 @@ expected_dmi = ""
 expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = true
+expected_decode = "pass"
+expected_xmp = "invalid"
+expected_internal = "no_notice"
+expected_external = "no_notice"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -408,6 +523,11 @@ expected_dmi = ""
 expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = true
+expected_decode = "pass"
+expected_xmp = "invalid"
+expected_internal = "no_notice"
+expected_external = "no_notice"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -425,6 +545,11 @@ expected_dmi = ""
 expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = true
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "no_notice"
+expected_external = "no_notice"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -442,6 +567,11 @@ expected_dmi = ""
 expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = true
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "no_notice"
+expected_external = "no_notice"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -459,6 +589,11 @@ expected_dmi = ""
 expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = true
+expected_decode = "pass"
+expected_xmp = "either"
+expected_internal = "no_notice"
+expected_external = "no_notice"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -476,6 +611,11 @@ expected_dmi = ""
 expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = true
+expected_decode = "fail"
+expected_xmp = "absent"
+expected_internal = "no_notice"
+expected_external = "no_notice"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -493,6 +633,11 @@ expected_dmi = ""
 expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = true
+expected_decode = "fail"
+expected_xmp = "absent"
+expected_internal = "no_notice"
+expected_external = "no_notice"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -507,9 +652,14 @@ source = "generated"
 license = "MIT"
 sha256 = "d0ec8b72a5b0d13ae896467fac232092eb2bf5cbe01660968e9b28d68189840b"
 expected_dmi = "DMI-ALLOWED"
-expected_conflict = true
+expected_conflict = false
 expected_legal_fields = { copyright_holder = "Allowed Holder" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -524,9 +674,14 @@ source = "generated"
 license = "MIT"
 sha256 = "f15f43f6e2305c837f41d2e4fa3b2216b930b88a29ef5bf057211fe3e4747f46"
 expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
-expected_conflict = true
+expected_conflict = false
 expected_legal_fields = { copyright_holder = "Prohibited Holder" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -541,9 +696,14 @@ source = "generated"
 license = "MIT"
 sha256 = "178c3346fce79d3fad13d5a370ee8f7032199b705b71346463085ef3f160e3a5"
 expected_dmi = ""
-expected_conflict = true
+expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "absent"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -558,9 +718,14 @@ source = "generated"
 license = "MIT"
 sha256 = "fc8eec891688a85e31339e0cab7d47a134ce1c2f16ce1de29430c6d9aed68df8"
 expected_dmi = ""
-expected_conflict = true
+expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "absent"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -574,10 +739,15 @@ generation_command = "raw XMP injection"
 source = "generated"
 license = "MIT"
 sha256 = "cef39d3098fd2089a93241307ab6bfe754a82ea982b6b9bd28665b597a0e801f"
-expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
-expected_conflict = true
+expected_dmi = ""
+expected_conflict = false
 expected_legal_fields = {}
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]
@@ -595,6 +765,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Preservation Holder", usage_terms = "Preservation Terms" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = ["copyright_holder", "usage_terms"]
 
 [[fixture]]
@@ -612,6 +787,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Preservation Holder", usage_terms = "Preservation Terms" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = ["copyright_holder", "usage_terms"]
 
 [[fixture]]
@@ -629,6 +809,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Preservation Holder", usage_terms = "Preservation Terms" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = ["copyright_holder", "usage_terms"]
 
 [[fixture]]
@@ -646,6 +831,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "New Holder" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = ["copyright_holder"]
 
 [[fixture]]
@@ -663,6 +853,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Auth Holder", usage_terms = "Auth Terms" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = ["copyright_holder", "usage_terms"]
 
 [[fixture]]
@@ -680,6 +875,11 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "XMP Holder" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = ["copyright_holder"]
 
 [[fixture]]
@@ -697,4 +897,9 @@ expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Idempotent Holder", usage_terms = "Idempotent Terms" }
 expected_malformed = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = []
 expected_preservation = ["copyright_holder", "usage_terms"]

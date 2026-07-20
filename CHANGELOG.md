@@ -15,6 +15,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-format semantic-equivalence test suite (19 scenarios)
 - Merge policy tests (11 tests)
 - Field-mapping audit architecture document
+- Conformance harness: `DecodeExpectation`, `XmpExpectation`, `ExtractionExpectation` enums for per-fixture expected outcomes
+- Conformance harness: `ExternalToolError` type preserving tool name, executable, exit status, stderr, and JSON parse failure
+- Conformance harness: per-fixture ImageMagick (`identify`) and libvips (`vipsheader`) execution
+- Conformance harness: `coverage_minimums` field in JSON report envelope
+- Conformance harness: `required_external_fields` per-fixture enforcement
+- Regression tests for manifest validation, DMI normalization, and harness configuration (15+ new tests)
 
 ### Fixed
 - WebP extraction now reads `photoshop:Credit` as `credit_line` (was incorrectly mapped to `contact`)
@@ -23,10 +29,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `rights_url` collision split: `license_url` and `web_statement_of_rights` are now distinct in `NoticeVerification`
 - JPEG XMP namespace matching fix: `windows(28)` instead of `windows(29)` for `http://ns.adobe.com/xap/1.0/`
 - Auto-enable legal claims when `LegalMetadata` is provided (no explicit `with_legal_claims(true)` needed)
+- Conformance harness: external extraction errors now produce typed `ExternalToolError` instead of silent defaults
+- Conformance harness: malformed fixtures with expected decode failure now correctly evaluate decode expectations
+- Fixture provenance: 8 fixtures with empty `authoring_tool_version` now have pinned versions
 
 ### Changed
 - Version bumped to 0.3.0 (new public API)
 - `photoshop:Credit` in XMP now maps to `credit_line` (semantically correct), not `contact_email`
+- Conformance manifest now includes explicit `expected_decode`, `expected_xmp`, `expected_internal`, `expected_external`, `required_external_fields` per fixture
+- Conformance harness strict mode requires ImageMagick and libvips when available
 
 ## [Unreleased]
 
