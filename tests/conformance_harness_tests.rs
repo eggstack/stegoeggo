@@ -410,7 +410,7 @@ fn harness_nonstrict_survives_missing_exiftool() {
         .arg(dir.path())
         .output()
         .unwrap();
-    assert_eq!(result.status.code(), None);
+    assert_eq!(result.status.code(), Some(0));
 }
 
 #[test]
