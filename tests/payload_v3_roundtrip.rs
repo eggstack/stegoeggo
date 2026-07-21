@@ -202,7 +202,7 @@ fn test_v3_auth_algorithm_coverage() {
 
     assert_eq!(AuthAlgorithm::None.tag_length(), Some(0));
     assert_eq!(AuthAlgorithm::Crc32.tag_length(), Some(4));
-    assert_eq!(AuthAlgorithm::HmacSha256Truncated.tag_length(), Some(8));
+    assert_eq!(AuthAlgorithm::HmacSha256Truncated.tag_length(), Some(16));
     assert_eq!(AuthAlgorithm::Ed25519.tag_length(), Some(64));
 }
 
@@ -237,4 +237,168 @@ fn test_v3_parse_empty_payload() {
 fn test_v3_parse_unknown_version() {
     let data = vec![99u8; 32];
     assert!(parse_payload(&data).is_err());
+}
+
+// ============================================================================
+// Negative tests: Truncated payloads
+// ============================================================================
+
+#[test]
+fn test_v3_truncated_header() {
+    let mut data = vec![0u8; 16];
+    data[0] = V3_MAGIC[0];
+    data[1] = V3_MAGIC[1];
+    data[2] = V3_PAYLOAD_VERSION;
+    assert!(parse_payload(&data).is_err());
+}
+
+#[test]
+fn test_v3_truncated_after_magic() {
+    let data = vec![V3_MAGIC[0], V3_MAGIC[1], V3_PAYLOAD_VERSION];
+    assert!(parse_payload(&data).is_err());
+}
+
+#[test]
+fn test_v2_truncated() {
+    let data = vec![2u8; 16];
+    assert!(parse_payload(&data).is_err());
+}
+
+#[test]
+fn test_v1_truncated() {
+    let data = vec![1u8; 10];
+    assert!(parse_payload(&data).is_err());
+}
+
+// ============================================================================
+// Negative tests: Invalid magic bytes
+// ============================================================================
+
+#[test]
+fn test_v3_invalid_magic_byte_0() {
+    let mut data = vec![0u8; V3_CORE_SIZE];
+    data[0] = 0x00;
+    data[1] = 0x45;
+    data[2] = V3_PAYLOAD_VERSION;
+    data[3] = V3_CORE_SIZE as u8;
+    assert!(parse_payload(&data).is_err());
+}
+
+#[test]
+fn test_v3_invalid_magic_byte_1() {
+    let mut data = vec![0u8; V3_CORE_SIZE];
+    data[0] = 0x53;
+    data[1] = 0x00;
+    data[2] = V3_PAYLOAD_VERSION;
+    data[3] = V3_CORE_SIZE as u8;
+    assert!(parse_payload(&data).is_err());
+}
+
+// ============================================================================
+// Negative tests: Invalid DMI policy
+// ============================================================================
+
+#[test]
+fn test_v3_invalid_dmi_policy() {
+    let mut header = make_test_header();
+    header.dmi_policy = 7;
+    let bytes = header.to_bytes();
+    assert!(PayloadV3Header::from_bytes(&bytes).is_err());
+}
+
+// ============================================================================
+// Negative tests: Invalid auth algorithm
+// ============================================================================
+
+#[test]
+fn test_v3_invalid_auth_algorithm() {
+    let mut header = make_test_header();
+    header.auth_algorithm = 4;
+    let bytes = header.to_bytes();
+    assert!(PayloadV3Header::from_bytes(&bytes).is_err());
+}
+
+#[test]
+fn test_v3_invalid_auth_algorithm_255() {
+    let mut header = make_test_header();
+    header.auth_algorithm = 255;
+    let bytes = header.to_bytes();
+    assert!(PayloadV3Header::from_bytes(&bytes).is_err());
+}
+
+// ============================================================================
+// Negative tests: Key ID too long
+// ============================================================================
+
+#[test]
+fn test_v3_key_id_too_long() {
+    let mut header = make_test_header();
+    header.key_id_len = 33;
+    let bytes = header.to_bytes();
+    assert!(PayloadV3Header::from_bytes(&bytes).is_err());
+}
+
+// ============================================================================
+// Negative tests: Single byte payloads
+// ============================================================================
+
+#[test]
+fn test_single_byte_zero() {
+    assert!(parse_payload(&[0x00]).is_err());
+}
+
+#[test]
+fn test_single_byte_one() {
+    assert!(parse_payload(&[0x01]).is_err());
+}
+
+#[test]
+fn test_single_byte_two() {
+    assert!(parse_payload(&[0x02]).is_err());
+}
+
+// ============================================================================
+// Negative tests: Extension parsing
+// ============================================================================
+
+#[test]
+fn test_v3_duplicate_extension_rejected() {
+    let mut header = make_test_header();
+    let ext1_data = b"first";
+    let ext2_data = b"second";
+    let ext_section_len = (4 + ext1_data.len()) + (4 + ext2_data.len());
+
+    header.flags = 0x0001;
+    header.header_length = (V3_CORE_SIZE + ext_section_len) as u8;
+    header.total_length = (V3_CORE_SIZE + ext_section_len) as u16;
+
+    let mut bytes = header.to_bytes();
+    // Extension 1: type 0x0001
+    bytes.extend_from_slice(&0x0001u16.to_le_bytes());
+    bytes.extend_from_slice(&(ext1_data.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(ext1_data);
+    // Extension 2: type 0x0001 (duplicate)
+    bytes.extend_from_slice(&0x0001u16.to_le_bytes());
+    bytes.extend_from_slice(&(ext2_data.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(ext2_data);
+
+    let result = parse_payload(&bytes);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_v3_extension_truncated() {
+    let mut header = make_test_header();
+    header.flags = 0x0001;
+    header.header_length = (V3_CORE_SIZE + 10) as u8;
+    header.total_length = (V3_CORE_SIZE + 10) as u16;
+
+    let mut bytes = header.to_bytes();
+    // Extension type but no length or data
+    bytes.extend_from_slice(&0x0001u16.to_le_bytes());
+    bytes.extend_from_slice(&100u16.to_le_bytes());
+    // Only 2 bytes of data instead of 100
+
+    let result = parse_payload(&bytes);
+    assert!(result.is_err());
 }

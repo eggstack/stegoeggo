@@ -57,4 +57,10 @@ pub enum PayloadV3ParseError {
     /// Intensity value is out of range.
     #[error("Invalid intensity value: {0}")]
     InvalidIntensity(u16),
+    /// Authentication key was not provided but the payload requires one.
+    #[error("Authentication key required but not provided")]
+    MissingKey,
+    /// Authentication key was provided but verification failed.
+    #[error("Authentication failed: wrong key or corrupted tag")]
+    WrongKey,
 }

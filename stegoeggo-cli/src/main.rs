@@ -398,6 +398,39 @@ impl From<OutputFormatArg> for ImageOutputFormat {
     }
 }
 
+/// Resolve a key from multiple sources with the following priority:
+/// 1. Explicit CLI argument (--key <hex>)
+/// 2. Environment variable (STEGOEGGO_KEY)
+/// 3. Stdin (when --key is "-")
+fn resolve_key_input(
+    key_arg: &Option<String>,
+    env_var: &str,
+) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
+    if let Some(ref key_str) = key_arg {
+        if key_str == "-" {
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            let hex_key = input.trim();
+            return Ok(Some(
+                hex::decode(hex_key).map_err(|e| format!("Invalid hex key from stdin: {}", e))?,
+            ));
+        }
+        return Ok(Some(
+            hex::decode(key_str).map_err(|e| format!("Invalid hex key '{}': {}", key_str, e))?,
+        ));
+    }
+
+    if let Ok(env_val) = std::env::var(env_var) {
+        if !env_val.is_empty() {
+            return Ok(Some(hex::decode(&env_val).map_err(|e| {
+                format!("Invalid hex key from {}: {}", env_var, e)
+            })?));
+        }
+    }
+
+    Ok(None)
+}
+
 fn collect_input_files(inputs: &[PathBuf]) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for input in inputs {
@@ -1043,11 +1076,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || args.dry_run
     {
         let seed = args.seed.unwrap_or_else(generate_random_seed);
-        let mac_key = args
-            .key
-            .as_ref()
-            .map(|k| hex::decode(k).map_err(|e| format!("Invalid hex key '{}': {}", k, e)))
-            .transpose()?;
+        let mac_key = resolve_key_input(&args.key, "STEGOEGGO_KEY")?;
 
         let (legal_metadata, _) = build_legal_metadata(&args);
 
@@ -1215,11 +1244,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let seed = args.seed.unwrap_or_else(generate_random_seed);
 
-    let mac_key = args
-        .key
-        .as_ref()
-        .map(|k| hex::decode(k).map_err(|e| format!("Invalid hex key '{}': {}", k, e)))
-        .transpose()?;
+    let mac_key = resolve_key_input(&args.key, "STEGOEGGO_KEY")?;
 
     let (legal_metadata, legal_dmi_override) = build_legal_metadata(&args);
 

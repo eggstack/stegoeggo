@@ -60,7 +60,7 @@ impl AuthAlgorithm {
         match self {
             Self::None => Some(0),
             Self::Crc32 => Some(4),
-            Self::HmacSha256Truncated => Some(8),
+            Self::HmacSha256Truncated => Some(16),
             Self::Ed25519 => Some(64),
         }
     }

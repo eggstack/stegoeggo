@@ -171,7 +171,7 @@ The `HAS_KEY_ID` flag bit MUST be set when `key_id_len > 0`.
 |-------|-----------|---------------|
 | 0 | None | 0 bytes |
 | 1 | CRC32 | 4 bytes |
-| 2 | HMAC-SHA256-truncated | 8 bytes |
+| 2 | HMAC-SHA256-truncated | 16 bytes |
 | 3 | Ed25519 | 64 bytes |
 
 Implementations MUST support at least `auth_algo = 0` (none) and
@@ -179,8 +179,8 @@ Implementations MUST support at least `auth_algo = 0` (none) and
 deprecated but allowed for backward compatibility.
 
 `auth_tag_len` MUST match the expected size for `auth_algo`. For
-HMAC-SHA256-truncated, `auth_tag_len` is always 8 (the 8 most significant
-bytes of the 32-byte HMAC output).
+HMAC-SHA256-truncated, `auth_tag_len` is always 16 (the 16 most significant
+bytes of the 32-byte HMAC output, providing 128-bit security).
 
 ### 5.6. Authentication Tag
 
@@ -206,10 +206,10 @@ The minimum v3 payload with no key_id, no extensions, no auth:
 ```
 32 bytes core
 + 16 bytes key_id (SHA-256 truncated)
-+ 1 byte auth_algo=2, 1 byte auth_tag_len=8
++ 1 byte auth_algo=2, 1 byte auth_tag_len=16
 + 0 bytes extensions
-+ 8 bytes HMAC-SHA256-truncated
-= 58 bytes
++ 16 bytes HMAC-SHA256-truncated
+= 66 bytes
 ```
 
 ### 6.3. Maximum Embedded Payload
@@ -232,8 +232,8 @@ ECC encoding uses 3× repetition (same as v1/v2):
 |------|-----------|-----------|---------|-------|
 | No key, no ext | 32 | 96 | +4 | 100 |
 | No key, 16-byte ext | 48 | 144 | +4 | 148 |
-| HMAC, no ext | 46 (core+key+algo) | — | — | 46 + 8 = 54 |
-| HMAC, 16-byte ext | 62 | — | — | 62 + 8 = 70 |
+| HMAC, no ext | 46 (core+key+algo) | — | — | 46 + 16 = 62 |
+| HMAC, 16-byte ext | 62 | — | — | 62 + 16 = 78 |
 
 When using ECC encoding (no MAC key), the auth tag is CRC32 over the
 ECC-encoded bytes, same as v1/v2.
@@ -358,11 +358,11 @@ b"StegoEggo-v3"     (12 bytes)
 ```
 
 Where `header bytes` are the payload from offset 0 through the last
-extension/padding byte (everything except the 8-byte auth tag itself).
+extension/padding byte (everything except the 16-byte auth tag itself).
 
 **Key:** The MAC key (implementation-provided, typically `ProtectionConfig.mac_key`).
 
-**Output:** First 8 bytes of `HMAC-SHA256(key, HMAC_input)`.
+**Output:** First 16 bytes of `HMAC-SHA256(key, HMAC_input)`.
 
 **Verification:** Extractor recomputes HMAC over the received header bytes
 (with auth tag zeroed) using the same key and domain context. Constant-time

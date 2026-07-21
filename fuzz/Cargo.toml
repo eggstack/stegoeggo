@@ -28,3 +28,9 @@ name = "jpeg_parser"
 path = "fuzz_targets/jpeg_parser.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "payload_v3_parser"
+path = "fuzz_targets/payload_v3_parser.rs"
+test = false
+doc = false

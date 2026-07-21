@@ -25,6 +25,27 @@ pub struct DetachedManifest {
     pub public_keys: Vec<PublicKeyEntry>,
     /// Optional reference to an embedded payload.
     pub embedded_reference: Option<EmbeddedReference>,
+    /// Optional trust metadata for certificate chains and trust policies.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trust_metadata: Option<TrustMetadata>,
+}
+
+/// Trust metadata for certificate chains and trust policies.
+///
+/// Bounded to prevent unbounded expansion. The library does not
+/// ship an implicit trust store — this metadata is informational
+/// and caller-validated.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TrustMetadata {
+    /// Trust model name (e.g., "local", "web-of-trust", "pki").
+    pub trust_model: String,
+    /// Whether the claim is trusted under the specified model.
+    pub trusted: bool,
+    /// Human-readable reason for the trust decision.
+    pub reason: String,
+    /// Optional certificate chain (DER-encoded, base64).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate_chain: Option<Vec<String>>,
 }
 
 /// A single signature record.
@@ -67,6 +88,7 @@ impl DetachedManifest {
             signatures: Vec::new(),
             public_keys: Vec::new(),
             embedded_reference: None,
+            trust_metadata: None,
         }
     }
 
@@ -92,6 +114,13 @@ impl DetachedManifest {
     #[must_use]
     pub fn with_embedded_reference(mut self, reference: EmbeddedReference) -> Self {
         self.embedded_reference = Some(reference);
+        self
+    }
+
+    /// Set the trust metadata.
+    #[must_use]
+    pub fn with_trust_metadata(mut self, trust: TrustMetadata) -> Self {
+        self.trust_metadata = Some(trust);
         self
     }
 
