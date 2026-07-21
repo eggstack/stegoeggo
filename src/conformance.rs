@@ -453,16 +453,11 @@ pub fn normalize_url(s: &str) -> String {
             let host = &rest[..slash_pos];
             let path = &rest[slash_pos..];
             let lower_host = host.to_lowercase();
-            format!(
-                "{}://{}{}",
-                &trimmed[..pos].to_lowercase(),
-                lower_host,
-                path
-            )
+            format!("{}://{}{}", trimmed[..pos].to_lowercase(), lower_host, path)
         } else {
             format!(
                 "{}://{}",
-                &trimmed[..pos].to_lowercase(),
+                trimmed[..pos].to_lowercase(),
                 rest.to_lowercase()
             )
         }

@@ -624,6 +624,7 @@ pub struct HarnessResult {
     pub manifest_report: Option<ManifestReport>,
     pub incomplete_reasons: Vec<String>,
     pub strict: bool,
+    pub exit_code: Option<i32>,
 }
 
 fn evaluate_manifest_expectations(
@@ -848,7 +849,22 @@ pub fn run_harness(
     if !exiftool_state.discovered {
         if strict {
             eprintln!("Error: exiftool required in strict mode but not found");
-            std::process::exit(EXIT_CONFIG);
+            return HarnessResult {
+                reports: Vec::new(),
+                digest_results: None,
+                coverage: None,
+                coverage_minimums: None,
+                tools: vec![
+                    exiftool_state.to_report(),
+                    xmllint_state.to_report(),
+                    imagemagick_state.to_report(),
+                    vips_state.to_report(),
+                ],
+                manifest_report: None,
+                incomplete_reasons: Vec::new(),
+                strict,
+                exit_code: Some(EXIT_CONFIG),
+            };
         }
         incomplete_reasons.push("exiftool not found".to_string());
         eprintln!("Warning: exiftool not found, skipping external validation");
@@ -856,7 +872,22 @@ pub fn run_harness(
 
     if strict && manifest_path.is_none() {
         eprintln!("Error: --manifest required in strict mode");
-        std::process::exit(EXIT_CONFIG);
+        return HarnessResult {
+            reports: Vec::new(),
+            digest_results: None,
+            coverage: None,
+            coverage_minimums: None,
+            tools: vec![
+                exiftool_state.to_report(),
+                xmllint_state.to_report(),
+                imagemagick_state.to_report(),
+                vips_state.to_report(),
+            ],
+            manifest_report: None,
+            incomplete_reasons: Vec::new(),
+            strict,
+            exit_code: Some(EXIT_CONFIG),
+        };
     }
 
     if !fixtures_dir.exists() {
@@ -865,7 +896,22 @@ pub fn run_harness(
                 "Error: fixtures directory not found at {}",
                 fixtures_dir.display()
             );
-            std::process::exit(EXIT_CONFIG);
+            return HarnessResult {
+                reports: Vec::new(),
+                digest_results: None,
+                coverage: None,
+                coverage_minimums: None,
+                tools: vec![
+                    exiftool_state.to_report(),
+                    xmllint_state.to_report(),
+                    imagemagick_state.to_report(),
+                    vips_state.to_report(),
+                ],
+                manifest_report: None,
+                incomplete_reasons: Vec::new(),
+                strict,
+                exit_code: Some(EXIT_CONFIG),
+            };
         }
         incomplete_reasons.push(format!(
             "fixtures directory not found at {}",
@@ -889,6 +935,7 @@ pub fn run_harness(
             manifest_report: None,
             incomplete_reasons,
             strict,
+            exit_code: None,
         };
     }
 
@@ -902,7 +949,22 @@ pub fn run_harness(
                 "Error: no fixture images found in {}",
                 fixtures_dir.display()
             );
-            std::process::exit(EXIT_CONFIG);
+            return HarnessResult {
+                reports,
+                digest_results: None,
+                coverage: None,
+                coverage_minimums: None,
+                tools: vec![
+                    exiftool_state.to_report(),
+                    xmllint_state.to_report(),
+                    imagemagick_state.to_report(),
+                    vips_state.to_report(),
+                ],
+                manifest_report: None,
+                incomplete_reasons: Vec::new(),
+                strict,
+                exit_code: Some(EXIT_CONFIG),
+            };
         }
         incomplete_reasons.push(format!(
             "no fixture images found in {}",
@@ -923,6 +985,7 @@ pub fn run_harness(
             manifest_report: None,
             incomplete_reasons,
             strict,
+            exit_code: None,
         };
     }
 
@@ -933,7 +996,22 @@ pub fn run_harness(
             Ok(m) => {
                 if strict && m.entries.is_empty() {
                     eprintln!("Error: manifest contains no entries");
-                    std::process::exit(EXIT_CONFIG);
+                    return HarnessResult {
+                        reports: Vec::new(),
+                        digest_results: None,
+                        coverage: None,
+                        coverage_minimums: None,
+                        tools: vec![
+                            exiftool_state.to_report(),
+                            xmllint_state.to_report(),
+                            imagemagick_state.to_report(),
+                            vips_state.to_report(),
+                        ],
+                        manifest_report: None,
+                        incomplete_reasons,
+                        strict,
+                        exit_code: Some(EXIT_CONFIG),
+                    };
                 }
                 let validation = conformance::validate_manifest(&m);
                 let is_valid = validation.is_ok();
@@ -944,7 +1022,22 @@ pub fn run_harness(
                         }
                     }
                     if strict {
-                        std::process::exit(EXIT_DIGEST);
+                        return HarnessResult {
+                            reports: Vec::new(),
+                            digest_results: None,
+                            coverage: None,
+                            coverage_minimums: None,
+                            tools: vec![
+                                exiftool_state.to_report(),
+                                xmllint_state.to_report(),
+                                imagemagick_state.to_report(),
+                                vips_state.to_report(),
+                            ],
+                            manifest_report: None,
+                            incomplete_reasons,
+                            strict,
+                            exit_code: Some(EXIT_DIGEST),
+                        };
                     }
                 }
                 let entry_count = m.entries.len();
@@ -972,7 +1065,22 @@ pub fn run_harness(
             Err(e) => {
                 if strict {
                     eprintln!("Error: {}", e);
-                    std::process::exit(EXIT_DIGEST);
+                    return HarnessResult {
+                        reports: Vec::new(),
+                        digest_results: None,
+                        coverage: None,
+                        coverage_minimums: None,
+                        tools: vec![
+                            exiftool_state.to_report(),
+                            xmllint_state.to_report(),
+                            imagemagick_state.to_report(),
+                            vips_state.to_report(),
+                        ],
+                        manifest_report: None,
+                        incomplete_reasons,
+                        strict,
+                        exit_code: Some(EXIT_DIGEST),
+                    };
                 }
                 incomplete_reasons.push(format!("manifest load error: {}", e));
                 eprintln!("Warning: {}", e);
@@ -1457,7 +1565,23 @@ pub fn run_harness(
                         );
                     }
                 }
-                std::process::exit(EXIT_DIGEST);
+                digest_results = Some(dr);
+                return HarnessResult {
+                    reports,
+                    digest_results,
+                    coverage: None,
+                    coverage_minimums: None,
+                    tools: vec![
+                        exiftool_state.to_report(),
+                        xmllint_state.to_report(),
+                        imagemagick_state.to_report(),
+                        vips_state.to_report(),
+                    ],
+                    manifest_report,
+                    incomplete_reasons,
+                    strict,
+                    exit_code: Some(EXIT_DIGEST),
+                };
             }
         } else {
             eprintln!("Digest verification: all {} digests match", dr.len());
@@ -1471,7 +1595,23 @@ pub fn run_harness(
                 eprintln!("  - {}", v);
             }
             if strict {
-                std::process::exit(EXIT_COVERAGE);
+                coverage = Some(cov);
+                return HarnessResult {
+                    reports,
+                    digest_results,
+                    coverage,
+                    coverage_minimums: None,
+                    tools: vec![
+                        exiftool_state.to_report(),
+                        xmllint_state.to_report(),
+                        imagemagick_state.to_report(),
+                        vips_state.to_report(),
+                    ],
+                    manifest_report,
+                    incomplete_reasons,
+                    strict,
+                    exit_code: Some(EXIT_COVERAGE),
+                };
             }
         } else {
             eprintln!("Coverage check: PASS");
@@ -1523,6 +1663,7 @@ pub fn run_harness(
         manifest_report,
         incomplete_reasons,
         strict,
+        exit_code: None,
     }
 }
 
@@ -1638,6 +1779,9 @@ fn main() {
     );
     eprintln!("Complete: {}, Passed: {}", complete, report_passed);
 
+    if let Some(code) = result.exit_code {
+        std::process::exit(code);
+    }
     if failed > 0 {
         std::process::exit(EXIT_FAIL);
     }
