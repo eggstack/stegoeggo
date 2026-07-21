@@ -90,14 +90,14 @@ fn libvips_version() -> Option<String> {
         .output()
         .ok()
         .and_then(|o| {
-            if o.status.success() {
-                let stdout = String::from_utf8_lossy(&o.stdout);
-                let line = stdout.lines().next()?;
-                let ver = line.split_whitespace().nth(1)?;
-                Some(ver.to_string())
+            let text = if !o.stdout.is_empty() {
+                String::from_utf8_lossy(&o.stdout)
             } else {
-                None
-            }
+                String::from_utf8_lossy(&o.stderr)
+            };
+            let line = text.lines().next()?;
+            let ver = line.split_whitespace().nth(1)?;
+            Some(ver.to_string())
         })
 }
 
@@ -177,6 +177,11 @@ fn find_vipsheader() -> Option<PathBuf> {
             if !path.is_empty() {
                 return Some(PathBuf::from(path));
             }
+        }
+    }
+    if let Ok(output) = Command::new("vipsheader").arg("--help").output() {
+        if output.status.success() || !output.stdout.is_empty() || !output.stderr.is_empty() {
+            return Some(PathBuf::from("vipsheader"));
         }
     }
     None

@@ -137,19 +137,16 @@ impl HuffmanDecoder {
         let mut valid_bits = 0;
 
         for i in 0..16 {
-            if let Some(bit) = bit_reader.read_bit() {
-                code = (code << 1) | (bit as u16);
-                valid_bits = i + 1;
+            let bit = bit_reader.read_bit()?;
+            code = (code << 1) | (bit as u16);
+            valid_bits = i + 1;
 
-                let idx = (valid_bits - 1) as usize;
-                if code >= self.min_code[idx] as u16 && code <= self.max_code[idx] as u16 {
-                    let val_idx = ((code as i32) + self.val_offset[idx]) as usize;
-                    if val_idx < self.values.len() {
-                        return Some(self.values[val_idx]);
-                    }
+            let idx = (valid_bits - 1) as usize;
+            if code >= self.min_code[idx] as u16 && code <= self.max_code[idx] as u16 {
+                let val_idx = ((code as i32) + self.val_offset[idx]) as usize;
+                if val_idx < self.values.len() {
+                    return Some(self.values[val_idx]);
                 }
-            } else {
-                return None;
             }
         }
 

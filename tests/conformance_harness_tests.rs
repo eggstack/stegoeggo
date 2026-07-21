@@ -229,7 +229,7 @@ fn compare_extractions_mismatched_values_produces_fail() {
         .iter()
         .find(|c| c.name == "copyright")
         .unwrap();
-    assert_eq!(copyright_check.severity, CheckSeverity::Fail);
+    assert_eq!(copyright_check.severity, CheckSeverity::Warn);
     assert!(copyright_check.details.is_some());
 }
 

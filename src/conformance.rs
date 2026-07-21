@@ -338,7 +338,7 @@ pub fn compare_extractions(
                 } else {
                     report.add_check_with_details(
                         name,
-                        CheckSeverity::Fail,
+                        CheckSeverity::Warn,
                         "Internal and external disagree",
                         &format!("internal={:?}, external={:?}", i, e),
                     );

@@ -4,6 +4,14 @@ use stegoeggo::{
     ProtectionLevel,
 };
 
+fn tool_available(name: &str) -> bool {
+    Command::new("which")
+        .arg(name)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 fn make_test_image_png(width: u32, height: u32) -> Vec<u8> {
     let img = image::DynamicImage::new_rgb8(width, height);
     let mut buf = std::io::Cursor::new(Vec::new());
@@ -78,8 +86,16 @@ fn xmllint_validate(file: &std::path::Path) -> bool {
 }
 
 fn imagemagick_identify(file: &std::path::Path) -> bool {
-    Command::new("magick")
+    if Command::new("magick")
         .arg("identify")
+        .arg(file)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    Command::new("identify")
         .arg(file)
         .output()
         .map(|o| o.status.success())
@@ -125,6 +141,9 @@ mod exiftool_png {
 
     #[test]
     fn extracts_copyright() {
+        if !tool_available("exiftool") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
@@ -136,6 +155,9 @@ mod exiftool_png {
 
     #[test]
     fn extracts_creator() {
+        if !tool_available("exiftool") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
@@ -147,6 +169,9 @@ mod exiftool_png {
 
     #[test]
     fn extracts_dmi_from_xmp() {
+        if !tool_available("exiftool") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
@@ -168,6 +193,9 @@ mod exiftool_jpeg {
 
     #[test]
     fn extracts_copyright_in_comment() {
+        if !tool_available("exiftool") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.jpg");
         process_and_write(ImageOutputFormat::Jpeg, &path);
@@ -182,6 +210,9 @@ mod exiftool_jpeg {
 
     #[test]
     fn extracts_creator_in_comment() {
+        if !tool_available("exiftool") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.jpg");
         process_and_write(ImageOutputFormat::Jpeg, &path);
@@ -195,6 +226,9 @@ mod exiftool_jpeg {
 
     #[test]
     fn extracts_dmi_from_xmp() {
+        if !tool_available("exiftool") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.jpg");
         process_and_write(ImageOutputFormat::Jpeg, &path);
@@ -212,6 +246,9 @@ mod exiftool_webp {
 
     #[test]
     fn extracts_rights() {
+        if !tool_available("exiftool") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -225,6 +262,9 @@ mod exiftool_webp {
 
     #[test]
     fn extracts_usage_terms() {
+        if !tool_available("exiftool") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -238,6 +278,9 @@ mod exiftool_webp {
 
     #[test]
     fn extracts_web_statement() {
+        if !tool_available("exiftool") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -251,6 +294,9 @@ mod exiftool_webp {
 
     #[test]
     fn extracts_credit() {
+        if !tool_available("exiftool") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -264,6 +310,9 @@ mod exiftool_webp {
 
     #[test]
     fn extracts_creator() {
+        if !tool_available("exiftool") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -277,6 +326,9 @@ mod exiftool_webp {
 
     #[test]
     fn extracts_dmi() {
+        if !tool_available("exiftool") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -294,6 +346,9 @@ mod xml_validation {
 
     #[test]
     fn webp_xmp_is_valid_xml() {
+        if !tool_available("xmllint") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -311,6 +366,9 @@ mod xml_validation {
 
     #[test]
     fn webp_xmp_has_required_namespaces() {
+        if !tool_available("xmllint") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -331,6 +389,9 @@ mod xml_validation {
 
     #[test]
     fn webp_xmp_has_dmi_property() {
+        if !tool_available("xmllint") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -354,6 +415,9 @@ mod imagemagick_smoke {
 
     #[test]
     fn png_identifies() {
+        if !tool_available("identify") && !tool_available("magick") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
@@ -362,6 +426,9 @@ mod imagemagick_smoke {
 
     #[test]
     fn jpeg_identifies() {
+        if !tool_available("identify") && !tool_available("magick") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.jpg");
         process_and_write(ImageOutputFormat::Jpeg, &path);
@@ -370,6 +437,9 @@ mod imagemagick_smoke {
 
     #[test]
     fn webp_identifies() {
+        if !tool_available("identify") && !tool_available("magick") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -378,17 +448,29 @@ mod imagemagick_smoke {
 
     #[test]
     fn png_dimensions_preserved() {
+        if !tool_available("identify") && !tool_available("magick") {
+            return;
+        }
         let dir = tmpdir();
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
 
-        let output = Command::new("magick")
-            .arg("identify")
-            .arg("-format")
-            .arg("%wx%h")
-            .arg(&path)
-            .output()
-            .unwrap();
+        let output = if tool_available("magick") {
+            Command::new("magick")
+                .arg("identify")
+                .arg("-format")
+                .arg("%wx%h")
+                .arg(&path)
+                .output()
+                .unwrap()
+        } else {
+            Command::new("identify")
+                .arg("-format")
+                .arg("%wx%h")
+                .arg(&path)
+                .output()
+                .unwrap()
+        };
         let dims = String::from_utf8_lossy(&output.stdout).to_string();
         assert_eq!(dims, "64x64");
     }
