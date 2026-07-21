@@ -172,10 +172,16 @@
 
 pub mod conformance;
 pub mod error;
+/// V3 payload wire format: header, parser, types, and errors.
+pub mod payload_v3;
+/// Provenance claim model for rights/provenance assertions about images.
+pub mod provenance;
 pub mod traits;
 /// Core types: protection levels, configuration, legal metadata, and verification results.
 #[allow(deprecated)]
 pub mod types;
+/// Structured verification report and builder for legal-notice and stego verification.
+pub mod verification;
 
 pub(crate) mod jpeg_transcoder;
 pub(crate) mod protected;
@@ -183,6 +189,14 @@ pub(crate) mod util;
 
 #[cfg(feature = "async")]
 pub mod async_api;
+
+#[cfg(feature = "signatures")]
+#[cfg_attr(docsrs, doc(cfg(feature = "signatures")))]
+pub mod signing;
+
+#[cfg(feature = "detached-manifest")]
+#[cfg_attr(docsrs, doc(cfg(feature = "detached-manifest")))]
+pub mod detached;
 
 pub use error::{Error, Result};
 pub use types::{AuthenticationMode, HiddenMarkerMode, ProcessingOptions};
@@ -227,9 +241,12 @@ pub use util::image::{
     load_image_from_bytes,
 };
 
+#[allow(deprecated)]
 pub use util::iscc::{
-    compute_iscc, compute_iscc_from_bytes, compute_iscc_from_bytes_with_metadata,
-    compute_iscc_with_metadata, Iscc,
+    compute_content_identifiers, compute_content_identifiers_from_bytes,
+    compute_content_identifiers_from_bytes_with_metadata,
+    compute_content_identifiers_with_metadata, compute_iscc, compute_iscc_from_bytes,
+    compute_iscc_from_bytes_with_metadata, compute_iscc_with_metadata, ContentIdentifiers, Iscc,
 };
 pub use util::seed::generate_random_seed;
 

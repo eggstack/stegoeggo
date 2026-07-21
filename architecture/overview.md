@@ -183,6 +183,22 @@ src/
 │   ├── entropy.rs            CoefficientDecoder, CoefficientEncoder (Huffman codec)
 │   └── stego_f5.rs           DctStegoF5, F5XorShiftRng (F5 DCT coefficient embedding)
 │
+├── payload_v3/                Payload v3 wire format (header, parser, types, errors)
+│
+├── provenance/                Provenance claim model
+│   ├── claim.rs              ProvenanceClaim builder and canonical serialization
+│   ├── digest.rs             Content digest computation (SHA-256)
+│   └── canonical.rs          Canonical JSON serialization
+│
+├── signing/                   Ed25519 signing (feature-gated: signatures)
+│   └── (uses ed25519-dalek)
+│
+├── detached/                  Detached signed manifests (feature-gated: detached-manifest)
+│   └── manifest.rs           DetachedManifest, ManifestBuilder, sidecar JSON
+│
+├── verification/              Structured verification report
+│   └── report.rs             VerificationReport, StegoResult, MetadataResult, SigningResult
+│
 └── util/
     ├── mod.rs                Module re-exports
     ├── image.rs              XorShiftRng, encoding
@@ -213,6 +229,11 @@ Each component has a detailed deep-dive document in `architecture/`:
 | **F5 DCT Stego** | [jpeg-stego-f5.md](jpeg-stego-f5.md) | F5-style embedding, no-zero variant, quantization table seed |
 | **Constants** | [constants.md](constants.md) | All tuning constants (STEGO_*, XORSHIFT_*, SPLITMIX64_*) |
 | **CLI** | [cli.md](cli.md) | Command-line interface, batch processing, filename collision handling |
+| **Payload v3** | [payload-v3.md](payload-v3.md) | TLV extension format, domain-separated authentication |
+| **Provenance** | [provenance.md](provenance.md) | Canonical provenance claims, digest binding, serialization |
+| **Signing** | [signing.md](signing.md) | Ed25519 signing and verification (feature-gated: signatures) |
+| **Detached Manifests** | [detached.md](detached.md) | Signed sidecar manifests for out-of-band provenance (feature-gated: detached-manifest) |
+| **Verification** | [verification.md](verification.md) | Structured verification report with per-channel sub-results |
 
 ## Key Design Decisions
 
@@ -269,6 +290,61 @@ static DEFAULT_PIPELINE: LazyLock<ProtectionPipeline> = LazyLock::new(Protection
 - With HMAC key: 24-byte header + 8-byte HMAC = 32 bytes total
 - Non-MAC mode produces 100-byte ECC-encoded payload (32 bytes V2 header × 3 replication + 4 CRC32)
 
+### Payload v3 (Release 5)
+
+Payload v3 adds TLV (Type-Length-Value) extensions with domain-separated authentication:
+
+```
+v3 Header (24 bytes)
+├── Version (1 byte, =3)
+├── Flags (1 byte)
+├── Seed (8 bytes, little-endian)
+├── Intensity (2 bytes)
+├── Timestamp (8 bytes)
+└── Extension count + reserved (4 bytes)
+
+Extensions (variable, TLV format)
+├── Type (1 byte: domain + key)
+├── Length (1 byte)
+└── Value (N bytes)
+
+Authentication
+├── Per-domain MAC keys (domain separation)
+└── Truncated HMAC-SHA256
+```
+
+Domain separation ensures cross-domain forgery is infeasible — each extension domain uses a distinct MAC key derived from the master key.
+
+### Provenance Claims (Release 5)
+
+`ProvenanceClaim` provides a canonical provenance assertion:
+
+```rust
+let claim = ProvenanceClaim::builder()
+    .with_creator("Jane Artist")
+    .with_copyright("© 2025 Jane Artist")
+    .with_source_hash(image_bytes)
+    .with_timestamp(Utc::now())
+    .build();
+```
+
+Claims are serialized using canonical JSON (sorted keys, no whitespace) for deterministic signing. The claim digest is bound to the image content via SHA-256.
+
+### Detached Manifests (Release 5)
+
+`DetachedManifest` is a signed sidecar for distributing provenance outside the image file:
+
+```
+{
+  "stegoeggo_manifest_version": 1,
+  "provenance_claim": { ... },
+  "signature": "base64-encoded Ed25519 signature",
+  "verifying_key": "base64-encoded public key"
+}
+```
+
+Manifests are independent of image format — they can be distributed alongside images via sidecar files, API responses, or database records. Verification checks the signature against the embedded claim and image digest.
+
 ### Metadata Injection Semantics
 
 Three-state control (`Option<bool>`) for metadata injection:
@@ -294,6 +370,7 @@ Three-state control (`Option<bool>`) for metadata injection:
 | `serde` | 1.0 | Serialization of context and variants |
 | `serde_json` | 1.0 | JSON serialization |
 | `subtle` | 2 | Constant-time HMAC comparison |
+| `ed25519-dalek` | 2 | Ed25519 signing (signatures feature) |
 | `tokio` | 1.0 (opt) | Async runtime for WAF/CDN integration |
 | `clap` | 4 (CLI) | Command-line argument parsing |
 | `crc32fast` | 1.4 | CRC32 for PNG chunk checksums |

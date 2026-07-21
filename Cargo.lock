@@ -1077,6 +1077,8 @@ dependencies = [
  "hex",
  "image",
  "rayon",
+ "serde_json",
+ "sha2",
  "stegoeggo",
  "tempfile",
 ]

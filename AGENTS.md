@@ -7,7 +7,7 @@
 ## Tech Stack
 
 - Rust (edition 2021, MSRV 1.87, stable channel)
-- Key crates: `image` 0.25, `jpeg-encoder` 0.7, `rayon` 1.10, `sha2`/`hmac` for crypto, `serde`/`serde_json` for serialization, `subtle` 2 (constant-time comparisons), `iscc-lib` 0.4 (ISO 24138:2024 ISCC), `getrandom` 0.2 (CSPRNG), `tokio` (optional, for async)
+- Key crates: `image` 0.25, `jpeg-encoder` 0.7, `rayon` 1.10, `sha2`/`hmac` for crypto, `serde`/`serde_json` for serialization, `subtle` 2 (constant-time comparisons), `iscc-lib` 0.4 (ISO 24138:2024 ISCC), `getrandom` 0.2 (CSPRNG), `tokio` (optional, for async), `ed25519-dalek` (optional, for signing)
 - `unicode-normalization` 0.1: Used by conformance harness for NFC normalization during field comparison
 
 ## Design Philosophy
@@ -55,6 +55,11 @@ src/
 │   ├── header.rs          # JPEG header parser
 │   ├── entropy.rs         # Huffman entropy codec
 │   └── stego_f5.rs        # F5-style DCT steganography
+├── payload_v3/            # Payload v3 wire format (header, parser, types, errors)
+├── provenance/            # Provenance claim model (claim, digest, canonical)
+├── signing/               # Ed25519 signing (feature-gated: signatures)
+├── detached/              # Detached signed manifests (feature-gated: detached-manifest)
+├── verification/          # Structured verification report
 └── util/
     ├── image.rs           # Encoding, hash
     ├── iscc.rs            # ISCC content identifiers
@@ -81,13 +86,26 @@ src/
 - `ProtectionContext` helper constructors: `::legal_notice()`, `::legal_notice_with_stego()`, `::authenticated_provenance()`, `::maximal()`
 - All struct fields on `ProtectionContext` and `StegoPayload` are private — use getter methods (e.g., `ctx.intensity()`, `ctx.seed()`)
 - `ProtectionContext` has `set_input_format()` (public) and `set_protection_level()` (crate-internal) for non-builder mutation
+- `ProvenanceClaim` — Canonical provenance assertion
+- `DetachedManifest` — Signed manifest sidecar
+- `SigningKey` / `VerifyingKey` — Ed25519 key types (signatures feature)
+- `VerificationReport` — Structured verification results
+- `PayloadV3Header` — v3 payload header
+
+## Features
+
+| Feature | Description | Default |
+|---------|-------------|---------|
+| `async` | Tokio-based async API wrappers | No |
+| `signatures` | Ed25519 signing and key management | No |
+| `detached-manifest` | Detached signed manifest sidecar support | No |
 
 ## Build & Test Commands
 
 ```bash
 cargo check                              # Compilation
 cargo test                               # All tests (718 passed, 27 ignored)
-cargo test --all-features                # Includes async tests
+cargo test --all-features                # Includes signing and detached manifest tests
 cargo clippy --all-targets -- -D warnings # Lint check
 cargo fmt --check                        # Format check
 cargo package --workspace --allow-dirty  # Package dry-run
@@ -149,7 +167,7 @@ All checks must pass. MSRV is verified by CI (Rust 1.87). Benchmarks are run via
 
 ## Architecture Documentation
 
-Architecture docs live in `architecture/` (19 files). All docs have been verified against source code.
+Architecture docs live in `architecture/` (24 files). All docs have been verified against source code.
 
 ## Validation Scripts
 
@@ -222,7 +240,7 @@ Stable exit codes: 0=pass, 1=fail, 2=config error, 3=digest mismatch, 4=coverage
 - **Spread spectrum LSB**: Each payload bit embedded across `STEGO_SPREAD_FACTOR` (=5) adjacent pixels via majority voting
 - **Large-magnitude DCT coefficient preference**: F5 sorts non-zero AC coefficients by |magnitude| descending before shuffling
 - **F5 redundancy cap**: Max redundancy is 10. Extraction tries all 10 values
-- **Payload version migration**: Current version is 2. V1 (24-byte) still supported for extraction. To add v3: bump `CURRENT_PAYLOAD_VERSION`, add to `SUPPORTED_PAYLOAD_VERSIONS`, add `parse_stego_payload_v3` arm
+- **Payload version migration**: Current version is 3. V1 (24-byte) and V2 (24-byte header + ECC/HMAC) still supported for extraction. V3 adds TLV extensions with domain-separated authentication
 - **CLI file path**: CLI binary lives at `stegoeggo-cli/src/main.rs`, not `src/bin/`
 - **CLI batch filename collisions**: Duplicate output stems get `_protected_1`, `_protected_2`, etc.
 - **CLI legal metadata flags**: `--copyright-holder`, `--creator`, `--contact`, `--rights-url`, `--usage-terms`, `--ai-constraints`, `--credit-line`, `--copyright-owner`, `--licensor-name`, `--licensor-email`, `--licensor-url`, `--content-created-at` set `LegalMetadata` fields. `--no-ai-training`, `--no-genai-training`, `--tdm-reserved` are DMI presets that also set default `ai_constraints` text. Any legal flag auto-enables legal claims (no explicit `--legal-claims` needed). `--metadata false` + legal flags → error. `--strict` exits with error if any warnings have Error severity. `--tdm-reserved` is deprecated (TDMRep deployment deferred)
@@ -253,3 +271,7 @@ Stable exit codes: 0=pass, 1=fail, 2=config error, 3=digest mismatch, 4=coverage
 - **Deprecated API surfaces**: `EvidenceProfile`, `with_dmi()`, `with_metadata_injection()`, `with_inject_legal_claims()` are deprecated. They still work but will be removed in the next major version
 - **Metadata-only fast path**: `ProtectionRequest::metadata_only()` produces same-format output without pixel/stego processing. Use this for the simplest legal-notice workflow
 - **Resolution runs once**: `resolve_request()` validates all input and produces an immutable `ResolvedProtectionPlan`. Pipeline stages consume the plan rather than re-querying mutable context
+- **Payload v3 uses TLV extensions with domain-separated authentication**: v3 payloads support arbitrary key-value extensions with per-domain MAC keys. Domain separation ensures cross-domain forgery is infeasible
+- **SigningKey does NOT implement Serialize — private keys are never serialized**: `ed25519_dalek::SigningKey` is kept out of serde. Use `to_bytes()` / `from_bytes()` for explicit key serialization
+- **ISCC API names are deprecated — use compute_content_identifiers() instead**: `compute_iscc()` is renamed to `compute_content_identifiers()`. The old name is deprecated
+- **VerificationReport replaces broad VerificationStatus with structured sub-results**: `VerificationReport` contains per-channel results (`StegoResult`, `MetadataResult`, `SigningResult`) instead of a single overall status

@@ -2011,7 +2011,7 @@ impl VerificationResult {
 ///     VerificationStatus::NotFound => println!("No protection found"),
 /// }
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum VerificationStatus {
     /// Protection data found and integrity check passed.
     Verified,
@@ -2071,7 +2071,7 @@ impl From<VerificationStatus> for Option<bool> {
 /// - [`MetadataNoticeAndAuthenticatedProvenance`](Self::MetadataNoticeAndAuthenticatedProvenance):
 ///   Legal-notice metadata plus a steganographic payload verified with
 ///   HMAC-SHA256 using the caller's MAC key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub enum EvidenceStrength {
     /// No rights-reservation metadata found in the image.
@@ -2103,7 +2103,7 @@ impl std::fmt::Display for EvidenceStrength {
 ///
 /// Each variant corresponds to a specific metadata location or steganographic
 /// technique used by the protection pipeline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub enum EvidenceChannel {
     /// PNG tEXt/iTXt text chunk containing a key-value pair.

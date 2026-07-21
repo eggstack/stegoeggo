@@ -9,9 +9,21 @@ use image::DynamicImage;
 /// with the standard [ISCC specification](https://iscc-project.github.io/) —
 /// use these identifiers for in-application deduplication and provenance
 /// tracking, not for cross-ISCC-tool interoperability.
+#[deprecated(
+    since = "0.4.0",
+    note = "Renamed to `ContentIdentifiers` for clarity. This is not a standard ISCC identifier."
+)]
+pub type Iscc = ContentIdentifiers;
+
+/// Content identifiers computed from an image's perceptual and data characteristics.
+///
+/// Uses a custom DCT-based perceptual hash. **Not guaranteed to be interoperable**
+/// with the standard [ISCC specification](https://iscc-project.github.io/) —
+/// use these identifiers for in-application deduplication and provenance
+/// tracking, not for cross-ISCC-tool interoperability.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[must_use]
-pub struct Iscc {
+pub struct ContentIdentifiers {
     meta: Option<String>,
     content: String,
     data: String,
@@ -19,24 +31,24 @@ pub struct Iscc {
     full: String,
 }
 
-impl Iscc {
-    /// Computes an ISCC identifier from an image.
+impl ContentIdentifiers {
+    /// Computes content identifiers from an image.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Iscc`] if the underlying ISCC computation fails.
+    /// Returns [`Error::Iscc`] if the underlying computation fails.
     pub fn from_image(img: &DynamicImage) -> Result<Self> {
         Self::from_image_with_metadata(img, None)
     }
 
-    /// Computes an ISCC identifier from an image with optional legal metadata.
+    /// Computes content identifiers from an image with optional legal metadata.
     ///
     /// When `legal_metadata` is `Some`, a meta code is generated for
     /// full ISO 24138:2024 compliance.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Iscc`] if the underlying ISCC computation fails.
+    /// Returns [`Error::Iscc`] if the underlying computation fails.
     pub fn from_image_with_metadata(
         img: &DynamicImage,
         legal_metadata: Option<&LegalMetadata>,
@@ -174,38 +186,89 @@ fn extract_grayscale_pixels(img: &DynamicImage) -> Vec<u8> {
     gray.into_raw()
 }
 
-/// Compute an ISCC identifier from a `DynamicImage`.
-pub fn compute_iscc(img: &DynamicImage) -> Result<Iscc> {
-    Iscc::from_image(img)
+/// Compute content identifiers from a `DynamicImage`.
+#[deprecated(
+    since = "0.4.0",
+    note = "Renamed to `compute_content_identifiers()` for clarity."
+)]
+pub fn compute_iscc(img: &DynamicImage) -> Result<ContentIdentifiers> {
+    compute_content_identifiers(img)
 }
 
-/// Compute an ISCC identifier from a `DynamicImage` with legal metadata.
+/// Compute content identifiers from a `DynamicImage` with legal metadata.
 ///
 /// Generates a meta code from the provided legal metadata for full ISO 24138:2024 compliance.
+#[deprecated(
+    since = "0.4.0",
+    note = "Renamed to `compute_content_identifiers_with_metadata()` for clarity."
+)]
 pub fn compute_iscc_with_metadata(
     img: &DynamicImage,
     legal_metadata: &LegalMetadata,
-) -> Result<Iscc> {
-    Iscc::from_image_with_metadata(img, Some(legal_metadata))
+) -> Result<ContentIdentifiers> {
+    compute_content_identifiers_with_metadata(img, legal_metadata)
 }
 
-/// Compute an ISCC identifier from raw image bytes.
+/// Compute content identifiers from raw image bytes.
 ///
 /// Returns `None` if the bytes cannot be decoded as an image.
-pub fn compute_iscc_from_bytes(bytes: &[u8]) -> Option<Result<Iscc>> {
-    let img = image::load_from_memory(bytes).ok()?;
-    Some(Iscc::from_image(&img))
+#[deprecated(
+    since = "0.4.0",
+    note = "Renamed to `compute_content_identifiers_from_bytes()` for clarity."
+)]
+pub fn compute_iscc_from_bytes(bytes: &[u8]) -> Option<Result<ContentIdentifiers>> {
+    compute_content_identifiers_from_bytes(bytes)
 }
 
-/// Compute an ISCC identifier from raw image bytes with legal metadata.
+/// Compute content identifiers from raw image bytes with legal metadata.
 ///
 /// Returns `None` if the bytes cannot be decoded as an image.
+#[deprecated(
+    since = "0.4.0",
+    note = "Renamed to `compute_content_identifiers_from_bytes_with_metadata()` for clarity."
+)]
 pub fn compute_iscc_from_bytes_with_metadata(
     bytes: &[u8],
     legal_metadata: &LegalMetadata,
-) -> Option<Result<Iscc>> {
+) -> Option<Result<ContentIdentifiers>> {
+    compute_content_identifiers_from_bytes_with_metadata(bytes, legal_metadata)
+}
+
+/// Compute content identifiers from a `DynamicImage`.
+pub fn compute_content_identifiers(img: &DynamicImage) -> Result<ContentIdentifiers> {
+    ContentIdentifiers::from_image(img)
+}
+
+/// Compute content identifiers from a `DynamicImage` with legal metadata.
+///
+/// Generates a meta code from the provided legal metadata for full ISO 24138:2024 compliance.
+pub fn compute_content_identifiers_with_metadata(
+    img: &DynamicImage,
+    legal_metadata: &LegalMetadata,
+) -> Result<ContentIdentifiers> {
+    ContentIdentifiers::from_image_with_metadata(img, Some(legal_metadata))
+}
+
+/// Compute content identifiers from raw image bytes.
+///
+/// Returns `None` if the bytes cannot be decoded as an image.
+pub fn compute_content_identifiers_from_bytes(bytes: &[u8]) -> Option<Result<ContentIdentifiers>> {
     let img = image::load_from_memory(bytes).ok()?;
-    Some(Iscc::from_image_with_metadata(&img, Some(legal_metadata)))
+    Some(ContentIdentifiers::from_image(&img))
+}
+
+/// Compute content identifiers from raw image bytes with legal metadata.
+///
+/// Returns `None` if the bytes cannot be decoded as an image.
+pub fn compute_content_identifiers_from_bytes_with_metadata(
+    bytes: &[u8],
+    legal_metadata: &LegalMetadata,
+) -> Option<Result<ContentIdentifiers>> {
+    let img = image::load_from_memory(bytes).ok()?;
+    Some(ContentIdentifiers::from_image_with_metadata(
+        &img,
+        Some(legal_metadata),
+    ))
 }
 
 #[cfg(test)]
@@ -213,96 +276,96 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_iscc_deterministic() {
+    fn test_content_identifiers_deterministic() {
         let img = DynamicImage::new_rgb8(100, 100);
-        let iscc1 = Iscc::from_image(&img).unwrap();
-        let iscc2 = Iscc::from_image(&img).unwrap();
+        let ci1 = ContentIdentifiers::from_image(&img).unwrap();
+        let ci2 = ContentIdentifiers::from_image(&img).unwrap();
 
-        assert_eq!(iscc1.content(), iscc2.content());
-        assert_eq!(iscc1.full(), iscc2.full());
+        assert_eq!(ci1.content(), ci2.content());
+        assert_eq!(ci1.full(), ci2.full());
     }
 
     #[test]
-    fn test_iscc_starts_with_ee_prefix() {
+    fn test_content_identifiers_starts_with_ee_prefix() {
         let img = DynamicImage::new_rgb8(100, 100);
-        let iscc = Iscc::from_image(&img).unwrap();
+        let ci = ContentIdentifiers::from_image(&img).unwrap();
 
         assert!(
-            iscc.content().starts_with("EE"),
+            ci.content().starts_with("EE"),
             "content code should start with EE (CONTENT-IMAGE prefix per ISO 24138:2024), got: {}",
-            iscc.content()
+            ci.content()
         );
     }
 
     #[test]
-    fn test_iscc_with_metadata_includes_meta_code() {
+    fn test_content_identifiers_with_metadata_includes_meta_code() {
         use crate::types::LegalMetadata;
 
         let img = DynamicImage::new_rgb8(100, 100);
         let legal = LegalMetadata::new()
             .with_copyright_holder("Test Author")
             .with_usage_terms("CC BY 4.0");
-        let iscc = Iscc::from_image_with_metadata(&img, Some(&legal)).unwrap();
+        let ci = ContentIdentifiers::from_image_with_metadata(&img, Some(&legal)).unwrap();
 
-        assert!(iscc.meta_code().is_some(), "meta code should be present");
-        let meta = iscc.meta_code().unwrap();
+        assert!(ci.meta_code().is_some(), "meta code should be present");
+        let meta = ci.meta_code().unwrap();
         assert!(
             meta.starts_with("AA"),
             "meta code should start with AA (META prefix), got: {}",
             meta
         );
         assert!(
-            iscc.full().starts_with("ISCC:AA"),
+            ci.full().starts_with("ISCC:AA"),
             "full URI should start with ISCC:AA when meta is present, got: {}",
-            iscc.full()
+            ci.full()
         );
         assert!(
-            iscc.full().contains('+'),
+            ci.full().contains('+'),
             "full URI should contain + separators"
         );
     }
 
     #[test]
-    fn test_iscc_without_metadata_no_meta_code() {
+    fn test_content_identifiers_without_metadata_no_meta_code() {
         let img = DynamicImage::new_rgb8(100, 100);
-        let iscc = Iscc::from_image(&img).unwrap();
+        let ci = ContentIdentifiers::from_image(&img).unwrap();
 
-        assert!(iscc.meta_code().is_none());
+        assert!(ci.meta_code().is_none());
     }
 
     #[test]
     fn test_meta_code_getter() {
         let img = DynamicImage::new_rgb8(100, 100);
-        let iscc = Iscc::from_image(&img).unwrap();
-        assert!(iscc.meta_code().is_none());
+        let ci = ContentIdentifiers::from_image(&img).unwrap();
+        assert!(ci.meta_code().is_none());
 
         let legal = LegalMetadata::new().with_copyright_holder("Author");
-        let iscc = Iscc::from_image_with_metadata(&img, Some(&legal)).unwrap();
-        assert!(iscc.meta_code().is_some());
+        let ci = ContentIdentifiers::from_image_with_metadata(&img, Some(&legal)).unwrap();
+        assert!(ci.meta_code().is_some());
     }
 
     #[test]
-    fn test_compute_iscc_returns_result() {
+    fn test_compute_content_identifiers_returns_result() {
         let img = DynamicImage::new_rgb8(100, 100);
-        let iscc = compute_iscc(&img).unwrap();
-        assert!(!iscc.full().is_empty());
+        let ci = compute_content_identifiers(&img).unwrap();
+        assert!(!ci.full().is_empty());
     }
 
     #[test]
-    fn test_compute_iscc_from_bytes_returns_option_of_result() {
+    fn test_compute_content_identifiers_from_bytes_returns_option_of_result() {
         let img = DynamicImage::new_rgb8(100, 100);
         let bytes = crate::util::image::encode_image(&img, image::ImageFormat::Png).unwrap();
-        let result = compute_iscc_from_bytes(&bytes).unwrap();
+        let result = compute_content_identifiers_from_bytes(&bytes).unwrap();
         assert!(result.is_ok());
     }
 
     #[test]
-    fn test_iscc_field_getters() {
+    fn test_content_identifiers_field_getters() {
         let img = DynamicImage::new_rgb8(100, 100);
-        let iscc = Iscc::from_image(&img).unwrap();
-        assert!(!iscc.data().is_empty());
-        assert!(!iscc.instance().is_empty());
-        assert_eq!(iscc.data(), iscc.instance());
-        assert!(!iscc.content_bytes().is_empty());
+        let ci = ContentIdentifiers::from_image(&img).unwrap();
+        assert!(!ci.data().is_empty());
+        assert!(!ci.instance().is_empty());
+        assert_eq!(ci.data(), ci.instance());
+        assert!(!ci.content_bytes().is_empty());
     }
 }

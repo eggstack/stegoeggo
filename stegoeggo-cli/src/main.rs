@@ -1,4 +1,4 @@
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -210,6 +210,49 @@ struct Args {
 
     #[arg(long, help = "Dry run: show resolved plan without processing")]
     dry_run: bool,
+
+    #[cfg(feature = "signatures")]
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    #[cfg(feature = "signatures")]
+    #[command(about = "Generate a new Ed25519 key pair")]
+    Keygen {
+        #[arg(long, default_value = ".", help = "Directory to write key files")]
+        output_dir: PathBuf,
+
+        #[arg(long, help = "Optional key identifier label")]
+        key_id: Option<String>,
+    },
+
+    #[cfg(feature = "signatures")]
+    #[command(about = "Sign a detached manifest")]
+    Sign {
+        #[arg(long, help = "Path to the detached manifest JSON")]
+        manifest: PathBuf,
+
+        #[arg(long, help = "Path to the private key file")]
+        key: PathBuf,
+
+        #[arg(long, help = "Output file (default: overwrite manifest)")]
+        output: Option<PathBuf>,
+    },
+
+    #[cfg(feature = "signatures")]
+    #[command(about = "Verify a detached manifest")]
+    VerifyManifest {
+        #[arg(long, help = "Path to the detached manifest JSON")]
+        manifest: PathBuf,
+
+        #[arg(long, help = "Path to the image file")]
+        image: PathBuf,
+
+        #[arg(long, help = "Path to public key file for signature verification")]
+        key: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -588,8 +631,246 @@ fn build_legal_metadata(args: &Args) -> (Option<stegoeggo::LegalMetadata>, Optio
     (Some(meta), dmi_override)
 }
 
+#[cfg(feature = "signatures")]
+fn handle_keygen(
+    output_dir: &PathBuf,
+    key_id: &Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use stegoeggo::signing::SigningKey;
+
+    let key = SigningKey::generate();
+    let verifying_key = key.verifying_key();
+
+    let key_id_hex = key_id
+        .as_deref()
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| hex::encode(key.key_id()));
+
+    let private_path = output_dir.join("key_private.pem");
+    let public_path = output_dir.join("key_public.pem");
+
+    fs::create_dir_all(output_dir)?;
+
+    let private_pem = format!(
+        "-----BEGIN STEGOEGGO PRIVATE KEY-----\nkey_id:{}\n{}\n-----END STEGOEGGO PRIVATE KEY-----\n",
+        key_id_hex,
+        hex::encode(key.key_bytes())
+    );
+    fs::write(&private_path, private_pem.as_bytes())?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&private_path, fs::Permissions::from_mode(0o600))?;
+    }
+
+    let public_pem = format!(
+        "-----BEGIN STEGOEGGO PUBLIC KEY-----\nkey_id:{}\n{}\n-----END STEGOEGGO PUBLIC KEY-----\n",
+        key_id_hex,
+        hex::encode(verifying_key.as_bytes())
+    );
+    fs::write(&public_path, public_pem.as_bytes())?;
+
+    println!("Key pair generated:");
+    println!("  Private key: {}", private_path.display());
+    println!("  Public key:  {}", public_path.display());
+    println!("  Key ID:      {}", key_id_hex);
+
+    Ok(())
+}
+
+#[cfg(feature = "signatures")]
+fn handle_sign(
+    manifest_path: &PathBuf,
+    key_path: &PathBuf,
+    output: &Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use stegoeggo::detached::{DetachedManifest, PublicKeyEntry, SignatureRecord};
+    use stegoeggo::signing::SigningKey;
+
+    let key_bytes = fs::read(key_path)?;
+    let key_str = String::from_utf8_lossy(&key_bytes);
+
+    let hex_key = extract_pem_field(&key_str, "BEGIN STEGOEGGO PRIVATE KEY")
+        .and_then(|block| {
+            let key_id = block
+                .lines()
+                .find(|l| l.starts_with("key_id:"))
+                .map(|l| l.strip_prefix("key_id:").unwrap_or("").to_string());
+            let key_hex = block
+                .lines()
+                .find(|l| !l.starts_with("key_id:"))
+                .map(String::from);
+            key_hex.map(|k| (k, key_id.unwrap_or_default()))
+        })
+        .unwrap_or_else(|| {
+            (
+                String::from_utf8_lossy(&key_bytes).trim().to_string(),
+                String::new(),
+            )
+        });
+
+    let key_bytes_vec = hex::decode(&hex_key.0)
+        .map_err(|e| format!("Invalid hex key data in {}: {}", key_path.display(), e))?;
+    if key_bytes_vec.len() != 32 {
+        return Err(format!("Private key must be 32 bytes, got {}", key_bytes_vec.len()).into());
+    }
+    let mut raw_key = [0u8; 32];
+    raw_key.copy_from_slice(&key_bytes_vec);
+
+    let signing_key = SigningKey::from_bytes(raw_key, hex_key.1.into_bytes());
+
+    let manifest_bytes = fs::read(manifest_path)?;
+    let mut manifest: DetachedManifest = serde_json::from_slice(&manifest_bytes)?;
+
+    let claim_bytes = manifest.claim.canonical_bytes();
+    let signature_bytes = signing_key.sign(&claim_bytes);
+    let signature_hex = hex::encode(&signature_bytes);
+
+    let key_id = signing_key.verifying_key().key_id().to_vec();
+
+    let sig_record = SignatureRecord {
+        algorithm: "ed25519".to_string(),
+        key_id,
+        signature: signature_hex,
+    };
+    manifest = manifest.with_signature(sig_record);
+
+    let public_key = signing_key.verifying_key();
+    let pub_entry = PublicKeyEntry {
+        key_id: public_key.key_id().to_vec(),
+        algorithm: "ed25519".to_string(),
+        key_bytes: hex::encode(public_key.as_bytes()),
+    };
+    manifest = manifest.with_public_key(pub_entry);
+
+    let signed_json = serde_json::to_string_pretty(&manifest)?;
+    let out_path = output.as_ref().unwrap_or(manifest_path);
+    fs::write(out_path, signed_json.as_bytes())?;
+
+    println!("Manifest signed: {}", out_path.display());
+    Ok(())
+}
+
+#[cfg(feature = "signatures")]
+fn handle_verify_manifest(
+    manifest_path: &PathBuf,
+    image_path: &PathBuf,
+    key_path: &Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use sha2::Digest;
+    use stegoeggo::detached::DetachedManifest;
+    use stegoeggo::signing::VerifyingKey;
+
+    let manifest_bytes = fs::read(manifest_path)?;
+    let manifest: DetachedManifest = serde_json::from_slice(&manifest_bytes)?;
+
+    println!("Manifest schema version: {}", manifest.schema_version);
+    println!("Claim ID: {}", hex::encode(&manifest.claim.claim_id));
+    println!("Instance digest: {}", manifest.claim.instance_digest);
+    println!("Format: {}", manifest.claim.format);
+    println!(
+        "Dimensions: {}x{}",
+        manifest.claim.width, manifest.claim.height
+    );
+    println!("File size: {} bytes", manifest.claim.file_size);
+    println!("Rights policy: {}", manifest.claim.rights_policy);
+    println!("Software: {}", manifest.claim.software);
+
+    let image_bytes = fs::read(image_path)?;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(&image_bytes);
+    let image_hash = hasher.finalize();
+    let image_digest = format!("sha256:{}", hex::encode(image_hash));
+
+    if image_digest == manifest.claim.instance_digest {
+        println!("\nImage digest: MATCH");
+    } else {
+        println!("\nImage digest: MISMATCH");
+        println!("  Expected: {}", manifest.claim.instance_digest);
+        println!("  Got:      {}", image_digest);
+    }
+
+    if manifest.signatures.is_empty() {
+        println!("\nSignatures: None");
+    } else {
+        println!("\nSignatures: {} total", manifest.signatures.len());
+        for (i, sig) in manifest.signatures.iter().enumerate() {
+            println!("  [{}] algorithm: {}", i, sig.algorithm);
+            println!("      key_id: {}", hex::encode(&sig.key_id));
+
+            if let Some(ref key_file) = key_path {
+                let pub_key_bytes = fs::read(key_file)?;
+                let pub_key_str = String::from_utf8_lossy(&pub_key_bytes);
+
+                let hex_pub = extract_pem_field(&pub_key_str, "BEGIN STEGOEGGO PUBLIC KEY")
+                    .and_then(|block| {
+                        block
+                            .lines()
+                            .find(|l| !l.starts_with("key_id:"))
+                            .map(String::from)
+                    })
+                    .unwrap_or_else(|| String::from_utf8_lossy(&pub_key_bytes).trim().to_string());
+
+                if let Ok(pub_bytes_vec) = hex::decode(&hex_pub) {
+                    if pub_bytes_vec.len() == 32 {
+                        let mut raw_pub = [0u8; 32];
+                        raw_pub.copy_from_slice(&pub_bytes_vec);
+                        let vk = VerifyingKey::from_bytes(raw_pub, sig.key_id.clone());
+
+                        let claim_bytes = manifest.claim.canonical_bytes();
+                        let sig_result =
+                            vk.verify(&claim_bytes, &signature_bytes_from_hex(&sig.signature));
+                        println!("      verification: {}", sig_result);
+                    } else {
+                        println!("      verification: SKIPPED (invalid public key length)");
+                    }
+                } else {
+                    println!("      verification: SKIPPED (invalid hex in public key file)");
+                }
+            } else {
+                println!("      verification: SKIPPED (no public key provided)");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "signatures")]
+fn signature_bytes_from_hex(hex_str: &str) -> Vec<u8> {
+    hex::decode(hex_str).unwrap_or_default()
+}
+
+#[cfg(feature = "signatures")]
+fn extract_pem_field(pem_str: &str, begin_tag: &str) -> Option<String> {
+    let start_marker = format!("-----{}-----", begin_tag);
+    let end_marker = start_marker.replacen("BEGIN", "END", 1);
+
+    let start = pem_str.find(&start_marker)? + start_marker.len();
+    let end = pem_str.find(&end_marker)?;
+    Some(pem_str[start..end].trim().to_string())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    #[cfg(feature = "signatures")]
+    if let Some(ref cmd) = args.command {
+        return match cmd {
+            Command::Keygen { output_dir, key_id } => handle_keygen(output_dir, key_id),
+            Command::Sign {
+                manifest,
+                key,
+                output,
+            } => handle_sign(manifest, key, output),
+            Command::VerifyManifest {
+                manifest,
+                image,
+                key,
+            } => handle_verify_manifest(manifest, image, key),
+        };
+    }
 
     if args.tdm_reserved {
         eprintln!(

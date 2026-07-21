@@ -40,6 +40,18 @@ stegoeggo embeds multiple layers of rights-reservation and AI-training restricti
 - **PLUS License Data Format** - Emits `plus:DataMining` with official PLUS LDF controlled-vocabulary URIs for machine-readable rights signals (canonical per the [PLUS License Data Format](https://www.useplus.com/) specification). Legacy `Iptc4xmpExt:DMI-*` properties are still parsed for backward compatibility but not emitted by default.
 - **ISCC** - Computes [Immutable Self-Certifying Constituent Content](https://iscc-project.github.io/) identifiers for content identification
 
+## Release 5 Features
+
+Release 5 adds cryptographic provenance, signing, and detached manifests:
+
+| Feature | Description |
+|---------|-------------|
+| **Payload v3** | TLV extension format with domain-separated authentication for future-proof metadata |
+| **Provenance Claims** | Canonical provenance assertions with digest binding and canonical serialization |
+| **Ed25519 Signing** | Cryptographic signing of protection payloads and provenance claims (`signatures` feature) |
+| **Detached Manifests** | Signed sidecar manifests for distributing provenance outside the image (`detached-manifest` feature) |
+| **Structured Verification** | `VerificationReport` with per-channel sub-results replaces the old `VerificationStatus` enum |
+
 ## Installation
 
 ### As a Library
@@ -57,6 +69,13 @@ For async support (Tokio-based WAF/CDN deployments):
 ```toml
 [dependencies]
 stegoeggo = { version = "0.2", features = ["async"] }
+```
+
+For Ed25519 signing (provenance claims, detached manifests):
+
+```toml
+[dependencies]
+stegoeggo = { version = "0.2", features = ["signatures", "detached-manifest"] }
 ```
 
 ### As a CLI Tool
@@ -226,6 +245,52 @@ let request = ProtectionRequest::from_preset(
 let (protected, report) = stegoeggo::process_request_bytes_with_report(&img_bytes, &request)?;
 println!("Metadata injected: {}", report.metadata_injected);
 println!("Stego succeeded: {}", report.stego_succeeded);
+```
+
+### Key Generation and Signing (feature: `signatures`)
+
+```rust
+use stegoeggo::signing::{SigningKey, VerifyingKey};
+
+// Generate a new signing key
+let signing_key = SigningKey::generate();
+let verifying_key: VerifyingKey = signing_key.verifying_key();
+
+// Sign a provenance claim
+let claim_bytes = b"provenance claim data";
+let signature = signing_key.sign(claim_bytes);
+
+// Verify
+assert!(verifying_key.verify(claim_bytes, &signature).is_ok());
+```
+
+### Detached Manifests (feature: `detached-manifest`)
+
+```rust
+use stegoeggo::detached::{DetachedManifest, ManifestBuilder};
+
+// Create a manifest from protected image bytes
+let manifest = ManifestBuilder::new()
+    .with_provenance(claim)
+    .with_signature(signature)
+    .build();
+
+// Serialize to JSON sidecar
+let sidecar = manifest.to_json()?;
+
+// Later, verify the sidecar against image bytes
+let report = DetachedManifest::verify(&sidecar, &image_bytes)?;
+```
+
+### VerificationReport (structured results)
+
+```rust
+use stegoeggo::verification::VerificationReport;
+
+let report: VerificationReport = stegoeggo::verify_image_bytes_detailed(&image_bytes)?;
+println!("Stego: {:?}", report.stego);
+println!("Metadata: {:?}", report.metadata);
+println!("Signing: {:?}", report.signing);
 ```
 
 ### Protection Levels
@@ -846,16 +911,18 @@ Standard protection at 512x512: 60 allocations, 5.7 MB peak.
 The library computes ISCC-**like** (Immutable Self-Certifying Constituent Content) identifiers for content identification. **Note:** these identifiers are not guaranteed to be interoperable with the standard ISCC specification — they use a custom DCT-based perceptual hash and SHA-256 instance code. They are suitable for in-application deduplication and provenance tracking, but should not be used for cross-ISCC-tool interoperability:
 
 ```rust,ignore
-use stegoeggo::{compute_iscc, Iscc};
+use stegoeggo::{compute_content_identifiers, Iscc};
 
 let img = image::open("image.png").unwrap();
-let iscc = compute_iscc(&img);
+let iscc = compute_content_identifiers(&img);
 
 println!("Content Code: {}", iscc.content);
 println!("Data Code: {}", iscc.data);
 println!("Instance Code: {}", iscc.instance);
 println!("Full ISCC: {}", iscc.full);
 ```
+
+> **Note:** `compute_iscc()` is deprecated. Use `compute_content_identifiers()` instead.
 
 The `Iscc` struct fields:
 - `meta` — optional metadata code (not set by default)

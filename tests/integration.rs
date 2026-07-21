@@ -833,15 +833,15 @@ mod utilities {
     fn test_iscc_computation() {
         let img = create_test_image(32, 32);
 
-        let iscc = stegoeggo::compute_iscc(&img).unwrap();
-        assert!(!iscc.full().is_empty(), "ISCC should be computed");
+        let ci = stegoeggo::compute_content_identifiers(&img).unwrap();
+        assert!(!ci.full().is_empty(), "ISCC should be computed");
     }
 
     #[test]
     fn test_iscc_from_bytes() {
         let img_bytes = image_to_png_bytes(&create_test_image(32, 32));
 
-        let result = stegoeggo::compute_iscc_from_bytes(&img_bytes);
+        let result = stegoeggo::compute_content_identifiers_from_bytes(&img_bytes);
         assert!(result.is_some(), "ISCC should be computed from bytes");
         let _ = result.unwrap().unwrap();
     }
