@@ -19,7 +19,7 @@
 ```bash
 cargo fmt --check                    # PASS
 cargo clippy --all-targets --all-features -- -D warnings  # PASS
-cargo test --all-features            # 718 passed, 27 ignored
+cargo test --all-features            # 748 passed, 27 ignored
 cargo test --doc                     # 12 passed, 7 ignored
 cargo package --workspace --allow-dirty  # PASS
 ```
@@ -87,7 +87,7 @@ cargo package --workspace --allow-dirty  # PASS
 ### Workstream K: Closure evidence
 - **K1**: This file
 - **K2**: plans/019-status.md created
-- **K3**: Pending clean CI run on main after Plan 021 merge. Local validation: 718 passed, 27 ignored.
+- **K3**: Pending clean CI run on main after Plan 021 merge. Local validation: 748 passed, 27 ignored.
 
 ## Remaining Risk
 

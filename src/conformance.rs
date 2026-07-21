@@ -974,7 +974,10 @@ pub fn validate_manifest(manifest: &FixtureManifest) -> Result<(), Vec<String>> 
             ));
         }
         if entry.source == "external" && entry.authoring_tool_version.is_empty() {
-            // Allow empty version for external tools but log it
+            errors.push(format!(
+                "Fixture '{}' has empty authoring_tool_version for external source",
+                entry.id
+            ));
         }
     }
 

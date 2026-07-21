@@ -27,7 +27,7 @@ Plan 019 defined a closure pass for Plans 016–018. Plan 020 implemented the co
 - **Evidence**:
   - `evaluate_manifest_expectations()` checks DMI, conflict, and legal fields
   - Typed expectations (`DecodeExpectation`, `XmpExpectation`, `ExtractionExpectation`) replace `expected_malformed`
-  - 718 tests pass, 27 ignored (external tool tests run via `--ignored`)
+  - 748 tests pass, 27 ignored (external tool tests run via `--ignored`)
 
 ### NoticeVerification builder
 - **Status**: CLOSED (implemented before Plan 020)

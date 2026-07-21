@@ -1343,3 +1343,361 @@ fn comparison_url_equivalent_normalization_passes() {
         .unwrap();
     assert_ne!(url_check.severity, CheckSeverity::Fail);
 }
+
+#[test]
+fn coverage_missing_external_canonical_jpeg_fails() {
+    let manifest = FixtureManifest { entries: vec![] };
+    let mins = CoverageMinimums::default();
+    let result = conformance::check_coverage(&manifest, &mins);
+    assert!(!result.passed);
+    assert!(
+        result
+            .violations
+            .iter()
+            .any(|v| v.contains("external canonical JPEG")),
+        "Should report missing external canonical JPEG: {:?}",
+        result.violations
+    );
+}
+
+#[test]
+fn coverage_missing_external_canonical_webp_fails() {
+    let manifest = FixtureManifest { entries: vec![] };
+    let mins = CoverageMinimums::default();
+    let result = conformance::check_coverage(&manifest, &mins);
+    assert!(!result.passed);
+    assert!(
+        result
+            .violations
+            .iter()
+            .any(|v| v.contains("external canonical WebP")),
+        "Should report missing external canonical WebP: {:?}",
+        result.violations
+    );
+}
+
+#[test]
+fn coverage_generated_only_corpus_fails() {
+    let manifest = FixtureManifest {
+        entries: vec![
+            stegoeggo::conformance::FixtureEntry {
+                id: "gen_1".into(),
+                path: "a.png".into(),
+                format: "png".into(),
+                category: "canonical".into(),
+                authoring_tool: "stegoeggo".into(),
+                authoring_tool_version: "0.3.0".into(),
+                generation_command: "cargo test".into(),
+                source: "generated".into(),
+                license: "MIT".into(),
+                sha256: "a".repeat(64),
+                expected_dmi: String::new(),
+                expected_conflict: false,
+                expected_legal_fields: Default::default(),
+                expected_malformed: false,
+                expected_decode: Default::default(),
+                expected_xmp: Default::default(),
+                expected_internal: Default::default(),
+                expected_external: Default::default(),
+                required_external_fields: Vec::new(),
+                expected_preservation: Vec::new(),
+            },
+            stegoeggo::conformance::FixtureEntry {
+                id: "gen_2".into(),
+                path: "b.jpg".into(),
+                format: "jpeg".into(),
+                category: "canonical".into(),
+                authoring_tool: "stegoeggo".into(),
+                authoring_tool_version: "0.3.0".into(),
+                generation_command: "cargo test".into(),
+                source: "generated".into(),
+                license: "MIT".into(),
+                sha256: "b".repeat(64),
+                expected_dmi: String::new(),
+                expected_conflict: false,
+                expected_legal_fields: Default::default(),
+                expected_malformed: false,
+                expected_decode: Default::default(),
+                expected_xmp: Default::default(),
+                expected_internal: Default::default(),
+                expected_external: Default::default(),
+                required_external_fields: Vec::new(),
+                expected_preservation: Vec::new(),
+            },
+        ],
+    };
+    let mins = CoverageMinimums::default();
+    let result = conformance::check_coverage(&manifest, &mins);
+    assert!(!result.passed);
+    assert!(
+        result.violations.iter().any(|v| v.contains("external")),
+        "Generated-only corpus should fail external coverage: {:?}",
+        result.violations
+    );
+}
+
+#[test]
+fn digest_mismatch_detected() {
+    let manifest = FixtureManifest {
+        entries: vec![stegoeggo::conformance::FixtureEntry {
+            id: "mismatch".into(),
+            path: "test.png".into(),
+            format: "png".into(),
+            category: "canonical".into(),
+            authoring_tool: "test".into(),
+            authoring_tool_version: "1.0".into(),
+            generation_command: "test".into(),
+            source: "generated".into(),
+            license: "MIT".into(),
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            expected_dmi: String::new(),
+            expected_conflict: false,
+            expected_legal_fields: Default::default(),
+            expected_malformed: false,
+            expected_decode: Default::default(),
+            expected_xmp: Default::default(),
+            expected_internal: Default::default(),
+            expected_external: Default::default(),
+            required_external_fields: Vec::new(),
+            expected_preservation: Vec::new(),
+        }],
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.png");
+    std::fs::write(&file, make_test_image_png(8, 8)).unwrap();
+    let results = conformance::verify_fixtures(&manifest, dir.path());
+    assert_eq!(results.len(), 1);
+    assert!(
+        !results[0].matches,
+        "Digest should not match: expected {:?}, observed {:?}",
+        results[0].expected, results[0].observed
+    );
+}
+
+#[test]
+fn digest_match_detected() {
+    let file_bytes = make_test_image_png(8, 8);
+    let digest = {
+        use sha2::Digest;
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&file_bytes);
+        let result = hasher.finalize();
+        result
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>()
+    };
+    let manifest = FixtureManifest {
+        entries: vec![stegoeggo::conformance::FixtureEntry {
+            id: "match".into(),
+            path: "test.png".into(),
+            format: "png".into(),
+            category: "canonical".into(),
+            authoring_tool: "test".into(),
+            authoring_tool_version: "1.0".into(),
+            generation_command: "test".into(),
+            source: "generated".into(),
+            license: "MIT".into(),
+            sha256: digest,
+            expected_dmi: String::new(),
+            expected_conflict: false,
+            expected_legal_fields: Default::default(),
+            expected_malformed: false,
+            expected_decode: Default::default(),
+            expected_xmp: Default::default(),
+            expected_internal: Default::default(),
+            expected_external: Default::default(),
+            required_external_fields: Vec::new(),
+            expected_preservation: Vec::new(),
+        }],
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.png");
+    std::fs::write(&file, &file_bytes).unwrap();
+    let results = conformance::verify_fixtures(&manifest, dir.path());
+    assert_eq!(results.len(), 1);
+    assert!(results[0].matches);
+}
+
+#[test]
+fn dmi_mismatch_produces_fail() {
+    let internal = InternalExtraction {
+        canonical_data_mining: Some("DMI-PROHIBITED-AIMLTRAINING".into()),
+        ..Default::default()
+    };
+    let external = ExternalExtraction {
+        canonical_data_mining: Some("DMI-ALLOWED".into()),
+        ..Default::default()
+    };
+    let mut report = ConformanceReport::new("test", "png");
+    conformance::compare_extractions(&internal, &external, &mut report);
+    let dmi_check = report
+        .checks
+        .iter()
+        .find(|c| c.name == "canonical_dmi")
+        .unwrap();
+    assert_eq!(dmi_check.severity, CheckSeverity::Fail);
+    assert!(dmi_check.details.is_some());
+}
+
+#[test]
+fn no_notice_internal_with_actual_content_fails() {
+    let internal = InternalExtraction {
+        copyright_holder: Some("Unexpected content".into()),
+        ..Default::default()
+    };
+    assert!(
+        internal.has_notice_content(),
+        "Internal extraction with copyright should report notice content"
+    );
+}
+
+#[test]
+fn no_notice_external_empty_satisfies_no_notice() {
+    let external = ExternalExtraction::default();
+    assert!(
+        !external.has_notice_content(),
+        "Empty external extraction should not report notice content"
+    );
+}
+
+#[test]
+fn no_notice_external_with_content_rejects() {
+    let external = ExternalExtraction {
+        copyright: Some("Unexpected".into()),
+        ..Default::default()
+    };
+    assert!(
+        external.has_notice_content(),
+        "External extraction with copyright should report notice content"
+    );
+}
+
+#[test]
+fn invalid_provenance_empty_external_version_rejected() {
+    let manifest = FixtureManifest {
+        entries: vec![stegoeggo::conformance::FixtureEntry {
+            id: "no_version".into(),
+            path: "test.png".into(),
+            format: "png".into(),
+            category: "canonical".into(),
+            authoring_tool: "exiftool".into(),
+            authoring_tool_version: String::new(),
+            generation_command: "exiftool -TagsFromFile src.png dst.png".into(),
+            source: "external".into(),
+            license: "MIT".into(),
+            sha256: "a".repeat(64),
+            expected_dmi: String::new(),
+            expected_conflict: false,
+            expected_legal_fields: Default::default(),
+            expected_malformed: false,
+            expected_decode: Default::default(),
+            expected_xmp: Default::default(),
+            expected_internal: Default::default(),
+            expected_external: Default::default(),
+            required_external_fields: Vec::new(),
+            expected_preservation: Vec::new(),
+        }],
+    };
+    let result = conformance::validate_manifest(&manifest);
+    assert!(result.is_err(), "Should reject empty external tool version");
+    let errors = result.unwrap_err();
+    assert!(
+        errors.iter().any(|e| e.contains("authoring_tool_version")),
+        "Error should mention authoring_tool_version: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn provenance_generated_fixture_valid() {
+    let manifest = FixtureManifest {
+        entries: vec![stegoeggo::conformance::FixtureEntry {
+            id: "valid_gen".into(),
+            path: "test.png".into(),
+            format: "png".into(),
+            category: "canonical".into(),
+            authoring_tool: "stegoeggo".into(),
+            authoring_tool_version: "0.3.0".into(),
+            generation_command: "cargo test".into(),
+            source: "generated".into(),
+            license: "MIT".into(),
+            sha256: "a".repeat(64),
+            expected_dmi: String::new(),
+            expected_conflict: false,
+            expected_legal_fields: Default::default(),
+            expected_malformed: false,
+            expected_decode: Default::default(),
+            expected_xmp: Default::default(),
+            expected_internal: Default::default(),
+            expected_external: Default::default(),
+            required_external_fields: Vec::new(),
+            expected_preservation: Vec::new(),
+        }],
+    };
+    let result = conformance::validate_manifest(&manifest);
+    assert!(
+        result.is_ok(),
+        "Valid generated fixture should pass validation"
+    );
+}
+
+#[test]
+fn strict_digest_mismatch_exits_nonzero() {
+    let dir = tempfile::tempdir().unwrap();
+    let fixtures_dir = dir.path().join("fixtures");
+    std::fs::create_dir(&fixtures_dir).unwrap();
+    let file = fixtures_dir.join("test.png");
+    std::fs::write(&file, make_test_image_png(8, 8)).unwrap();
+
+    let manifest_path = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest_path,
+        r#"
+[[fixture]]
+id = "test"
+path = "test.png"
+format = "png"
+category = "canonical"
+authoring_tool = "test"
+authoring_tool_version = "1.0"
+generation_command = "test"
+source = "generated"
+license = "MIT"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+expected_dmi = ""
+expected_conflict = false
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+"#,
+    )
+    .unwrap();
+
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_stegoeggo-conformance"))
+        .arg("--fixtures")
+        .arg(&fixtures_dir)
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("--strict")
+        .output()
+        .unwrap();
+    assert_ne!(
+        result.status.code(),
+        Some(0),
+        "Strict mode with digest mismatch should exit non-zero"
+    );
+}
+
+#[test]
+fn missing_required_external_field_detected() {
+    let mut report = ConformanceReport::new("test.png", "png");
+    report.add_check(
+        "required_field_ai_constraints",
+        CheckSeverity::Fail,
+        "Required external field missing",
+    );
+    report.evaluate();
+    assert!(!report.passed);
+}
