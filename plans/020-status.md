@@ -19,7 +19,7 @@
 ```bash
 cargo fmt --check                    # PASS
 cargo clippy --all-targets --all-features -- -D warnings  # PASS
-cargo test --all-features            # 736 passed, 8 ignored
+cargo test --all-features            # 718 passed, 27 ignored
 cargo test --doc                     # 12 passed, 7 ignored
 cargo package --workspace --allow-dirty  # PASS
 ```
@@ -73,7 +73,7 @@ cargo package --workspace --allow-dirty  # PASS
 - **G2**: PASS — Search engine exception checked before gen AI before broad AI/ML. Unit test `normalize_dmi_genai_precedence` verifies.
 
 ### Workstream H: Hermetic vs external tests
-- **H1-H3**: PASS — External tool tests already `#[ignore]` in `tests/external_tools.rs`
+- **H1-H3**: PASS — External tool tests use `#[ignore = "requires external tools"]` in `tests/external_tools.rs`. Dedicated `external-integration` CI job runs them with `--ignored`. Release workflow also runs them.
 
 ### Workstream I: CI and release alignment
 - **I1**: PASS — Both workflows use same conformance command with `--manifest`
@@ -87,7 +87,7 @@ cargo package --workspace --allow-dirty  # PASS
 ### Workstream K: Closure evidence
 - **K1**: This file
 - **K2**: plans/019-status.md created
-- **K3**: Pending clean CI run on main after push
+- **K3**: Pending clean CI run on main after Plan 021 merge. Local validation: 718 passed, 27 ignored.
 
 ## Remaining Risk
 

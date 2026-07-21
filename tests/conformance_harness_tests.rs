@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use stegoeggo::conformance::{
-    self, CheckSeverity, ConformanceReport, ExternalExtraction, InternalExtraction,
+    self, CheckSeverity, ConformanceReport, ConformanceRunReport, ConformanceSummary,
+    CoverageCheckResult, CoverageMinimums, DigestCheckResult, ExternalExtraction, FixtureManifest,
+    InternalExtraction, ManifestReport, ToolReport,
 };
 use stegoeggo::{
     process_image_bytes, DmiValue, ImageOutputFormat, LegalMetadata, ProtectionContext,
@@ -229,7 +231,7 @@ fn compare_extractions_mismatched_values_produces_fail() {
         .iter()
         .find(|c| c.name == "copyright")
         .unwrap();
-    assert_eq!(copyright_check.severity, CheckSeverity::Warn);
+    assert_eq!(copyright_check.severity, CheckSeverity::Fail);
     assert!(copyright_check.details.is_some());
 }
 
@@ -391,7 +393,7 @@ fn compare_extractions_overlap_values_produces_pass() {
         .iter()
         .find(|c| c.name == "copyright")
         .unwrap();
-    assert_eq!(copyright_check.severity, CheckSeverity::Pass);
+    assert_eq!(copyright_check.severity, CheckSeverity::Fail);
 }
 
 #[test]
@@ -458,12 +460,13 @@ fn harness_json_output_is_valid() {
         "JSON report should be written even if some fixtures fail"
     );
     let json_str = std::fs::read_to_string(&json_path).unwrap();
-    let reports: Vec<ConformanceReport> = serde_json::from_str(&json_str).unwrap();
+    let run_report: ConformanceRunReport = serde_json::from_str(&json_str).unwrap();
+    assert_eq!(run_report.schema_version, 1);
     assert!(
-        !reports.is_empty(),
-        "JSON should contain at least one report"
+        !run_report.fixtures.is_empty(),
+        "JSON should contain at least one fixture report"
     );
-    for r in &reports {
+    for r in &run_report.fixtures {
         assert!(!r.fixture.is_empty());
         assert!(!r.format.is_empty());
         assert!(!r.checks.is_empty());
@@ -978,7 +981,365 @@ fn coverage_minimums_in_report() {
         .output();
     if json_path.exists() {
         let json_str = std::fs::read_to_string(&json_path).unwrap();
-        let reports: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap();
-        assert!(!reports.is_empty());
+        let run_report: ConformanceRunReport = serde_json::from_str(&json_str).unwrap();
+        assert!(!run_report.fixtures.is_empty());
     }
+}
+
+#[test]
+fn run_report_schema_version_is_positive() {
+    let report = ConformanceRunReport {
+        schema_version: 1,
+        generated_by: "test".into(),
+        crate_version: "0.3.0".into(),
+        commit_sha: None,
+        strict: true,
+        complete: true,
+        passed: true,
+        started_at: None,
+        manifest: None,
+        tools: vec![],
+        coverage_minimums: None,
+        coverage: None,
+        digest_verification: vec![],
+        summary: ConformanceSummary {
+            total: 0,
+            passed: 0,
+            failed: 0,
+            by_format: Default::default(),
+            by_category: Default::default(),
+            digest_verification: None,
+            coverage: None,
+            coverage_minimums: None,
+        },
+        incomplete_reasons: vec![],
+        fixtures: vec![],
+    };
+    let json = serde_json::to_string(&report).unwrap();
+    let parsed: ConformanceRunReport = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.schema_version, 1);
+    assert!(parsed.complete);
+    assert!(parsed.passed);
+}
+
+#[test]
+fn run_report_failure_envelope_serialization() {
+    let report = ConformanceRunReport {
+        schema_version: 1,
+        generated_by: "test".into(),
+        crate_version: "0.3.0".into(),
+        commit_sha: None,
+        strict: true,
+        complete: false,
+        passed: false,
+        started_at: None,
+        manifest: None,
+        tools: vec![],
+        coverage_minimums: None,
+        coverage: None,
+        digest_verification: vec![],
+        summary: ConformanceSummary {
+            total: 5,
+            passed: 3,
+            failed: 2,
+            by_format: Default::default(),
+            by_category: Default::default(),
+            digest_verification: None,
+            coverage: None,
+            coverage_minimums: None,
+        },
+        incomplete_reasons: vec!["missing tool: exiftool".into()],
+        fixtures: vec![],
+    };
+    let json = serde_json::to_string(&report).unwrap();
+    let parsed: ConformanceRunReport = serde_json::from_str(&json).unwrap();
+    assert!(!parsed.complete);
+    assert!(!parsed.passed);
+    assert_eq!(parsed.incomplete_reasons.len(), 1);
+}
+
+#[test]
+fn run_report_complete_false_when_tool_skipped() {
+    let report = ConformanceRunReport {
+        schema_version: 1,
+        generated_by: "test".into(),
+        crate_version: "0.3.0".into(),
+        commit_sha: None,
+        strict: false,
+        complete: false,
+        passed: false,
+        started_at: None,
+        manifest: Some(ManifestReport {
+            requested_path: "manifest.toml".into(),
+            canonical_path: None,
+            sha256: "abc123".into(),
+            entry_count: 10,
+            validation: Ok(()),
+            duplicate_count: 0,
+            unlisted_count: 0,
+            unexercised_count: 3,
+        }),
+        tools: vec![ToolReport {
+            name: "exiftool".into(),
+            path: None,
+            version: None,
+            discovered: false,
+            exercised: false,
+            invocations: 0,
+            successes: 0,
+            failures: 0,
+        }],
+        coverage_minimums: None,
+        coverage: None,
+        digest_verification: vec![],
+        summary: ConformanceSummary {
+            total: 10,
+            passed: 7,
+            failed: 0,
+            by_format: Default::default(),
+            by_category: Default::default(),
+            digest_verification: None,
+            coverage: None,
+            coverage_minimums: None,
+        },
+        incomplete_reasons: vec!["tool not found: exiftool".into()],
+        fixtures: vec![],
+    };
+    assert!(!report.complete);
+}
+
+#[test]
+fn run_report_tool_execution_counts() {
+    let tools = vec![
+        ToolReport {
+            name: "exiftool".into(),
+            path: Some("/usr/bin/exiftool".into()),
+            version: Some("13.00".into()),
+            discovered: true,
+            exercised: true,
+            invocations: 41,
+            successes: 38,
+            failures: 3,
+        },
+        ToolReport {
+            name: "xmllint".into(),
+            path: Some("/usr/bin/xmllint".into()),
+            version: Some("2.13.0".into()),
+            discovered: true,
+            exercised: true,
+            invocations: 41,
+            successes: 40,
+            failures: 1,
+        },
+    ];
+    let json = serde_json::to_string(&tools).unwrap();
+    let parsed: Vec<ToolReport> = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed[0].invocations, 41);
+    assert_eq!(parsed[0].successes, 38);
+    assert_eq!(parsed[0].failures, 3);
+    assert!(parsed[0].exercised);
+}
+
+#[test]
+fn run_report_manifest_hash_present() {
+    let manifest = ManifestReport {
+        requested_path: "tests/fixtures/conformance/manifest.toml".into(),
+        canonical_path: Some("/absolute/path/manifest.toml".into()),
+        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+        entry_count: 41,
+        validation: Ok(()),
+        duplicate_count: 0,
+        unlisted_count: 0,
+        unexercised_count: 0,
+    };
+    let json = serde_json::to_string(&manifest).unwrap();
+    let parsed: ManifestReport = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.sha256.len(), 64);
+    assert_eq!(parsed.entry_count, 41);
+}
+
+#[test]
+fn run_report_digest_verification_present() {
+    let digests = vec![DigestCheckResult {
+        fixture_id: "canonical_complete_png".into(),
+        fixture_path: "canonical/complete.png".into(),
+        expected: "ed7dda293bbd83f4957c854b762d638d9a8ccfe6dc1e6d8101b39c986fd06e89".into(),
+        observed: "ed7dda293bbd83f4957c854b762d638d9a8ccfe6dc1e6d8101b39c986fd06e89".into(),
+        matches: true,
+    }];
+    let json = serde_json::to_string(&digests).unwrap();
+    let parsed: Vec<DigestCheckResult> = serde_json::from_str(&json).unwrap();
+    assert!(parsed[0].matches);
+}
+
+#[test]
+fn run_report_coverage_failure_present() {
+    let coverage = CoverageCheckResult {
+        passed: false,
+        violations: vec!["missing external canonical png".into()],
+        observed_canonical_png: 0,
+        observed_canonical_jpeg: 1,
+        observed_canonical_webp: 1,
+        observed_legacy: 1,
+        observed_conflict: 1,
+        observed_malformed: 1,
+        observed_preservation: 1,
+        observed_external_canonical_png: 0,
+        observed_external_canonical_jpeg: 1,
+        observed_external_canonical_webp: 1,
+        observed_external_legacy: 0,
+        observed_external_alt_prefix: 0,
+        observed_external_conflict: 0,
+        observed_external_preservation: 0,
+    };
+    let json = serde_json::to_string(&coverage).unwrap();
+    let parsed: CoverageCheckResult = serde_json::from_str(&json).unwrap();
+    assert!(!parsed.passed);
+    assert_eq!(parsed.violations.len(), 1);
+    assert_eq!(parsed.observed_external_canonical_png, 0);
+}
+
+#[test]
+fn internal_extraction_has_notice_with_actual_content() {
+    let ext = InternalExtraction {
+        copyright_holder: Some("Test".into()),
+        canonical_data_mining: Some("DMI-PROHIBITED-AIMLTRAINING".into()),
+        ..Default::default()
+    };
+    assert!(ext.has_notice_content());
+}
+
+#[test]
+fn internal_extraction_has_notice_with_no_content() {
+    let ext = InternalExtraction::default();
+    assert!(!ext.has_notice_content());
+}
+
+#[test]
+fn internal_extraction_has_notice_with_only_creator() {
+    let ext = InternalExtraction {
+        creators: vec!["Alice".into()],
+        ..Default::default()
+    };
+    assert!(ext.has_notice_content());
+}
+
+#[test]
+fn external_extraction_has_notice_with_actual_content() {
+    let ext = ExternalExtraction {
+        copyright: Some("Test".into()),
+        canonical_data_mining: Some("DMI-PROHIBITED-AIMLTRAINING".into()),
+        ..Default::default()
+    };
+    assert!(ext.has_notice_content());
+}
+
+#[test]
+fn external_extraction_has_notice_with_no_content() {
+    let ext = ExternalExtraction::default();
+    assert!(!ext.has_notice_content());
+}
+
+#[test]
+fn coverage_source_aware_minimums_default_values() {
+    let mins = CoverageMinimums::default();
+    assert_eq!(mins.external_canonical_png, 1);
+    assert_eq!(mins.external_canonical_jpeg, 1);
+    assert_eq!(mins.external_canonical_webp, 1);
+    assert_eq!(mins.external_legacy_min, 1);
+    assert_eq!(mins.external_alt_prefix_min, 1);
+    assert_eq!(mins.external_conflict_min, 1);
+    assert_eq!(mins.external_preservation_min, 1);
+}
+
+#[test]
+fn coverage_missing_external_canonical_png_fails() {
+    let manifest = FixtureManifest { entries: vec![] };
+    let mins = CoverageMinimums::default();
+    let result = conformance::check_coverage(&manifest, &mins);
+    assert!(!result.passed);
+    assert!(
+        result
+            .violations
+            .iter()
+            .any(|v| v.contains("external canonical PNG")),
+        "Should report missing external canonical PNG: {:?}",
+        result.violations
+    );
+}
+
+#[test]
+fn comparison_unicode_equivalent_strings_pass() {
+    let internal = InternalExtraction {
+        copyright_holder: Some("Caf\u{00e9}".into()),
+        ..Default::default()
+    };
+    let external = ExternalExtraction {
+        copyright: Some("Caf\u{00e9}".into()),
+        ..Default::default()
+    };
+    let mut report = ConformanceReport::new("test", "png");
+    conformance::compare_extractions(&internal, &external, &mut report);
+    let copyright_check = report
+        .checks
+        .iter()
+        .find(|c| c.name == "copyright")
+        .unwrap();
+    assert_ne!(copyright_check.severity, CheckSeverity::Fail);
+}
+
+#[test]
+fn comparison_different_rights_urls_fails() {
+    let internal = InternalExtraction {
+        web_statement_of_rights: Some("https://example.com/rights".into()),
+        ..Default::default()
+    };
+    let external = ExternalExtraction {
+        rights_url: Some("https://other.com/rights".into()),
+        ..Default::default()
+    };
+    let mut report = ConformanceReport::new("test", "png");
+    conformance::compare_extractions(&internal, &external, &mut report);
+    let url_check = report
+        .checks
+        .iter()
+        .find(|c| c.name == "rights_url")
+        .unwrap();
+    assert_eq!(url_check.severity, CheckSeverity::Fail);
+}
+
+#[test]
+fn comparison_creator_array_mismatch_fails() {
+    let internal = InternalExtraction {
+        creators: vec!["Alice".into(), "Bob".into()],
+        ..Default::default()
+    };
+    let external = ExternalExtraction {
+        creators: vec!["Alice".into(), "Charlie".into()],
+        ..Default::default()
+    };
+    let mut report = ConformanceReport::new("test", "png");
+    conformance::compare_extractions(&internal, &external, &mut report);
+    let creator_check = report.checks.iter().find(|c| c.name == "creators").unwrap();
+    assert_eq!(creator_check.severity, CheckSeverity::Fail);
+}
+
+#[test]
+fn comparison_url_equivalent_normalization_passes() {
+    let internal = InternalExtraction {
+        web_statement_of_rights: Some("https://Example.com/Path".into()),
+        ..Default::default()
+    };
+    let external = ExternalExtraction {
+        rights_url: Some("https://example.com/Path".into()),
+        ..Default::default()
+    };
+    let mut report = ConformanceReport::new("test", "png");
+    conformance::compare_extractions(&internal, &external, &mut report);
+    let url_check = report
+        .checks
+        .iter()
+        .find(|c| c.name == "rights_url")
+        .unwrap();
+    assert_ne!(url_check.severity, CheckSeverity::Fail);
 }

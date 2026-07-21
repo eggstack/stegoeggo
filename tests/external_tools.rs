@@ -4,12 +4,15 @@ use stegoeggo::{
     ProtectionLevel,
 };
 
-fn tool_available(name: &str) -> bool {
-    Command::new("which")
+fn require_tool(name: &str) -> String {
+    let output = std::process::Command::new("which")
         .arg(name)
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .unwrap_or_else(|e| panic!("Failed to run 'which {name}': {e}"));
+    if !output.status.success() {
+        panic!("Required tool '{name}' not found. Install it or skip with --ignored.");
+    }
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
 fn make_test_image_png(width: u32, height: u32) -> Vec<u8> {
@@ -140,10 +143,9 @@ mod exiftool_png {
     use super::*;
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn extracts_copyright() {
-        if !tool_available("exiftool") {
-            return;
-        }
+        require_tool("exiftool");
         let dir = tmpdir();
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
@@ -154,10 +156,9 @@ mod exiftool_png {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn extracts_creator() {
-        if !tool_available("exiftool") {
-            return;
-        }
+        require_tool("exiftool");
         let dir = tmpdir();
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
@@ -168,10 +169,9 @@ mod exiftool_png {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn extracts_dmi_from_xmp() {
-        if !tool_available("exiftool") {
-            return;
-        }
+        require_tool("exiftool");
         let dir = tmpdir();
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
@@ -192,10 +192,9 @@ mod exiftool_jpeg {
     use super::*;
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn extracts_copyright_in_comment() {
-        if !tool_available("exiftool") {
-            return;
-        }
+        require_tool("exiftool");
         let dir = tmpdir();
         let path = dir.path().join("test.jpg");
         process_and_write(ImageOutputFormat::Jpeg, &path);
@@ -209,10 +208,9 @@ mod exiftool_jpeg {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn extracts_creator_in_comment() {
-        if !tool_available("exiftool") {
-            return;
-        }
+        require_tool("exiftool");
         let dir = tmpdir();
         let path = dir.path().join("test.jpg");
         process_and_write(ImageOutputFormat::Jpeg, &path);
@@ -225,10 +223,9 @@ mod exiftool_jpeg {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn extracts_dmi_from_xmp() {
-        if !tool_available("exiftool") {
-            return;
-        }
+        require_tool("exiftool");
         let dir = tmpdir();
         let path = dir.path().join("test.jpg");
         process_and_write(ImageOutputFormat::Jpeg, &path);
@@ -245,10 +242,9 @@ mod exiftool_webp {
     use super::*;
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn extracts_rights() {
-        if !tool_available("exiftool") {
-            return;
-        }
+        require_tool("exiftool");
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -261,10 +257,9 @@ mod exiftool_webp {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn extracts_usage_terms() {
-        if !tool_available("exiftool") {
-            return;
-        }
+        require_tool("exiftool");
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -277,10 +272,9 @@ mod exiftool_webp {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn extracts_web_statement() {
-        if !tool_available("exiftool") {
-            return;
-        }
+        require_tool("exiftool");
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -293,10 +287,9 @@ mod exiftool_webp {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn extracts_credit() {
-        if !tool_available("exiftool") {
-            return;
-        }
+        require_tool("exiftool");
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -309,10 +302,9 @@ mod exiftool_webp {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn extracts_creator() {
-        if !tool_available("exiftool") {
-            return;
-        }
+        require_tool("exiftool");
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -325,10 +317,9 @@ mod exiftool_webp {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn extracts_dmi() {
-        if !tool_available("exiftool") {
-            return;
-        }
+        require_tool("exiftool");
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -345,10 +336,9 @@ mod xml_validation {
     use super::*;
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn webp_xmp_is_valid_xml() {
-        if !tool_available("xmllint") {
-            return;
-        }
+        require_tool("xmllint");
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -365,10 +355,9 @@ mod xml_validation {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn webp_xmp_has_required_namespaces() {
-        if !tool_available("xmllint") {
-            return;
-        }
+        require_tool("xmllint");
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -388,10 +377,9 @@ mod xml_validation {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn webp_xmp_has_dmi_property() {
-        if !tool_available("xmllint") {
-            return;
-        }
+        require_tool("xmllint");
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -414,10 +402,9 @@ mod imagemagick_smoke {
     use super::*;
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn png_identifies() {
-        if !tool_available("identify") && !tool_available("magick") {
-            return;
-        }
+        require_tool("identify");
         let dir = tmpdir();
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
@@ -425,10 +412,9 @@ mod imagemagick_smoke {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn jpeg_identifies() {
-        if !tool_available("identify") && !tool_available("magick") {
-            return;
-        }
+        require_tool("identify");
         let dir = tmpdir();
         let path = dir.path().join("test.jpg");
         process_and_write(ImageOutputFormat::Jpeg, &path);
@@ -436,10 +422,9 @@ mod imagemagick_smoke {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn webp_identifies() {
-        if !tool_available("identify") && !tool_available("magick") {
-            return;
-        }
+        require_tool("identify");
         let dir = tmpdir();
         let path = dir.path().join("test.webp");
         process_and_write(ImageOutputFormat::WebP, &path);
@@ -447,30 +432,19 @@ mod imagemagick_smoke {
     }
 
     #[test]
+    #[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]
     fn png_dimensions_preserved() {
-        if !tool_available("identify") && !tool_available("magick") {
-            return;
-        }
+        require_tool("identify");
         let dir = tmpdir();
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
 
-        let output = if tool_available("magick") {
-            Command::new("magick")
-                .arg("identify")
-                .arg("-format")
-                .arg("%wx%h")
-                .arg(&path)
-                .output()
-                .unwrap()
-        } else {
-            Command::new("identify")
-                .arg("-format")
-                .arg("%wx%h")
-                .arg(&path)
-                .output()
-                .unwrap()
-        };
+        let output = Command::new("identify")
+            .arg("-format")
+            .arg("%wx%h")
+            .arg(&path)
+            .output()
+            .unwrap();
         let dims = String::from_utf8_lossy(&output.stdout).to_string();
         assert_eq!(dims, "64x64");
     }

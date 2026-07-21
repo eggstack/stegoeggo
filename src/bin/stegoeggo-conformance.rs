@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use stegoeggo::conformance::{
-    self, CheckSeverity, ConformanceReport, ConformanceSummary, CoverageCheckResult,
-    DecodeExpectation, DigestCheckResult, ExternalExtraction, ExtractionExpectation,
-    InternalExtraction, XmpExpectation,
+    self, CheckSeverity, ConformanceReport, ConformanceRunReport, ConformanceSummary,
+    CoverageCheckResult, DecodeExpectation, DigestCheckResult, ExternalExtraction,
+    ExtractionExpectation, InternalExtraction, ManifestReport, ToolReport, XmpExpectation,
 };
 
 #[allow(dead_code)]
@@ -620,6 +620,10 @@ pub struct HarnessResult {
     pub digest_results: Option<Vec<DigestCheckResult>>,
     pub coverage: Option<CoverageCheckResult>,
     pub coverage_minimums: Option<conformance::CoverageMinimums>,
+    pub tools: Vec<ToolReport>,
+    pub manifest_report: Option<ManifestReport>,
+    pub incomplete_reasons: Vec<String>,
+    pub strict: bool,
 }
 
 fn evaluate_manifest_expectations(
@@ -754,29 +758,101 @@ fn evaluate_manifest_expectations(
     );
 }
 
+struct ToolState {
+    name: String,
+    path: Option<PathBuf>,
+    version: Option<String>,
+    discovered: bool,
+    exercised: bool,
+    invocations: u32,
+    successes: u32,
+    failures: u32,
+}
+
+impl ToolState {
+    fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            path: None,
+            version: None,
+            discovered: false,
+            exercised: false,
+            invocations: 0,
+            successes: 0,
+            failures: 0,
+        }
+    }
+
+    fn record_invocation(&mut self, success: bool) {
+        self.exercised = true;
+        self.invocations += 1;
+        if success {
+            self.successes += 1;
+        } else {
+            self.failures += 1;
+        }
+    }
+
+    fn to_report(&self) -> ToolReport {
+        ToolReport {
+            name: self.name.clone(),
+            path: self.path.as_ref().map(|p| p.display().to_string()),
+            version: self.version.clone(),
+            discovered: self.discovered,
+            exercised: self.exercised,
+            invocations: self.invocations,
+            successes: self.successes,
+            failures: self.failures,
+        }
+    }
+}
+
 pub fn run_harness(
     fixtures_dir: &Path,
     strict: bool,
-    json_path: Option<&Path>,
+    _json_path: Option<&Path>,
     format_filter: &Option<String>,
     manifest_path: Option<&Path>,
 ) -> HarnessResult {
-    let exiftool = match find_exiftool() {
-        Some(et) => et,
-        None => {
-            if strict {
-                eprintln!("Error: exiftool required in strict mode but not found");
-                std::process::exit(EXIT_CONFIG);
-            }
-            eprintln!("Warning: exiftool not found, skipping external validation");
-            return HarnessResult {
-                reports: Vec::new(),
-                digest_results: None,
-                coverage: None,
-                coverage_minimums: None,
-            };
+    let mut exiftool_state = ToolState::new("exiftool");
+    let mut xmllint_state = ToolState::new("xmllint");
+    let mut imagemagick_state = ToolState::new("imagemagick");
+    let mut vips_state = ToolState::new("libvips");
+
+    if let Some(path) = find_exiftool() {
+        exiftool_state.discovered = true;
+        exiftool_state.path = Some(path.clone());
+        exiftool_state.version = exiftool_version(&path);
+    }
+
+    xmllint_state.discovered = Command::new("xmllint").arg("--version").output().is_ok();
+    if xmllint_state.discovered {
+        xmllint_state.version = xmllint_version();
+        xmllint_state.path = Some(PathBuf::from("xmllint"));
+    }
+
+    if let Some(path) = find_imagemagick() {
+        imagemagick_state.discovered = true;
+        imagemagick_state.path = Some(path);
+        imagemagick_state.version = imagemagick_version();
+    }
+
+    if let Some(path) = find_vipsheader() {
+        vips_state.discovered = true;
+        vips_state.path = Some(path);
+        vips_state.version = libvips_version();
+    }
+
+    let mut incomplete_reasons = Vec::new();
+
+    if !exiftool_state.discovered {
+        if strict {
+            eprintln!("Error: exiftool required in strict mode but not found");
+            std::process::exit(EXIT_CONFIG);
         }
-    };
+        incomplete_reasons.push("exiftool not found".to_string());
+        eprintln!("Warning: exiftool not found, skipping external validation");
+    }
 
     if strict && manifest_path.is_none() {
         eprintln!("Error: --manifest required in strict mode");
@@ -791,6 +867,10 @@ pub fn run_harness(
             );
             std::process::exit(EXIT_CONFIG);
         }
+        incomplete_reasons.push(format!(
+            "fixtures directory not found at {}",
+            fixtures_dir.display()
+        ));
         eprintln!(
             "Warning: fixtures directory not found at {}",
             fixtures_dir.display()
@@ -800,6 +880,15 @@ pub fn run_harness(
             digest_results: None,
             coverage: None,
             coverage_minimums: None,
+            tools: vec![
+                exiftool_state.to_report(),
+                xmllint_state.to_report(),
+                imagemagick_state.to_report(),
+                vips_state.to_report(),
+            ],
+            manifest_report: None,
+            incomplete_reasons,
+            strict,
         };
     }
 
@@ -815,39 +904,69 @@ pub fn run_harness(
             );
             std::process::exit(EXIT_CONFIG);
         }
+        incomplete_reasons.push(format!(
+            "no fixture images found in {}",
+            fixtures_dir.display()
+        ));
         eprintln!("No fixture images found in {}", fixtures_dir.display());
         return HarnessResult {
             reports,
             digest_results: None,
             coverage: None,
             coverage_minimums: None,
+            tools: vec![
+                exiftool_state.to_report(),
+                xmllint_state.to_report(),
+                imagemagick_state.to_report(),
+                vips_state.to_report(),
+            ],
+            manifest_report: None,
+            incomplete_reasons,
+            strict,
         };
     }
 
+    let mut manifest_report = None;
     let manifest = if let Some(mpath) = manifest_path {
+        let sha256 = conformance::FixtureManifest::compute_sha256(mpath).unwrap_or_default();
         match conformance::load_manifest(mpath) {
             Ok(m) => {
                 if strict && m.entries.is_empty() {
                     eprintln!("Error: manifest contains no entries");
                     std::process::exit(EXIT_CONFIG);
                 }
-                match conformance::validate_manifest(&m) {
-                    Ok(()) => {
-                        eprintln!(
-                            "Loaded and validated manifest with {} entries",
-                            m.entries.len()
-                        );
-                        Some(m)
-                    }
-                    Err(errors) => {
-                        for e in &errors {
+                let validation = conformance::validate_manifest(&m);
+                let is_valid = validation.is_ok();
+                if !is_valid {
+                    if let Err(errors) = &validation {
+                        for e in errors {
                             eprintln!("Manifest validation error: {}", e);
                         }
-                        if strict {
-                            std::process::exit(EXIT_DIGEST);
-                        }
-                        None
                     }
+                    if strict {
+                        std::process::exit(EXIT_DIGEST);
+                    }
+                }
+                let entry_count = m.entries.len();
+                let duplicate_count = {
+                    let mut ids = std::collections::HashSet::new();
+                    m.entries.iter().filter(|e| !ids.insert(&e.id)).count()
+                };
+                manifest_report = Some(ManifestReport {
+                    requested_path: mpath.display().to_string(),
+                    canonical_path: mpath.canonicalize().ok().map(|p| p.display().to_string()),
+                    sha256,
+                    entry_count,
+                    validation: validation.clone(),
+                    duplicate_count,
+                    unlisted_count: 0,
+                    unexercised_count: 0,
+                });
+                if is_valid {
+                    eprintln!("Loaded and validated manifest with {} entries", entry_count);
+                    Some(m)
+                } else {
+                    None
                 }
             }
             Err(e) => {
@@ -855,6 +974,7 @@ pub fn run_harness(
                     eprintln!("Error: {}", e);
                     std::process::exit(EXIT_DIGEST);
                 }
+                incomplete_reasons.push(format!("manifest load error: {}", e));
                 eprintln!("Warning: {}", e);
                 None
             }
@@ -980,6 +1100,9 @@ pub fn run_harness(
         if let Some(xmp) = extract_xmp_from_image(file) {
             report.xmp_valid = xmllint_validate(&xmp);
             let valid = report.xmp_valid.unwrap_or(false);
+            if report.xmp_valid.is_some() {
+                xmllint_state.record_invocation(true);
+            }
             match expected_xmp {
                 XmpExpectation::Valid => {
                     report.add_check(
@@ -1059,11 +1182,19 @@ pub fn run_harness(
                     );
                 }
                 ExtractionExpectation::NoNotice => {
-                    report.add_check(
-                        "internal_extraction",
-                        CheckSeverity::Pass,
-                        "Internal extraction returned no notice (expected)",
-                    );
+                    if report.internal.has_notice_content() {
+                        report.add_check(
+                            "internal_extraction",
+                            CheckSeverity::Fail,
+                            "Internal extraction returned notice content but NoNotice expected",
+                        );
+                    } else {
+                        report.add_check(
+                            "internal_extraction",
+                            CheckSeverity::Pass,
+                            "Internal extraction returned no notice (expected)",
+                        );
+                    }
                 }
                 ExtractionExpectation::Reject => {
                     report.add_check(
@@ -1085,8 +1216,8 @@ pub fn run_harness(
                 ExtractionExpectation::NoNotice => {
                     report.add_check(
                         "internal_extraction",
-                        CheckSeverity::Pass,
-                        "Internal extraction returned no notice (expected)",
+                        CheckSeverity::Fail,
+                        "Internal extraction failed; parser failure is not equivalent to no notice",
                     );
                 }
                 ExtractionExpectation::Reject => {
@@ -1099,9 +1230,14 @@ pub fn run_harness(
             }
         }
 
-        let external_result = external_extract_json(file, &exiftool);
+        let exiftool_path = exiftool_state
+            .path
+            .as_ref()
+            .expect("exiftool path should be set");
+        let external_result = external_extract_json(file, exiftool_path);
         let external = match &external_result {
             Ok(ext) => {
+                exiftool_state.record_invocation(true);
                 report.external.push(ext.clone());
                 match expected_external {
                     ExtractionExpectation::Success => {
@@ -1121,11 +1257,19 @@ pub fn run_harness(
                         }
                     }
                     ExtractionExpectation::NoNotice => {
-                        report.add_check(
-                            "external_extraction",
-                            CheckSeverity::Pass,
-                            "External extraction returned no notice (expected)",
-                        );
+                        if ext.has_notice_content() {
+                            report.add_check(
+                                "external_extraction",
+                                CheckSeverity::Fail,
+                                "External extraction returned notice content but NoNotice expected",
+                            );
+                        } else {
+                            report.add_check(
+                                "external_extraction",
+                                CheckSeverity::Pass,
+                                "External extraction returned no notice (expected)",
+                            );
+                        }
                     }
                     ExtractionExpectation::Reject => {
                         report.add_check(
@@ -1138,6 +1282,7 @@ pub fn run_harness(
                 ext.clone()
             }
             Err(err) => {
+                exiftool_state.record_invocation(false);
                 let fallback = ExternalExtraction {
                     tool: err.tool.clone(),
                     version: None,
@@ -1150,6 +1295,13 @@ pub fn run_harness(
                             "external_extraction",
                             CheckSeverity::Pass,
                             &format!("Expected rejection: {}", err.stderr_summary),
+                        );
+                    }
+                    ExtractionExpectation::NoNotice => {
+                        report.add_check(
+                            "external_extraction",
+                            CheckSeverity::Fail,
+                            "External extraction failed; command failure is not equivalent to no notice",
                         );
                     }
                     _ => {
@@ -1192,17 +1344,16 @@ pub fn run_harness(
         conformance::compare_extractions(&report.internal.clone(), &external, &mut report);
 
         if is_valid {
-            let has_im = find_imagemagick().is_some();
-            let has_vips = find_vipsheader().is_some();
-            if strict && !has_im {
+            if strict && !imagemagick_state.discovered {
                 report.add_check(
                     "imagemagick",
                     CheckSeverity::Fail,
                     "ImageMagick (identify) required in strict mode but not found",
                 );
-            } else if has_im {
+            } else if imagemagick_state.discovered {
                 match imagemagick_identify(file) {
                     Ok(output) => {
+                        imagemagick_state.record_invocation(true);
                         report.add_check(
                             "imagemagick",
                             CheckSeverity::Pass,
@@ -1210,6 +1361,7 @@ pub fn run_harness(
                         );
                     }
                     Err(e) => {
+                        imagemagick_state.record_invocation(false);
                         report.add_check_with_details(
                             "imagemagick",
                             CheckSeverity::Fail,
@@ -1219,15 +1371,16 @@ pub fn run_harness(
                     }
                 }
             }
-            if strict && !has_vips {
+            if strict && !vips_state.discovered {
                 report.add_check(
                     "libvips",
                     CheckSeverity::Fail,
                     "libvips (vipsheader) required in strict mode but not found",
                 );
-            } else if has_vips {
+            } else if vips_state.discovered {
                 match vipsheader_validate(file) {
                     Ok(output) => {
+                        vips_state.record_invocation(true);
                         report.add_check(
                             "libvips",
                             CheckSeverity::Pass,
@@ -1235,6 +1388,7 @@ pub fn run_harness(
                         );
                     }
                     Err(e) => {
+                        vips_state.record_invocation(false);
                         report.add_check_with_details(
                             "libvips",
                             CheckSeverity::Fail,
@@ -1285,12 +1439,6 @@ pub fn run_harness(
         }
     }
 
-    if let Some(path) = json_path {
-        let json = serde_json::to_string_pretty(&reports).unwrap();
-        std::fs::write(path, &json).unwrap();
-        eprintln!("JSON report written to {}", path.display());
-    }
-
     let mut digest_results = None;
     let mut coverage = None;
 
@@ -1305,7 +1453,7 @@ pub fn run_harness(
                     if !d.matches {
                         eprintln!(
                             "  {} expected={} actual={}",
-                            d.fixture_path, d.expected_sha256, d.actual_sha256
+                            d.fixture_path, d.expected, d.observed
                         );
                     }
                 }
@@ -1335,15 +1483,46 @@ pub fn run_harness(
         for (tool, count) in &tool_counts {
             eprintln!("  {}: {}", tool, count);
         }
+
+        if let Some(ref mut mr) = manifest_report {
+            let exercised: std::collections::HashSet<_> =
+                reports.iter().map(|r| r.fixture.as_str()).collect();
+            mr.unexercised_count = m
+                .entries
+                .iter()
+                .filter(|entry| !exercised.contains(entry.path.as_str()))
+                .count();
+        }
     }
 
     let coverage_minimums = conformance::CoverageMinimums::default();
+
+    let tools = vec![
+        exiftool_state.to_report(),
+        xmllint_state.to_report(),
+        imagemagick_state.to_report(),
+        vips_state.to_report(),
+    ];
+
+    if !exiftool_state.discovered && strict {
+        incomplete_reasons.push("exiftool not found".to_string());
+    }
+    if !imagemagick_state.discovered && strict {
+        incomplete_reasons.push("imagemagick not found".to_string());
+    }
+    if !vips_state.discovered && strict {
+        incomplete_reasons.push("libvips not found".to_string());
+    }
 
     HarnessResult {
         reports,
         digest_results,
         coverage,
         coverage_minimums: Some(coverage_minimums),
+        tools,
+        manifest_report,
+        incomplete_reasons,
+        strict,
     }
 }
 
@@ -1414,38 +1593,50 @@ fn main() {
     );
 
     let total = result.reports.len();
-    let passed = result.reports.iter().filter(|r| r.passed).count();
-    let failed = total - passed;
+    let passed_count = result.reports.iter().filter(|r| r.passed).count();
+    let failed = total - passed_count;
 
     for report in &result.reports {
         println!("{}", report.summary());
         println!();
     }
 
-    let mut summary = ConformanceSummary::from_reports(&result.reports);
-    if let Some(dr) = result.digest_results {
-        summary.with_digest_verification(dr);
-    }
-    if let Some(cov) = result.coverage {
-        summary.with_coverage(cov);
-    }
-    if let Some(mins) = result.coverage_minimums {
-        summary.with_coverage_minimums(mins);
+    let summary = ConformanceSummary::from_reports(&result.reports);
+
+    let complete = result.incomplete_reasons.is_empty();
+    let report_passed = complete && failed == 0;
+
+    let run_report = ConformanceRunReport {
+        schema_version: 1,
+        generated_by: "stegoeggo-conformance".to_string(),
+        crate_version: env!("CARGO_PKG_VERSION").to_string(),
+        commit_sha: option_env!("GIT_COMMIT_SHA").map(|s| s.to_string()),
+        strict: result.strict,
+        complete,
+        passed: report_passed,
+        started_at: None,
+        manifest: result.manifest_report,
+        tools: result.tools,
+        coverage_minimums: result.coverage_minimums.clone(),
+        coverage: result.coverage.clone(),
+        digest_verification: result.digest_results.clone().unwrap_or_default(),
+        summary,
+        incomplete_reasons: result.incomplete_reasons,
+        fixtures: result.reports,
+    };
+
+    if let Some(ref path) = json_path {
+        let json = serde_json::to_string_pretty(&run_report).unwrap();
+        std::fs::write(path, &json).unwrap();
+        eprintln!("JSON report written to {}", path.display());
     }
 
     eprintln!("=== Conformance Summary ===");
-    eprintln!("{}", summary.summary());
-
-    let et_ver = find_exiftool()
-        .and_then(|et| exiftool_version(&et))
-        .unwrap_or_else(|| "not found".to_string());
-    let xl_ver = xmllint_version().unwrap_or_else(|| "not found".to_string());
-    let im_ver = imagemagick_version().unwrap_or_else(|| "not found".to_string());
-    let vips_ver = libvips_version().unwrap_or_else(|| "not found".to_string());
-    eprintln!("ExifTool version: {}", et_ver);
-    eprintln!("xmllint version: {}", xl_ver);
-    eprintln!("ImageMagick version: {}", im_ver);
-    eprintln!("libvips version: {}", vips_ver);
+    eprintln!(
+        "Total: {}, Passed: {}, Failed: {}",
+        total, passed_count, failed
+    );
+    eprintln!("Complete: {}, Passed: {}", complete, report_passed);
 
     if failed > 0 {
         std::process::exit(EXIT_FAIL);

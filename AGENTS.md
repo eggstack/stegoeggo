@@ -8,6 +8,7 @@
 
 - Rust (edition 2021, MSRV 1.87, stable channel)
 - Key crates: `image` 0.25, `jpeg-encoder` 0.7, `rayon` 1.10, `sha2`/`hmac` for crypto, `serde`/`serde_json` for serialization, `subtle` 2 (constant-time comparisons), `iscc-lib` 0.4 (ISO 24138:2024 ISCC), `getrandom` 0.2 (CSPRNG), `tokio` (optional, for async)
+- `unicode-normalization` 0.1: Used by conformance harness for NFC normalization during field comparison
 
 ## Design Philosophy
 
@@ -75,14 +76,17 @@ src/
 
 ```bash
 cargo check                              # Compilation
-cargo test                               # All tests (724 passed, 8 ignored)
+cargo test                               # All tests (718 passed, 27 ignored)
 cargo test --all-features                # Includes async tests
 cargo clippy --all-targets -- -D warnings # Lint check
 cargo fmt --check                        # Format check
 cargo package --workspace --allow-dirty  # Package dry-run
 cargo bench                              # Criterion benchmarks
+cargo test --test external_tools -- --ignored    # External tool integration tests
 cargo build --release --bin stegoeggo-conformance  # Build conformance harness
 ./target/release/stegoeggo-conformance --fixtures tests/fixtures/conformance --manifest tests/fixtures/conformance/manifest.toml --strict  # Run conformance
+./scripts/validate-release.sh                     # Full release validation
+./scripts/validate-release.sh --skip-external     # Hermetic-only validation
 ```
 
 ## CI Pipeline
@@ -96,8 +100,9 @@ GitHub Actions (`.github/workflows/ci.yml`) runs:
 4. Security audit (`cargo audit`)
 5. License/advisory check (`cargo deny check licenses && cargo deny check advisories`)
 6. Package dry-run (`cargo package --workspace --allow-dirty`)
-7. External Conformance (`stegoeggo-conformance --strict`, uploads JSON report)
-8. Benchmarks (manual dispatch only)
+7. External integration tests (`cargo test --test external_tools -- --ignored`, installs exiftool/xmllint/imagemagick/libvips)
+8. External Conformance (`stegoeggo-conformance --strict`, uploads JSON report)
+9. Benchmarks (manual dispatch only)
 
 ## Release Gate
 
@@ -111,8 +116,15 @@ cargo test --doc
 cargo package --workspace --allow-dirty
 cargo deny check licenses
 cargo deny check advisories
+cargo test --test external_tools -- --ignored
 cargo build --release --bin stegoeggo-conformance
 ./target/release/stegoeggo-conformance --fixtures tests/fixtures/conformance --manifest tests/fixtures/conformance/manifest.toml --strict
+```
+
+Or use the centralized script:
+```bash
+./scripts/validate-release.sh                     # Full validation (hermetic + external)
+./scripts/validate-release.sh --skip-external     # Hermetic-only validation
 ```
 
 All checks must pass. MSRV is verified by CI (Rust 1.87). Benchmarks are run via manual workflow dispatch.
@@ -129,6 +141,11 @@ All checks must pass. MSRV is verified by CI (Rust 1.87). Benchmarks are run via
 
 Architecture docs live in `architecture/` (19 files). All docs have been verified against source code.
 
+## Validation Scripts
+
+- `scripts/validate-release.sh` — Centralized release validation. Runs hermetic phase (fmt, clippy, tests, package, deny) and optional external phase (external integration tests + conformance). Use `--skip-external` for environments without external tools.
+- `scripts/verify_metadata_conformance.sh` — Shell wrapper for running conformance checks.
+
 ## Fuzzing
 
 Three fuzz targets in `fuzz/`:
@@ -144,11 +161,14 @@ The independent conformance suite (`src/bin/stegoeggo-conformance.rs`) validates
 metadata interoperability against external parsers. It produces machine-readable
 JSON reports and is a mandatory CI gate.
 
-- `src/conformance.rs` — Report types (`ConformanceReport`, `CheckSeverity`, `FixtureManifest`, etc.)
+- `src/conformance.rs` — Report types (`ConformanceReport`, `ConformanceRunReport`, `CheckSeverity`, `FixtureManifest`, etc.)
 - `src/bin/stegoeggo-conformance.rs` — Harness binary (CLI + internal/external extraction)
+- `tests/conformance_harness_tests.rs` — Regression tests for report types and harness configuration
+- `tests/external_tools.rs` — External tool integration tests (`#[ignore]`, run with `--ignored`)
 - `tests/fixtures/conformance/` — Fixture taxonomy (canonical, legacy, malformed, conflicting, preservation)
 - `tests/fixtures/conformance/manifest.toml` — Machine-readable manifest with SHA-256 digests and expected values
 - `scripts/verify_metadata_conformance.sh` — Shell wrapper for operator convenience
+- `scripts/validate-release.sh` — Full release validation (hermetic + external phases)
 
 The harness performs:
 1. Fixture manifest loading and SHA-256 digest verification
@@ -157,9 +177,12 @@ The harness performs:
 4. Internal extraction via `verify_legal_notice()`
 5. External extraction via ExifTool
 6. XMP well-formedness validation via xmllint
-7. Normalized field-by-field comparison
-8. Coverage enforcement (explicit per-category and per-format minimums)
-9. JSON and human-readable output
+7. Normalized field-by-field comparison (Unicode NFC, URL canonicalization, whitespace normalization, creator array ordering)
+8. Coverage enforcement (explicit per-category and per-format minimums, including source-aware external minimums)
+9. Versioned run report envelope (`ConformanceRunReport`) with `complete`/`passed` semantics
+10. JSON and human-readable output
+
+External integration tests in `tests/external_tools.rs` are `#[ignore]` and run explicitly with `--ignored`.
 
 Required external tools: `exiftool`, `xmllint`, `imagemagick`, `libvips` (installed in both CI and release workflows)
 

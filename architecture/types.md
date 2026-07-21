@@ -284,10 +284,11 @@ pub enum WarningSeverity {
 
 ## CoverageMinimums
 
-Minimum counts required per category/format for coverage enforcement:
+Minimum counts required per category/format for coverage enforcement, including 7 source-aware external minimums:
 
 ```rust
 pub struct CoverageMinimums {
+    // Internal minimums
     pub canonical_png: usize,       // default: 1
     pub canonical_jpeg: usize,      // default: 1
     pub canonical_webp: usize,      // default: 1
@@ -298,10 +299,18 @@ pub struct CoverageMinimums {
     pub malformed_per_format: usize,// default: 1 (per format: png, jpeg, webp)
     pub preservation_min: usize,    // default: 3
     pub preservation_formats: usize,// default: 3
+    // Source-aware external minimums
+    pub external_canonical_png: usize,   // default: 1
+    pub external_canonical_jpeg: usize,  // default: 1
+    pub external_canonical_webp: usize,  // default: 1
+    pub external_legacy_min: usize,      // default: 1
+    pub external_alt_prefix_min: usize,  // default: 1
+    pub external_conflict_min: usize,    // default: 1
+    pub external_preservation_min: usize,// default: 1
 }
 ```
 
-Note: The blanket `external_coverage_pct` field has been removed. Coverage is now enforced via these explicit per-category and per-format minimums. The `malformed_per_format` field ensures malformed fixtures cover each format individually.
+Note: The blanket `external_coverage_pct` field has been removed. Coverage is now enforced via these explicit per-category and per-format minimums, including source-aware external minimums that ensure externally-authored fixtures exist across categories. The `malformed_per_format` field ensures malformed fixtures cover each format individually.
 
 ## ConformanceReport
 
@@ -314,6 +323,114 @@ core fields (`fixture`, `format`, `decode_valid`, `xmp_valid`, `internal`,
 - `source: Option<String>` — Fixture source classification, if matched
 
 These fields are populated from the manifest entry when the fixture is found in the manifest. They are skipped in JSON serialization when `None`.
+
+## ConformanceRunReport
+
+Versioned run report envelope wrapping all conformance results. Emitted as the top-level JSON object.
+
+```rust
+pub struct ConformanceRunReport {
+    pub schema_version: u32,           // Report format version (currently 1)
+    pub generated_by: String,          // Tool identifier
+    pub crate_version: String,         // Crate version
+    pub commit_sha: Option<String>,    // Git commit, if available
+    pub strict: bool,                  // Whether strict mode was enabled
+    pub complete: bool,                // Whether all required inputs/tools available
+    pub passed: bool,                  // complete && no required check failed
+    pub started_at: Option<String>,    // ISO 8601 timestamp
+    pub manifest: Option<ManifestReport>,
+    pub tools: Vec<ToolReport>,
+    pub coverage_minimums: Option<CoverageMinimums>,
+    pub coverage: Option<CoverageCheckResult>,
+    pub digest_verification: Vec<DigestCheckResult>,
+    pub summary: ConformanceSummary,
+    pub incomplete_reasons: Vec<String>,
+    pub fixtures: Vec<ConformanceReport>,
+}
+```
+
+- `complete` is false when tools are missing, fixtures are incomplete, or other required inputs are unavailable
+- `passed` requires `complete == true` and no check with `Fail` severity
+- The envelope is written on every meaningful exit path (pass, fail, coverage violation)
+
+## ToolReport
+
+Report on a single external tool used during a conformance run:
+
+```rust
+pub struct ToolReport {
+    pub name: String,            // Logical name (e.g., "exiftool")
+    pub path: Option<String>,    // Resolved executable path
+    pub version: Option<String>, // Version string
+    pub discovered: bool,        // Whether discovery succeeded
+    pub exercised: bool,         // Whether tool was run on fixtures
+    pub invocations: u32,        // Total fixture invocations
+    pub successes: u32,          // Successful invocations
+    pub failures: u32,           // Failed invocations
+}
+```
+
+## ManifestReport
+
+Report on the manifest used during a conformance run:
+
+```rust
+pub struct ManifestReport {
+    pub requested_path: String,
+    pub canonical_path: Option<String>,
+    pub sha256: String,               // SHA-256 of the manifest file
+    pub entry_count: usize,
+    pub validation: Result<(), Vec<String>>,
+    pub duplicate_count: usize,
+    pub unlisted_count: usize,        // On disk but not in manifest
+    pub unexercised_count: usize,     // In manifest but not processed
+}
+```
+
+## DigestCheckResult
+
+Result of SHA-256 digest verification for a single fixture:
+
+```rust
+pub struct DigestCheckResult {
+    pub fixture_id: String,
+    pub fixture_path: String,
+    pub expected: String,   // Expected SHA-256 hex digest
+    pub observed: String,   // Actual SHA-256 hex digest
+    pub matches: bool,
+}
+```
+
+## InternalExtraction / ExternalExtraction — has_notice_content()
+
+Both `InternalExtraction` and `ExternalExtraction` implement `has_notice_content() -> bool`. This predicate returns true when any legal/rights-notice content is present (copyright, creators, usage terms, DMI, AI constraints, TDM reservation, etc.). It is used by the harness to evaluate `ExtractionExpectation::NoNotice` — a "no notice" expectation requires successful extraction AND `has_notice_content() == false`.
+
+## CoverageCheckResult
+
+Result of coverage enforcement. Includes both pass/fail status and observed counts:
+
+```rust
+pub struct CoverageCheckResult {
+    pub passed: bool,
+    pub violations: Vec<String>,
+    // Internal observed counts
+    pub observed_canonical_png: usize,
+    pub observed_canonical_jpeg: usize,
+    pub observed_canonical_webp: usize,
+    pub observed_legacy: usize,
+    pub observed_conflict: usize,
+    pub observed_malformed: usize,
+    pub observed_preservation: usize,
+    // External source-aware observed counts
+    pub observed_external_canonical_png: usize,
+    pub observed_external_canonical_jpeg: usize,
+    pub observed_external_canonical_webp: usize,
+    pub observed_external_legacy: usize,
+    pub observed_external_alt_prefix: usize,
+    pub observed_external_conflict: usize,
+    pub observed_external_preservation: usize,
+}
+```
 
 ## validate_manifest()
 

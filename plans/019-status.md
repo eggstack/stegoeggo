@@ -2,7 +2,7 @@
 
 ## Context
 
-Plan 019 defined a closure pass for Plans 016–018. Plan 020 implemented the corrective work and produced auditable evidence.
+Plan 019 defined a closure pass for Plans 016–018. Plan 020 implemented the corrective work and produced auditable evidence. Plan 021 completed the final evidence and gating cleanup.
 
 ## Acceptance Items
 
@@ -18,7 +18,7 @@ Plan 019 defined a closure pass for Plans 016–018. Plan 020 implemented the co
 ### Fixture manifest and digests
 - **Status**: CLOSED via Plan 020
 - **Evidence**:
-  - `tests/fixtures/conformance/manifest.toml` with 37 entries
+  - `tests/fixtures/conformance/manifest.toml` with entries
   - SHA-256 digests verified by harness in strict mode
   - Manifest validation checks structure before processing
 
@@ -26,18 +26,19 @@ Plan 019 defined a closure pass for Plans 016–018. Plan 020 implemented the co
 - **Status**: CLOSED via Plan 020
 - **Evidence**:
   - `evaluate_manifest_expectations()` checks DMI, conflict, and legal fields
-  - `expected_malformed` fixtures evaluated correctly
-  - 724 tests pass (8 ignored external tool tests)
+  - Typed expectations (`DecodeExpectation`, `XmpExpectation`, `ExtractionExpectation`) replace `expected_malformed`
+  - 718 tests pass, 27 ignored (external tool tests run via `--ignored`)
 
 ### NoticeVerification builder
 - **Status**: CLOSED (implemented before Plan 020)
 - **Evidence**: `NoticeVerification::builder()` pattern available
 
 ### External-tool installation in CI
-- **Status**: CLOSED via Plan 020
+- **Status**: CLOSED via Plan 021
 - **Evidence**:
   - CI installs exiftool, xmllint, imagemagick, libvips-tools
-  - Release workflow now installs all four tools
+  - Release workflow installs all four tools
+  - Dedicated `external-integration` CI job runs `cargo test --test external_tools -- --ignored`
   - Tool versions uploaded as artifacts
 
 ### TDMRep deferral
@@ -48,21 +49,25 @@ Plan 019 defined a closure pass for Plans 016–018. Plan 020 implemented the co
   - README and architecture docs state deferral
 
 ### Conformance harness improvements
-- **Status**: CLOSED via Plan 020
+- **Status**: CLOSED via Plan 021
 - **Evidence**:
   - Strict mode fails on missing/empty/incomplete fixture suites
   - Stable exit codes (0-5)
   - Manifest validated before processing
   - All manifest entries must be exercised
   - Unknown CLI arguments are fatal
+  - `ConformanceRunReport` versioned envelope with `complete`/`passed` semantics
+  - `has_notice_content()` predicates for expected-negative evaluation
+  - Source-aware coverage minimums (7 external fields)
+  - Field-specific normalization (Unicode NFC, URL, whitespace, creator arrays)
 
 ### Documentation
-- **Status**: CLOSED via Plan 020
+- **Status**: CLOSED via Plan 021
 - **Evidence**:
-  - architecture/conformance.md updated
-  - architecture/types.md updated
+  - architecture/conformance.md updated (versioned envelope, normalization, external tests)
+  - architecture/types.md updated (ConformanceRunReport, ToolReport, ManifestReport, CoverageCheckResult)
   - README.md updated
-  - AGENTS.md updated
+  - AGENTS.md updated (external-integration job, validation scripts, unicode-normalization)
 
 ## Explicitly Deferred
 
@@ -74,8 +79,9 @@ Plan 019 defined a closure pass for Plans 016–018. Plan 020 implemented the co
 
 ## CI Evidence Required
 
-A clean CI run on main after the Plan 020 commit must show:
+A clean CI run on main after the Plan 021 merge must show:
 - All test jobs green
 - Lint job green
 - Security/deny jobs green
+- External integration job green (runs `--ignored` tests)
 - External conformance job green with `conformance-report` and `tool-versions` artifacts
