@@ -470,6 +470,12 @@ pub struct RightsNotice {
 }
 
 impl RightsNotice {
+    /// Creates a new empty `RightsNotice`.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Returns the copyright holder name, if set.
     #[must_use]
     pub fn copyright_holder(&self) -> Option<&str> {
@@ -596,6 +602,125 @@ impl RightsNotice {
             || self.licensor_url.is_some()
             || self.metadata_date.is_some()
             || self.notice_applied_at.is_some()
+    }
+
+    /// Sets the copyright holder name.
+    #[must_use]
+    pub fn with_copyright_holder(mut self, holder: impl Into<String>) -> Self {
+        self.copyright_holder = Some(holder.into());
+        self
+    }
+
+    /// Sets the contact email for IP claims.
+    #[must_use]
+    pub fn with_contact_email(mut self, email: impl Into<String>) -> Self {
+        self.contact_email = Some(email.into());
+        self
+    }
+
+    /// Sets the license URL.
+    #[must_use]
+    pub fn with_license_url(mut self, url: impl Into<String>) -> Self {
+        self.license_url = Some(url.into());
+        self
+    }
+
+    /// Sets the usage terms (e.g., "All Rights Reserved").
+    #[must_use]
+    pub fn with_usage_terms(mut self, terms: impl Into<String>) -> Self {
+        self.usage_terms = Some(terms.into());
+        self
+    }
+
+    /// Sets the creation date string.
+    #[must_use]
+    pub fn with_creation_date(mut self, date: impl Into<String>) -> Self {
+        self.creation_date = Some(date.into());
+        self
+    }
+
+    /// Sets the AI training constraints (e.g., "No AI training permitted").
+    #[must_use]
+    pub fn with_ai_constraints(mut self, constraints: impl Into<String>) -> Self {
+        self.ai_constraints = Some(constraints.into());
+        self
+    }
+
+    /// Sets the web statement of rights URL.
+    #[must_use]
+    pub fn with_web_statement_of_rights(mut self, statement: impl Into<String>) -> Self {
+        self.web_statement_of_rights = Some(statement.into());
+        self
+    }
+
+    /// Sets the creator name.
+    #[must_use]
+    pub fn with_creator(mut self, creator: impl Into<String>) -> Self {
+        self.creator = Some(creator.into());
+        self
+    }
+
+    /// Sets the credit line.
+    #[must_use]
+    pub fn with_credit_line(mut self, line: impl Into<String>) -> Self {
+        self.credit_line = Some(line.into());
+        self
+    }
+
+    /// Sets the copyright owner name.
+    #[must_use]
+    pub fn with_copyright_owner(mut self, owner: impl Into<String>) -> Self {
+        self.copyright_owner = Some(owner.into());
+        self
+    }
+
+    /// Sets the licensor name.
+    #[must_use]
+    pub fn with_licensor_name(mut self, name: impl Into<String>) -> Self {
+        self.licensor_name = Some(name.into());
+        self
+    }
+
+    /// Sets the licensor email.
+    #[must_use]
+    pub fn with_licensor_email(mut self, email: impl Into<String>) -> Self {
+        self.licensor_email = Some(email.into());
+        self
+    }
+
+    /// Sets the licensor URL.
+    #[must_use]
+    pub fn with_licensor_url(mut self, url: impl Into<String>) -> Self {
+        self.licensor_url = Some(url.into());
+        self
+    }
+
+    /// Sets the metadata date.
+    #[must_use]
+    pub fn with_metadata_date(mut self, date: impl Into<String>) -> Self {
+        self.metadata_date = Some(date.into());
+        self
+    }
+
+    /// Sets the notice-applied-at timestamp.
+    #[must_use]
+    pub fn with_notice_applied_at(mut self, timestamp: impl Into<String>) -> Self {
+        self.notice_applied_at = Some(timestamp.into());
+        self
+    }
+
+    /// Sets the DMI value.
+    #[must_use]
+    pub fn with_dmi(mut self, dmi: DmiValue) -> Self {
+        self.dmi = Some(dmi);
+        self
+    }
+
+    /// Sets the seed.
+    #[must_use]
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.seed = Some(seed);
+        self
     }
 }
 
@@ -3886,6 +4011,274 @@ mod plus_mapping_tests {
             DmiValue::ProhibitedAiMlTraining.plus_vocab_key(),
             "DMI-PROHIBITED-AIMLTRAINING"
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(deprecated)]
+mod rights_policy_tests {
+    use super::*;
+
+    #[test]
+    fn unspecified_to_dmi_returns_none() {
+        assert_eq!(RightsPolicy::Unspecified.to_dmi_value(), None);
+    }
+
+    #[test]
+    fn allowed_to_dmi() {
+        assert_eq!(
+            RightsPolicy::Allowed.to_dmi_value(),
+            Some(DmiValue::Allowed)
+        );
+    }
+
+    #[test]
+    fn prohibited_ai_ml_training_to_dmi() {
+        assert_eq!(
+            RightsPolicy::ProhibitedAiMlTraining.to_dmi_value(),
+            Some(DmiValue::ProhibitedAiMlTraining)
+        );
+    }
+
+    #[test]
+    fn prohibited_generative_ai_training_to_dmi() {
+        assert_eq!(
+            RightsPolicy::ProhibitedGenerativeAiTraining.to_dmi_value(),
+            Some(DmiValue::ProhibitedGenAiMlTraining)
+        );
+    }
+
+    #[test]
+    fn prohibited_except_search_indexing_to_dmi() {
+        assert_eq!(
+            RightsPolicy::ProhibitedExceptSearchIndexing.to_dmi_value(),
+            Some(DmiValue::ProhibitedExceptSearchEngineIndexing)
+        );
+    }
+
+    #[test]
+    fn prohibited_all_data_mining_to_dmi() {
+        assert_eq!(
+            RightsPolicy::ProhibitedAllDataMining.to_dmi_value(),
+            Some(DmiValue::Prohibited)
+        );
+    }
+
+    #[test]
+    fn prohibited_see_constraints_to_dmi() {
+        assert_eq!(
+            RightsPolicy::ProhibitedSeeConstraints.to_dmi_value(),
+            Some(DmiValue::ProhibitedSeeConstraints)
+        );
+    }
+
+    #[test]
+    fn from_dmi_unspecified() {
+        assert_eq!(
+            RightsPolicy::from_dmi_value(DmiValue::Unspecified),
+            RightsPolicy::Unspecified
+        );
+    }
+
+    #[test]
+    fn from_dmi_allowed() {
+        assert_eq!(
+            RightsPolicy::from_dmi_value(DmiValue::Allowed),
+            RightsPolicy::Allowed
+        );
+    }
+
+    #[test]
+    fn from_dmi_prohibited_ai_ml_training() {
+        assert_eq!(
+            RightsPolicy::from_dmi_value(DmiValue::ProhibitedAiMlTraining),
+            RightsPolicy::ProhibitedAiMlTraining
+        );
+    }
+
+    #[test]
+    fn from_dmi_prohibited_gen_ai_ml_training() {
+        assert_eq!(
+            RightsPolicy::from_dmi_value(DmiValue::ProhibitedGenAiMlTraining),
+            RightsPolicy::ProhibitedGenerativeAiTraining
+        );
+    }
+
+    #[test]
+    fn from_dmi_prohibited_except_search_engine_indexing() {
+        assert_eq!(
+            RightsPolicy::from_dmi_value(DmiValue::ProhibitedExceptSearchEngineIndexing),
+            RightsPolicy::ProhibitedExceptSearchIndexing
+        );
+    }
+
+    #[test]
+    fn from_dmi_prohibited() {
+        assert_eq!(
+            RightsPolicy::from_dmi_value(DmiValue::Prohibited),
+            RightsPolicy::ProhibitedAllDataMining
+        );
+    }
+
+    #[test]
+    fn from_dmi_prohibited_see_constraints() {
+        assert_eq!(
+            RightsPolicy::from_dmi_value(DmiValue::ProhibitedSeeConstraints),
+            RightsPolicy::ProhibitedSeeConstraints
+        );
+    }
+
+    #[test]
+    fn roundtrip_to_dmi_from_dmi() {
+        let policies = [
+            RightsPolicy::Allowed,
+            RightsPolicy::ProhibitedAiMlTraining,
+            RightsPolicy::ProhibitedGenerativeAiTraining,
+            RightsPolicy::ProhibitedExceptSearchIndexing,
+            RightsPolicy::ProhibitedAllDataMining,
+            RightsPolicy::ProhibitedSeeConstraints,
+        ];
+        for policy in policies {
+            let dmi = policy.to_dmi_value().unwrap();
+            let roundtripped = RightsPolicy::from_dmi_value(dmi);
+            assert_eq!(roundtripped, policy);
+        }
+    }
+
+    #[test]
+    fn roundtrip_from_dmi_to_dmi() {
+        let dmi_values = [
+            DmiValue::Allowed,
+            DmiValue::ProhibitedAiMlTraining,
+            DmiValue::ProhibitedGenAiMlTraining,
+            DmiValue::ProhibitedExceptSearchEngineIndexing,
+            DmiValue::Prohibited,
+            DmiValue::ProhibitedSeeConstraints,
+        ];
+        for dmi in dmi_values {
+            let policy = RightsPolicy::from_dmi_value(dmi);
+            let roundtripped = policy.to_dmi_value().unwrap();
+            assert_eq!(roundtripped, dmi);
+        }
+    }
+
+    #[test]
+    fn from_trait_matches_function() {
+        for dmi in [
+            DmiValue::Allowed,
+            DmiValue::ProhibitedAiMlTraining,
+            DmiValue::ProhibitedGenAiMlTraining,
+        ] {
+            let via_from: RightsPolicy = dmi.into();
+            let via_fn = RightsPolicy::from_dmi_value(dmi);
+            assert_eq!(via_from, via_fn);
+        }
+    }
+
+    #[test]
+    fn into_trait_matches_to_dmi_value() {
+        for policy in [
+            RightsPolicy::Allowed,
+            RightsPolicy::ProhibitedAiMlTraining,
+            RightsPolicy::ProhibitedGenerativeAiTraining,
+        ] {
+            let via_into: DmiValue = policy.into();
+            let via_fn = policy.to_dmi_value().unwrap();
+            assert_eq!(via_into, via_fn);
+        }
+    }
+
+    #[test]
+    fn requires_constraints_only_for_see_constraints() {
+        assert!(!RightsPolicy::Allowed.requires_constraints());
+        assert!(!RightsPolicy::ProhibitedAiMlTraining.requires_constraints());
+        assert!(RightsPolicy::ProhibitedSeeConstraints.requires_constraints());
+    }
+
+    #[test]
+    fn as_str_matches_variant_name() {
+        assert_eq!(RightsPolicy::Unspecified.as_str(), "Unspecified");
+        assert_eq!(RightsPolicy::Allowed.as_str(), "Allowed");
+        assert_eq!(
+            RightsPolicy::ProhibitedAllDataMining.as_str(),
+            "ProhibitedAllDataMining"
+        );
+    }
+}
+
+#[cfg(test)]
+#[allow(deprecated)]
+mod protection_preset_tests {
+    use super::*;
+
+    #[test]
+    fn legal_notice_expands_to_metadata_only() {
+        let channels = ProtectionPreset::LegalNotice.to_channels();
+        assert!(channels.rights_metadata);
+        assert_eq!(channels.hidden_marker, HiddenMarkerMode::Disabled);
+        assert_eq!(channels.authentication, AuthenticationMode::None);
+        assert!(!channels.has_stego());
+    }
+
+    #[test]
+    fn legal_notice_with_stego_expands_correctly() {
+        let channels = ProtectionPreset::LegalNoticeWithStego.to_channels();
+        assert!(channels.rights_metadata);
+        assert_eq!(channels.hidden_marker, HiddenMarkerMode::BestEffort);
+        assert_eq!(channels.authentication, AuthenticationMode::None);
+        assert!(channels.has_stego());
+    }
+
+    #[test]
+    fn authenticated_provenance_expands_correctly() {
+        let channels = ProtectionPreset::AuthenticatedProvenance.to_channels();
+        assert!(channels.rights_metadata);
+        assert_eq!(channels.hidden_marker, HiddenMarkerMode::BestEffort);
+        assert_eq!(channels.authentication, AuthenticationMode::Hmac);
+        assert!(channels.has_stego());
+    }
+
+    #[test]
+    fn maximal_expands_correctly() {
+        let channels = ProtectionPreset::Maximal.to_channels();
+        assert!(channels.rights_metadata);
+        assert_eq!(channels.hidden_marker, HiddenMarkerMode::BestEffort);
+        assert_eq!(channels.authentication, AuthenticationMode::Hmac);
+        assert!(channels.has_stego());
+    }
+
+    #[test]
+    fn requires_mac_key_only_for_authenticated_presets() {
+        assert!(!ProtectionPreset::LegalNotice.requires_mac_key());
+        assert!(!ProtectionPreset::LegalNoticeWithStego.requires_mac_key());
+        assert!(ProtectionPreset::AuthenticatedProvenance.requires_mac_key());
+        assert!(ProtectionPreset::Maximal.requires_mac_key());
+    }
+
+    #[test]
+    fn as_str_returns_lowercase() {
+        assert_eq!(ProtectionPreset::LegalNotice.as_str(), "legal-notice");
+        assert_eq!(
+            ProtectionPreset::LegalNoticeWithStego.as_str(),
+            "legal-notice-stego"
+        );
+        assert_eq!(
+            ProtectionPreset::AuthenticatedProvenance.as_str(),
+            "authenticated-provenance"
+        );
+        assert_eq!(ProtectionPreset::Maximal.as_str(), "maximal");
+    }
+
+    #[test]
+    fn from_preset_uses_preset_channels() {
+        let notice = RightsNotice::new();
+        let request = ProtectionRequest::from_preset(
+            ProtectionPreset::LegalNotice,
+            notice,
+            RightsPolicy::Allowed,
+        );
+        assert!(request.channels().rights_metadata);
+        assert_eq!(request.channels().hidden_marker, HiddenMarkerMode::Disabled);
     }
 }
 

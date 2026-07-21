@@ -278,6 +278,96 @@ Builder-pattern struct for legal/copyright metadata:
 
 Fields: `copyright_holder`, `contact_email`, `license_url`, `usage_terms`, `creation_date`, `ai_constraints`, `web_statement_of_rights`, `creator`.
 
+## Migration Guide: v0.3 → v0.4 (Release 4)
+
+### Deprecated APIs and their replacements
+
+| Deprecated | Replacement | Notes |
+|-----------|-------------|-------|
+| `EvidenceProfile` | `ProtectionPreset` | Presets control actual channel behavior, not just warning severity |
+| `ProtectionContext::with_dmi()` | `RightsPolicy` in `ProtectionRequest` | Policy is never inferred from processing intensity |
+| `ProtectionContext::with_metadata_injection()` | `ProtectionChannels::rights_metadata` | Channel configuration is explicit |
+| `ProtectionContext::with_inject_legal_claims()` | `LegalMetadata` in request | Auto-injected when metadata is present |
+
+### Before/after examples
+
+**Metadata-only legal notice (simplest workflow):**
+
+```rust
+// v0.3 (deprecated)
+let ctx = ProtectionContext::new(0.0, 42)
+    .with_dmi(DmiValue::ProhibitedAiMlTraining);
+process_image_bytes(&bytes, ProtectionLevel::Light, &ctx)
+
+// v0.4 (recommended)
+let request = ProtectionRequest::metadata_only(
+    RightsNotice::new().with_copyright_holder("Author"),
+    RightsPolicy::ProhibitedAiMlTraining,
+);
+process_request_bytes(&bytes, &request)
+```
+
+**Metadata + hidden marker:**
+
+```rust
+// v0.3
+let ctx = ProtectionContext::new(0.5, 42)
+    .with_dmi(DmiValue::ProhibitedAiMlTraining);
+process_image_bytes(&bytes, ProtectionLevel::Standard, &ctx)
+
+// v0.4
+let request = ProtectionRequest::with_hidden_marker(
+    RightsNotice::new().with_copyright_holder("Author"),
+    RightsPolicy::ProhibitedAiMlTraining,
+)
+.with_seed(42)
+.with_intensity(0.5);
+process_request_bytes(&bytes, &request)
+```
+
+**Authenticated provenance:**
+
+```rust
+// v0.3
+let ctx = ProtectionContext::new(0.7, 42)
+    .with_mac_key(b"secret".to_vec())
+    .with_dmi(DmiValue::Prohibited);
+process_image_bytes(&bytes, ProtectionLevel::Standard, &ctx)
+
+// v0.4
+let request = ProtectionRequest::from_preset(
+    ProtectionPreset::AuthenticatedProvenance,
+    RightsNotice::new().with_copyright_holder("Author"),
+    RightsPolicy::ProhibitedAllDataMining,
+)
+.with_seed(42)
+.with_mac_key(b"secret".to_vec());
+process_request_bytes(&bytes, &request)
+```
+
+**Legacy compatibility adapter:**
+
+```rust
+// Old code still works with deprecation warnings
+let ctx = ProtectionContext::new(0.5, 42);
+process_image_bytes(&bytes, ProtectionLevel::Standard, &ctx)
+
+// Equivalent new code
+let plan = resolve_request(
+    &ProtectionRequest::with_hidden_marker(notice, policy).with_seed(42),
+    ImageOutputFormat::Png,
+).unwrap();
+process_request_bytes(&bytes, &request)
+```
+
+### Key behavioral changes
+
+1. `ProtectionLevel::to_request()` provides a compatibility bridge — maps Disabled/Light/Standard to equivalent `ProtectionRequest` configurations
+2. Metadata-only is now the default legal-notice path (no steganographic processing)
+3. `resolve_request()` validates all inputs before processing begins — invalid combinations fail fast
+4. `ExecutionReport` tracks which channels were requested, executed, and degraded
+5. `RightsPolicy` is always explicit — never inferred from intensity, format, or channel selection
+
 ## NoticeVerification
 
 Comprehensive legal-notice verification report returned by `verify_legal_notice()`:

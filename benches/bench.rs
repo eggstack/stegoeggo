@@ -3,7 +3,8 @@ use image::DynamicImage;
 use std::alloc::System;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use stegoeggo::{
-    process_image_bytes, ImageOutputFormat, ProtectionContext, ProtectionLevel, ProtectionPipeline,
+    process_image_bytes, process_request_bytes, ImageOutputFormat, ProtectionContext,
+    ProtectionLevel, ProtectionPipeline, ProtectionRequest, RightsNotice, RightsPolicy,
 };
 
 static ALLOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -351,6 +352,104 @@ fn benchmark_tiled_extract(c: &mut Criterion) {
     group.finish();
 }
 
+fn benchmark_metadata_only(c: &mut Criterion) {
+    let mut group = c.benchmark_group("metadata_only_request");
+    group.sample_size(50);
+
+    let notice = RightsNotice::new()
+        .with_copyright_holder("Benchmark Author")
+        .with_usage_terms("All rights reserved");
+
+    for &(size, label) in &[(256u32, "256"), (1024u32, "1024"), (3840u32, "4k")] {
+        let img = create_test_image(size, size);
+
+        let mut png_bytes = Vec::new();
+        {
+            use image::ImageEncoder;
+            let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+            encoder
+                .write_image(&img.to_rgb8(), size, size, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        }
+
+        let mut jpeg_bytes = Vec::new();
+        {
+            use image::ImageEncoder;
+            let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_bytes, 85);
+            encoder
+                .write_image(&img.to_rgb8(), size, size, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        }
+
+        let png_request =
+            ProtectionRequest::metadata_only(notice.clone(), RightsPolicy::ProhibitedAiMlTraining);
+        group.bench_with_input(
+            BenchmarkId::new("png", label),
+            &(&png_bytes, &png_request),
+            |b, &(bytes, req)| {
+                b.iter(|| process_request_bytes(black_box(bytes), black_box(req)));
+            },
+        );
+
+        let jpeg_request =
+            ProtectionRequest::metadata_only(notice.clone(), RightsPolicy::ProhibitedAiMlTraining);
+        group.bench_with_input(
+            BenchmarkId::new("jpeg", label),
+            &(&jpeg_bytes, &jpeg_request),
+            |b, &(bytes, req)| {
+                b.iter(|| process_request_bytes(black_box(bytes), black_box(req)));
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn benchmark_request_vs_legacy(c: &mut Criterion) {
+    let mut group = c.benchmark_group("request_vs_legacy_512");
+
+    let img = create_test_image(512, 512);
+    let mut png_bytes = Vec::new();
+    {
+        use image::ImageEncoder;
+        let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+        encoder
+            .write_image(&img.to_rgb8(), 512, 512, image::ExtendedColorType::Rgb8)
+            .unwrap();
+    }
+
+    let ctx = ProtectionContext::new(0.5, 42);
+    let notice = RightsNotice::new()
+        .with_copyright_holder("Benchmark Author")
+        .with_usage_terms("All rights reserved");
+
+    group.bench_function("legacy_standard", |b| {
+        b.iter(|| {
+            process_image_bytes(
+                black_box(&png_bytes),
+                ProtectionLevel::Standard,
+                black_box(&ctx),
+            )
+        });
+    });
+
+    let request =
+        ProtectionRequest::with_hidden_marker(notice.clone(), RightsPolicy::ProhibitedAiMlTraining)
+            .with_seed(42)
+            .with_intensity(0.5);
+    group.bench_function("request_hidden_marker", |b| {
+        b.iter(|| process_request_bytes(black_box(&png_bytes), black_box(&request)));
+    });
+
+    let meta_request =
+        ProtectionRequest::metadata_only(notice, RightsPolicy::ProhibitedAiMlTraining);
+    group.bench_function("request_metadata_only", |b| {
+        b.iter(|| process_request_bytes(black_box(&png_bytes), black_box(&meta_request)));
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     benchmark_pipeline_sizes,
@@ -363,5 +462,7 @@ criterion_group!(
     benchmark_jpeg_fast_path,
     benchmark_tiled_embed,
     benchmark_tiled_extract,
+    benchmark_metadata_only,
+    benchmark_request_vs_legacy,
 );
 criterion_main!(benches);
