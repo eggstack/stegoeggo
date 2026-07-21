@@ -3,7 +3,8 @@
 ## Implementation Commits
 
 - Plan 020 initial: `13c8ff9` (2026-07-18)
-- Plan 020 completion gaps: TBD (2026-07-20)
+- Plan 020 completion gaps: `b9b3d5d` (2026-07-20)
+- CI fixes: `4b02d86` (2026-07-21) — clippy, external tools, libvips detection, cross-check severity
 
 ## Files Changed (Plan 020 completion pass)
 
