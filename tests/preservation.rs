@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use image::GenericImageView;
 use stegoeggo::{
     process_image_bytes, DmiValue, ImageOutputFormat, LegalMetadata, MetadataTrapProtector,

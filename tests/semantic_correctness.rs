@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use stegoeggo::{
     DmiValue, ImageOutputFormat, LegalMetadata, NoticeVerification, ProtectionContext,
     ProtectionLevel, RightsSignalKind, VerificationStatus,

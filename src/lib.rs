@@ -174,6 +174,7 @@ pub mod conformance;
 pub mod error;
 pub mod traits;
 /// Core types: protection levels, configuration, legal metadata, and verification results.
+#[allow(deprecated)]
 pub mod types;
 
 pub(crate) mod jpeg_transcoder;
@@ -184,12 +185,16 @@ pub(crate) mod util;
 pub mod async_api;
 
 pub use error::{Error, Result};
+pub use types::{AuthenticationMode, HiddenMarkerMode, ProcessingOptions};
+#[allow(deprecated)]
 pub use types::{
-    DmiValue, EvidenceChannel, EvidenceProfile, EvidenceStrength, ImageOutputFormat, LegalMetadata,
-    LocalizedText, MetadataUpdatePolicy, NoticeVerification, NoticeVerificationBuilder,
-    ProtectionConfig, ProtectionContext, ProtectionLevel, ProtectionWarning, RightsNotice,
-    RightsSignalKind, VerificationResult, VerificationStatus, WarningCategory, WarningSeverity,
-    DEFAULT_OUTPUT_FORMAT, PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
+    DmiValue, EvidenceChannel, EvidenceProfile, EvidenceStrength, ExecutionReport,
+    ImageOutputFormat, LegalMetadata, LocalizedText, MetadataUpdatePolicy, NoticeVerification,
+    NoticeVerificationBuilder, ProtectionChannels, ProtectionConfig, ProtectionContext,
+    ProtectionLevel, ProtectionPreset, ProtectionRequest, ProtectionWarning,
+    ResolvedProtectionPlan, RightsNotice, RightsPolicy, RightsSignalKind, VerificationResult,
+    VerificationStatus, WarningCategory, WarningSeverity, DEFAULT_OUTPUT_FORMAT,
+    PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
 };
 
 pub use traits::Protector;
@@ -252,6 +257,16 @@ pub struct ProtectionPipeline {
     passthrough: Arc<PassthroughProtector>,
     metadata_trap: Arc<MetadataTrapProtector>,
     steganography: Arc<SteganographyProtector>,
+}
+
+impl Clone for ProtectionPipeline {
+    fn clone(&self) -> Self {
+        Self {
+            passthrough: Arc::clone(&self.passthrough),
+            metadata_trap: Arc::clone(&self.metadata_trap),
+            steganography: Arc::clone(&self.steganography),
+        }
+    }
 }
 
 impl ProtectionPipeline {
@@ -552,6 +567,38 @@ impl ProtectionPipeline {
         Self::validate_dimensions(&img, ctx.max_dimension())?;
         self.apply_pipeline_bytes(&img, ctx, output_format)
     }
+
+    /// Process image bytes with metadata-only injection.
+    ///
+    /// For same-format metadata-only processing, this avoids pixel decode entirely:
+    /// - PNG: inject tEXt/iTXt chunks without pixel processing
+    /// - JPEG: inject APP/COM segments without DCT decode
+    /// - WebP: inject RIFF metadata chunks without pixel processing
+    fn process_metadata_only(
+        &self,
+        img_bytes: &[u8],
+        plan: &ResolvedProtectionPlan,
+    ) -> Result<Vec<u8>> {
+        let input_format = plan.input_format();
+        let output_format = plan.output_format();
+
+        if input_format != output_format {
+            let img = load_image_from_bytes(img_bytes)?;
+            let ctx = plan_to_context(plan);
+            return self.metadata_trap.inject_bytes(
+                &crate::util::image::encode_image_with_options(
+                    &img,
+                    Some(output_format),
+                    plan.processing().progressive_jpeg,
+                    plan.processing().jpeg_quality,
+                )?,
+                &ctx,
+            );
+        }
+
+        let ctx = plan_to_context(plan);
+        self.metadata_trap.inject_bytes(img_bytes, &ctx)
+    }
 }
 
 impl Default for ProtectionPipeline {
@@ -652,6 +699,18 @@ pub fn process_images_bytes_parallel(
         .collect()
 }
 
+/// Resolve a [`ProtectionRequest`] into an immutable execution plan.
+///
+/// This validates all input combinations and produces an execution plan
+/// that pipeline stages consume. Resolution runs once before any image
+/// processing occurs.
+pub fn resolve_request(
+    request: &ProtectionRequest,
+    input_format: ImageOutputFormat,
+) -> Result<ResolvedProtectionPlan> {
+    protected::resolve::resolve_request(request, input_format)
+}
+
 /// Process image bytes with the specified protection level.
 ///
 /// Automatically detects the input format from magic bytes and preserves
@@ -750,6 +809,7 @@ pub fn process_image_bytes_with_info(
 /// Returns [`Error::InvalidFormat`] if the image format cannot be determined.
 /// Returns [`Error::ImageDecode`], [`Error::ImageEncode`], or
 /// [`Error::Steganography`] if processing fails.
+#[allow(deprecated)]
 pub fn process_image_bytes_with_warnings(
     img_bytes: &[u8],
     level: ProtectionLevel,
@@ -849,6 +909,160 @@ pub fn process_image_bytes_with_warnings(
     }
 
     Ok((result, warnings))
+}
+
+/// Process image bytes using a [`ProtectionRequest`].
+///
+/// This is the canonical request-based API. It resolves the request into
+/// an execution plan, then processes the image according to that plan.
+/// Metadata-only requests produce same-format output without pixel decode.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidFormat`] if the image format cannot be determined.
+/// Returns config errors if the request contains invalid combinations.
+pub fn process_request_bytes(img_bytes: &[u8], request: &ProtectionRequest) -> Result<Vec<u8>> {
+    let input_format = ImageOutputFormat::from_magic_bytes(img_bytes)
+        .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
+
+    let plan = resolve_request(request, input_format)?;
+
+    if let Some(meta) = plan.legal_metadata() {
+        meta.validate()?;
+    }
+
+    process_plan_bytes(img_bytes, &plan)
+}
+
+/// Process image bytes using a [`ProtectionRequest`], returning warnings.
+///
+/// Like [`process_request_bytes`], but also returns any warnings about
+/// degraded protection conditions.
+pub fn process_request_bytes_with_warnings(
+    img_bytes: &[u8],
+    request: &ProtectionRequest,
+) -> Result<(Vec<u8>, Vec<ProtectionWarning>)> {
+    let input_format = ImageOutputFormat::from_magic_bytes(img_bytes)
+        .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
+
+    let plan = resolve_request(request, input_format)?;
+
+    if let Some(meta) = plan.legal_metadata() {
+        meta.validate()?;
+    }
+
+    let all_warnings = plan.warnings().to_vec();
+
+    let result = process_plan_bytes(img_bytes, &plan)?;
+
+    Ok((result, all_warnings))
+}
+
+/// Process image bytes using a [`ProtectionRequest`], returning a full execution report.
+///
+/// This is the most informative request-based API. It resolves the request,
+/// processes the image, and returns a detailed report of what was executed
+/// and any degradation that occurred.
+pub fn process_request_bytes_with_report(
+    img_bytes: &[u8],
+    request: &ProtectionRequest,
+) -> Result<(Vec<u8>, ExecutionReport)> {
+    let input_format = ImageOutputFormat::from_magic_bytes(img_bytes)
+        .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
+
+    let plan = resolve_request(request, input_format)?;
+
+    if let Some(meta) = plan.legal_metadata() {
+        meta.validate()?;
+    }
+
+    let warnings = plan.warnings().to_vec();
+    let output_format = plan.output_format();
+    let format_transcoded = input_format != output_format;
+
+    let result = process_plan_bytes(img_bytes, &plan)?;
+
+    let stego_attempted = plan.channels().has_stego();
+    let stego_succeeded = stego_attempted
+        && !warnings.iter().any(|w| {
+            matches!(
+                w,
+                ProtectionWarning::LsbCapacitySkipped | ProtectionWarning::DctCapacityInsufficient
+            )
+        });
+
+    let report = ExecutionReport {
+        effective_policy: plan.effective_policy(),
+        effective_dmi: plan.effective_dmi(),
+        metadata_injected: plan.channels().rights_metadata,
+        stego_attempted,
+        stego_succeeded,
+        format_transcoded,
+        warnings,
+    };
+
+    Ok((result, report))
+}
+
+fn process_plan_bytes(img_bytes: &[u8], plan: &ResolvedProtectionPlan) -> Result<Vec<u8>> {
+    let pipeline = DEFAULT_PIPELINE.clone();
+
+    if plan.is_metadata_only() {
+        return pipeline.process_metadata_only(img_bytes, plan);
+    }
+
+    match plan.channels().hidden_marker {
+        HiddenMarkerMode::Disabled => pipeline.process_metadata_only(img_bytes, plan),
+        HiddenMarkerMode::BestEffort => {
+            let level = ProtectionLevel::Standard;
+            let ctx = plan_to_context(plan);
+            pipeline.process_bytes(img_bytes, level, &ctx)
+        }
+        HiddenMarkerMode::Tiled { tile_size } => {
+            let mut ctx = plan_to_context(plan);
+            ctx.set_tile_size(tile_size);
+            pipeline.process_bytes(img_bytes, ProtectionLevel::Standard, &ctx)
+        }
+    }
+}
+
+#[allow(deprecated)]
+fn plan_to_context(plan: &ResolvedProtectionPlan) -> ProtectionContext {
+    let mut ctx =
+        ProtectionContext::new(plan.intensity(), plan.seed()).with_format(plan.output_format());
+    ctx.set_input_format(plan.input_format());
+
+    if let Some(key) = plan.mac_key() {
+        ctx = ctx.with_mac_key(key.to_vec());
+    }
+
+    ctx = ctx
+        .with_jpeg_quality(plan.processing().jpeg_quality)
+        .with_metadata_update_policy(plan.processing().metadata_update_policy);
+
+    if plan.processing().progressive_jpeg {
+        ctx = ctx.with_progressive_jpeg(true);
+    }
+
+    if let Some(max_dim) = plan.processing().max_dimension {
+        ctx = ctx.with_max_dimension(max_dim);
+    }
+
+    if let Some(meta) = plan.legal_metadata() {
+        ctx = ctx.with_legal_metadata(meta.clone());
+    }
+
+    if plan.channels().rights_metadata {
+        ctx = ctx.with_metadata_injection(true);
+    } else {
+        ctx = ctx.with_metadata_injection(false);
+    }
+
+    if let Some(dmi) = plan.effective_dmi() {
+        ctx = ctx.with_dmi(dmi);
+    }
+
+    ctx
 }
 
 fn context_with_detected_format(
@@ -1005,6 +1219,7 @@ pub fn verify_legal_notice(img_bytes: &[u8], mac_key: &[u8]) -> NoticeVerificati
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 
@@ -1307,5 +1522,265 @@ mod tests {
             protected.starts_with(&[0xFF, 0xD8, 0xFF]),
             "Light byte processing should convert PNG input to requested JPEG output"
         );
+    }
+
+    #[test]
+    fn process_request_metadata_only_png() {
+        use image::ImageEncoder;
+
+        let img = DynamicImage::new_rgb8(64, 64);
+        let mut png_bytes = Vec::new();
+        {
+            let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+            let rgb = img.to_rgb8();
+            encoder
+                .write_image(&rgb, 64, 64, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        }
+
+        let notice = RightsNotice::default();
+        let request = ProtectionRequest::metadata_only(notice, RightsPolicy::Unspecified);
+        let result = process_request_bytes(&png_bytes, &request);
+        assert!(
+            result.is_ok(),
+            "Metadata-only PNG processing should succeed"
+        );
+
+        let output = result.unwrap();
+        assert!(
+            output.starts_with(&[0x89, 0x50, 0x4E, 0x47]),
+            "Output should be PNG"
+        );
+    }
+
+    #[test]
+    fn process_request_metadata_only_jpeg() {
+        use image::ImageEncoder;
+
+        let img = DynamicImage::new_rgb8(64, 64);
+        let mut jpeg_bytes = Vec::new();
+        {
+            let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_bytes, 90);
+            let rgb = img.to_rgb8();
+            encoder
+                .write_image(&rgb, 64, 64, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        }
+
+        let notice = RightsNotice::default();
+        let request = ProtectionRequest::metadata_only(notice, RightsPolicy::Unspecified);
+        let result = process_request_bytes(&jpeg_bytes, &request);
+        assert!(
+            result.is_ok(),
+            "Metadata-only JPEG processing should succeed"
+        );
+
+        let output = result.unwrap();
+        assert!(
+            output.starts_with(&[0xFF, 0xD8, 0xFF]),
+            "Output should be JPEG"
+        );
+    }
+
+    #[test]
+    fn process_request_rejects_hmac_without_key() {
+        let notice = RightsNotice::default();
+        let request = ProtectionRequest::new(
+            notice,
+            RightsPolicy::ProhibitedAiMlTraining,
+            ProtectionChannels::authenticated(),
+        );
+        let input_format = ImageOutputFormat::Png;
+        let result = resolve_request(&request, input_format);
+        assert!(result.is_err(), "HMAC without key should fail resolution");
+    }
+
+    #[test]
+    fn process_request_rejects_hmac_with_disabled_marker() {
+        let notice = RightsNotice::default();
+        let request = ProtectionRequest::new(
+            notice,
+            RightsPolicy::ProhibitedAiMlTraining,
+            ProtectionChannels {
+                rights_metadata: true,
+                hidden_marker: HiddenMarkerMode::Disabled,
+                authentication: AuthenticationMode::Hmac,
+            },
+        )
+        .with_mac_key(b"test-key".to_vec());
+
+        let input_format = ImageOutputFormat::Png;
+        let result = resolve_request(&request, input_format);
+        assert!(result.is_err(), "HMAC with disabled marker should fail");
+    }
+
+    #[test]
+    fn process_request_preserves_png_format() {
+        use image::ImageEncoder;
+
+        let img = DynamicImage::new_rgb8(32, 32);
+        let mut png_bytes = Vec::new();
+        {
+            let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+            let rgb = img.to_rgb8();
+            encoder
+                .write_image(&rgb, 32, 32, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        }
+
+        let notice = RightsNotice::default();
+        let request = ProtectionRequest::metadata_only(notice, RightsPolicy::Unspecified);
+        let output = process_request_bytes(&png_bytes, &request).unwrap();
+        assert!(output.starts_with(&[0x89, 0x50, 0x4E, 0x47]));
+        assert!(output.len() >= png_bytes.len());
+    }
+
+    #[test]
+    fn preset_legal_notice_is_metadata_only() {
+        let preset = ProtectionPreset::LegalNotice;
+        let channels = preset.to_channels();
+        assert!(!channels.has_stego());
+        assert!(channels.rights_metadata);
+        assert!(!preset.requires_mac_key());
+    }
+
+    #[test]
+    fn preset_legal_notice_with_stego_has_marker() {
+        let preset = ProtectionPreset::LegalNoticeWithStego;
+        let channels = preset.to_channels();
+        assert!(channels.has_stego());
+        assert!(channels.rights_metadata);
+        assert!(!preset.requires_mac_key());
+    }
+
+    #[test]
+    fn preset_authenticated_requires_mac() {
+        let preset = ProtectionPreset::AuthenticatedProvenance;
+        assert!(preset.requires_mac_key());
+        let channels = preset.to_channels();
+        assert!(channels.has_stego());
+        assert!(matches!(channels.authentication, AuthenticationMode::Hmac));
+    }
+
+    #[test]
+    fn preset_maximal_requires_mac() {
+        let preset = ProtectionPreset::Maximal;
+        assert!(preset.requires_mac_key());
+        let channels = preset.to_channels();
+        assert!(channels.has_stego());
+        assert!(matches!(channels.authentication, AuthenticationMode::Hmac));
+    }
+
+    #[test]
+    fn from_preset_sets_channels() {
+        let notice = RightsNotice::default();
+        let req = ProtectionRequest::from_preset(
+            ProtectionPreset::LegalNotice,
+            notice,
+            RightsPolicy::ProhibitedAiMlTraining,
+        );
+        assert!(!req.channels().has_stego());
+        assert!(req.channels().rights_metadata);
+    }
+
+    #[test]
+    fn process_request_with_report_metadata_only() {
+        use image::ImageEncoder;
+
+        let img = DynamicImage::new_rgb8(32, 32);
+        let mut png_bytes = Vec::new();
+        {
+            let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+            let rgb = img.to_rgb8();
+            encoder
+                .write_image(&rgb, 32, 32, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        }
+
+        let notice = RightsNotice::default();
+        let request =
+            ProtectionRequest::metadata_only(notice, RightsPolicy::ProhibitedAiMlTraining);
+        let (output, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+
+        assert!(report.metadata_injected);
+        assert!(!report.stego_attempted);
+        assert!(!report.format_transcoded);
+        assert!(report.effective_dmi.is_some());
+        assert!(output.starts_with(&[0x89, 0x50, 0x4E, 0x47]));
+    }
+
+    #[test]
+    fn rights_policy_dmi_roundtrip() {
+        let policies = [
+            RightsPolicy::Unspecified,
+            RightsPolicy::Allowed,
+            RightsPolicy::ProhibitedAiMlTraining,
+            RightsPolicy::ProhibitedGenerativeAiTraining,
+            RightsPolicy::ProhibitedExceptSearchIndexing,
+            RightsPolicy::ProhibitedAllDataMining,
+            RightsPolicy::ProhibitedSeeConstraints,
+        ];
+        for policy in &policies {
+            let dmi = DmiValue::from(*policy);
+            let back = RightsPolicy::from_dmi_value(dmi);
+            assert_eq!(&back, policy, "Roundtrip failed for {:?}", policy);
+        }
+    }
+
+    #[test]
+    fn rights_policy_to_dmi_unspecified_is_none() {
+        assert!(RightsPolicy::Unspecified.to_dmi_value().is_none());
+    }
+
+    #[test]
+    fn rights_policy_to_dmi_allowed_is_some() {
+        assert_eq!(
+            RightsPolicy::Allowed.to_dmi_value(),
+            Some(DmiValue::Allowed)
+        );
+    }
+
+    #[test]
+    fn protection_level_to_request_disabled() {
+        let notice = RightsNotice::default();
+        let req = ProtectionLevel::Disabled.to_request(notice, RightsPolicy::Unspecified);
+        assert!(!req.channels().rights_metadata);
+        assert!(!req.channels().has_stego());
+    }
+
+    #[test]
+    fn protection_level_to_request_light() {
+        let notice = RightsNotice::default();
+        let req = ProtectionLevel::Light.to_request(notice, RightsPolicy::ProhibitedAiMlTraining);
+        assert!(req.channels().rights_metadata);
+        assert!(req.channels().has_stego());
+    }
+
+    #[test]
+    fn protection_level_to_request_standard() {
+        let notice = RightsNotice::default();
+        let req = ProtectionLevel::Standard.to_request(notice, RightsPolicy::Allowed);
+        assert!(req.channels().rights_metadata);
+        assert!(req.channels().has_stego());
+    }
+
+    #[test]
+    fn preset_to_channels_metadata_only() {
+        let channels = ProtectionPreset::LegalNotice.to_channels();
+        assert!(!channels.has_stego());
+        assert!(channels.rights_metadata);
+    }
+
+    #[test]
+    fn preset_to_channels_with_stego() {
+        let channels = ProtectionPreset::LegalNoticeWithStego.to_channels();
+        assert!(channels.has_stego());
+    }
+
+    #[test]
+    fn preset_to_channels_authenticated() {
+        let channels = ProtectionPreset::AuthenticatedProvenance.to_channels();
+        assert!(channels.has_stego());
+        assert!(matches!(channels.authentication, AuthenticationMode::Hmac));
     }
 }

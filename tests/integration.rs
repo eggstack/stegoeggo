@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use image::{DynamicImage, ImageEncoder};
 use stegoeggo::{
     process_image, process_image_bytes, process_images_bytes_parallel, process_images_parallel,

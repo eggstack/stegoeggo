@@ -1796,6 +1796,7 @@ impl MetadataTrapProtector {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use crate::traits::Protector;

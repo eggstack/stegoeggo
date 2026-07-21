@@ -49,6 +49,7 @@ src/
 │   ├── steganography.rs   # LSB/DCT steganographic embedding
 │   ├── ecc.rs             # 3x repetition ECC with majority voting
 │   ├── notice_verification.rs # Legal notice verification (verify_legal_notice)
+│   ├── resolve.rs         # Request resolution and validation
 │   └── stego_cost.rs      # Pixel embedding cost computation (Laplacian-based)
 ├── jpeg_transcoder/       # JPEG-specific processing
 │   ├── header.rs          # JPEG header parser
@@ -65,7 +66,16 @@ src/
 - `ProtectionContext::new(intensity: f32, seed: u64)` — intensity clamped to [0.0, 1.0]
 - `ProtectionConfig` — MAC key and legal metadata wrapped in `Arc`
 - `StegoPayload` — extracted stego data with `protection_level()`, `seed()`, `intensity()`, `version()` getters
-- `EvidenceProfile` — enum with 4 variants: `LegalNotice` (default), `LegalNoticeWithStego`, `AuthenticatedProvenance`, `Maximal`. Controls warning interpretation and evidence posture. Access via `ctx.evidence_profile()` (defaults to `LegalNotice` when not set)
+- `EvidenceProfile` — enum with 4 variants: `LegalNotice` (default), `LegalNoticeWithStego`, `AuthenticatedProvenance`, `Maximal`. Controls warning interpretation and evidence posture. Access via `ctx.evidence_profile()` (defaults to `LegalNotice` when not set). **Deprecated** — use `ProtectionPreset` instead
+- `RightsPolicy` — Explicit data-mining policy enum. Maps 1:1 to `DmiValue`. Never inferred from processing intensity
+- `ProtectionChannels` — Configuration of protection channels (rights_metadata, hidden_marker, authentication)
+- `ProtectionRequest` — Request-based API entry point combining notice, policy, channels, and processing options
+- `ResolvedProtectionPlan` — Immutable execution plan produced by `resolve_request()`. Consumed by pipeline stages
+- `ProtectionPreset` — Executable presets (LegalNotice, LegalNoticeWithStego, AuthenticatedProvenance, Maximal) that expand into `ProtectionChannels`
+- `ExecutionReport` — Tracks which channels executed and any degradation during processing
+- `HiddenMarkerMode` — Controls steganographic embedding: Disabled, BestEffort, Tiled { tile_size }
+- `AuthenticationMode` — Controls payload authentication: None, Hmac
+- `ProcessingOptions` — Image processing options (output format, JPEG quality, etc.)
 - `MetadataUpdatePolicy` — controls merge behavior on repeated processing: `ReplaceStegoOwned` (default), `FailOnConflict`, `PreserveExisting`
 - `NoticeVerification` — use `NoticeVerification::builder()` for construction (26-field builder pattern). Deprecated `new()` positional constructor still available for backward compatibility
 - `ProtectionContext` helper constructors: `::legal_notice()`, `::legal_notice_with_stego()`, `::authenticated_provenance()`, `::maximal()`
@@ -239,3 +249,7 @@ Stable exit codes: 0=pass, 1=fail, 2=config error, 3=digest mismatch, 4=coverage
 - **`ConformanceReport` has `fixture_id`, `category`, `source` fields**: These `Option<String>` fields link reports to manifest entries. They are populated from the manifest and skipped in JSON serialization when `None`
 - **`validate_manifest()` checks structure before processing**: Validates duplicate IDs, duplicate paths, empty IDs, path traversal, unsupported formats/categories/sources, and SHA-256 validity. Returns `Err(Vec<String>)` on violations. Called before any fixtures are processed
 - **DMI normalization precedence**: `normalize_dmi_value()` matches in order: search engine indexing > gen AI/ML training > AI/ML training > see constraints > generic prohibited > allowed. This ordering ensures the most specific prohibition is returned
+- **Policy-first architecture (Release 4)**: `ProtectionRequest` and `RightsPolicy` are the canonical API. `ProtectionLevel` and `EvidenceProfile` are deprecated compatibility adapters. New code should use `process_request_bytes()` and `process_request_bytes_with_report()`
+- **Deprecated API surfaces**: `EvidenceProfile`, `with_dmi()`, `with_metadata_injection()`, `with_inject_legal_claims()` are deprecated. They still work but will be removed in the next major version
+- **Metadata-only fast path**: `ProtectionRequest::metadata_only()` produces same-format output without pixel/stego processing. Use this for the simplest legal-notice workflow
+- **Resolution runs once**: `resolve_request()` validates all input and produces an immutable `ResolvedProtectionPlan`. Pipeline stages consume the plan rather than re-querying mutable context

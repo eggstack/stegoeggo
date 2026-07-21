@@ -36,6 +36,8 @@ pub enum EvidenceProfile {
 - `Default` returns `LegalNotice`
 - Serialized as serde-compatible enum variants
 
+**Deprecated** — use `ProtectionPreset` instead. `EvidenceProfile` is retained as a compatibility adapter and will be removed in the next major version.
+
 ### Interaction with ProtectionLevel
 
 `ProtectionLevel` controls *how much processing occurs*. `EvidenceProfile` controls *how warnings are interpreted*. They are orthogonal:
@@ -57,6 +59,142 @@ pub enum ImageOutputFormat {
 - `from_extension(path)` — Extracts from file extension
 - `extension()` — Returns `"png"`, `"jpg"`, `"webp"`
 - `to_image_format()` — Converts to `image::ImageFormat`
+
+## Policy-First Architecture (Release 4)
+
+Release 4 separates rights policy from processing mechanics. The canonical API entry point is `ProtectionRequest`, which combines a rights notice, policy, channel configuration, and processing options. `resolve_request()` validates all inputs and produces an immutable `ResolvedProtectionPlan` consumed by pipeline stages.
+
+### RightsPolicy
+
+Explicit data-mining policy enum. Maps 1:1 to `DmiValue`:
+
+```rust
+pub enum RightsPolicy {
+    Unspecified,
+    Allowed,
+    ProhibitedAiMlTraining,
+    ProhibitedGenerativeAiTraining,
+    ProhibitedExceptSearchEngineIndexing,
+    ProhibitedAllDataMining,
+    ProhibitedSeeConstraints,
+}
+```
+
+- `to_dmi_value()` — Converts to `Option<DmiValue>` (None for Unspecified)
+- `from_dmi_value()` — Converts from `DmiValue` back to `RightsPolicy`
+- Never inferred from processing intensity — always explicit
+
+### HiddenMarkerMode
+
+Controls steganographic embedding:
+
+```rust
+pub enum HiddenMarkerMode {
+    Disabled,
+    BestEffort,
+    Tiled { tile_size: u32 },
+}
+```
+
+### AuthenticationMode
+
+Controls payload authentication:
+
+```rust
+pub enum AuthenticationMode {
+    None,
+    Hmac,
+}
+```
+
+### ProtectionChannels
+
+Configuration of protection channels:
+
+```rust
+pub struct ProtectionChannels {
+    pub rights_metadata: bool,
+    pub hidden_marker: HiddenMarkerMode,
+    pub authentication: AuthenticationMode,
+}
+```
+
+- `metadata_only()` — Rights metadata only, no stego or auth
+- `with_hidden_marker()` — Adds best-effort steganography
+- `authenticated()` — Best-effort stego + HMAC authentication
+
+### ProcessingOptions
+
+Image processing options:
+
+```rust
+pub struct ProcessingOptions {
+    pub output_format: Option<ImageOutputFormat>,
+    pub jpeg_quality: Option<u8>,
+    pub progressive_jpeg: Option<bool>,
+    pub max_dimension: Option<u32>,
+    pub metadata_update_policy: MetadataUpdatePolicy,
+}
+```
+
+### ProtectionRequest
+
+Request-based API entry point:
+
+```rust
+pub struct ProtectionRequest {
+    notice: RightsNotice,
+    policy: RightsPolicy,
+    channels: ProtectionChannels,
+    options: ProcessingOptions,
+    mac_key: Option<Vec<u8>>,
+    legal_metadata: Option<LegalMetadata>,
+    context: ProtectionContext,
+}
+```
+
+- `metadata_only(notice, policy)` — Fastest path: same-format output with metadata only
+- `with_hidden_marker(notice, policy)` — Adds best-effort steganography
+- `from_preset(preset, notice, policy)` — Creates from a `ProtectionPreset`
+- Builder methods: `with_mac_key()`, `with_legal_metadata()`, `with_processing_options()`
+
+### ResolvedProtectionPlan
+
+Immutable execution plan produced by `resolve_request()`. Consumed by pipeline stages:
+
+```rust
+pub struct ResolvedProtectionPlan {
+    // Immutable — pipeline stages read from this, never mutate
+}
+```
+
+### ProtectionPreset
+
+Executable presets that expand into `ProtectionChannels`:
+
+```rust
+pub enum ProtectionPreset {
+    LegalNotice,
+    LegalNoticeWithStego,
+    AuthenticatedProvenance,
+    Maximal,
+}
+```
+
+- `to_channels()` — Expands preset into `ProtectionChannels`
+
+### ExecutionReport
+
+Tracks which channels executed and any degradation:
+
+```rust
+pub struct ExecutionReport {
+    pub metadata_injected: bool,
+    pub stego_succeeded: bool,
+    pub authentication_performed: bool,
+    pub warnings: Vec<ProtectionWarning>,
+}
+```
 
 ## DmiValue
 

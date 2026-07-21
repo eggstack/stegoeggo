@@ -56,6 +56,44 @@
 
 Each level above `Disabled` activates metadata injection. `Light` adds the cheapest recoverable seed marker for the output format. `Standard` applies the full LSB or DCT payload.
 
+## Request-Based API Flow (Release 4)
+
+Release 4 introduces a policy-first architecture where `ProtectionRequest` is the canonical entry point. The flow separates request construction, resolution, and execution:
+
+```
+ProtectionRequest (user constructs)
+        │
+        ▼
+resolve_request()  ──► validates input, resolves channels/policy
+        │
+        ▼
+ResolvedProtectionPlan (immutable)
+        │
+        ├── process_request_bytes()          → Vec<u8>
+        ├── process_request_bytes_with_warnings() → (Vec<u8>, Vec<ProtectionWarning>)
+        └── process_request_bytes_with_report()   → (Vec<u8>, ExecutionReport)
+```
+
+### Why Resolution Runs Once
+
+`resolve_request()` validates all inputs and produces an immutable `ResolvedProtectionPlan`. Pipeline stages consume the plan rather than re-querying mutable context. This ensures:
+- Single validation point (no repeated checks)
+- Immutable execution plan (no mid-flight mutations)
+- Clean separation between request construction and execution
+
+### Presets vs Direct Channels
+
+Presets (`ProtectionPreset`) expand into `ProtectionChannels` at construction time:
+
+| Preset | Channels |
+|--------|----------|
+| `LegalNotice` | `{ rights_metadata: true, hidden_marker: Disabled, authentication: None }` |
+| `LegalNoticeWithStego` | `{ rights_metadata: true, hidden_marker: BestEffort, authentication: None }` |
+| `AuthenticatedProvenance` | `{ rights_metadata: true, hidden_marker: BestEffort, authentication: Hmac }` |
+| `Maximal` | `{ rights_metadata: true, hidden_marker: BestEffort, authentication: Hmac }` |
+
+For finer control, construct `ProtectionChannels` directly instead of using a preset.
+
 ## Data Flow
 
 ### Image → Image (pixel path)

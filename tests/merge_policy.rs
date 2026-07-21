@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use image::{DynamicImage, ImageEncoder};
 use stegoeggo::{
     process_image_bytes, LegalMetadata, MetadataTrapProtector, MetadataUpdatePolicy,

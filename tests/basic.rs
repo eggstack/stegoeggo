@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use image::DynamicImage;
 use stegoeggo::{
     process_image, process_image_bytes, MetadataTrapProtector, PassthroughProtector,

@@ -10,6 +10,7 @@ pub(crate) mod ecc;
 pub mod metadata_trap;
 pub(crate) mod notice_verification;
 pub mod passthrough;
+pub(crate) mod resolve;
 pub mod steganography;
 #[cfg(feature = "fuzz")]
 pub(crate) mod stego_cost;

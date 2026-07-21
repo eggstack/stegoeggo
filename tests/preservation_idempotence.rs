@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use stegoeggo::{
     process_image_bytes, process_image_bytes_with_warnings, verify_legal_notice, DmiValue,
     ImageOutputFormat, LegalMetadata, MetadataUpdatePolicy, ProtectionContext, ProtectionLevel,

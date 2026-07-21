@@ -128,6 +128,24 @@ let img = DynamicImage::new_rgb8(512, 512);
 let protected = pipeline.process(&img, ProtectionLevel::Standard, &ctx).unwrap();
 ```
 
+### Request-Based API (recommended for new code)
+
+```rust
+use stegoeggo::{ProtectionRequest, RightsPolicy, RightsNotice, LegalMetadata};
+
+let request = ProtectionRequest::metadata_only(
+    RightsNotice::default(),
+    RightsPolicy::ProhibitedAiMlTraining,
+)
+.with_legal_metadata(
+    LegalMetadata::new()
+        .with_copyright_holder("Example Corp")
+        .with_usage_terms("All Rights Reserved"),
+);
+
+let protected = stegoeggo::process_request_bytes(&img_bytes, &request)?;
+```
+
 ## Library Usage
 
 ### Processing Image Bytes
@@ -175,6 +193,39 @@ let image_bytes: Vec<Vec<u8>> = vec![
 ];
 
 let protected = process_images_bytes_parallel(&image_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+```
+
+### Request-Based API (Recommended)
+
+The request-based API is the canonical way to use stegoeggo. It separates
+rights policy from processing mechanics:
+
+```rust
+use stegoeggo::{ProtectionRequest, RightsPolicy, ProtectionPreset, RightsNotice};
+
+// Metadata-only legal notice (fastest path)
+let request = ProtectionRequest::metadata_only(
+    RightsNotice::default(),
+    RightsPolicy::ProhibitedAiMlTraining,
+);
+
+// With hidden marker
+let request = ProtectionRequest::with_hidden_marker(
+    RightsNotice::default(),
+    RightsPolicy::ProhibitedAiMlTraining,
+);
+
+// Using a preset
+let request = ProtectionRequest::from_preset(
+    ProtectionPreset::AuthenticatedProvenance,
+    RightsNotice::default(),
+    RightsPolicy::ProhibitedAiMlTraining,
+)
+.with_mac_key(b"secret".to_vec());
+
+let (protected, report) = stegoeggo::process_request_bytes_with_report(&img_bytes, &request)?;
+println!("Metadata injected: {}", report.metadata_injected);
+println!("Stego succeeded: {}", report.stego_succeeded);
 ```
 
 ### Protection Levels
@@ -300,6 +351,18 @@ let ctx = ProtectionContext::new(0.8, 42);
 
 The MAC key affects:
 - Steganography payload verification (HMAC-SHA256 instead of simple checksum)
+
+### Migration from ProtectionLevel API
+
+The `ProtectionLevel` and `EvidenceProfile` APIs still work but are deprecated.
+To migrate:
+
+| Old API | New API |
+|---------|---------|
+| `process_image_bytes(&bytes, ProtectionLevel::Standard, &ctx)` | `process_request_bytes(&bytes, &request)` |
+| `ctx.with_dmi(DmiValue::ProhibitedAiMlTraining)` | `RightsPolicy::ProhibitedAiMlTraining` in `ProtectionRequest` |
+| `EvidenceProfile::LegalNotice` | `ProtectionPreset::LegalNotice` or `ProtectionChannels::metadata_only()` |
+| `ctx.with_metadata_injection(false)` | `ProtectionChannels { rights_metadata: false, .. }` |
 
 ### Granular Control
 

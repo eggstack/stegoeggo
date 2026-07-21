@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use std::path::PathBuf;
 use stegoeggo::conformance::{
     self, CheckSeverity, ConformanceReport, ConformanceRunReport, ConformanceSummary,

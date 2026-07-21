@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use std::process::Command;
 use stegoeggo::{
     process_image_bytes, DmiValue, ImageOutputFormat, LegalMetadata, ProtectionContext,
