@@ -2,6 +2,8 @@
 
 use stegoeggo::signing::{SignatureResult, SigningKey, VerifyingKey};
 
+use ed25519_dalek::Signer;
+
 #[test]
 fn test_key_generation() {
     let key = SigningKey::generate();
@@ -182,4 +184,66 @@ fn test_rfc8032_test_vector() {
 
     let bad_claim = b"Goodbye, world!";
     assert!(verifying_key.verify(bad_claim, &signature).is_err());
+}
+
+#[test]
+fn test_rfc8032_known_answer_public_key() {
+    let seed = [0u8; 32];
+    let expected_public_key_hex =
+        "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29";
+
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+    let verifying_key = signing_key.verifying_key();
+    let public_key_bytes = verifying_key.to_bytes();
+    assert_eq!(hex::encode(public_key_bytes), expected_public_key_hex);
+
+    let wrapper_key = SigningKey::from_bytes(seed, vec![1]).unwrap();
+    assert_eq!(wrapper_key.public_key_bytes(), public_key_bytes);
+}
+
+#[test]
+fn test_signature_bit_flip_rejected() {
+    let key = SigningKey::generate();
+    let claim = b"test claim for bit flip";
+    let sig = key.sign(claim);
+    let mut sig_bytes = sig;
+    sig_bytes[32] ^= 0x01;
+    assert_eq!(
+        key.verifying_key().verify(claim, &sig_bytes),
+        SignatureResult::Invalid
+    );
+}
+
+#[test]
+fn test_signing_key_not_serializable() {
+    let key = SigningKey::generate();
+    let _: &dyn std::fmt::Debug = &key;
+}
+
+#[test]
+fn test_verify_independently_created_signature() {
+    let seed = [42u8; 32];
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+    let claim = b"independently signed message";
+    let sig = signing_key.sign(claim);
+
+    let wrapper_key = SigningKey::from_bytes(seed, vec![1]).unwrap();
+    assert_eq!(
+        wrapper_key.verifying_key().verify(claim, &sig.to_bytes()),
+        SignatureResult::Valid
+    );
+}
+
+#[test]
+fn test_truncated_signature_rejected() {
+    let key = SigningKey::generate();
+    let claim = b"truncated test";
+    for len in [32, 63, 65] {
+        let mut sig_bytes = vec![0u8; len];
+        sig_bytes[0] = 0x01;
+        assert_eq!(
+            key.verifying_key().verify(claim, &sig_bytes),
+            SignatureResult::MalformedSignature
+        );
+    }
 }

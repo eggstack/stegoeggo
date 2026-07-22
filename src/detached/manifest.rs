@@ -68,7 +68,7 @@ pub struct PublicKeyEntry {
     pub key_id: Vec<u8>,
     /// Key algorithm name.
     pub algorithm: String,
-    /// Base64-encoded public key bytes.
+    /// Hex-encoded public key bytes.
     pub key_bytes: String,
 }
 

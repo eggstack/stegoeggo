@@ -144,29 +144,16 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Build CLI binaries
-        run: |
-          TARGETS=(
-            "x86_64-unknown-linux-gnu"
-            "aarch64-unknown-linux-gnu"
-            "x86_64-apple-darwin"
-            "aarch64-apple-darwin"
-            "x86_64-pc-windows-msvc"
-          )
-          for target in "${TARGETS[@]}"; do
-            echo "Building for $target..."
-            cargo build --release --bin stegoeggo-cli --target "$target" 2>/dev/null || echo "Skipping $target (cross-compile not available)"
-          done
+      - name: Build CLI binary
+        run: cargo build --release --bin stegoeggo
 
       - name: Collect artifacts
         run: |
           mkdir -p release-artifacts
           TAG_VERSION="${{ needs.validate.outputs.tag_version }}"
-          for f in target/release/stegoeggo-cli; do
-            if [ -f "$f" ]; then
-              cp "$f" "release-artifacts/stegoeggo-${TAG_VERSION}-linux-amd64"
-            fi
-          done
+          if [ -f target/release/stegoeggo ]; then
+            cp target/release/stegoeggo "release-artifacts/stegoeggo-${TAG_VERSION}-linux-amd64"
+          fi
 
       - name: Generate checksums
         working-directory: release-artifacts

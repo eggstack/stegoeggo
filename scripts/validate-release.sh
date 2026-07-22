@@ -27,7 +27,7 @@ run cargo fmt --all -- --check
 run cargo clippy --all-targets --all-features -- -D warnings
 run cargo test --all-features --no-fail-fast
 run cargo test --doc
-run cargo package --workspace --allow-dirty
+run cargo package --workspace
 run cargo deny check licenses
 run cargo deny check advisories
 

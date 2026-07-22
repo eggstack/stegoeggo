@@ -1,6 +1,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::detached::manifest::DetachedManifest;
+use crate::resource_limits::ResourceLimits;
 use crate::verification::report::{FieldSource, SignatureVerification, VerificationReport};
 
 /// Callback function type for trust evaluation.
@@ -91,6 +92,58 @@ pub fn verify_detached_manifest(
     manifest: &DetachedManifest,
     trust: &TrustPolicy,
 ) -> ManifestVerification {
+    verify_detached_manifest_with_limits(image_bytes, manifest, trust, None)
+}
+
+/// Verify a detached manifest with resource limits.
+///
+/// Like [`verify_detached_manifest`], but enforces [`ResourceLimits`]
+/// on the input image bytes before performing verification. The
+/// resource limits check is performed before the SHA-256 hash computation.
+///
+/// # Arguments
+///
+/// * `image_bytes` - Raw image bytes.
+/// * `manifest` - The detached manifest to verify.
+/// * `trust` - Trust policy controlling which keys are trusted.
+/// * `limits` - Optional resource limits. When `None`, default limits are used.
+///
+/// # Returns
+///
+/// A [`ManifestVerification`] with structured results.
+#[must_use]
+pub fn verify_detached_manifest_with_limits(
+    image_bytes: &[u8],
+    manifest: &DetachedManifest,
+    trust: &TrustPolicy,
+    limits: Option<&ResourceLimits>,
+) -> ManifestVerification {
+    if let Some(limits) = limits {
+        if limits.check_input_size(image_bytes.len()).is_err() {
+            let mut builder = VerificationReport::builder();
+            builder = builder.with_bindings(
+                crate::verification::report::BindingVerification::builder()
+                    .instance_digest_present(false)
+                    .instance_digest_valid(false)
+                    .build(),
+            );
+            return ManifestVerification {
+                report: builder.build(),
+                instance_digest_match: false,
+                manifest_valid: false,
+                embedded_reference_status: EmbeddedReferenceStatus::NotProvided,
+            };
+        }
+    }
+
+    verify_detached_manifest_inner(image_bytes, manifest, trust)
+}
+
+fn verify_detached_manifest_inner(
+    image_bytes: &[u8],
+    manifest: &DetachedManifest,
+    trust: &TrustPolicy,
+) -> ManifestVerification {
     let mut builder = VerificationReport::builder();
 
     // 1. Verify instance digest
@@ -104,6 +157,17 @@ pub fn verify_detached_manifest(
     let mut any_signature_valid = false;
 
     for sig_record in &manifest.signatures {
+        if sig_record.algorithm != "ed25519" {
+            builder = builder.add_signature(
+                SignatureVerification::builder()
+                    .present(true)
+                    .structurally_valid(false)
+                    .source(FieldSource::DetachedManifest)
+                    .build(),
+            );
+            continue;
+        }
+
         let sig_bytes = match hex::decode(&sig_record.signature) {
             Ok(b) => b,
             Err(_) => {
@@ -125,6 +189,17 @@ pub fn verify_detached_manifest(
             .find(|k| k.key_id == sig_record.key_id);
 
         if let Some(pub_entry) = matching_key {
+            if pub_entry.algorithm != "ed25519" {
+                builder = builder.add_signature(
+                    SignatureVerification::builder()
+                        .present(true)
+                        .structurally_valid(false)
+                        .source(FieldSource::DetachedManifest)
+                        .build(),
+                );
+                continue;
+            }
+
             if let Ok(pub_bytes_vec) = hex::decode(&pub_entry.key_bytes) {
                 if pub_bytes_vec.len() == 32 {
                     let mut raw_pub = [0u8; 32];
@@ -239,20 +314,20 @@ pub fn verify_detached_manifest(
                             embedded_reference_status: EmbeddedReferenceStatus::Stripped,
                         };
                     }
-                    if let Some(raw) = payload.raw_payload() {
-                        let mut hasher = Sha256::new();
-                        hasher.update(raw);
-                        let actual_digest = format!("sha256:{}", hex::encode(hasher.finalize()));
-                        if actual_digest != reference.payload_digest {
-                            return ManifestVerification {
-                                report,
-                                instance_digest_match,
-                                manifest_valid: true,
-                                embedded_reference_status: EmbeddedReferenceStatus::Malformed,
-                            };
+                    match payload.raw_payload() {
+                        Some(raw) => {
+                            let mut hasher = Sha256::new();
+                            hasher.update(raw);
+                            let actual_digest =
+                                format!("sha256:{}", hex::encode(hasher.finalize()));
+                            if actual_digest != reference.payload_digest {
+                                EmbeddedReferenceStatus::Malformed
+                            } else {
+                                EmbeddedReferenceStatus::Present
+                            }
                         }
+                        None => EmbeddedReferenceStatus::Malformed,
                     }
-                    EmbeddedReferenceStatus::Present
                 }
                 None => EmbeddedReferenceStatus::Stripped,
             }

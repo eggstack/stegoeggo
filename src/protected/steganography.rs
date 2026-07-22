@@ -2637,7 +2637,7 @@ impl StegoPayload {
         self.intensity
     }
 
-    /// The payload format version (1 or 2).
+    /// The payload format version (1, 2, or 3).
     #[must_use]
     pub fn version(&self) -> u8 {
         self.version

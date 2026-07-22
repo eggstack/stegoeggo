@@ -9,13 +9,13 @@
 
 ## Supported Platforms
 
-| OS | Architecture | Status |
-|----|-------------|--------|
-| Linux | x86_64 | Supported |
-| Linux | aarch64 | Supported |
-| macOS | x86_64 | Supported |
-| macOS | aarch64 | Supported |
-| Windows | x86_64 | Supported |
+| OS | Architecture | CI Tested | Notes |
+|----|-------------|-----------|-------|
+| Linux | x86_64 | Yes | Primary development platform |
+| Linux | aarch64 | No | May work, untested in CI |
+| macOS | x86_64 | No | May work, untested in CI |
+| macOS | aarch64 | No | May work, untested in CI |
+| Windows | x86_64 | No | May work, untested in CI |
 
 ## Supported Image Formats
 

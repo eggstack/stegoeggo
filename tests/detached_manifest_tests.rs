@@ -1,9 +1,10 @@
 #![cfg(feature = "detached-manifest")]
 
 use stegoeggo::detached::{
-    verify_detached_manifest, verify_detached_manifest_with_keys, DetachedManifest,
-    EmbeddedReference, EmbeddedReferenceStatus, PublicKeyEntry, SignatureRecord, TrustPolicy,
-    MAX_KEY_ID_LEN, MAX_MANIFEST_SIZE, MAX_PUBLIC_KEYS, MAX_SIGNATURES,
+    verify_detached_manifest, verify_detached_manifest_with_keys,
+    verify_detached_manifest_with_limits, DetachedManifest, EmbeddedReference,
+    EmbeddedReferenceStatus, PublicKeyEntry, SignatureRecord, TrustPolicy, MAX_KEY_ID_LEN,
+    MAX_MANIFEST_SIZE, MAX_PUBLIC_KEYS, MAX_SIGNATURES,
 };
 use stegoeggo::provenance::ProvenanceClaim;
 use stegoeggo::signing::SigningKey;
@@ -344,6 +345,161 @@ fn test_embedded_reference_not_provided() {
         result.embedded_reference_status,
         EmbeddedReferenceStatus::NotProvided
     );
+}
+
+#[test]
+fn test_unknown_algorithm_rejected() {
+    let sk = SigningKey::from_bytes([42u8; 32], b"test-key-id".to_vec()).unwrap();
+    let vk = sk.verifying_key();
+    let image_bytes = b"fake image content for testing";
+
+    let claim = ProvenanceClaim::new(1)
+        .with_content_code("iscc:test-algo".to_string())
+        .with_creation_time(1700000000)
+        .with_source_facts("png", 100, 100, 10000)
+        .with_software("stegoeggo/0.3.0")
+        .with_instance_digest(image_bytes);
+
+    let claim_bytes = claim.canonical_bytes();
+    let sig_bytes = sk.sign(&claim_bytes);
+
+    let manifest = DetachedManifest::new(claim)
+        .with_signature(SignatureRecord {
+            algorithm: "rsa-sha256".to_string(),
+            key_id: b"test-key-id".to_vec(),
+            signature: hex::encode(&sig_bytes),
+        })
+        .with_public_key(PublicKeyEntry {
+            key_id: b"test-key-id".to_vec(),
+            algorithm: "ed25519".to_string(),
+            key_bytes: hex::encode(vk.as_bytes()),
+        });
+
+    let result = verify_detached_manifest(image_bytes, &manifest, &TrustPolicy::TrustNone);
+    assert_eq!(result.report.signatures().len(), 1);
+    assert!(!result.report.signatures()[0].structurally_valid());
+}
+
+#[test]
+fn test_encoding_mismatch_rejected() {
+    let sk = SigningKey::from_bytes([42u8; 32], b"test-key-id".to_vec()).unwrap();
+    let image_bytes = b"fake image content for testing";
+
+    let claim = ProvenanceClaim::new(1)
+        .with_content_code("iscc:test-encoding".to_string())
+        .with_creation_time(1700000000)
+        .with_source_facts("png", 100, 100, 10000)
+        .with_software("stegoeggo/0.3.0")
+        .with_instance_digest(image_bytes);
+
+    let claim_bytes = claim.canonical_bytes();
+    let sig_bytes = sk.sign(&claim_bytes);
+
+    let manifest = DetachedManifest::new(claim)
+        .with_signature(SignatureRecord {
+            algorithm: "ed25519".to_string(),
+            key_id: b"test-key-id".to_vec(),
+            signature: hex::encode(sig_bytes),
+        })
+        .with_public_key(PublicKeyEntry {
+            key_id: b"test-key-id".to_vec(),
+            algorithm: "ed25519".to_string(),
+            key_bytes: "++invalid-hex++".to_string(),
+        });
+
+    let result = verify_detached_manifest(image_bytes, &manifest, &TrustPolicy::TrustNone);
+    assert_eq!(result.report.signatures().len(), 1);
+    assert!(!result.report.signatures()[0].structurally_valid());
+}
+
+#[test]
+fn test_wrong_key_content_fails() {
+    let image_bytes = b"fake image content for testing";
+
+    let claim = ProvenanceClaim::new(1)
+        .with_content_code("iscc:test-wrong-key".to_string())
+        .with_creation_time(1700000000)
+        .with_source_facts("png", 100, 100, 10000)
+        .with_software("stegoeggo/0.3.0")
+        .with_instance_digest(image_bytes);
+
+    let sig_bytes = [0u8; 64];
+
+    let manifest = DetachedManifest::new(claim)
+        .with_signature(SignatureRecord {
+            algorithm: "ed25519".to_string(),
+            key_id: b"test-key-id".to_vec(),
+            signature: hex::encode(sig_bytes),
+        })
+        .with_public_key(PublicKeyEntry {
+            key_id: b"test-key-id".to_vec(),
+            algorithm: "ed25519".to_string(),
+            key_bytes: hex::encode([0xFFu8; 32]),
+        });
+
+    let result = verify_detached_manifest(image_bytes, &manifest, &TrustPolicy::TrustNone);
+    assert_eq!(result.report.signatures().len(), 1);
+    assert!(result.report.signatures()[0].structurally_valid());
+    assert!(!result.report.signatures()[0].cryptographically_valid());
+}
+
+#[test]
+fn test_embedded_reference_raw_payload_none() {
+    use image::ImageEncoder;
+
+    let img = image::DynamicImage::new_rgb8(64, 64);
+    let mut image_bytes = Vec::new();
+    {
+        let encoder = image::codecs::png::PngEncoder::new(&mut image_bytes);
+        let rgb = img.to_rgb8();
+        encoder
+            .write_image(&rgb, 64, 64, image::ExtendedColorType::Rgb8)
+            .unwrap();
+    }
+
+    let claim = ProvenanceClaim::new(1)
+        .with_content_code("iscc:raw-payload-test".to_string())
+        .with_creation_time(1700000000)
+        .with_source_facts("png", 64, 64, image_bytes.len() as u64)
+        .with_software("stegoeggo/0.3.0")
+        .with_instance_digest(&image_bytes);
+
+    let manifest = DetachedManifest::new(claim).with_embedded_reference(EmbeddedReference {
+        payload_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            .to_string(),
+        payload_version: 3,
+    });
+
+    let result = verify_detached_manifest(&image_bytes, &manifest, &TrustPolicy::TrustNone);
+    assert_eq!(
+        result.embedded_reference_status,
+        EmbeddedReferenceStatus::Stripped
+    );
+}
+
+#[test]
+fn test_resource_limits_rejects_oversized_input() {
+    use stegoeggo::ResourceLimits;
+
+    let limits = ResourceLimits::builder().max_input_bytes(100).build();
+    let image_bytes = vec![0u8; 200];
+
+    let claim = ProvenanceClaim::new(1)
+        .with_content_code("iscc:limits-test".to_string())
+        .with_creation_time(1700000000)
+        .with_source_facts("png", 100, 100, 10000)
+        .with_software("stegoeggo/0.3.0");
+
+    let manifest = DetachedManifest::new(claim);
+    let result = verify_detached_manifest_with_limits(
+        &image_bytes,
+        &manifest,
+        &TrustPolicy::TrustNone,
+        Some(&limits),
+    );
+
+    assert!(!result.manifest_valid);
+    assert!(!result.instance_digest_match);
 }
 
 #[test]

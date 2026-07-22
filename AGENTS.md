@@ -251,7 +251,7 @@ Stable exit codes: 0=pass, 1=fail, 2=config error, 3=digest mismatch, 4=coverage
 - **F5 tiled block set**: MCU-interleaved block ordering: `block_idx = (mcu_y * mcus_per_row + mcu_x) * h * v + sub_y * h + sub_x`. Do NOT assume row-major ordering
 - **ProtectionWarning variants**: 6 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped`, `DctCapacityInsufficient`. Returned by `process_image_bytes_with_warnings`
 - **WarningCategory / WarningSeverity**: `ProtectionWarning` has `category() -> WarningCategory` and `severity_for_profile(profile) -> WarningSeverity` methods. Categories: `LegalNotice`, `BestEffortStego`, `AuthenticatedProvenance`, `FormatFragility`. Severities: `Info`, `Warning`, `Error`
-- **Fuzz harness**: 3 targets in `fuzz/`: `pipeline_bytes`, `tiled_round_trip`, `jpeg_parser`. Run with `cargo +nightly fuzz run <target> -- -max_total_time=60`. Add regression tests in `tests/robustness.rs` for findings
+- **Fuzz harness**: 4 targets in `fuzz/`: `pipeline_bytes`, `tiled_round_trip`, `jpeg_parser`, `payload_v3_parser`. Run with `cargo +nightly fuzz run <target> -- -max_total_time=60`. Add regression tests in `tests/robustness.rs` for findings
 - **EvidenceProfile vs ProtectionLevel**: `ProtectionLevel` controls how much processing occurs (Disabled/Light/Standard). `EvidenceProfile` controls how warnings are interpreted and the default evidence posture. They are orthogonal — you can use any profile with any level
 - **MissingMacKey warning is profile-dependent**: Only emitted for `AuthenticatedProvenance` and `Maximal` profiles. `LegalNotice` and `LegalNoticeWithStego` do not warn about missing MAC keys
 - **`NoticeVerification`, `EvidenceStrength`, `EvidenceChannel`**: Types in `src/types.rs` for legal-notice conformance reporting. `verify_legal_notice()` in `src/protected/notice_verification.rs` extracts legal fields from PNG tEXt, JPEG COM, and WebP XMP markers, identifies evidence channels (JpegXmp, JpegIptc, PngXmp, etc.), verifies stego payload integrity (LsbPayload for non-JPEG, DctPayload for JPEG), and returns an evidence strength rating
@@ -281,4 +281,4 @@ Stable exit codes: 0=pass, 1=fail, 2=config error, 3=digest mismatch, 4=coverage
 - **Deprecated API inventory is tracked in DEPRECATIONS.md**
 - **Support matrix is documented in SUPPORT.md**
 - **Stability tiers are documented in STABILITY.md**
-- **Release 6 status tracking is in plans/024-status.md**
+- **Release 6 status tracking is in plans/025-status.md (local, not committed)**
