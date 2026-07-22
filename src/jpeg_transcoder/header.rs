@@ -122,6 +122,10 @@ impl Default for JpegHeader {
 
 impl JpegHeader {
     pub fn parse(data: &[u8]) -> Result<Self> {
+        Self::parse_with_limits(data, &crate::ResourceLimits::default())
+    }
+
+    pub fn parse_with_limits(data: &[u8], limits: &crate::ResourceLimits) -> Result<Self> {
         if data.len() < 2 {
             return Err(TranscoderError::InvalidFormat("Input too short".into()));
         }
@@ -144,6 +148,7 @@ impl JpegHeader {
         let mut pos = 2;
         let mut largest_width = 0usize;
         let mut largest_height = 0usize;
+        let mut segment_count: usize = 0;
 
         while pos < data.len() {
             // Find next marker - skip to 0xFF
@@ -187,6 +192,15 @@ impl JpegHeader {
                 break;
             }
 
+            segment_count += 1;
+            if segment_count > limits.max_jpeg_segments() {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "JPEG segment count {} exceeds limit {}",
+                    segment_count,
+                    limits.max_jpeg_segments()
+                )));
+            }
+
             // Get segment length
             if pos + 3 >= data.len() {
                 return Err(TranscoderError::InvalidFormat(format!(
@@ -196,6 +210,14 @@ impl JpegHeader {
             }
 
             let segment_len = ((data[pos + 2] as usize) << 8) | (data[pos + 3] as usize);
+
+            if segment_len > limits.max_jpeg_segment_bytes() {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "JPEG segment size {} exceeds limit {}",
+                    segment_len,
+                    limits.max_jpeg_segment_bytes()
+                )));
+            }
 
             let segment_data_start = pos + 4;
             let segment_data_end = (pos + 2 + segment_len)

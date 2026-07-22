@@ -643,6 +643,9 @@ pub struct BindingVerification {
     instance_digest_valid: bool,
     content_hash_present: bool,
     content_hash_valid: bool,
+    format_valid: bool,
+    dimensions_valid: bool,
+    file_size_valid: bool,
     source: FieldSource,
 }
 
@@ -671,6 +674,24 @@ impl BindingVerification {
         self.content_hash_valid
     }
 
+    /// Whether the claimed format matches the actual image format.
+    #[must_use]
+    pub fn format_valid(&self) -> bool {
+        self.format_valid
+    }
+
+    /// Whether the claimed dimensions match the actual image dimensions.
+    #[must_use]
+    pub fn dimensions_valid(&self) -> bool {
+        self.dimensions_valid
+    }
+
+    /// Whether the claimed file size matches the actual file size.
+    #[must_use]
+    pub fn file_size_valid(&self) -> bool {
+        self.file_size_valid
+    }
+
     /// Source from which this verification was obtained.
     #[must_use]
     pub fn source(&self) -> FieldSource {
@@ -684,6 +705,9 @@ impl BindingVerification {
             instance_digest_valid: false,
             content_hash_present: false,
             content_hash_valid: false,
+            format_valid: false,
+            dimensions_valid: false,
+            file_size_valid: false,
             source: FieldSource::Xmp,
         }
     }
@@ -695,6 +719,9 @@ pub struct BindingVerificationBuilder {
     instance_digest_valid: bool,
     content_hash_present: bool,
     content_hash_valid: bool,
+    format_valid: bool,
+    dimensions_valid: bool,
+    file_size_valid: bool,
     source: FieldSource,
 }
 
@@ -727,6 +754,27 @@ impl BindingVerificationBuilder {
         self
     }
 
+    /// Set whether the claimed format matches the actual image format.
+    #[must_use]
+    pub fn format_valid(mut self, valid: bool) -> Self {
+        self.format_valid = valid;
+        self
+    }
+
+    /// Set whether the claimed dimensions match the actual image dimensions.
+    #[must_use]
+    pub fn dimensions_valid(mut self, valid: bool) -> Self {
+        self.dimensions_valid = valid;
+        self
+    }
+
+    /// Set whether the claimed file size matches the actual file size.
+    #[must_use]
+    pub fn file_size_valid(mut self, valid: bool) -> Self {
+        self.file_size_valid = valid;
+        self
+    }
+
     /// Set the source.
     #[must_use]
     pub fn source(mut self, source: FieldSource) -> Self {
@@ -742,6 +790,9 @@ impl BindingVerificationBuilder {
             instance_digest_valid: self.instance_digest_valid,
             content_hash_present: self.content_hash_present,
             content_hash_valid: self.content_hash_valid,
+            format_valid: self.format_valid,
+            dimensions_valid: self.dimensions_valid,
+            file_size_valid: self.file_size_valid,
             source: self.source,
         }
     }

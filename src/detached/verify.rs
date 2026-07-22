@@ -1,3 +1,4 @@
+use image::GenericImageView;
 use sha2::{Digest, Sha256};
 
 use crate::detached::manifest::DetachedManifest;
@@ -280,11 +281,29 @@ fn verify_detached_manifest_inner(
         );
     }
 
-    // 4. Set binding verification
+    // 4. Set binding verification (instance digest + format + dimensions + file size)
+    let actual_format = crate::types::ImageOutputFormat::from_magic_bytes(image_bytes)
+        .map(|f| format!("{:?}", f).to_lowercase())
+        .unwrap_or_default();
+    let format_valid = actual_format == manifest.claim.format;
+
+    let (actual_width, actual_height) = match crate::util::image::load_image_from_bytes(image_bytes)
+    {
+        Ok(img) => img.dimensions(),
+        Err(_) => (0, 0),
+    };
+    let dimensions_valid =
+        actual_width == manifest.claim.width && actual_height == manifest.claim.height;
+
+    let file_size_valid = (image_bytes.len() as u64) == manifest.claim.file_size;
+
     builder = builder.with_bindings(
         crate::verification::report::BindingVerification::builder()
             .instance_digest_present(!manifest.claim.instance_digest.is_empty())
             .instance_digest_valid(instance_digest_match)
+            .format_valid(format_valid)
+            .dimensions_valid(dimensions_valid)
+            .file_size_valid(file_size_valid)
             .build(),
     );
 

@@ -51,11 +51,11 @@ impl Default for ResourceLimits {
             max_width: 16384,
             max_height: 16384,
             max_png_chunks: 500,
-            max_png_chunk_bytes: 65535,
+            max_png_chunk_bytes: 16 * 1024 * 1024,
             max_jpeg_segments: 256,
             max_jpeg_segment_bytes: 65535,
             max_webp_riff_chunks: 500,
-            max_webp_riff_bytes: 65535,
+            max_webp_riff_bytes: 16 * 1024 * 1024,
             max_xmp_bytes: 65535,
             max_xml_depth: 32,
             max_xml_properties: 256,
@@ -546,5 +546,133 @@ mod tests {
         let s = usage.to_string();
         assert!(s.contains("1024"));
         assert!(s.contains("10"));
+    }
+
+    #[test]
+    fn jpeg_segment_count_exceeds_limit() {
+        let limits = ResourceLimits::builder().max_jpeg_segments(3).build();
+        let mut data = vec![0xFF, 0xD8]; // SOI
+        for i in 0..5u8 {
+            data.extend_from_slice(&[0xFF, 0xFE]); // COM marker
+            data.extend_from_slice(&[0x00, 0x06]); // length = 6
+            data.extend_from_slice(&[i, 0, 0, 0]); // payload
+        }
+        data.extend_from_slice(&[0xFF, 0xD9]); // EOI
+        let result = crate::jpeg_transcoder::header::JpegHeader::parse_with_limits(&data, &limits);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("segment count"),
+            "Error should mention segment count: {err}"
+        );
+    }
+
+    #[test]
+    fn jpeg_segment_bytes_exceeds_limit() {
+        let limits = ResourceLimits::builder().max_jpeg_segment_bytes(10).build();
+        let mut data = vec![0xFF, 0xD8]; // SOI
+        data.extend_from_slice(&[0xFF, 0xFE]); // COM marker
+        data.extend_from_slice(&[0x00, 0x20]); // length = 32 (exceeds 10)
+        data.extend_from_slice(&[0; 30]); // payload
+        data.extend_from_slice(&[0xFF, 0xD9]); // EOI
+        let result = crate::jpeg_transcoder::header::JpegHeader::parse_with_limits(&data, &limits);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("segment size"),
+            "Error should mention segment size: {err}"
+        );
+    }
+
+    #[test]
+    fn png_chunk_count_exceeds_limit() {
+        use crate::protected::metadata_trap::MetadataTrapProtector;
+        use crate::traits::Protector;
+        use crate::types::{ImageOutputFormat, ProtectionContext};
+
+        let img = image::DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(16, 16, |x, y| {
+            image::Rgb([x as u8, y as u8, 0])
+        }));
+        let png = crate::util::image::encode_image(&img, image::ImageFormat::Png).unwrap();
+
+        let limits = ResourceLimits::builder().max_png_chunks(2).build();
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_resource_limits(limits);
+        let protector = MetadataTrapProtector::new();
+        let result = protector.inject_bytes(&png, &ctx);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn png_chunk_bytes_exceeds_limit() {
+        use crate::protected::metadata_trap::MetadataTrapProtector;
+        use crate::traits::Protector;
+        use crate::types::{ImageOutputFormat, ProtectionContext};
+
+        let img = image::DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(16, 16, |x, y| {
+            image::Rgb([x as u8, y as u8, 0])
+        }));
+        let png = crate::util::image::encode_image(&img, image::ImageFormat::Png).unwrap();
+
+        let limits = ResourceLimits::builder().max_png_chunk_bytes(10).build();
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Png)
+            .with_resource_limits(limits);
+        let protector = MetadataTrapProtector::new();
+        let result = protector.inject_bytes(&png, &ctx);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn input_size_exceeds_limit() {
+        let limits = ResourceLimits::builder().max_input_bytes(100).build();
+        let err = limits.check_input_size(200).unwrap_err();
+        match err {
+            crate::Error::InputTooLarge { size, limit } => {
+                assert_eq!(size, 200);
+                assert_eq!(limit, 100);
+            }
+            _ => panic!("Expected InputTooLarge"),
+        }
+    }
+
+    #[test]
+    fn dimensions_exceeds_limit() {
+        let limits = ResourceLimits::builder()
+            .max_width(100)
+            .max_height(100)
+            .build();
+        let err = limits.check_dimensions(200, 200).unwrap_err();
+        match err {
+            crate::Error::DimensionsExceeded {
+                width,
+                height,
+                max_width,
+                max_height,
+            } => {
+                assert_eq!(width, 200);
+                assert_eq!(height, 200);
+                assert_eq!(max_width, 100);
+                assert_eq!(max_height, 100);
+            }
+            _ => panic!("Expected DimensionsExceeded"),
+        }
+    }
+
+    #[test]
+    fn metadata_field_bytes_exceeds_limit() {
+        let limits = ResourceLimits::builder().max_metadata_field_bytes(10).build();
+        let err = limits
+            .check_metadata_size("XMP", 20, limits.max_metadata_field_bytes())
+            .unwrap_err();
+        match err {
+            crate::Error::MetadataLimitExceeded { kind, size, limit } => {
+                assert_eq!(kind, "XMP");
+                assert_eq!(size, 20);
+                assert_eq!(limit, 10);
+            }
+            _ => panic!("Expected MetadataLimitExceeded"),
+        }
     }
 }

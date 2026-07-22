@@ -444,6 +444,7 @@ impl ProtectionPipeline {
                     img_bytes,
                     input_format,
                     ctx_with_level.max_dimension(),
+                    &ctx.resource_limits(),
                 )?;
                 self.apply_light_bytes_pipeline(
                     img_bytes,
@@ -498,9 +499,13 @@ impl ProtectionPipeline {
         Ok((ctx_with_level, input_format, output_format))
     }
 
-    fn validate_jpeg_dimensions_from_bytes(img_bytes: &[u8], max_dim: Option<u32>) -> Result<()> {
+    fn validate_jpeg_dimensions_from_bytes(
+        img_bytes: &[u8],
+        max_dim: Option<u32>,
+        limits: &ResourceLimits,
+    ) -> Result<()> {
         if let Some(max) = max_dim {
-            let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+            let header = jpeg_transcoder::header::JpegHeader::parse_with_limits(img_bytes, limits)?;
             if header.width as u32 > max || header.height as u32 > max {
                 return Err(Error::ImageDecode(format!(
                     "Image dimensions {}x{} exceed maximum allowed {}",
@@ -516,13 +521,14 @@ impl ProtectionPipeline {
         img_bytes: &[u8],
         input_format: crate::types::ImageOutputFormat,
         max_dim: Option<u32>,
+        limits: &ResourceLimits,
     ) -> Result<()> {
         if max_dim.is_none() {
             return Ok(());
         }
 
         if input_format == crate::types::ImageOutputFormat::Jpeg {
-            Self::validate_jpeg_dimensions_from_bytes(img_bytes, max_dim)
+            Self::validate_jpeg_dimensions_from_bytes(img_bytes, max_dim, limits)
         } else {
             let img = load_image_from_bytes(img_bytes)?;
             Self::validate_dimensions(&img, max_dim)
@@ -579,7 +585,11 @@ impl ProtectionPipeline {
         if input_format == crate::types::ImageOutputFormat::Jpeg
             && output_format == crate::types::ImageOutputFormat::Jpeg
         {
-            Self::validate_jpeg_dimensions_from_bytes(img_bytes, ctx.max_dimension())?;
+            Self::validate_jpeg_dimensions_from_bytes(
+                img_bytes,
+                ctx.max_dimension(),
+                &ctx.resource_limits(),
+            )?;
             let with_stego = self.steganography.apply_dct_stego_bytes(img_bytes, ctx)?;
             return self.metadata_trap.inject_bytes(&with_stego, ctx);
         }

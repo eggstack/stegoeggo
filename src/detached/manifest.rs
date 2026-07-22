@@ -127,8 +127,163 @@ impl DetachedManifest {
     }
 
     /// Serialize the manifest to canonical JSON bytes.
+    ///
+    /// Produces deterministic JSON with sorted keys and no whitespace.
+    /// This is used for digest computation. Signing uses the claim-level
+    /// canonical bytes, not the full manifest.
     pub fn canonical_bytes(&self) -> Vec<u8> {
-        serde_json::to_string(self)
+        let mut map = serde_json::Map::new();
+        map.insert("claim".into(), {
+            let mut claim_map = serde_json::Map::new();
+            claim_map.insert(
+                "claim_id".into(),
+                serde_json::Value::String(hex::encode(self.claim.claim_id)),
+            );
+            claim_map.insert(
+                "content_code".into(),
+                serde_json::Value::String(self.claim.content_code.clone()),
+            );
+            claim_map.insert(
+                "created_at".into(),
+                serde_json::Value::Number(self.claim.created_at.into()),
+            );
+            claim_map.insert(
+                "file_size".into(),
+                serde_json::Value::Number(self.claim.file_size.into()),
+            );
+            claim_map.insert(
+                "format".into(),
+                serde_json::Value::String(self.claim.format.clone()),
+            );
+            claim_map.insert(
+                "height".into(),
+                serde_json::Value::Number(self.claim.height.into()),
+            );
+            claim_map.insert(
+                "instance_digest".into(),
+                serde_json::Value::String(self.claim.instance_digest.clone()),
+            );
+            claim_map.insert(
+                "issuer_id".into(),
+                serde_json::Value::String(self.claim.issuer_id.clone()),
+            );
+            claim_map.insert(
+                "notice_digest".into(),
+                serde_json::Value::String(self.claim.notice_digest.clone()),
+            );
+            if let Some(ref parent) = self.claim.parent_claim_id {
+                claim_map.insert(
+                    "parent_claim_id".into(),
+                    serde_json::Value::String(parent.clone()),
+                );
+            }
+            claim_map.insert(
+                "rights_policy".into(),
+                serde_json::Value::Number(self.claim.rights_policy.into()),
+            );
+            claim_map.insert(
+                "schema_version".into(),
+                serde_json::Value::Number(self.claim.schema_version.into()),
+            );
+            claim_map.insert(
+                "software".into(),
+                serde_json::Value::String(self.claim.software.clone()),
+            );
+            if let Some(ref uri) = self.claim.statement_uri {
+                claim_map.insert(
+                    "statement_uri".into(),
+                    serde_json::Value::String(uri.clone()),
+                );
+            }
+            claim_map.insert(
+                "width".into(),
+                serde_json::Value::Number(self.claim.width.into()),
+            );
+            serde_json::Value::Object(claim_map)
+        });
+        map.insert(
+            "embedded_reference".into(),
+            match &self.embedded_reference {
+                Some(r) => {
+                    let mut m = serde_json::Map::new();
+                    m.insert(
+                        "payload_digest".into(),
+                        serde_json::Value::String(r.payload_digest.clone()),
+                    );
+                    m.insert(
+                        "payload_version".into(),
+                        serde_json::Value::Number(r.payload_version.into()),
+                    );
+                    serde_json::Value::Object(m)
+                }
+                None => serde_json::Value::Null,
+            },
+        );
+        map.insert(
+            "public_keys".into(),
+            serde_json::json!(self
+                .public_keys
+                .iter()
+                .map(|k| {
+                    let mut m = serde_json::Map::new();
+                    m.insert(
+                        "algorithm".into(),
+                        serde_json::Value::String(k.algorithm.clone()),
+                    );
+                    m.insert(
+                        "key_bytes".into(),
+                        serde_json::Value::String(k.key_bytes.clone()),
+                    );
+                    m.insert("key_id".into(), serde_json::json!(k.key_id));
+                    serde_json::Value::Object(m)
+                })
+                .collect::<Vec<_>>()),
+        );
+        map.insert(
+            "schema_version".into(),
+            serde_json::Value::Number(self.schema_version.into()),
+        );
+        map.insert(
+            "signatures".into(),
+            serde_json::json!(self
+                .signatures
+                .iter()
+                .map(|s| {
+                    let mut m = serde_json::Map::new();
+                    m.insert(
+                        "algorithm".into(),
+                        serde_json::Value::String(s.algorithm.clone()),
+                    );
+                    m.insert("key_id".into(), serde_json::json!(s.key_id));
+                    m.insert(
+                        "signature".into(),
+                        serde_json::Value::String(s.signature.clone()),
+                    );
+                    serde_json::Value::Object(m)
+                })
+                .collect::<Vec<_>>()),
+        );
+        if let Some(ref trust) = self.trust_metadata {
+            let mut trust_map = serde_json::Map::new();
+            trust_map.insert(
+                "trust_model".into(),
+                serde_json::Value::String(trust.trust_model.clone()),
+            );
+            trust_map.insert("trusted".into(), serde_json::Value::Bool(trust.trusted));
+            trust_map.insert(
+                "reason".into(),
+                serde_json::Value::String(trust.reason.clone()),
+            );
+            if let Some(ref chain) = trust.certificate_chain {
+                trust_map.insert("certificate_chain".into(), serde_json::json!(chain));
+            }
+            map.insert(
+                "trust_metadata".into(),
+                serde_json::Value::Object(trust_map),
+            );
+        }
+        let canonical = serde_json::Value::Object(map);
+        serde_json::to_string(&canonical)
             .expect("detached manifest canonical serialization failed")
             .into_bytes()
     }

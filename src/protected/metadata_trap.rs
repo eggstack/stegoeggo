@@ -901,6 +901,7 @@ impl MetadataTrapProtector {
         metadata: &[(Vec<u8>, Vec<u8>)],
         dmi: Option<DmiValue>,
         seed: Option<u64>,
+        limits: Option<&crate::ResourceLimits>,
     ) -> Result<Vec<u8>> {
         if metadata.is_empty() && dmi.is_none() {
             return Ok(png_data.to_vec());
@@ -914,14 +915,37 @@ impl MetadataTrapProtector {
         output.extend_from_slice(&png_data[0..8]);
 
         let mut pos = 8;
+        let mut chunk_count: usize = 0;
 
         while pos + 12 <= png_data.len() {
+            chunk_count += 1;
+            if let Some(lim) = limits {
+                if chunk_count > lim.max_png_chunks() {
+                    return Err(Error::ContainerLimitExceeded {
+                        kind: "PNG chunks",
+                        count: chunk_count,
+                        limit: lim.max_png_chunks(),
+                    });
+                }
+            }
+
             let chunk_len = u32::from_be_bytes([
                 png_data[pos],
                 png_data[pos + 1],
                 png_data[pos + 2],
                 png_data[pos + 3],
             ]) as usize;
+
+            if let Some(lim) = limits {
+                if chunk_len > lim.max_png_chunk_bytes() {
+                    return Err(Error::MetadataLimitExceeded {
+                        kind: "PNG chunk",
+                        size: chunk_len,
+                        limit: lim.max_png_chunk_bytes(),
+                    });
+                }
+            }
+
             let chunk_type = &png_data[pos + 4..pos + 8];
 
             if chunk_type == b"IEND" {
@@ -1504,33 +1528,62 @@ impl MetadataTrapProtector {
     /// looking for the `X-Protection-Seed` key. Returns `None` if no seed is found
     /// or the image format is unrecognized.
     pub fn extract_seed_from_image(img_bytes: &[u8]) -> Option<u64> {
+        Self::extract_seed_from_image_with_limits(img_bytes, None)
+    }
+
+    /// Extract the protection seed from image metadata, with optional resource limits.
+    ///
+    /// When limits are provided, chunk/segment iteration is bounded to prevent
+    /// resource exhaustion on malicious inputs.
+    pub fn extract_seed_from_image_with_limits(
+        img_bytes: &[u8],
+        limits: Option<&crate::ResourceLimits>,
+    ) -> Option<u64> {
         if img_bytes.len() < 8 {
             return None;
         }
 
         if img_bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
-            Self::extract_seed_from_png(img_bytes)
+            Self::extract_seed_from_png(img_bytes, limits)
         } else if img_bytes.starts_with(&[0xFF, 0xD8]) {
-            Self::extract_seed_from_jpeg(img_bytes)
+            Self::extract_seed_from_jpeg(img_bytes, limits)
         } else if img_bytes.len() >= 12
             && &img_bytes[0..4] == b"RIFF"
             && &img_bytes[8..12] == b"WEBP"
         {
-            Self::extract_seed_from_webp(img_bytes)
+            Self::extract_seed_from_webp(img_bytes, limits)
         } else {
             None
         }
     }
 
-    fn extract_seed_from_png(png_data: &[u8]) -> Option<u64> {
+    fn extract_seed_from_png(
+        png_data: &[u8],
+        limits: Option<&crate::ResourceLimits>,
+    ) -> Option<u64> {
         let mut pos = 8;
+        let mut chunk_count: usize = 0;
         while pos + 12 <= png_data.len() {
+            chunk_count += 1;
+            if let Some(lim) = limits {
+                if chunk_count > lim.max_png_chunks() {
+                    return None;
+                }
+            }
+
             let chunk_len = u32::from_be_bytes([
                 png_data[pos],
                 png_data[pos + 1],
                 png_data[pos + 2],
                 png_data[pos + 3],
             ]) as usize;
+
+            if let Some(lim) = limits {
+                if chunk_len > lim.max_png_chunk_bytes() {
+                    return None;
+                }
+            }
+
             let chunk_type = &png_data[pos + 4..pos + 8];
 
             if chunk_type == b"IEND" {
@@ -1572,8 +1625,12 @@ impl MetadataTrapProtector {
         None
     }
 
-    fn extract_seed_from_jpeg(jpeg_data: &[u8]) -> Option<u64> {
+    fn extract_seed_from_jpeg(
+        jpeg_data: &[u8],
+        limits: Option<&crate::ResourceLimits>,
+    ) -> Option<u64> {
         let mut pos = 2;
+        let mut segment_count: usize = 0;
         while pos + 2 <= jpeg_data.len() {
             if jpeg_data[pos] != 0xFF {
                 pos += 1;
@@ -1589,6 +1646,13 @@ impl MetadataTrapProtector {
             if marker == 0x00 {
                 pos += 1;
                 continue;
+            }
+
+            segment_count += 1;
+            if let Some(lim) = limits {
+                if segment_count > lim.max_jpeg_segments() {
+                    return None;
+                }
             }
 
             if marker == 0xFE {
@@ -1626,6 +1690,12 @@ impl MetadataTrapProtector {
                 return None;
             }
             let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
+
+            if let Some(lim) = limits {
+                if segment_len > lim.max_jpeg_segment_bytes() {
+                    return None;
+                }
+            }
 
             if marker == 0xED {
                 let seg_start = pos + 4;
@@ -1675,14 +1745,25 @@ impl MetadataTrapProtector {
         None
     }
 
-    fn extract_seed_from_webp(webp_data: &[u8]) -> Option<u64> {
+    fn extract_seed_from_webp(
+        webp_data: &[u8],
+        limits: Option<&crate::ResourceLimits>,
+    ) -> Option<u64> {
         if webp_data.len() < 20 {
             return None;
         }
 
         let mut pos = 12;
+        let mut chunk_count: usize = 0;
 
         while pos + 8 <= webp_data.len() {
+            chunk_count += 1;
+            if let Some(lim) = limits {
+                if chunk_count > lim.max_webp_riff_chunks() {
+                    return None;
+                }
+            }
+
             let chunk_type = &webp_data[pos..pos + 4];
             let chunk_size = u32::from_le_bytes([
                 webp_data[pos + 4],
@@ -1690,6 +1771,12 @@ impl MetadataTrapProtector {
                 webp_data[pos + 6],
                 webp_data[pos + 7],
             ]) as usize;
+
+            if let Some(lim) = limits {
+                if chunk_size > lim.max_webp_riff_bytes() {
+                    return None;
+                }
+            }
 
             let data_start = pos + 8;
             let data_end = (data_start + chunk_size).min(webp_data.len());
@@ -1780,9 +1867,13 @@ impl MetadataTrapProtector {
         }
 
         let with_metadata = match format {
-            ImageOutputFormat::Png => {
-                self.inject_text_chunks_png(img_bytes, &metadata, notice.dmi(), notice.seed())?
-            }
+            ImageOutputFormat::Png => self.inject_text_chunks_png(
+                img_bytes,
+                &metadata,
+                notice.dmi(),
+                notice.seed(),
+                Some(&ctx.resource_limits()),
+            )?,
             ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg(
                 img_bytes,
                 &metadata,
@@ -2020,7 +2111,7 @@ mod tests {
         let png = encode_png(&make_test_image());
         let metadata = vec![(b"Test-Key".to_vec(), b"Test-Value".to_vec())];
         let result = protector
-            .inject_text_chunks_png(&png, &metadata, None, None)
+            .inject_text_chunks_png(&png, &metadata, None, None, None)
             .unwrap();
         assert!(result.starts_with(&[0x89, 0x50, 0x4E, 0x47]));
         assert!(result.len() > png.len());
@@ -2037,6 +2128,7 @@ mod tests {
                 &metadata,
                 Some(DmiValue::ProhibitedAiMlTraining),
                 Some(42),
+                None,
             )
             .unwrap();
 
@@ -2084,7 +2176,7 @@ mod tests {
         let protector = MetadataTrapProtector::new();
         let png = encode_png(&make_test_image());
         let result = protector
-            .inject_text_chunks_png(&png, &[], None, None)
+            .inject_text_chunks_png(&png, &[], None, None, None)
             .unwrap();
         assert_eq!(result, png);
     }
@@ -2097,6 +2189,7 @@ mod tests {
             &[(b"key".to_vec(), b"val".to_vec())],
             None,
             None,
+            None,
         );
         assert!(result.is_err());
     }
@@ -2107,9 +2200,9 @@ mod tests {
         let png = encode_png(&make_test_image());
         let metadata = vec![];
         let result = protector
-            .inject_text_chunks_png(&png, &metadata, None, None)
+            .inject_text_chunks_png(&png, &metadata, None, None, None)
             .unwrap();
-        let extracted = MetadataTrapProtector::extract_seed_from_png(&result);
+        let extracted = MetadataTrapProtector::extract_seed_from_png(&result, None);
         assert!(extracted.is_none());
 
         // Now with seed in metadata
@@ -2118,9 +2211,9 @@ mod tests {
             (b"Other".to_vec(), b"Value".to_vec()),
         ];
         let result = protector
-            .inject_text_chunks_png(&png, &metadata_with_seed, None, Some(12345))
+            .inject_text_chunks_png(&png, &metadata_with_seed, None, Some(12345), None)
             .unwrap();
-        let extracted = MetadataTrapProtector::extract_seed_from_png(&result);
+        let extracted = MetadataTrapProtector::extract_seed_from_png(&result, None);
         assert_eq!(extracted, Some(12345));
     }
 
@@ -2129,7 +2222,13 @@ mod tests {
         let protector = MetadataTrapProtector::new();
         let png = encode_png(&make_test_image());
         let result = protector
-            .inject_text_chunks_png(&png, &[], Some(DmiValue::ProhibitedAiMlTraining), None)
+            .inject_text_chunks_png(
+                &png,
+                &[],
+                Some(DmiValue::ProhibitedAiMlTraining),
+                None,
+                None,
+            )
             .unwrap();
         // XMP is injected as iTXt chunk with "XML:com.adobe.xmp" keyword
         assert!(result.len() > png.len());
@@ -2157,7 +2256,7 @@ mod tests {
         let result = protector
             .inject_text_chunks_jpeg(&jpeg, &metadata, None, Some(54321), None)
             .unwrap();
-        let extracted = MetadataTrapProtector::extract_seed_from_jpeg(&result).unwrap();
+        let extracted = MetadataTrapProtector::extract_seed_from_jpeg(&result, None).unwrap();
         assert_eq!(extracted, 54321);
     }
 
@@ -2251,7 +2350,7 @@ mod tests {
         let result = protector
             .inject_text_chunks_webp(&webp, &metadata, None, Some(99999), None)
             .unwrap();
-        let extracted = MetadataTrapProtector::extract_seed_from_webp(&result);
+        let extracted = MetadataTrapProtector::extract_seed_from_webp(&result, None);
         assert_eq!(extracted, Some(99999));
     }
 
@@ -2276,7 +2375,7 @@ mod tests {
         let png = encode_png(&make_test_image());
         let metadata = vec![(b"X-Protection-Seed".to_vec(), b"100".to_vec())];
         let injected = protector
-            .inject_text_chunks_png(&png, &metadata, None, Some(100))
+            .inject_text_chunks_png(&png, &metadata, None, Some(100), None)
             .unwrap();
         assert_eq!(
             MetadataTrapProtector::extract_seed_from_image(&injected),
