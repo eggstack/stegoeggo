@@ -1,0 +1,140 @@
+name: Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to validate (branch, tag, or SHA)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Release Candidate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Install Rust (MSRV)
+        uses: dtolnay/rust-toolchain@1.87.0
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify no uncommitted changes
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Working tree is dirty — release candidates must be from clean commits"
+            git status --porcelain
+            exit 1
+          fi
+
+      - name: Record commit info
+        run: |
+          git rev-parse HEAD > commit-sha.txt
+          git log --oneline -1 > commit-info.txt
+          echo "Commit: $(cat commit-sha.txt)"
+          echo "Message: $(cat commit-info.txt)"
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --all-features --no-fail-fast
+
+      - name: Run doc tests
+        run: cargo test --doc
+
+      - name: Package (strict, no --allow-dirty)
+        run: cargo package --workspace
+
+      - name: Generate package inventory
+        run: |
+          cargo package --list > package-inventory.txt
+          echo "=== Package Inventory ==="
+          cat package-inventory.txt
+          echo ""
+          echo "=== Package Sizes ==="
+          wc -l package-inventory.txt
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny
+
+      - name: License and advisory check
+        run: |
+          cargo deny check licenses
+          cargo deny check advisories
+
+      - name: Install external tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libimage-exiftool-perl libxml2-utils imagemagick libvips-tools
+
+      - name: Log tool versions
+        run: |
+          {
+            echo "exiftool $(exiftool -ver)"
+            echo "xmllint $(xmllint --version 2>&1 | head -1)"
+            echo "imagemagick $(convert --version 2>&1 | head -1)"
+            echo "libvips $(vips --version 2>&1 | head -1)"
+            echo "rustc $(rustc --version)"
+            echo "cargo $(cargo --version)"
+          } > tool-versions.txt
+          cat tool-versions.txt
+
+      - name: External integration tests
+        run: cargo test --test external_tools -- --ignored
+
+      - name: Build conformance harness
+        run: cargo build --release --bin stegoeggo-conformance
+
+      - name: Run conformance checks
+        run: |
+          ./target/release/stegoeggo-conformance \
+            --fixtures tests/fixtures/conformance \
+            --manifest tests/fixtures/conformance/manifest.toml \
+            --strict \
+            --json conformance-report.json
+
+      - name: Upload conformance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-conformance-report
+          path: conformance-report.json
+
+      - name: Upload tool versions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-tool-versions
+          path: tool-versions.txt
+
+      - name: Upload package inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-package-inventory
+          path: package-inventory.txt
+
+      - name: Upload commit info
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-commit-info
+          path: |
+            commit-sha.txt
+            commit-info.txt

@@ -110,7 +110,7 @@ cargo clippy --all-targets -- -D warnings # Lint check
 cargo fmt --check                        # Format check
 cargo package --workspace --allow-dirty  # Package dry-run
 cargo bench                              # Criterion benchmarks
-cargo test --test external_tools -- --ignored    # External tool integration tests
+cargo test --test external_tools -- --ignored    # External tool integration tests (requires exiftool/xmllint)
 cargo build --release --bin stegoeggo-conformance  # Build conformance harness
 ./target/release/stegoeggo-conformance --fixtures tests/fixtures/conformance --manifest tests/fixtures/conformance/manifest.toml --strict  # Run conformance
 ./scripts/validate-release.sh                     # Full release validation
@@ -129,7 +129,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs:
 5. License/advisory check (`cargo deny check licenses && cargo deny check advisories`)
 6. Package dry-run (`cargo package --workspace --allow-dirty`)
 7. External integration tests (`cargo test --test external_tools -- --ignored`, installs exiftool/xmllint/imagemagick/libvips)
-8. External Conformance (`stegoeggo-conformance --strict`, uploads JSON report)
+8. External Conformance (`stegoeggo-conformance --strict`, uploads JSON report). A release-candidate workflow exists at `.github/workflows/release-candidate.yml` for manual dispatch validation
 9. Benchmarks (manual dispatch only)
 
 ## Release Gate
@@ -147,6 +147,9 @@ cargo deny check advisories
 cargo test --test external_tools -- --ignored
 cargo build --release --bin stegoeggo-conformance
 ./target/release/stegoeggo-conformance --fixtures tests/fixtures/conformance --manifest tests/fixtures/conformance/manifest.toml --strict
+
+# Verify deprecation inventory is current
+cat DEPRECATIONS.md
 ```
 
 Or use the centralized script:
@@ -275,3 +278,7 @@ Stable exit codes: 0=pass, 1=fail, 2=config error, 3=digest mismatch, 4=coverage
 - **SigningKey does NOT implement Serialize — private keys are never serialized**: `ed25519_dalek::SigningKey` is kept out of serde. Use `to_bytes()` / `from_bytes()` for explicit key serialization
 - **ISCC API names are deprecated — use compute_content_identifiers() instead**: `compute_iscc()` is renamed to `compute_content_identifiers()`. The old name is deprecated
 - **VerificationReport replaces broad VerificationStatus with structured sub-results**: `VerificationReport` contains per-channel results (`StegoResult`, `MetadataResult`, `SigningResult`) instead of a single overall status
+- **Deprecated API inventory is tracked in DEPRECATIONS.md**
+- **Support matrix is documented in SUPPORT.md**
+- **Stability tiers are documented in STABILITY.md**
+- **Release 6 status tracking is in plans/024-status.md**

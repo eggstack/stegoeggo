@@ -60,7 +60,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-stegoeggo = "0.2"
+stegoeggo = "0.3"
 image = "0.25"  # Required for DynamicImage
 ```
 
@@ -68,14 +68,14 @@ For async support (Tokio-based WAF/CDN deployments):
 
 ```toml
 [dependencies]
-stegoeggo = { version = "0.2", features = ["async"] }
+stegoeggo = { version = "0.3", features = ["async"] }
 ```
 
 For Ed25519 signing (provenance claims, detached manifests):
 
 ```toml
 [dependencies]
-stegoeggo = { version = "0.2", features = ["signatures", "detached-manifest"] }
+stegoeggo = { version = "0.3", features = ["signatures", "detached-manifest"] }
 ```
 
 ### As a CLI Tool
@@ -845,7 +845,7 @@ The primary deterrence mechanism is **visible metadata injection** — canonical
 
 ## Performance
 
-Benchmarked on Apple M4 Pro (12 cores), version 0.2.0.
+Benchmarked on Apple M4 Pro (12 cores), version 0.3.0.
 
 ### In-Memory Processing (`DynamicImage` path)
 

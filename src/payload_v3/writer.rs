@@ -1,9 +1,11 @@
 use crate::payload_v3::errors::PayloadV3ParseError;
 use crate::payload_v3::types::{
-    AuthAlgorithm, ExtensionEntry, ExtensionType, PayloadFlags, ProtectionChannels, V3_CORE_SIZE,
-    V3_MAGIC, V3_MAX_EMBEDDED_SIZE, V3_MAX_EXTENSION_COUNT, V3_MAX_EXTENSION_SIZE,
-    V3_MAX_KEY_ID_LEN, V3_PAYLOAD_VERSION,
+    AuthAlgorithm, ExtensionEntry, PayloadFlags, ProtectionChannels, V3_CORE_SIZE, V3_MAGIC,
+    V3_MAX_EMBEDDED_SIZE, V3_MAX_EXTENSION_COUNT, V3_MAX_EXTENSION_SIZE, V3_MAX_KEY_ID_LEN,
+    V3_PAYLOAD_VERSION,
 };
+#[cfg(feature = "signatures")]
+use crate::payload_v3::types::ExtensionType;
 
 /// Builder for constructing a V3 payload.
 ///
