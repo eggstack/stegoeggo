@@ -1005,18 +1005,37 @@ pub fn process_request_bytes_with_report(
     let result = process_plan_bytes(img_bytes, &plan)?;
 
     let stego_attempted = plan.channels().has_stego();
-    let stego_succeeded = stego_attempted
-        && !warnings.iter().any(|w| {
+
+    let stego_succeeded = if stego_attempted {
+        let had_capacity_warning = warnings.iter().any(|w| {
             matches!(
                 w,
                 ProtectionWarning::LsbCapacitySkipped | ProtectionWarning::DctCapacityInsufficient
             )
         });
+        if had_capacity_warning {
+            false
+        } else {
+            let stego = protected::steganography::SteganographyProtector::new();
+            let mac_key = plan.mac_key().unwrap_or(&[]);
+            stego.verify_payload_from_bytes_with_key(&result, mac_key)
+                == VerificationStatus::Verified
+        }
+    } else {
+        false
+    };
+
+    let metadata_injected = if plan.channels().rights_metadata {
+        protected::metadata_trap::MetadataTrapProtector::new()
+            .has_stego_owned_metadata(&result, output_format)
+    } else {
+        false
+    };
 
     let report = ExecutionReport {
         effective_policy: plan.effective_policy(),
         effective_dmi: plan.effective_dmi(),
-        metadata_injected: plan.channels().rights_metadata,
+        metadata_injected,
         stego_attempted,
         stego_succeeded,
         format_transcoded,
@@ -1033,7 +1052,7 @@ fn process_plan_bytes(img_bytes: &[u8], plan: &ResolvedProtectionPlan) -> Result
         return pipeline.process_metadata_only(img_bytes, plan);
     }
 
-    let limits = ResourceLimits::default();
+    let limits = plan.resource_limits();
     limits.check_input_size(img_bytes.len())?;
 
     if plan.processing().max_dimension.is_some() {
@@ -1097,6 +1116,8 @@ fn plan_to_context(plan: &ResolvedProtectionPlan) -> ProtectionContext {
     if let Some(dmi) = plan.effective_dmi() {
         ctx = ctx.with_dmi(dmi);
     }
+
+    ctx = ctx.with_resource_limits(plan.resource_limits().clone());
 
     ctx
 }

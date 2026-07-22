@@ -533,7 +533,11 @@ impl MetadataTrapProtector {
         xmp.into_bytes()
     }
 
-    fn has_stego_owned_metadata(&self, img_bytes: &[u8], format: ImageOutputFormat) -> bool {
+    pub(crate) fn has_stego_owned_metadata(
+        &self,
+        img_bytes: &[u8],
+        format: ImageOutputFormat,
+    ) -> bool {
         match format {
             ImageOutputFormat::Png => self.png_has_stego_metadata(img_bytes),
             ImageOutputFormat::Jpeg => self.jpeg_has_stego_metadata(img_bytes),

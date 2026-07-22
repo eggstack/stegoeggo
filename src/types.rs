@@ -3189,6 +3189,7 @@ pub struct ProtectionRequest {
     intensity: f32,
     legal_metadata: Option<LegalMetadata>,
     mac_key: Option<Vec<u8>>,
+    resource_limits: Option<crate::resource_limits::ResourceLimits>,
 }
 
 impl ProtectionRequest {
@@ -3204,6 +3205,7 @@ impl ProtectionRequest {
             intensity: 0.5,
             legal_metadata: None,
             mac_key: None,
+            resource_limits: None,
         }
     }
 
@@ -3251,6 +3253,13 @@ impl ProtectionRequest {
     #[must_use]
     pub fn with_mac_key(mut self, key: Vec<u8>) -> Self {
         self.mac_key = Some(key);
+        self
+    }
+
+    /// Sets custom resource limits for parser safety.
+    #[must_use]
+    pub fn with_resource_limits(mut self, limits: crate::resource_limits::ResourceLimits) -> Self {
+        self.resource_limits = Some(limits);
         self
     }
 
@@ -3337,6 +3346,12 @@ impl ProtectionRequest {
         self.mac_key.as_deref()
     }
 
+    /// Returns the resource limits, if set.
+    #[must_use]
+    pub fn resource_limits(&self) -> Option<&crate::resource_limits::ResourceLimits> {
+        self.resource_limits.as_ref()
+    }
+
     /// Creates a protection request from a preset, notice, and policy.
     ///
     /// The preset determines the channel configuration. Additional options
@@ -3369,6 +3384,7 @@ pub struct ResolvedProtectionPlan {
     legal_metadata: Option<LegalMetadata>,
     mac_key: Option<Vec<u8>>,
     warnings: Vec<ProtectionWarning>,
+    resource_limits: crate::resource_limits::ResourceLimits,
 }
 
 impl ResolvedProtectionPlan {
@@ -3444,6 +3460,12 @@ impl ResolvedProtectionPlan {
         &self.warnings
     }
 
+    /// Returns the resource limits for this plan.
+    #[must_use]
+    pub fn resource_limits(&self) -> &crate::resource_limits::ResourceLimits {
+        &self.resource_limits
+    }
+
     /// Returns true if any pixel-modifying work is required.
     #[must_use]
     pub fn modifies_pixels(&self) -> bool {
@@ -3473,6 +3495,7 @@ impl ResolvedProtectionPlan {
         legal_metadata: Option<LegalMetadata>,
         mac_key: Option<Vec<u8>>,
         warnings: Vec<ProtectionWarning>,
+        resource_limits: crate::resource_limits::ResourceLimits,
     ) -> Self {
         Self {
             effective_policy,
@@ -3487,6 +3510,7 @@ impl ResolvedProtectionPlan {
             legal_metadata,
             mac_key,
             warnings,
+            resource_limits,
         }
     }
 }

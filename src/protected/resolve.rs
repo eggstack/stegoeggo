@@ -73,6 +73,7 @@ pub fn resolve_request(
         request.legal_metadata().cloned(),
         request.mac_key().map(|k| k.to_vec()),
         warnings,
+        request.resource_limits().cloned().unwrap_or_default(),
     ))
 }
 

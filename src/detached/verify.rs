@@ -92,7 +92,8 @@ pub fn verify_detached_manifest(
     manifest: &DetachedManifest,
     trust: &TrustPolicy,
 ) -> ManifestVerification {
-    verify_detached_manifest_with_limits(image_bytes, manifest, trust, None)
+    let limits = ResourceLimits::default();
+    verify_detached_manifest_with_limits(image_bytes, manifest, trust, Some(&limits))
 }
 
 /// Verify a detached manifest with resource limits.

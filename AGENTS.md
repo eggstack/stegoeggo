@@ -179,7 +179,7 @@ Architecture docs live in `architecture/` (24 files). All docs have been verifie
 
 ## Fuzzing
 
-Three fuzz targets in `fuzz/`:
+Four fuzz targets in `fuzz/`:
 - `pipeline_bytes` — Full bytes-in/bytes-out path
 - `tiled_round_trip` — Tiled steganography end-to-end
 - `jpeg_parser` — JPEG header/entropy/DCT parsing
