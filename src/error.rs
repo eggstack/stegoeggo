@@ -85,6 +85,61 @@ pub enum Error {
     #[error("ISCC generation error: {0}")]
     Iscc(String),
 
+    /// Input exceeds the configured maximum byte limit.
+    #[error("Input too large: {size} bytes exceeds limit of {limit} bytes")]
+    InputTooLarge {
+        /// Actual input size in bytes.
+        size: usize,
+        /// Configured maximum allowed size.
+        limit: usize,
+    },
+
+    /// Image dimensions exceed the configured maximum.
+    #[error("Dimensions exceeded: {width}x{height} exceeds {max_width}x{max_height}")]
+    DimensionsExceeded {
+        /// Actual image width.
+        width: u32,
+        /// Actual image height.
+        height: u32,
+        /// Maximum allowed width.
+        max_width: u32,
+        /// Maximum allowed height.
+        max_height: u32,
+    },
+
+    /// A container structure (PNG chunks, JPEG segments, WebP RIFF) exceeds limits.
+    #[error("Container limit exceeded: {kind} count {count} exceeds limit {limit}")]
+    ContainerLimitExceeded {
+        /// Container type description.
+        kind: &'static str,
+        /// Actual count observed.
+        count: usize,
+        /// Configured maximum count.
+        limit: usize,
+    },
+
+    /// Metadata extraction or parsing exceeds configured limits.
+    #[error("Metadata limit exceeded: {kind} size {size} exceeds limit {limit}")]
+    MetadataLimitExceeded {
+        /// Metadata type description.
+        kind: &'static str,
+        /// Actual size in bytes.
+        size: usize,
+        /// Configured maximum size.
+        limit: usize,
+    },
+
+    /// Verification budget exceeded (too many candidates, seeds, or origins).
+    #[error("Verification budget exceeded: {kind} count {count} exceeds limit {limit}")]
+    VerificationBudgetExceeded {
+        /// Budget type description.
+        kind: &'static str,
+        /// Actual count observed.
+        count: usize,
+        /// Configured maximum count.
+        limit: usize,
+    },
+
     /// An async blocking task failed.
     #[cfg(feature = "async")]
     #[error("Blocking task failed: {0}")]
@@ -226,5 +281,67 @@ mod tests {
         let _ = Error::PayloadVerification("test".to_string());
         let _ = Error::Crypto("test".to_string());
         let _ = Error::Iscc("test".to_string());
+        let _ = Error::InputTooLarge {
+            size: 1000,
+            limit: 500,
+        };
+        let _ = Error::DimensionsExceeded {
+            width: 8000,
+            height: 8000,
+            max_width: 4096,
+            max_height: 4096,
+        };
+        let _ = Error::ContainerLimitExceeded {
+            kind: "PNG chunks",
+            count: 1000,
+            limit: 500,
+        };
+        let _ = Error::MetadataLimitExceeded {
+            kind: "XMP packet",
+            size: 200000,
+            limit: 65535,
+        };
+        let _ = Error::VerificationBudgetExceeded {
+            kind: "tile origins",
+            count: 100,
+            limit: 16,
+        };
+    }
+
+    #[test]
+    fn error_input_too_large_display() {
+        let err = Error::InputTooLarge {
+            size: 1000,
+            limit: 500,
+        };
+        let s = err.to_string();
+        assert!(s.contains("1000"));
+        assert!(s.contains("500"));
+    }
+
+    #[test]
+    fn error_dimensions_exceeded_display() {
+        let err = Error::DimensionsExceeded {
+            width: 8000,
+            height: 8000,
+            max_width: 4096,
+            max_height: 4096,
+        };
+        let s = err.to_string();
+        assert!(s.contains("8000x8000"));
+        assert!(s.contains("4096x4096"));
+    }
+
+    #[test]
+    fn error_container_limit_display() {
+        let err = Error::ContainerLimitExceeded {
+            kind: "JPEG segments",
+            count: 200,
+            limit: 100,
+        };
+        let s = err.to_string();
+        assert!(s.contains("JPEG segments"));
+        assert!(s.contains("200"));
+        assert!(s.contains("100"));
     }
 }

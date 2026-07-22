@@ -1,4 +1,4 @@
-name: Release
+name: Validate Release
 
 on:
   push:
@@ -6,11 +6,11 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
-    name: Validate Release
+  validate:
+    name: Validate Release Candidate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

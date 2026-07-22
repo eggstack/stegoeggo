@@ -1,0 +1,74 @@
+name: Fuzz
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Fuzz Smoke Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [pipeline_bytes, jpeg_parser, payload_v3_parser]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Run fuzz smoke (${{ matrix.target }})
+        run: |
+          cargo fuzz run ${{ matrix.target }} -- \
+            -max_total_time=30 \
+            -max_len=4096 \
+            -timeout=10
+
+  depth:
+    name: Fuzz Depth (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        target: [pipeline_bytes, jpeg_parser, payload_v3_parser]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Run fuzz depth (${{ matrix.target }})
+        run: |
+          cargo fuzz run ${{ matrix.target }} -- \
+            -max_total_time=300 \
+            -max_len=4096 \
+            -timeout=30
+
+      - name: Upload artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus-${{ matrix.target }}
+          path: fuzz/corpus/${{ matrix.target }}/
+          retention-days: 30

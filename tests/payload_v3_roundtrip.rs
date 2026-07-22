@@ -667,3 +667,35 @@ fn test_version_dispatch_boundary_four_unknown() {
     let result = parse_payload(&data);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_endianness_explicit_byte_order() {
+    let header = make_test_header();
+    let bytes = header.to_bytes();
+
+    assert_eq!(
+        u16::from_le_bytes([bytes[4], bytes[5]]),
+        header.total_length,
+        "total_length must be little-endian"
+    );
+    assert_eq!(
+        u16::from_le_bytes([bytes[6], bytes[7]]),
+        header.flags,
+        "flags must be little-endian"
+    );
+    assert_eq!(
+        u16::from_le_bytes([bytes[8], bytes[9]]),
+        header.channels,
+        "channels must be little-endian"
+    );
+    assert_eq!(
+        u64::from_le_bytes(bytes[11..19].try_into().unwrap()),
+        header.seed,
+        "seed must be little-endian"
+    );
+    assert_eq!(
+        u16::from_le_bytes([bytes[19], bytes[20]]),
+        header.intensity,
+        "intensity must be little-endian"
+    );
+}

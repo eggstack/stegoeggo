@@ -1270,6 +1270,8 @@ pub struct ProtectionContext {
     timestamp_override: Option<String>,
     #[serde(skip)]
     config: Option<Arc<ProtectionConfig>>,
+    #[serde(skip)]
+    resource_limits: Option<crate::resource_limits::ResourceLimits>,
 }
 
 impl Serialize for ProtectionContext {
@@ -1338,6 +1340,7 @@ impl Default for ProtectionContext {
             metadata_update_policy: None,
             timestamp_override: None,
             config: None,
+            resource_limits: None,
         }
     }
 }
@@ -1382,6 +1385,7 @@ impl ProtectionContext {
             metadata_update_policy: None,
             timestamp_override: None,
             config: None,
+            resource_limits: None,
         }
     }
 
@@ -1703,6 +1707,28 @@ impl ProtectionContext {
     pub fn with_timestamp_override(mut self, ts: impl Into<String>) -> Self {
         self.timestamp_override = Some(ts.into());
         self
+    }
+
+    /// Set resource limits for parser hardening.
+    ///
+    /// Limits are applied to externally reachable parsers (PNG chunk walker,
+    /// JPEG segment parser, WebP RIFF parser, XMP extraction, stego extraction)
+    /// to prevent resource exhaustion from malformed or adversarial inputs.
+    ///
+    /// When not set, the library uses conservative defaults suitable for
+    /// web-facing services. Explicit limits override all defaults.
+    #[must_use]
+    pub fn with_resource_limits(mut self, limits: crate::resource_limits::ResourceLimits) -> Self {
+        self.resource_limits = Some(limits);
+        self
+    }
+
+    /// Get the resource limits.
+    ///
+    /// Returns caller-specified limits, or conservative defaults.
+    #[must_use]
+    pub fn resource_limits(&self) -> crate::resource_limits::ResourceLimits {
+        self.resource_limits.clone().unwrap_or_default()
     }
 
     /// Get the intensity value.

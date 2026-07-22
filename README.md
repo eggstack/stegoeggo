@@ -1063,6 +1063,93 @@ sudo pacman -S perl-image-exiftool libxml2
 3. Document provenance in `tests/fixtures/conformance/README.md`
 4. Verify: `cargo run --bin stegoeggo-conformance -- --fixtures tests/fixtures/conformance --manifest tests/fixtures/conformance/manifest.toml --strict`
 
+## Migration Guide
+
+### From v0.2 (legacy metadata)
+
+v0.2 used `ProtectionLevel::Light` for metadata-only and `ProtectionLevel::Standard` for stego + metadata. The API is unchanged — `process_image_bytes()` and `ProtectionContext` work identically. The main difference is that v0.3 emits canonical PLUS `DataMining` properties instead of legacy `Iptc4xmpExt:DMI-*` tags.
+
+**Action required:** None. v0.3 reads legacy metadata written by v0.2.
+
+### From `ProtectionLevel` to `ProtectionRequest`
+
+`ProtectionLevel` still works but is deprecated for new code. The `ProtectionRequest` API provides finer control:
+
+```rust
+// Old (still works, deprecated):
+use stegoeggo::{process_image_bytes, ProtectionContext, ProtectionLevel};
+let ctx = ProtectionContext::new(0.5, 42);
+let out = process_image_bytes(&bytes, ProtectionLevel::Standard, &ctx)?;
+
+// New (preferred):
+use stegoeggo::{process_request_bytes, ProtectionRequest, RightsPolicy};
+let request = ProtectionRequest::metadata_only()
+    .with_policy(RightsPolicy::ProhibitedAimlTraining);
+let out = process_request_bytes(&bytes, &request)?;
+```
+
+### From `compute_iscc()` to `compute_content_identifiers()`
+
+The ISCC API was renamed for accuracy:
+
+```rust
+// Old (deprecated):
+let iscc = compute_iscc(&img);
+
+// New:
+let ids = compute_content_identifiers(&img);
+```
+
+### From `EvidenceProfile` to `ProtectionPreset`
+
+`EvidenceProfile` is deprecated. Use `ProtectionPreset` for preset-based configuration:
+
+```rust
+// Old (deprecated):
+use stegoeggo::EvidenceProfile;
+let ctx = ProtectionContext::new(0.5, 42)
+    .with_evidence_profile(EvidenceProfile::LegalNoticeWithStego);
+
+// New:
+use stegoeggo::ProtectionPreset;
+let request = ProtectionRequest::from_preset(ProtectionPreset::LegalNoticeWithStego);
+```
+
+### From `with_dmi()` to `RightsPolicy`
+
+The `with_dmi()` builder method is deprecated. Use `RightsPolicy` directly:
+
+```rust
+// Old (deprecated):
+let ctx = ProtectionContext::new(0.5, 42)
+    .with_dmi(DmiValue::ProhibitedAimlTraining);
+
+// New:
+let request = ProtectionRequest::metadata_only()
+    .with_policy(RightsPolicy::ProhibitedAimlTraining);
+```
+
+### From `with_inject_legal_claims()` / `with_metadata_injection()`
+
+These three-state options are deprecated. Use `ProtectionChannels`:
+
+```rust
+// Old (deprecated):
+let ctx = ProtectionContext::new(0.5, 42)
+    .with_inject_legal_claims(true)
+    .with_metadata_injection(false);
+
+// New:
+use stegoeggo::ProtectionChannels;
+let channels = ProtectionChannels {
+    rights_metadata: false,
+    ..Default::default()
+};
+let request = ProtectionRequest::metadata_only().with_channels(channels);
+```
+
+For the full deprecation inventory, see [DEPRECATIONS.md](DEPRECATIONS.md).
+
 ## Contributor Checklist
 
 Before submitting a change that affects metadata output:

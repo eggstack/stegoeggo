@@ -176,6 +176,8 @@ pub mod error;
 pub mod payload_v3;
 /// Provenance claim model for rights/provenance assertions about images.
 pub mod provenance;
+/// Resource limits for parser hardening against malformed or adversarial inputs.
+pub mod resource_limits;
 pub mod traits;
 /// Core types: protection levels, configuration, legal metadata, and verification results.
 #[allow(deprecated)]
@@ -199,6 +201,7 @@ pub mod signing;
 pub mod detached;
 
 pub use error::{Error, Result};
+pub use resource_limits::{ResourceLimits, ResourceUsage};
 pub use types::{AuthenticationMode, HiddenMarkerMode, ProcessingOptions};
 #[allow(deprecated)]
 pub use types::{
@@ -428,6 +431,8 @@ impl ProtectionPipeline {
         if level == ProtectionLevel::Disabled {
             return Ok(img_bytes.to_vec());
         }
+
+        ctx.resource_limits().check_input_size(img_bytes.len())?;
 
         let (ctx_with_level, input_format, output_format) =
             Self::context_for_bytes(img_bytes, level, ctx)?;

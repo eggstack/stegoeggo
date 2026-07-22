@@ -472,6 +472,54 @@ fn is_image_file(path: &Path) -> bool {
     }
 }
 
+fn write_atomic(path: &Path, data: &[u8]) -> Result<(), Error> {
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut temp = tempfile::NamedTempFile::new_in(dir).map_err(|e| {
+        Error::Io(std::io::Error::new(
+            e.kind(),
+            format!("create temp file: {e}"),
+        ))
+    })?;
+    std::io::Write::write_all(&mut temp, data).map_err(|e| {
+        Error::Io(std::io::Error::new(
+            e.kind(),
+            format!("write temp file: {e}"),
+        ))
+    })?;
+    temp.persist(path).map_err(|e| {
+        Error::Io(std::io::Error::new(
+            e.error.kind(),
+            format!("persist temp file: {}", e.error),
+        ))
+    })?;
+    Ok(())
+}
+
+fn check_input_output_disjoint(input: &Path, output: &Path) -> Result<(), Error> {
+    let input_canonical = input.canonicalize().map_err(|e| {
+        Error::Io(std::io::Error::new(
+            e.kind(),
+            format!("resolve input path: {e}"),
+        ))
+    })?;
+    let output_parent = output.parent().unwrap_or_else(|| Path::new("."));
+    let output_canonical = output
+        .canonicalize()
+        .or_else(|_| output_parent.canonicalize())
+        .map_err(|e| {
+            Error::Io(std::io::Error::new(
+                e.kind(),
+                format!("resolve output path: {e}"),
+            ))
+        })?;
+    if input_canonical == output_canonical {
+        return Err(Error::Config(
+            "Input and output paths resolve to the same file; use --output to specify a different path".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn compute_output_path(
     input_path: &Path,
     output_dir: &Option<PathBuf>,
@@ -549,7 +597,8 @@ fn process_single_file(
         if let Some(parent) = override_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&override_path, &output_bytes)?;
+        check_input_output_disjoint(input_path, &override_path)?;
+        write_atomic(&override_path, &output_bytes)?;
         override_path
     } else {
         let stem = input_path
@@ -569,11 +618,13 @@ fn process_single_file(
                 fs::create_dir_all(dir)?;
                 dir.join(&filename)
             };
-            fs::write(&out_path, &output_bytes)?;
+            check_input_output_disjoint(input_path, &out_path)?;
+            write_atomic(&out_path, &output_bytes)?;
             out_path
         } else {
             let output_path = PathBuf::from(filename);
-            fs::write(&output_path, &output_bytes)?;
+            check_input_output_disjoint(input_path, &output_path)?;
+            write_atomic(&output_path, &output_bytes)?;
             output_path
         }
     };
@@ -1228,7 +1279,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&output_path, &output_bytes)?;
+        check_input_output_disjoint(&input_path, &output_path)?;
+        write_atomic(&output_path, &output_bytes)?;
 
         #[allow(deprecated)]
         let ctx = ProtectionContext::new(args.intensity.clamp(0.0, 1.0), seed)
