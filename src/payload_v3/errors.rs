@@ -60,7 +60,19 @@ pub enum PayloadV3ParseError {
     /// Authentication key was not provided but the payload requires one.
     #[error("Authentication key required but not provided")]
     MissingKey,
-    /// Authentication key was provided but verification failed.
-    #[error("Authentication failed: wrong key or corrupted tag")]
+    /// Authentication key was provided but HMAC verification failed.
+    ///
+    /// This indicates the supplied key does not match the key used during
+    /// embedding. It is distinct from [`PayloadV3ParseError::CorruptTag`],
+    /// which indicates the tag itself is structurally malformed.
+    #[error("Authentication failed: wrong key")]
     WrongKey,
+    /// Authentication tag is present but structurally invalid.
+    ///
+    /// The tag length does not match the expected length for the declared
+    /// algorithm, or the tag is truncated. This is distinct from
+    /// [`PayloadV3ParseError::WrongKey`], where the tag structure is correct
+    /// but the HMAC does not match.
+    #[error("Authentication tag is corrupt or truncated")]
+    CorruptTag,
 }

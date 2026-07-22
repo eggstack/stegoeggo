@@ -164,7 +164,7 @@ struct Args {
 
     #[arg(
         long,
-        help = "Optional cryptographic key for HMAC-verified steganographic payloads (authenticated provenance mode)"
+        help = "Cryptographic key for HMAC authentication. Accepts: hex string, @/path/to/file (hex in file), - (stdin), or env STEGOEGGO_KEY"
     )]
     key: Option<String>,
 
@@ -400,8 +400,9 @@ impl From<OutputFormatArg> for ImageOutputFormat {
 
 /// Resolve a key from multiple sources with the following priority:
 /// 1. Explicit CLI argument (--key <hex>)
-/// 2. Environment variable (STEGOEGGO_KEY)
-/// 3. Stdin (when --key is "-")
+/// 2. File path (--key @/path/to/file, reads raw hex from file)
+/// 3. Environment variable (STEGOEGGO_KEY)
+/// 4. Stdin (when --key is "-")
 fn resolve_key_input(
     key_arg: &Option<String>,
     env_var: &str,
@@ -415,8 +416,20 @@ fn resolve_key_input(
                 hex::decode(hex_key).map_err(|e| format!("Invalid hex key from stdin: {}", e))?,
             ));
         }
+        if let Some(path_str) = key_str.strip_prefix('@') {
+            let path = Path::new(path_str);
+            if !path.exists() {
+                return Err(format!("Key file not found: {}", path_str).into());
+            }
+            let contents = fs::read_to_string(path)
+                .map_err(|e| format!("Failed to read key file '{}': {}", path_str, e))?;
+            let hex_key = contents.trim().replace('\n', "").replace('\r', "");
+            return Ok(Some(
+                hex::decode(&hex_key).map_err(|e| format!("Invalid hex key in file: {}", e))?,
+            ));
+        }
         return Ok(Some(
-            hex::decode(key_str).map_err(|e| format!("Invalid hex key '{}': {}", key_str, e))?,
+            hex::decode(key_str).map_err(|e| format!("Invalid hex key: {}", e))?,
         ));
     }
 
@@ -964,7 +977,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mac_key = args
             .key
             .as_ref()
-            .map(|k| hex::decode(k).map_err(|e| format!("Invalid hex key '{}': {}", k, e)))
+            .map(|k| hex::decode(k).map_err(|e| format!("Invalid hex key: {}", e)))
             .transpose()?
             .unwrap_or_default();
 

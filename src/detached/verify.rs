@@ -87,9 +87,8 @@ pub fn verify_detached_manifest(
                     let is_valid = result == crate::signing::SignatureResult::Valid;
                     any_signature_valid = any_signature_valid || is_valid;
 
-                    let key_id_matched = expected_keys.is_some_and(|trusted| {
-                        trusted.iter().any(|t| t == &sig_record.key_id)
-                    });
+                    let key_id_matched = expected_keys
+                        .is_some_and(|trusted| trusted.iter().any(|t| t == &sig_record.key_id));
 
                     builder = builder.add_signature(
                         SignatureVerification::builder()

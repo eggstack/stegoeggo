@@ -1019,4 +1019,102 @@ impl VerificationReport {
     pub fn builder() -> crate::verification::VerificationReportBuilder {
         crate::verification::VerificationReportBuilder::new()
     }
+
+    /// Construct a [`VerificationReport`] from a legacy [`NoticeVerification`](crate::types::NoticeVerification).
+    ///
+    /// This bridges the legacy verification API to the structured report format.
+    /// Fields not available from the legacy API are set to sensible defaults.
+    pub fn from_notice_verification(notice: &crate::types::NoticeVerification) -> Self {
+        use crate::types::VerificationStatus;
+
+        let rights = RightsVerification::builder()
+            .found(notice.has_notice())
+            .source(if notice.channels().is_empty() {
+                FieldSource::Xmp
+            } else {
+                FieldSource::Legacy
+            })
+            .channels(notice.channels().to_vec());
+
+        let rights = if let Some(h) = notice.copyright_holder() {
+            rights.copyright_holder(h)
+        } else {
+            rights
+        };
+        let rights = if let Some(c) = notice.creator() {
+            rights.creator(c)
+        } else {
+            rights
+        };
+        let rights = if let Some(c) = notice.contact() {
+            rights.contact(c)
+        } else {
+            rights
+        };
+        let rights = if let Some(u) = notice.usage_terms() {
+            rights.usage_terms(u)
+        } else {
+            rights
+        };
+        let rights = if let Some(a) = notice.ai_constraints() {
+            rights.ai_constraints(a)
+        } else {
+            rights
+        };
+        let rights = if let Some(d) = notice.dmi() {
+            rights.dmi(d as u8)
+        } else {
+            rights
+        };
+        let rights = rights.build();
+
+        let mut hidden_marker = HiddenMarkerVerification::builder()
+            .status(notice.stego_status())
+            .source(if notice.stego_payload().is_some() {
+                match notice.stego_payload().unwrap().version() {
+                    1 => FieldSource::EmbeddedPayloadV1,
+                    2 => FieldSource::EmbeddedPayloadV2,
+                    3 => FieldSource::EmbeddedPayloadV3,
+                    _ => FieldSource::Xmp,
+                }
+            } else {
+                FieldSource::Xmp
+            });
+
+        if let Some(seed) = notice.protection_seed() {
+            hidden_marker = hidden_marker.seed(seed);
+        }
+
+        let hidden_marker = hidden_marker.build();
+
+        let authentication = AuthenticationVerification::builder()
+            .attempted(
+                notice.authenticated() || notice.stego_status() == VerificationStatus::Verified,
+            )
+            .hmac_status(if notice.authenticated() {
+                VerificationStatus::Verified
+            } else if notice.stego_status() == VerificationStatus::Invalid {
+                VerificationStatus::Invalid
+            } else {
+                VerificationStatus::NotFound
+            })
+            .build();
+
+        let trust = TrustEvaluation::builder()
+            .trust_model("caller-owned")
+            .trusted(false)
+            .reason("Trust evaluation requires an explicit key/trust policy".to_string())
+            .build();
+
+        Self {
+            rights,
+            hidden_marker,
+            authentication,
+            signatures: Vec::new(),
+            bindings: BindingVerification::builder().build(),
+            trust,
+            evidence_strength: notice.evidence_strength(),
+            diagnostics: Vec::new(),
+        }
+    }
 }

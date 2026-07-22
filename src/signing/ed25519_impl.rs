@@ -153,16 +153,31 @@ impl VerifyingKey {
     }
 }
 
-/// Result of signature verification.
+/// Result of low-level signature verification.
+///
+/// This enum reports the cryptographic validity of a signature against a known
+/// public key. It does **not** distinguish between an unknown key and an untrusted
+/// key — both are treated as the same public key for verification purposes.
+///
+/// For trust-aware verification, use
+/// [`VerificationReport::signatures()`](crate::verification::VerificationReport::signatures),
+/// which separately tracks:
+/// - `cryptographically_valid` — the signature is valid for the given key
+/// - `key_id_matched` — the key ID matches the expected key ID
+/// - `trusted` — the key is trusted under the caller's trust policy
+///
+/// `SignatureResult` is intentionally limited to cryptographic validity so that
+/// trust decisions remain caller-owned and are not conflated with signature
+/// correctness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignatureResult {
-    /// Signature is cryptographically valid.
+    /// Signature is cryptographically valid for the supplied public key.
     Valid,
-    /// Signature is invalid (wrong key, altered claim, etc.).
+    /// Signature is invalid (wrong key, altered claim, or corrupted signature).
     Invalid,
-    /// Signature is malformed (wrong length, etc.).
+    /// Signature bytes are malformed (wrong length, etc.).
     MalformedSignature,
-    /// Key not supplied for verification.
+    /// No public key was supplied for verification.
     KeyNotSupplied,
 }
 

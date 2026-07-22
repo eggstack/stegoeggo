@@ -8,6 +8,8 @@ pub mod header;
 pub mod parser;
 /// Payload v3 core types, constants, and flags.
 pub mod types;
+/// Payload v3 builder for constructing and serializing payloads.
+pub mod writer;
 
 pub use errors::PayloadV3ParseError;
 pub use header::PayloadV3Header;
@@ -17,3 +19,4 @@ pub use types::{
     V3_DOMAIN_STRING, V3_MAGIC, V3_MAX_EMBEDDED_SIZE, V3_MAX_EXTENSION_COUNT,
     V3_MAX_EXTENSION_SIZE, V3_MAX_KEY_ID_LEN, V3_PAYLOAD_VERSION,
 };
+pub use writer::PayloadBuilder;
