@@ -402,3 +402,268 @@ fn test_v3_extension_truncated() {
     let result = parse_payload(&bytes);
     assert!(result.is_err());
 }
+
+// ============================================================================
+// Compatibility matrix: v1 CRC payload
+// ============================================================================
+
+#[test]
+fn test_v1_crc_payload_parsing() {
+    let mut data = vec![0u8; 32];
+    data[0] = 1; // version
+    data[1] = 2; // protection_level = Standard
+    data[2..10].copy_from_slice(&12345u64.to_le_bytes()); // seed
+    data[10..12].copy_from_slice(&7500u16.to_le_bytes()); // intensity
+    data[12..20].copy_from_slice(&99999u64.to_le_bytes()); // timestamp
+
+    let parsed = parse_payload(&data).unwrap();
+    match parsed {
+        ParsedPayload::V1(v1) => {
+            assert_eq!(v1.protection_level, 2);
+            assert_eq!(v1.seed, 12345);
+            assert_eq!(v1.intensity, 7500);
+            assert_eq!(v1.timestamp, 99999);
+        }
+        _ => panic!("Expected V1 payload"),
+    }
+}
+
+#[test]
+fn test_v1_crc_payload_minimal_values() {
+    let mut data = vec![0u8; 32];
+    data[0] = 1;
+    data[1] = 0; // Disabled
+                 // seed = 0, intensity = 0, timestamp = 0
+
+    let parsed = parse_payload(&data).unwrap();
+    match parsed {
+        ParsedPayload::V1(v1) => {
+            assert_eq!(v1.protection_level, 0);
+            assert_eq!(v1.seed, 0);
+            assert_eq!(v1.intensity, 0);
+            assert_eq!(v1.timestamp, 0);
+        }
+        _ => panic!("Expected V1 payload"),
+    }
+}
+
+#[test]
+fn test_v1_crc_payload_maximal_values() {
+    let mut data = vec![0u8; 32];
+    data[0] = 1;
+    data[1] = 2; // Standard
+    data[2..10].copy_from_slice(&u64::MAX.to_le_bytes());
+    data[10..12].copy_from_slice(&u16::MAX.to_le_bytes());
+    data[12..20].copy_from_slice(&u64::MAX.to_le_bytes());
+
+    let parsed = parse_payload(&data).unwrap();
+    match parsed {
+        ParsedPayload::V1(v1) => {
+            assert_eq!(v1.protection_level, 2);
+            assert_eq!(v1.seed, u64::MAX);
+            assert_eq!(v1.intensity, u16::MAX);
+            assert_eq!(v1.timestamp, u64::MAX);
+        }
+        _ => panic!("Expected V1 payload"),
+    }
+}
+
+// ============================================================================
+// Compatibility matrix: v2 CRC payload
+// ============================================================================
+
+#[test]
+fn test_v2_crc_payload_parsing() {
+    let mut data = vec![0u8; 32];
+    data[0] = 2; // version
+    data[1] = 2; // protection_level = Standard
+    data[2..10].copy_from_slice(&54321u64.to_le_bytes()); // seed
+    data[10..12].copy_from_slice(&8000u16.to_le_bytes()); // intensity
+    data[12..20].copy_from_slice(&11111u64.to_le_bytes()); // timestamp
+    data[20..24].copy_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]); // content_hash
+    data[24] = 2; // dmi_value
+    data[25] = 0; // flags (CRC, no HMAC)
+
+    let parsed = parse_payload(&data).unwrap();
+    match parsed {
+        ParsedPayload::V2(v2) => {
+            assert_eq!(v2.protection_level, 2);
+            assert_eq!(v2.seed, 54321);
+            assert_eq!(v2.intensity, 8000);
+            assert_eq!(v2.timestamp, 11111);
+            assert_eq!(v2.content_hash, [0xAA, 0xBB, 0xCC, 0xDD]);
+            assert_eq!(v2.dmi_value, 2);
+            assert_eq!(v2.flags, 0);
+        }
+        _ => panic!("Expected V2 payload"),
+    }
+}
+
+#[test]
+fn test_v2_hmac_payload_parsing() {
+    let mut data = vec![0u8; 32];
+    data[0] = 2; // version
+    data[1] = 2; // protection_level = Standard
+    data[2..10].copy_from_slice(&77777u64.to_le_bytes()); // seed
+    data[10..12].copy_from_slice(&9000u16.to_le_bytes()); // intensity
+    data[12..20].copy_from_slice(&22222u64.to_le_bytes()); // timestamp
+    data[20..24].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]); // content_hash
+    data[24] = 4; // dmi_value
+    data[25] = 1; // flags (HMAC bit set)
+
+    let parsed = parse_payload(&data).unwrap();
+    match parsed {
+        ParsedPayload::V2(v2) => {
+            assert_eq!(v2.protection_level, 2);
+            assert_eq!(v2.seed, 77777);
+            assert_eq!(v2.intensity, 9000);
+            assert_eq!(v2.content_hash, [0x11, 0x22, 0x33, 0x44]);
+            assert_eq!(v2.dmi_value, 4);
+            assert_eq!(v2.flags, 1);
+        }
+        _ => panic!("Expected V2 payload"),
+    }
+}
+
+#[test]
+fn test_v2_dmi_value_range() {
+    for dmi in 0..=6u8 {
+        let mut data = vec![0u8; 32];
+        data[0] = 2;
+        data[24] = dmi;
+
+        let parsed = parse_payload(&data).unwrap();
+        match parsed {
+            ParsedPayload::V2(v2) => {
+                assert_eq!(v2.dmi_value, dmi);
+            }
+            _ => panic!("Expected V2 payload for dmi={}", dmi),
+        }
+    }
+}
+
+// ============================================================================
+// Compatibility matrix: v3 with Ed25519 signature
+// ============================================================================
+
+#[cfg(feature = "signatures")]
+#[test]
+fn test_v3_ed25519_signature_payload_roundtrip() {
+    use stegoeggo::payload_v3::writer::PayloadBuilder;
+    use stegoeggo::signing::SigningKey;
+
+    let sk = SigningKey::from_bytes([0xABu8; 32], b"compat-test-key".to_vec());
+    let vk = sk.verifying_key();
+    let claim = b"compatibility matrix claim data";
+
+    let payload = PayloadBuilder::new()
+        .seed(88888)
+        .intensity(6000)
+        .dmi_policy(5)
+        .channels(stegoeggo::payload_v3::ProtectionChannels {
+            rights_metadata: true,
+            hidden_marker: true,
+            authentication: true,
+        })
+        .embed_signature(&sk, claim)
+        .build()
+        .unwrap();
+
+    assert!(payload.len() <= V3_MAX_EMBEDDED_SIZE);
+    assert_eq!(&payload[0..2], V3_MAGIC);
+    assert_eq!(payload[2], V3_PAYLOAD_VERSION);
+
+    let parsed = parse_payload(&payload).unwrap();
+    match parsed {
+        ParsedPayload::V3(v3) => {
+            assert_eq!(v3.header.seed, 88888);
+            assert_eq!(v3.header.intensity, 6000);
+            assert_eq!(v3.header.auth_algorithm, AuthAlgorithm::Ed25519 as u8);
+            assert!(v3.header.flags & 0x0200 != 0); // SIGNED flag
+            assert_eq!(v3.key_id, b"compat-test-key");
+
+            let sig_ext = v3.extensions.iter().find(|e| e.extension_type == 0x0011);
+            assert!(sig_ext.is_some());
+            let sig_data = &sig_ext.unwrap().data;
+            assert_eq!(sig_data.len(), 64);
+
+            let result = vk.verify(claim, sig_data);
+            assert_eq!(result, stegoeggo::signing::SignatureResult::Valid);
+        }
+        _ => panic!("Expected V3 payload"),
+    }
+}
+
+// ============================================================================
+// Compatibility matrix: v3 with HMAC-128
+// ============================================================================
+
+#[test]
+fn test_v3_hmac128_payload_roundtrip() {
+    use stegoeggo::payload_v3::writer::PayloadBuilder;
+
+    let payload = PayloadBuilder::new()
+        .seed(55555)
+        .intensity(4000)
+        .dmi_policy(1)
+        .key_id(b"hmac-key-id".to_vec())
+        .auth_algorithm(AuthAlgorithm::HmacSha256Truncated)
+        .auth_tag(vec![0xAA; 16])
+        .build()
+        .unwrap();
+
+    assert!(payload.len() <= V3_MAX_EMBEDDED_SIZE);
+
+    let parsed = parse_payload(&payload).unwrap();
+    match parsed {
+        ParsedPayload::V3(v3) => {
+            assert_eq!(v3.header.seed, 55555);
+            assert_eq!(v3.header.intensity, 4000);
+            assert_eq!(
+                v3.header.auth_algorithm,
+                AuthAlgorithm::HmacSha256Truncated as u8
+            );
+            assert_eq!(v3.header.auth_tag_len, 16);
+            assert_eq!(v3.key_id, b"hmac-key-id");
+        }
+        _ => panic!("Expected V3 payload"),
+    }
+}
+
+// ============================================================================
+// Compatibility matrix: version dispatch boundary tests
+// ============================================================================
+
+#[test]
+fn test_version_dispatch_boundary_zero() {
+    let data = vec![0u8; 32];
+    let result = parse_payload(&data);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_version_dispatch_boundary_three() {
+    let mut data = vec![0u8; V3_CORE_SIZE];
+    data[0] = V3_MAGIC[0];
+    data[1] = V3_MAGIC[1];
+    data[2] = 3;
+    data[3] = V3_CORE_SIZE as u8;
+    data[4..6].copy_from_slice(&(V3_CORE_SIZE as u16).to_le_bytes());
+
+    let parsed = parse_payload(&data).unwrap();
+    match parsed {
+        ParsedPayload::V3(v3) => {
+            assert_eq!(v3.header.version, 3);
+        }
+        _ => panic!("Expected V3 payload"),
+    }
+}
+
+#[test]
+fn test_version_dispatch_boundary_four_unknown() {
+    let mut data = vec![0u8; 32];
+    data[0] = 4; // unknown version
+
+    let result = parse_payload(&data);
+    assert!(result.is_err());
+}

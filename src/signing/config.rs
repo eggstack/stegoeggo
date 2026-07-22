@@ -91,6 +91,15 @@ impl SigningConfig {
     pub fn key_bytes(&self) -> &[u8; 32] {
         self.signing_key.key_bytes()
     }
+
+    /// Check whether the signature fits within the available payload capacity.
+    ///
+    /// Delegates to [`check_signature_capacity`](super::check_signature_capacity)
+    /// using this config's key ID length and placement preference.
+    #[must_use]
+    pub fn check_capacity(&self, available_bytes: usize) -> super::SignatureCapacity {
+        super::check_signature_capacity(available_bytes, self.key_id().len(), self.placement)
+    }
 }
 
 impl Drop for SigningConfig {

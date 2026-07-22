@@ -3,6 +3,55 @@ use sha2::{Digest, Sha256};
 use crate::detached::manifest::DetachedManifest;
 use crate::verification::report::{FieldSource, SignatureVerification, VerificationReport};
 
+/// Callback function type for trust evaluation.
+///
+/// Receives a key identifier and returns `true` if the key is trusted.
+pub type TrustCallbackFn = dyn Fn(&[u8]) -> bool + Send + Sync;
+
+/// Trust policy for evaluating detached manifest signatures.
+///
+/// Controls which public key identifiers are considered trusted
+/// during verification. The library ships no implicit trust store;
+/// trust is always caller-owned.
+pub enum TrustPolicy {
+    /// Never trust any key. Signature validity is reported but `trusted` is always false.
+    TrustNone,
+    /// Trust an exact set of key identifiers.
+    TrustKeys(Vec<Vec<u8>>),
+    /// Trust keys for which the callback returns `true`.
+    ///
+    /// The callback receives the key identifier from each signature record.
+    /// Returning `true` marks the key as trusted (combined with cryptographic validity).
+    TrustCallback(Box<TrustCallbackFn>),
+}
+
+impl std::fmt::Debug for TrustPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TrustPolicy::TrustNone => write!(f, "TrustNone"),
+            TrustPolicy::TrustKeys(keys) => f.debug_tuple("TrustKeys").field(keys).finish(),
+            TrustPolicy::TrustCallback(_) => write!(f, "TrustCallback(<function>)"),
+        }
+    }
+}
+
+/// Status of the embedded payload reference in a detached manifest.
+///
+/// When a manifest declares an `embedded_reference`, this status indicates
+/// whether the referenced payload was found in the image. A `Stripped` status
+/// means only detached evidence remains — the embedded stego channel has been
+/// removed or was never present.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbeddedReferenceStatus {
+    /// The manifest does not declare an embedded reference.
+    NotProvided,
+    /// The manifest declares a reference but no stego payload was found in the image.
+    /// Only detached evidence remains.
+    Stripped,
+    /// The manifest declares a reference and a stego payload was found in the image.
+    Present,
+}
+
 /// Result of verifying a detached manifest against an image.
 #[derive(Debug, Clone)]
 pub struct ManifestVerification {
@@ -12,22 +61,23 @@ pub struct ManifestVerification {
     pub instance_digest_match: bool,
     /// Whether the manifest was deserialized successfully.
     pub manifest_valid: bool,
+    /// Status of the embedded payload reference.
+    pub embedded_reference_status: EmbeddedReferenceStatus,
 }
 
-/// Verify a detached manifest against image bytes.
+/// Verify a detached manifest against image bytes using a [`TrustPolicy`].
 ///
 /// Checks:
-/// 1. Manifest deserializes successfully.
-/// 2. Image SHA-256 matches the claim's `instance_digest`.
-/// 3. Signatures verify against provided public keys.
-/// 4. Trust metadata is evaluated if present.
+/// 1. Image SHA-256 matches the claim's `instance_digest`.
+/// 2. Signatures verify against public keys in the manifest.
+/// 3. Trust is evaluated according to the supplied policy.
+/// 4. Trust metadata from the manifest is reported if present.
 ///
 /// # Arguments
 ///
 /// * `image_bytes` - Raw image bytes.
 /// * `manifest` - The detached manifest to verify.
-/// * `expected_keys` - Optional list of trusted public key identifiers.
-///   If empty or None, signature validity is reported but not trusted.
+/// * `trust` - Trust policy controlling which keys are trusted.
 ///
 /// # Returns
 ///
@@ -36,7 +86,7 @@ pub struct ManifestVerification {
 pub fn verify_detached_manifest(
     image_bytes: &[u8],
     manifest: &DetachedManifest,
-    expected_keys: Option<&[Vec<u8>]>,
+    trust: &TrustPolicy,
 ) -> ManifestVerification {
     let mut builder = VerificationReport::builder();
 
@@ -87,8 +137,13 @@ pub fn verify_detached_manifest(
                     let is_valid = result == crate::signing::SignatureResult::Valid;
                     any_signature_valid = any_signature_valid || is_valid;
 
-                    let key_id_matched = expected_keys
-                        .is_some_and(|trusted| trusted.iter().any(|t| t == &sig_record.key_id));
+                    let key_id_matched = match trust {
+                        TrustPolicy::TrustNone => false,
+                        TrustPolicy::TrustKeys(keys) => {
+                            keys.iter().any(|t| t == &sig_record.key_id)
+                        }
+                        TrustPolicy::TrustCallback(f) => f(&sig_record.key_id),
+                    };
 
                     builder = builder.add_signature(
                         SignatureVerification::builder()
@@ -151,9 +206,60 @@ pub fn verify_detached_manifest(
 
     let report = builder.build();
 
+    let embedded_reference_status = match manifest.embedded_reference {
+        None => EmbeddedReferenceStatus::NotProvided,
+        Some(_) => {
+            let extractor = crate::protected::steganography::SteganographyProtector::new();
+            let img = match crate::util::image::load_image_from_bytes(image_bytes) {
+                Ok(img) => img,
+                Err(_) => {
+                    return ManifestVerification {
+                        report,
+                        instance_digest_match,
+                        manifest_valid: true,
+                        embedded_reference_status: EmbeddedReferenceStatus::Stripped,
+                    };
+                }
+            };
+            match extractor.extract_payload(&img) {
+                Some(_) => EmbeddedReferenceStatus::Present,
+                None => EmbeddedReferenceStatus::Stripped,
+            }
+        }
+    };
+
     ManifestVerification {
         report,
         instance_digest_match,
         manifest_valid: true,
+        embedded_reference_status,
     }
+}
+
+/// Verify a detached manifest against image bytes using a flat key-ID set.
+///
+/// This is a backward-compatible wrapper around [`verify_detached_manifest`]
+/// that accepts the legacy `expected_keys` parameter.
+///
+/// # Arguments
+///
+/// * `image_bytes` - Raw image bytes.
+/// * `manifest` - The detached manifest to verify.
+/// * `expected_keys` - Optional list of trusted public key identifiers.
+///   If `None`, [`TrustPolicy::TrustNone`] is used.
+///
+/// # Returns
+///
+/// A [`ManifestVerification`] with structured results.
+#[must_use]
+pub fn verify_detached_manifest_with_keys(
+    image_bytes: &[u8],
+    manifest: &DetachedManifest,
+    expected_keys: Option<&[Vec<u8>]>,
+) -> ManifestVerification {
+    let policy = match expected_keys {
+        Some(keys) => TrustPolicy::TrustKeys(keys.to_vec()),
+        None => TrustPolicy::TrustNone,
+    };
+    verify_detached_manifest(image_bytes, manifest, &policy)
 }

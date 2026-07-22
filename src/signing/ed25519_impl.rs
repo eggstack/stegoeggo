@@ -321,4 +321,57 @@ mod tests {
         key.zeroize();
         assert_eq!(key.key_bytes(), &[0u8; 32]);
     }
+
+    #[test]
+    fn check_signature_capacity_fits_embedded() {
+        use super::super::{check_signature_capacity, SignatureCapacity, SignaturePlacement};
+
+        let available = 256; // max v3 payload size
+        let result = check_signature_capacity(available, 16, SignaturePlacement::PreferredEmbedded);
+        assert_eq!(result, SignatureCapacity::FitsEmbedded);
+    }
+
+    #[test]
+    fn check_signature_capacity_needs_detached() {
+        use super::super::{check_signature_capacity, SignatureCapacity, SignaturePlacement};
+
+        let available = 100; // too small
+        let result = check_signature_capacity(available, 16, SignaturePlacement::PreferredEmbedded);
+        assert_eq!(result, SignatureCapacity::NeedsDetached);
+    }
+
+    #[test]
+    fn check_signature_capacity_detached_always_needs_detached() {
+        use super::super::{check_signature_capacity, SignatureCapacity, SignaturePlacement};
+
+        let result = check_signature_capacity(256, 0, SignaturePlacement::Detached);
+        assert_eq!(result, SignatureCapacity::NeedsDetached);
+    }
+
+    #[test]
+    fn check_signature_capacity_embedded_fails_when_too_small() {
+        use super::super::{check_signature_capacity, SignatureCapacity, SignaturePlacement};
+
+        // Core(32) + key_id(32) + overhead(168) = 232 minimum
+        let result = check_signature_capacity(231, 32, SignaturePlacement::Embedded);
+        assert_eq!(result, SignatureCapacity::NeedsDetached);
+
+        let result = check_signature_capacity(232, 32, SignaturePlacement::Embedded);
+        assert_eq!(result, SignatureCapacity::FitsEmbedded);
+    }
+
+    #[test]
+    fn signing_config_check_capacity() {
+        use super::super::{SignatureCapacity, SignaturePlacement};
+
+        let key = SigningKey::from_bytes([1u8; 32], vec![0xAA; 16]);
+        let config =
+            super::super::config::SigningConfig::new(key, SignaturePlacement::PreferredEmbedded);
+
+        let result = config.check_capacity(256);
+        assert_eq!(result, SignatureCapacity::FitsEmbedded);
+
+        let result = config.check_capacity(50);
+        assert_eq!(result, SignatureCapacity::NeedsDetached);
+    }
 }

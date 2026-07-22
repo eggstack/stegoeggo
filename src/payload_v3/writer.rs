@@ -1,8 +1,8 @@
 use crate::payload_v3::errors::PayloadV3ParseError;
 use crate::payload_v3::types::{
-    AuthAlgorithm, ExtensionEntry, PayloadFlags, ProtectionChannels, V3_CORE_SIZE, V3_MAGIC,
-    V3_MAX_EMBEDDED_SIZE, V3_MAX_EXTENSION_COUNT, V3_MAX_EXTENSION_SIZE, V3_MAX_KEY_ID_LEN,
-    V3_PAYLOAD_VERSION,
+    AuthAlgorithm, ExtensionEntry, ExtensionType, PayloadFlags, ProtectionChannels, V3_CORE_SIZE,
+    V3_MAGIC, V3_MAX_EMBEDDED_SIZE, V3_MAX_EXTENSION_COUNT, V3_MAX_EXTENSION_SIZE,
+    V3_MAX_KEY_ID_LEN, V3_PAYLOAD_VERSION,
 };
 
 /// Builder for constructing a V3 payload.
@@ -188,6 +188,57 @@ impl PayloadBuilder {
     #[must_use]
     pub fn signed(mut self, signed: bool) -> Self {
         self.flags.signed = signed;
+        self
+    }
+
+    /// Sign claim bytes and embed the Ed25519 signature in this payload.
+    ///
+    /// Adds the public key as an `Ed25519PublicKey` extension (0x0010),
+    /// the signature as an `Ed25519DetachedSig` extension (0x0011),
+    /// sets the auth algorithm to `Ed25519`, sets the auth tag to the
+    /// 64-byte signature, and marks the payload as signed.
+    ///
+    /// The caller should verify capacity before calling this method.
+    /// Use [`check_signature_capacity`](crate::signing::check_signature_capacity)
+    /// or [`SigningConfig::check_capacity`](crate::signing::SigningConfig::check_capacity)
+    /// to determine if the signature fits.
+    ///
+    /// # Arguments
+    ///
+    /// * `signing_key` — The Ed25519 signing key.
+    /// * `claim_bytes` — Canonical claim bytes to sign.
+    ///
+    /// # Returns
+    ///
+    /// The builder with signature fields populated.
+    #[cfg(feature = "signatures")]
+    #[must_use]
+    pub fn embed_signature(
+        mut self,
+        signing_key: &crate::signing::SigningKey,
+        claim_bytes: &[u8],
+    ) -> Self {
+        let signature = signing_key.sign(claim_bytes);
+        let public_key = signing_key.public_key_bytes();
+        let key_id = signing_key.key_id().to_vec();
+
+        self.key_id = key_id;
+        self.auth_algorithm = AuthAlgorithm::Ed25519;
+        self.auth_tag = signature.clone();
+        self.flags.signed = true;
+
+        self.extensions.push(ExtensionEntry {
+            extension_type: ExtensionType::Ed25519PublicKey as u16,
+            critical: false,
+            data: public_key.to_vec(),
+        });
+
+        self.extensions.push(ExtensionEntry {
+            extension_type: ExtensionType::Ed25519DetachedSig as u16,
+            critical: true,
+            data: signature,
+        });
+
         self
     }
 
@@ -422,5 +473,109 @@ mod tests {
         let payload = PayloadBuilder::new().intensity(5000).build().unwrap();
         let parsed = crate::payload_v3::header::PayloadV3Header::from_bytes(&payload).unwrap();
         assert!((parsed.intensity_f32() - 50.0).abs() < f32::EPSILON);
+    }
+
+    #[cfg(feature = "signatures")]
+    #[test]
+    fn test_embed_signature_roundtrip() {
+        use crate::payload_v3::parser::parse_payload;
+        use crate::signing::SigningKey;
+
+        let sk = SigningKey::from_bytes([42u8; 32], b"test-key".to_vec());
+        let claim = b"test claim data for signing";
+
+        let payload = PayloadBuilder::new()
+            .seed(99)
+            .intensity(7500)
+            .dmi_policy(3)
+            .channels(ProtectionChannels {
+                rights_metadata: true,
+                hidden_marker: true,
+                authentication: true,
+            })
+            .embed_signature(&sk, claim)
+            .build()
+            .unwrap();
+
+        assert!(payload.len() <= V3_MAX_EMBEDDED_SIZE);
+
+        let parsed = parse_payload(&payload).unwrap();
+        match parsed {
+            crate::payload_v3::parser::ParsedPayload::V3(v3) => {
+                assert_eq!(v3.header.seed, 99);
+                assert_eq!(v3.header.intensity, 7500);
+                assert_eq!(v3.header.auth_algorithm, AuthAlgorithm::Ed25519 as u8);
+                assert_eq!(v3.header.auth_tag_len, 64);
+                assert!(v3.header.flags & PayloadFlags::SIGNED != 0);
+                assert_eq!(v3.key_id, b"test-key");
+
+                let pk_ext = v3.extensions.iter().find(|e| e.extension_type == 0x0010);
+                assert!(pk_ext.is_some());
+                assert_eq!(pk_ext.unwrap().data.len(), 32);
+
+                let sig_ext = v3.extensions.iter().find(|e| e.extension_type == 0x0011);
+                assert!(sig_ext.is_some());
+                assert_eq!(sig_ext.unwrap().data.len(), 64);
+                assert!(sig_ext.unwrap().critical);
+            }
+            _ => panic!("Expected V3"),
+        }
+    }
+
+    #[cfg(feature = "signatures")]
+    #[test]
+    fn test_embed_signature_verifies() {
+        use crate::signing::SigningKey;
+
+        let sk = SigningKey::from_bytes([7u8; 32], b"verify-key".to_vec());
+        let vk = sk.verifying_key();
+        let claim = b"claim to verify";
+
+        let payload = PayloadBuilder::new()
+            .embed_signature(&sk, claim)
+            .build()
+            .unwrap();
+
+        let parsed = crate::payload_v3::parser::parse_payload(&payload).unwrap();
+        match parsed {
+            crate::payload_v3::parser::ParsedPayload::V3(v3) => {
+                let sig_ext = v3
+                    .extensions
+                    .iter()
+                    .find(|e| e.extension_type == 0x0011)
+                    .unwrap();
+                let result = vk.verify(claim, &sig_ext.data);
+                assert_eq!(result, crate::signing::SignatureResult::Valid);
+            }
+            _ => panic!("Expected V3"),
+        }
+    }
+
+    #[cfg(feature = "signatures")]
+    #[test]
+    fn test_embed_signature_rejects_altered_claim() {
+        use crate::signing::SigningKey;
+
+        let sk = SigningKey::from_bytes([9u8; 32], b"alter-key".to_vec());
+        let vk = sk.verifying_key();
+
+        let payload = PayloadBuilder::new()
+            .embed_signature(&sk, b"original claim")
+            .build()
+            .unwrap();
+
+        let parsed = crate::payload_v3::parser::parse_payload(&payload).unwrap();
+        match parsed {
+            crate::payload_v3::parser::ParsedPayload::V3(v3) => {
+                let sig_ext = v3
+                    .extensions
+                    .iter()
+                    .find(|e| e.extension_type == 0x0011)
+                    .unwrap();
+                let result = vk.verify(b"altered claim", &sig_ext.data);
+                assert_eq!(result, crate::signing::SignatureResult::Invalid);
+            }
+            _ => panic!("Expected V3"),
+        }
     }
 }

@@ -1,10 +1,12 @@
 #![cfg(feature = "detached-manifest")]
 
 use stegoeggo::detached::{
-    DetachedManifest, EmbeddedReference, PublicKeyEntry, SignatureRecord, MAX_MANIFEST_SIZE,
-    MAX_PUBLIC_KEYS, MAX_SIGNATURES,
+    verify_detached_manifest, verify_detached_manifest_with_keys, DetachedManifest,
+    EmbeddedReference, EmbeddedReferenceStatus, PublicKeyEntry, SignatureRecord, TrustPolicy,
+    MAX_MANIFEST_SIZE, MAX_PUBLIC_KEYS, MAX_SIGNATURES,
 };
 use stegoeggo::provenance::ProvenanceClaim;
+use stegoeggo::signing::SigningKey;
 
 fn make_test_claim() -> ProvenanceClaim {
     ProvenanceClaim::new(1)
@@ -178,4 +180,203 @@ fn test_manifest_json_is_valid_json() {
 #[test]
 fn test_manifest_max_manifest_size_constant() {
     assert_eq!(MAX_MANIFEST_SIZE, 64 * 1024);
+}
+
+fn make_signed_manifest() -> (DetachedManifest, Vec<u8>, SigningKey) {
+    let sk = SigningKey::from_bytes([42u8; 32], b"test-key-id".to_vec());
+    let vk = sk.verifying_key();
+    let image_bytes = b"fake image content for testing";
+
+    let claim = ProvenanceClaim::new(1)
+        .with_content_code("iscc:test-sign".to_string())
+        .with_creation_time(1700000000)
+        .with_source_facts("png", 100, 100, 10000)
+        .with_software("stegoeggo/0.3.0")
+        .with_instance_digest(image_bytes);
+
+    let claim_bytes = claim.canonical_bytes();
+    let sig_bytes = sk.sign(&claim_bytes);
+    let sig_hex = hex::encode(&sig_bytes);
+
+    let manifest = DetachedManifest::new(claim)
+        .with_signature(SignatureRecord {
+            algorithm: "ed25519".to_string(),
+            key_id: b"test-key-id".to_vec(),
+            signature: sig_hex,
+        })
+        .with_public_key(PublicKeyEntry {
+            key_id: b"test-key-id".to_vec(),
+            algorithm: "ed25519".to_string(),
+            key_bytes: hex::encode(vk.as_bytes()),
+        });
+
+    (manifest, image_bytes.to_vec(), sk)
+}
+
+#[test]
+fn test_trust_none_untrusted_even_with_valid_sig() {
+    let (manifest, image_bytes, _) = make_signed_manifest();
+    let result = verify_detached_manifest(&image_bytes, &manifest, &TrustPolicy::TrustNone);
+
+    assert!(result.report.signatures().len() == 1);
+    assert!(result.report.signatures()[0].cryptographically_valid());
+    assert!(!result.report.signatures()[0].trusted());
+}
+
+#[test]
+fn test_trust_keys_trusted_when_key_matches() {
+    let (manifest, image_bytes, _) = make_signed_manifest();
+    let trusted_keys = vec![b"test-key-id".to_vec()];
+    let result = verify_detached_manifest(
+        &image_bytes,
+        &manifest,
+        &TrustPolicy::TrustKeys(trusted_keys),
+    );
+
+    assert!(result.report.signatures()[0].cryptographically_valid());
+    assert!(result.report.signatures()[0].key_id_matched());
+    assert!(result.report.signatures()[0].trusted());
+}
+
+#[test]
+fn test_trust_keys_untrusted_when_key_does_not_match() {
+    let (manifest, image_bytes, _) = make_signed_manifest();
+    let trusted_keys = vec![b"wrong-key-id".to_vec()];
+    let result = verify_detached_manifest(
+        &image_bytes,
+        &manifest,
+        &TrustPolicy::TrustKeys(trusted_keys),
+    );
+
+    assert!(result.report.signatures()[0].cryptographically_valid());
+    assert!(!result.report.signatures()[0].key_id_matched());
+    assert!(!result.report.signatures()[0].trusted());
+}
+
+#[test]
+fn test_trust_callback_trusted_when_cb_returns_true() {
+    let (manifest, image_bytes, _) = make_signed_manifest();
+    let result = verify_detached_manifest(
+        &image_bytes,
+        &manifest,
+        &TrustPolicy::TrustCallback(Box::new(|_key_id| true)),
+    );
+
+    assert!(result.report.signatures()[0].cryptographically_valid());
+    assert!(result.report.signatures()[0].trusted());
+}
+
+#[test]
+fn test_trust_callback_untrusted_when_cb_returns_false() {
+    let (manifest, image_bytes, _) = make_signed_manifest();
+    let result = verify_detached_manifest(
+        &image_bytes,
+        &manifest,
+        &TrustPolicy::TrustCallback(Box::new(|_key_id| false)),
+    );
+
+    assert!(result.report.signatures()[0].cryptographically_valid());
+    assert!(!result.report.signatures()[0].trusted());
+}
+
+#[test]
+fn test_trust_callback_custom_logic() {
+    let (manifest, image_bytes, _) = make_signed_manifest();
+    let result = verify_detached_manifest(
+        &image_bytes,
+        &manifest,
+        &TrustPolicy::TrustCallback(Box::new(|key_id| key_id.starts_with(b"test"))),
+    );
+
+    assert!(result.report.signatures()[0].trusted());
+
+    let result2 = verify_detached_manifest(
+        &image_bytes,
+        &manifest,
+        &TrustPolicy::TrustCallback(Box::new(|key_id| key_id.starts_with(b"other"))),
+    );
+
+    assert!(!result2.report.signatures()[0].trusted());
+}
+
+#[test]
+fn test_backward_compat_wrapper_trust_none() {
+    let (manifest, image_bytes, _) = make_signed_manifest();
+    let result = verify_detached_manifest_with_keys(&image_bytes, &manifest, None);
+
+    assert!(result.report.signatures()[0].cryptographically_valid());
+    assert!(!result.report.signatures()[0].trusted());
+}
+
+#[test]
+fn test_backward_compat_wrapper_trust_keys() {
+    let (manifest, image_bytes, _) = make_signed_manifest();
+    let keys = vec![b"test-key-id".to_vec()];
+    let result = verify_detached_manifest_with_keys(&image_bytes, &manifest, Some(&keys));
+
+    assert!(result.report.signatures()[0].trusted());
+}
+
+#[test]
+fn test_instance_digest_match() {
+    let (manifest, image_bytes, _) = make_signed_manifest();
+    let result = verify_detached_manifest(&image_bytes, &manifest, &TrustPolicy::TrustNone);
+
+    assert!(result.instance_digest_match);
+}
+
+#[test]
+fn test_instance_digest_mismatch() {
+    let (manifest, _, _) = make_signed_manifest();
+    let different_image = b"completely different image content";
+    let result = verify_detached_manifest(different_image, &manifest, &TrustPolicy::TrustNone);
+
+    assert!(!result.instance_digest_match);
+}
+
+#[test]
+fn test_embedded_reference_not_provided() {
+    let (manifest, image_bytes, _) = make_signed_manifest();
+    assert!(manifest.embedded_reference.is_none());
+
+    let result = verify_detached_manifest(&image_bytes, &manifest, &TrustPolicy::TrustNone);
+    assert_eq!(
+        result.embedded_reference_status,
+        EmbeddedReferenceStatus::NotProvided
+    );
+}
+
+#[test]
+fn test_embedded_reference_stripped_when_no_payload() {
+    let (mut manifest, image_bytes, _) = make_signed_manifest();
+    manifest = manifest.with_embedded_reference(EmbeddedReference {
+        payload_digest: "sha256:abcdef".to_string(),
+        payload_version: 3,
+    });
+
+    let result = verify_detached_manifest(&image_bytes, &manifest, &TrustPolicy::TrustNone);
+    assert_eq!(
+        result.embedded_reference_status,
+        EmbeddedReferenceStatus::Stripped
+    );
+}
+
+#[test]
+fn test_embedded_reference_stripped_for_invalid_image_bytes() {
+    let claim = ProvenanceClaim::new(1)
+        .with_content_code("iscc:test-stripped".to_string())
+        .with_instance_digest(b"not-a-real-image")
+        .with_source_facts("png", 100, 100, 10000)
+        .with_software("stegoeggo/0.3.0");
+
+    let manifest = DetachedManifest::new(claim).with_embedded_reference(EmbeddedReference {
+        payload_digest: "sha256:test".to_string(),
+        payload_version: 3,
+    });
+
+    let result = verify_detached_manifest(b"not-a-real-image", &manifest, &TrustPolicy::TrustNone);
+    assert_eq!(
+        result.embedded_reference_status,
+        EmbeddedReferenceStatus::Stripped
+    );
 }

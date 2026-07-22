@@ -10,4 +10,7 @@ pub mod verify;
 
 pub use generate::{compute_image_digest, create_manifest_from_image, create_manifest_with_claim};
 pub use manifest::*;
-pub use verify::{verify_detached_manifest, ManifestVerification};
+pub use verify::{
+    verify_detached_manifest, verify_detached_manifest_with_keys, EmbeddedReferenceStatus,
+    ManifestVerification, TrustCallbackFn, TrustPolicy,
+};

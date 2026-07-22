@@ -2227,3 +2227,126 @@ mod warning_severity_tests {
         );
     }
 }
+
+// ============================================================================
+// Capacity matrix: {format} × {marker mode} × HMAC-128
+// ============================================================================
+
+mod capacity_matrix {
+    use super::*;
+    use stegoeggo::{process_image_bytes_with_warnings, ProtectionWarning};
+
+    const MAC_KEY: &[u8] = b"capacity-test-key-128bit";
+
+    type EncodeFn = fn(&DynamicImage) -> Vec<u8>;
+
+    fn make_high_entropy_image(width: u32, height: u32) -> DynamicImage {
+        let img = DynamicImage::new_rgb8(width, height);
+        let mut rgb = img.to_rgb8();
+        for y in 0..height {
+            for x in 0..width {
+                let r = ((x * 7 + y * 13) % 256) as u8;
+                let g = ((x * 11 + y * 3) % 256) as u8;
+                let b = ((x * 5 + y * 17) % 256) as u8;
+                rgb.put_pixel(x, y, image::Rgb([r, g, b]));
+            }
+        }
+        DynamicImage::ImageRgb8(rgb)
+    }
+
+    #[test]
+    fn test_capacity_matrix_hmac_128() {
+        let formats: &[(&str, EncodeFn)] = &[
+            ("png", |img| image_to_png_bytes(img)),
+            ("jpeg", |img| image_to_jpeg_bytes(img, 90)),
+            ("webp", |img| image_to_webp_bytes(img)),
+        ];
+
+        let modes = &[
+            ("Disabled", stegoeggo::HiddenMarkerMode::Disabled),
+            ("BestEffort", stegoeggo::HiddenMarkerMode::BestEffort),
+            (
+                "Tiled",
+                stegoeggo::HiddenMarkerMode::Tiled { tile_size: 64 },
+            ),
+        ];
+
+        for (fmt_name, encode_fn) in formats {
+            for (mode_name, mode) in modes {
+                let img = make_high_entropy_image(256, 256);
+                let img_bytes = encode_fn(&img);
+
+                let mut ctx = ProtectionContext::new(0.5, 42).with_mac_key(MAC_KEY.to_vec());
+
+                match mode {
+                    stegoeggo::HiddenMarkerMode::Disabled => {}
+                    stegoeggo::HiddenMarkerMode::BestEffort => {}
+                    stegoeggo::HiddenMarkerMode::Tiled { tile_size } => {
+                        ctx = ctx.with_tile_size(*tile_size);
+                    }
+                    _ => {}
+                }
+
+                let result =
+                    process_image_bytes_with_warnings(&img_bytes, ProtectionLevel::Standard, &ctx);
+
+                assert!(
+                    result.is_ok(),
+                    "Format={}, Mode={}: processing failed: {:?}",
+                    fmt_name,
+                    mode_name,
+                    result.err()
+                );
+
+                let (protected, warnings) = result.unwrap();
+
+                assert!(
+                    !protected.is_empty(),
+                    "Format={}, Mode={}: output is empty",
+                    fmt_name,
+                    mode_name,
+                );
+
+                match *mode {
+                    stegoeggo::HiddenMarkerMode::Disabled => {
+                        assert!(
+                            !warnings.contains(&ProtectionWarning::LsbCapacitySkipped),
+                            "Format={}, Mode={}: Disabled should not produce LsbCapacitySkipped",
+                            fmt_name,
+                            mode_name,
+                        );
+                        assert!(
+                            !warnings.contains(&ProtectionWarning::DctCapacityInsufficient),
+                            "Format={}, Mode={}: Disabled should not produce DctCapacityInsufficient",
+                            fmt_name,
+                            mode_name,
+                        );
+                    }
+                    stegoeggo::HiddenMarkerMode::BestEffort
+                    | stegoeggo::HiddenMarkerMode::Tiled { .. } => {
+                        let has_capacity_warning = warnings
+                            .contains(&ProtectionWarning::LsbCapacitySkipped)
+                            || warnings.contains(&ProtectionWarning::DctCapacityInsufficient);
+
+                        let protector = SteganographyProtector::new();
+                        let dyn_img = image::load_from_memory(&protected).unwrap();
+                        let payload_present = protector.verify_payload_with_key(&dyn_img, MAC_KEY)
+                            == VerificationStatus::Verified;
+
+                        let has_fragile_warning =
+                            warnings.contains(&ProtectionWarning::JpegReencodeFragile);
+
+                        assert!(
+                            payload_present || has_capacity_warning || has_fragile_warning,
+                            "Format={}, Mode={}: no payload embedded, no capacity warning, and no fragile warning. Warnings: {:?}",
+                            fmt_name,
+                            mode_name,
+                            warnings,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
