@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [pipeline_bytes, jpeg_parser, payload_v3_parser]
+        target: [pipeline_bytes, jpeg_parser, payload_v3_parser, tiled_round_trip]
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +45,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     strategy:
       matrix:
-        target: [pipeline_bytes, jpeg_parser, payload_v3_parser]
+        target: [pipeline_bytes, jpeg_parser, payload_v3_parser, tiled_round_trip]
     steps:
       - uses: actions/checkout@v4
 

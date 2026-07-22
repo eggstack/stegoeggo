@@ -95,3 +95,4 @@ The following capabilities are guaranteed for the lifetime of the 0.x series and
 - **Legacy metadata reading**: Legacy `Iptc4x3mpExt:DMI-*` properties and `tdm:reserve_tdm` will continue to be parsed for backward compatibility, even though they are no longer emitted.
 - **Payload v1/v2/v3 reading**: Extraction of all three payload versions will continue to be supported. Write output uses v3 only.
 - **Detached manifest v1 reading**: Verification of v1 detached manifests will continue to be supported.
+- **CLI JSON schemas**: The JSON output format for conformance reports and verification results will maintain backward-compatible schema versions. New fields may be added; existing fields will not be removed or renamed within the same major version.

@@ -11,6 +11,11 @@ use stegoeggo::{
     WarningSeverity, DEFAULT_OUTPUT_FORMAT,
 };
 
+const EXIT_OK: i32 = 0;
+const EXIT_ERROR: i32 = 1;
+const EXIT_CONFIG: i32 = 2;
+const EXIT_INTERNAL: i32 = 5;
+
 #[derive(Parser, Debug)]
 #[command(name = "stegoeggo")]
 #[command(about = "Embed legal-notice and rights-reservation metadata into images, with optional steganographic markers", long_about = None)]
@@ -982,7 +987,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if input_files.is_empty() {
         eprintln!("Error: No input files found");
-        std::process::exit(1);
+        std::process::exit(EXIT_CONFIG);
     }
 
     let is_batch = input_files.len() > 1 || args.input.iter().any(|p| p.is_dir());
@@ -1001,7 +1006,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.verify {
         if is_batch {
             eprintln!("Error: Verify mode only works with single files");
-            std::process::exit(1);
+            std::process::exit(EXIT_CONFIG);
         }
 
         let input_path = &input_files[0];
@@ -1183,14 +1188,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let input_files = collect_input_files(&args.input);
         if input_files.is_empty() {
             eprintln!("Error: No input files found");
-            std::process::exit(1);
+            std::process::exit(EXIT_CONFIG);
         }
 
         let is_batch = input_files.len() > 1 || args.input.iter().any(|p| p.is_dir());
 
         if is_batch {
             eprintln!("Error: New request-based API does not support batch processing yet");
-            std::process::exit(1);
+            std::process::exit(EXIT_CONFIG);
         }
 
         let input_path = &input_files[0];
@@ -1337,7 +1342,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
              --ai-constraints, --no-ai-training, --no-genai-training, --tdm-reserved). \
              Legal metadata requires metadata injection to be enabled."
         );
-        std::process::exit(1);
+        std::process::exit(EXIT_CONFIG);
     }
 
     #[allow(deprecated)]

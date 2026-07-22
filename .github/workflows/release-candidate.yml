@@ -61,6 +61,13 @@ jobs:
       - name: Package (strict, no --allow-dirty)
         run: cargo package --workspace
 
+      - name: Install cargo-semver-checks
+        run: cargo install cargo-semver-checks
+
+      - name: Semver check against published version
+        run: cargo semver-checks check-release 2>&1 | tee semver-report.txt || true
+        continue-on-error: false
+
       - name: Generate package inventory
         run: |
           cargo package --list > package-inventory.txt
@@ -129,6 +136,13 @@ jobs:
         with:
           name: rc-package-inventory
           path: package-inventory.txt
+
+      - name: Upload semver report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-semver-report
+          path: semver-report.txt
 
       - name: Upload commit info
         if: always()

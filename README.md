@@ -1201,6 +1201,8 @@ This library is designed to protect intellectual property from unauthorized AI t
 
 This is a defensive tool for content protection, not an offensive weapon against AI systems.
 
+**Disclaimer**: stegoeggo provides technical mechanisms for embedding metadata and steganographic markers. It does not provide legal advice. The effectiveness of rights-reservation metadata and AI-training restrictions depends on jurisdiction, applicable law, and the specific use case. Consult a qualified attorney for legal guidance regarding intellectual property protection.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.

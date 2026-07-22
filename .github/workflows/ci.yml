@@ -42,7 +42,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check package
-        run: cargo package --workspace --allow-dirty
+        run: cargo package --workspace
 
   test:
     name: Test

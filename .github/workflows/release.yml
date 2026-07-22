@@ -50,7 +50,7 @@ jobs:
         run: cargo test --doc
 
       - name: Package dry-run
-        run: cargo package --workspace --allow-dirty
+        run: cargo package --workspace
 
       - name: Install cargo-deny
         run: cargo install cargo-deny
