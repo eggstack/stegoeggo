@@ -30,3 +30,24 @@ All image metadata (XMP, IPTC, EXIF, tEXt chunks) can be stripped by any image p
 
 ### JPEG re-encoding
 The JPEG fast path (JPEG-in/JPEG-out through `process_image_bytes`) preserves DCT coefficients and quantization tables. Re-encoding through standard image libraries (e.g., the `image` crate's encoder) rebuilds Q-tables from scratch and discards COM/APP1 markers, destroying the protection evidence. Always use `process_image_bytes` for JPEG processing to preserve protection data.
+
+### Ed25519 signing (experimental)
+
+The `signatures` feature provides Ed25519 signing via `ed25519-dalek`, a well-audited crate implementing the standard Ed25519 elliptic-curve signature scheme. This is real Ed25519 — not a custom or homegrown construction.
+
+Key security properties:
+- **Deterministic signatures**: Same key + same message always produces the same signature (RFC 8032 compliant).
+- **Private key zeroization**: `SigningKey` zeroizes secret bytes on drop and exposes a `zeroize()` method.
+- **No private key serialization**: `SigningKey` intentionally does not implement `Serialize` to prevent accidental key material leakage.
+- **Constant-time verification**: Signature verification uses `ed25519_dalek::Verifier`, which is constant-time.
+
+What a valid signature proves:
+- The holder of the private key that corresponds to the embedded public key signed the canonical claim bytes.
+- The claim bytes have not been altered since signing.
+
+What a valid signature does **not** prove:
+- Copyright ownership or authorship.
+- That the signer is a trusted party.
+- That the image has not been tampered with since signing (signatures bind claim bytes, not the image pixel data).
+
+The `signatures` feature is **experimental**. API surfaces within the signing module may change without notice between minor releases. Trust evaluation is caller-owned — the library ships no implicit trust store.

@@ -6,7 +6,8 @@ use stegoeggo::signing::{SignatureResult, SigningKey, VerifyingKey};
 fn test_key_generation() {
     let key = SigningKey::generate();
     assert_eq!(key.key_id().len(), 16);
-    assert_eq!(key.key_bytes().len(), 32);
+    let pk = key.public_key_bytes();
+    assert_eq!(pk.len(), 32);
 }
 
 #[test]
@@ -56,13 +57,12 @@ fn test_key_not_revealed_in_debug() {
 
     assert!(debug.contains("SigningKey"));
     assert!(debug.contains("key_id"));
-    assert!(!debug.contains(&hex::encode(key.key_bytes())));
+    let secret_hex = hex::encode(key.to_bytes());
+    assert!(!debug.contains(&secret_hex));
 }
 
 #[test]
 fn test_key_not_serializable() {
-    // SigningKey intentionally does not implement Serialize.
-    // VerifyingKey does — confirm it roundtrips through JSON.
     let key = SigningKey::generate();
     let vk = key.verifying_key();
 
@@ -77,11 +77,11 @@ fn test_key_not_serializable() {
 #[test]
 fn test_zeroize_on_drop() {
     let mut key = SigningKey::generate();
-    let original_key_bytes = *key.key_bytes();
+    let original_key_bytes = key.to_bytes();
 
     key.zeroize();
-    assert_eq!(key.key_bytes(), &[0u8; 32]);
-    assert_ne!(*key.key_bytes(), original_key_bytes);
+    assert_eq!(key.to_bytes(), [0u8; 32]);
+    assert_ne!(key.to_bytes(), original_key_bytes);
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn test_signature_is_64_bytes() {
 
 #[test]
 fn test_deterministic_signing() {
-    let key = SigningKey::from_bytes([42u8; 32], vec![1]);
+    let key = SigningKey::from_bytes([42u8; 32], vec![1]).unwrap();
     let claim = b"deterministic test";
 
     let sig1 = key.sign(claim);
@@ -124,14 +124,14 @@ fn test_malformed_signature_rejected() {
 
 #[test]
 fn test_key_id_at_max_length() {
-    let key = SigningKey::from_bytes([0u8; 32], vec![0u8; 32]);
+    let key = SigningKey::from_bytes([0u8; 32], vec![0u8; 32]).unwrap();
     assert_eq!(key.key_id().len(), 32);
 }
 
 #[test]
-#[should_panic(expected = "Key ID too long")]
-fn test_key_id_exceeds_max_length_panics() {
-    SigningKey::from_bytes([0u8; 32], vec![0u8; 33]);
+fn test_key_id_exceeds_max_length_returns_error() {
+    let result = SigningKey::from_bytes([0u8; 32], vec![0u8; 33]);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -152,14 +152,34 @@ fn test_signature_result_display() {
 fn test_generate_produces_unique_keys() {
     let key1 = SigningKey::generate();
     let key2 = SigningKey::generate();
-    assert_ne!(key1.key_bytes(), key2.key_bytes());
+    assert_ne!(key1.public_key_bytes(), key2.public_key_bytes());
     assert_ne!(key1.key_id(), key2.key_id());
 }
 
 #[test]
 fn test_public_key_deterministic() {
-    let key = SigningKey::from_bytes([1u8; 32], vec![1]);
+    let key = SigningKey::from_bytes([1u8; 32], vec![1]).unwrap();
     let pk1 = key.public_key_bytes();
     let pk2 = key.public_key_bytes();
     assert_eq!(pk1, pk2);
+}
+
+#[test]
+fn test_rfc8032_test_vector() {
+    let secret_key = [0u8; 32];
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_key);
+    let verifying_key = signing_key.verifying_key();
+
+    assert_eq!(verifying_key.as_bytes().len(), 32);
+
+    let claim = b"Hello, world!";
+    use ed25519_dalek::Signer;
+    let signature = signing_key.sign(claim);
+    assert_eq!(signature.to_bytes().len(), 64);
+
+    use ed25519_dalek::Verifier;
+    assert!(verifying_key.verify(claim, &signature).is_ok());
+
+    let bad_claim = b"Goodbye, world!";
+    assert!(verifying_key.verify(bad_claim, &signature).is_err());
 }

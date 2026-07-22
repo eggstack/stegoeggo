@@ -11,9 +11,12 @@ use stegoeggo::{
     WarningSeverity, DEFAULT_OUTPUT_FORMAT,
 };
 
+#[allow(dead_code)]
 const EXIT_OK: i32 = 0;
+#[allow(dead_code)]
 const EXIT_ERROR: i32 = 1;
 const EXIT_CONFIG: i32 = 2;
+#[allow(dead_code)]
 const EXIT_INTERNAL: i32 = 5;
 
 #[derive(Parser, Debug)]
@@ -58,7 +61,11 @@ struct Args {
     #[arg(short, long, help = "Seed for reproducible results")]
     seed: Option<u64>,
 
-    #[arg(short, long, help = "Output format (png|jpg|webp) - defaults to png")]
+    #[arg(
+        short,
+        long,
+        help = "Output format (png|jpg|webp) - defaults to preserving input format"
+    )]
     format: Option<OutputFormatArg>,
 
     #[arg(
@@ -428,7 +435,7 @@ fn resolve_key_input(
             }
             let contents = fs::read_to_string(path)
                 .map_err(|e| format!("Failed to read key file '{}': {}", path_str, e))?;
-            let hex_key = contents.trim().replace('\n', "").replace('\r', "");
+            let hex_key = contents.trim().replace(['\n', '\r'], "");
             return Ok(Some(
                 hex::decode(&hex_key).map_err(|e| format!("Invalid hex key in file: {}", e))?,
             ));
@@ -574,7 +581,7 @@ fn display_warnings(warnings: &[ProtectionWarning], ctx: &ProtectionContext, ver
 fn process_single_file(
     input_path: &PathBuf,
     output_dir: &Option<PathBuf>,
-    output_format: ImageOutputFormat,
+    output_format: Option<ImageOutputFormat>,
     ctx_base: &ProtectionContext,
     protection_level: ProtectionLevel,
     verbose: bool,
@@ -585,11 +592,15 @@ fn process_single_file(
     let detected_format =
         ImageOutputFormat::from_magic_bytes(&input_bytes).unwrap_or(DEFAULT_OUTPUT_FORMAT);
 
-    if verbose && output_format != detected_format {
-        eprintln!(
-            "Warning: output format {:?} differs from detected format {:?}",
-            output_format, detected_format
-        );
+    if verbose {
+        if let Some(fmt) = output_format {
+            if fmt != detected_format {
+                eprintln!(
+                    "Warning: output format {:?} differs from detected format {:?}",
+                    fmt, detected_format
+                );
+            }
+        }
     }
 
     let mut ctx = ctx_base.clone();
@@ -597,6 +608,8 @@ fn process_single_file(
 
     let (output_bytes, warnings) =
         process_image_bytes_with_warnings(&input_bytes, protection_level, &ctx)?;
+
+    let effective_format = output_format.unwrap_or(detected_format);
 
     let output_path = if let Some(override_path) = override_output {
         if let Some(parent) = override_path.parent() {
@@ -610,7 +623,7 @@ fn process_single_file(
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("output");
-        let ext = output_format.extension();
+        let ext = effective_format.extension();
         let filename = format!("{}_protected.{}", stem, ext);
 
         if let Some(ref dir) = output_dir {
@@ -756,7 +769,7 @@ fn handle_keygen(
     let private_pem = format!(
         "-----BEGIN STEGOEGGO PRIVATE KEY-----\nkey_id:{}\n{}\n-----END STEGOEGGO PRIVATE KEY-----\n",
         key_id_hex,
-        hex::encode(key.key_bytes())
+        hex::encode(key.to_bytes())
     );
     fs::write(&private_path, private_pem.as_bytes())?;
 
@@ -820,7 +833,8 @@ fn handle_sign(
     let mut raw_key = [0u8; 32];
     raw_key.copy_from_slice(&key_bytes_vec);
 
-    let signing_key = SigningKey::from_bytes(raw_key, hex_key.1.into_bytes());
+    let signing_key = SigningKey::from_bytes(raw_key, hex_key.1.into_bytes())
+        .map_err(|e| format!("Invalid signing key: {}", e))?;
 
     let manifest_bytes = fs::read(manifest_path)?;
     let mut manifest: DetachedManifest = serde_json::from_slice(&manifest_bytes)?;
@@ -868,7 +882,7 @@ fn handle_verify_manifest(
     let manifest: DetachedManifest = serde_json::from_slice(&manifest_bytes)?;
 
     println!("Manifest schema version: {}", manifest.schema_version);
-    println!("Claim ID: {}", hex::encode(&manifest.claim.claim_id));
+    println!("Claim ID: {}", hex::encode(manifest.claim.claim_id));
     println!("Instance digest: {}", manifest.claim.instance_digest);
     println!("Format: {}", manifest.claim.format);
     println!(
@@ -1154,6 +1168,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(RightsPolicy::from)
             .unwrap_or(RightsPolicy::Unspecified);
 
+        let notice = stegoeggo::RightsNotice::default();
+
         let channels = if let Some(preset_arg) = args.preset {
             let preset: ProtectionPreset = preset_arg.into();
             preset.to_channels()
@@ -1174,16 +1190,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .unwrap_or(stegoeggo::AuthenticationMode::None);
 
+            let rights_metadata = policy != RightsPolicy::Unspecified
+                || notice.has_legal_content()
+                || legal_metadata.is_some()
+                || !matches!(hidden, HiddenMarkerMode::Disabled);
+
             ProtectionChannels {
-                rights_metadata: !matches!(hidden, HiddenMarkerMode::Disabled)
-                    || legal_metadata.is_some(),
+                rights_metadata,
                 hidden_marker: hidden,
                 authentication: auth,
             }
         };
 
-        let output_format = args.format.map(ImageOutputFormat::from);
-        let effective_output_format = output_format.unwrap_or(DEFAULT_OUTPUT_FORMAT);
+        let output_format: Option<ImageOutputFormat> = args.format.map(ImageOutputFormat::from);
 
         let input_files = collect_input_files(&args.input);
         if input_files.is_empty() {
@@ -1201,12 +1220,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let input_path = &input_files[0];
         let input_bytes = fs::read(input_path)?;
 
-        let mut request =
-            stegoeggo::ProtectionRequest::new(stegoeggo::RightsNotice::default(), policy, channels)
-                .with_seed(seed)
-                .with_intensity(args.intensity.clamp(0.0, 1.0))
-                .with_output_format(effective_output_format)
-                .with_jpeg_quality(args.jpeg_quality.clamp(1, 100));
+        let mut request = stegoeggo::ProtectionRequest::new(notice, policy, channels)
+            .with_seed(seed)
+            .with_intensity(args.intensity.clamp(0.0, 1.0))
+            .with_jpeg_quality(args.jpeg_quality.clamp(1, 100));
+
+        if let Some(fmt) = output_format {
+            request = request.with_output_format(fmt);
+        }
 
         if args.progressive {
             request = request.with_progressive_jpeg();
@@ -1247,11 +1268,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let detected_format =
             ImageOutputFormat::from_magic_bytes(&input_bytes).unwrap_or(DEFAULT_OUTPUT_FORMAT);
-        if args.verbose && effective_output_format != detected_format {
-            eprintln!(
-                "Warning: output format {:?} differs from detected format {:?}",
-                effective_output_format, detected_format
-            );
+        if args.verbose {
+            if let Some(fmt) = output_format {
+                if fmt != detected_format {
+                    eprintln!(
+                        "Warning: output format {:?} differs from detected format {:?}",
+                        fmt, detected_format
+                    );
+                }
+            }
         }
 
         let (output_bytes, warnings) =
@@ -1269,7 +1294,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("output");
-                let ext = effective_output_format.extension();
+                let ext = output_format.unwrap_or(detected_format).extension();
                 dir.join(format!("{}_protected.{}", stem, ext))
             }
         } else {
@@ -1277,14 +1302,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("output");
-            let ext = effective_output_format.extension();
+            let ext = output_format.unwrap_or(detected_format).extension();
             PathBuf::from(format!("{}_protected.{}", stem, ext))
         };
 
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        check_input_output_disjoint(&input_path, &output_path)?;
+        check_input_output_disjoint(input_path, &output_path)?;
         write_atomic(&output_path, &output_bytes)?;
 
         #[allow(deprecated)]
@@ -1318,8 +1343,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (legal_metadata, legal_dmi_override) = build_legal_metadata(&args);
 
-    let output_format = args.format.map(ImageOutputFormat::from);
-    let effective_output_format = output_format.unwrap_or(DEFAULT_OUTPUT_FORMAT);
+    let output_format: Option<ImageOutputFormat> = args.format.map(ImageOutputFormat::from);
 
     let protection_level = ProtectionLevel::from(args.level);
     #[allow(deprecated)]
@@ -1347,11 +1371,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[allow(deprecated)]
     let mut ctx = ProtectionContext::new(args.intensity.clamp(0.0, 1.0), seed)
-        .with_format(effective_output_format)
         .with_stego_redundancy(args.stego_redundancy.clamp(1, 10))
         .with_jpeg_quality(args.jpeg_quality.clamp(1, 100))
         .with_progressive_jpeg(args.progressive)
         .with_evidence_profile(evidence_profile);
+
+    if let Some(fmt) = output_format {
+        ctx = ctx.with_format(fmt);
+    }
 
     let effective_dmi = legal_dmi_override.or(dmi_value);
     #[allow(deprecated)]
@@ -1437,64 +1464,70 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
-        let results: Vec<Result<(PathBuf, PathBuf, Vec<ProtectionWarning>), (PathBuf, String)>> =
-            if args.jobs > 1 {
-                let seen_paths: std::sync::Mutex<HashMap<PathBuf, usize>> =
-                    std::sync::Mutex::new(HashMap::new());
+        #[allow(clippy::type_complexity)]
+        let results: Vec<
+            Result<(PathBuf, PathBuf, Vec<ProtectionWarning>), (PathBuf, String)>,
+        > = if args.jobs > 1 {
+            let seen_paths: std::sync::Mutex<HashMap<PathBuf, usize>> =
+                std::sync::Mutex::new(HashMap::new());
 
-                input_files
-                    .par_iter()
-                    .with_max_len(1)
-                    .map(|input_path| {
-                        let mut seen = seen_paths.lock().unwrap();
-                        let override_output = compute_output_path(
-                            input_path,
-                            &output_dir,
-                            effective_output_format,
-                            &mut seen,
-                        );
-                        drop(seen);
+            input_files
+                .par_iter()
+                .with_max_len(1)
+                .map(|input_path| {
+                    let input_bytes_preview =
+                        fs::read(input_path).map_err(|e| (input_path.clone(), e.to_string()))?;
+                    let detected = ImageOutputFormat::from_magic_bytes(&input_bytes_preview)
+                        .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+                    let effective_format = output_format.unwrap_or(detected);
 
-                        process_single_file(
-                            input_path,
-                            &output_dir,
-                            effective_output_format,
-                            &ctx,
-                            protection_level,
-                            args.verbose,
-                            override_output,
-                        )
-                        .map(|(output, warnings)| (input_path.clone(), output, warnings))
-                        .map_err(|e| (input_path.clone(), e.to_string()))
-                    })
-                    .collect()
-            } else {
-                let mut seen: HashMap<PathBuf, usize> = HashMap::new();
+                    let mut seen = seen_paths.lock().unwrap();
+                    let override_output =
+                        compute_output_path(input_path, &output_dir, effective_format, &mut seen);
+                    drop(seen);
 
-                input_files
-                    .iter()
-                    .map(|input_path| {
-                        let override_output = compute_output_path(
-                            input_path,
-                            &output_dir,
-                            effective_output_format,
-                            &mut seen,
-                        );
+                    process_single_file(
+                        input_path,
+                        &output_dir,
+                        output_format,
+                        &ctx,
+                        protection_level,
+                        args.verbose,
+                        override_output,
+                    )
+                    .map(|(output, warnings)| (input_path.clone(), output, warnings))
+                    .map_err(|e| (input_path.clone(), e.to_string()))
+                })
+                .collect()
+        } else {
+            let mut seen: HashMap<PathBuf, usize> = HashMap::new();
 
-                        process_single_file(
-                            input_path,
-                            &output_dir,
-                            effective_output_format,
-                            &ctx,
-                            protection_level,
-                            args.verbose,
-                            override_output,
-                        )
-                        .map(|(output, warnings)| (input_path.clone(), output, warnings))
-                        .map_err(|e| (input_path.clone(), e.to_string()))
-                    })
-                    .collect()
-            };
+            input_files
+                .iter()
+                .map(|input_path| {
+                    let detected = ImageOutputFormat::from_magic_bytes(
+                        &fs::read(input_path).unwrap_or_default(),
+                    )
+                    .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+                    let effective_format = output_format.unwrap_or(detected);
+
+                    let override_output =
+                        compute_output_path(input_path, &output_dir, effective_format, &mut seen);
+
+                    process_single_file(
+                        input_path,
+                        &output_dir,
+                        output_format,
+                        &ctx,
+                        protection_level,
+                        args.verbose,
+                        override_output,
+                    )
+                    .map(|(output, warnings)| (input_path.clone(), output, warnings))
+                    .map_err(|e| (input_path.clone(), e.to_string()))
+                })
+                .collect()
+        };
 
         let mut success_count = 0;
         let mut failed_files: Vec<PathBuf> = Vec::new();
@@ -1565,7 +1598,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (output_path, warnings) = process_single_file(
             input_path,
             &args.output,
-            effective_output_format,
+            output_format,
             &ctx,
             protection_level,
             args.verbose,

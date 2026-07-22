@@ -17,6 +17,10 @@ pub(crate) const TOTAL_ECC_LEN: usize = DATA_LEN * REPLICATION_FACTOR;
 ///
 /// Each byte is written 3 times consecutively. The output length is
 /// `data.len() * REPLICATION_FACTOR`.
+///
+/// Kept for backward-compatible extraction of v1/v2 payloads. No longer
+/// used for writing since v3 uses built-in CRC32/HMAC instead of ECC.
+#[allow(dead_code)]
 pub(crate) fn ecc_encode(data: &[u8]) -> Vec<u8> {
     let data_len = data.len();
     let mut encoded = Vec::with_capacity(data_len * REPLICATION_FACTOR);

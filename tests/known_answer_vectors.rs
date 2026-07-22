@@ -21,7 +21,7 @@ const FIXED_KEY_ID: &[u8] = b"test-key-001";
 
 #[test]
 fn test_known_answer_signing_deterministic() {
-    let signing_key = SigningKey::from_bytes(FIXED_SECRET_KEY, FIXED_KEY_ID.to_vec());
+    let signing_key = SigningKey::from_bytes(FIXED_SECRET_KEY, FIXED_KEY_ID.to_vec()).unwrap();
     let verifying_key = signing_key.verifying_key();
 
     let claim = b"test provenance claim data for known-answer vector";
@@ -40,7 +40,7 @@ fn test_known_answer_signing_deterministic() {
 
 #[test]
 fn test_known_answer_verifying_key_derivation() {
-    let signing_key = SigningKey::from_bytes(FIXED_SECRET_KEY, FIXED_KEY_ID.to_vec());
+    let signing_key = SigningKey::from_bytes(FIXED_SECRET_KEY, FIXED_KEY_ID.to_vec()).unwrap();
     let vk1 = signing_key.verifying_key();
     let vk2 = signing_key.verifying_key();
 
@@ -51,13 +51,13 @@ fn test_known_answer_verifying_key_derivation() {
 
 #[test]
 fn test_known_answer_wrong_key_rejected() {
-    let key1 = SigningKey::from_bytes(FIXED_SECRET_KEY, FIXED_KEY_ID.to_vec());
+    let key1 = SigningKey::from_bytes(FIXED_SECRET_KEY, FIXED_KEY_ID.to_vec()).unwrap();
     let key2_bytes: [u8; 32] = [
         0xFF, 0xFE, 0xFD, 0xFC, 0xFB, 0xFA, 0xF9, 0xF8, 0xF7, 0xF6, 0xF5, 0xF4, 0xF3, 0xF2, 0xF1,
         0xF0, 0xEF, 0xEE, 0xED, 0xEC, 0xEB, 0xEA, 0xE9, 0xE8, 0xE7, 0xE6, 0xE5, 0xE4, 0xE3, 0xE2,
         0xE1, 0xE0,
     ];
-    let key2 = SigningKey::from_bytes(key2_bytes, b"wrong-key".to_vec());
+    let key2 = SigningKey::from_bytes(key2_bytes, b"wrong-key".to_vec()).unwrap();
 
     let claim = b"test claim for wrong key rejection";
     let signature = key1.sign(claim);
@@ -70,7 +70,7 @@ fn test_known_answer_wrong_key_rejected() {
 
 #[test]
 fn test_known_answer_altered_claim_rejected() {
-    let signing_key = SigningKey::from_bytes(FIXED_SECRET_KEY, FIXED_KEY_ID.to_vec());
+    let signing_key = SigningKey::from_bytes(FIXED_SECRET_KEY, FIXED_KEY_ID.to_vec()).unwrap();
     let verifying_key = signing_key.verifying_key();
 
     let claim = b"original claim for alteration test";

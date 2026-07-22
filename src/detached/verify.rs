@@ -48,7 +48,10 @@ pub enum EmbeddedReferenceStatus {
     /// The manifest declares a reference but no stego payload was found in the image.
     /// Only detached evidence remains.
     Stripped,
-    /// The manifest declares a reference and a stego payload was found in the image.
+    /// The manifest declares a reference and a stego payload was found in the image,
+    /// but the payload could not be parsed (malformed or corrupted).
+    Malformed,
+    /// The manifest declares a reference and a valid stego payload was found in the image.
     Present,
 }
 
@@ -185,13 +188,18 @@ pub fn verify_detached_manifest(
         }
     }
 
-    // 3. Set trust evaluation
+    // 3. Trust evaluation is derived solely from the caller-supplied TrustPolicy.
+    // The manifest's trust_metadata is never used to set the trust outcome.
+    // A malicious manifest claiming `trusted: true` must not influence the
+    // report. If trust_metadata is present, we report the trust_model name
+    // for transparency but always set trusted=false (the real trust decision
+    // lives in the per-signature key_id_matched flags above).
     if let Some(ref trust) = manifest.trust_metadata {
         builder = builder.with_trust(
             crate::verification::report::TrustEvaluation::builder()
                 .trust_model(&trust.trust_model)
-                .trusted(trust.trusted)
-                .reason(&trust.reason)
+                .trusted(false)
+                .reason("trust_metadata from manifest is informational only; trust is determined by caller policy")
                 .build(),
         );
     }
@@ -206,9 +214,9 @@ pub fn verify_detached_manifest(
 
     let report = builder.build();
 
-    let embedded_reference_status = match manifest.embedded_reference {
+    let embedded_reference_status = match &manifest.embedded_reference {
         None => EmbeddedReferenceStatus::NotProvided,
-        Some(_) => {
+        Some(reference) => {
             let extractor = crate::protected::steganography::SteganographyProtector::new();
             let img = match crate::util::image::load_image_from_bytes(image_bytes) {
                 Ok(img) => img,
@@ -222,7 +230,30 @@ pub fn verify_detached_manifest(
                 }
             };
             match extractor.extract_payload(&img) {
-                Some(_) => EmbeddedReferenceStatus::Present,
+                Some(payload) => {
+                    if payload.version() != reference.payload_version {
+                        return ManifestVerification {
+                            report,
+                            instance_digest_match,
+                            manifest_valid: true,
+                            embedded_reference_status: EmbeddedReferenceStatus::Stripped,
+                        };
+                    }
+                    if let Some(raw) = payload.raw_payload() {
+                        let mut hasher = Sha256::new();
+                        hasher.update(raw);
+                        let actual_digest = format!("sha256:{}", hex::encode(hasher.finalize()));
+                        if actual_digest != reference.payload_digest {
+                            return ManifestVerification {
+                                report,
+                                instance_digest_match,
+                                manifest_valid: true,
+                                embedded_reference_status: EmbeddedReferenceStatus::Malformed,
+                            };
+                        }
+                    }
+                    EmbeddedReferenceStatus::Present
+                }
                 None => EmbeddedReferenceStatus::Stripped,
             }
         }

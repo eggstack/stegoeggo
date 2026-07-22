@@ -221,7 +221,7 @@ impl PayloadBuilder {
         claim_bytes: &[u8],
     ) -> Self {
         let signature = signing_key.sign(claim_bytes);
-        let public_key = signing_key.public_key_bytes();
+        let public_key = *signing_key.verifying_key().as_bytes();
         let key_id = signing_key.key_id().to_vec();
 
         self.key_id = key_id;
@@ -483,7 +483,7 @@ mod tests {
         use crate::payload_v3::parser::parse_payload;
         use crate::signing::SigningKey;
 
-        let sk = SigningKey::from_bytes([42u8; 32], b"test-key".to_vec());
+        let sk = SigningKey::from_bytes([42u8; 32], b"test-key".to_vec()).unwrap();
         let claim = b"test claim data for signing";
 
         let payload = PayloadBuilder::new()
@@ -529,7 +529,7 @@ mod tests {
     fn test_embed_signature_verifies() {
         use crate::signing::SigningKey;
 
-        let sk = SigningKey::from_bytes([7u8; 32], b"verify-key".to_vec());
+        let sk = SigningKey::from_bytes([7u8; 32], b"verify-key".to_vec()).unwrap();
         let vk = sk.verifying_key();
         let claim = b"claim to verify";
 
@@ -558,7 +558,7 @@ mod tests {
     fn test_embed_signature_rejects_altered_claim() {
         use crate::signing::SigningKey;
 
-        let sk = SigningKey::from_bytes([9u8; 32], b"alter-key".to_vec());
+        let sk = SigningKey::from_bytes([9u8; 32], b"alter-key".to_vec()).unwrap();
         let vk = sk.verifying_key();
 
         let payload = PayloadBuilder::new()

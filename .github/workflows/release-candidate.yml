@@ -65,7 +65,9 @@ jobs:
         run: cargo install cargo-semver-checks
 
       - name: Semver check against published version
-        run: cargo semver-checks check-release 2>&1 | tee semver-report.txt || true
+        run: |
+          set -o pipefail
+          cargo semver-checks check-release 2>&1 | tee semver-report.txt
         continue-on-error: false
 
       - name: Generate package inventory

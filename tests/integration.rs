@@ -1670,7 +1670,9 @@ mod progressive_jpeg_warning {
 
     #[test]
     fn test_lsb_capacity_warning_uses_effective_payload_size() {
-        let img = create_test_image(30, 30);
+        // With v3 payloads, both CRC (36 bytes) and HMAC (48 bytes) are small.
+        // Use a tiny image that can't fit either.
+        let img = create_test_image(20, 20);
         let png_bytes = image_to_png_bytes(&img);
 
         let ctx_without_mac = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Png);
@@ -1682,6 +1684,9 @@ mod progressive_jpeg_warning {
         .unwrap();
         assert!(warnings_without_mac.contains(&ProtectionWarning::LsbCapacitySkipped));
 
+        // Use a larger image that can fit v3 HMAC payload
+        let img = create_test_image(32, 32);
+        let png_bytes = image_to_png_bytes(&img);
         let ctx_with_mac = ProtectionContext::new(0.5, 42)
             .with_format(ImageOutputFormat::Png)
             .with_mac_key(b"shared-test-key".to_vec());
@@ -1755,7 +1760,7 @@ mod notice_verification_tests {
 
     #[test]
     fn test_metadata_only_returns_metadata_notice_only() {
-        let img = create_test_image(32, 32);
+        let img = create_test_image(16, 16);
         let ctx = ProtectionContext::new(0.5, 42)
             .with_format(ImageOutputFormat::Png)
             .with_legal_metadata(create_legal_metadata())

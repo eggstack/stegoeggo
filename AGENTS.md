@@ -57,7 +57,7 @@ src/
 │   └── stego_f5.rs        # F5-style DCT steganography
 ├── payload_v3/            # Payload v3 wire format (header, parser, types, errors)
 ├── provenance/            # Provenance claim model (claim, digest, canonical)
-├── signing/               # Ed25519 signing (feature-gated: signatures)
+├── signing/               # Ed25519 signing via ed25519-dalek, RFC 8032 compliant (feature-gated: signatures)
 ├── detached/              # Detached signed manifests (feature-gated: detached-manifest)
 ├── verification/          # Structured verification report
 └── util/
@@ -97,7 +97,7 @@ src/
 | Feature | Description | Default |
 |---------|-------------|---------|
 | `async` | Tokio-based async API wrappers | No |
-| `signatures` | Ed25519 signing and key management | No |
+| `signatures` | Ed25519 signing and key management (via `ed25519-dalek`) | No |
 | `detached-manifest` | Detached signed manifest sidecar support | No |
 
 ## Build & Test Commands
@@ -108,7 +108,7 @@ cargo test                               # All tests (718 passed, 27 ignored)
 cargo test --all-features                # Includes signing and detached manifest tests
 cargo clippy --all-targets -- -D warnings # Lint check
 cargo fmt --check                        # Format check
-cargo package --workspace --allow-dirty  # Package dry-run
+cargo package --workspace                # Package dry-run (strict, no --allow-dirty)
 cargo bench                              # Criterion benchmarks
 cargo test --test external_tools -- --ignored    # External tool integration tests (requires exiftool/xmllint)
 cargo build --release --bin stegoeggo-conformance  # Build conformance harness
@@ -127,7 +127,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs:
 3. Format + clippy lint (`cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`)
 4. Security audit (`cargo audit`)
 5. License/advisory check (`cargo deny check licenses && cargo deny check advisories`)
-6. Package dry-run (`cargo package --workspace --allow-dirty`)
+6. Package dry-run (`cargo package --workspace`)
 7. External integration tests (`cargo test --test external_tools -- --ignored`, installs exiftool/xmllint/imagemagick/libvips)
 8. External Conformance (`stegoeggo-conformance --strict`, uploads JSON report). A release-candidate workflow exists at `.github/workflows/release-candidate.yml` for manual dispatch validation
 9. Benchmarks (manual dispatch only)
@@ -141,7 +141,7 @@ cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
 cargo test --doc
-cargo package --workspace --allow-dirty
+cargo package --workspace
 cargo deny check licenses
 cargo deny check advisories
 cargo test --test external_tools -- --ignored

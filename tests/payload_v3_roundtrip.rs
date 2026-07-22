@@ -552,7 +552,7 @@ fn test_v3_ed25519_signature_payload_roundtrip() {
     use stegoeggo::payload_v3::writer::PayloadBuilder;
     use stegoeggo::signing::SigningKey;
 
-    let sk = SigningKey::from_bytes([0xABu8; 32], b"compat-test-key".to_vec());
+    let sk = SigningKey::from_bytes([0xABu8; 32], b"compat-test-key".to_vec()).unwrap();
     let vk = sk.verifying_key();
     let claim = b"compatibility matrix claim data";
 

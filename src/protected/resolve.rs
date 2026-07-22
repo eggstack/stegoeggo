@@ -9,6 +9,12 @@ pub fn resolve_request(
 
     validate_channels(request.channels(), request.mac_key())?;
 
+    if request.policy() != RightsPolicy::Unspecified && !request.channels().rights_metadata {
+        return Err(Error::Config(
+            "A non-Unspecified rights policy requires rights_metadata to be enabled".into(),
+        ));
+    }
+
     if request.policy() == RightsPolicy::ProhibitedSeeConstraints {
         let notice = request.notice();
         let has_constraints =

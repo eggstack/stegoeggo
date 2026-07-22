@@ -31,7 +31,7 @@ include = [
 [features]
 default = []
 async = ["tokio"]
-signatures = []
+signatures = ["ed25519-dalek"]
 test-seeds = []
 fuzz = []
 detached-manifest = []
@@ -52,6 +52,8 @@ getrandom = "0.2"
 rayon = "1.10"
 toml = "1"
 subtle = "2"
+ed25519-dalek = { version = "3", features = ["zeroize"], optional = true }
+zeroize = { version = "1", features = ["derive"] }
 unicode-normalization = "0.1"
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 

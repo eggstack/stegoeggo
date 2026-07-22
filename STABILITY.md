@@ -48,10 +48,10 @@ The following API surfaces are deprecated. They remain functional but will be re
 
 The following modules are experimental. API surfaces within them may change without notice between minor releases.
 
-| Module | Feature Gate |
-|--------|-------------|
-| `stegoeggo::signing` | `signatures` |
-| `stegoeggo::detached` | `detached-manifest` |
+| Module | Feature Gate | Notes |
+|--------|-------------|-------|
+| `stegoeggo::signing` | `signatures` | Uses `ed25519-dalek` (real Ed25519). Private keys are not serialized. Trust evaluation is caller-owned. |
+| `stegoeggo::detached` | `detached-manifest` | Signed sidecar manifests for distributing provenance outside the image. |
 
 ## CLI Stable Commands and Flags
 

@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use crate::jpeg_transcoder::{DctStegoF5, JpegTranscoder};
+use crate::payload_v3::types::{AuthAlgorithm, ProtectionChannels, V3_MAGIC, V3_PAYLOAD_VERSION};
 use crate::protected::constants::{SPLITMIX64_SEED, STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR};
 use crate::protected::ecc;
 use crate::protected::metadata_trap::MetadataTrapProtector;
@@ -26,11 +27,14 @@ const ECC_PAYLOAD_SIZE_V2: usize = V2_HEADER_SIZE * ecc::REPLICATION_FACTOR + 4;
 pub(crate) const ECC_PAYLOAD_BITS_V2: usize = ECC_PAYLOAD_SIZE_V2 * 8;
 /// Legacy ECC payload bits (V1, kept for backward-compatible extraction).
 const ECC_PAYLOAD_BITS: usize = ECC_PAYLOAD_SIZE_V1 * 8;
-
-/// The version byte written into the payload header by `generate_payload()`.
-///
-/// Bump this when the payload layout changes in a non-backward-compatible way.
-const CURRENT_PAYLOAD_VERSION: u8 = 2;
+/// V3 payload size: CRC32 mode (32-byte core + 4-byte CRC32 = 36 bytes).
+const V3_CRC_PAYLOAD_SIZE: usize = crate::payload_v3::types::V3_CORE_SIZE + 4;
+/// V3 payload bits for CRC32 mode.
+const V3_CRC_PAYLOAD_BITS: usize = V3_CRC_PAYLOAD_SIZE * 8;
+/// V3 payload size: HMAC mode (32-byte core + 16-byte HMAC = 48 bytes).
+const V3_HMAC_PAYLOAD_SIZE: usize = crate::payload_v3::types::V3_CORE_SIZE + 16;
+/// V3 payload bits for HMAC mode.
+const V3_HMAC_PAYLOAD_BITS: usize = V3_HMAC_PAYLOAD_SIZE * 8;
 
 /// Payload versions the extractor knows how to parse, in preference order.
 ///
@@ -42,7 +46,7 @@ const CURRENT_PAYLOAD_VERSION: u8 = 2;
 /// Removing a version from this slice will make previously-protected images
 /// un-parseable. Only remove a version when you are confident no surviving
 /// protected image still uses it.
-const SUPPORTED_PAYLOAD_VERSIONS: &[u8] = &[1, 2];
+const SUPPORTED_PAYLOAD_VERSIONS: &[u8] = &[1, 2, 3];
 
 /// Common test/dev seeds tried when metadata seed is unavailable.
 ///
@@ -246,9 +250,9 @@ impl SteganographyProtector {
 
     fn payload_bits_for_context(ctx: &ProtectionContext) -> usize {
         if ctx.mac_key().is_some() {
-            (V2_HEADER_SIZE + 8) * 8
+            V3_HMAC_PAYLOAD_BITS
         } else {
-            ECC_PAYLOAD_BITS_V2
+            V3_CRC_PAYLOAD_BITS
         }
     }
 
@@ -456,7 +460,7 @@ impl SteganographyProtector {
 
                                 let payload_bytes = Self::bits_to_bytes(&extracted);
                                 if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                                    return Some(payload_bytes);
+                                    return Some(Self::truncate_to_actual_payload(&payload_bytes));
                                 }
                                 if Self::try_ecc_decode(&payload_bytes).is_some() {
                                     return Some(payload_bytes);
@@ -552,7 +556,9 @@ impl SteganographyProtector {
 
                                 let payload_bytes = Self::bits_to_bytes(&extracted);
                                 if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                                    return CandidateOutcome::Valid(payload_bytes);
+                                    return CandidateOutcome::Valid(
+                                        Self::truncate_to_actual_payload(&payload_bytes),
+                                    );
                                 }
                                 if Self::try_ecc_decode(&payload_bytes).is_some() {
                                     return CandidateOutcome::Valid(payload_bytes);
@@ -721,7 +727,7 @@ impl SteganographyProtector {
                         return Some(payload);
                     }
                     if Self::verify_payload_integrity(&payload, mac_key) {
-                        return Some(payload);
+                        return Some(Self::truncate_to_actual_payload(&payload));
                     }
                 }
             }
@@ -751,7 +757,7 @@ impl SteganographyProtector {
                         return CandidateOutcome::Valid(payload);
                     }
                     if Self::verify_payload_integrity(&payload, mac_key) {
-                        return CandidateOutcome::Valid(payload);
+                        return CandidateOutcome::Valid(Self::truncate_to_actual_payload(&payload));
                     }
                     if last_invalid.is_none() {
                         last_invalid = Some(payload);
@@ -887,11 +893,7 @@ impl SteganographyProtector {
                     payload_bytes
                 };
 
-                if header.len() >= 10 {
-                    let embedded_seed = u64::from_le_bytes([
-                        header[2], header[3], header[4], header[5], header[6], header[7],
-                        header[8], header[9],
-                    ]);
+                if let Some(embedded_seed) = Self::extract_embedded_seed(&header) {
                     if embedded_seed == seed {
                         return true;
                     }
@@ -919,13 +921,11 @@ impl SteganographyProtector {
             } else {
                 payload.clone()
             };
-            if header.len() >= 10 && Self::verify_checksum(&payload) {
-                let embedded_seed = u64::from_le_bytes([
-                    header[2], header[3], header[4], header[5], header[6], header[7], header[8],
-                    header[9],
-                ]);
-                if embedded_seed == seed {
-                    return true;
+            if Self::verify_checksum(&payload) {
+                if let Some(embedded_seed) = Self::extract_embedded_seed(&header) {
+                    if embedded_seed == seed {
+                        return true;
+                    }
                 }
             }
         }
@@ -939,13 +939,11 @@ impl SteganographyProtector {
                         } else {
                             payload.clone()
                         };
-                        if header.len() >= 10 && Self::verify_checksum(&payload) {
-                            let embedded_seed = u64::from_le_bytes([
-                                header[2], header[3], header[4], header[5], header[6], header[7],
-                                header[8], header[9],
-                            ]);
-                            if embedded_seed == seed {
-                                return true;
+                        if Self::verify_checksum(&payload) {
+                            if let Some(embedded_seed) = Self::extract_embedded_seed(&header) {
+                                if embedded_seed == seed {
+                                    return true;
+                                }
                             }
                         }
                     }
@@ -1105,12 +1103,29 @@ impl SteganographyProtector {
         if header.len() < 10 {
             return false;
         }
+
+        // V3: check magic bytes and read seed from v3 offset
+        if header.len() >= 3
+            && header[0] == V3_MAGIC[0]
+            && header[1] == V3_MAGIC[1]
+            && header[2] == V3_PAYLOAD_VERSION
+        {
+            if header.len() < 19 {
+                return false;
+            }
+            let embedded_seed = u64::from_le_bytes([
+                header[11], header[12], header[13], header[14], header[15], header[16], header[17],
+                header[18],
+            ]);
+            return embedded_seed == expected_seed;
+        }
+
+        // V1/V2: seed at bytes 2-9
         let embedded_seed = u64::from_le_bytes([
             header[2], header[3], header[4], header[5], header[6], header[7], header[8], header[9],
         ]);
         embedded_seed == expected_seed
     }
-
     /// Extract the steganographic payload from a protected image.
     ///
     /// Tries metadata-extracted seed first, then falls back to common test seeds.
@@ -1159,6 +1174,46 @@ impl SteganographyProtector {
         }
 
         None
+    }
+
+    /// Truncate an extracted payload to its actual size based on the header.
+    /// For v3 payloads, extracts `total_length` bytes. For v1/v2, returns as-is.
+    fn truncate_to_actual_payload(payload: &[u8]) -> Vec<u8> {
+        if payload.len() >= 3
+            && payload[0] == V3_MAGIC[0]
+            && payload[1] == V3_MAGIC[1]
+            && payload[2] == V3_PAYLOAD_VERSION
+            && payload.len() >= crate::payload_v3::types::V3_CORE_SIZE
+        {
+            let total_length = u16::from_le_bytes([payload[4], payload[5]]) as usize;
+            if total_length <= payload.len() {
+                return payload[..total_length].to_vec();
+            }
+        }
+        payload.to_vec()
+    }
+
+    /// Extract the embedded seed from a decoded payload header.
+    /// Handles both v2 (seed at bytes 2-9) and v3 (seed at bytes 11-18) layouts.
+    fn extract_embedded_seed(header: &[u8]) -> Option<u64> {
+        if header.len() < 10 {
+            return None;
+        }
+        // V3: check magic bytes and read seed from v3 offset
+        if header.len() >= 19
+            && header[0] == V3_MAGIC[0]
+            && header[1] == V3_MAGIC[1]
+            && header[2] == V3_PAYLOAD_VERSION
+        {
+            return Some(u64::from_le_bytes([
+                header[11], header[12], header[13], header[14], header[15], header[16], header[17],
+                header[18],
+            ]));
+        }
+        // V1/V2: seed at bytes 2-9
+        Some(u64::from_le_bytes([
+            header[2], header[3], header[4], header[5], header[6], header[7], header[8], header[9],
+        ]))
     }
 
     /// Extract the steganographic payload from raw image bytes.
@@ -1262,6 +1317,15 @@ impl SteganographyProtector {
             return None;
         }
 
+        // V3: check magic bytes first
+        if payload.len() >= 3
+            && payload[0] == V3_MAGIC[0]
+            && payload[1] == V3_MAGIC[1]
+            && payload[2] == V3_PAYLOAD_VERSION
+        {
+            return Self::parse_stego_payload_v3(payload);
+        }
+
         let version = payload[0];
 
         for &supported in SUPPORTED_PAYLOAD_VERSIONS {
@@ -1314,6 +1378,7 @@ impl SteganographyProtector {
             version: 1,
             content_hash: None,
             dmi_value: None,
+            raw_payload: None,
         })
     }
 
@@ -1375,6 +1440,77 @@ impl SteganographyProtector {
             version: 2,
             content_hash,
             dmi_value,
+            raw_payload: None,
+        })
+    }
+
+    /// Parse a version-3 stego payload header.
+    ///
+    /// V3 header layout (32 bytes core):
+    /// ```text
+    /// Offset  Size  Field
+    /// 0       2     Magic ([0x53, 0x45] = "SE")
+    /// 2       1     Version (=3)
+    /// 3       1     Header length (core + key_id + extensions)
+    /// 4       2     Total length (u16 LE)
+    /// 6       2     Flags (u16 LE)
+    /// 8       2     Channels (u16 LE)
+    /// 10      1     DMI policy byte
+    /// 11      8     Seed (u64 LE)
+    /// 19      2     Intensity (u16 LE, scaled ×100)
+    /// 21      8     Content hash (truncated)
+    /// 29      1     Auth algorithm byte
+    /// 30      1     Auth tag length
+    /// 31      1     Key ID length
+    /// ```
+    fn parse_stego_payload_v3(payload: &[u8]) -> Option<StegoPayload> {
+        if payload.len() < crate::payload_v3::types::V3_CORE_SIZE {
+            return None;
+        }
+
+        let extracted_seed = u64::from_le_bytes([
+            payload[11],
+            payload[12],
+            payload[13],
+            payload[14],
+            payload[15],
+            payload[16],
+            payload[17],
+            payload[18],
+        ]);
+
+        let intensity_raw = u16::from_le_bytes([payload[19], payload[20]]);
+        let intensity = intensity_raw as f32 / 100.0;
+
+        let content_hash = {
+            let mut hash = [0u8; 4];
+            hash.copy_from_slice(&payload[21..25]);
+            if hash != [0, 0, 0, 0] {
+                Some(hash)
+            } else {
+                None
+            }
+        };
+
+        let dmi_value = match payload[10] {
+            0 => None,
+            1 => Some(crate::types::DmiValue::Allowed),
+            2 => Some(crate::types::DmiValue::ProhibitedAiMlTraining),
+            3 => Some(crate::types::DmiValue::ProhibitedGenAiMlTraining),
+            4 => Some(crate::types::DmiValue::ProhibitedExceptSearchEngineIndexing),
+            5 => Some(crate::types::DmiValue::Prohibited),
+            6 => Some(crate::types::DmiValue::ProhibitedSeeConstraints),
+            _ => None,
+        };
+
+        Some(StegoPayload {
+            protection_level: 2,
+            seed: extracted_seed,
+            intensity,
+            version: 3,
+            content_hash,
+            dmi_value,
+            raw_payload: None,
         })
     }
 
@@ -1388,10 +1524,14 @@ impl SteganographyProtector {
         let rgba = img.to_rgba8();
         if let Some(payload) = self.extract_with_redundancy(&rgba, seed, mac_key) {
             if let Some(decoded) = Self::try_ecc_decode(&payload) {
-                return Self::parse_stego_payload(&decoded);
+                let mut sp = Self::parse_stego_payload(&decoded)?;
+                sp.raw_payload = Some(Self::truncate_to_actual_payload(&payload));
+                return Some(sp);
             }
             if Self::verify_payload_integrity(&payload, mac_key) {
-                return Self::parse_stego_payload(&payload);
+                let mut sp = Self::parse_stego_payload(&payload)?;
+                sp.raw_payload = Some(Self::truncate_to_actual_payload(&payload));
+                return Some(sp);
             }
         }
 
@@ -1403,10 +1543,14 @@ impl SteganographyProtector {
             self.extract_lsb_tiled_candidates(&rgba, seed, DEFAULT_TILE_SIZE, 64, mac_key)
         {
             if let Some(decoded) = Self::try_ecc_decode(&payload) {
-                return Self::parse_stego_payload(&decoded);
+                let mut sp = Self::parse_stego_payload(&decoded)?;
+                sp.raw_payload = Some(Self::truncate_to_actual_payload(&payload));
+                return Some(sp);
             }
             if Self::verify_payload_integrity(&payload, mac_key) {
-                return Self::parse_stego_payload(&payload);
+                let mut sp = Self::parse_stego_payload(&payload)?;
+                sp.raw_payload = Some(Self::truncate_to_actual_payload(&payload));
+                return Some(sp);
             }
         }
 
@@ -1418,9 +1562,13 @@ impl SteganographyProtector {
         let rgba = img.to_rgba8();
         if let Some(payload) = self.extract_with_redundancy(&rgba, seed, &[]) {
             if let Some(decoded) = Self::try_ecc_decode(&payload) {
-                return Self::parse_stego_payload(&decoded);
+                let mut sp = Self::parse_stego_payload(&decoded)?;
+                sp.raw_payload = Some(Self::truncate_to_actual_payload(&payload));
+                return Some(sp);
             }
-            return Self::parse_stego_payload(&payload);
+            let mut sp = Self::parse_stego_payload(&payload)?;
+            sp.raw_payload = Some(Self::truncate_to_actual_payload(&payload));
+            return Some(sp);
         }
 
         // Crop-resistant fallback: tiled extraction.
@@ -1428,9 +1576,13 @@ impl SteganographyProtector {
             self.extract_lsb_tiled_candidates(&rgba, seed, DEFAULT_TILE_SIZE, 64, &[])
         {
             if let Some(decoded) = Self::try_ecc_decode(&payload) {
-                return Self::parse_stego_payload(&decoded);
+                let mut sp = Self::parse_stego_payload(&decoded)?;
+                sp.raw_payload = Some(Self::truncate_to_actual_payload(&payload));
+                return Some(sp);
             }
-            return Self::parse_stego_payload(&payload);
+            let mut sp = Self::parse_stego_payload(&payload)?;
+            sp.raw_payload = Some(Self::truncate_to_actual_payload(&payload));
+            return Some(sp);
         }
 
         None
@@ -1530,7 +1682,7 @@ impl SteganographyProtector {
 
                 let payload_bytes = Self::bits_to_bytes(&extracted);
                 if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                    return Some(payload_bytes);
+                    return Some(Self::truncate_to_actual_payload(&payload_bytes));
                 }
                 if Self::try_ecc_decode(&payload_bytes).is_some() {
                     return Some(payload_bytes);
@@ -1561,7 +1713,9 @@ impl SteganographyProtector {
 
                 let payload_bytes = Self::bits_to_bytes(&extracted);
                 if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                    return CandidateOutcome::Valid(payload_bytes);
+                    return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
+                        &payload_bytes,
+                    ));
                 }
                 if Self::try_ecc_decode(&payload_bytes).is_some() {
                     return CandidateOutcome::Valid(payload_bytes);
@@ -1586,6 +1740,15 @@ impl SteganographyProtector {
         ]
     }
 
+    fn compute_payload_mac_v3(payload_without_mac: &[u8], mac_key: &[u8]) -> [u8; 16] {
+        let mut mac = HmacSha256::new_from_slice(mac_key).expect("HMAC can take key of any size");
+        mac.update(payload_without_mac);
+        let result = mac.finalize().into_bytes();
+        let mut out = [0u8; 16];
+        out.copy_from_slice(&result[..16]);
+        out
+    }
+
     fn verify_payload_mac(payload_without_mac: &[u8], mac_key: &[u8], expected_mac: &[u8]) -> bool {
         let computed_mac = Self::compute_payload_mac(payload_without_mac, mac_key);
         computed_mac.ct_eq(expected_mac).into()
@@ -1607,45 +1770,105 @@ impl SteganographyProtector {
     /// Tries v2 ECC size (96 data + 4 checksum = 100 bytes) first,
     /// then v1 (72 data + 4 checksum = 76 bytes).
     fn verify_checksum(payload: &[u8]) -> bool {
-        // Try v2 ECC size first
-        let v2_ecc_len = V2_HEADER_SIZE * ecc::REPLICATION_FACTOR;
-        if payload.len() >= v2_ecc_len + 4 {
-            let expected = Self::compute_checksum(&payload[..v2_ecc_len]);
-            if payload[v2_ecc_len] == expected[0]
-                && payload[v2_ecc_len + 1] == expected[1]
-                && payload[v2_ecc_len + 2] == expected[2]
-                && payload[v2_ecc_len + 3] == expected[3]
-            {
-                return true;
+        // V3 payload: CRC32 over core header
+        if payload.len() >= 3
+            && payload[0] == V3_MAGIC[0]
+            && payload[1] == V3_MAGIC[1]
+            && payload[2] == V3_PAYLOAD_VERSION
+        {
+            if payload.len() < crate::payload_v3::types::V3_CORE_SIZE + 4 {
+                return false;
             }
-        }
-        // Try v1 ECC size
-        if payload.len() >= ecc::TOTAL_ECC_LEN + 4 {
-            let expected = Self::compute_checksum(&payload[..ecc::TOTAL_ECC_LEN]);
-            if payload[ecc::TOTAL_ECC_LEN] == expected[0]
-                && payload[ecc::TOTAL_ECC_LEN + 1] == expected[1]
-                && payload[ecc::TOTAL_ECC_LEN + 2] == expected[2]
-                && payload[ecc::TOTAL_ECC_LEN + 3] == expected[3]
-            {
-                return true;
+            let total_length = u16::from_le_bytes([payload[4], payload[5]]) as usize;
+            if total_length > payload.len() {
+                return false;
             }
-        }
-        // Legacy: try 24-byte header + 4 checksum
-        if payload.len() >= MIN_PAYLOAD_SIZE {
-            let expected = Self::compute_checksum(&payload[..24]);
-            if payload[24] == expected[0]
-                && payload[25] == expected[1]
-                && payload[26] == expected[2]
-                && payload[27] == expected[3]
-            {
-                return true;
+            let auth_tag_len = payload[30] as usize;
+            if total_length < crate::payload_v3::types::V3_CORE_SIZE + auth_tag_len {
+                return false;
             }
+            let core_and_ext = &payload[..total_length - auth_tag_len];
+            let expected = Self::compute_checksum(core_and_ext);
+            payload[total_length - auth_tag_len] == expected[0]
+                && payload[total_length - auth_tag_len + 1] == expected[1]
+                && payload[total_length - auth_tag_len + 2] == expected[2]
+                && payload[total_length - auth_tag_len + 3] == expected[3]
         }
-        false
+        // V2 ECC size first
+        else {
+            let v2_ecc_len = V2_HEADER_SIZE * ecc::REPLICATION_FACTOR;
+            if payload.len() >= v2_ecc_len + 4 {
+                let expected = Self::compute_checksum(&payload[..v2_ecc_len]);
+                if payload[v2_ecc_len] == expected[0]
+                    && payload[v2_ecc_len + 1] == expected[1]
+                    && payload[v2_ecc_len + 2] == expected[2]
+                    && payload[v2_ecc_len + 3] == expected[3]
+                {
+                    return true;
+                }
+            }
+            // Try v1 ECC size
+            if payload.len() >= ecc::TOTAL_ECC_LEN + 4 {
+                let expected = Self::compute_checksum(&payload[..ecc::TOTAL_ECC_LEN]);
+                if payload[ecc::TOTAL_ECC_LEN] == expected[0]
+                    && payload[ecc::TOTAL_ECC_LEN + 1] == expected[1]
+                    && payload[ecc::TOTAL_ECC_LEN + 2] == expected[2]
+                    && payload[ecc::TOTAL_ECC_LEN + 3] == expected[3]
+                {
+                    return true;
+                }
+            }
+            // Legacy: try 24-byte header + 4 checksum
+            if payload.len() >= MIN_PAYLOAD_SIZE {
+                let expected = Self::compute_checksum(&payload[..24]);
+                if payload[24] == expected[0]
+                    && payload[25] == expected[1]
+                    && payload[26] == expected[2]
+                    && payload[27] == expected[3]
+                {
+                    return true;
+                }
+            }
+            false
+        }
     }
 
     fn verify_payload_integrity(payload: &[u8], mac_key: &[u8]) -> bool {
-        if mac_key.is_empty() {
+        // V3 payload: check magic bytes
+        if payload.len() >= 3
+            && payload[0] == V3_MAGIC[0]
+            && payload[1] == V3_MAGIC[1]
+            && payload[2] == V3_PAYLOAD_VERSION
+        {
+            if payload.len() < crate::payload_v3::types::V3_CORE_SIZE {
+                return false;
+            }
+            let total_length = u16::from_le_bytes([payload[4], payload[5]]) as usize;
+            if total_length > payload.len() {
+                return false;
+            }
+            let auth_algo = payload[29];
+            let auth_tag_len = payload[30] as usize;
+            if total_length < crate::payload_v3::types::V3_CORE_SIZE + auth_tag_len {
+                return false;
+            }
+            let core_and_ext = &payload[..total_length - auth_tag_len];
+            let tag = &payload[total_length - auth_tag_len..total_length];
+            match auth_algo {
+                1 => {
+                    let expected = Self::compute_checksum(core_and_ext);
+                    tag == expected
+                }
+                2 if !mac_key.is_empty() => {
+                    let mut mac =
+                        HmacSha256::new_from_slice(mac_key).expect("HMAC can take key of any size");
+                    mac.update(core_and_ext);
+                    let result = mac.finalize().into_bytes();
+                    result[..tag.len()].ct_eq(tag).into()
+                }
+                _ => false,
+            }
+        } else if mac_key.is_empty() {
             Self::verify_checksum(payload)
         } else {
             // Try v2 MAC: 32-byte header + 8-byte MAC = 40 bytes
@@ -1704,32 +1927,8 @@ impl SteganographyProtector {
     /// - HMAC-SHA256 of the first 32 bytes (8 bytes, if mac_key is set), OR
     /// - Reed-Solomon ECC-encoded payload (96 bytes) + CRC32 checksum (4 bytes) = 100 bytes
     fn generate_payload(&self, ctx: &ProtectionContext) -> Vec<u8> {
-        let mut header = Vec::with_capacity(V2_HEADER_SIZE);
-
-        header.push(CURRENT_PAYLOAD_VERSION);
-
-        let level_byte = ctx.protection_level().map(|l| l.to_byte()).unwrap_or(2);
-        header.push(level_byte);
-
-        header.extend_from_slice(&ctx.seed().to_le_bytes());
-
         let intensity_val = (ctx.intensity() * 100.0) as u16;
-        header.extend_from_slice(&intensity_val.to_le_bytes());
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        header.extend_from_slice(&now.to_le_bytes());
-
-        // Bytes 20-23: content hash (4 bytes)
-        if let Some(hash) = ctx.content_hash() {
-            header.extend_from_slice(&hash);
-        } else {
-            header.extend_from_slice(&[0u8; 4]);
-        }
-
-        // Byte 24: DMI value
         let dmi_byte = ctx
             .dmi_value()
             .map(|d| match d {
@@ -1742,29 +1941,67 @@ impl SteganographyProtector {
                 crate::types::DmiValue::ProhibitedSeeConstraints => 6,
             })
             .unwrap_or(0);
-        header.push(dmi_byte);
 
-        // Byte 25: flags (reserved for future use)
-        header.push(0);
+        let content_hash_8 = ctx
+            .content_hash()
+            .map(|h| {
+                let mut buf = [0u8; 8];
+                buf[..4].copy_from_slice(&h);
+                buf
+            })
+            .unwrap_or([0u8; 8]);
 
-        // Bytes 26-31: reserved (zeroed)
-        while header.len() < V2_HEADER_SIZE {
-            header.push(0);
-        }
-        header.truncate(V2_HEADER_SIZE);
+        let flags = crate::payload_v3::types::PayloadFlags {
+            has_extensions: false,
+            has_key_id: false,
+            tiled: ctx.is_tile_mode_enabled(),
+            progressive_jpeg: ctx.progressive_jpeg(),
+            critical_extension: false,
+            signed: false,
+            reserved: 0,
+        };
 
-        if let Some(key) = ctx.mac_key() {
-            let mut payload = header;
-            let mac = Self::compute_payload_mac(&payload, key);
-            payload.extend_from_slice(&mac);
-            payload
+        let channels = ProtectionChannels {
+            rights_metadata: true,
+            hidden_marker: true,
+            authentication: true,
+        };
+
+        let has_mac = ctx.mac_key().is_some();
+        let (auth_algo, auth_tag_len) = if has_mac {
+            (AuthAlgorithm::HmacSha256Truncated, 16u8)
         } else {
-            let encoded = ecc::ecc_encode(&header);
-            let checksum = Self::compute_checksum(&encoded);
-            let mut payload = encoded;
-            payload.extend_from_slice(&checksum);
-            payload
-        }
+            (AuthAlgorithm::Crc32, 4u8)
+        };
+
+        let mut buf =
+            Vec::with_capacity(crate::payload_v3::types::V3_CORE_SIZE + auth_tag_len as usize);
+
+        buf.extend_from_slice(&V3_MAGIC);
+        buf.push(V3_PAYLOAD_VERSION);
+        buf.push(crate::payload_v3::types::V3_CORE_SIZE as u8);
+        let total_length = crate::payload_v3::types::V3_CORE_SIZE + auth_tag_len as usize;
+        buf.extend_from_slice(&(total_length as u16).to_le_bytes());
+        buf.extend_from_slice(&flags.to_bits().to_le_bytes());
+        buf.extend_from_slice(&channels.to_bits().to_le_bytes());
+        buf.push(dmi_byte);
+        buf.extend_from_slice(&ctx.seed().to_le_bytes());
+        buf.extend_from_slice(&intensity_val.to_le_bytes());
+        buf.extend_from_slice(&content_hash_8);
+        buf.push(auth_algo as u8);
+        buf.push(auth_tag_len);
+        buf.push(0);
+
+        debug_assert_eq!(buf.len(), crate::payload_v3::types::V3_CORE_SIZE);
+
+        let auth_tag = if let Some(key) = ctx.mac_key() {
+            Self::compute_payload_mac_v3(&buf, key).to_vec()
+        } else {
+            Self::compute_checksum(&buf).to_vec()
+        };
+        buf.extend_from_slice(&auth_tag);
+
+        buf
     }
 
     /// Collision-free LCG permutation for stego pixel selection.
@@ -1938,7 +2175,12 @@ impl SteganographyProtector {
         }
 
         // Try v2 payload bits first, then v1
-        let ecc_bits_list = [ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS];
+        let ecc_bits_list = [
+            ECC_PAYLOAD_BITS_V2,
+            ECC_PAYLOAD_BITS,
+            V3_CRC_PAYLOAD_BITS,
+            V3_HMAC_PAYLOAD_BITS,
+        ];
 
         // Deterministic scan: top-left to bottom-right, every `stride` pixels
         // in each axis. A stride of `tile_size / 2` gives a reasonable balance
@@ -2003,7 +2245,7 @@ impl SteganographyProtector {
                                     break;
                                 }
                                 if Self::verify_payload_integrity(&candidate, mac_key) {
-                                    payload = Some(candidate);
+                                    payload = Some(Self::truncate_to_actual_payload(&candidate));
                                     break;
                                 }
                             }
@@ -2045,7 +2287,12 @@ impl SteganographyProtector {
             return CandidateOutcome::NotFound;
         }
 
-        let ecc_bits_list = [ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS];
+        let ecc_bits_list = [
+            ECC_PAYLOAD_BITS_V2,
+            ECC_PAYLOAD_BITS,
+            V3_CRC_PAYLOAD_BITS,
+            V3_HMAC_PAYLOAD_BITS,
+        ];
         let stride = (tile_size / 2).max(1);
         let mut origins: Vec<(u32, u32)> = Vec::new();
         let mut y = 0u32;
@@ -2088,7 +2335,9 @@ impl SteganographyProtector {
                                     return CandidateOutcome::Valid(candidate);
                                 }
                                 if Self::verify_payload_integrity(&candidate, mac_key) {
-                                    return CandidateOutcome::Valid(candidate);
+                                    return CandidateOutcome::Valid(
+                                        Self::truncate_to_actual_payload(&candidate),
+                                    );
                                 }
                                 if last_invalid.is_none() {
                                     last_invalid = Some(candidate);
@@ -2366,6 +2615,7 @@ pub struct StegoPayload {
     version: u8,
     content_hash: Option<[u8; 4]>,
     dmi_value: Option<crate::types::DmiValue>,
+    raw_payload: Option<Vec<u8>>,
 }
 
 impl StegoPayload {
@@ -2409,6 +2659,15 @@ impl StegoPayload {
     #[must_use]
     pub fn dmi_value(&self) -> Option<crate::types::DmiValue> {
         self.dmi_value
+    }
+
+    /// Raw extracted payload bytes (before ECC decoding and truncation).
+    ///
+    /// Used for digest comparison in detached manifest verification.
+    /// `None` when the payload was extracted from parsed fields only.
+    #[must_use]
+    pub fn raw_payload(&self) -> Option<&[u8]> {
+        self.raw_payload.as_deref()
     }
 }
 
@@ -2652,7 +2911,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(42);
         let payload = protector.generate_payload(&ctx);
-        assert_eq!(payload.len(), ECC_PAYLOAD_SIZE_V2);
+        assert_eq!(payload.len(), V3_CRC_PAYLOAD_SIZE);
         assert!(SteganographyProtector::verify_payload_integrity(
             &payload,
             &[]
@@ -2664,7 +2923,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let ctx = ctx_with_mac(42, b"secret");
         let payload = protector.generate_payload(&ctx);
-        assert_eq!(payload.len(), V2_HEADER_SIZE + 8);
+        assert_eq!(payload.len(), V3_HMAC_PAYLOAD_SIZE);
         assert!(SteganographyProtector::verify_payload_integrity(
             &payload, b"secret"
         ));
@@ -2714,7 +2973,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(12345);
         let payload = protector.generate_payload(&ctx);
-        assert_eq!(payload.len(), ECC_PAYLOAD_SIZE_V2);
+        assert_eq!(payload.len(), V3_CRC_PAYLOAD_SIZE);
     }
 
     #[test]
@@ -2722,7 +2981,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let ctx = ctx_with_mac(12345, b"key");
         let payload = protector.generate_payload(&ctx);
-        assert_eq!(payload.len(), V2_HEADER_SIZE + 8); // 32-byte header + 8-byte MAC
+        assert_eq!(payload.len(), V3_HMAC_PAYLOAD_SIZE);
     }
 
     #[test]
@@ -2730,7 +2989,8 @@ mod tests {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(42);
         let payload = protector.generate_payload(&ctx);
-        assert_eq!(payload[0], 2);
+        assert_eq!(&payload[0..2], &V3_MAGIC);
+        assert_eq!(payload[2], 3);
     }
 
     #[test]
@@ -2741,8 +3001,14 @@ mod tests {
         let payload = protector.generate_payload(&ctx);
 
         let extracted_seed = u64::from_le_bytes([
-            payload[2], payload[3], payload[4], payload[5], payload[6], payload[7], payload[8],
-            payload[9],
+            payload[11],
+            payload[12],
+            payload[13],
+            payload[14],
+            payload[15],
+            payload[16],
+            payload[17],
+            payload[18],
         ]);
         assert_eq!(extracted_seed, seed);
     }
@@ -2753,7 +3019,7 @@ mod tests {
         let ctx = ProtectionContext::new(0.73, 42);
         let payload = protector.generate_payload(&ctx);
 
-        let intensity_raw = u16::from_le_bytes([payload[10], payload[11]]);
+        let intensity_raw = u16::from_le_bytes([payload[19], payload[20]]);
         let recovered = intensity_raw as f32 / 100.0;
         assert!((recovered - 0.73).abs() < 0.02);
     }
@@ -2763,8 +3029,12 @@ mod tests {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(42);
         let payload = protector.generate_payload(&ctx);
-        // Default protection_level is None, falls back to 2 (Standard)
-        assert_eq!(payload[1], 2);
+        // V3: channels field at bytes 8-9 encodes protection info
+        let channels = u16::from_le_bytes([payload[8], payload[9]]);
+        assert_ne!(
+            channels, 0,
+            "channels should be non-zero for Standard level"
+        );
     }
 
     #[test]
@@ -2772,7 +3042,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let a = protector.generate_payload(&ctx_no_mac(1));
         let b = protector.generate_payload(&ctx_no_mac(2));
-        assert_ne!(a[..10], b[..10]); // seed bytes differ
+        assert_ne!(a[11..19], b[11..19]); // seed bytes differ in v3
     }
 
     // ── Permutation ───────────────────────────────────────────────────
@@ -3036,11 +3306,9 @@ mod tests {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(12345);
         let payload = protector.generate_payload(&ctx);
-
         let parsed = SteganographyProtector::parse_stego_payload(&payload).unwrap();
-        assert_eq!(parsed.version(), 2);
+        assert_eq!(parsed.version(), 3);
         assert_eq!(parsed.seed(), 12345);
-        assert_eq!(parsed.protection_level(), 2);
         assert!((parsed.intensity() - 0.5).abs() < 0.02);
     }
 
@@ -3059,10 +3327,10 @@ mod tests {
     #[test]
     fn current_payload_version_is_in_supported_list() {
         assert!(
-            SUPPORTED_PAYLOAD_VERSIONS.contains(&CURRENT_PAYLOAD_VERSION),
-            "SUPPORTED_PAYLOAD_VERSIONS must include CURRENT_PAYLOAD_VERSION ({}) \
+            SUPPORTED_PAYLOAD_VERSIONS.contains(&V3_PAYLOAD_VERSION),
+            "SUPPORTED_PAYLOAD_VERSIONS must include V3_PAYLOAD_VERSION ({}) \
              so freshly-generated payloads are always parseable",
-            CURRENT_PAYLOAD_VERSION
+            V3_PAYLOAD_VERSION
         );
     }
 
@@ -3250,7 +3518,7 @@ mod tests {
         assert!(payload.is_some());
         let p = payload.unwrap();
         assert_eq!(p.seed(), 42);
-        assert_eq!(p.version(), 2);
+        assert_eq!(p.version(), 3);
     }
 
     #[test]

@@ -3,7 +3,7 @@
 use stegoeggo::detached::{
     verify_detached_manifest, verify_detached_manifest_with_keys, DetachedManifest,
     EmbeddedReference, EmbeddedReferenceStatus, PublicKeyEntry, SignatureRecord, TrustPolicy,
-    MAX_MANIFEST_SIZE, MAX_PUBLIC_KEYS, MAX_SIGNATURES,
+    MAX_KEY_ID_LEN, MAX_MANIFEST_SIZE, MAX_PUBLIC_KEYS, MAX_SIGNATURES,
 };
 use stegoeggo::provenance::ProvenanceClaim;
 use stegoeggo::signing::SigningKey;
@@ -183,7 +183,7 @@ fn test_manifest_max_manifest_size_constant() {
 }
 
 fn make_signed_manifest() -> (DetachedManifest, Vec<u8>, SigningKey) {
-    let sk = SigningKey::from_bytes([42u8; 32], b"test-key-id".to_vec());
+    let sk = SigningKey::from_bytes([42u8; 32], b"test-key-id".to_vec()).unwrap();
     let vk = sk.verifying_key();
     let image_bytes = b"fake image content for testing";
 
@@ -375,6 +375,210 @@ fn test_embedded_reference_stripped_for_invalid_image_bytes() {
     });
 
     let result = verify_detached_manifest(b"not-a-real-image", &manifest, &TrustPolicy::TrustNone);
+    assert_eq!(
+        result.embedded_reference_status,
+        EmbeddedReferenceStatus::Stripped
+    );
+}
+
+#[test]
+fn test_oversized_manifest_fails_parsing() {
+    let oversized = vec![0u8; MAX_MANIFEST_SIZE + 1];
+    let result = DetachedManifest::from_json(&oversized);
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("exceeds maximum"),
+        "Error should mention size limit: {}",
+        err_msg
+    );
+}
+
+#[test]
+fn test_unknown_schema_version_fails_parsing() {
+    let manifest = DetachedManifest::new(make_test_claim());
+    let mut json_bytes = manifest.canonical_bytes();
+    let mut parsed: serde_json::Value = serde_json::from_slice(&json_bytes).unwrap();
+    parsed["schema_version"] = serde_json::Value::from(99);
+    json_bytes = serde_json::to_vec(&parsed).unwrap();
+
+    let result = DetachedManifest::from_json(&json_bytes);
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("schema version"),
+        "Error should mention schema version: {}",
+        err_msg
+    );
+}
+
+#[test]
+fn test_schema_version_zero_fails_parsing() {
+    let manifest = DetachedManifest::new(make_test_claim());
+    let mut json_bytes = manifest.canonical_bytes();
+    let mut parsed: serde_json::Value = serde_json::from_slice(&json_bytes).unwrap();
+    parsed["schema_version"] = serde_json::Value::from(0);
+    json_bytes = serde_json::to_vec(&parsed).unwrap();
+
+    let result = DetachedManifest::from_json(&json_bytes);
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("schema version"),
+        "Error should mention schema version: {}",
+        err_msg
+    );
+}
+
+#[test]
+fn test_duplicate_key_ids_in_signatures_are_handled() {
+    let sk = SigningKey::from_bytes([42u8; 32], b"dup-key".to_vec()).unwrap();
+    let vk = sk.verifying_key();
+    let image_bytes = b"test image for dup keys";
+
+    let claim = ProvenanceClaim::new(1)
+        .with_content_code("iscc:dup-test".to_string())
+        .with_creation_time(1700000000)
+        .with_source_facts("png", 100, 100, 10000)
+        .with_software("stegoeggo/0.3.0")
+        .with_instance_digest(image_bytes);
+
+    let claim_bytes = claim.canonical_bytes();
+    let sig_bytes = sk.sign(&claim_bytes);
+    let sig_hex = hex::encode(&sig_bytes);
+
+    let manifest = DetachedManifest::new(claim)
+        .with_signature(SignatureRecord {
+            algorithm: "ed25519".to_string(),
+            key_id: b"dup-key".to_vec(),
+            signature: sig_hex.clone(),
+        })
+        .with_signature(SignatureRecord {
+            algorithm: "ed25519".to_string(),
+            key_id: b"dup-key".to_vec(),
+            signature: sig_hex,
+        })
+        .with_public_key(PublicKeyEntry {
+            key_id: b"dup-key".to_vec(),
+            algorithm: "ed25519".to_string(),
+            key_bytes: hex::encode(vk.as_bytes()),
+        });
+
+    let result = verify_detached_manifest(image_bytes, &manifest, &TrustPolicy::TrustNone);
+    assert_eq!(result.report.signatures().len(), 2);
+    assert!(result.report.signatures()[0].cryptographically_valid());
+    assert!(result.report.signatures()[1].cryptographically_valid());
+}
+
+#[test]
+fn test_wrong_image_digest_fails_verification() {
+    let (manifest, _image_bytes, _) = make_signed_manifest();
+    let different_image = b"this is not the original image content at all";
+
+    let result = verify_detached_manifest(different_image, &manifest, &TrustPolicy::TrustNone);
+    assert!(!result.instance_digest_match);
+}
+
+#[test]
+fn test_untrusted_key_produces_invalid_trust_result() {
+    let (manifest, image_bytes, _) = make_signed_manifest();
+
+    let result = verify_detached_manifest(
+        &image_bytes,
+        &manifest,
+        &TrustPolicy::TrustKeys(vec![b"unknown-key-id".to_vec()]),
+    );
+
+    assert!(result.report.signatures()[0].cryptographically_valid());
+    assert!(!result.report.signatures()[0].key_id_matched());
+    assert!(!result.report.signatures()[0].trusted());
+}
+
+#[test]
+fn test_trust_metadata_is_informational_only() {
+    let (mut manifest, image_bytes, _) = make_signed_manifest();
+    manifest.trust_metadata = Some(stegoeggo::detached::TrustMetadata {
+        trust_model: "pki".to_string(),
+        trusted: true,
+        reason: "manifest says trusted".to_string(),
+        certificate_chain: None,
+    });
+
+    // TrustNone should NOT trust even though trust_metadata.trusted = true
+    let result = verify_detached_manifest(&image_bytes, &manifest, &TrustPolicy::TrustNone);
+    assert!(!result.report.signatures()[0].trusted());
+
+    // TrustKeys with the correct key SHOULD trust, regardless of trust_metadata
+    let result = verify_detached_manifest(
+        &image_bytes,
+        &manifest,
+        &TrustPolicy::TrustKeys(vec![b"test-key-id".to_vec()]),
+    );
+    assert!(result.report.signatures()[0].trusted());
+}
+
+#[test]
+fn test_embedded_reference_version_mismatch_reports_stripped() {
+    let (mut manifest, image_bytes, _) = make_signed_manifest();
+    manifest = manifest.with_embedded_reference(EmbeddedReference {
+        payload_digest: "sha256:does_not_matter".to_string(),
+        payload_version: 99,
+    });
+
+    let result = verify_detached_manifest(&image_bytes, &manifest, &TrustPolicy::TrustNone);
+    assert_eq!(
+        result.embedded_reference_status,
+        EmbeddedReferenceStatus::Stripped
+    );
+}
+
+#[test]
+fn test_max_key_id_len_constant() {
+    assert_eq!(MAX_KEY_ID_LEN, 64);
+}
+
+#[test]
+fn test_invalid_json_fails_parsing() {
+    let result = DetachedManifest::from_json(b"not valid json {{{");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_trust_metadata_not_present_reported() {
+    let (manifest, image_bytes, _) = make_signed_manifest();
+    let result = verify_detached_manifest(&image_bytes, &manifest, &TrustPolicy::TrustNone);
+    // trust_metadata is None, so the report trust should have default values
+    assert!(!result.report.trust().trusted());
+}
+
+#[test]
+fn test_embedded_reference_wrong_digest_reports_stripped_without_payload() {
+    use image::ImageEncoder;
+
+    let img = image::DynamicImage::new_rgb8(64, 64);
+    let mut image_bytes = Vec::new();
+    {
+        let encoder = image::codecs::png::PngEncoder::new(&mut image_bytes);
+        let rgb = img.to_rgb8();
+        encoder
+            .write_image(&rgb, 64, 64, image::ExtendedColorType::Rgb8)
+            .unwrap();
+    }
+
+    let claim = ProvenanceClaim::new(1)
+        .with_content_code("iscc:digest-test".to_string())
+        .with_creation_time(1700000000)
+        .with_source_facts("png", 64, 64, image_bytes.len() as u64)
+        .with_software("stegoeggo/0.3.0")
+        .with_instance_digest(&image_bytes);
+
+    let manifest = DetachedManifest::new(claim).with_embedded_reference(EmbeddedReference {
+        payload_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            .to_string(),
+        payload_version: 3,
+    });
+
+    let result = verify_detached_manifest(&image_bytes, &manifest, &TrustPolicy::TrustNone);
     assert_eq!(
         result.embedded_reference_status,
         EmbeddedReferenceStatus::Stripped

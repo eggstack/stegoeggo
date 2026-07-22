@@ -48,7 +48,7 @@ Release 5 adds cryptographic provenance, signing, and detached manifests:
 |---------|-------------|
 | **Payload v3** | TLV extension format with domain-separated authentication for future-proof metadata |
 | **Provenance Claims** | Canonical provenance assertions with digest binding and canonical serialization |
-| **Ed25519 Signing** | Cryptographic signing of protection payloads and provenance claims (`signatures` feature) |
+| **Ed25519 Signing** | Real Ed25519 signing via `ed25519-dalek` of protection payloads and provenance claims (`signatures` feature) |
 | **Detached Manifests** | Signed sidecar manifests for distributing provenance outside the image (`detached-manifest` feature) |
 | **Structured Verification** | `VerificationReport` with per-channel sub-results replaces the old `VerificationStatus` enum |
 
@@ -252,17 +252,19 @@ println!("Stego succeeded: {}", report.stego_succeeded);
 ```rust
 use stegoeggo::signing::{SigningKey, VerifyingKey};
 
-// Generate a new signing key
+// Generate a new signing key (uses ed25519-dalek for real Ed25519)
 let signing_key = SigningKey::generate();
 let verifying_key: VerifyingKey = signing_key.verifying_key();
 
-// Sign a provenance claim
+// Sign a provenance claim — produces a 64-byte Ed25519 signature
 let claim_bytes = b"provenance claim data";
 let signature = signing_key.sign(claim_bytes);
 
 // Verify
 assert!(verifying_key.verify(claim_bytes, &signature).is_ok());
 ```
+
+**Note:** Signing is experimental (feature-gated behind `signatures`). A valid signature proves only that the private key holder signed the claim bytes — it does not prove copyright ownership or authorship. See [SECURITY.md](SECURITY.md) for details.
 
 ### Detached Manifests (feature: `detached-manifest`)
 
@@ -691,31 +693,29 @@ Hidden payloads embedded in images for redundant verification evidence:
 
 **Payload Structure:**
 
-The embedded payload has two variants depending on whether a MAC key is configured:
+The library writes **payload v3** by default. Older payload versions (v1, v2) are still extracted for backward compatibility but are never written.
 
-*MAC mode (40 bytes, with `with_mac_key`):*
+*v3 core header (32 bytes):*
 ```
 Offset  Size  Field
-0       1     Version (2)
-1       1     Protection level
-2       8     Seed (little-endian)
-10      2     Intensity (0-100, little-endian)
-12      8     Timestamp (Unix epoch)
-20      4     Content hash (truncated ISCC or SHA-256)
-24      1     DMI value
-25      1     Flags (reserved)
-26      6     Reserved/padding
-32      8     HMAC-SHA256 (truncated to 8 bytes)
+0       2     Magic bytes ('S', 'E')
+2       1     Version (3)
+3       1     Header length (includes extensions and key ID)
+4       2     Total payload length
+6       8     Seed (little-endian)
+14      2     Intensity (0–10000, little-endian)
+16      1     DMI policy byte
+17      8     Content hash (truncated)
+25      1     Key ID length (0–32)
+26      1     Auth algorithm (0=CRC32, 1=HMAC-SHA256, 2=Ed25519)
+27      1     Auth tag length
+28      2     Flags
+30      2     Reserved
 ```
 
-*Default mode (100 bytes, no MAC key — uses ECC for error recovery):*
-```
-Offset  Size  Field
-0       96    Reed-Solomon-like 3x repetition ECC encoding of the 32-byte header
-96      4     CRC32 checksum of bytes 0-95
-```
+The v3 format supports TLV extensions for additional metadata and optionally carries an Ed25519 signature or HMAC-SHA256 authentication tag. The `signatures` feature adds 168 bytes of overhead for embedded Ed25519 signatures (64-byte signature + 36-byte public key extension + 68-byte detached signature extension).
 
-Without a MAC key, the payload uses 3x repetition coding with majority-vote decoding (`src/protected/ecc.rs`) so it can recover from bit corruption. With a MAC key, the 8-byte truncated HMAC-SHA256 provides cryptographic integrity.
+Without an authentication key, the payload uses 3× repetition ECC with majority-vote decoding (`src/protected/ecc.rs`) for error recovery. With a MAC key, HMAC-SHA256 provides cryptographic integrity. With the `signatures` feature, Ed25519 provides non-repudiable signing.
 
 ## Integration Architecture
 

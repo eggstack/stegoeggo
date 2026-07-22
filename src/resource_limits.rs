@@ -361,6 +361,60 @@ pub struct ResourceUsage {
     pub peak_allocations_bytes: usize,
 }
 
+impl ResourceUsage {
+    /// Record the start of a processing operation with the given input size.
+    pub fn begin(input_bytes: usize) -> Self {
+        Self {
+            input_bytes,
+            peak_allocations_bytes: input_bytes,
+            ..Default::default()
+        }
+    }
+
+    /// Update peak allocation tracking if the given size exceeds the current peak.
+    pub fn track_allocation(&mut self, size: usize) {
+        if size > self.peak_allocations_bytes {
+            self.peak_allocations_bytes = size;
+        }
+    }
+
+    /// Record that PNG chunks were scanned.
+    pub fn record_png_chunks(&mut self, count: usize) {
+        self.png_chunks_scanned = count;
+    }
+
+    /// Record that JPEG segments were scanned.
+    pub fn record_jpeg_segments(&mut self, count: usize) {
+        self.jpeg_segments_scanned = count;
+    }
+
+    /// Record that WebP RIFF chunks were scanned.
+    pub fn record_webp_riff_chunks(&mut self, count: usize) {
+        self.webp_riff_chunks_scanned = count;
+    }
+
+    /// Record XMP bytes parsed.
+    pub fn record_xmp_bytes(&mut self, bytes: usize) {
+        self.xmp_bytes_parsed = bytes;
+    }
+
+    /// Record metadata extraction results.
+    pub fn record_metadata(&mut self, fields: usize, bytes: usize) {
+        self.metadata_fields_extracted = fields;
+        self.metadata_bytes_copied = bytes;
+    }
+
+    /// Record tile origin checks.
+    pub fn record_tile_origins(&mut self, count: usize) {
+        self.tile_origins_checked = count;
+    }
+
+    /// Record verification seed attempts.
+    pub fn record_verification_seeds(&mut self, count: usize) {
+        self.verification_seeds_tried = count;
+    }
+}
+
 impl fmt::Display for ResourceUsage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

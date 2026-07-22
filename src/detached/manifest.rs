@@ -11,6 +11,8 @@ pub const MAX_MANIFEST_SIZE: usize = 64 * 1024;
 pub const MAX_SIGNATURES: usize = 16;
 /// Maximum number of public key entries.
 pub const MAX_PUBLIC_KEYS: usize = 16;
+/// Maximum key identifier length in bytes.
+pub const MAX_KEY_ID_LEN: usize = 64;
 
 /// A signed detached manifest containing a provenance claim and its signatures.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,7 +141,67 @@ impl DetachedManifest {
     }
 
     /// Deserialize a manifest from JSON bytes.
-    pub fn from_json(bytes: &[u8]) -> Result<Self, serde_json::Error> {
-        serde_json::from_slice(bytes)
+    ///
+    /// Validates bounded resource limits before and after deserialization:
+    /// - Maximum manifest size ([`MAX_MANIFEST_SIZE`])
+    /// - Schema version must be exactly [`MANIFEST_SCHEMA_VERSION`]
+    /// - Maximum signatures ([`MAX_SIGNATURES`])
+    /// - Maximum public keys ([`MAX_PUBLIC_KEYS`])
+    /// - Maximum key ID length ([`MAX_KEY_ID_LEN`])
+    pub fn from_json(bytes: &[u8]) -> Result<Self, crate::Error> {
+        if bytes.len() > MAX_MANIFEST_SIZE {
+            return Err(crate::Error::Config(format!(
+                "Manifest size {} exceeds maximum {}",
+                bytes.len(),
+                MAX_MANIFEST_SIZE
+            )));
+        }
+
+        let manifest: Self = serde_json::from_slice(bytes)?;
+
+        if manifest.schema_version != MANIFEST_SCHEMA_VERSION {
+            return Err(crate::Error::Config(format!(
+                "Unsupported manifest schema version {} (expected {})",
+                manifest.schema_version, MANIFEST_SCHEMA_VERSION
+            )));
+        }
+
+        if manifest.signatures.len() > MAX_SIGNATURES {
+            return Err(crate::Error::Config(format!(
+                "Signature count {} exceeds maximum {}",
+                manifest.signatures.len(),
+                MAX_SIGNATURES
+            )));
+        }
+
+        if manifest.public_keys.len() > MAX_PUBLIC_KEYS {
+            return Err(crate::Error::Config(format!(
+                "Public key count {} exceeds maximum {}",
+                manifest.public_keys.len(),
+                MAX_PUBLIC_KEYS
+            )));
+        }
+
+        for key in &manifest.public_keys {
+            if key.key_id.len() > MAX_KEY_ID_LEN {
+                return Err(crate::Error::Config(format!(
+                    "Key ID length {} exceeds maximum {}",
+                    key.key_id.len(),
+                    MAX_KEY_ID_LEN
+                )));
+            }
+        }
+
+        for sig in &manifest.signatures {
+            if sig.key_id.len() > MAX_KEY_ID_LEN {
+                return Err(crate::Error::Config(format!(
+                    "Signature key ID length {} exceeds maximum {}",
+                    sig.key_id.len(),
+                    MAX_KEY_ID_LEN
+                )));
+            }
+        }
+
+        Ok(manifest)
     }
 }
