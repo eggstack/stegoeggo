@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.3] - Unreleased
+
+### Fixed
+- V3-first extraction: all LSB/DCT/tiled extraction paths now try V3 CRC (288 bits) and V3 HMAC (384 bits) sizes first, falling back to V2/V1 for backward compatibility
+- V3 channel flags: `authentication` flag now reflects actual HMAC usage (`ctx.mac_key().is_some()`) instead of hardcoded `true`
+- DCT capacity warnings now use V3 payload sizes instead of legacy v2 constants
+- Embedded reference verification now uses raw byte extraction (`extract_payload_from_bytes_with_key`) instead of DynamicImage decode, preserving JPEG quantization tables and metadata seeds
+- Detached-manifest trust evaluation: `report.trust().trusted()` now correctly reflects per-signature trust (caller policy + cryptographic validity) instead of always returning `false`
+- Resource limits: `max_width`/`max_height` from `ResourceLimits` are now enforced unconditionally on all processing paths, even when no explicit `max_dimension` is set
+- CLI `verify-manifest` and `sign` use bounded parsing via `DetachedManifest::from_json_with_limits`
+
+### Added
+- 38 new tests covering V3 extraction (CRC/HMAC, PNG/JPEG/tiled), malformed v3, missing/wrong HMAC key, channel flags, detached verification (trust, embedded references, oversized manifests), and resource-limit enforcement (input size, dimensions, payload, tile origins, verification seeds)
+- Resource closure table documenting all 18 `ResourceLimits` fields with enforcement sites and tests
+- `SteganographyProtector::generate_payload_for_context` (test helper) for inspecting V3 payload structure
+- `EXIT_TRUST` (exit code 4) for valid-but-untrusted detached-manifest verification
+
 ## [0.2.2] - Unreleased
 
 ### Added
@@ -119,7 +136,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Initial release.
 
-[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/eggstack/stegoeggo/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/eggstack/stegoeggo/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/eggstack/stegoeggo/compare/v0.1.0...v0.2.1
 [0.1.0]: https://github.com/eggstack/stegoeggo/releases/tag/v0.1.0

@@ -164,6 +164,7 @@ fn verify_detached_manifest_inner(
 
     // 2. Verify signatures
     let mut _any_signature_valid = false;
+    let mut _any_signature_trusted = false;
 
     for sig_record in &manifest.signatures {
         if sig_record.algorithm != "ed25519" {
@@ -234,6 +235,9 @@ fn verify_detached_manifest_inner(
                             TrustPolicy::TrustCallback(f) => f(&sig_record.key_id),
                         };
 
+                        let sig_trusted = key_id_matched && is_valid;
+                        _any_signature_trusted = _any_signature_trusted || sig_trusted;
+
                         builder = builder.add_signature(
                             SignatureVerification::builder()
                                 .present(true)
@@ -241,7 +245,7 @@ fn verify_detached_manifest_inner(
                                 .cryptographically_valid(is_valid)
                                 .public_key_id(sig_record.key_id.clone())
                                 .key_id_matched(key_id_matched)
-                                .trusted(key_id_matched && is_valid)
+                                .trusted(sig_trusted)
                                 .source(FieldSource::DetachedManifest)
                                 .build(),
                         );
@@ -289,15 +293,27 @@ fn verify_detached_manifest_inner(
     // 3. Trust evaluation is derived solely from the caller-supplied TrustPolicy.
     // The manifest's trust_metadata is never used to set the trust outcome.
     // A malicious manifest claiming `trusted: true` must not influence the
-    // report. If trust_metadata is present, we report the trust_model name
-    // for transparency but always set trusted=false (the real trust decision
-    // lives in the per-signature key_id_matched flags above).
+    // report. The overall trust reflects whether any signature was both
+    // cryptographically valid AND matched a trusted key via the caller policy.
+    let overall_trusted = _any_signature_trusted;
     if let Some(ref trust) = manifest.trust_metadata {
         builder = builder.with_trust(
             crate::verification::report::TrustEvaluation::builder()
                 .trust_model(&trust.trust_model)
-                .trusted(false)
-                .reason("trust_metadata from manifest is informational only; trust is determined by caller policy")
+                .trusted(overall_trusted)
+                .reason(if overall_trusted {
+                    "caller-trusted key produced valid signature"
+                } else {
+                    "trust_metadata from manifest is informational only; no caller-trusted key produced a valid signature"
+                })
+                .build(),
+        );
+    } else if overall_trusted {
+        builder = builder.with_trust(
+            crate::verification::report::TrustEvaluation::builder()
+                .trust_model("caller")
+                .trusted(true)
+                .reason("caller-trusted key produced valid signature")
                 .build(),
         );
     }
@@ -334,18 +350,10 @@ fn verify_detached_manifest_inner(
         None => EmbeddedReferenceStatus::NotProvided,
         Some(reference) => {
             let extractor = crate::protected::steganography::SteganographyProtector::new();
-            let img = match crate::util::image::load_image_from_bytes(image_bytes) {
-                Ok(img) => img,
-                Err(_) => {
-                    return ManifestVerification {
-                        report,
-                        instance_digest_match,
-                        manifest_valid: true,
-                        embedded_reference_status: EmbeddedReferenceStatus::Stripped,
-                    };
-                }
-            };
-            match extractor.extract_payload(&img) {
+            // Use raw byte extraction to preserve JPEG quantization tables,
+            // metadata seeds, and exact embedded bytes — avoiding DynamicImage
+            // decode which loses stego-relevant byte-level detail.
+            match extractor.extract_payload_from_bytes_with_key(image_bytes, &[]) {
                 Some(payload) => {
                     if payload.version() != reference.payload_version {
                         return ManifestVerification {

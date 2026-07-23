@@ -434,6 +434,17 @@ impl ProtectionPipeline {
 
         ctx.resource_limits().check_input_size(img_bytes.len())?;
 
+        // Enforce ResourceLimits default dimensions unconditionally, even
+        // when the caller did not set an explicit max_dimension.
+        let limits = ctx.resource_limits();
+        if img_bytes.starts_with(&[0xFF, 0xD8]) {
+            let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+            limits.check_dimensions(header.width as u32, header.height as u32)?;
+        } else if let Ok(img) = load_image_from_bytes(img_bytes) {
+            let (width, height) = img.dimensions();
+            limits.check_dimensions(width, height)?;
+        }
+
         let (ctx_with_level, input_format, output_format) =
             Self::context_for_bytes(img_bytes, level, ctx)?;
 
@@ -1065,14 +1076,15 @@ fn process_plan_bytes(img_bytes: &[u8], plan: &ResolvedProtectionPlan) -> Result
     let limits = plan.resource_limits();
     limits.check_input_size(img_bytes.len())?;
 
-    if plan.processing().max_dimension.is_some() || plan.is_metadata_only() {
-        if plan.input_format() == ImageOutputFormat::Jpeg {
-            let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
-            limits.check_dimensions(header.width as u32, header.height as u32)?;
-        } else if let Ok(img) = load_image_from_bytes(img_bytes) {
-            let (width, height) = img.dimensions();
-            limits.check_dimensions(width, height)?;
-        }
+    // Always enforce ResourceLimits default dimensions, even when the caller
+    // did not set an explicit max_dimension. This prevents processing images
+    // that exceed the library's safety bounds.
+    if plan.input_format() == ImageOutputFormat::Jpeg {
+        let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+        limits.check_dimensions(header.width as u32, header.height as u32)?;
+    } else if let Ok(img) = load_image_from_bytes(img_bytes) {
+        let (width, height) = img.dimensions();
+        limits.check_dimensions(width, height)?;
     }
 
     if plan.is_metadata_only() {
@@ -1157,11 +1169,15 @@ fn resolved_output_format(ctx: &ProtectionContext) -> ImageOutputFormat {
 }
 
 /// Number of payload bits the DCT path needs to embed, including redundancy.
+///
+/// Uses the actual V3 payload sizes (CRC or HMAC) instead of legacy v2
+/// constants, so capacity warnings reflect the payload that `generate_payload`
+/// will actually emit.
 fn dct_required_bits_for_context(ctx: &ProtectionContext) -> usize {
     let payload_bits = if ctx.mac_key().is_some() {
-        (protected::steganography::V2_HEADER_SIZE + 8) * 8
+        protected::steganography::V3_HMAC_PAYLOAD_BITS
     } else {
-        protected::steganography::ECC_PAYLOAD_BITS_V2
+        protected::steganography::V3_CRC_PAYLOAD_BITS
     };
     payload_bits * ctx.effective_redundancy()
 }

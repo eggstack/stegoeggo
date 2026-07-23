@@ -104,7 +104,7 @@ src/
 
 ```bash
 cargo check                              # Compilation
-cargo test                               # All tests (1106 passed, 27 ignored)
+cargo test                               # All tests (1144 passed, 27 ignored)
 cargo test --all-features                # Includes signing and detached manifest tests
 cargo clippy --all-targets -- -D warnings # Lint check
 cargo fmt --check                        # Format check

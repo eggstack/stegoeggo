@@ -31,11 +31,11 @@ const ECC_PAYLOAD_BITS: usize = ECC_PAYLOAD_SIZE_V1 * 8;
 /// V3 payload size: CRC32 mode (32-byte core + 4-byte CRC32 = 36 bytes).
 const V3_CRC_PAYLOAD_SIZE: usize = crate::payload_v3::types::V3_CORE_SIZE + 4;
 /// V3 payload bits for CRC32 mode.
-const V3_CRC_PAYLOAD_BITS: usize = V3_CRC_PAYLOAD_SIZE * 8;
+pub(crate) const V3_CRC_PAYLOAD_BITS: usize = V3_CRC_PAYLOAD_SIZE * 8;
 /// V3 payload size: HMAC mode (32-byte core + 16-byte HMAC = 48 bytes).
 const V3_HMAC_PAYLOAD_SIZE: usize = crate::payload_v3::types::V3_CORE_SIZE + 16;
 /// V3 payload bits for HMAC mode.
-const V3_HMAC_PAYLOAD_BITS: usize = V3_HMAC_PAYLOAD_SIZE * 8;
+pub(crate) const V3_HMAC_PAYLOAD_BITS: usize = V3_HMAC_PAYLOAD_SIZE * 8;
 
 /// Payload versions the extractor knows how to parse, in preference order.
 ///
@@ -2088,6 +2088,15 @@ impl SteganographyProtector {
         buf.extend_from_slice(&auth_tag);
 
         buf
+    }
+
+    /// Generate the V3 stego payload for a given context.
+    ///
+    /// Exposed for testing channel flags and payload structure without
+    /// requiring a full image embed/extract cycle.
+    #[doc(hidden)]
+    pub fn generate_payload_for_context(&self, ctx: &ProtectionContext) -> Vec<u8> {
+        self.generate_payload(ctx)
     }
 
     /// Collision-free LCG permutation for stego pixel selection.
