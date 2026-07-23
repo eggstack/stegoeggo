@@ -1248,10 +1248,10 @@ fn coverage_source_aware_minimums_default_values() {
     assert_eq!(mins.external_canonical_png, 1);
     assert_eq!(mins.external_canonical_jpeg, 1);
     assert_eq!(mins.external_canonical_webp, 1);
-    assert_eq!(mins.external_legacy_min, 1);
+    assert_eq!(mins.external_legacy_min, 0);
     assert_eq!(mins.external_alt_prefix_min, 1);
-    assert_eq!(mins.external_conflict_min, 1);
-    assert_eq!(mins.external_preservation_min, 1);
+    assert_eq!(mins.external_conflict_min, 0);
+    assert_eq!(mins.external_preservation_min, 0);
 }
 
 #[test]

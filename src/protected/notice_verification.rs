@@ -840,22 +840,24 @@ fn extract_jpeg_notice(
             break;
         }
 
-        if marker == 0xED {
-            // IPTC APP13
-            let segment_data = &jpeg_data[pos + 4..segment_end];
-            if segment_data.windows(13).any(|w| w == b"Photoshop 3.0\0") {
-                found_iptc = true;
+        if segment_end > pos + 4 {
+            if marker == 0xED {
+                // IPTC APP13
+                let segment_data = &jpeg_data[pos + 4..segment_end];
+                if segment_data.windows(13).any(|w| w == b"Photoshop 3.0\0") {
+                    found_iptc = true;
+                }
             }
-        }
 
-        if marker == 0xE1 {
-            // APP1 — could be XMP
-            let segment_data = &jpeg_data[pos + 4..segment_end];
-            if segment_data
-                .windows(28)
-                .any(|w| w == b"http://ns.adobe.com/xap/1.0/")
-            {
-                found_xmp = true;
+            if marker == 0xE1 {
+                // APP1 — could be XMP
+                let segment_data = &jpeg_data[pos + 4..segment_end];
+                if segment_data
+                    .windows(28)
+                    .any(|w| w == b"http://ns.adobe.com/xap/1.0/")
+                {
+                    found_xmp = true;
+                }
             }
         }
 
@@ -927,7 +929,7 @@ fn extract_xmp_dmi_from_jpeg(
             break;
         }
 
-        if marker == 0xE1 {
+        if marker == 0xE1 && segment_end > pos + 4 {
             let segment_data = &jpeg_data[pos + 4..segment_end];
             if segment_data
                 .windows(28)
@@ -987,7 +989,7 @@ fn extract_xmp_dmi_from_jpeg_with_limits(
             break;
         }
 
-        if marker == 0xE1 {
+        if marker == 0xE1 && segment_end > pos + 4 {
             let segment_data = &jpeg_data[pos + 4..segment_end];
             if segment_data.len() > limits.max_xmp_bytes() {
                 pos = segment_end;

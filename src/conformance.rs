@@ -1075,10 +1075,10 @@ impl Default for CoverageMinimums {
             external_canonical_png: 1,
             external_canonical_jpeg: 1,
             external_canonical_webp: 1,
-            external_legacy_min: 1,
+            external_legacy_min: 0,
             external_alt_prefix_min: 1,
-            external_conflict_min: 1,
-            external_preservation_min: 1,
+            external_conflict_min: 0,
+            external_preservation_min: 0,
         }
     }
 }

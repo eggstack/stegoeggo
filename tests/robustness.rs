@@ -1,8 +1,9 @@
 use image::DynamicImage;
 use image::ImageEncoder;
 use stegoeggo::{
-    process_image_bytes, verify_image_bytes, ImageOutputFormat, MetadataTrapProtector,
-    ProtectionContext, ProtectionLevel, SteganographyProtector, VerificationStatus,
+    process_image_bytes, verify_image_bytes, verify_legal_notice, ImageOutputFormat,
+    MetadataTrapProtector, ProtectionContext, ProtectionLevel, SteganographyProtector,
+    VerificationStatus,
 };
 
 fn create_test_image(width: u32, height: u32) -> DynamicImage {
@@ -1407,6 +1408,16 @@ mod fuzz_regression {
         ];
         let result = verify_image_bytes(&adversarial, &[]);
         assert_eq!(result, VerificationStatus::NotFound);
+    }
+
+    #[test]
+    fn xmp_extract_jpeg_zero_length_segment() {
+        let crash_input: Vec<u8> = vec![
+            0xFF, 0xD8, 0xFF, 0x77, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xE1, 0x00, 0x00, 0xFF, 0x00,
+            0x00, 0xD5, 0x00, 0x00, 0x00, 0xFB, 0x00, 0x00, 0x00, 0x00, 0xFB, 0x00, 0x00,
+        ];
+        let _ = verify_legal_notice(&crash_input, &[]);
+        let _ = verify_legal_notice(&crash_input, b"fuzz-key");
     }
 
     #[test]

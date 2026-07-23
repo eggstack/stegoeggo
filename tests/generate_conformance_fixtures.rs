@@ -163,7 +163,8 @@ fn generate_canonical_fixtures() {
         .with_credit_line("Photo by Conformance Creator")
         .with_licensor_name("Conformance Licensor")
         .with_licensor_email("licensor@conformance.test")
-        .with_licensor_url("https://licensor.conformance.test");
+        .with_licensor_url("https://licensor.conformance.test")
+        .with_notice_applied_at("2025-01-15T00:00:00Z");
 
     process_write(
         &png_bytes,
@@ -190,7 +191,7 @@ fn generate_canonical_fixtures() {
         42,
     );
 
-    let legal_policy_only = LegalMetadata::new();
+    let legal_policy_only = LegalMetadata::new().with_notice_applied_at("2025-01-15T00:00:00Z");
     process_write(
         &png_bytes,
         ImageOutputFormat::Png,
@@ -216,7 +217,9 @@ fn generate_canonical_fixtures() {
         43,
     );
 
-    let legal_copyright = LegalMetadata::new().with_copyright_holder("Jane Doe");
+    let legal_copyright = LegalMetadata::new()
+        .with_copyright_holder("Jane Doe")
+        .with_notice_applied_at("2025-01-15T00:00:00Z");
     process_write(
         &png_bytes,
         ImageOutputFormat::Png,
@@ -228,7 +231,8 @@ fn generate_canonical_fixtures() {
 
     let legal_unicode = LegalMetadata::new()
         .with_copyright_holder("日本テスト株式会社")
-        .with_usage_terms("Alle Rechte vorbehalten. 版權所有。");
+        .with_usage_terms("Alle Rechte vorbehalten. 版權所有。")
+        .with_notice_applied_at("2025-01-15T00:00:00Z");
     process_write(
         &png_bytes,
         ImageOutputFormat::Png,
@@ -331,7 +335,8 @@ fn generate_legacy_fixtures() {
 
     let legal = LegalMetadata::new()
         .with_copyright_holder("Legacy Holder")
-        .with_usage_terms("Legacy Terms");
+        .with_usage_terms("Legacy Terms")
+        .with_notice_applied_at("2025-01-15T00:00:00Z");
     process_write(
         &png_bytes,
         ImageOutputFormat::Png,
@@ -460,7 +465,9 @@ fn generate_conflicting_fixtures() {
 
     let png_bytes = make_test_image_png(64, 64);
 
-    let legal_allowed = LegalMetadata::new().with_copyright_holder("Allowed Holder");
+    let legal_allowed = LegalMetadata::new()
+        .with_copyright_holder("Allowed Holder")
+        .with_notice_applied_at("2025-01-15T00:00:00Z");
     let ctx_allowed = ProtectionContext::new(0.5, 60)
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(legal_allowed)
@@ -469,7 +476,9 @@ fn generate_conflicting_fixtures() {
         process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Standard, &ctx_allowed)
             .unwrap();
 
-    let legal_prohibited = LegalMetadata::new().with_copyright_holder("Prohibited Holder");
+    let legal_prohibited = LegalMetadata::new()
+        .with_copyright_holder("Prohibited Holder")
+        .with_notice_applied_at("2025-01-15T00:00:00Z");
     let ctx_prohibited = ProtectionContext::new(0.5, 61)
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(legal_prohibited)
@@ -528,7 +537,8 @@ fn generate_preservation_fixtures() {
 
     let legal = LegalMetadata::new()
         .with_copyright_holder("Preservation Holder")
-        .with_usage_terms("Preservation Terms");
+        .with_usage_terms("Preservation Terms")
+        .with_notice_applied_at("2025-01-15T00:00:00Z");
     process_write(
         &png_bytes,
         ImageOutputFormat::Png,
@@ -556,7 +566,9 @@ fn generate_preservation_fixtures() {
 
     let base_png = make_test_image_png(64, 64);
     let with_creator = make_png_with_text_chunks(&base_png, &[("Creator", "Original Creator")]);
-    let legal_new = LegalMetadata::new().with_copyright_holder("New Holder");
+    let legal_new = LegalMetadata::new()
+        .with_copyright_holder("New Holder")
+        .with_notice_applied_at("2025-01-15T00:00:00Z");
     let ctx = ProtectionContext::new(0.5, 71)
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(legal_new)
@@ -568,7 +580,8 @@ fn generate_preservation_fixtures() {
     let with_author = make_png_with_text_chunks(&base_png, &[("Author", "Alice")]);
     let legal_auth = LegalMetadata::new()
         .with_copyright_holder("Auth Holder")
-        .with_usage_terms("Auth Terms");
+        .with_usage_terms("Auth Terms")
+        .with_notice_applied_at("2025-01-15T00:00:00Z");
     let ctx_auth = ProtectionContext::new(0.5, 72)
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(legal_auth)
@@ -589,7 +602,9 @@ fn generate_preservation_fixtures() {
   </rdf:RDF>
 </x:xmpmeta>"#,
     );
-    let legal_xmp = LegalMetadata::new().with_copyright_holder("XMP Holder");
+    let legal_xmp = LegalMetadata::new()
+        .with_copyright_holder("XMP Holder")
+        .with_notice_applied_at("2025-01-15T00:00:00Z");
     let ctx_xmp = ProtectionContext::new(0.5, 73)
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(legal_xmp)
@@ -602,7 +617,8 @@ fn generate_preservation_fixtures() {
     let mut idempotent_base = make_test_image_png(64, 64);
     let legal_idem = LegalMetadata::new()
         .with_copyright_holder("Idempotent Holder")
-        .with_usage_terms("Idempotent Terms");
+        .with_usage_terms("Idempotent Terms")
+        .with_notice_applied_at("2025-01-15T00:00:00Z");
     let ctx_idem = ProtectionContext::new(0.5, 74)
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(legal_idem.clone())
