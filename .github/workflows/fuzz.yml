@@ -45,6 +45,8 @@ jobs:
         run: cargo install cargo-fuzz
 
       - name: Run fuzz smoke (${{ matrix.target }})
+        env:
+          RUSTUP_TOOLCHAIN: nightly
         run: |
           cargo fuzz run ${{ matrix.target }} -- \
             -max_total_time=30 \
@@ -83,6 +85,8 @@ jobs:
         run: cargo install cargo-fuzz
 
       - name: Run fuzz depth (${{ matrix.target }})
+        env:
+          RUSTUP_TOOLCHAIN: nightly
         run: |
           cargo fuzz run ${{ matrix.target }} -- \
             -max_total_time=300 \
