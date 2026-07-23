@@ -587,10 +587,14 @@ pub fn compare_extractions(
         }
     };
 
+    let normalized_copyright_external = external
+        .copyright
+        .as_ref()
+        .map(|c| c.strip_prefix("Copyright (c) ").unwrap_or(c).to_string());
     text_check(
         "copyright",
         &internal.copyright_holder,
-        &external.copyright,
+        &normalized_copyright_external,
         report,
     );
     text_check(
@@ -668,6 +672,26 @@ pub fn compare_extractions(
     let ne = normalize_creator_list(&external.creators);
     if ni == ne {
         report.add_check("creators", CheckSeverity::Pass, "Creator lists match");
+    } else if !ni.is_empty() && ne.is_empty() {
+        report.add_check_with_details(
+            "creators",
+            CheckSeverity::Warn,
+            "Found internally but not via external parser",
+            &format!(
+                "internal={:?}, external={:?}",
+                internal.creators, external.creators
+            ),
+        );
+    } else if ni.is_empty() && !ne.is_empty() {
+        report.add_check_with_details(
+            "creators",
+            CheckSeverity::Warn,
+            "Found via external parser but not internally",
+            &format!(
+                "internal={:?}, external={:?}",
+                internal.creators, external.creators
+            ),
+        );
     } else {
         report.add_check_with_details(
             "creators",

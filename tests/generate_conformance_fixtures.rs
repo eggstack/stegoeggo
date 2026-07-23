@@ -253,10 +253,10 @@ fn generate_canonical_fixtures() {
     let xmp_alt_prefix = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     <rdf:Description rdf:about=""
-      xmlns:PLUS="http://ns.useplus.org/ldf/xmp/1.0/"
+      xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/"
       xmlns:dc="http://purl.org/dc/elements/1.1/"
       dc:rights="Copyright (c) 2025 Alt Prefix Test"
-      PLUS:DataMining="http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING">
+      plus:DataMining="http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING">
     </rdf:Description>
   </rdf:RDF>
 </x:xmpmeta>"#;
@@ -273,13 +273,19 @@ fn generate_canonical_fixtures() {
       xmlns:xmpRights="http://ns.adobe.com/xap/1.0/rights/"
       xmlns:Iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02/29/"
       dc:rights="Copyright (c) 2025 Multi Creator Corp. All rights reserved."
-      dc:creator="{'Alice Smith','Bob Jones','Carol Davis'}"
       xmpRights:WebStatement="https://example.com/rights"
       plus:DataMining="http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING"
       Iptc4xmpExt:CopyrightOwner="Multi Creator Corp"
       Iptc4xmpExt:LicensorName="License Admin"
       Iptc4xmpExt:LicensorEmail="admin@multi-creator.test"
       Iptc4xmpExt:LicensorUrl="https://multi-creator.test/license">
+      <dc:creator>
+        <rdf:Seq>
+          <rdf:li>Alice Smith</rdf:li>
+          <rdf:li>Bob Jones</rdf:li>
+          <rdf:li>Carol Davis</rdf:li>
+        </rdf:Seq>
+      </dc:creator>
     </rdf:Description>
   </rdf:RDF>
 </x:xmpmeta>"#;

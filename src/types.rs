@@ -83,7 +83,11 @@ impl DmiValue {
     /// Returns `None` for unknown or malformed values.
     #[must_use]
     pub fn from_plus_vocab_key(key: &str) -> Option<Self> {
-        match key {
+        let bare = key
+            .rsplit('/')
+            .next()
+            .unwrap_or(key);
+        match bare {
             "DMI-UNSPECIFIED" => Some(DmiValue::Unspecified),
             "DMI-ALLOWED" => Some(DmiValue::Allowed),
             "DMI-PROHIBITED-AIMLTRAINING" => Some(DmiValue::ProhibitedAiMlTraining),

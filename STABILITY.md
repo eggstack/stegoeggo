@@ -39,8 +39,8 @@ The following API surfaces are deprecated. They remain functional but will be re
 | `ProtectionLevel` | `ProtectionRequest` with `ProtectionPreset` |
 | `EvidenceProfile` | `ProtectionPreset` |
 | `with_dmi()` | `RightsPolicy` on `ProtectionRequest` |
-| `with_metadata_injection()` | `ProcessingOptions` on `ProtectionRequest` |
-| `with_inject_legal_claims()` | `RightsNotice` on `ProtectionRequest` |
+| `with_metadata_injection()` | `ProtectionChannels::metadata_only()` or `ProtectionRequest` builder |
+| `with_inject_legal_claims()` | Auto-enabled with `LegalMetadata` on `ProtectionRequest` |
 | `compute_iscc()` | `compute_content_identifiers()` |
 | `VerificationStatus` | `VerificationReport` |
 

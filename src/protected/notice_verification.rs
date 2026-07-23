@@ -1033,22 +1033,38 @@ fn extract_xmp_text_property(xmp: &str, tag: &str) -> Option<String> {
 }
 
 fn extract_xmp_seq_property(xmp: &str, tag: &str) -> Option<String> {
+    extract_xmp_seq_all(xmp, tag)
+        .and_then(|v| v.into_iter().next())
+}
+
+fn extract_xmp_seq_all(xmp: &str, tag: &str) -> Option<Vec<String>> {
     let open = format!("<{}>", tag);
-    if let Some(start) = xmp.find(&open) {
-        let rest = &xmp[start..];
-        let li_open = "<rdf:li>";
-        let li_close = "</rdf:li>";
-        if let Some(li_start) = rest.find(li_open) {
-            let value_start = li_start + li_open.len();
-            if let Some(li_end) = rest[value_start..].find(li_close) {
-                let value = &rest[value_start..value_start + li_end];
-                if !value.is_empty() {
-                    return Some(unescape_xml(value));
-                }
+    let close = format!("</{}>", tag);
+    let start = xmp.find(&open)?;
+    let seq_start = start + open.len();
+    let seq_end = xmp[seq_start..].find(&close)? + seq_start;
+    let seq_content = &xmp[seq_start..seq_end];
+    let li_open = "<rdf:li>";
+    let li_close = "</rdf:li>";
+    let mut results = Vec::new();
+    let mut pos = 0;
+    while let Some(li_start) = seq_content[pos..].find(li_open) {
+        let value_start = pos + li_start + li_open.len();
+        if let Some(li_end) = seq_content[value_start..].find(li_close) {
+            let value = &seq_content[value_start..value_start + li_end];
+            if !value.is_empty() {
+                results.push(unescape_xml(value));
             }
+            pos = value_start + li_end + li_close.len();
+        } else {
+            break;
         }
     }
-    None
+    if results.is_empty() {
+        None
+    } else {
+        Some(results)
+    }
 }
 
 fn unescape_xml(s: &str) -> String {

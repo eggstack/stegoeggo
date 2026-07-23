@@ -60,7 +60,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-stegoeggo = "0.3"
+stegoeggo = "0.2"
 image = "0.25"  # Required for DynamicImage
 ```
 
@@ -68,14 +68,14 @@ For async support (Tokio-based WAF/CDN deployments):
 
 ```toml
 [dependencies]
-stegoeggo = { version = "0.3", features = ["async"] }
+stegoeggo = { version = "0.2", features = ["async"] }
 ```
 
 For Ed25519 signing (provenance claims, detached manifests):
 
 ```toml
 [dependencies]
-stegoeggo = { version = "0.3", features = ["signatures", "detached-manifest"] }
+stegoeggo = { version = "0.2", features = ["signatures", "detached-manifest"] }
 ```
 
 ### As a CLI Tool
@@ -107,7 +107,7 @@ stegoeggo artwork.png -o artwork_protected.png \
   --rights-url "https://example.com/rights/artwork" \
   --no-genai-training
 
-# With full legal metadata including new v0.2.2 fields
+# With full legal metadata including new v0.2 fields
 stegoeggo photo.jpg --copyright-holder "Acme Corp" --creator "Jane Doe" \
   --credit-line "Photo by Jane Doe / Acme Corp" \
   --copyright-owner "Acme Corp" \
@@ -129,7 +129,7 @@ stegoeggo artwork.png -o artwork_auth.png \
   --no-ai-training
 
 # Verify if an image is protected
-stegoeggo protected.png -V
+stegoeggo protected.png --verify
 ```
 
 ### Library
@@ -564,7 +564,7 @@ Arguments:
 
 Options:
   -o, --output <OUTPUT>    Output directory (batch) or file (single)
-  -V, --verify             Verify legal-notice report, evidence strength, and channels
+  --verify                Verify legal-notice report, evidence strength, and channels
   -l, --level <LEVEL>      Protection level: disabled, light, standard
   -p, --profile <PROFILE>  Evidence profile: legal-notice, legal-notice-stego,
                            authenticated-provenance, maximal (default: legal-notice)
@@ -633,7 +633,7 @@ stegoeggo photo.jpg -o protected.jpg --no-genai-training
 stegoeggo image.png -o output.png --key a1b2c3d4e5f6
 
 # Verify protection
-stegoeggo output.png -V
+stegoeggo output.png --verify
 ```
 
 ### Verification
@@ -641,7 +641,7 @@ stegoeggo output.png -V
 Check if an image has been protected:
 
 ```bash
-stegoeggo image.png -V
+stegoeggo image.png --verify
 ```
 
 Output examples:
@@ -845,7 +845,7 @@ The primary deterrence mechanism is **visible metadata injection** — canonical
 
 ## Performance
 
-Benchmarked on Apple M4 Pro (12 cores), version 0.2.2.
+Benchmarked on Apple M4 Pro (12 cores), version 0.2.
 
 ### In-Memory Processing (`DynamicImage` path)
 
@@ -1084,7 +1084,7 @@ let out = process_image_bytes(&bytes, ProtectionLevel::Standard, &ctx)?;
 // New (preferred):
 use stegoeggo::{process_request_bytes, ProtectionRequest, RightsPolicy};
 let request = ProtectionRequest::metadata_only()
-    .with_policy(RightsPolicy::ProhibitedAimlTraining);
+    .with_policy(RightsPolicy::ProhibitedAiMlTraining);
 let out = process_request_bytes(&bytes, &request)?;
 ```
 
@@ -1122,11 +1122,11 @@ The `with_dmi()` builder method is deprecated. Use `RightsPolicy` directly:
 ```rust
 // Old (deprecated):
 let ctx = ProtectionContext::new(0.5, 42)
-    .with_dmi(DmiValue::ProhibitedAimlTraining);
+    .with_dmi(DmiValue::ProhibitedAiMlTraining);
 
 // New:
 let request = ProtectionRequest::metadata_only()
-    .with_policy(RightsPolicy::ProhibitedAimlTraining);
+    .with_policy(RightsPolicy::ProhibitedAiMlTraining);
 ```
 
 ### From `with_inject_legal_claims()` / `with_metadata_injection()`

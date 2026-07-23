@@ -9,7 +9,7 @@ This document tracks all deprecated public API surfaces, their replacements, and
 | `ProtectionLevel` | `ProtectionRequest` + `RightsPolicy` | v0.2.2 | v1.0.0 |
 | `EvidenceProfile` | `ProtectionPreset` | v0.2.2 | v1.0.0 |
 | `with_dmi()` | `RightsPolicy` in `ProtectionRequest` | v0.2.2 | v1.0.0 |
-| `with_metadata_injection()` | `ProtectionChannels` | v0.2.2 | v1.0.0 |
+| `with_metadata_injection()` | `ProtectionChannels::metadata_only()` or `ProtectionRequest` builder | v0.2.2 | v1.0.0 |
 | `with_inject_legal_claims()` | Auto-enabled with `LegalMetadata` | v0.2.2 | v1.0.0 |
 | `compute_iscc()` | `compute_content_identifiers()` | v0.2.2 | v1.0.0 |
 | `compute_iscc_detailed()` | `compute_content_identifiers()` | v0.2.2 | v1.0.0 |
