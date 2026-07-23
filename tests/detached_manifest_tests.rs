@@ -7,6 +7,7 @@ use stegoeggo::detached::{
     MAX_MANIFEST_SIZE, MAX_PUBLIC_KEYS, MAX_SIGNATURES,
 };
 use stegoeggo::provenance::ProvenanceClaim;
+#[cfg(feature = "signatures")]
 use stegoeggo::signing::SigningKey;
 
 fn make_test_claim() -> ProvenanceClaim {
@@ -183,6 +184,7 @@ fn test_manifest_max_manifest_size_constant() {
     assert_eq!(MAX_MANIFEST_SIZE, 64 * 1024);
 }
 
+#[cfg(feature = "signatures")]
 fn make_signed_manifest() -> (DetachedManifest, Vec<u8>, SigningKey) {
     let sk = SigningKey::from_bytes([42u8; 32], b"test-key-id".to_vec()).unwrap();
     let vk = sk.verifying_key();
@@ -214,6 +216,7 @@ fn make_signed_manifest() -> (DetachedManifest, Vec<u8>, SigningKey) {
     (manifest, image_bytes.to_vec(), sk)
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_trust_none_untrusted_even_with_valid_sig() {
     let (manifest, image_bytes, _) = make_signed_manifest();
@@ -224,6 +227,7 @@ fn test_trust_none_untrusted_even_with_valid_sig() {
     assert!(!result.report.signatures()[0].trusted());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_trust_keys_trusted_when_key_matches() {
     let (manifest, image_bytes, _) = make_signed_manifest();
@@ -239,6 +243,7 @@ fn test_trust_keys_trusted_when_key_matches() {
     assert!(result.report.signatures()[0].trusted());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_trust_keys_untrusted_when_key_does_not_match() {
     let (manifest, image_bytes, _) = make_signed_manifest();
@@ -254,6 +259,7 @@ fn test_trust_keys_untrusted_when_key_does_not_match() {
     assert!(!result.report.signatures()[0].trusted());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_trust_callback_trusted_when_cb_returns_true() {
     let (manifest, image_bytes, _) = make_signed_manifest();
@@ -267,6 +273,7 @@ fn test_trust_callback_trusted_when_cb_returns_true() {
     assert!(result.report.signatures()[0].trusted());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_trust_callback_untrusted_when_cb_returns_false() {
     let (manifest, image_bytes, _) = make_signed_manifest();
@@ -280,6 +287,7 @@ fn test_trust_callback_untrusted_when_cb_returns_false() {
     assert!(!result.report.signatures()[0].trusted());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_trust_callback_custom_logic() {
     let (manifest, image_bytes, _) = make_signed_manifest();
@@ -300,6 +308,7 @@ fn test_trust_callback_custom_logic() {
     assert!(!result2.report.signatures()[0].trusted());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_backward_compat_wrapper_trust_none() {
     let (manifest, image_bytes, _) = make_signed_manifest();
@@ -309,6 +318,7 @@ fn test_backward_compat_wrapper_trust_none() {
     assert!(!result.report.signatures()[0].trusted());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_backward_compat_wrapper_trust_keys() {
     let (manifest, image_bytes, _) = make_signed_manifest();
@@ -318,6 +328,7 @@ fn test_backward_compat_wrapper_trust_keys() {
     assert!(result.report.signatures()[0].trusted());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_instance_digest_match() {
     let (manifest, image_bytes, _) = make_signed_manifest();
@@ -326,6 +337,7 @@ fn test_instance_digest_match() {
     assert!(result.instance_digest_match);
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_instance_digest_mismatch() {
     let (manifest, _, _) = make_signed_manifest();
@@ -335,6 +347,7 @@ fn test_instance_digest_mismatch() {
     assert!(!result.instance_digest_match);
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_embedded_reference_not_provided() {
     let (manifest, image_bytes, _) = make_signed_manifest();
@@ -347,6 +360,7 @@ fn test_embedded_reference_not_provided() {
     );
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_unknown_algorithm_rejected() {
     let sk = SigningKey::from_bytes([42u8; 32], b"test-key-id".to_vec()).unwrap();
@@ -380,6 +394,7 @@ fn test_unknown_algorithm_rejected() {
     assert!(!result.report.signatures()[0].structurally_valid());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_encoding_mismatch_rejected() {
     let sk = SigningKey::from_bytes([42u8; 32], b"test-key-id".to_vec()).unwrap();
@@ -502,6 +517,7 @@ fn test_resource_limits_rejects_oversized_input() {
     assert!(!result.instance_digest_match);
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_embedded_reference_stripped_when_no_payload() {
     let (mut manifest, image_bytes, _) = make_signed_manifest();
@@ -586,6 +602,7 @@ fn test_schema_version_zero_fails_parsing() {
     );
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_duplicate_key_ids_in_signatures_are_handled() {
     let sk = SigningKey::from_bytes([42u8; 32], b"dup-key".to_vec()).unwrap();
@@ -626,6 +643,7 @@ fn test_duplicate_key_ids_in_signatures_are_handled() {
     assert!(result.report.signatures()[1].cryptographically_valid());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_wrong_image_digest_fails_verification() {
     let (manifest, _image_bytes, _) = make_signed_manifest();
@@ -635,6 +653,7 @@ fn test_wrong_image_digest_fails_verification() {
     assert!(!result.instance_digest_match);
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_untrusted_key_produces_invalid_trust_result() {
     let (manifest, image_bytes, _) = make_signed_manifest();
@@ -650,6 +669,7 @@ fn test_untrusted_key_produces_invalid_trust_result() {
     assert!(!result.report.signatures()[0].trusted());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_trust_metadata_is_informational_only() {
     let (mut manifest, image_bytes, _) = make_signed_manifest();
@@ -673,6 +693,7 @@ fn test_trust_metadata_is_informational_only() {
     assert!(result.report.signatures()[0].trusted());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_embedded_reference_version_mismatch_reports_stripped() {
     let (mut manifest, image_bytes, _) = make_signed_manifest();
@@ -699,6 +720,7 @@ fn test_invalid_json_fails_parsing() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "signatures")]
 #[test]
 fn test_trust_metadata_not_present_reported() {
     let (manifest, image_bytes, _) = make_signed_manifest();
