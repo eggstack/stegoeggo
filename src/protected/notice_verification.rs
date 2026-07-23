@@ -1496,6 +1496,45 @@ fn parse_xmp_for_dmi(
     }
 }
 
+fn check_xml_depth(xmp_str: &str, max_depth: usize) -> bool {
+    let mut depth: usize = 0;
+    let bytes = xmp_str.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'<' {
+            if i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+                depth = depth.saturating_sub(1);
+                i += 2;
+                while i < bytes.len() && bytes[i] != b'>' {
+                    i += 1;
+                }
+            } else {
+                let tag_start = i + 1;
+                let mut tag_end = tag_start;
+                while tag_end < bytes.len() && bytes[tag_end] != b'>' {
+                    tag_end += 1;
+                }
+                if tag_end < bytes.len() {
+                    let tag_content = &xmp_str[tag_start..tag_end];
+                    let trimmed = tag_content.trim_end();
+                    let is_self_closing =
+                        trimmed.ends_with('/') || tag_content.bytes().last() == Some(b'/');
+                    if !is_self_closing {
+                        depth += 1;
+                        if depth > max_depth {
+                            return false;
+                        }
+                    }
+                }
+                i = tag_end + 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    true
+}
+
 fn parse_xmp_for_dmi_with_limits(
     xmp_str: &str,
     dmi: &mut Option<DmiValue>,
@@ -1505,6 +1544,9 @@ fn parse_xmp_for_dmi_with_limits(
     rights_signal_kind: &mut Option<RightsSignalKind>,
     limits: &ResourceLimits,
 ) {
+    if !check_xml_depth(xmp_str, limits.max_xml_depth()) {
+        return;
+    }
     let max_props = limits.max_xml_properties();
     let mut props_checked = 0usize;
 
@@ -1786,6 +1828,63 @@ mod tests {
         assert_eq!(a.stego_status(), b.stego_status());
         assert_eq!(a.evidence_strength(), b.evidence_strength());
         assert_eq!(a.channels(), b.channels());
+    }
+
+    #[test]
+    fn xml_depth_flat_xmp_within_limit() {
+        let xmp = r#"plus:DataMining="DMI-PROHIBITED-AIMLTRAINING""#;
+        assert!(check_xml_depth(xmp, 32));
+    }
+
+    #[test]
+    fn xml_depth_nested_tags_within_limit() {
+        let xmp = r#"<rdf:RDF><rdf:Description><plus:DataMining>Allowed</plus:DataMining></rdf:Description></rdf:RDF>"#;
+        assert!(check_xml_depth(xmp, 4));
+    }
+
+    #[test]
+    fn xml_depth_exceeds_limit() {
+        let xmp = r#"<a><b><c><d><e><f>deep</f></e></d></c></b></a>"#;
+        assert!(!check_xml_depth(xmp, 3));
+    }
+
+    #[test]
+    fn xml_depth_self_closing_does_not_increase() {
+        let xmp = r#"<a/><b/><c>text</c>"#;
+        assert!(check_xml_depth(xmp, 1));
+    }
+
+    #[test]
+    fn xml_depth_malformed_no_closing_gt() {
+        let xmp = r#"<tag without closing"#;
+        assert!(check_xml_depth(xmp, 1));
+    }
+
+    #[test]
+    fn xml_depth_empty_string() {
+        assert!(check_xml_depth("", 32));
+    }
+
+    #[test]
+    fn xml_depth_with_limits_rejects_deep_xml() {
+        let limits = ResourceLimits::builder().max_xml_depth(2).build();
+        let xmp = r#"<a><b><c>deep</c></b></a>"#;
+        let mut dmi = None;
+        let mut tdm_reserved = None;
+        let mut canonical_dmi = None;
+        let mut legacy_dmi = None;
+        let mut rights_signal_kind = None;
+        parse_xmp_for_dmi_with_limits(
+            xmp,
+            &mut dmi,
+            &mut tdm_reserved,
+            &mut canonical_dmi,
+            &mut legacy_dmi,
+            &mut rights_signal_kind,
+            &limits,
+        );
+        assert!(canonical_dmi.is_none());
+        assert!(legacy_dmi.is_none());
     }
 
     #[test]

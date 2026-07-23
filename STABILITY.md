@@ -57,13 +57,13 @@ The following modules are experimental. API surfaces within them may change with
 
 The following CLI commands and their primary flags are stable.
 
-| Command | Description |
-|---------|-------------|
-| `stegoeggo protect` | Protect an image with legal metadata and steganography |
-| `stegoeggo verify` | Verify protection status of an image |
-| `stegoeggo keygen` | Generate an Ed25519 key pair |
-| `stegoeggo sign` | Sign an image |
-| `stegoeggo verify-manifest` | Verify a detached manifest |
+| Command | Feature Gate | Description |
+|---------|-------------|-------------|
+| `stegoeggo protect` | (default) | Protect an image with legal metadata and steganography |
+| `stegoeggo verify` | (default) | Verify protection status of an image |
+| `stegoeggo keygen` | `signatures` | Generate an Ed25519 key pair |
+| `stegoeggo sign` | `signatures` | Sign an image |
+| `stegoeggo verify-manifest` | `signatures` | Verify a detached manifest |
 
 ## Machine-Readable Schemas
 
