@@ -57,13 +57,32 @@ The following modules are experimental. API surfaces within them may change with
 
 The following CLI commands and their primary flags are stable.
 
+The CLI uses a single-binary design with positional arguments for the `protect`/`verify` mode and subcommands for signing operations.
+
 | Command | Feature Gate | Description |
 |---------|-------------|-------------|
-| `stegoeggo protect` | (default) | Protect an image with legal metadata and steganography |
-| `stegoeggo verify` | (default) | Verify protection status of an image |
+| `stegoeggo <input>...` | (default) | Protect an image with legal metadata and steganography (positional args + flags) |
+| `stegoeggo --verify <input>` | (default) | Verify protection status of an image |
 | `stegoeggo keygen` | `signatures` | Generate an Ed25519 key pair |
-| `stegoeggo sign` | `signatures` | Sign an image |
-| `stegoeggo verify-manifest` | `signatures` | Verify a detached manifest |
+| `stegoeggo sign --manifest <path> --key <path>` | `signatures` | Sign a detached manifest |
+| `stegoeggo verify-manifest --manifest <path> --image <path>` | `signatures` | Verify a detached manifest against an image |
+
+### CLI Exit Codes
+
+| Code | Constant | Meaning |
+|------|----------|---------|
+| 0 | `EXIT_OK` | Success |
+| 1 | `EXIT_ERROR` | General error (I/O, image decode/encode, etc.) |
+| 2 | `EXIT_CONFIG` | Malformed manifest, config error, or input validation failure |
+| 3 | `EXIT_INTEGRITY` | Digest mismatch, binding failure, or signature/integrity failure |
+| 4 | `EXIT_TRUST` | Cryptographically valid but untrusted (no matching public key) |
+| 5 | `EXIT_INTERNAL` | Internal or unexpected error |
+
+The `verify-manifest` subcommand returns structured `ManifestVerification` results (via `verify_detached_manifest()` from `stegoeggo::detached::verify`) and uses `--json` for machine-readable output. Exit codes follow the table above.
+
+### CLI Bounded Parsing
+
+Both `sign` and `verify-manifest` use `DetachedManifest::from_json_with_limits` with `ResourceLimits::default()` instead of raw `serde_json::from_slice`, enforcing bounded parsing of manifest JSON.
 
 ## Machine-Readable Schemas
 

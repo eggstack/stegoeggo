@@ -15,7 +15,6 @@ const EXIT_OK: i32 = 0;
 const EXIT_ERROR: i32 = 1;
 const EXIT_CONFIG: i32 = 2;
 const EXIT_INTEGRITY: i32 = 3;
-#[allow(dead_code)]
 const EXIT_TRUST: i32 = 4;
 const EXIT_INTERNAL: i32 = 5;
 
@@ -871,6 +870,7 @@ fn handle_sign(
     output: &Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use stegoeggo::detached::{DetachedManifest, PublicKeyEntry, SignatureRecord};
+    use stegoeggo::resource_limits::ResourceLimits;
     use stegoeggo::signing::SigningKey;
 
     let key_bytes = fs::read(key_path)?;
@@ -907,7 +907,9 @@ fn handle_sign(
         .map_err(|e| format!("Invalid signing key: {}", e))?;
 
     let manifest_bytes = fs::read(manifest_path)?;
-    let mut manifest: DetachedManifest = serde_json::from_slice(&manifest_bytes)?;
+    let limits = ResourceLimits::default();
+    let mut manifest = DetachedManifest::from_json_with_limits(&manifest_bytes, &limits)
+        .map_err(|e| format!("Manifest parsing failed: {}", e))?;
 
     let claim_bytes = manifest.claim.canonical_bytes();
     let signature_bytes = signing_key.sign(&claim_bytes);
@@ -943,89 +945,183 @@ fn handle_verify_manifest(
     manifest_path: &PathBuf,
     image_path: &PathBuf,
     key_path: &Option<PathBuf>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use sha2::Digest;
+    json_output: bool,
+) -> Result<i32, Box<dyn std::error::Error>> {
+    use stegoeggo::detached::verify::{
+        verify_detached_manifest, EmbeddedReferenceStatus, TrustPolicy,
+    };
     use stegoeggo::detached::DetachedManifest;
+    use stegoeggo::resource_limits::ResourceLimits;
     use stegoeggo::signing::VerifyingKey;
+    use stegoeggo::VerificationStatus;
 
     let manifest_bytes = fs::read(manifest_path)?;
-    let manifest: DetachedManifest = serde_json::from_slice(&manifest_bytes)?;
-
-    println!("Manifest schema version: {}", manifest.schema_version);
-    println!("Claim ID: {}", hex::encode(manifest.claim.claim_id));
-    println!("Instance digest: {}", manifest.claim.instance_digest);
-    println!("Format: {}", manifest.claim.format);
-    println!(
-        "Dimensions: {}x{}",
-        manifest.claim.width, manifest.claim.height
-    );
-    println!("File size: {} bytes", manifest.claim.file_size);
-    println!("Rights policy: {}", manifest.claim.rights_policy);
-    println!("Software: {}", manifest.claim.software);
+    let limits = ResourceLimits::default();
+    let manifest = DetachedManifest::from_json_with_limits(&manifest_bytes, &limits)
+        .map_err(|e| format!("Manifest parsing failed: {}", e))?;
 
     let image_bytes = fs::read(image_path)?;
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(&image_bytes);
-    let image_hash = hasher.finalize();
-    let image_digest = format!("sha256:{}", hex::encode(image_hash));
 
-    if image_digest == manifest.claim.instance_digest {
-        println!("\nImage digest: MATCH");
+    let trust = if let Some(ref key_file) = key_path {
+        let pub_key_bytes = fs::read(key_file)?;
+        let pub_key_str = String::from_utf8_lossy(&pub_key_bytes);
+
+        let hex_pub = extract_pem_field(&pub_key_str, "BEGIN STEGOEGGO PUBLIC KEY")
+            .and_then(|block| {
+                block
+                    .lines()
+                    .find(|l| !l.starts_with("key_id:"))
+                    .map(String::from)
+            })
+            .unwrap_or_else(|| String::from_utf8_lossy(&pub_key_bytes).trim().to_string());
+
+        let pub_bytes_vec =
+            hex::decode(&hex_pub).map_err(|e| format!("Invalid hex in public key file: {}", e))?;
+        if pub_bytes_vec.len() != 32 {
+            return Err(format!("Public key must be 32 bytes, got {}", pub_bytes_vec.len()).into());
+        }
+        let mut raw_pub = [0u8; 32];
+        raw_pub.copy_from_slice(&pub_bytes_vec);
+        let vk = VerifyingKey::from_bytes(raw_pub, Vec::new());
+        TrustPolicy::TrustKeys(vec![vk.key_id().to_vec()])
     } else {
-        println!("\nImage digest: MISMATCH");
-        println!("  Expected: {}", manifest.claim.instance_digest);
-        println!("  Got:      {}", image_digest);
-    }
+        TrustPolicy::TrustNone
+    };
 
-    if manifest.signatures.is_empty() {
-        println!("\nSignatures: None");
-    } else {
-        println!("\nSignatures: {} total", manifest.signatures.len());
-        for (i, sig) in manifest.signatures.iter().enumerate() {
-            println!("  [{}] algorithm: {}", i, sig.algorithm);
-            println!("      key_id: {}", hex::encode(&sig.key_id));
+    let result = verify_detached_manifest(&image_bytes, &manifest, &trust);
 
-            if let Some(ref key_file) = key_path {
-                let pub_key_bytes = fs::read(key_file)?;
-                let pub_key_str = String::from_utf8_lossy(&pub_key_bytes);
-
-                let hex_pub = extract_pem_field(&pub_key_str, "BEGIN STEGOEGGO PUBLIC KEY")
-                    .and_then(|block| {
-                        block
-                            .lines()
-                            .find(|l| !l.starts_with("key_id:"))
-                            .map(String::from)
-                    })
-                    .unwrap_or_else(|| String::from_utf8_lossy(&pub_key_bytes).trim().to_string());
-
-                if let Ok(pub_bytes_vec) = hex::decode(&hex_pub) {
-                    if pub_bytes_vec.len() == 32 {
-                        let mut raw_pub = [0u8; 32];
-                        raw_pub.copy_from_slice(&pub_bytes_vec);
-                        let vk = VerifyingKey::from_bytes(raw_pub, sig.key_id.clone());
-
-                        let claim_bytes = manifest.claim.canonical_bytes();
-                        let sig_result =
-                            vk.verify(&claim_bytes, &signature_bytes_from_hex(&sig.signature));
-                        println!("      verification: {}", sig_result);
-                    } else {
-                        println!("      verification: SKIPPED (invalid public key length)");
-                    }
-                } else {
-                    println!("      verification: SKIPPED (invalid hex in public key file)");
-                }
-            } else {
-                println!("      verification: SKIPPED (no public key provided)");
+    if json_output {
+        let overall_status = if !result.manifest_valid {
+            "invalid"
+        } else if !result.instance_digest_match {
+            "mismatch"
+        } else {
+            match result.report.summary_status() {
+                VerificationStatus::Verified => "verified",
+                VerificationStatus::Invalid => "invalid",
+                VerificationStatus::NotFound => "not_found",
             }
+        };
+
+        #[derive(serde::Serialize)]
+        struct JsonManifestVerify {
+            schema_version: u32,
+            status: &'static str,
+            instance_digest_match: bool,
+            manifest_valid: bool,
+            embedded_reference: &'static str,
+            signatures_valid: bool,
+            trusted: bool,
+            evidence_strength: String,
+        }
+
+        let embedded_ref = match result.embedded_reference_status {
+            EmbeddedReferenceStatus::NotProvided => "not_provided",
+            EmbeddedReferenceStatus::Stripped => "stripped",
+            EmbeddedReferenceStatus::VersionMismatch => "version_mismatch",
+            EmbeddedReferenceStatus::DigestMismatch => "digest_mismatch",
+            EmbeddedReferenceStatus::Malformed => "malformed",
+            EmbeddedReferenceStatus::Present => "present",
+        };
+
+        let sigs_valid = result
+            .report
+            .signatures()
+            .iter()
+            .any(|s| s.cryptographically_valid());
+        let trusted = result.report.trust().trusted();
+
+        let json = JsonManifestVerify {
+            schema_version: manifest.schema_version as u32,
+            status: overall_status,
+            instance_digest_match: result.instance_digest_match,
+            manifest_valid: result.manifest_valid,
+            embedded_reference: embedded_ref,
+            signatures_valid: sigs_valid,
+            trusted,
+            evidence_strength: format!("{:?}", result.report.evidence_strength()),
+        };
+        println!("{}", serde_json::to_string_pretty(&json)?);
+    } else {
+        println!("Manifest schema version: {}", manifest.schema_version);
+        println!("Claim ID: {}", hex::encode(manifest.claim.claim_id));
+        println!("Instance digest: {}", manifest.claim.instance_digest);
+        println!("Format: {}", manifest.claim.format);
+        println!(
+            "Dimensions: {}x{}",
+            manifest.claim.width, manifest.claim.height
+        );
+        println!("File size: {} bytes", manifest.claim.file_size);
+        println!("Rights policy: {}", manifest.claim.rights_policy);
+        println!("Software: {}", manifest.claim.software);
+
+        if result.instance_digest_match {
+            println!("\nImage digest: MATCH");
+        } else {
+            println!("\nImage digest: MISMATCH");
+        }
+
+        println!(
+            "\nManifest valid: {}",
+            if result.manifest_valid { "YES" } else { "NO" }
+        );
+
+        if manifest.signatures.is_empty() {
+            println!("Signatures: None");
+        } else {
+            println!("Signatures: {} total", manifest.signatures.len());
+            for (i, sig) in result.report.signatures().iter().enumerate() {
+                println!("  [{}] algorithm: ed25519", i);
+                println!(
+                    "      key_id: {}",
+                    hex::encode(sig.public_key_id().unwrap_or(&[]))
+                );
+                println!(
+                    "      cryptographically_valid: {}",
+                    sig.cryptographically_valid()
+                );
+                println!("      trusted: {}", sig.trusted());
+            }
+        }
+
+        println!(
+            "\nEmbedded reference: {:?}",
+            result.embedded_reference_status
+        );
+        println!(
+            "Trust: {}",
+            if result.report.trust().trusted() {
+                "TRUSTED"
+            } else {
+                "UNTRUSTED"
+            }
+        );
+        println!("Evidence strength: {:?}", result.report.evidence_strength());
+
+        for diag in result.report.diagnostics() {
+            println!("  [{:?}] {}", diag.level(), diag.message());
         }
     }
 
-    Ok(())
-}
+    let exit_code = if !result.manifest_valid {
+        EXIT_CONFIG
+    } else if !result.instance_digest_match {
+        EXIT_INTEGRITY
+    } else {
+        match result.report.summary_status() {
+            VerificationStatus::Invalid => EXIT_INTEGRITY,
+            VerificationStatus::NotFound => EXIT_INTEGRITY,
+            VerificationStatus::Verified => {
+                if result.report.trust().trusted() {
+                    EXIT_OK
+                } else {
+                    EXIT_TRUST
+                }
+            }
+        }
+    };
 
-#[cfg(feature = "signatures")]
-fn signature_bytes_from_hex(hex_str: &str) -> Vec<u8> {
-    hex::decode(hex_str).unwrap_or_default()
+    Ok(exit_code)
 }
 
 #[cfg(feature = "signatures")]
@@ -1138,7 +1234,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 manifest,
                 image,
                 key,
-            } => handle_verify_manifest(manifest, image, key),
+            } => {
+                let exit_code = handle_verify_manifest(manifest, image, key, args.json)?;
+                std::process::exit(exit_code);
+            }
         };
     }
 

@@ -1062,22 +1062,21 @@ pub fn process_request_bytes_with_report(
 fn process_plan_bytes(img_bytes: &[u8], plan: &ResolvedProtectionPlan) -> Result<Vec<u8>> {
     let pipeline = DEFAULT_PIPELINE.clone();
 
-    if plan.is_metadata_only() {
-        return pipeline.process_metadata_only(img_bytes, plan);
-    }
-
     let limits = plan.resource_limits();
     limits.check_input_size(img_bytes.len())?;
 
-    if plan.processing().max_dimension.is_some() {
+    if plan.processing().max_dimension.is_some() || plan.is_metadata_only() {
         if plan.input_format() == ImageOutputFormat::Jpeg {
             let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
             limits.check_dimensions(header.width as u32, header.height as u32)?;
-        } else {
-            let img = load_image_from_bytes(img_bytes)?;
+        } else if let Ok(img) = load_image_from_bytes(img_bytes) {
             let (width, height) = img.dimensions();
             limits.check_dimensions(width, height)?;
         }
+    }
+
+    if plan.is_metadata_only() {
+        return pipeline.process_metadata_only(img_bytes, plan);
     }
 
     match plan.channels().hidden_marker {

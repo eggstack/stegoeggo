@@ -104,7 +104,7 @@ src/
 
 ```bash
 cargo check                              # Compilation
-cargo test                               # All tests (718 passed, 27 ignored)
+cargo test                               # All tests (1106 passed, 27 ignored)
 cargo test --all-features                # Includes signing and detached manifest tests
 cargo clippy --all-targets -- -D warnings # Lint check
 cargo fmt --check                        # Format check
@@ -226,7 +226,9 @@ External integration tests in `tests/external_tools.rs` are `#[ignore]` and run 
 
 Required external tools: `exiftool`, `xmllint`, `imagemagick`, `libvips` (installed in both CI and release workflows)
 
-Stable exit codes: 0=pass, 1=fail, 2=config error, 3=digest mismatch, 4=coverage violation, 5=internal error
+Stable exit codes: 0=pass, 1=fail, 2=config error, 3=digest mismatch, 4=coverage violation, 5=internal error (conformance harness)
+
+CLI exit codes: 0=ok, 1=error, 2=config, 3=integrity, 4=trust (untrusted but valid), 5=internal
 
 ## Things to Watch Out For
 
@@ -252,7 +254,7 @@ Stable exit codes: 0=pass, 1=fail, 2=config error, 3=digest mismatch, 4=coverage
 - **Spread spectrum LSB**: Each payload bit embedded across `STEGO_SPREAD_FACTOR` (=5) adjacent pixels via majority voting
 - **Large-magnitude DCT coefficient preference**: F5 sorts non-zero AC coefficients by |magnitude| descending before shuffling
 - **F5 redundancy cap**: Max redundancy is 10. Extraction tries all 10 values
-- **Payload version migration**: Current version is 3. V1 (24-byte) and V2 (24-byte header + ECC/HMAC) still supported for extraction. V3 adds TLV extensions with domain-separated authentication
+- **Payload version migration**: Current version is 3. V1 (24-byte) and V2 (24-byte header + ECC/HMAC) still supported for extraction. V3 adds TLV extensions with domain-separated authentication. V3 extraction paths (magic bytes `[0x53, 0x45]`) are tried first in `verify_checksum` and `verify_payload_integrity` before falling back to V2/V1 sizes
 - **CLI file path**: CLI binary lives at `stegoeggo-cli/src/main.rs`, not `src/bin/`
 - **CLI batch filename collisions**: Duplicate output stems get `_protected_1`, `_protected_2`, etc.
 - **CLI legal metadata flags**: `--copyright-holder`, `--creator`, `--contact`, `--rights-url`, `--usage-terms`, `--ai-constraints`, `--credit-line`, `--copyright-owner`, `--licensor-name`, `--licensor-email`, `--licensor-url`, `--content-created-at` set `LegalMetadata` fields. `--no-ai-training`, `--no-genai-training`, `--tdm-reserved` are DMI presets that also set default `ai_constraints` text. Any legal flag auto-enables legal claims (no explicit `--legal-claims` needed). `--metadata false` + legal flags → error. `--strict` exits with error if any warnings have Error severity. `--tdm-reserved` is deprecated (TDMRep deployment deferred)
@@ -282,8 +284,13 @@ Stable exit codes: 0=pass, 1=fail, 2=config error, 3=digest mismatch, 4=coverage
 - **Policy-first architecture (Release 4)**: `ProtectionRequest` and `RightsPolicy` are the canonical API. `ProtectionLevel` and `EvidenceProfile` are deprecated compatibility adapters. New code should use `process_request_bytes()` and `process_request_bytes_with_report()`
 - **Deprecated API surfaces**: `EvidenceProfile`, `with_dmi()`, `with_metadata_injection()`, `with_inject_legal_claims()` are deprecated. They still work but will be removed in the next major version
 - **Metadata-only fast path**: `ProtectionRequest::metadata_only()` produces same-format output without pixel/stego processing. Use this for the simplest legal-notice workflow
+- **Resource limits enforced before metadata-only path**: input size and dimension checks (`ResourceLimits::check_input_size`, `check_dimensions`) apply to all processing paths, including metadata-only. The checks run in `process_plan_bytes()` before routing to the metadata-only branch
 - **Resolution runs once**: `resolve_request()` validates all input and produces an immutable `ResolvedProtectionPlan`. Pipeline stages consume the plan rather than re-querying mutable context
 - **Payload v3 uses TLV extensions with domain-separated authentication**: v3 payloads support arbitrary key-value extensions with per-domain MAC keys. Domain separation ensures cross-domain forgery is infeasible
+- **V3 channel flags**: The `authentication` flag in the V3 header channels bitfield correctly reflects whether HMAC is actually used (`ctx.mac_key().is_some()`), not always true. The `rights_metadata` and `hidden_marker` flags are always set to `true` for embedded payloads
+- **V3-first extraction**: All extraction paths (LSB non-tiled, LSB tiled, DCT non-tiled, DCT tiled, and all verification variants) try V3 CRC (288 bits) and V3 HMAC (384 bits) sizes first, then fall back to V2 ECC (800 bits) and V1 ECC (608 bits). This ensures V3 payloads are extracted efficiently while maintaining backward compatibility
+- **CLI verify-manifest uses library verifier**: The `verify-manifest` subcommand routes through `verify_detached_manifest()` from `stegoeggo::detached::verify`, using bounded parsing (`DetachedManifest::from_json_with_limits`) and the structured `ManifestVerification` result. It no longer reimplements digest/signature verification inline
+- **CLI exit code 4 (EXIT_TRUST)**: Used when `verify-manifest` finds cryptographically valid evidence but no valid signature is trusted by caller policy
 - **SigningKey does NOT implement Serialize — private keys are never serialized**: `ed25519_dalek::SigningKey` is kept out of serde. Use `to_bytes()` / `from_bytes()` for explicit key serialization
 - **ISCC API names are deprecated — use compute_content_identifiers() instead**: `compute_iscc()` is renamed to `compute_content_identifiers()`. The old name is deprecated
 - **VerificationReport replaces broad VerificationStatus with structured sub-results**: `VerificationReport` contains per-channel results (`StegoResult`, `MetadataResult`, `SigningResult`) instead of a single overall status

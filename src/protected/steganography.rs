@@ -458,7 +458,12 @@ impl SteganographyProtector {
                         }
                         let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
 
-                        for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                        for &ecc_bits in &[
+                            V3_CRC_PAYLOAD_BITS,
+                            V3_HMAC_PAYLOAD_BITS,
+                            ECC_PAYLOAD_BITS_V2,
+                            ECC_PAYLOAD_BITS,
+                        ] {
                             for redundancy in 1..=10 {
                                 let stego = DctStegoF5::with_redundancy(redundancy);
                                 let extracted = stego.extract_f5_from_blocks(
@@ -554,7 +559,12 @@ impl SteganographyProtector {
                         }
                         let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
 
-                        for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                        for &ecc_bits in &[
+                            V3_CRC_PAYLOAD_BITS,
+                            V3_HMAC_PAYLOAD_BITS,
+                            ECC_PAYLOAD_BITS_V2,
+                            ECC_PAYLOAD_BITS,
+                        ] {
                             for redundancy in 1..=10 {
                                 let stego = DctStegoF5::with_redundancy(redundancy);
                                 let extracted = stego.extract_f5_from_blocks(
@@ -731,8 +741,12 @@ impl SteganographyProtector {
         seed: u64,
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
-        // Try v2 payload size first (larger), then fall back to v1
-        for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+        for &ecc_bits in &[
+            V3_CRC_PAYLOAD_BITS,
+            V3_HMAC_PAYLOAD_BITS,
+            ECC_PAYLOAD_BITS_V2,
+            ECC_PAYLOAD_BITS,
+        ] {
             for pass in 0..5 {
                 let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
 
@@ -762,7 +776,12 @@ impl SteganographyProtector {
         mac_key: &[u8],
     ) -> CandidateOutcome {
         let mut last_invalid: Option<Vec<u8>> = None;
-        for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+        for &ecc_bits in &[
+            V3_CRC_PAYLOAD_BITS,
+            V3_HMAC_PAYLOAD_BITS,
+            ECC_PAYLOAD_BITS_V2,
+            ECC_PAYLOAD_BITS,
+        ] {
             for pass in 0..5 {
                 let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
 
@@ -1732,8 +1751,12 @@ impl SteganographyProtector {
         seed: u64,
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
-        // Try v2 payload bits first, then v1
-        for &bits_needed in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+        for &bits_needed in &[
+            V3_CRC_PAYLOAD_BITS,
+            V3_HMAC_PAYLOAD_BITS,
+            ECC_PAYLOAD_BITS_V2,
+            ECC_PAYLOAD_BITS,
+        ] {
             for redundancy in 1..=10 {
                 let stego_f5 = DctStegoF5::with_redundancy(redundancy);
                 let extracted = stego_f5.extract_f5(coefficients, bits_needed, seed);
@@ -1764,7 +1787,12 @@ impl SteganographyProtector {
         mac_key: &[u8],
     ) -> CandidateOutcome {
         let mut last_invalid: Option<Vec<u8>> = None;
-        for &bits_needed in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+        for &bits_needed in &[
+            V3_CRC_PAYLOAD_BITS,
+            V3_HMAC_PAYLOAD_BITS,
+            ECC_PAYLOAD_BITS_V2,
+            ECC_PAYLOAD_BITS,
+        ] {
             for redundancy in 1..=10 {
                 let stego_f5 = DctStegoF5::with_redundancy(redundancy);
                 let extracted = stego_f5.extract_f5(coefficients, bits_needed, seed);
@@ -2018,13 +2046,14 @@ impl SteganographyProtector {
             reserved: 0,
         };
 
+        let has_mac = ctx.mac_key().is_some();
+
         let channels = ProtectionChannels {
             rights_metadata: true,
             hidden_marker: true,
-            authentication: true,
+            authentication: has_mac,
         };
 
-        let has_mac = ctx.mac_key().is_some();
         let (auth_algo, auth_tag_len) = if has_mac {
             (AuthAlgorithm::HmacSha256Truncated, 16u8)
         } else {
