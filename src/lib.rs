@@ -1210,6 +1210,20 @@ pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatu
     stego.verify_payload_from_bytes_with_key(img_bytes, mac_key)
 }
 
+/// Verify protection with custom resource limits.
+///
+/// Like [`verify_image_bytes`], but enforces the provided [`ResourceLimits`]
+/// during extraction. Limits cap tile-origin scanning, fallback-seed iteration,
+/// and payload size to prevent excessive work on adversarial inputs.
+pub fn verify_image_bytes_with_limits(
+    img_bytes: &[u8],
+    mac_key: &[u8],
+    limits: &ResourceLimits,
+) -> VerificationStatus {
+    let stego = SteganographyProtector::with_resource_limits(limits.clone());
+    stego.verify_payload_from_bytes_with_key(img_bytes, mac_key)
+}
+
 /// Verify protection with detailed results.
 ///
 /// Like [`verify_image_bytes`], but returns a [`VerificationResult`] with
@@ -1234,6 +1248,39 @@ pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatu
 /// ```
 pub fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> VerificationResult {
     let stego = SteganographyProtector::new();
+
+    match stego.verify_payload_from_bytes_with_key(img_bytes, mac_key) {
+        VerificationStatus::Verified => {
+            if let Some(payload) = stego.extract_payload_from_bytes_with_key(img_bytes, mac_key) {
+                return VerificationResult::Verified { payload };
+            }
+            return VerificationResult::NotFound;
+        }
+        VerificationStatus::Invalid => {
+            if let Some(payload) = stego.extract_payload_from_bytes_with_key(img_bytes, mac_key) {
+                return VerificationResult::Corrupted { payload };
+            }
+        }
+        VerificationStatus::NotFound => {}
+    }
+
+    if let Some(seed) = MetadataTrapProtector::extract_seed_from_image(img_bytes) {
+        return VerificationResult::MetadataOnly { seed };
+    }
+
+    VerificationResult::NotFound
+}
+
+/// Verify protection with detailed results and custom resource limits.
+///
+/// Like [`verify_image_bytes_detailed`], but enforces the provided [`ResourceLimits`]
+/// during extraction.
+pub fn verify_image_bytes_detailed_with_limits(
+    img_bytes: &[u8],
+    mac_key: &[u8],
+    limits: &ResourceLimits,
+) -> VerificationResult {
+    let stego = SteganographyProtector::with_resource_limits(limits.clone());
 
     match stego.verify_payload_from_bytes_with_key(img_bytes, mac_key) {
         VerificationStatus::Verified => {
@@ -1287,6 +1334,19 @@ pub fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> Verifica
 /// ```
 pub fn verify_legal_notice(img_bytes: &[u8], mac_key: &[u8]) -> NoticeVerification {
     protected::notice_verification::verify_notice_metadata(img_bytes, mac_key)
+}
+
+/// Verify legal-notice metadata with custom resource limits.
+///
+/// Like [`verify_legal_notice`], but enforces the provided [`ResourceLimits`]
+/// during extraction. Limits cap XMP size, metadata field counts, and
+/// steganographic extraction bounds.
+pub fn verify_legal_notice_with_limits(
+    img_bytes: &[u8],
+    mac_key: &[u8],
+    limits: &ResourceLimits,
+) -> NoticeVerification {
+    protected::notice_verification::verify_notice_metadata_with_limits(img_bytes, mac_key, limits)
 }
 
 #[cfg(test)]

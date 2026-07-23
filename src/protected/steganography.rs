@@ -4,14 +4,11 @@ use crate::payload_v3::types::{AuthAlgorithm, ProtectionChannels, V3_MAGIC, V3_P
 use crate::protected::constants::{SPLITMIX64_SEED, STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR};
 use crate::protected::ecc;
 use crate::protected::metadata_trap::MetadataTrapProtector;
+use crate::resource_limits::ResourceLimits;
 use crate::traits::Protector;
 use crate::types::{ProtectionContext, ProtectionLevel, VerificationStatus};
 use crc32fast::Hasher as Crc32Hasher;
 use hmac::{Hmac, Mac};
-
-const DEFAULT_MAX_TILE_ORIGINS: u32 = 64;
-#[cfg(feature = "test-seeds")]
-const DEFAULT_MAX_VERIFICATION_SEEDS: usize = 32;
 use image::{DynamicImage, Rgba, RgbaImage};
 use sha2::Sha256;
 use std::borrow::Cow;
@@ -131,12 +128,25 @@ fn splitmix64(x: u64) -> u64 {
 /// input, the protector uses [`apply_dct_stego_bytes`](Self::apply_dct_stego_bytes),
 /// which stores the seed in quantization tables when those tables are preserved and
 /// applies F5 DCT coefficient embedding for baseline JPEGs.
-pub struct SteganographyProtector;
+pub struct SteganographyProtector {
+    limits: ResourceLimits,
+}
 
 impl SteganographyProtector {
-    /// Create a new steganography protector.
+    /// Create a new steganography protector with default resource limits.
     pub fn new() -> Self {
-        Self
+        Self {
+            limits: ResourceLimits::default(),
+        }
+    }
+
+    /// Create a new steganography protector with custom resource limits.
+    pub fn with_resource_limits(limits: ResourceLimits) -> Self {
+        Self { limits }
+    }
+
+    fn payload_within_limits(&self, bytes: &[u8]) -> bool {
+        bytes.len() <= self.limits.max_payload_bytes()
     }
 
     /// Verify that an image contains a valid protection payload.
@@ -859,7 +869,7 @@ impl SteganographyProtector {
                     &rgba,
                     seed,
                     DEFAULT_TILE_SIZE,
-                    64,
+                    self.limits.max_tile_extraction_origins() as u32,
                     mac_key,
                 ) {
                     CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
@@ -872,7 +882,10 @@ impl SteganographyProtector {
         // LSB fallback: try known seeds via DynamicImage
         #[cfg(feature = "test-seeds")]
         if let Ok(img) = image::load_from_memory(img_bytes) {
-            for &seed in FALLBACK_SEEDS.iter().take(DEFAULT_MAX_VERIFICATION_SEEDS) {
+            for &seed in FALLBACK_SEEDS
+                .iter()
+                .take(self.limits.max_verification_seeds())
+            {
                 match self.verify_payload_with_seed_outcome(&img, seed, mac_key) {
                     CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
                     CandidateOutcome::Invalid(_) => return VerificationStatus::Invalid,
@@ -962,7 +975,7 @@ impl SteganographyProtector {
             &rgba,
             seed,
             DEFAULT_TILE_SIZE,
-            DEFAULT_MAX_TILE_ORIGINS,
+            self.limits.max_tile_extraction_origins() as u32,
             &[],
         ) {
             return true;
@@ -1037,7 +1050,7 @@ impl SteganographyProtector {
             &rgba,
             seed,
             DEFAULT_TILE_SIZE,
-            DEFAULT_MAX_TILE_ORIGINS,
+            self.limits.max_tile_extraction_origins() as u32,
             mac_key,
         )
     }
@@ -1095,7 +1108,7 @@ impl SteganographyProtector {
                 jpeg_bytes,
                 seed,
                 DEFAULT_TILE_SIZE,
-                DEFAULT_MAX_TILE_ORIGINS,
+                self.limits.max_tile_extraction_origins() as u32,
                 mac_key,
             );
             if let CandidateOutcome::Valid(payload) = &tiled_outcome {
@@ -1188,7 +1201,10 @@ impl SteganographyProtector {
 
         // Fallback: try common seeds (metadata stripped during DynamicImage re-encoding)
         #[cfg(feature = "test-seeds")]
-        for &seed in FALLBACK_SEEDS.iter().take(DEFAULT_MAX_VERIFICATION_SEEDS) {
+        for &seed in FALLBACK_SEEDS
+            .iter()
+            .take(self.limits.max_verification_seeds())
+        {
             if let Some(payload) = self.extract_payload_with_seed_and_key(img, seed, mac_key) {
                 return Some(payload);
             }
@@ -1252,6 +1268,9 @@ impl SteganographyProtector {
         // JPEG: try DCT extraction first (avoids pixel decode)
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
             if let Some(payload_bytes) = self.extract_verified_dct_payload(img_bytes, mac_key) {
+                if !self.payload_within_limits(&payload_bytes) {
+                    return None;
+                }
                 if let Some(decoded) = Self::try_ecc_decode(&payload_bytes) {
                     if let Some(payload) = Self::parse_stego_payload(&decoded) {
                         return Some(payload);
@@ -1268,9 +1287,12 @@ impl SteganographyProtector {
                     img_bytes,
                     metadata_seed,
                     DEFAULT_TILE_SIZE,
-                    DEFAULT_MAX_TILE_ORIGINS,
+                    self.limits.max_tile_extraction_origins() as u32,
                     mac_key,
                 ) {
+                    if !self.payload_within_limits(&payload_bytes) {
+                        return None;
+                    }
                     if let Some(decoded) = Self::try_ecc_decode(&payload_bytes) {
                         if let Some(payload) = Self::parse_stego_payload(&decoded) {
                             return Some(payload);
@@ -1315,12 +1337,15 @@ impl SteganographyProtector {
         #[cfg(feature = "test-seeds")]
         if let Ok(img) = image::load_from_memory(img_bytes) {
             let rgba = img.to_rgba8();
-            for &seed in FALLBACK_SEEDS.iter().take(DEFAULT_MAX_VERIFICATION_SEEDS) {
+            for &seed in FALLBACK_SEEDS
+                .iter()
+                .take(self.limits.max_verification_seeds())
+            {
                 if let Some(payload) = self.extract_lsb_tiled_candidates(
                     &rgba,
                     seed,
                     DEFAULT_TILE_SIZE,
-                    DEFAULT_MAX_TILE_ORIGINS,
+                    self.limits.max_tile_extraction_origins() as u32,
                     mac_key,
                 ) {
                     if let Some(decoded) = Self::try_ecc_decode(&payload) {
@@ -1549,6 +1574,9 @@ impl SteganographyProtector {
     ) -> Option<StegoPayload> {
         let rgba = img.to_rgba8();
         if let Some(payload) = self.extract_with_redundancy(&rgba, seed, mac_key) {
+            if !self.payload_within_limits(&payload) {
+                return None;
+            }
             if let Some(decoded) = Self::try_ecc_decode(&payload) {
                 let mut sp = Self::parse_stego_payload(&decoded)?;
                 sp.raw_payload = Some(Self::truncate_to_actual_payload(&payload));
@@ -1569,7 +1597,7 @@ impl SteganographyProtector {
             &rgba,
             seed,
             DEFAULT_TILE_SIZE,
-            DEFAULT_MAX_TILE_ORIGINS,
+            self.limits.max_tile_extraction_origins() as u32,
             mac_key,
         ) {
             if let Some(decoded) = Self::try_ecc_decode(&payload) {
@@ -1606,7 +1634,7 @@ impl SteganographyProtector {
             &rgba,
             seed,
             DEFAULT_TILE_SIZE,
-            DEFAULT_MAX_TILE_ORIGINS,
+            self.limits.max_tile_extraction_origins() as u32,
             &[],
         ) {
             if let Some(decoded) = Self::try_ecc_decode(&payload) {
@@ -1645,7 +1673,7 @@ impl SteganographyProtector {
                     jpeg_bytes,
                     extracted_seed,
                     DEFAULT_TILE_SIZE,
-                    64,
+                    self.limits.max_tile_extraction_origins() as u32,
                     mac_key,
                 ) {
                     return Some(result);
@@ -1679,7 +1707,7 @@ impl SteganographyProtector {
                     jpeg_bytes,
                     extracted_seed,
                     DEFAULT_TILE_SIZE,
-                    64,
+                    self.limits.max_tile_extraction_origins() as u32,
                     mac_key,
                 );
                 if let CandidateOutcome::Valid(payload) = &tiled_outcome {

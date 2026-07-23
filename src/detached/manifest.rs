@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::provenance::ProvenanceClaim;
+use crate::resource_limits::ResourceLimits;
 
 /// Current detached manifest schema version.
 pub const MANIFEST_SCHEMA_VERSION: u8 = 1;
@@ -309,6 +310,70 @@ impl DetachedManifest {
                 "Manifest size {} exceeds maximum {}",
                 bytes.len(),
                 MAX_MANIFEST_SIZE
+            )));
+        }
+
+        let manifest: Self = serde_json::from_slice(bytes)?;
+
+        if manifest.schema_version != MANIFEST_SCHEMA_VERSION {
+            return Err(crate::Error::Config(format!(
+                "Unsupported manifest schema version {} (expected {})",
+                manifest.schema_version, MANIFEST_SCHEMA_VERSION
+            )));
+        }
+
+        if manifest.signatures.len() > MAX_SIGNATURES {
+            return Err(crate::Error::Config(format!(
+                "Signature count {} exceeds maximum {}",
+                manifest.signatures.len(),
+                MAX_SIGNATURES
+            )));
+        }
+
+        if manifest.public_keys.len() > MAX_PUBLIC_KEYS {
+            return Err(crate::Error::Config(format!(
+                "Public key count {} exceeds maximum {}",
+                manifest.public_keys.len(),
+                MAX_PUBLIC_KEYS
+            )));
+        }
+
+        for key in &manifest.public_keys {
+            if key.key_id.len() > MAX_KEY_ID_LEN {
+                return Err(crate::Error::Config(format!(
+                    "Key ID length {} exceeds maximum {}",
+                    key.key_id.len(),
+                    MAX_KEY_ID_LEN
+                )));
+            }
+        }
+
+        for sig in &manifest.signatures {
+            if sig.key_id.len() > MAX_KEY_ID_LEN {
+                return Err(crate::Error::Config(format!(
+                    "Signature key ID length {} exceeds maximum {}",
+                    sig.key_id.len(),
+                    MAX_KEY_ID_LEN
+                )));
+            }
+        }
+
+        Ok(manifest)
+    }
+
+    /// Deserialize a manifest from JSON bytes with explicit resource limits.
+    ///
+    /// Like [`from_json`](Self::from_json), but uses the provided [`ResourceLimits`]
+    /// for the maximum manifest size instead of the hardcoded default.
+    pub fn from_json_with_limits(
+        bytes: &[u8],
+        limits: &ResourceLimits,
+    ) -> Result<Self, crate::Error> {
+        if bytes.len() > limits.max_detached_manifest_bytes() {
+            return Err(crate::Error::Config(format!(
+                "Manifest size {} exceeds maximum {}",
+                bytes.len(),
+                limits.max_detached_manifest_bytes()
             )));
         }
 

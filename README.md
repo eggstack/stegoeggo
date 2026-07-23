@@ -1214,4 +1214,4 @@ Contributions are welcome! Please ensure:
 1. Tests pass: `cargo test --all-features`
 2. Code is formatted: `cargo fmt --check`
 3. No clippy warnings: `cargo clippy --all-targets --all-features -- -D warnings`
-4. Package builds: `cargo package --workspace --allow-dirty`
+4. Package builds: `cargo package --workspace`
