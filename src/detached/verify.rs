@@ -147,6 +147,7 @@ pub fn verify_detached_manifest_with_limits(
     verify_detached_manifest_inner(image_bytes, manifest, trust)
 }
 
+#[allow(unused_variables)]
 fn verify_detached_manifest_inner(
     image_bytes: &[u8],
     manifest: &DetachedManifest,
@@ -162,7 +163,7 @@ fn verify_detached_manifest_inner(
     let instance_digest_match = image_digest == manifest.claim.instance_digest;
 
     // 2. Verify signatures
-    let mut any_signature_valid = false;
+    let mut _any_signature_valid = false;
 
     for sig_record in &manifest.signatures {
         if sig_record.algorithm != "ed25519" {
@@ -208,40 +209,51 @@ fn verify_detached_manifest_inner(
                 continue;
             }
 
-            if let Ok(pub_bytes_vec) = hex::decode(&pub_entry.key_bytes) {
-                if pub_bytes_vec.len() == 32 {
-                    let mut raw_pub = [0u8; 32];
-                    raw_pub.copy_from_slice(&pub_bytes_vec);
-                    let vk = crate::signing::VerifyingKey::from_bytes(
-                        raw_pub,
-                        sig_record.key_id.clone(),
-                    );
+            #[cfg(feature = "signatures")]
+            {
+                if let Ok(pub_bytes_vec) = hex::decode(&pub_entry.key_bytes) {
+                    if pub_bytes_vec.len() == 32 {
+                        let mut raw_pub = [0u8; 32];
+                        raw_pub.copy_from_slice(&pub_bytes_vec);
+                        let vk = crate::signing::VerifyingKey::from_bytes(
+                            raw_pub,
+                            sig_record.key_id.clone(),
+                        );
 
-                    let claim_bytes = manifest.claim.canonical_bytes();
-                    let result = vk.verify(&claim_bytes, &sig_bytes);
+                        let claim_bytes = manifest.claim.canonical_bytes();
+                        let result = vk.verify(&claim_bytes, &sig_bytes);
 
-                    let is_valid = result == crate::signing::SignatureResult::Valid;
-                    any_signature_valid = any_signature_valid || is_valid;
+                        let is_valid = result == crate::signing::SignatureResult::Valid;
+                        _any_signature_valid = _any_signature_valid || is_valid;
 
-                    let key_id_matched = match trust {
-                        TrustPolicy::TrustNone => false,
-                        TrustPolicy::TrustKeys(keys) => {
-                            keys.iter().any(|t| t == &sig_record.key_id)
-                        }
-                        TrustPolicy::TrustCallback(f) => f(&sig_record.key_id),
-                    };
+                        let key_id_matched = match trust {
+                            TrustPolicy::TrustNone => false,
+                            TrustPolicy::TrustKeys(keys) => {
+                                keys.iter().any(|t| t == &sig_record.key_id)
+                            }
+                            TrustPolicy::TrustCallback(f) => f(&sig_record.key_id),
+                        };
 
-                    builder = builder.add_signature(
-                        SignatureVerification::builder()
-                            .present(true)
-                            .structurally_valid(true)
-                            .cryptographically_valid(is_valid)
-                            .public_key_id(sig_record.key_id.clone())
-                            .key_id_matched(key_id_matched)
-                            .trusted(key_id_matched && is_valid)
-                            .source(FieldSource::DetachedManifest)
-                            .build(),
-                    );
+                        builder = builder.add_signature(
+                            SignatureVerification::builder()
+                                .present(true)
+                                .structurally_valid(true)
+                                .cryptographically_valid(is_valid)
+                                .public_key_id(sig_record.key_id.clone())
+                                .key_id_matched(key_id_matched)
+                                .trusted(key_id_matched && is_valid)
+                                .source(FieldSource::DetachedManifest)
+                                .build(),
+                        );
+                    } else {
+                        builder = builder.add_signature(
+                            SignatureVerification::builder()
+                                .present(true)
+                                .structurally_valid(false)
+                                .source(FieldSource::DetachedManifest)
+                                .build(),
+                        );
+                    }
                 } else {
                     builder = builder.add_signature(
                         SignatureVerification::builder()
@@ -251,11 +263,14 @@ fn verify_detached_manifest_inner(
                             .build(),
                     );
                 }
-            } else {
+            }
+            #[cfg(not(feature = "signatures"))]
+            {
                 builder = builder.add_signature(
                     SignatureVerification::builder()
                         .present(true)
-                        .structurally_valid(false)
+                        .structurally_valid(true)
+                        .cryptographically_valid(false)
                         .source(FieldSource::DetachedManifest)
                         .build(),
                 );
