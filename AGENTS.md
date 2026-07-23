@@ -179,10 +179,19 @@ Architecture docs live in `architecture/` (24 files). All docs have been verifie
 
 ## Fuzzing
 
-Four fuzz targets in `fuzz/`:
+Twelve fuzz targets in `fuzz/`:
 - `pipeline_bytes` — Full bytes-in/bytes-out path
 - `tiled_round_trip` — Tiled steganography end-to-end
 - `jpeg_parser` — JPEG header/entropy/DCT parsing
+- `payload_v3_parser` — Payload v3 TLV parsing
+- `png_metadata` — PNG chunk parsing and metadata injection
+- `webp_riff_parser` — WebP RIFF chunk parsing
+- `xmp_extract` — XMP extraction and normalization
+- `metadata_merge` — Metadata conflict/merge policies
+- `detached_manifest_parse` — Detached manifest bounded parser
+- `detached_manifest_verify` — Detached manifest verification
+- `provenance_canonicalize` — Provenance claim canonicalization
+- `verification_report` — Verification report aggregation
 
 Run with: `cargo +nightly fuzz run <target> -- -max_total_time=60`
 

@@ -949,19 +949,28 @@ impl MetadataTrapProtector {
             let chunk_type = &png_data[pos + 4..pos + 8];
 
             if chunk_type == b"IEND" {
+                let injected_field_count =
+                    metadata.len() + usize::from(dmi.is_some()) + usize::from(seed.is_some());
+                if let Some(lim) = limits {
+                    lim.check_metadata_field_count(injected_field_count)?;
+                }
+
                 if let Some(dmi_val) = dmi {
-                    let xmp_chunk =
-                        Self::create_png_xmp_chunk(&Self::generate_xmp_dmi(dmi_val, seed))?;
+                    let xmp_bytes = Self::generate_xmp_dmi(dmi_val, seed);
+                    if let Some(lim) = limits {
+                        lim.check_metadata_size("XMP", xmp_bytes.len(), lim.max_xmp_bytes())?;
+                    }
+                    let xmp_chunk = Self::create_png_xmp_chunk(&xmp_bytes)?;
                     output.extend_from_slice(&xmp_chunk);
                 }
                 for (key, value) in metadata {
-                    let text_chunk = Self::create_png_text_chunk(key, value)?;
+                    let text_chunk = Self::create_png_text_chunk(key, value, limits)?;
                     output.extend_from_slice(&text_chunk);
                 }
                 if let Some(s) = seed {
                     let desc_value = format!("Protected image. Seed: {}", s);
                     let desc_chunk =
-                        Self::create_png_text_chunk(b"Description", desc_value.as_bytes())?;
+                        Self::create_png_text_chunk(b"Description", desc_value.as_bytes(), limits)?;
                     output.extend_from_slice(&desc_chunk);
                 }
             }
@@ -1116,6 +1125,13 @@ impl MetadataTrapProtector {
         seed: Option<u64>,
         ctx: Option<&ProtectionContext>,
     ) -> Result<()> {
+        let default_limits = crate::ResourceLimits::default();
+        let limits = ctx.map(|c| c.resource_limits());
+        let limits_ref = limits.as_ref().unwrap_or(&default_limits);
+
+        let injected_field_count = metadata.len() + usize::from(dmi.is_some());
+        limits_ref.check_metadata_field_count(injected_field_count)?;
+
         if let Some(dmi_val) = dmi {
             let exif_marker = Self::create_jpeg_exif_marker(&Self::generate_exif_dmi(dmi_val))?;
             output.extend_from_slice(&exif_marker);
@@ -1124,12 +1140,14 @@ impl MetadataTrapProtector {
                 Self::create_jpeg_iptc_marker(&Self::generate_iptc_iim_dmi(dmi_val, seed))?;
             output.extend_from_slice(&iptc_marker);
 
-            let xmp_marker = Self::create_jpeg_xmp_marker(&Self::generate_xmp_dmi(dmi_val, seed))?;
+            let xmp_bytes = Self::generate_xmp_dmi(dmi_val, seed);
+            limits_ref.check_metadata_size("XMP", xmp_bytes.len(), limits_ref.max_xmp_bytes())?;
+            let xmp_marker = Self::create_jpeg_xmp_marker(&xmp_bytes)?;
             output.extend_from_slice(&xmp_marker);
         }
 
         for (key, value) in metadata {
-            let com_chunk = Self::create_jpeg_comment(key, value)?;
+            let com_chunk = Self::create_jpeg_comment(key, value, Some(limits_ref))?;
             output.extend_from_slice(&com_chunk);
         }
 
@@ -1344,7 +1362,15 @@ impl MetadataTrapProtector {
         chunk
     }
 
-    fn create_png_text_chunk(key: &[u8], value: &[u8]) -> Result<Vec<u8>> {
+    fn create_png_text_chunk(
+        key: &[u8],
+        value: &[u8],
+        limits: Option<&crate::ResourceLimits>,
+    ) -> Result<Vec<u8>> {
+        if let Some(lim) = limits {
+            let total = key.len() + 1 + value.len();
+            lim.check_metadata_size("tEXt field", total, lim.max_metadata_field_bytes())?;
+        }
         let mut data = Vec::new();
         data.extend_from_slice(key);
         data.push(0);
@@ -1368,7 +1394,15 @@ impl MetadataTrapProtector {
         Ok(chunk)
     }
 
-    fn create_jpeg_comment(key: &[u8], value: &[u8]) -> Result<Vec<u8>> {
+    fn create_jpeg_comment(
+        key: &[u8],
+        value: &[u8],
+        limits: Option<&crate::ResourceLimits>,
+    ) -> Result<Vec<u8>> {
+        if let Some(lim) = limits {
+            let total = key.len() + 2 + value.len();
+            lim.check_metadata_size("COM field", total, lim.max_metadata_field_bytes())?;
+        }
         let mut comment = Vec::new();
         comment.extend_from_slice(key);
         comment.extend_from_slice(b": ");
@@ -2999,6 +3033,7 @@ mod tests {
                 let text_chunk = MetadataTrapProtector::create_png_text_chunk(
                     b"Description",
                     b"Protected image. Seed: 99",
+                    None,
                 )
                 .unwrap();
                 output.extend_from_slice(&text_chunk);

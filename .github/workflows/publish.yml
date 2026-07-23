@@ -7,24 +7,20 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
-  validate:
-    name: Validate Before Publish
+  verify-rc:
+    name: Verify Release Candidate Exists
     runs-on: ubuntu-latest
     outputs:
       tag_version: ${{ steps.verify-tag.outputs.tag_version }}
+      rc_sha: ${{ steps.find-rc.outputs.rc_sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install Rust (MSRV)
-        uses: dtolnay/rust-toolchain@1.87.0
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
         with:
-          workspaces: ". -> target"
+          fetch-depth: 0
 
       - name: Verify tag matches Cargo.toml
         id: verify-tag
@@ -41,6 +37,32 @@ jobs:
           fi
           echo "tag_version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Find successful RC for this SHA
+        id: find-rc
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PUBLISH_SHA="${{ github.sha }}"
+          echo "Looking for successful RC run for SHA: $PUBLISH_SHA"
+
+          # Search for successful Release Candidate workflow runs
+          RC_RUNS=$(gh run list \
+            --workflow release-candidate.yml \
+            --status completed \
+            --limit 20 \
+            --json databaseId,conclusion,headSha \
+            --jq ".[] | select(.conclusion == \"success\" and .headSha == \"$PUBLISH_SHA\") | .databaseId")
+
+          if [ -z "$RC_RUNS" ]; then
+            echo "::error::No successful release-candidate run found for SHA $PUBLISH_SHA"
+            echo "Run the Release Candidate workflow for this SHA before publishing."
+            exit 1
+          fi
+
+          RC_RUN_ID=$(echo "$RC_RUNS" | head -1)
+          echo "Found successful RC run: #$RC_RUN_ID"
+          echo "rc_sha=$PUBLISH_SHA" >> "$GITHUB_OUTPUT"
+
       - name: Verify clean working tree
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -48,6 +70,35 @@ jobs:
             git status --porcelain
             exit 1
           fi
+
+  validate:
+    name: Validate Before Publish
+    needs: verify-rc
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (at validated SHA)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify-rc.outputs.rc_sha }}
+
+      - name: Verify checkout matches RC SHA
+        run: |
+          CHECKOUT_SHA=$(git rev-parse HEAD)
+          EXPECTED="${{ needs.verify-rc.outputs.rc_sha }}"
+          echo "Checkout SHA:  $CHECKOUT_SHA"
+          echo "Expected SHA:  $EXPECTED"
+          if [ "$CHECKOUT_SHA" != "$EXPECTED" ]; then
+            echo "::error::Checkout SHA does not match the validated RC SHA"
+            exit 1
+          fi
+
+      - name: Install Rust (MSRV)
+        uses: dtolnay/rust-toolchain@1.87.0
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -100,12 +151,14 @@ jobs:
 
   publish:
     name: Publish to crates.io
-    needs: validate
+    needs: [verify-rc, validate]
     runs-on: ubuntu-latest
     environment: crates-io
     steps:
-      - name: Checkout
+      - name: Checkout (at validated SHA)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify-rc.outputs.rc_sha }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -130,13 +183,15 @@ jobs:
 
   github-release:
     name: Create GitHub Release
-    needs: [validate, publish]
+    needs: [verify-rc, validate, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout
+      - name: Checkout (at validated SHA)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify-rc.outputs.rc_sha }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -150,7 +205,7 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p release-artifacts
-          TAG_VERSION="${{ needs.validate.outputs.tag_version }}"
+          TAG_VERSION="${{ needs.verify-rc.outputs.tag_version }}"
           if [ -f target/release/stegoeggo ]; then
             cp target/release/stegoeggo "release-artifacts/stegoeggo-${TAG_VERSION}-linux-amd64"
           fi
@@ -166,7 +221,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Release ${{ needs.validate.outputs.tag_version }}
+          name: Release ${{ needs.verify-rc.outputs.tag_version }}
           generate_release_notes: true
           files: |
             release-artifacts/*

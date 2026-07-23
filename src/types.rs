@@ -3588,9 +3588,59 @@ pub struct ExecutionReport {
     pub format_transcoded: bool,
     /// Warnings generated during execution.
     pub warnings: Vec<ProtectionWarning>,
+    /// Observed resource usage during processing, if tracked.
+    pub resource_usage: Option<crate::resource_limits::ResourceUsage>,
 }
 
 impl ExecutionReport {
+    /// The effective rights policy after resolution.
+    #[must_use]
+    pub fn effective_policy(&self) -> RightsPolicy {
+        self.effective_policy
+    }
+
+    /// The DMI value serialized into metadata, if any.
+    #[must_use]
+    pub fn effective_dmi(&self) -> Option<DmiValue> {
+        self.effective_dmi
+    }
+
+    /// Whether metadata was injected.
+    #[must_use]
+    pub fn metadata_injected(&self) -> bool {
+        self.metadata_injected
+    }
+
+    /// Whether steganographic embedding was attempted.
+    #[must_use]
+    pub fn stego_attempted(&self) -> bool {
+        self.stego_attempted
+    }
+
+    /// Whether steganographic embedding succeeded.
+    #[must_use]
+    pub fn stego_succeeded(&self) -> bool {
+        self.stego_succeeded
+    }
+
+    /// Whether the output format differs from input.
+    #[must_use]
+    pub fn format_transcoded(&self) -> bool {
+        self.format_transcoded
+    }
+
+    /// Warnings generated during execution.
+    #[must_use]
+    pub fn warnings(&self) -> &[ProtectionWarning] {
+        &self.warnings
+    }
+
+    /// Observed resource usage during processing, if tracked.
+    #[must_use]
+    pub fn resource_usage(&self) -> Option<&crate::resource_limits::ResourceUsage> {
+        self.resource_usage.as_ref()
+    }
+
     /// Returns true if any channel executed successfully.
     #[must_use]
     pub fn any_succeeded(&self) -> bool {

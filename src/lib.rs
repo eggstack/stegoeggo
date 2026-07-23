@@ -1042,6 +1042,9 @@ pub fn process_request_bytes_with_report(
         false
     };
 
+    let mut resource_usage = crate::resource_limits::ResourceUsage::begin(img_bytes.len());
+    resource_usage.track_allocation(result.len());
+
     let report = ExecutionReport {
         effective_policy: plan.effective_policy(),
         effective_dmi: plan.effective_dmi(),
@@ -1050,6 +1053,7 @@ pub fn process_request_bytes_with_report(
         stego_succeeded,
         format_transcoded,
         warnings,
+        resource_usage: Some(resource_usage),
     };
 
     Ok((result, report))

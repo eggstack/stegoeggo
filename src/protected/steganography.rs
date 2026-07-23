@@ -8,6 +8,10 @@ use crate::traits::Protector;
 use crate::types::{ProtectionContext, ProtectionLevel, VerificationStatus};
 use crc32fast::Hasher as Crc32Hasher;
 use hmac::{Hmac, Mac};
+
+const DEFAULT_MAX_TILE_ORIGINS: u32 = 64;
+#[cfg(feature = "test-seeds")]
+const DEFAULT_MAX_VERIFICATION_SEEDS: usize = 32;
 use image::{DynamicImage, Rgba, RgbaImage};
 use sha2::Sha256;
 use std::borrow::Cow;
@@ -868,7 +872,7 @@ impl SteganographyProtector {
         // LSB fallback: try known seeds via DynamicImage
         #[cfg(feature = "test-seeds")]
         if let Ok(img) = image::load_from_memory(img_bytes) {
-            for &seed in FALLBACK_SEEDS {
+            for &seed in FALLBACK_SEEDS.iter().take(DEFAULT_MAX_VERIFICATION_SEEDS) {
                 match self.verify_payload_with_seed_outcome(&img, seed, mac_key) {
                     CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
                     CandidateOutcome::Invalid(_) => return VerificationStatus::Invalid,
@@ -954,7 +958,13 @@ impl SteganographyProtector {
         // Crop-resistant path: try tiled extraction as a final fallback.
         // Tiled embedding produces multiple full copies of the payload, so a
         // crop that destroys most pixels can still leave one intact tile.
-        if self.try_tiled_extraction_verify(&rgba, seed, DEFAULT_TILE_SIZE, 64, &[]) {
+        if self.try_tiled_extraction_verify(
+            &rgba,
+            seed,
+            DEFAULT_TILE_SIZE,
+            DEFAULT_MAX_TILE_ORIGINS,
+            &[],
+        ) {
             return true;
         }
 
@@ -1023,7 +1033,13 @@ impl SteganographyProtector {
             }
         }
 
-        self.verify_tiled_extraction_outcome(&rgba, seed, DEFAULT_TILE_SIZE, 64, mac_key)
+        self.verify_tiled_extraction_outcome(
+            &rgba,
+            seed,
+            DEFAULT_TILE_SIZE,
+            DEFAULT_MAX_TILE_ORIGINS,
+            mac_key,
+        )
     }
 
     /// Tri-state variant of `try_tiled_extraction_verify`.
@@ -1075,8 +1091,13 @@ impl SteganographyProtector {
                 return CandidateOutcome::Valid(payload.clone());
             }
 
-            let tiled_outcome =
-                self.verify_extract_f5_tiled(jpeg_bytes, seed, DEFAULT_TILE_SIZE, 64, mac_key);
+            let tiled_outcome = self.verify_extract_f5_tiled(
+                jpeg_bytes,
+                seed,
+                DEFAULT_TILE_SIZE,
+                DEFAULT_MAX_TILE_ORIGINS,
+                mac_key,
+            );
             if let CandidateOutcome::Valid(payload) = &tiled_outcome {
                 return CandidateOutcome::Valid(payload.clone());
             }
@@ -1167,7 +1188,7 @@ impl SteganographyProtector {
 
         // Fallback: try common seeds (metadata stripped during DynamicImage re-encoding)
         #[cfg(feature = "test-seeds")]
-        for &seed in FALLBACK_SEEDS {
+        for &seed in FALLBACK_SEEDS.iter().take(DEFAULT_MAX_VERIFICATION_SEEDS) {
             if let Some(payload) = self.extract_payload_with_seed_and_key(img, seed, mac_key) {
                 return Some(payload);
             }
@@ -1247,7 +1268,7 @@ impl SteganographyProtector {
                     img_bytes,
                     metadata_seed,
                     DEFAULT_TILE_SIZE,
-                    64,
+                    DEFAULT_MAX_TILE_ORIGINS,
                     mac_key,
                 ) {
                     if let Some(decoded) = Self::try_ecc_decode(&payload_bytes) {
@@ -1291,12 +1312,17 @@ impl SteganographyProtector {
         }
 
         // Tiled LSB fallback
+        #[cfg(feature = "test-seeds")]
         if let Ok(img) = image::load_from_memory(img_bytes) {
             let rgba = img.to_rgba8();
-            for &seed in &[42u64, 0, 1, 12345, 99999, 123456789] {
-                if let Some(payload) =
-                    self.extract_lsb_tiled_candidates(&rgba, seed, DEFAULT_TILE_SIZE, 64, mac_key)
-                {
+            for &seed in FALLBACK_SEEDS.iter().take(DEFAULT_MAX_VERIFICATION_SEEDS) {
+                if let Some(payload) = self.extract_lsb_tiled_candidates(
+                    &rgba,
+                    seed,
+                    DEFAULT_TILE_SIZE,
+                    DEFAULT_MAX_TILE_ORIGINS,
+                    mac_key,
+                ) {
                     if let Some(decoded) = Self::try_ecc_decode(&payload) {
                         if let Some(payload) = Self::parse_stego_payload(&decoded) {
                             return Some(payload);
@@ -1539,9 +1565,13 @@ impl SteganographyProtector {
         // payload from any crop that contains at least one intact tile, even
         // when the non-tiled path's pixel positions are completely scrambled
         // by the crop offset.
-        if let Some(payload) =
-            self.extract_lsb_tiled_candidates(&rgba, seed, DEFAULT_TILE_SIZE, 64, mac_key)
-        {
+        if let Some(payload) = self.extract_lsb_tiled_candidates(
+            &rgba,
+            seed,
+            DEFAULT_TILE_SIZE,
+            DEFAULT_MAX_TILE_ORIGINS,
+            mac_key,
+        ) {
             if let Some(decoded) = Self::try_ecc_decode(&payload) {
                 let mut sp = Self::parse_stego_payload(&decoded)?;
                 sp.raw_payload = Some(Self::truncate_to_actual_payload(&payload));
@@ -1572,9 +1602,13 @@ impl SteganographyProtector {
         }
 
         // Crop-resistant fallback: tiled extraction.
-        if let Some(payload) =
-            self.extract_lsb_tiled_candidates(&rgba, seed, DEFAULT_TILE_SIZE, 64, &[])
-        {
+        if let Some(payload) = self.extract_lsb_tiled_candidates(
+            &rgba,
+            seed,
+            DEFAULT_TILE_SIZE,
+            DEFAULT_MAX_TILE_ORIGINS,
+            &[],
+        ) {
             if let Some(decoded) = Self::try_ecc_decode(&payload) {
                 let mut sp = Self::parse_stego_payload(&decoded)?;
                 sp.raw_payload = Some(Self::truncate_to_actual_payload(&payload));
@@ -1913,19 +1947,14 @@ impl SteganographyProtector {
 
     /// Generates the steganography payload containing protection metadata.
     ///
-    /// The payload contains:
-    /// - Version byte (2)
+    /// The payload uses the v3 wire format with a TLV header:
+    /// - Magic bytes (3 bytes: 0x53 0x45 0x03)
     /// - Protection level byte
     /// - Seed (8 bytes, little-endian)
     /// - Intensity (2 bytes, scaled by 100)
-    /// - Timestamp (8 bytes)
-    /// - Content hash (4 bytes, truncated ISCC or SHA-256)
-    /// - DMI value byte + flags byte
-    /// - Reserved (2 bytes)
-    ///
-    /// This is followed by either:
-    /// - HMAC-SHA256 of the first 32 bytes (8 bytes, if mac_key is set), OR
-    /// - Reed-Solomon ECC-encoded payload (96 bytes) + CRC32 checksum (4 bytes) = 100 bytes
+    /// - Flags and extension count
+    /// - Optional TLV extensions
+    /// - Authentication tag (HMAC-SHA256 truncated, or CRC32 + ECC)
     fn generate_payload(&self, ctx: &ProtectionContext) -> Vec<u8> {
         let intensity_val = (ctx.intensity() * 100.0) as u16;
 

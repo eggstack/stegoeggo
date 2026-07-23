@@ -50,8 +50,14 @@ pub enum EmbeddedReferenceStatus {
     /// The manifest declares a reference but no stego payload was found in the image.
     /// Only detached evidence remains.
     Stripped,
-    /// The manifest declares a reference and a stego payload was found in the image,
-    /// but the payload could not be parsed (malformed or corrupted).
+    /// The manifest declares a reference and a stego payload was found, but the
+    /// payload version does not match the declared version.
+    VersionMismatch,
+    /// The manifest declares a reference and a stego payload was found, but the
+    /// payload digest does not match the declared digest.
+    DigestMismatch,
+    /// The manifest declares a reference and a stego payload was found, but the
+    /// payload could not be parsed (malformed, corrupted, or authentication failed).
     Malformed,
     /// The manifest declares a reference and a valid stego payload was found in the image.
     Present,
@@ -331,7 +337,7 @@ fn verify_detached_manifest_inner(
                             report,
                             instance_digest_match,
                             manifest_valid: true,
-                            embedded_reference_status: EmbeddedReferenceStatus::Stripped,
+                            embedded_reference_status: EmbeddedReferenceStatus::VersionMismatch,
                         };
                     }
                     match payload.raw_payload() {
@@ -341,7 +347,7 @@ fn verify_detached_manifest_inner(
                             let actual_digest =
                                 format!("sha256:{}", hex::encode(hasher.finalize()));
                             if actual_digest != reference.payload_digest {
-                                EmbeddedReferenceStatus::Malformed
+                                EmbeddedReferenceStatus::DigestMismatch
                             } else {
                                 EmbeddedReferenceStatus::Present
                             }

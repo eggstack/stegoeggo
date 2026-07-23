@@ -15,6 +15,7 @@ const EXIT_OK: i32 = 0;
 const EXIT_ERROR: i32 = 1;
 const EXIT_CONFIG: i32 = 2;
 const EXIT_INTEGRITY: i32 = 3;
+#[allow(dead_code)]
 const EXIT_TRUST: i32 = 4;
 const EXIT_INTERNAL: i32 = 5;
 
@@ -1041,14 +1042,14 @@ fn main() {
     match run() {
         Ok(()) => std::process::exit(EXIT_OK),
         Err(e) => {
-            let exit_code = classify_error(&e);
+            let exit_code = classify_error(e.as_ref());
             eprintln!("Error: {}", e);
             std::process::exit(exit_code);
         }
     }
 }
 
-fn classify_error(e: &dyn std::error::Error) -> i32 {
+fn classify_error(e: &(dyn std::error::Error + 'static)) -> i32 {
     if let Some(e) = e.downcast_ref::<stegoeggo::Error>() {
         match e {
             Error::Config(_) => EXIT_CONFIG,
@@ -1067,7 +1068,7 @@ fn classify_error(e: &dyn std::error::Error) -> i32 {
             Error::Serialization(_) => EXIT_CONFIG,
             Error::Iscc(_) => EXIT_ERROR,
             Error::VerificationBudgetExceeded { .. } => EXIT_CONFIG,
-            _ => EXIT_ERROR,
+            _ => EXIT_INTERNAL,
         }
     } else {
         EXIT_ERROR
@@ -1076,6 +1077,7 @@ fn classify_error(e: &dyn std::error::Error) -> i32 {
 
 #[derive(serde::Serialize)]
 struct JsonOutput {
+    schema_version: u32,
     status: String,
     output_path: Option<String>,
     warnings: Vec<String>,
@@ -1091,10 +1093,27 @@ struct JsonExecutionReport {
     stego_attempted: bool,
     stego_succeeded: bool,
     format_transcoded: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resource_usage: Option<JsonResourceUsage>,
+}
+
+#[derive(serde::Serialize)]
+struct JsonResourceUsage {
+    input_bytes: usize,
+    png_chunks_scanned: usize,
+    jpeg_segments_scanned: usize,
+    webp_riff_chunks_scanned: usize,
+    xmp_bytes_parsed: usize,
+    metadata_fields_extracted: usize,
+    metadata_bytes_copied: usize,
+    tile_origins_checked: usize,
+    verification_seeds_tried: usize,
+    peak_allocations_bytes: usize,
 }
 
 #[derive(serde::Serialize)]
 struct JsonVerifyOutput {
+    schema_version: u32,
     status: String,
     copyright_holder: Option<String>,
     rights_url: Option<String>,
@@ -1190,6 +1209,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         if args.json {
             let json_output = JsonVerifyOutput {
+                schema_version: 1,
                 status: "ok".to_string(),
                 copyright_holder: notice.copyright_holder().map(String::from),
                 rights_url: notice.rights_url().map(String::from),
@@ -1387,6 +1407,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let ctx_for_display = ProtectionContext::new(args.intensity.clamp(0.0, 1.0), seed)
                 .with_evidence_profile(EvidenceProfile::LegalNotice);
 
+            #[allow(clippy::type_complexity)]
             let results: Vec<
                 Result<(PathBuf, PathBuf, Vec<ProtectionWarning>), (PathBuf, String)>,
             > = if args.jobs > 1 {
@@ -1586,6 +1607,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             write_atomic(&output_path, &output_bytes)?;
 
             let json_output = JsonOutput {
+                schema_version: 1,
                 status: "ok".to_string(),
                 output_path: Some(output_path.display().to_string()),
                 warnings: report.warnings().iter().map(|w| w.to_string()).collect(),
@@ -1596,6 +1618,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     stego_attempted: report.stego_attempted(),
                     stego_succeeded: report.stego_succeeded(),
                     format_transcoded: report.format_transcoded(),
+                    resource_usage: report.resource_usage().map(|u| JsonResourceUsage {
+                        input_bytes: u.input_bytes,
+                        png_chunks_scanned: u.png_chunks_scanned,
+                        jpeg_segments_scanned: u.jpeg_segments_scanned,
+                        webp_riff_chunks_scanned: u.webp_riff_chunks_scanned,
+                        xmp_bytes_parsed: u.xmp_bytes_parsed,
+                        metadata_fields_extracted: u.metadata_fields_extracted,
+                        metadata_bytes_copied: u.metadata_bytes_copied,
+                        tile_origins_checked: u.tile_origins_checked,
+                        verification_seeds_tried: u.verification_seeds_tried,
+                        peak_allocations_bytes: u.peak_allocations_bytes,
+                    }),
                 }),
             };
             println!("{}", serde_json::to_string_pretty(&json_output)?);

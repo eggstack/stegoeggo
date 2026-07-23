@@ -8,7 +8,7 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-stegoeggo = { path = "..", version = "0.3", features = ["fuzz"] }
+stegoeggo = { path = "..", version = "0.3", features = ["fuzz", "detached-manifest", "signatures", "test-seeds"] }
 libfuzzer-sys = "0.4"
 
 [[bin]]
@@ -32,5 +32,53 @@ doc = false
 [[bin]]
 name = "payload_v3_parser"
 path = "fuzz_targets/payload_v3_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "png_metadata"
+path = "fuzz_targets/png_metadata.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "webp_riff_parser"
+path = "fuzz_targets/webp_riff_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "xmp_extract"
+path = "fuzz_targets/xmp_extract.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "metadata_merge"
+path = "fuzz_targets/metadata_merge.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "detached_manifest_parse"
+path = "fuzz_targets/detached_manifest_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "detached_manifest_verify"
+path = "fuzz_targets/detached_manifest_verify.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "provenance_canonicalize"
+path = "fuzz_targets/provenance_canonicalize.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "verification_report"
+path = "fuzz_targets/verification_report.rs"
 test = false
 doc = false

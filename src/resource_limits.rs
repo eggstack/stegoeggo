@@ -214,6 +214,18 @@ impl ResourceLimits {
         }
         Ok(())
     }
+
+    /// Check that the number of metadata fields is within limits.
+    pub fn check_metadata_field_count(&self, count: usize) -> crate::Result<()> {
+        if count > self.max_metadata_fields {
+            return Err(crate::Error::ContainerLimitExceeded {
+                kind: "metadata fields",
+                count,
+                limit: self.max_metadata_fields,
+            });
+        }
+        Ok(())
+    }
 }
 
 /// Builder for [`ResourceLimits`].
@@ -587,7 +599,6 @@ mod tests {
     #[test]
     fn png_chunk_count_exceeds_limit() {
         use crate::protected::metadata_trap::MetadataTrapProtector;
-        use crate::traits::Protector;
         use crate::types::{ImageOutputFormat, ProtectionContext};
 
         let img = image::DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(16, 16, |x, y| {
@@ -607,7 +618,6 @@ mod tests {
     #[test]
     fn png_chunk_bytes_exceeds_limit() {
         use crate::protected::metadata_trap::MetadataTrapProtector;
-        use crate::traits::Protector;
         use crate::types::{ImageOutputFormat, ProtectionContext};
 
         let img = image::DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(16, 16, |x, y| {
@@ -662,7 +672,9 @@ mod tests {
 
     #[test]
     fn metadata_field_bytes_exceeds_limit() {
-        let limits = ResourceLimits::builder().max_metadata_field_bytes(10).build();
+        let limits = ResourceLimits::builder()
+            .max_metadata_field_bytes(10)
+            .build();
         let err = limits
             .check_metadata_size("XMP", 20, limits.max_metadata_field_bytes())
             .unwrap_err();

@@ -19,7 +19,19 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [pipeline_bytes, jpeg_parser, payload_v3_parser, tiled_round_trip]
+        target:
+          - pipeline_bytes
+          - jpeg_parser
+          - payload_v3_parser
+          - tiled_round_trip
+          - png_metadata
+          - webp_riff_parser
+          - xmp_extract
+          - metadata_merge
+          - detached_manifest_parse
+          - detached_manifest_verify
+          - provenance_canonicalize
+          - verification_report
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +57,19 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     strategy:
       matrix:
-        target: [pipeline_bytes, jpeg_parser, payload_v3_parser, tiled_round_trip]
+        target:
+          - pipeline_bytes
+          - jpeg_parser
+          - payload_v3_parser
+          - tiled_round_trip
+          - png_metadata
+          - webp_riff_parser
+          - xmp_extract
+          - metadata_merge
+          - detached_manifest_parse
+          - detached_manifest_verify
+          - provenance_canonicalize
+          - verification_report
     steps:
       - uses: actions/checkout@v4
 
