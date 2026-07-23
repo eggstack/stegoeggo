@@ -1033,8 +1033,7 @@ fn extract_xmp_text_property(xmp: &str, tag: &str) -> Option<String> {
 }
 
 fn extract_xmp_seq_property(xmp: &str, tag: &str) -> Option<String> {
-    extract_xmp_seq_all(xmp, tag)
-        .and_then(|v| v.into_iter().next())
+    extract_xmp_seq_all(xmp, tag).and_then(|v| v.into_iter().next())
 }
 
 fn extract_xmp_seq_all(xmp: &str, tag: &str) -> Option<Vec<String>> {
