@@ -81,7 +81,7 @@ Injects:
 2. **EXIF chunk** — UserComment with seed
 3. Updates RIFF file size header
 
-**External visibility**: XMP DMI fields use canonical `plus:DataMining` and are visible via `exiftool`. Legal fields (Copyright, Creator, UsageTerms, AIConstraints) are embedded as standard XMP properties (`dc:rights`, `dc:creator`, `xmpRights:UsageTerms`, `stegoeggo:AIConstraints`). `photoshop:Credit` maps to `credit_line` (not `contact`). `photoshop:DateCreated` maps to `creation_date`. Additional v0.3.0 fields: `stegoeggo:CopyrightOwner`, `stegoeggo:LicensorName`, `stegoeggo:LicensorEmail`, `stegoeggo:LicensorURL`, `xmp:MetadataDate`, `stegoeggo:NoticeAppliedAt`. Contact is NOT written to `photoshop:Credit`; it is only available in PNG tEXt and JPEG COM markers. TDM reservation is no longer emitted by default.
+**External visibility**: XMP DMI fields use canonical `plus:DataMining` and are visible via `exiftool`. Legal fields (Copyright, Creator, UsageTerms, AIConstraints) are embedded as standard XMP properties (`dc:rights`, `dc:creator`, `xmpRights:UsageTerms`, `stegoeggo:AIConstraints`). `photoshop:Credit` maps to `credit_line` (not `contact`). `photoshop:DateCreated` maps to `creation_date`. Additional v0.2.2 fields: `stegoeggo:CopyrightOwner`, `stegoeggo:LicensorName`, `stegoeggo:LicensorEmail`, `stegoeggo:LicensorURL`, `xmp:MetadataDate`, `stegoeggo:NoticeAppliedAt`. Contact is NOT written to `photoshop:Credit`; it is only available in PNG tEXt and JPEG COM markers. TDM reservation is no longer emitted by default.
 
 ## Metadata Merge Behavior
 

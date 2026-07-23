@@ -1570,7 +1570,7 @@ impl ProtectionContext {
     /// Only enable for content you own. May create legal liability otherwise.
     #[must_use]
     #[deprecated(
-        since = "0.3.0",
+        since = "0.2.2",
         note = "Legal claims are auto-enabled when LegalMetadata is present. \
                 This method is redundant for the normal case and produces a \
                 ContradictoryLegalClaims warning when used with `false` \
@@ -2462,7 +2462,7 @@ impl NoticeVerification {
             || self.notice_applied_at.is_some()
     }
 
-    #[deprecated(since = "0.3.0", note = "use NoticeVerificationBuilder instead")]
+    #[deprecated(since = "0.2.2", note = "use NoticeVerificationBuilder instead")]
     #[allow(clippy::too_many_arguments, dead_code)]
     pub(crate) fn new(
         copyright_holder: Option<String>,

@@ -15,7 +15,7 @@ fn test_claim_builder() {
         .with_creation_time(1700000000)
         .with_source_facts("png", 1920, 1080, 524288)
         .with_issuer_id("issuer123".to_string())
-        .with_software("stegoeggo/0.3.0")
+        .with_software("stegoeggo/0.2.2")
         .with_parent_claim("parent_claim_id".to_string())
         .with_statement_uri("https://example.com/license");
 
@@ -28,7 +28,7 @@ fn test_claim_builder() {
     assert_eq!(claim.height, 1080);
     assert_eq!(claim.file_size, 524288);
     assert_eq!(claim.issuer_id, "issuer123");
-    assert_eq!(claim.software, "stegoeggo/0.3.0");
+    assert_eq!(claim.software, "stegoeggo/0.2.2");
     assert_eq!(claim.parent_claim_id, Some("parent_claim_id".to_string()));
     assert_eq!(
         claim.statement_uri,
@@ -91,7 +91,7 @@ fn test_claim_serialization_roundtrip() {
         .with_content_code("iscc:roundtrip".to_string())
         .with_creation_time(3000)
         .with_source_facts("webp", 800, 600, 2048)
-        .with_software("stegoeggo/0.3.0")
+        .with_software("stegoeggo/0.2.2")
         .with_issuer_id("test-issuer".to_string())
         .with_statement_uri("https://example.com/license");
 

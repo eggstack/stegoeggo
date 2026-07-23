@@ -85,7 +85,7 @@ The following modules are public but oriented toward internal use. API stability
 
 ## Deprecation Removal Policy
 
-Deprecated API surfaces introduced in v0.3.0 are guaranteed to remain available through the v0.x series. They will be removed in v1.0.0 or the next semver-major release, whichever comes first.
+Deprecated API surfaces introduced in v0.2.2 are guaranteed to remain available through the v0.x series. They will be removed in v1.0.0 or the next semver-major release, whichever comes first.
 
 ## Retention Promises
 

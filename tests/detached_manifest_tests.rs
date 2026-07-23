@@ -15,7 +15,7 @@ fn make_test_claim() -> ProvenanceClaim {
         .with_content_code("iscc:test123".to_string())
         .with_creation_time(1700000000)
         .with_source_facts("png", 1920, 1080, 524288)
-        .with_software("stegoeggo/0.3.0")
+        .with_software("stegoeggo/0.2.2")
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn make_signed_manifest() -> (DetachedManifest, Vec<u8>, SigningKey) {
         .with_content_code("iscc:test-sign".to_string())
         .with_creation_time(1700000000)
         .with_source_facts("png", 100, 100, 10000)
-        .with_software("stegoeggo/0.3.0")
+        .with_software("stegoeggo/0.2.2")
         .with_instance_digest(image_bytes);
 
     let claim_bytes = claim.canonical_bytes();
@@ -371,7 +371,7 @@ fn test_unknown_algorithm_rejected() {
         .with_content_code("iscc:test-algo".to_string())
         .with_creation_time(1700000000)
         .with_source_facts("png", 100, 100, 10000)
-        .with_software("stegoeggo/0.3.0")
+        .with_software("stegoeggo/0.2.2")
         .with_instance_digest(image_bytes);
 
     let claim_bytes = claim.canonical_bytes();
@@ -404,7 +404,7 @@ fn test_encoding_mismatch_rejected() {
         .with_content_code("iscc:test-encoding".to_string())
         .with_creation_time(1700000000)
         .with_source_facts("png", 100, 100, 10000)
-        .with_software("stegoeggo/0.3.0")
+        .with_software("stegoeggo/0.2.2")
         .with_instance_digest(image_bytes);
 
     let claim_bytes = claim.canonical_bytes();
@@ -435,7 +435,7 @@ fn test_wrong_key_content_fails() {
         .with_content_code("iscc:test-wrong-key".to_string())
         .with_creation_time(1700000000)
         .with_source_facts("png", 100, 100, 10000)
-        .with_software("stegoeggo/0.3.0")
+        .with_software("stegoeggo/0.2.2")
         .with_instance_digest(image_bytes);
 
     let sig_bytes = [0u8; 64];
@@ -476,7 +476,7 @@ fn test_embedded_reference_raw_payload_none() {
         .with_content_code("iscc:raw-payload-test".to_string())
         .with_creation_time(1700000000)
         .with_source_facts("png", 64, 64, image_bytes.len() as u64)
-        .with_software("stegoeggo/0.3.0")
+        .with_software("stegoeggo/0.2.2")
         .with_instance_digest(&image_bytes);
 
     let manifest = DetachedManifest::new(claim).with_embedded_reference(EmbeddedReference {
@@ -503,7 +503,7 @@ fn test_resource_limits_rejects_oversized_input() {
         .with_content_code("iscc:limits-test".to_string())
         .with_creation_time(1700000000)
         .with_source_facts("png", 100, 100, 10000)
-        .with_software("stegoeggo/0.3.0");
+        .with_software("stegoeggo/0.2.2");
 
     let manifest = DetachedManifest::new(claim);
     let result = verify_detached_manifest_with_limits(
@@ -539,7 +539,7 @@ fn test_embedded_reference_stripped_for_invalid_image_bytes() {
         .with_content_code("iscc:test-stripped".to_string())
         .with_instance_digest(b"not-a-real-image")
         .with_source_facts("png", 100, 100, 10000)
-        .with_software("stegoeggo/0.3.0");
+        .with_software("stegoeggo/0.2.2");
 
     let manifest = DetachedManifest::new(claim).with_embedded_reference(EmbeddedReference {
         payload_digest: "sha256:test".to_string(),
@@ -613,7 +613,7 @@ fn test_duplicate_key_ids_in_signatures_are_handled() {
         .with_content_code("iscc:dup-test".to_string())
         .with_creation_time(1700000000)
         .with_source_facts("png", 100, 100, 10000)
-        .with_software("stegoeggo/0.3.0")
+        .with_software("stegoeggo/0.2.2")
         .with_instance_digest(image_bytes);
 
     let claim_bytes = claim.canonical_bytes();
@@ -747,7 +747,7 @@ fn test_embedded_reference_wrong_digest_reports_stripped_without_payload() {
         .with_content_code("iscc:digest-test".to_string())
         .with_creation_time(1700000000)
         .with_source_facts("png", 64, 64, image_bytes.len() as u64)
-        .with_software("stegoeggo/0.3.0")
+        .with_software("stegoeggo/0.2.2")
         .with_instance_digest(&image_bytes);
 
     let manifest = DetachedManifest::new(claim).with_embedded_reference(EmbeddedReference {

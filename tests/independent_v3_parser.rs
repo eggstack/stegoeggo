@@ -217,7 +217,7 @@ fn test_independent_v3_full_featured() {
         .extension(ExtensionEntry {
             extension_type: 0x0005,
             critical: false,
-            data: b"stegoeggo/0.3.0".to_vec(),
+            data: b"stegoeggo/0.2.2".to_vec(),
         })
         .build()
         .expect("build full-featured v3");
@@ -235,7 +235,7 @@ fn test_independent_v3_full_featured() {
             );
             assert_eq!(v3.header.auth_tag_len, 16);
             assert_eq!(v3.extensions.len(), 1);
-            assert_eq!(v3.extensions[0].data, b"stegoeggo/0.3.0");
+            assert_eq!(v3.extensions[0].data, b"stegoeggo/0.2.2");
             let flags = PayloadFlags::from_bits(v3.header.flags);
             assert!(flags.tiled);
             assert!(flags.has_key_id);

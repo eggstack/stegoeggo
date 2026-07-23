@@ -1,8 +1,8 @@
-# Migration Guide: v0.2.x to v0.3.0
+# Migration Guide: v0.2.x to v0.2.2
 
 ## Overview
 
-v0.3.0 introduces semantic correctness for legal metadata across all formats (PNG, JPEG, WebP). The same `LegalMetadata` input now produces semantically equivalent output regardless of output format.
+v0.2.2 introduces semantic correctness for legal metadata across all formats (PNG, JPEG, WebP). The same `LegalMetadata` input now produces semantically equivalent output regardless of output format.
 
 ## Breaking Changes
 
@@ -84,7 +84,7 @@ stegoeggo protect --copyright-notice "Jane Doe" image.png
 ## New Types
 
 - `RightsNotice` — Normalized rights notice (public, for advanced use)
-- `LocalizedText` — Text with language tag (already public since v0.3.0)
+- `LocalizedText` — Text with language tag (already public since v0.2.2)
 - `ProtectionWarning::ContradictoryLegalClaims` — Warning variant
 
 ## Verification API

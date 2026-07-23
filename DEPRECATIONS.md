@@ -2,19 +2,19 @@
 
 This document tracks all deprecated public API surfaces, their replacements, and removal timeline.
 
-## Deprecated in v0.3.0 (Release 4/5)
+## Deprecated in v0.2.2 (Release 4/5)
 
 | Deprecated API | Replacement | Introduced | Earliest Removal |
 |----------------|-------------|------------|------------------|
-| `ProtectionLevel` | `ProtectionRequest` + `RightsPolicy` | v0.3.0 | v1.0.0 |
-| `EvidenceProfile` | `ProtectionPreset` | v0.3.0 | v1.0.0 |
-| `with_dmi()` | `RightsPolicy` in `ProtectionRequest` | v0.3.0 | v1.0.0 |
-| `with_metadata_injection()` | `ProtectionChannels` | v0.3.0 | v1.0.0 |
-| `with_inject_legal_claims()` | Auto-enabled with `LegalMetadata` | v0.3.0 | v1.0.0 |
-| `compute_iscc()` | `compute_content_identifiers()` | v0.3.0 | v1.0.0 |
-| `compute_iscc_detailed()` | `compute_content_identifiers()` | v0.3.0 | v1.0.0 |
-| `VerificationStatus` | `VerificationReport` | v0.3.0 | v1.0.0 |
-| `NoticeVerification::new()` (positional) | `NoticeVerification::builder()` | v0.3.0 | v1.0.0 |
+| `ProtectionLevel` | `ProtectionRequest` + `RightsPolicy` | v0.2.2 | v1.0.0 |
+| `EvidenceProfile` | `ProtectionPreset` | v0.2.2 | v1.0.0 |
+| `with_dmi()` | `RightsPolicy` in `ProtectionRequest` | v0.2.2 | v1.0.0 |
+| `with_metadata_injection()` | `ProtectionChannels` | v0.2.2 | v1.0.0 |
+| `with_inject_legal_claims()` | Auto-enabled with `LegalMetadata` | v0.2.2 | v1.0.0 |
+| `compute_iscc()` | `compute_content_identifiers()` | v0.2.2 | v1.0.0 |
+| `compute_iscc_detailed()` | `compute_content_identifiers()` | v0.2.2 | v1.0.0 |
+| `VerificationStatus` | `VerificationReport` | v0.2.2 | v1.0.0 |
+| `NoticeVerification::new()` (positional) | `NoticeVerification::builder()` | v0.2.2 | v1.0.0 |
 
 ## Migration Examples
 

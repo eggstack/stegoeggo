@@ -94,7 +94,7 @@ fn test_known_answer_canonical_claim_deterministic() {
         .with_creation_time(1700000000)
         .with_source_facts("png", 1920, 1080, 524288)
         .with_issuer_id("dGVzdC1pc3N1ZXI".to_string())
-        .with_software("stegoeggo/0.3.0");
+        .with_software("stegoeggo/0.2.2");
 
     let bytes1 = claim.canonical_bytes();
     let bytes2 = claim.canonical_bytes();
@@ -150,7 +150,7 @@ fn test_known_answer_manifest_roundtrip() {
         .with_content_code("iscc:manifest-test".to_string())
         .with_creation_time(1700000000)
         .with_source_facts("jpeg", 640, 480, 102400)
-        .with_software("stegoeggo/0.3.0");
+        .with_software("stegoeggo/0.2.2");
 
     let manifest = DetachedManifest::new(claim)
         .with_signature(SignatureRecord {
@@ -212,7 +212,7 @@ fn test_known_answer_manifest_digest_stability() {
         .with_content_code("iscc:digest-test".to_string())
         .with_creation_time(1700000000)
         .with_source_facts("png", 800, 600, 4096)
-        .with_software("stegoeggo/0.3.0");
+        .with_software("stegoeggo/0.2.2");
 
     let manifest = DetachedManifest::new(claim);
     let digest1 = manifest.digest();

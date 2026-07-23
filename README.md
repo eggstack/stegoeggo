@@ -107,7 +107,7 @@ stegoeggo artwork.png -o artwork_protected.png \
   --rights-url "https://example.com/rights/artwork" \
   --no-genai-training
 
-# With full legal metadata including new v0.3.0 fields
+# With full legal metadata including new v0.2.2 fields
 stegoeggo photo.jpg --copyright-holder "Acme Corp" --creator "Jane Doe" \
   --credit-line "Photo by Jane Doe / Acme Corp" \
   --copyright-owner "Acme Corp" \
@@ -845,7 +845,7 @@ The primary deterrence mechanism is **visible metadata injection** — canonical
 
 ## Performance
 
-Benchmarked on Apple M4 Pro (12 cores), version 0.3.0.
+Benchmarked on Apple M4 Pro (12 cores), version 0.2.2.
 
 ### In-Memory Processing (`DynamicImage` path)
 
