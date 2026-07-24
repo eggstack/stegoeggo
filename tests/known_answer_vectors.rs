@@ -156,12 +156,12 @@ fn test_known_answer_manifest_roundtrip() {
         .with_signature(SignatureRecord {
             algorithm: "ed25519".to_string(),
             key_id: vec![0xAA, 0xBB],
-            signature: "abcdef0123456789".to_string(),
+            signature: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789".to_string(),
         })
         .with_public_key(PublicKeyEntry {
             key_id: vec![0xAA, 0xBB],
             algorithm: "ed25519".to_string(),
-            key_bytes: "0123456789abcdef0123456789abcdef".to_string(),
+            key_bytes: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
         })
         .with_embedded_reference(EmbeddedReference {
             payload_digest:

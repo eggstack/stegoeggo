@@ -60,7 +60,48 @@ pub enum EmbeddedReferenceStatus {
     /// payload could not be parsed (malformed, corrupted, or authentication failed).
     Malformed,
     /// The manifest declares a reference and a valid stego payload was found in the image.
+    #[deprecated(note = "use PresentValid")]
     Present,
+    /// The manifest declares a reference and a valid stego payload was found in the image.
+    PresentValid,
+    /// The manifest declares an HMAC-protected reference but no MAC key is available.
+    AuthenticationKeyMissing,
+    /// The manifest declares an HMAC-protected reference and verification failed.
+    AuthenticationFailed,
+    /// The manifest declares a reference but the payload version is not supported.
+    UnsupportedVersion,
+}
+
+/// Overall status of detached manifest verification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetachedOverallStatus {
+    /// Manifest is valid, binding matches, at least one signature is cryptographically valid,
+    /// and a caller-trusted key produced a valid signature.
+    VerifiedTrusted,
+    /// Manifest is valid, binding matches, at least one signature is cryptographically valid,
+    /// but no caller-trusted key produced a valid signature.
+    VerifiedUntrusted,
+    /// Manifest failed to parse or resource limits were exceeded.
+    InvalidConfiguration,
+    /// Image instance digest does not match the manifest claim.
+    BindingFailure,
+    /// No signature was cryptographically valid.
+    SignatureFailure,
+    /// Embedded reference check failed (stripped, version mismatch, digest mismatch, etc.).
+    EmbeddedReferenceFailure,
+}
+
+impl DetachedOverallStatus {
+    /// Map this status to a CLI exit code.
+    #[must_use]
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Self::VerifiedTrusted => 0,
+            Self::VerifiedUntrusted => 4,
+            Self::InvalidConfiguration => 2,
+            Self::BindingFailure | Self::SignatureFailure | Self::EmbeddedReferenceFailure => 3,
+        }
+    }
 }
 
 /// Result of verifying a detached manifest against an image.
@@ -74,6 +115,42 @@ pub struct ManifestVerification {
     pub manifest_valid: bool,
     /// Status of the embedded payload reference.
     pub embedded_reference_status: EmbeddedReferenceStatus,
+}
+
+impl ManifestVerification {
+    /// Compute the overall verification status.
+    ///
+    /// Priority: InvalidConfiguration > BindingFailure > SignatureFailure > EmbeddedReferenceFailure > Verified.
+    #[must_use]
+    pub fn overall_status(&self) -> DetachedOverallStatus {
+        if !self.manifest_valid {
+            return DetachedOverallStatus::InvalidConfiguration;
+        }
+        if !self.instance_digest_match {
+            return DetachedOverallStatus::BindingFailure;
+        }
+        if !self
+            .report
+            .signatures()
+            .iter()
+            .any(|s| s.cryptographically_valid())
+        {
+            return DetachedOverallStatus::SignatureFailure;
+        }
+        match self.embedded_reference_status {
+            #[allow(deprecated)]
+            EmbeddedReferenceStatus::NotProvided
+            | EmbeddedReferenceStatus::Present
+            | EmbeddedReferenceStatus::PresentValid => {
+                if self.report.trust().trusted() {
+                    DetachedOverallStatus::VerifiedTrusted
+                } else {
+                    DetachedOverallStatus::VerifiedUntrusted
+                }
+            }
+            _ => DetachedOverallStatus::EmbeddedReferenceFailure,
+        }
+    }
 }
 
 /// Verify a detached manifest against image bytes using a [`TrustPolicy`].
@@ -372,7 +449,7 @@ fn verify_detached_manifest_inner(
                             if actual_digest != reference.payload_digest {
                                 EmbeddedReferenceStatus::DigestMismatch
                             } else {
-                                EmbeddedReferenceStatus::Present
+                                EmbeddedReferenceStatus::PresentValid
                             }
                         }
                         None => EmbeddedReferenceStatus::Malformed,

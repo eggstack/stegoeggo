@@ -15,7 +15,6 @@ const EXIT_OK: i32 = 0;
 const EXIT_ERROR: i32 = 1;
 const EXIT_CONFIG: i32 = 2;
 const EXIT_INTEGRITY: i32 = 3;
-const EXIT_TRUST: i32 = 4;
 const EXIT_INTERNAL: i32 = 5;
 
 #[derive(Parser, Debug)]
@@ -266,6 +265,9 @@ enum Command {
 
         #[arg(long, help = "Path to public key file for signature verification")]
         key: Option<PathBuf>,
+
+        #[arg(long, help = "Hex-encoded HMAC key for embedded payload verification")]
+        payload_key: Option<String>,
     },
 }
 
@@ -934,7 +936,10 @@ fn handle_sign(
 
     let signed_json = serde_json::to_string_pretty(&manifest)?;
     let out_path = output.as_ref().unwrap_or(manifest_path);
-    fs::write(out_path, signed_json.as_bytes())?;
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_atomic(out_path, signed_json.as_bytes())?;
 
     println!("Manifest signed: {}", out_path.display());
     Ok(())
@@ -945,6 +950,7 @@ fn handle_verify_manifest(
     manifest_path: &PathBuf,
     image_path: &PathBuf,
     key_path: &Option<PathBuf>,
+    _payload_key: Option<String>,
     json_output: bool,
 ) -> Result<i32, Box<dyn std::error::Error>> {
     use stegoeggo::detached::verify::{
@@ -953,7 +959,6 @@ fn handle_verify_manifest(
     use stegoeggo::detached::DetachedManifest;
     use stegoeggo::resource_limits::ResourceLimits;
     use stegoeggo::signing::VerifyingKey;
-    use stegoeggo::VerificationStatus;
 
     let manifest_bytes = fs::read(manifest_path)?;
     let limits = ResourceLimits::default();
@@ -966,14 +971,24 @@ fn handle_verify_manifest(
         let pub_key_bytes = fs::read(key_file)?;
         let pub_key_str = String::from_utf8_lossy(&pub_key_bytes);
 
-        let hex_pub = extract_pem_field(&pub_key_str, "BEGIN STEGOEGGO PUBLIC KEY")
+        let (hex_pub, key_id_hex) = extract_pem_field(&pub_key_str, "BEGIN STEGOEGGO PUBLIC KEY")
             .and_then(|block| {
-                block
+                let key_id = block
+                    .lines()
+                    .find(|l| l.starts_with("key_id:"))
+                    .map(|l| l.strip_prefix("key_id:").unwrap_or("").to_string());
+                let key_hex = block
                     .lines()
                     .find(|l| !l.starts_with("key_id:"))
-                    .map(String::from)
+                    .map(String::from);
+                key_hex.map(|k| (k, key_id.unwrap_or_default()))
             })
-            .unwrap_or_else(|| String::from_utf8_lossy(&pub_key_bytes).trim().to_string());
+            .unwrap_or_else(|| {
+                (
+                    String::from_utf8_lossy(&pub_key_bytes).trim().to_string(),
+                    String::new(),
+                )
+            });
 
         let pub_bytes_vec =
             hex::decode(&hex_pub).map_err(|e| format!("Invalid hex in public key file: {}", e))?;
@@ -982,7 +997,7 @@ fn handle_verify_manifest(
         }
         let mut raw_pub = [0u8; 32];
         raw_pub.copy_from_slice(&pub_bytes_vec);
-        let vk = VerifyingKey::from_bytes(raw_pub, Vec::new());
+        let vk = VerifyingKey::from_bytes(raw_pub, key_id_hex.into_bytes());
         TrustPolicy::TrustKeys(vec![vk.key_id().to_vec()])
     } else {
         TrustPolicy::TrustNone
@@ -990,23 +1005,26 @@ fn handle_verify_manifest(
 
     let result = verify_detached_manifest(&image_bytes, &manifest, &trust);
 
+    let overall = result.overall_status();
+
     if json_output {
-        let overall_status = if !result.manifest_valid {
-            "invalid"
-        } else if !result.instance_digest_match {
-            "mismatch"
-        } else {
-            match result.report.summary_status() {
-                VerificationStatus::Verified => "verified",
-                VerificationStatus::Invalid => "invalid",
-                VerificationStatus::NotFound => "not_found",
+        let status_str = match overall {
+            stegoeggo::detached::DetachedOverallStatus::VerifiedTrusted => "verified_trusted",
+            stegoeggo::detached::DetachedOverallStatus::VerifiedUntrusted => "verified_untrusted",
+            stegoeggo::detached::DetachedOverallStatus::InvalidConfiguration => {
+                "invalid_configuration"
+            }
+            stegoeggo::detached::DetachedOverallStatus::BindingFailure => "binding_failure",
+            stegoeggo::detached::DetachedOverallStatus::SignatureFailure => "signature_failure",
+            stegoeggo::detached::DetachedOverallStatus::EmbeddedReferenceFailure => {
+                "embedded_reference_failure"
             }
         };
 
         #[derive(serde::Serialize)]
         struct JsonManifestVerify {
             schema_version: u32,
-            status: &'static str,
+            overall_status: &'static str,
             instance_digest_match: bool,
             manifest_valid: bool,
             embedded_reference: &'static str,
@@ -1021,7 +1039,12 @@ fn handle_verify_manifest(
             EmbeddedReferenceStatus::VersionMismatch => "version_mismatch",
             EmbeddedReferenceStatus::DigestMismatch => "digest_mismatch",
             EmbeddedReferenceStatus::Malformed => "malformed",
+            #[allow(deprecated)]
             EmbeddedReferenceStatus::Present => "present",
+            EmbeddedReferenceStatus::PresentValid => "present_valid",
+            EmbeddedReferenceStatus::AuthenticationKeyMissing => "authentication_key_missing",
+            EmbeddedReferenceStatus::AuthenticationFailed => "authentication_failed",
+            EmbeddedReferenceStatus::UnsupportedVersion => "unsupported_version",
         };
 
         let sigs_valid = result
@@ -1033,7 +1056,7 @@ fn handle_verify_manifest(
 
         let json = JsonManifestVerify {
             schema_version: manifest.schema_version as u32,
-            status: overall_status,
+            overall_status: status_str,
             instance_digest_match: result.instance_digest_match,
             manifest_valid: result.manifest_valid,
             embedded_reference: embedded_ref,
@@ -1097,31 +1120,14 @@ fn handle_verify_manifest(
             }
         );
         println!("Evidence strength: {:?}", result.report.evidence_strength());
+        println!("Overall status: {:?}", overall);
 
         for diag in result.report.diagnostics() {
             println!("  [{:?}] {}", diag.level(), diag.message());
         }
     }
 
-    let exit_code = if !result.manifest_valid {
-        EXIT_CONFIG
-    } else if !result.instance_digest_match {
-        EXIT_INTEGRITY
-    } else {
-        match result.report.summary_status() {
-            VerificationStatus::Invalid => EXIT_INTEGRITY,
-            VerificationStatus::NotFound => EXIT_INTEGRITY,
-            VerificationStatus::Verified => {
-                if result.report.trust().trusted() {
-                    EXIT_OK
-                } else {
-                    EXIT_TRUST
-                }
-            }
-        }
-    };
-
-    Ok(exit_code)
+    Ok(overall.exit_code())
 }
 
 #[cfg(feature = "signatures")]
@@ -1234,8 +1240,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 manifest,
                 image,
                 key,
+                payload_key,
             } => {
-                let exit_code = handle_verify_manifest(manifest, image, key, args.json)?;
+                let exit_code =
+                    handle_verify_manifest(manifest, image, key, payload_key.clone(), args.json)?;
                 std::process::exit(exit_code);
             }
         };

@@ -91,6 +91,8 @@ src/
 - `SigningKey` / `VerifyingKey` — Ed25519 key types (signatures feature)
 - `VerificationReport` — Structured verification results
 - `PayloadV3Header` — v3 payload header
+- `DetachedOverallStatus` — Overall verification verdict for detached manifests
+- `EmbeddedReferenceStatus` — Status of embedded manifest reference: `PresentValid`, `AuthenticationKeyMissing`, `AuthenticationFailed`, `UnsupportedVersion` (plus deprecated `Present` alias)
 
 ## Features
 
@@ -257,7 +259,7 @@ CLI exit codes: 0=ok, 1=error, 2=config, 3=integrity, 4=trust (untrusted but val
 - **Payload version migration**: Current version is 3. V1 (24-byte) and V2 (24-byte header + ECC/HMAC) still supported for extraction. V3 adds TLV extensions with domain-separated authentication. V3 extraction paths (magic bytes `[0x53, 0x45]`) are tried first in `verify_checksum` and `verify_payload_integrity` before falling back to V2/V1 sizes
 - **CLI file path**: CLI binary lives at `stegoeggo-cli/src/main.rs`, not `src/bin/`
 - **CLI batch filename collisions**: Duplicate output stems get `_protected_1`, `_protected_2`, etc.
-- **CLI legal metadata flags**: `--copyright-holder`, `--creator`, `--contact`, `--rights-url`, `--usage-terms`, `--ai-constraints`, `--credit-line`, `--copyright-owner`, `--licensor-name`, `--licensor-email`, `--licensor-url`, `--content-created-at` set `LegalMetadata` fields. `--no-ai-training`, `--no-genai-training`, `--tdm-reserved` are DMI presets that also set default `ai_constraints` text. Any legal flag auto-enables legal claims (no explicit `--legal-claims` needed). `--metadata false` + legal flags → error. `--strict` exits with error if any warnings have Error severity. `--tdm-reserved` is deprecated (TDMRep deployment deferred)
+- **CLI legal metadata flags**: `--copyright-holder`, `--creator`, `--contact`, `--rights-url`, `--usage-terms`, `--ai-constraints`, `--credit-line`, `--copyright-owner`, `--licensor-name`, `--licensor-email`, `--licensor-url`, `--content-created-at` set `LegalMetadata` fields. `--no-ai-training`, `--no-genai-training`, `--tdm-reserved` are DMI presets that also set default `ai_constraints` text. Any legal flag auto-enables legal claims (no explicit `--legal-claims` needed). `--metadata false` + legal flags → error. `--strict` exits with error if any warnings have Error severity. `--tdm-reserved` is deprecated (TDMRep deployment deferred). `--payload-key` provides HMAC key for payload verification
 - **Tiled steganography** (`with_tile_size(n)`): Crop-resistant mode. Embeds full payload per tile. Tiled F5 limited to tile-aligned crops without re-encode. `tile_seed(master_seed, tile_x, tile_y)` uses splitmix64. Tiled paths are verification fallbacks
 - **F5 tiled block set**: MCU-interleaved block ordering: `block_idx = (mcu_y * mcus_per_row + mcu_x) * h * v + sub_y * h + sub_x`. Do NOT assume row-major ordering
 - **ProtectionWarning variants**: 6 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped`, `DctCapacityInsufficient`. Returned by `process_image_bytes_with_warnings`

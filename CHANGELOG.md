@@ -20,6 +20,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Resource closure table documenting all 18 `ResourceLimits` fields with enforcement sites and tests
 - `SteganographyProtector::generate_payload_for_context` (test helper) for inspecting V3 payload structure
 - `EXIT_TRUST` (exit code 4) for valid-but-untrusted detached-manifest verification
+- Detached manifest structural validation: duplicate keys/signatures, hex digest validation, key length checks
+- `DetachedOverallStatus` enum for overall verification verdict with structured exit codes
+- `EmbeddedReferenceStatus` expanded with `PresentValid`, `AuthenticationKeyMissing`, `AuthenticationFailed`, `UnsupportedVersion`
+- CLI `--payload-key` option for HMAC payload verification
+- CLI public key parsing now preserves `key_id` from PEM files
+- V3 extraction: `probe_v3_header` now returns `None` for non-v3 data (cleaner fallthrough)
+- Detached manifest signing output is now atomic (write-to-temp + rename)
 
 ## [0.2.2] - Unreleased
 

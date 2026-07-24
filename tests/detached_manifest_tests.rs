@@ -92,12 +92,12 @@ fn test_manifest_from_json_roundtrip() {
         .with_signature(SignatureRecord {
             algorithm: "ed25519".to_string(),
             key_id: vec![10],
-            signature: "sig_data".to_string(),
+            signature: "a".repeat(128),
         })
         .with_public_key(PublicKeyEntry {
             key_id: vec![10],
             algorithm: "ed25519".to_string(),
-            key_bytes: "pub_key_hex".to_string(),
+            key_bytes: "b".repeat(64),
         })
         .with_embedded_reference(EmbeddedReference {
             payload_digest: "sha256:abcdef".to_string(),
@@ -637,10 +637,10 @@ fn test_duplicate_key_ids_in_signatures_are_handled() {
             key_bytes: hex::encode(vk.as_bytes()),
         });
 
+    assert_eq!(manifest.signatures.len(), 1);
     let result = verify_detached_manifest(image_bytes, &manifest, &TrustPolicy::TrustNone);
-    assert_eq!(result.report.signatures().len(), 2);
+    assert_eq!(result.report.signatures().len(), 1);
     assert!(result.report.signatures()[0].cryptographically_valid());
-    assert!(result.report.signatures()[1].cryptographically_valid());
 }
 
 #[cfg(feature = "signatures")]

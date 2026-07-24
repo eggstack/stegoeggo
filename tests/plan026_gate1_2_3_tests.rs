@@ -424,7 +424,7 @@ mod detached_tests {
         let result = verify_detached_manifest(&protected, &manifest, &trust);
         assert_eq!(
             result.embedded_reference_status,
-            EmbeddedReferenceStatus::Present
+            EmbeddedReferenceStatus::PresentValid
         );
     }
 

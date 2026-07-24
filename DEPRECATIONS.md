@@ -16,6 +16,12 @@ This document tracks all deprecated public API surfaces, their replacements, and
 | `VerificationStatus` | `VerificationReport` | v0.2.2 | v1.0.0 |
 | `NoticeVerification::new()` (positional) | `NoticeVerification::builder()` | v0.2.2 | v1.0.0 |
 
+## Deprecated in v0.2.3
+
+| Deprecated API | Replacement | Introduced | Earliest Removal |
+|----------------|-------------|------------|------------------|
+| `EmbeddedReferenceStatus::Present` | `EmbeddedReferenceStatus::PresentValid` | v0.2.3 | v1.0.0 |
+
 ## Migration Examples
 
 ### ProtectionLevel → ProtectionRequest

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 
 use crate::provenance::ProvenanceClaim;
 use crate::resource_limits::ResourceLimits;
@@ -96,19 +97,32 @@ impl DetachedManifest {
     }
 
     /// Add a signature record (up to [`MAX_SIGNATURES`]).
+    ///
+    /// Silently skips if a signature with the same (algorithm, key_id) already exists.
     #[must_use]
     pub fn with_signature(mut self, sig: SignatureRecord) -> Self {
         if self.signatures.len() < MAX_SIGNATURES {
-            self.signatures.push(sig);
+            let is_dup = self
+                .signatures
+                .iter()
+                .any(|s| s.algorithm == sig.algorithm && s.key_id == sig.key_id);
+            if !is_dup {
+                self.signatures.push(sig);
+            }
         }
         self
     }
 
     /// Add a public key entry (up to [`MAX_PUBLIC_KEYS`]).
+    ///
+    /// Silently skips if a public key with the same key_id already exists.
     #[must_use]
     pub fn with_public_key(mut self, key: PublicKeyEntry) -> Self {
         if self.public_keys.len() < MAX_PUBLIC_KEYS {
-            self.public_keys.push(key);
+            let is_dup = self.public_keys.iter().any(|k| k.key_id == key.key_id);
+            if !is_dup {
+                self.public_keys.push(key);
+            }
         }
         self
     }
@@ -125,6 +139,95 @@ impl DetachedManifest {
     pub fn with_trust_metadata(mut self, trust: TrustMetadata) -> Self {
         self.trust_metadata = Some(trust);
         self
+    }
+
+    /// Validate the manifest structure.
+    ///
+    /// Checks for duplicate keys, duplicate signatures, empty key IDs,
+    /// valid hex encodings, correct byte lengths, and that each signature
+    /// references an existing public key.
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+        // Check for empty key IDs and validate key_bytes hex/length
+        for (i, key) in self.public_keys.iter().enumerate() {
+            if key.key_id.is_empty() {
+                errors.push(format!("Public key {} has empty key ID", i));
+            }
+            match hex::decode(&key.key_bytes) {
+                Ok(bytes) => {
+                    if bytes.len() != 32 {
+                        errors.push(format!(
+                            "Public key {} has invalid byte length {} (expected 32)",
+                            i,
+                            bytes.len()
+                        ));
+                    }
+                }
+                Err(e) => {
+                    errors.push(format!("Public key {} has invalid hex: {}", i, e));
+                }
+            }
+        }
+
+        // Check for duplicate public key IDs
+        let mut seen_key_ids = HashSet::new();
+        for key in &self.public_keys {
+            if !seen_key_ids.insert(&key.key_id) {
+                errors.push(format!(
+                    "Duplicate public key ID: {:?}",
+                    String::from_utf8_lossy(&key.key_id)
+                ));
+            }
+        }
+
+        // Validate signatures
+        for (i, sig) in self.signatures.iter().enumerate() {
+            if sig.key_id.is_empty() {
+                errors.push(format!("Signature {} has empty key ID", i));
+            }
+            match hex::decode(&sig.signature) {
+                Ok(bytes) => {
+                    if bytes.len() != 64 {
+                        errors.push(format!(
+                            "Signature {} has invalid byte length {} (expected 64 for ed25519)",
+                            i,
+                            bytes.len()
+                        ));
+                    }
+                }
+                Err(e) => {
+                    errors.push(format!("Signature {} has invalid hex: {}", i, e));
+                }
+            }
+            // Check that signature has a matching public key
+            if !self.public_keys.iter().any(|k| k.key_id == sig.key_id) {
+                errors.push(format!(
+                    "Signature {} references unknown key ID {:?}",
+                    i,
+                    String::from_utf8_lossy(&sig.key_id)
+                ));
+            }
+        }
+
+        // Check for duplicate signature identities (algorithm + key_id)
+        let mut seen_sigs = HashSet::new();
+        for sig in &self.signatures {
+            let identity = (sig.algorithm.clone(), sig.key_id.clone());
+            if !seen_sigs.insert(identity) {
+                errors.push(format!(
+                    "Duplicate signature for ({}, {:?})",
+                    sig.algorithm,
+                    String::from_utf8_lossy(&sig.key_id)
+                ));
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 
     /// Serialize the manifest to canonical JSON bytes.
@@ -358,6 +461,10 @@ impl DetachedManifest {
             }
         }
 
+        manifest.validate().map_err(|errors| {
+            crate::Error::Config(format!("Manifest validation failed: {}", errors.join("; ")))
+        })?;
+
         Ok(manifest)
     }
 
@@ -421,6 +528,10 @@ impl DetachedManifest {
                 )));
             }
         }
+
+        manifest.validate().map_err(|errors| {
+            crate::Error::Config(format!("Manifest validation failed: {}", errors.join("; ")))
+        })?;
 
         Ok(manifest)
     }
