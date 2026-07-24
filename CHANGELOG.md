@@ -14,9 +14,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Detached-manifest trust evaluation: `report.trust().trusted()` now correctly reflects per-signature trust (caller policy + cryptographic validity) instead of always returning `false`
 - Resource limits: `max_width`/`max_height` from `ResourceLimits` are now enforced unconditionally on all processing paths, even when no explicit `max_dimension` is set
 - CLI `verify-manifest` and `sign` use bounded parsing via `DetachedManifest::from_json_with_limits`
+- `photoshop:Credit` in XMP now maps to `credit_line` (semantically correct), not `contact_email`
 
 ### Added
-- 38 new tests covering V3 extraction (CRC/HMAC, PNG/JPEG/tiled), malformed v3, missing/wrong HMAC key, channel flags, detached verification (trust, embedded references, oversized manifests), and resource-limit enforcement (input size, dimensions, payload, tile origins, verification seeds)
+- **Structured embedding outcomes**: `EmbedOutcome<T>` and `EmbedPath` types replace silent no-ops in LSB and DCT embedding. Embedding helpers now report whether the payload was embedded, skipped due to capacity, or degraded to Q-table seed only. Outcomes propagate through the pipeline to warnings, reports, JSON output, and strict CLI behavior.
+- **CLI detached-manifest integration tests**: 8 end-to-end tests covering keygen → sign → verify-manifest workflows: correct key trust (exit 0), no key (exit 4), wrong key (exit 3/4), tampered signature, modified image binding failure, HMAC embedded reference without payload key, and JSON/human-readable outcome agreement.
+- Header-driven v3 extraction: all 8 extraction paths (LSB, DCT, tiled LSB, tiled DCT, and verify variants) now check v3 magic from the first extracted candidate and re-extract with the exact `total_bits` declared in the v3 header
+- `CandidateOutcome` expanded with `MalformedV3`, `UnsupportedVersion`, `AuthenticationKeyMissing`, `AuthenticationFailed` for structured v3 failure reporting
+- `V3ProbeResult` enum and `probe_v3_header_from_lsb`/`classify_v3_probe` functions for v3 header probing
+- `extract_lsb_range` for bit-range LSB extraction (prepared for future use)
+- Behavior tests for resource limit enforcement through public entrypoints (tile origins, verification seeds, request API input size, request API dimensions)
 - Resource closure table documenting all 18 `ResourceLimits` fields with enforcement sites and tests
 - `SteganographyProtector::generate_payload_for_context` (test helper) for inspecting V3 payload structure
 - `EXIT_TRUST` (exit code 4) for valid-but-untrusted detached-manifest verification
@@ -25,15 +32,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `EmbeddedReferenceStatus` expanded with `PresentValid`, `AuthenticationKeyMissing`, `AuthenticationFailed`, `UnsupportedVersion`
 - CLI `--payload-key` option for HMAC payload verification
 - CLI public key parsing now preserves `key_id` from PEM files
-- V3 extraction: `probe_v3_header` now returns `None` for non-v3 data (cleaner fallthrough)
 - Detached manifest signing output is now atomic (write-to-temp + rename)
-- Header-driven v3 extraction: all 8 extraction paths (LSB, DCT, tiled LSB, tiled DCT, and verify variants) now check v3 magic from the first extracted candidate and re-extract with the exact `total_bits` declared in the v3 header
-- `CandidateOutcome` expanded with `MalformedV3`, `UnsupportedVersion`, `AuthenticationKeyMissing`, `AuthenticationFailed` for structured v3 failure reporting
-- `V3ProbeResult` enum and `probe_v3_header_from_lsb`/`classify_v3_probe` functions for v3 header probing
-- `extract_lsb_range` for bit-range LSB extraction (prepared for future use)
-- Behavior tests for resource limit enforcement through public entrypoints (tile origins, verification seeds, request API input size, request API dimensions)
 
-## [0.2.2] - Unreleased
+### Changed
+- `embed_lsb`, `embed_lsb_tiled`, `apply_dct_stego_bytes`, and `apply_dct_stego_bytes_tiled` now return `EmbedOutcome<T>` instead of raw images/bytes. Callers that only need the output can use `.into_inner()`.
+
+## [0.2.2] - 2026-07-23
 
 ### Added
 - `LegalMetadata` fields: `credit_line`, `copyright_owner`, `licensor_name`, `licensor_email`, `licensor_url`, `metadata_date`, `notice_applied_at`
