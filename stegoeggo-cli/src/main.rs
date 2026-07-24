@@ -954,7 +954,7 @@ fn handle_verify_manifest(
     json_output: bool,
 ) -> Result<i32, Box<dyn std::error::Error>> {
     use stegoeggo::detached::verify::{
-        verify_detached_manifest_with_limits, EmbeddedReferenceStatus, TrustPolicy,
+        verify_detached_manifest_with_limits_and_mac, EmbeddedReferenceStatus, TrustPolicy,
     };
     use stegoeggo::detached::DetachedManifest;
     use stegoeggo::resource_limits::ResourceLimits;
@@ -1014,7 +1014,7 @@ fn handle_verify_manifest(
             hex::decode(k).unwrap_or_else(|_| k.as_bytes().to_vec())
         }
     });
-    let result = verify_detached_manifest_with_limits(
+    let result = verify_detached_manifest_with_limits_and_mac(
         &image_bytes,
         &manifest,
         &trust,
@@ -1062,6 +1062,7 @@ fn handle_verify_manifest(
             EmbeddedReferenceStatus::AuthenticationKeyMissing => "authentication_key_missing",
             EmbeddedReferenceStatus::AuthenticationFailed => "authentication_failed",
             EmbeddedReferenceStatus::UnsupportedVersion => "unsupported_version",
+            _ => "unknown",
         };
 
         let sigs_valid = result

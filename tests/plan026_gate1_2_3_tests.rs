@@ -554,7 +554,6 @@ mod detached_tests {
             &manifest,
             &TrustPolicy::TrustNone,
             Some(&limits),
-            None,
         );
         assert_eq!(
             result.embedded_reference_status,
@@ -565,7 +564,7 @@ mod detached_tests {
 
     #[test]
     fn hmac_embedded_reference_wrong_key_reports_authentication_failed() {
-        use stegoeggo::detached::verify::verify_detached_manifest_with_limits;
+        use stegoeggo::detached::verify::verify_detached_manifest_with_limits_and_mac;
         use stegoeggo::resource_limits::ResourceLimits;
 
         let img = image::DynamicImage::new_rgb8(128, 128);
@@ -600,7 +599,7 @@ mod detached_tests {
         });
 
         let limits = ResourceLimits::default();
-        let result = verify_detached_manifest_with_limits(
+        let result = verify_detached_manifest_with_limits_and_mac(
             &protected,
             &manifest,
             &TrustPolicy::TrustNone,

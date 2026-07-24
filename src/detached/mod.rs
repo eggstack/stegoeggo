@@ -12,6 +12,7 @@ pub use generate::{compute_image_digest, create_manifest_from_image, create_mani
 pub use manifest::*;
 pub use verify::{
     verify_detached_manifest, verify_detached_manifest_with_keys,
-    verify_detached_manifest_with_limits, DetachedOverallStatus, EmbeddedReferenceStatus,
+    verify_detached_manifest_with_keys_and_mac, verify_detached_manifest_with_limits,
+    verify_detached_manifest_with_limits_and_mac, DetachedOverallStatus, EmbeddedReferenceStatus,
     ManifestVerification, TrustCallbackFn, TrustPolicy,
 };

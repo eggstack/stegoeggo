@@ -44,6 +44,7 @@ impl std::fmt::Debug for TrustPolicy {
 /// means only detached evidence remains — the embedded stego channel has been
 /// removed or was never present.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum EmbeddedReferenceStatus {
     /// The manifest does not declare an embedded reference.
     NotProvided,
@@ -178,7 +179,7 @@ pub fn verify_detached_manifest(
     trust: &TrustPolicy,
 ) -> ManifestVerification {
     let limits = ResourceLimits::default();
-    verify_detached_manifest_with_limits(image_bytes, manifest, trust, Some(&limits), None)
+    verify_detached_manifest_with_limits(image_bytes, manifest, trust, Some(&limits))
 }
 
 /// Verify a detached manifest with resource limits.
@@ -186,6 +187,31 @@ pub fn verify_detached_manifest(
 /// Like [`verify_detached_manifest`], but enforces [`ResourceLimits`]
 /// on the input image bytes before performing verification. The
 /// resource limits check is performed before the SHA-256 hash computation.
+///
+/// # Arguments
+///
+/// * `image_bytes` - Raw image bytes.
+/// * `manifest` - The detached manifest to verify.
+/// * `trust` - Trust policy controlling which keys are trusted.
+/// * `limits` - Optional resource limits. When `None`, default limits are used.
+///
+/// # Returns
+///
+/// A [`ManifestVerification`] with structured results.
+#[must_use]
+pub fn verify_detached_manifest_with_limits(
+    image_bytes: &[u8],
+    manifest: &DetachedManifest,
+    trust: &TrustPolicy,
+    limits: Option<&ResourceLimits>,
+) -> ManifestVerification {
+    verify_detached_manifest_with_limits_and_mac(image_bytes, manifest, trust, limits, None)
+}
+
+/// Verify a detached manifest with resource limits and an optional payload MAC key.
+///
+/// Like [`verify_detached_manifest_with_limits`], but also verifies
+/// embedded HMAC payload references when a MAC key is provided.
 ///
 /// # Arguments
 ///
@@ -203,7 +229,7 @@ pub fn verify_detached_manifest(
 ///
 /// A [`ManifestVerification`] with structured results.
 #[must_use]
-pub fn verify_detached_manifest_with_limits(
+pub fn verify_detached_manifest_with_limits_and_mac(
     image_bytes: &[u8],
     manifest: &DetachedManifest,
     trust: &TrustPolicy,
@@ -525,13 +551,35 @@ fn verify_detached_manifest_inner(
 /// * `manifest` - The detached manifest to verify.
 /// * `expected_keys` - Optional list of trusted public key identifiers.
 ///   If `None`, [`TrustPolicy::TrustNone`] is used.
-/// * `payload_mac_key` - Optional HMAC key for embedded payload verification.
 ///
 /// # Returns
 ///
 /// A [`ManifestVerification`] with structured results.
 #[must_use]
 pub fn verify_detached_manifest_with_keys(
+    image_bytes: &[u8],
+    manifest: &DetachedManifest,
+    expected_keys: Option<&[Vec<u8>]>,
+) -> ManifestVerification {
+    verify_detached_manifest_with_keys_and_mac(image_bytes, manifest, expected_keys, None)
+}
+
+/// Like [`verify_detached_manifest_with_keys`], but also verifies
+/// embedded HMAC payload references when a MAC key is provided.
+///
+/// # Arguments
+///
+/// * `image_bytes` - Raw image bytes.
+/// * `manifest` - The detached manifest to verify.
+/// * `expected_keys` - Optional list of trusted public key identifiers.
+///   If `None`, [`TrustPolicy::TrustNone`] is used.
+/// * `payload_mac_key` - Optional HMAC key for embedded payload verification.
+///
+/// # Returns
+///
+/// A [`ManifestVerification`] with structured results.
+#[must_use]
+pub fn verify_detached_manifest_with_keys_and_mac(
     image_bytes: &[u8],
     manifest: &DetachedManifest,
     expected_keys: Option<&[Vec<u8>]>,
@@ -542,7 +590,7 @@ pub fn verify_detached_manifest_with_keys(
         None => TrustPolicy::TrustNone,
     };
     let limits = ResourceLimits::default();
-    verify_detached_manifest_with_limits(
+    verify_detached_manifest_with_limits_and_mac(
         image_bytes,
         manifest,
         &policy,
