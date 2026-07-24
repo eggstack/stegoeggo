@@ -360,7 +360,7 @@ impl ProtectionPipeline {
                 ctx.jpeg_quality(),
             )?;
             let with_stego = self.steganography.apply_dct_stego_bytes(&jpeg_bytes, ctx)?;
-            return self.metadata_trap.inject_bytes(&with_stego, ctx);
+            return self.metadata_trap.inject_bytes(with_stego.output(), ctx);
         }
 
         // Non-JPEG output: pixel stego then encode
@@ -602,7 +602,7 @@ impl ProtectionPipeline {
                 &ctx.resource_limits(),
             )?;
             let with_stego = self.steganography.apply_dct_stego_bytes(img_bytes, ctx)?;
-            return self.metadata_trap.inject_bytes(&with_stego, ctx);
+            return self.metadata_trap.inject_bytes(with_stego.output(), ctx);
         }
 
         // Non-JPEG-in: decode then use shared pipeline

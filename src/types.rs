@@ -2814,6 +2814,158 @@ impl NoticeVerificationBuilder {
     }
 }
 
+/// The embedding path used for steganographic payload insertion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbedPath {
+    /// Non-tiled LSB pixel embedding (PNG/WebP).
+    Lsb,
+    /// Tiled LSB pixel embedding for crop resistance (PNG/WebP).
+    LsbTiled,
+    /// Non-tiled F5 DCT coefficient embedding (JPEG).
+    DctF5,
+    /// Tiled F5 DCT coefficient embedding for crop resistance (JPEG).
+    DctF5Tiled,
+    /// Q-table seed only — progressive JPEG fallback (no payload).
+    QTableSeedOnly,
+}
+
+/// Structured outcome from steganographic embedding.
+///
+/// Returned by embedding helpers to report whether the payload was
+/// actually embedded, skipped due to capacity, or degraded to a
+/// seed-only path. Propagated through the pipeline to warnings,
+/// reports, and strict CLI behavior.
+#[derive(Debug, Clone)]
+pub enum EmbedOutcome<T> {
+    /// Payload was successfully embedded.
+    Embedded {
+        /// The carrier image with embedded payload.
+        output: T,
+        /// Payload size in bytes.
+        payload_bytes: usize,
+        /// Required capacity (in units appropriate to the embedding path).
+        required_capacity: usize,
+        /// Available capacity in the carrier.
+        available_capacity: usize,
+        /// The embedding path used.
+        path: EmbedPath,
+    },
+    /// Payload was skipped due to insufficient carrier capacity.
+    SkippedCapacity {
+        /// The carrier image with Q-table/seed metadata (no payload embedded).
+        output: T,
+        /// Payload size in bytes.
+        payload_bytes: usize,
+        /// Required capacity (in units appropriate to the embedding path).
+        required_capacity: usize,
+        /// Available capacity in the carrier.
+        available_capacity: usize,
+        /// The embedding path that was attempted.
+        path: EmbedPath,
+    },
+    /// Progressive JPEG — fell back to Q-table seed only (no payload).
+    UnsupportedProgressive {
+        /// The carrier image with Q-table seed metadata (no payload embedded).
+        output: T,
+    },
+}
+
+impl<T> EmbedOutcome<T> {
+    /// Map the inner output type.
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> EmbedOutcome<U> {
+        match self {
+            EmbedOutcome::Embedded {
+                output,
+                payload_bytes,
+                required_capacity,
+                available_capacity,
+                path,
+            } => EmbedOutcome::Embedded {
+                output: f(output),
+                payload_bytes,
+                required_capacity,
+                available_capacity,
+                path,
+            },
+            EmbedOutcome::SkippedCapacity {
+                output,
+                payload_bytes,
+                required_capacity,
+                available_capacity,
+                path,
+            } => EmbedOutcome::SkippedCapacity {
+                output: f(output),
+                payload_bytes,
+                required_capacity,
+                available_capacity,
+                path,
+            },
+            EmbedOutcome::UnsupportedProgressive { output } => {
+                EmbedOutcome::UnsupportedProgressive { output: f(output) }
+            }
+        }
+    }
+
+    /// Consume the outcome and return the inner output value.
+    pub fn into_inner(self) -> T {
+        match self {
+            EmbedOutcome::Embedded { output, .. }
+            | EmbedOutcome::SkippedCapacity { output, .. }
+            | EmbedOutcome::UnsupportedProgressive { output } => output,
+        }
+    }
+
+    /// Returns a reference to the inner output.
+    #[must_use]
+    pub fn output(&self) -> &T {
+        match self {
+            EmbedOutcome::Embedded { output, .. }
+            | EmbedOutcome::SkippedCapacity { output, .. }
+            | EmbedOutcome::UnsupportedProgressive { output } => output,
+        }
+    }
+
+    /// Returns true if the payload was embedded.
+    #[must_use]
+    pub fn is_embedded(&self) -> bool {
+        matches!(self, EmbedOutcome::Embedded { .. })
+    }
+
+    /// Returns true if capacity was skipped.
+    #[must_use]
+    pub fn is_skipped(&self) -> bool {
+        matches!(self, EmbedOutcome::SkippedCapacity { .. })
+    }
+
+    /// Returns the required capacity for this embedding attempt.
+    #[must_use]
+    pub fn required_capacity(&self) -> usize {
+        match self {
+            EmbedOutcome::Embedded {
+                required_capacity, ..
+            }
+            | EmbedOutcome::SkippedCapacity {
+                required_capacity, ..
+            } => *required_capacity,
+            EmbedOutcome::UnsupportedProgressive { .. } => 0,
+        }
+    }
+
+    /// Returns the available capacity for this embedding attempt.
+    #[must_use]
+    pub fn available_capacity(&self) -> usize {
+        match self {
+            EmbedOutcome::Embedded {
+                available_capacity, ..
+            }
+            | EmbedOutcome::SkippedCapacity {
+                available_capacity, ..
+            } => *available_capacity,
+            EmbedOutcome::UnsupportedProgressive { .. } => 0,
+        }
+    }
+}
+
 /// Warning about degraded protection during image processing.
 ///
 /// Returned by [`process_image_bytes_with_info`](crate::process_image_bytes_with_info)

@@ -209,7 +209,9 @@ impl SteganographyProtector {
         &self,
         jpeg_bytes: &[u8],
         ctx: &ProtectionContext,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<crate::types::EmbedOutcome<Vec<u8>>> {
+        use crate::types::{EmbedOutcome, EmbedPath};
+
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
         }
@@ -220,12 +222,8 @@ impl SteganographyProtector {
 
         let seed = ctx.seed();
 
-        // Try to decode DCT coefficients (works for baseline JPEG)
         match JpegTranscoder::decode_coefficients(jpeg_bytes) {
             Ok((header, coefficients)) => {
-                // Canonicalize through the transcoder once so capacity checks
-                // and embedding match the coefficient set the encoder actually
-                // preserves on the way back out.
                 let canonical_jpeg = JpegTranscoder::encode_coefficients(&header, &coefficients)?;
                 let (mut header, coefficients) =
                     JpegTranscoder::decode_coefficients(&canonical_jpeg)?;
@@ -267,7 +265,13 @@ impl SteganographyProtector {
                                     seed,
                                 );
                                 if Self::bits_to_bytes(&roundtrip_bits) == payload {
-                                    return Ok(attempt_bytes);
+                                    return Ok(EmbedOutcome::Embedded {
+                                        output: attempt_bytes,
+                                        payload_bytes: payload.len(),
+                                        required_capacity: payload_bits,
+                                        available_capacity: available_coeffs,
+                                        path: EmbedPath::DctF5,
+                                    });
                                 }
                                 working_coefficients = roundtrip_coefficients;
                             } else {
@@ -277,17 +281,20 @@ impl SteganographyProtector {
                     }
                 }
 
-                Ok(JpegTranscoder::encode_coefficients(&header, &coefficients)?)
+                let output = JpegTranscoder::encode_coefficients(&header, &coefficients)?;
+                Ok(EmbedOutcome::SkippedCapacity {
+                    output,
+                    payload_bytes: payload.len(),
+                    required_capacity: payload_bits,
+                    available_capacity: available_coeffs,
+                    path: EmbedPath::DctF5,
+                })
             }
             Err(_) => {
-                // Progressive JPEG or other unsupported format: seed in Q-tables only.
-                // Parse header, embed seed, reassemble without touching DCT coefficients.
                 let mut header = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
-
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
-
-                // Reassemble: replace Q-tables in original byte stream
-                Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)
+                let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
+                Ok(EmbedOutcome::UnsupportedProgressive { output })
             }
         }
     }
@@ -335,7 +342,9 @@ impl SteganographyProtector {
         jpeg_bytes: &[u8],
         ctx: &ProtectionContext,
         tile_size: u32,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<crate::types::EmbedOutcome<Vec<u8>>> {
+        use crate::types::{EmbedOutcome, EmbedPath};
+
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
         }
@@ -349,6 +358,7 @@ impl SteganographyProtector {
                     JpegTranscoder::decode_coefficients(&canonical_jpeg)?;
 
                 let payload = self.generate_payload(ctx);
+                let payload_bits = payload.len() * 8;
 
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
 
@@ -408,22 +418,36 @@ impl SteganographyProtector {
                         );
                         let roundtrip_bits = DctStegoF5::with_redundancy(1).extract_f5_from_blocks(
                             &roundtrip_coefficients,
-                            payload.len() * 8,
+                            payload_bits,
                             tile_seed(seed, 0, 0),
                             &tile_blocks,
                         );
                         if Self::bits_to_bytes(&roundtrip_bits) == payload {
-                            return Ok(attempt_bytes);
+                            return Ok(EmbedOutcome::Embedded {
+                                output: attempt_bytes,
+                                payload_bytes: payload.len(),
+                                required_capacity: payload_bits,
+                                available_capacity: payload_bits,
+                                path: EmbedPath::DctF5Tiled,
+                            });
                         }
                     }
                 }
 
-                Ok(JpegTranscoder::encode_coefficients(&header, &coefficients)?)
+                let output = JpegTranscoder::encode_coefficients(&header, &coefficients)?;
+                Ok(EmbedOutcome::SkippedCapacity {
+                    output,
+                    payload_bytes: payload.len(),
+                    required_capacity: payload_bits,
+                    available_capacity: 0,
+                    path: EmbedPath::DctF5Tiled,
+                })
             }
             Err(_) => {
                 let mut header = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
-                Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)
+                let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
+                Ok(EmbedOutcome::UnsupportedProgressive { output })
             }
         }
     }
@@ -714,29 +738,28 @@ impl SteganographyProtector {
             .input_format()
             .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
 
-        let processed = match format {
+        match format {
             crate::types::ImageOutputFormat::Png | crate::types::ImageOutputFormat::WebP => {
-                self.embed_lsb(&rgba, &payload, ctx.seed(), 1)
+                let outcome = self.embed_lsb(&rgba, &payload, ctx.seed(), 1);
+                DynamicImage::ImageRgba8(outcome.into_inner())
             }
             crate::types::ImageOutputFormat::Jpeg => {
                 if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Jpeg)
                 {
                     if let Ok(with_seed) = self.apply_qtable_seed_bytes(&encoded, ctx.seed()) {
                         if let Ok(stego_img) = image::load_from_memory(&with_seed) {
-                            stego_img.to_rgba8()
+                            stego_img
                         } else {
-                            rgba.clone()
+                            img.clone()
                         }
                     } else {
-                        rgba.clone()
+                        img.clone()
                     }
                 } else {
-                    rgba.clone()
+                    img.clone()
                 }
             }
-        };
-
-        DynamicImage::ImageRgba8(processed)
+        }
     }
 
     /// Replace quantization tables in a JPEG byte stream with those from header.
@@ -2497,7 +2520,9 @@ impl SteganographyProtector {
         payload: &[u8],
         seed: u64,
         redundancy: usize,
-    ) -> RgbaImage {
+    ) -> crate::types::EmbedOutcome<RgbaImage> {
+        use crate::types::EmbedOutcome;
+
         let (width, height) = img.dimensions();
         let mut output = img.clone();
 
@@ -2507,7 +2532,13 @@ impl SteganographyProtector {
         let total_pixels_needed = Self::lsb_pixels_needed_for_bits(payload_bits.len());
 
         if total_pixels_needed > total_pixels {
-            return output;
+            return EmbedOutcome::SkippedCapacity {
+                output,
+                payload_bytes: payload.len(),
+                required_capacity: total_pixels_needed,
+                available_capacity: total_pixels,
+                path: crate::types::EmbedPath::Lsb,
+            };
         }
 
         for pass in 0..redundancy {
@@ -2527,7 +2558,13 @@ impl SteganographyProtector {
             }
         }
 
-        output
+        EmbedOutcome::Embedded {
+            output,
+            payload_bytes: payload.len(),
+            required_capacity: total_pixels_needed,
+            available_capacity: total_pixels,
+            path: crate::types::EmbedPath::Lsb,
+        }
     }
 
     fn extract_lsb(&self, img: &RgbaImage, expected_bits: usize, seed: u64) -> Option<Vec<u8>> {
@@ -2695,13 +2732,24 @@ impl SteganographyProtector {
         payload: &[u8],
         master_seed: u64,
         tile_size: u32,
-    ) -> RgbaImage {
+    ) -> crate::types::EmbedOutcome<RgbaImage> {
+        use crate::types::{EmbedOutcome, EmbedPath};
+
         let (width, height) = img.dimensions();
         if tile_size == 0 || width < tile_size || height < tile_size {
-            return img.clone();
+            return EmbedOutcome::SkippedCapacity {
+                output: img.clone(),
+                payload_bytes: payload.len(),
+                required_capacity: 0,
+                available_capacity: 0,
+                path: EmbedPath::LsbTiled,
+            };
         }
 
         let mut output = img.clone();
+        let mut any_embedded = false;
+        let mut total_required = 0usize;
+        let mut total_available = 0usize;
 
         let mut tile_y: u32 = 0;
         while tile_y * tile_size < height {
@@ -2716,15 +2764,36 @@ impl SteganographyProtector {
                 let local_seed = tile_seed(master_seed, tile_x, tile_y);
 
                 let sub = Self::crop_rgba(&output, x0, y0, x1 - x0, y1 - y0);
-                let embedded = self.embed_lsb(&sub, payload, local_seed, 1);
-                Self::blit_rgba(&mut output, x0, y0, &embedded);
+                let tile_outcome = self.embed_lsb(&sub, payload, local_seed, 1);
+                if tile_outcome.is_embedded() {
+                    any_embedded = true;
+                }
+                total_required += tile_outcome.required_capacity();
+                total_available += tile_outcome.available_capacity();
+                Self::blit_rgba(&mut output, x0, y0, tile_outcome.output());
 
                 tile_x += 1;
             }
             tile_y += 1;
         }
 
-        output
+        if any_embedded {
+            EmbedOutcome::Embedded {
+                output,
+                payload_bytes: payload.len(),
+                required_capacity: total_required,
+                available_capacity: total_available,
+                path: EmbedPath::LsbTiled,
+            }
+        } else {
+            EmbedOutcome::SkippedCapacity {
+                output,
+                payload_bytes: payload.len(),
+                required_capacity: total_required,
+                available_capacity: total_available,
+                path: EmbedPath::LsbTiled,
+            }
+        }
     }
 
     /// Extract a payload from a possibly-cropped image by trying each
@@ -3145,13 +3214,16 @@ impl SteganographyProtector {
 
         let redundancy = ctx.effective_redundancy();
 
-        let processed = match format {
+        match format {
             crate::types::ImageOutputFormat::Png => {
-                if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
+                let outcome = if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
                     self.embed_lsb_tiled(&rgba, &payload, ctx.seed(), tile_size)
                 } else {
                     self.embed_lsb(&rgba, &payload, ctx.seed(), redundancy)
-                }
+                };
+                let mut result = outcome.into_inner();
+                Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
+                Ok(DynamicImage::ImageRgba8(result))
             }
             crate::types::ImageOutputFormat::Jpeg => {
                 let jpeg_bytes = crate::util::image::encode_image_with_options(
@@ -3161,20 +3233,19 @@ impl SteganographyProtector {
                     ctx.jpeg_quality(),
                 )?;
                 let with_stego = self.apply_dct_stego_bytes(&jpeg_bytes, ctx)?;
-                return Ok(image::load_from_memory(&with_stego)?);
+                Ok(image::load_from_memory(with_stego.output())?)
             }
             crate::types::ImageOutputFormat::WebP => {
-                if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
+                let outcome = if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
                     self.embed_lsb_tiled(&rgba, &payload, ctx.seed(), tile_size)
                 } else {
                     self.embed_lsb(&rgba, &payload, ctx.seed(), redundancy)
-                }
+                };
+                let mut result = outcome.into_inner();
+                Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
+                Ok(DynamicImage::ImageRgba8(result))
             }
-        };
-
-        let mut result = processed;
-        Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
-        Ok(DynamicImage::ImageRgba8(result))
+        }
     }
 }
 
@@ -3200,7 +3271,9 @@ impl Protector for SteganographyProtector {
         });
 
         if format == crate::types::ImageOutputFormat::Jpeg {
-            return self.apply_dct_stego_bytes(img_bytes, ctx);
+            return self
+                .apply_dct_stego_bytes(img_bytes, ctx)
+                .map(|o| o.into_inner());
         }
 
         let img = image::load_from_memory(img_bytes)?;
@@ -3855,12 +3928,13 @@ mod tests {
     #[test]
     fn lsb_payload_too_large_returns_unchanged() {
         let protector = SteganographyProtector::new();
-        let tiny = make_test_image(2, 2); // 4 pixels, 12 channels — too small for 256 bits
+        let tiny = make_test_image(2, 2);
         let ctx = ctx_no_mac(42);
         let payload = protector.generate_payload(&ctx);
 
         let result = protector.embed_lsb(&tiny, &payload, 42, 1);
-        assert_eq!(result, tiny);
+        assert!(result.is_skipped());
+        assert_eq!(*result.output(), tiny);
     }
 
     #[test]
@@ -3886,7 +3960,9 @@ mod tests {
         let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
         assert!(SteganographyProtector::dct_payload_capacity(&coefficients) < required_bits);
 
-        let protected = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
+        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
+        assert!(outcome.is_skipped());
+        let protected = outcome.into_inner();
         let (header, _) = JpegTranscoder::decode_coefficients(&protected).unwrap();
 
         assert_eq!(
@@ -3913,7 +3989,9 @@ mod tests {
         let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
         assert!(SteganographyProtector::dct_payload_capacity(&coefficients) >= payload_bits * 3);
 
-        let protected = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
+        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
+        assert!(outcome.is_embedded());
+        let protected = outcome.into_inner();
         let (header, _) = JpegTranscoder::decode_coefficients(&protected).unwrap();
         assert_eq!(
             DctStegoF5::new().extract_seed_from_quantization_tables(&header),
@@ -4287,7 +4365,9 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = protector.embed_lsb_tiled(&img, &payload, 42, 64);
+        let embedded = protector
+            .embed_lsb_tiled(&img, &payload, 42, 64)
+            .into_inner();
         assert_eq!(embedded.dimensions(), img.dimensions());
 
         let recovered = protector
@@ -4302,7 +4382,9 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = protector.embed_lsb_tiled(&img, &payload, 42, 64);
+        let embedded = protector
+            .embed_lsb_tiled(&img, &payload, 42, 64)
+            .into_inner();
         // Crop to the second tile (aligned offset, x0=64, y0=0).
         let cropped = SteganographyProtector::crop_rgba(&embedded, 64, 0, 64, 64);
 
@@ -4318,7 +4400,9 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = protector.embed_lsb_tiled(&img, &payload, 42, 64);
+        let embedded = protector
+            .embed_lsb_tiled(&img, &payload, 42, 64)
+            .into_inner();
         // Crop with a 32-px offset (a 32 is a half-tile, NOT on a 64-px tile
         // boundary). The 96x96 window fully contains tile (1, 1) at original
         // (64, 64)-(127, 127). The embedded tile must still be recoverable
@@ -4338,7 +4422,9 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = protector.embed_lsb_tiled(&img, &payload, 42, 64);
+        let embedded = protector
+            .embed_lsb_tiled(&img, &payload, 42, 64)
+            .into_inner();
         // Crop a region smaller than the full image but large enough to
         // contain tile (0, 0) entirely. Tile (0, 0) is at original
         // (0, 0)-(63, 63) and is fully captured by this crop.
@@ -4357,7 +4443,9 @@ mod tests {
         let ctx = ctx_with_mac(42, b"my-key");
         let payload = protector.generate_payload(&ctx);
 
-        let embedded = protector.embed_lsb_tiled(&img, &payload, 42, 64);
+        let embedded = protector
+            .embed_lsb_tiled(&img, &payload, 42, 64)
+            .into_inner();
         // Crop with a 32-px offset; the 96x96 window fully contains tile
         // (1, 1) at original (64, 64)-(127, 127).
         let cropped = SteganographyProtector::crop_rgba(&embedded, 32, 32, 96, 96);
@@ -4378,7 +4466,9 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = protector.embed_lsb_tiled(&img, &payload, 42, 64);
+        let embedded = protector
+            .embed_lsb_tiled(&img, &payload, 42, 64)
+            .into_inner();
 
         // max_origins = 1 should still find a payload from a no-crop case
         // because the (0, 0) origin is in the deterministic scan order.
@@ -4398,7 +4488,8 @@ mod tests {
         // "tiling disabled" sentinel — the caller is expected to route
         // through the non-tiled path instead.
         let result = protector.embed_lsb_tiled(&img, &payload, 42, 0);
-        assert_eq!(result, img);
+        assert!(result.is_skipped());
+        assert_eq!(*result.output(), img);
     }
 
     #[test]
@@ -4439,7 +4530,9 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = protector.embed_lsb_tiled(&img, &payload, 42, 64);
+        let embedded = protector
+            .embed_lsb_tiled(&img, &payload, 42, 64)
+            .into_inner();
         // Crop by 4 pixels (not aligned with 64px tile boundary) but large
         // enough that the window still fully contains tile (1, 1) at
         // original (64, 64)-(127, 127). The extraction scans grid
@@ -4473,7 +4566,8 @@ mod tests {
 
         let protected = protector
             .apply_dct_stego_bytes_tiled(&jpeg_bytes, &ctx, 64)
-            .unwrap();
+            .unwrap()
+            .into_inner();
         // Re-encode as JPEG (image crate encoder). This rebuilds DCT
         // coefficients from pixels, destroying the F5 stego. The test
         // verifies the extraction path handles this without panicking.
@@ -4494,7 +4588,8 @@ mod tests {
 
         let protected = protector
             .apply_dct_stego_bytes_tiled(&jpeg_bytes, &ctx, 64)
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let recovered = protector.extract_f5_tiled_candidates(&protected, 42, 64, 64, &[]);
         assert!(
             recovered.is_some(),
@@ -4510,7 +4605,8 @@ mod tests {
 
         let protected = protector
             .apply_dct_stego_bytes_tiled(&jpeg_bytes, &ctx, 64)
-            .unwrap();
+            .unwrap()
+            .into_inner();
         // Crop to a single tile by re-encoding a sub-image as JPEG.
         // First decode the protected JPEG, crop in pixel space, re-encode.
         let img = image::load_from_memory(&protected).unwrap();
@@ -4539,7 +4635,8 @@ mod tests {
 
         let protected = protector
             .apply_dct_stego_bytes_tiled(&jpeg_bytes, &ctx, 64)
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let recovered = protector.extract_f5_tiled_candidates(&protected, 42, 64, 64, b"my-key");
         assert!(
             recovered.is_some(),
@@ -4561,7 +4658,8 @@ mod tests {
 
         let protected = protector
             .apply_dct_stego_bytes_tiled(&jpeg_bytes, &ctx, 64)
-            .unwrap();
+            .unwrap()
+            .into_inner();
         let recovered = protector.extract_f5_tiled_candidates(&protected, 42, 64, 1, &[]);
         assert!(
             recovered.is_some(),
