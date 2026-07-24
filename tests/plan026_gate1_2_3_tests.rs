@@ -651,16 +651,141 @@ fn payload_limit_rejects_large_payload() {
 
 #[test]
 fn tile_extraction_origins_bounded() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42);
+    let protected_bytes = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+
     let limits = ResourceLimits::builder()
         .max_tile_extraction_origins(1)
         .build();
-    assert_eq!(limits.max_tile_extraction_origins(), 1);
+    let stego = stegoeggo::SteganographyProtector::with_resource_limits(limits);
+    let result = stego.extract_payload_from_bytes_with_key(&protected_bytes, &[]);
+    assert!(
+        result.is_some(),
+        "Tiled extraction with 1 origin should still find the payload in a non-cropped image"
+    );
 }
 
 #[test]
 fn verification_seeds_bounded() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42);
+    let protected_bytes = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+
     let limits = ResourceLimits::builder().max_verification_seeds(1).build();
-    assert_eq!(limits.max_verification_seeds(), 1);
+    let result = stegoeggo::verify_image_bytes_with_limits(&protected_bytes, &[], &limits);
+    assert_eq!(
+        result,
+        VerificationStatus::Verified,
+        "Verification with 1 seed should find the payload via metadata seed"
+    );
+}
+
+#[test]
+fn tile_extraction_origins_limited_reduces_candidates() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42);
+    let protected_bytes = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+
+    let limits_unbounded = ResourceLimits::builder()
+        .max_tile_extraction_origins(64)
+        .build();
+    let stego_unbounded = stegoeggo::SteganographyProtector::with_resource_limits(limits_unbounded);
+
+    let limits_bounded = ResourceLimits::builder()
+        .max_tile_extraction_origins(1)
+        .build();
+    let stego_bounded = stegoeggo::SteganographyProtector::with_resource_limits(limits_bounded);
+
+    let result_unbounded =
+        stego_unbounded.extract_payload_from_bytes_with_key(&protected_bytes, &[]);
+    let result_bounded = stego_bounded.extract_payload_from_bytes_with_key(&protected_bytes, &[]);
+
+    assert!(result_unbounded.is_some(), "Unbounded should find payload");
+    assert!(result_bounded.is_some(), "Bounded should find payload");
+    assert_eq!(
+        result_unbounded.as_ref().map(|p| p.seed()),
+        result_bounded.as_ref().map(|p| p.seed()),
+        "Both should find the same payload"
+    );
+}
+
+#[test]
+fn verification_seeds_limited_still_works_with_metadata_seed() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42);
+    let protected_bytes = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+
+    let limits = ResourceLimits::builder().max_verification_seeds(1).build();
+    let result = stegoeggo::verify_image_bytes_with_limits(&protected_bytes, &[], &limits);
+    assert_eq!(
+        result,
+        VerificationStatus::Verified,
+        "Verification should succeed even with seed cap of 1, because metadata seed is found first"
+    );
+}
+
+#[test]
+fn metadata_only_rejects_oversized_input_via_request() {
+    use stegoeggo::{process_request_bytes, ProtectionRequest, RightsPolicy};
+
+    let limits = ResourceLimits::builder().max_input_bytes(100).build();
+    let oversized = vec![0u8; 200];
+    let req = ProtectionRequest::metadata_only(
+        stegoeggo::RightsNotice::new(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_resource_limits(limits);
+    let result = process_request_bytes(&oversized, &req);
+    assert!(
+        result.is_err(),
+        "Oversized input should be rejected by request API"
+    );
+}
+
+#[test]
+fn dimensions_exceeded_via_request() {
+    use stegoeggo::{process_request_bytes, ProtectionRequest, RightsPolicy};
+
+    let limits = ResourceLimits::builder()
+        .max_width(32)
+        .max_height(32)
+        .build();
+    let large_img = encode_image(
+        &image::DynamicImage::new_rgb8(64, 64),
+        image::ImageFormat::Png,
+    )
+    .unwrap();
+    let req = ProtectionRequest::metadata_only(
+        stegoeggo::RightsNotice::new(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_resource_limits(limits);
+    let result = process_request_bytes(&large_img, &req);
+    assert!(
+        result.is_err(),
+        "Oversized dimensions should be rejected by request API"
+    );
 }
 
 #[test]
