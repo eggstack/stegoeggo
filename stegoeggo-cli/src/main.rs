@@ -950,11 +950,11 @@ fn handle_verify_manifest(
     manifest_path: &PathBuf,
     image_path: &PathBuf,
     key_path: &Option<PathBuf>,
-    _payload_key: Option<String>,
+    payload_key: Option<String>,
     json_output: bool,
 ) -> Result<i32, Box<dyn std::error::Error>> {
     use stegoeggo::detached::verify::{
-        verify_detached_manifest, EmbeddedReferenceStatus, TrustPolicy,
+        verify_detached_manifest_with_limits, EmbeddedReferenceStatus, TrustPolicy,
     };
     use stegoeggo::detached::DetachedManifest;
     use stegoeggo::resource_limits::ResourceLimits;
@@ -1003,7 +1003,24 @@ fn handle_verify_manifest(
         TrustPolicy::TrustNone
     };
 
-    let result = verify_detached_manifest(&image_bytes, &manifest, &trust);
+    let payload_mac_key = payload_key.as_deref().map(|k| {
+        if let Some(hex_str) = k.strip_prefix('@') {
+            fs::read(PathBuf::from(hex_str))
+                .map_err(|e| format!("Failed to read payload key file: {}", e))
+                .unwrap_or_default()
+        } else if k == "->" {
+            Vec::new()
+        } else {
+            hex::decode(k).unwrap_or_else(|_| k.as_bytes().to_vec())
+        }
+    });
+    let result = verify_detached_manifest_with_limits(
+        &image_bytes,
+        &manifest,
+        &trust,
+        Some(&limits),
+        payload_mac_key.as_deref(),
+    );
 
     let overall = result.overall_status();
 

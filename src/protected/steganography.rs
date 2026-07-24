@@ -82,8 +82,8 @@ enum CandidateOutcome {
     Invalid(Vec<u8>),
     MalformedV3,
     UnsupportedVersion(u8),
-    AuthenticationKeyMissing,
-    AuthenticationFailed,
+    AuthenticationKeyMissing(Vec<u8>),
+    AuthenticationFailed(Vec<u8>),
     NotFound,
 }
 
@@ -592,7 +592,7 @@ impl SteganographyProtector {
 
         let max_grid = 16u32;
         let mut origins_tried = 0u32;
-        let mut last_invalid: Option<Vec<u8>> = None;
+        let mut last_outcome: Option<CandidateOutcome> = None;
 
         'outer: for ty in 0..tiles_y {
             for tx in 0..tiles_x {
@@ -670,8 +670,12 @@ impl SteganographyProtector {
                                                         ),
                                                     );
                                                 }
-                                                if last_invalid.is_none() {
-                                                    last_invalid = Some(full_bytes);
+                                                if last_outcome.is_none() {
+                                                    last_outcome =
+                                                        Some(Self::classify_auth_failure(
+                                                            &full_bytes,
+                                                            mac_key,
+                                                        ));
                                                 }
                                             }
                                         }
@@ -679,8 +683,9 @@ impl SteganographyProtector {
                                         return CandidateOutcome::MalformedV3;
                                     }
                                 }
-                                if last_invalid.is_none() {
-                                    last_invalid = Some(payload_bytes);
+                                if last_outcome.is_none() {
+                                    last_outcome =
+                                        Some(Self::classify_auth_failure(&payload_bytes, mac_key));
                                 }
                             }
                         }
@@ -689,10 +694,9 @@ impl SteganographyProtector {
             }
         }
 
-        if let Some(payload) = last_invalid {
-            CandidateOutcome::Invalid(payload)
-        } else {
-            CandidateOutcome::NotFound
+        match last_outcome {
+            Some(outcome) => outcome,
+            None => CandidateOutcome::NotFound,
         }
     }
 
@@ -905,7 +909,7 @@ impl SteganographyProtector {
         seed: u64,
         mac_key: &[u8],
     ) -> CandidateOutcome {
-        let mut last_invalid: Option<Vec<u8>> = None;
+        let mut last_outcome: Option<CandidateOutcome> = None;
         for &ecc_bits in &[
             V3_CRC_PAYLOAD_BITS,
             V3_HMAC_PAYLOAD_BITS,
@@ -931,8 +935,9 @@ impl SteganographyProtector {
                                             Self::truncate_to_actual_payload(&full),
                                         );
                                     }
-                                    if last_invalid.is_none() {
-                                        last_invalid = Some(full);
+                                    if last_outcome.is_none() {
+                                        last_outcome =
+                                            Some(Self::classify_auth_failure(&full, mac_key));
                                     }
                                 }
                             }
@@ -940,14 +945,14 @@ impl SteganographyProtector {
                             return CandidateOutcome::MalformedV3;
                         }
                     }
-                    if last_invalid.is_none() {
-                        last_invalid = Some(payload);
+                    if last_outcome.is_none() {
+                        last_outcome = Some(Self::classify_auth_failure(&payload, mac_key));
                     }
                 }
             }
         }
-        match last_invalid {
-            Some(p) => CandidateOutcome::Invalid(p),
+        match last_outcome {
+            Some(outcome) => outcome,
             None => CandidateOutcome::NotFound,
         }
     }
@@ -990,8 +995,8 @@ impl SteganographyProtector {
                 CandidateOutcome::Invalid(_)
                 | CandidateOutcome::MalformedV3
                 | CandidateOutcome::UnsupportedVersion(_)
-                | CandidateOutcome::AuthenticationKeyMissing
-                | CandidateOutcome::AuthenticationFailed => return VerificationStatus::Invalid,
+                | CandidateOutcome::AuthenticationKeyMissing(_)
+                | CandidateOutcome::AuthenticationFailed(_) => return VerificationStatus::Invalid,
                 CandidateOutcome::NotFound => {}
             }
 
@@ -1001,8 +1006,10 @@ impl SteganographyProtector {
                     CandidateOutcome::Invalid(_)
                     | CandidateOutcome::MalformedV3
                     | CandidateOutcome::UnsupportedVersion(_)
-                    | CandidateOutcome::AuthenticationKeyMissing
-                    | CandidateOutcome::AuthenticationFailed => return VerificationStatus::Invalid,
+                    | CandidateOutcome::AuthenticationKeyMissing(_)
+                    | CandidateOutcome::AuthenticationFailed(_) => {
+                        return VerificationStatus::Invalid
+                    }
                     CandidateOutcome::NotFound => {}
                 }
             }
@@ -1021,8 +1028,10 @@ impl SteganographyProtector {
                     CandidateOutcome::Invalid(_)
                     | CandidateOutcome::MalformedV3
                     | CandidateOutcome::UnsupportedVersion(_)
-                    | CandidateOutcome::AuthenticationKeyMissing
-                    | CandidateOutcome::AuthenticationFailed => return VerificationStatus::Invalid,
+                    | CandidateOutcome::AuthenticationKeyMissing(_)
+                    | CandidateOutcome::AuthenticationFailed(_) => {
+                        return VerificationStatus::Invalid
+                    }
                     CandidateOutcome::NotFound => {}
                 }
             }
@@ -1037,8 +1046,10 @@ impl SteganographyProtector {
                     CandidateOutcome::Invalid(_)
                     | CandidateOutcome::MalformedV3
                     | CandidateOutcome::UnsupportedVersion(_)
-                    | CandidateOutcome::AuthenticationKeyMissing
-                    | CandidateOutcome::AuthenticationFailed => return VerificationStatus::Invalid,
+                    | CandidateOutcome::AuthenticationKeyMissing(_)
+                    | CandidateOutcome::AuthenticationFailed(_) => {
+                        return VerificationStatus::Invalid
+                    }
                     CandidateOutcome::NotFound => {}
                 }
             }
@@ -1059,8 +1070,10 @@ impl SteganographyProtector {
                     CandidateOutcome::Invalid(_)
                     | CandidateOutcome::MalformedV3
                     | CandidateOutcome::UnsupportedVersion(_)
-                    | CandidateOutcome::AuthenticationKeyMissing
-                    | CandidateOutcome::AuthenticationFailed => return VerificationStatus::Invalid,
+                    | CandidateOutcome::AuthenticationKeyMissing(_)
+                    | CandidateOutcome::AuthenticationFailed(_) => {
+                        return VerificationStatus::Invalid
+                    }
                     CandidateOutcome::NotFound => {}
                 }
             }
@@ -1078,14 +1091,109 @@ impl SteganographyProtector {
                     CandidateOutcome::Invalid(_)
                     | CandidateOutcome::MalformedV3
                     | CandidateOutcome::UnsupportedVersion(_)
-                    | CandidateOutcome::AuthenticationKeyMissing
-                    | CandidateOutcome::AuthenticationFailed => return VerificationStatus::Invalid,
+                    | CandidateOutcome::AuthenticationKeyMissing(_)
+                    | CandidateOutcome::AuthenticationFailed(_) => {
+                        return VerificationStatus::Invalid
+                    }
                     CandidateOutcome::NotFound => {}
                 }
             }
         }
 
         VerificationStatus::NotFound
+    }
+
+    /// Verify protection and return raw payload bytes for embedded reference checks.
+    ///
+    /// Like [`verify_payload_from_bytes_with_key`], but also returns the raw
+    /// payload bytes when verification fails. This allows callers to inspect
+    /// the v3 header (e.g., auth_algo) to distinguish between missing and
+    /// wrong HMAC keys.
+    ///
+    /// Returns `(VerificationStatus, Option<Vec<u8>>)` where the second
+    /// element contains the raw payload bytes when a payload was found but
+    /// verification failed.
+    pub fn verify_and_extract_raw_from_bytes(
+        &self,
+        img_bytes: &[u8],
+        mac_key: &[u8],
+    ) -> (VerificationStatus, Option<Vec<u8>>) {
+        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(img_bytes);
+
+        if img_bytes.starts_with(&[0xFF, 0xD8]) {
+            match self.verify_extract_verified_dct(img_bytes, mac_key) {
+                CandidateOutcome::Valid(_) => return (VerificationStatus::Verified, None),
+                CandidateOutcome::Invalid(raw) => return (VerificationStatus::Invalid, Some(raw)),
+                CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
+                    return (VerificationStatus::Invalid, None)
+                }
+                CandidateOutcome::AuthenticationKeyMissing(raw)
+                | CandidateOutcome::AuthenticationFailed(raw) => {
+                    return (VerificationStatus::Invalid, Some(raw))
+                }
+                CandidateOutcome::NotFound => {}
+            }
+
+            if let Some(metadata_seed) = metadata_seed {
+                match self.verify_extract_dct_with_seed(img_bytes, metadata_seed, mac_key) {
+                    CandidateOutcome::Valid(_) => return (VerificationStatus::Verified, None),
+                    CandidateOutcome::Invalid(raw) => {
+                        return (VerificationStatus::Invalid, Some(raw))
+                    }
+                    CandidateOutcome::AuthenticationKeyMissing(raw)
+                    | CandidateOutcome::AuthenticationFailed(raw) => {
+                        return (VerificationStatus::Invalid, Some(raw))
+                    }
+                    CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
+                        return (VerificationStatus::Invalid, None)
+                    }
+                    CandidateOutcome::NotFound => {}
+                }
+            }
+
+            return (VerificationStatus::NotFound, None);
+        }
+
+        if let Some(metadata_seed) = metadata_seed {
+            if let Ok(img) = image::load_from_memory(img_bytes) {
+                match self.verify_payload_with_seed_outcome(&img, metadata_seed, mac_key) {
+                    CandidateOutcome::Valid(_) => return (VerificationStatus::Verified, None),
+                    CandidateOutcome::Invalid(raw) => {
+                        return (VerificationStatus::Invalid, Some(raw))
+                    }
+                    CandidateOutcome::AuthenticationKeyMissing(raw)
+                    | CandidateOutcome::AuthenticationFailed(raw) => {
+                        return (VerificationStatus::Invalid, Some(raw))
+                    }
+                    CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
+                        return (VerificationStatus::Invalid, None)
+                    }
+                    CandidateOutcome::NotFound => {}
+                }
+            }
+        }
+
+        if let Ok(img) = image::load_from_memory(img_bytes) {
+            let rgba = img.to_rgba8();
+            if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
+                match self.verify_payload_with_seed_outcome(&img, fallback_seed, mac_key) {
+                    CandidateOutcome::Valid(_) => return (VerificationStatus::Verified, None),
+                    CandidateOutcome::Invalid(raw) => {
+                        return (VerificationStatus::Invalid, Some(raw))
+                    }
+                    CandidateOutcome::AuthenticationKeyMissing(raw)
+                    | CandidateOutcome::AuthenticationFailed(raw) => {
+                        return (VerificationStatus::Invalid, Some(raw))
+                    }
+                    CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
+                        return (VerificationStatus::Invalid, None)
+                    }
+                    CandidateOutcome::NotFound => {}
+                }
+            }
+        }
+
+        (VerificationStatus::NotFound, None)
     }
 
     /// Verify protection from raw image bytes using a known seed.
@@ -1214,10 +1322,17 @@ impl SteganographyProtector {
                     return CandidateOutcome::Invalid(payload);
                 }
             }
-            CandidateOutcome::MalformedV3
-            | CandidateOutcome::UnsupportedVersion(_)
-            | CandidateOutcome::AuthenticationKeyMissing
-            | CandidateOutcome::AuthenticationFailed => {}
+            CandidateOutcome::AuthenticationKeyMissing(payload) => {
+                if Self::verify_embedded_seed_matches(&payload, seed) {
+                    return CandidateOutcome::AuthenticationKeyMissing(payload);
+                }
+            }
+            CandidateOutcome::AuthenticationFailed(payload) => {
+                if Self::verify_embedded_seed_matches(&payload, seed) {
+                    return CandidateOutcome::AuthenticationFailed(payload);
+                }
+            }
+            CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {}
             CandidateOutcome::NotFound => {}
         }
 
@@ -1235,10 +1350,18 @@ impl SteganographyProtector {
                                 return CandidateOutcome::Invalid(payload);
                             }
                         }
-                        CandidateOutcome::MalformedV3
-                        | CandidateOutcome::UnsupportedVersion(_)
-                        | CandidateOutcome::AuthenticationKeyMissing
-                        | CandidateOutcome::AuthenticationFailed => {}
+                        CandidateOutcome::AuthenticationKeyMissing(payload) => {
+                            if Self::verify_embedded_seed_matches(&payload, seed) {
+                                return CandidateOutcome::AuthenticationKeyMissing(payload);
+                            }
+                        }
+                        CandidateOutcome::AuthenticationFailed(payload) => {
+                            if Self::verify_embedded_seed_matches(&payload, seed) {
+                                return CandidateOutcome::AuthenticationFailed(payload);
+                            }
+                        }
+                        CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
+                        }
                         CandidateOutcome::NotFound => {}
                     }
                 }
@@ -1281,8 +1404,8 @@ impl SteganographyProtector {
             }
             CandidateOutcome::MalformedV3
             | CandidateOutcome::UnsupportedVersion(_)
-            | CandidateOutcome::AuthenticationKeyMissing
-            | CandidateOutcome::AuthenticationFailed => outcome,
+            | CandidateOutcome::AuthenticationKeyMissing(_)
+            | CandidateOutcome::AuthenticationFailed(_) => outcome,
             CandidateOutcome::NotFound => CandidateOutcome::NotFound,
         }
     }
@@ -1321,6 +1444,14 @@ impl SteganographyProtector {
             match (&coeffs_outcome, &tiled_outcome) {
                 (CandidateOutcome::Invalid(p), _) | (_, CandidateOutcome::Invalid(p)) => {
                     return CandidateOutcome::Invalid(p.clone());
+                }
+                (CandidateOutcome::AuthenticationKeyMissing(p), _)
+                | (_, CandidateOutcome::AuthenticationKeyMissing(p)) => {
+                    return CandidateOutcome::AuthenticationKeyMissing(p.clone());
+                }
+                (CandidateOutcome::AuthenticationFailed(p), _)
+                | (_, CandidateOutcome::AuthenticationFailed(p)) => {
+                    return CandidateOutcome::AuthenticationFailed(p.clone());
                 }
                 _ => {}
             }
@@ -1921,6 +2052,14 @@ impl SteganographyProtector {
                     (CandidateOutcome::Invalid(p), _) | (_, CandidateOutcome::Invalid(p)) => {
                         return CandidateOutcome::Invalid(p.clone());
                     }
+                    (CandidateOutcome::AuthenticationKeyMissing(p), _)
+                    | (_, CandidateOutcome::AuthenticationKeyMissing(p)) => {
+                        return CandidateOutcome::AuthenticationKeyMissing(p.clone());
+                    }
+                    (CandidateOutcome::AuthenticationFailed(p), _)
+                    | (_, CandidateOutcome::AuthenticationFailed(p)) => {
+                        return CandidateOutcome::AuthenticationFailed(p.clone());
+                    }
                     _ => {}
                 }
             }
@@ -1984,7 +2123,7 @@ impl SteganographyProtector {
         seed: u64,
         mac_key: &[u8],
     ) -> CandidateOutcome {
-        let mut last_invalid: Option<Vec<u8>> = None;
+        let mut last_outcome: Option<CandidateOutcome> = None;
         for &bits_needed in &[
             V3_CRC_PAYLOAD_BITS,
             V3_HMAC_PAYLOAD_BITS,
@@ -2020,8 +2159,9 @@ impl SteganographyProtector {
                                         Self::truncate_to_actual_payload(&full_bytes),
                                     );
                                 }
-                                if last_invalid.is_none() {
-                                    last_invalid = Some(full_bytes);
+                                if last_outcome.is_none() {
+                                    last_outcome =
+                                        Some(Self::classify_auth_failure(&full_bytes, mac_key));
                                 }
                             }
                         }
@@ -2029,13 +2169,13 @@ impl SteganographyProtector {
                         return CandidateOutcome::MalformedV3;
                     }
                 }
-                if last_invalid.is_none() {
-                    last_invalid = Some(payload_bytes);
+                if last_outcome.is_none() {
+                    last_outcome = Some(Self::classify_auth_failure(&payload_bytes, mac_key));
                 }
             }
         }
-        match last_invalid {
-            Some(p) => CandidateOutcome::Invalid(p),
+        match last_outcome {
+            Some(outcome) => outcome,
             None => CandidateOutcome::NotFound,
         }
     }
@@ -2194,6 +2334,28 @@ impl SteganographyProtector {
             } else {
                 false
             }
+        }
+    }
+
+    /// Classify an invalid payload based on v3 auth_algo and provided key.
+    ///
+    /// Returns `AuthenticationKeyMissing` if the payload uses HMAC but no key
+    /// was provided, `AuthenticationFailed` if the payload uses HMAC but the
+    /// key was wrong, or `Invalid` for other failures.
+    fn classify_auth_failure(payload: &[u8], mac_key: &[u8]) -> CandidateOutcome {
+        if payload.len() > 30 && Self::has_v3_magic(payload) {
+            let auth_algo = payload[29];
+            if auth_algo == 2 {
+                if mac_key.is_empty() {
+                    CandidateOutcome::AuthenticationKeyMissing(payload.to_vec())
+                } else {
+                    CandidateOutcome::AuthenticationFailed(payload.to_vec())
+                }
+            } else {
+                CandidateOutcome::Invalid(payload.to_vec())
+            }
+        } else {
+            CandidateOutcome::Invalid(payload.to_vec())
         }
     }
 
@@ -2750,7 +2912,7 @@ impl SteganographyProtector {
             y = y.saturating_add(stride);
         }
         let max_grid = 16u32;
-        let mut last_invalid: Option<Vec<u8>> = None;
+        let mut last_outcome: Option<CandidateOutcome> = None;
 
         for &(x0, y0) in &origins {
             let sub = Self::crop_rgba(img, x0, y0, tile_size, tile_size);
@@ -2791,8 +2953,10 @@ impl SteganographyProtector {
                                                         Self::truncate_to_actual_payload(&full),
                                                     );
                                                 }
-                                                if last_invalid.is_none() {
-                                                    last_invalid = Some(full);
+                                                if last_outcome.is_none() {
+                                                    last_outcome = Some(
+                                                        Self::classify_auth_failure(&full, mac_key),
+                                                    );
                                                 }
                                             }
                                         }
@@ -2800,8 +2964,9 @@ impl SteganographyProtector {
                                         return CandidateOutcome::MalformedV3;
                                     }
                                 }
-                                if last_invalid.is_none() {
-                                    last_invalid = Some(candidate);
+                                if last_outcome.is_none() {
+                                    last_outcome =
+                                        Some(Self::classify_auth_failure(&candidate, mac_key));
                                 }
                             }
                         }
@@ -2809,8 +2974,8 @@ impl SteganographyProtector {
                 }
             }
         }
-        match last_invalid {
-            Some(p) => CandidateOutcome::Invalid(p),
+        match last_outcome {
+            Some(outcome) => outcome,
             None => CandidateOutcome::NotFound,
         }
     }

@@ -160,6 +160,7 @@ impl ManifestVerification {
 /// 2. Signatures verify against public keys in the manifest.
 /// 3. Trust is evaluated according to the supplied policy.
 /// 4. Trust metadata from the manifest is reported if present.
+/// 5. Embedded payload reference is verified with the optional payload MAC key.
 ///
 /// # Arguments
 ///
@@ -177,7 +178,7 @@ pub fn verify_detached_manifest(
     trust: &TrustPolicy,
 ) -> ManifestVerification {
     let limits = ResourceLimits::default();
-    verify_detached_manifest_with_limits(image_bytes, manifest, trust, Some(&limits))
+    verify_detached_manifest_with_limits(image_bytes, manifest, trust, Some(&limits), None)
 }
 
 /// Verify a detached manifest with resource limits.
@@ -192,6 +193,11 @@ pub fn verify_detached_manifest(
 /// * `manifest` - The detached manifest to verify.
 /// * `trust` - Trust policy controlling which keys are trusted.
 /// * `limits` - Optional resource limits. When `None`, default limits are used.
+/// * `payload_mac_key` - Optional HMAC key for embedded payload verification.
+///   When `Some`, HMAC-protected payloads are verified with this key.
+///   When `None` and an HMAC payload is found, `EmbeddedReferenceStatus::AuthenticationKeyMissing`
+///   is returned. When `Some` and the key is wrong,
+///   `EmbeddedReferenceStatus::AuthenticationFailed` is returned.
 ///
 /// # Returns
 ///
@@ -202,6 +208,7 @@ pub fn verify_detached_manifest_with_limits(
     manifest: &DetachedManifest,
     trust: &TrustPolicy,
     limits: Option<&ResourceLimits>,
+    payload_mac_key: Option<&[u8]>,
 ) -> ManifestVerification {
     if let Some(limits) = limits {
         if limits.check_input_size(image_bytes.len()).is_err() {
@@ -221,7 +228,7 @@ pub fn verify_detached_manifest_with_limits(
         }
     }
 
-    verify_detached_manifest_inner(image_bytes, manifest, trust)
+    verify_detached_manifest_inner(image_bytes, manifest, trust, payload_mac_key)
 }
 
 #[allow(unused_variables)]
@@ -229,6 +236,7 @@ fn verify_detached_manifest_inner(
     image_bytes: &[u8],
     manifest: &DetachedManifest,
     trust: &TrustPolicy,
+    payload_mac_key: Option<&[u8]>,
 ) -> ManifestVerification {
     let mut builder = VerificationReport::builder();
 
@@ -427,35 +435,73 @@ fn verify_detached_manifest_inner(
         None => EmbeddedReferenceStatus::NotProvided,
         Some(reference) => {
             let extractor = crate::protected::steganography::SteganographyProtector::new();
-            // Use raw byte extraction to preserve JPEG quantization tables,
-            // metadata seeds, and exact embedded bytes — avoiding DynamicImage
-            // decode which loses stego-relevant byte-level detail.
-            match extractor.extract_payload_from_bytes_with_key(image_bytes, &[]) {
-                Some(payload) => {
-                    if payload.version() != reference.payload_version {
-                        return ManifestVerification {
-                            report,
-                            instance_digest_match,
-                            manifest_valid: true,
-                            embedded_reference_status: EmbeddedReferenceStatus::VersionMismatch,
-                        };
-                    }
-                    match payload.raw_payload() {
-                        Some(raw) => {
-                            let mut hasher = Sha256::new();
-                            hasher.update(raw);
-                            let actual_digest =
-                                format!("sha256:{}", hex::encode(hasher.finalize()));
-                            if actual_digest != reference.payload_digest {
-                                EmbeddedReferenceStatus::DigestMismatch
-                            } else {
-                                EmbeddedReferenceStatus::PresentValid
-                            }
+            let mac_key = payload_mac_key.unwrap_or(&[]);
+
+            // Use verify_and_extract_raw_from_bytes to get both the status and raw
+            // payload bytes. This allows us to inspect the v3 header to distinguish
+            // between missing and wrong HMAC keys.
+            let (status, raw_bytes) =
+                extractor.verify_and_extract_raw_from_bytes(image_bytes, mac_key);
+
+            match status {
+                crate::VerificationStatus::Verified => {
+                    // Payload verified. Extract to check version and digest.
+                    if let Some(payload) =
+                        extractor.extract_payload_from_bytes_with_key(image_bytes, mac_key)
+                    {
+                        if payload.version() != reference.payload_version {
+                            return ManifestVerification {
+                                report,
+                                instance_digest_match,
+                                manifest_valid: true,
+                                embedded_reference_status: EmbeddedReferenceStatus::VersionMismatch,
+                            };
                         }
-                        None => EmbeddedReferenceStatus::Malformed,
+                        match payload.raw_payload() {
+                            Some(raw) => {
+                                let mut hasher = Sha256::new();
+                                hasher.update(raw);
+                                let actual_digest =
+                                    format!("sha256:{}", hex::encode(hasher.finalize()));
+                                if actual_digest != reference.payload_digest {
+                                    EmbeddedReferenceStatus::DigestMismatch
+                                } else {
+                                    EmbeddedReferenceStatus::PresentValid
+                                }
+                            }
+                            None => EmbeddedReferenceStatus::Malformed,
+                        }
+                    } else {
+                        EmbeddedReferenceStatus::Malformed
                     }
                 }
-                None => EmbeddedReferenceStatus::Stripped,
+                crate::VerificationStatus::Invalid => {
+                    // Payload found but verification failed.
+                    // Use raw bytes to determine if this is due to missing/wrong HMAC key.
+                    if let Some(raw) = raw_bytes {
+                        // Check if this is a v3 payload with HMAC auth
+                        if raw.len() > 30 && raw[0] == 0x53 && raw[1] == 0x45 {
+                            let auth_algo = raw[29];
+                            if auth_algo == 2 {
+                                // HMAC payload
+                                if mac_key.is_empty() {
+                                    EmbeddedReferenceStatus::AuthenticationKeyMissing
+                                } else {
+                                    EmbeddedReferenceStatus::AuthenticationFailed
+                                }
+                            } else {
+                                // CRC payload — verification failed for other reasons
+                                EmbeddedReferenceStatus::Malformed
+                            }
+                        } else {
+                            EmbeddedReferenceStatus::Malformed
+                        }
+                    } else {
+                        // No raw bytes available — payload not found
+                        EmbeddedReferenceStatus::Stripped
+                    }
+                }
+                crate::VerificationStatus::NotFound => EmbeddedReferenceStatus::Stripped,
             }
         }
     };
@@ -479,6 +525,7 @@ fn verify_detached_manifest_inner(
 /// * `manifest` - The detached manifest to verify.
 /// * `expected_keys` - Optional list of trusted public key identifiers.
 ///   If `None`, [`TrustPolicy::TrustNone`] is used.
+/// * `payload_mac_key` - Optional HMAC key for embedded payload verification.
 ///
 /// # Returns
 ///
@@ -488,10 +535,18 @@ pub fn verify_detached_manifest_with_keys(
     image_bytes: &[u8],
     manifest: &DetachedManifest,
     expected_keys: Option<&[Vec<u8>]>,
+    payload_mac_key: Option<&[u8]>,
 ) -> ManifestVerification {
     let policy = match expected_keys {
         Some(keys) => TrustPolicy::TrustKeys(keys.to_vec()),
         None => TrustPolicy::TrustNone,
     };
-    verify_detached_manifest(image_bytes, manifest, &policy)
+    let limits = ResourceLimits::default();
+    verify_detached_manifest_with_limits(
+        image_bytes,
+        manifest,
+        &policy,
+        Some(&limits),
+        payload_mac_key,
+    )
 }

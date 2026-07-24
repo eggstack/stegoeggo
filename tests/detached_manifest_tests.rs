@@ -312,7 +312,7 @@ fn test_trust_callback_custom_logic() {
 #[test]
 fn test_backward_compat_wrapper_trust_none() {
     let (manifest, image_bytes, _) = make_signed_manifest();
-    let result = verify_detached_manifest_with_keys(&image_bytes, &manifest, None);
+    let result = verify_detached_manifest_with_keys(&image_bytes, &manifest, None, None);
 
     assert!(result.report.signatures()[0].cryptographically_valid());
     assert!(!result.report.signatures()[0].trusted());
@@ -323,7 +323,7 @@ fn test_backward_compat_wrapper_trust_none() {
 fn test_backward_compat_wrapper_trust_keys() {
     let (manifest, image_bytes, _) = make_signed_manifest();
     let keys = vec![b"test-key-id".to_vec()];
-    let result = verify_detached_manifest_with_keys(&image_bytes, &manifest, Some(&keys));
+    let result = verify_detached_manifest_with_keys(&image_bytes, &manifest, Some(&keys), None);
 
     assert!(result.report.signatures()[0].trusted());
 }
@@ -511,6 +511,7 @@ fn test_resource_limits_rejects_oversized_input() {
         &manifest,
         &TrustPolicy::TrustNone,
         Some(&limits),
+        None,
     );
 
     assert!(!result.manifest_valid);

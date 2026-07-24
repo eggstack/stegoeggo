@@ -513,6 +513,108 @@ mod detached_tests {
     }
 
     #[test]
+    fn hmac_embedded_reference_missing_key_reports_authentication_key_missing() {
+        use stegoeggo::detached::verify::verify_detached_manifest_with_limits;
+        use stegoeggo::resource_limits::ResourceLimits;
+
+        let img = image::DynamicImage::new_rgb8(128, 128);
+        let ctx = ProtectionContext::new(0.5, 42).with_mac_key(b"secret-key".to_vec());
+        let protected = process_image_bytes(
+            &encode_image(&img, image::ImageFormat::Png).unwrap(),
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        let stego = stegoeggo::SteganographyProtector::new();
+        let payload = stego
+            .extract_payload_from_bytes_with_key(&protected, b"secret-key")
+            .unwrap();
+        let raw = payload.raw_payload().unwrap();
+
+        use sha2::{Digest, Sha256};
+        let payload_digest = format!("sha256:{}", hex::encode(Sha256::digest(raw)));
+        let image_digest = format!("sha256:{}", hex::encode(Sha256::digest(&protected)));
+
+        let claim = stegoeggo::provenance::ProvenanceClaim::new(1)
+            .with_instance_digest_raw(image_digest)
+            .with_content_code("iscc:test".to_string())
+            .with_creation_time(1700000000)
+            .with_source_facts("png", 128, 128, protected.len() as u64)
+            .with_software("stegoeggo-test/0.2.3");
+
+        let manifest = DetachedManifest::new(claim).with_embedded_reference(EmbeddedReference {
+            payload_version: 3,
+            payload_digest,
+        });
+
+        let limits = ResourceLimits::default();
+        let result = verify_detached_manifest_with_limits(
+            &protected,
+            &manifest,
+            &TrustPolicy::TrustNone,
+            Some(&limits),
+            None,
+        );
+        assert_eq!(
+            result.embedded_reference_status,
+            EmbeddedReferenceStatus::AuthenticationKeyMissing,
+            "HMAC payload without key should report AuthenticationKeyMissing"
+        );
+    }
+
+    #[test]
+    fn hmac_embedded_reference_wrong_key_reports_authentication_failed() {
+        use stegoeggo::detached::verify::verify_detached_manifest_with_limits;
+        use stegoeggo::resource_limits::ResourceLimits;
+
+        let img = image::DynamicImage::new_rgb8(128, 128);
+        let ctx = ProtectionContext::new(0.5, 42).with_mac_key(b"secret-key".to_vec());
+        let protected = process_image_bytes(
+            &encode_image(&img, image::ImageFormat::Png).unwrap(),
+            ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+
+        let stego = stegoeggo::SteganographyProtector::new();
+        let payload = stego
+            .extract_payload_from_bytes_with_key(&protected, b"secret-key")
+            .unwrap();
+        let raw = payload.raw_payload().unwrap();
+
+        use sha2::{Digest, Sha256};
+        let payload_digest = format!("sha256:{}", hex::encode(Sha256::digest(raw)));
+        let image_digest = format!("sha256:{}", hex::encode(Sha256::digest(&protected)));
+
+        let claim = stegoeggo::provenance::ProvenanceClaim::new(1)
+            .with_instance_digest_raw(image_digest)
+            .with_content_code("iscc:test".to_string())
+            .with_creation_time(1700000000)
+            .with_source_facts("png", 128, 128, protected.len() as u64)
+            .with_software("stegoeggo-test/0.2.3");
+
+        let manifest = DetachedManifest::new(claim).with_embedded_reference(EmbeddedReference {
+            payload_version: 3,
+            payload_digest,
+        });
+
+        let limits = ResourceLimits::default();
+        let result = verify_detached_manifest_with_limits(
+            &protected,
+            &manifest,
+            &TrustPolicy::TrustNone,
+            Some(&limits),
+            Some(b"wrong-key"),
+        );
+        assert_eq!(
+            result.embedded_reference_status,
+            EmbeddedReferenceStatus::AuthenticationFailed,
+            "HMAC payload with wrong key should report AuthenticationFailed"
+        );
+    }
+
+    #[test]
     fn trust_metadata_does_not_affect_trust() {
         let image_bytes = make_test_image_bytes();
         let claim = make_test_claim_for(&image_bytes);
