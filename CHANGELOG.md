@@ -27,6 +27,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CLI public key parsing now preserves `key_id` from PEM files
 - V3 extraction: `probe_v3_header` now returns `None` for non-v3 data (cleaner fallthrough)
 - Detached manifest signing output is now atomic (write-to-temp + rename)
+- Header-driven v3 extraction: all 8 extraction paths (LSB, DCT, tiled LSB, tiled DCT, and verify variants) now check v3 magic from the first extracted candidate and re-extract with the exact `total_bits` declared in the v3 header
+- `CandidateOutcome` expanded with `MalformedV3`, `UnsupportedVersion`, `AuthenticationKeyMissing`, `AuthenticationFailed` for structured v3 failure reporting
+- `V3ProbeResult` enum and `probe_v3_header_from_lsb`/`classify_v3_probe` functions for v3 header probing
+- `extract_lsb_range` for bit-range LSB extraction (prepared for future use)
+- Behavior tests for resource limit enforcement through public entrypoints (tile origins, verification seeds, request API input size, request API dimensions)
 
 ## [0.2.2] - Unreleased
 

@@ -93,6 +93,8 @@ src/
 - `PayloadV3Header` — v3 payload header
 - `DetachedOverallStatus` — Overall verification verdict for detached manifests
 - `EmbeddedReferenceStatus` — Status of embedded manifest reference: `PresentValid`, `AuthenticationKeyMissing`, `AuthenticationFailed`, `UnsupportedVersion` (plus deprecated `Present` alias)
+- `CandidateOutcome` — Extraction outcome enum with `Valid`, `Invalid`, `MalformedV3`, `UnsupportedVersion`, `AuthenticationKeyMissing`, `AuthenticationFailed`, `NotFound` variants (crate-internal)
+- `V3ProbeResult` — V3 header probe result: `V3Detected`, `NotV3`, `MalformedV3`, `UnsupportedVersion`, `InsufficientCapacity` (crate-internal)
 
 ## Features
 
