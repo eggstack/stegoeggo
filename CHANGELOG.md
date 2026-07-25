@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.2.3] - Unreleased
+## [0.3.0] - Unreleased
 
 ### Fixed
 - V3-first extraction: all LSB/DCT/tiled extraction paths now try V3 CRC (288 bits) and V3 HMAC (384 bits) sizes first, falling back to V2/V1 for backward compatibility
@@ -152,8 +152,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Initial release.
 
-[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.2.3...HEAD
-[0.2.3]: https://github.com/eggstack/stegoeggo/compare/v0.2.2...v0.2.3
+[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/eggstack/stegoeggo/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/eggstack/stegoeggo/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/eggstack/stegoeggo/compare/v0.1.0...v0.2.1
 [0.1.0]: https://github.com/eggstack/stegoeggo/releases/tag/v0.1.0

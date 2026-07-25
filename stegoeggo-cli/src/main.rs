@@ -954,7 +954,7 @@ fn handle_verify_manifest(
     json_output: bool,
 ) -> Result<i32, Box<dyn std::error::Error>> {
     use stegoeggo::detached::verify::{
-        verify_detached_manifest_with_limits_and_mac, EmbeddedReferenceStatus, TrustPolicy,
+        verify_detached_manifest_with_options, DetachedVerificationOptions, EmbeddedReferenceStatus,
     };
     use stegoeggo::detached::DetachedManifest;
     use stegoeggo::resource_limits::ResourceLimits;
@@ -967,7 +967,9 @@ fn handle_verify_manifest(
 
     let image_bytes = fs::read(image_path)?;
 
-    let trust = if let Some(ref key_file) = key_path {
+    let caller_keys: Vec<stegoeggo::detached::TrustedVerifyingKey> = if let Some(ref key_file) =
+        key_path
+    {
         let pub_key_bytes = fs::read(key_file)?;
         let pub_key_str = String::from_utf8_lossy(&pub_key_bytes);
 
@@ -998,12 +1000,12 @@ fn handle_verify_manifest(
         let mut raw_pub = [0u8; 32];
         raw_pub.copy_from_slice(&pub_bytes_vec);
         let vk = VerifyingKey::from_bytes(raw_pub, key_id_hex.into_bytes());
-        TrustPolicy::TrustVerifyingKeys(vec![stegoeggo::detached::TrustedVerifyingKey {
+        vec![stegoeggo::detached::TrustedVerifyingKey {
             key_id: vk.key_id().to_vec(),
             key: vk,
-        }])
+        }]
     } else {
-        TrustPolicy::TrustNone
+        Vec::new()
     };
 
     let payload_mac_key = payload_key.as_deref().map(|k| {
@@ -1017,13 +1019,14 @@ fn handle_verify_manifest(
             hex::decode(k).unwrap_or_else(|_| k.as_bytes().to_vec())
         }
     });
-    let result = verify_detached_manifest_with_limits_and_mac(
-        &image_bytes,
-        &manifest,
-        &trust,
-        Some(&limits),
-        payload_mac_key.as_deref(),
-    );
+
+    let options = DetachedVerificationOptions {
+        trust_policy: None,
+        caller_verifying_keys: &caller_keys,
+        payload_mac_key: payload_mac_key.as_deref(),
+        limits: Some(&limits),
+    };
+    let result = verify_detached_manifest_with_options(&image_bytes, &manifest, &options);
 
     let overall = result.overall_status();
 
@@ -1042,7 +1045,6 @@ fn handle_verify_manifest(
             stegoeggo::detached::DetachedOverallStatus::KeyMaterialMismatch => {
                 "key_material_mismatch"
             }
-            _ => "unknown",
         };
 
         #[derive(serde::Serialize)]
@@ -1079,7 +1081,6 @@ fn handle_verify_manifest(
             EmbeddedReferenceStatus::AuthenticationKeyMissing => "authentication_key_missing",
             EmbeddedReferenceStatus::AuthenticationFailed => "authentication_failed",
             EmbeddedReferenceStatus::UnsupportedVersion => "unsupported_version",
-            _ => "unknown",
         };
 
         let sigs_valid = result

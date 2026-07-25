@@ -49,14 +49,13 @@ impl std::fmt::Debug for TrustedVerifyingKey {
 ///   reported but `trusted` is always `false`.
 /// - [`TrustPolicy::TrustKeys`]: Trusts key identifiers only. **Does not
 ///   bind external key material** — a manifest can supply arbitrary public
-///   key bytes under a trusted key ID. Use only for legacy compatibility;
-///   do not use for `verify-manifest --key`.
-/// - [`TrustPolicy::TrustVerifyingKeys`]: Trusts caller-owned public key
-///   bytes. A manifest cannot substitute attacker key bytes under a
-///   trusted key ID. This is the recommended mode for `verify-manifest --key`.
+///   key bytes under a trusted key ID. Use only for legacy compatibility.
 /// - [`TrustPolicy::TrustCallback`]: Trusts keys for which the callback
 ///   returns `true`.
-#[non_exhaustive]
+///
+/// For caller-owned public key verification (binding key ID to exact key
+/// bytes), use [`DetachedVerificationOptions`] with
+/// [`verify_detached_manifest_with_options`].
 pub enum TrustPolicy {
     /// Never trust any key. Signature validity is reported but `trusted` is always false.
     TrustNone,
@@ -64,15 +63,8 @@ pub enum TrustPolicy {
     ///
     /// **Does not bind external key material.** A manifest can supply
     /// arbitrary public key bytes under a trusted key ID. Use only for
-    /// legacy compatibility; prefer [`TrustPolicy::TrustVerifyingKeys`].
+    /// legacy compatibility.
     TrustKeys(Vec<Vec<u8>>),
-    /// Trust caller-owned public key bytes.
-    ///
-    /// Each entry binds a key ID to the exact 32-byte Ed25519 public key
-    /// supplied by the caller. A manifest cannot substitute alternative
-    /// key bytes under a trusted key ID.
-    #[cfg(feature = "signatures")]
-    TrustVerifyingKeys(Vec<TrustedVerifyingKey>),
     /// Trust keys for which the callback returns `true`.
     ///
     /// The callback receives the key identifier from each signature record.
@@ -85,13 +77,31 @@ impl std::fmt::Debug for TrustPolicy {
         match self {
             TrustPolicy::TrustNone => write!(f, "TrustNone"),
             TrustPolicy::TrustKeys(keys) => f.debug_tuple("TrustKeys").field(keys).finish(),
-            #[cfg(feature = "signatures")]
-            TrustPolicy::TrustVerifyingKeys(keys) => {
-                f.debug_tuple("TrustVerifyingKeys").field(keys).finish()
-            }
             TrustPolicy::TrustCallback(_) => write!(f, "TrustCallback(<function>)"),
         }
     }
+}
+
+/// Options for detached manifest verification with caller-owned key support.
+///
+/// This additive type allows the caller to supply verifying keys that bind
+/// a key ID to exact Ed25519 public key bytes. A manifest cannot substitute
+/// alternative key bytes under a trusted key ID when caller-owned keys are
+/// provided.
+///
+/// Use [`verify_detached_manifest_with_options`] to pass these options.
+#[derive(Debug, Default)]
+pub struct DetachedVerificationOptions<'a> {
+    /// Trust policy controlling which key identifiers are trusted.
+    /// When `None`, [`TrustPolicy::TrustNone`] is used.
+    pub trust_policy: Option<&'a TrustPolicy>,
+    /// Caller-owned verifying keys that bind key IDs to exact public key bytes.
+    #[cfg(feature = "signatures")]
+    pub caller_verifying_keys: &'a [TrustedVerifyingKey],
+    /// Optional HMAC key for embedded payload verification.
+    pub payload_mac_key: Option<&'a [u8]>,
+    /// Optional resource limits.
+    pub limits: Option<&'a ResourceLimits>,
 }
 
 /// Status of the embedded payload reference in a detached manifest.
@@ -101,7 +111,6 @@ impl std::fmt::Debug for TrustPolicy {
 /// means only detached evidence remains — the embedded stego channel has been
 /// removed or was never present.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum EmbeddedReferenceStatus {
     /// The manifest does not declare an embedded reference.
     NotProvided,
@@ -132,7 +141,6 @@ pub enum EmbeddedReferenceStatus {
 
 /// Overall status of detached manifest verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum DetachedOverallStatus {
     /// Manifest is valid, binding matches, at least one signature is cryptographically valid,
     /// and a caller-trusted key produced a valid signature.
@@ -328,7 +336,7 @@ pub fn verify_detached_manifest_with_limits_and_mac(
         }
     }
 
-    verify_detached_manifest_inner(image_bytes, manifest, trust, payload_mac_key)
+    verify_detached_manifest_inner(image_bytes, manifest, trust, payload_mac_key, &[])
 }
 
 #[allow(unused_variables)]
@@ -337,6 +345,8 @@ fn verify_detached_manifest_inner(
     manifest: &DetachedManifest,
     trust: &TrustPolicy,
     payload_mac_key: Option<&[u8]>,
+    #[cfg(feature = "signatures")] caller_verifying_keys: &[TrustedVerifyingKey],
+    #[cfg(not(feature = "signatures"))] caller_verifying_keys: &[()],
 ) -> ManifestVerification {
     let mut builder = VerificationReport::builder();
 
@@ -392,13 +402,10 @@ fn verify_detached_manifest_inner(
         // signature's key ID. When present, verification uses the caller-owned
         // key bytes directly and requires manifest key bytes (if any) to match.
         #[cfg(feature = "signatures")]
-        let trusted_vk: Option<&crate::signing::VerifyingKey> = match trust {
-            TrustPolicy::TrustVerifyingKeys(keys) => keys
-                .iter()
-                .find(|t| t.key_id == sig_record.key_id)
-                .map(|t| &t.key),
-            _ => None,
-        };
+        let trusted_vk: Option<&crate::signing::VerifyingKey> = caller_verifying_keys
+            .iter()
+            .find(|t| t.key_id == sig_record.key_id)
+            .map(|t| &t.key);
         #[cfg(not(feature = "signatures"))]
         let trusted_vk: Option<()> = None;
 
@@ -456,13 +463,18 @@ fn verify_detached_manifest_inner(
                 let key_id_matched = match trust {
                     TrustPolicy::TrustNone => false,
                     TrustPolicy::TrustKeys(keys) => keys.iter().any(|t| t == &sig_record.key_id),
-                    #[cfg(feature = "signatures")]
-                    TrustPolicy::TrustVerifyingKeys(keys) => {
-                        keys.iter().any(|t| t.key_id == sig_record.key_id)
-                    }
                     TrustPolicy::TrustCallback(f) => f(&sig_record.key_id),
-                    #[allow(unreachable_patterns)]
-                    _ => false,
+                } || {
+                    #[cfg(feature = "signatures")]
+                    {
+                        caller_verifying_keys
+                            .iter()
+                            .any(|t| t.key_id == sig_record.key_id)
+                    }
+                    #[cfg(not(feature = "signatures"))]
+                    {
+                        false
+                    }
                 };
 
                 // Trusted requires: key ID matched AND cryptographically valid
@@ -702,4 +714,70 @@ pub fn verify_detached_manifest_with_keys_and_mac(
         Some(&limits),
         payload_mac_key,
     )
+}
+
+/// Verify a detached manifest with full caller-owned key support.
+///
+/// This additive function accepts [`DetachedVerificationOptions`] which allows
+/// the caller to supply:
+/// - A [`TrustPolicy`] for key-ID-based trust evaluation
+/// - Caller-owned verifying keys that bind key IDs to exact Ed25519 public key bytes
+/// - An optional HMAC key for embedded payload verification
+/// - Optional resource limits
+///
+/// When caller-owned verifying keys are provided, the manifest cannot substitute
+/// alternative key bytes under a trusted key ID. This is the recommended function
+/// for `verify-manifest --key` and similar CLI operations.
+///
+/// # Arguments
+///
+/// * `image_bytes` - Raw image bytes.
+/// * `manifest` - The detached manifest to verify.
+/// * `options` - Verification options including trust policy, caller keys, and limits.
+///
+/// # Returns
+///
+/// A [`ManifestVerification`] with structured results.
+#[must_use]
+pub fn verify_detached_manifest_with_options(
+    image_bytes: &[u8],
+    manifest: &DetachedManifest,
+    options: &DetachedVerificationOptions<'_>,
+) -> ManifestVerification {
+    let default_limits = ResourceLimits::default();
+    let limits = options.limits.unwrap_or(&default_limits);
+
+    if limits.check_input_size(image_bytes.len()).is_err() {
+        let mut builder = VerificationReport::builder();
+        builder = builder.with_bindings(
+            crate::verification::report::BindingVerification::builder()
+                .instance_digest_present(false)
+                .instance_digest_valid(false)
+                .build(),
+        );
+        return ManifestVerification {
+            report: builder.build(),
+            instance_digest_match: false,
+            manifest_valid: false,
+            embedded_reference_status: EmbeddedReferenceStatus::NotProvided,
+        };
+    }
+
+    let default_policy = TrustPolicy::TrustNone;
+    let trust = options.trust_policy.unwrap_or(&default_policy);
+
+    #[cfg(feature = "signatures")]
+    {
+        verify_detached_manifest_inner(
+            image_bytes,
+            manifest,
+            trust,
+            options.payload_mac_key,
+            options.caller_verifying_keys,
+        )
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        verify_detached_manifest_inner(image_bytes, manifest, trust, options.payload_mac_key, &[])
+    }
 }

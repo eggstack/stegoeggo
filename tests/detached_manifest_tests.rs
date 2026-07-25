@@ -766,7 +766,9 @@ fn test_embedded_reference_wrong_digest_reports_stripped_without_payload() {
 #[cfg(feature = "signatures")]
 mod trust_verifying_key_tests {
     use super::*;
-    use stegoeggo::detached::verify::verify_detached_manifest_with_limits_and_mac;
+    use stegoeggo::detached::verify::{
+        verify_detached_manifest_with_options, DetachedVerificationOptions,
+    };
     use stegoeggo::detached::TrustedVerifyingKey;
     use stegoeggo::resource_limits::ResourceLimits;
 
@@ -817,10 +819,13 @@ mod trust_verifying_key_tests {
             key_id: b"key-a-id".to_vec(),
             key: vk_a.clone(),
         }];
-        let result = verify_detached_manifest(
+        let result = verify_detached_manifest_with_options(
             image_bytes,
             &manifest,
-            &TrustPolicy::TrustVerifyingKeys(trusted),
+            &DetachedVerificationOptions {
+                caller_verifying_keys: &trusted,
+                ..Default::default()
+            },
         );
 
         assert!(result.report.signatures()[0].cryptographically_valid());
@@ -855,10 +860,13 @@ mod trust_verifying_key_tests {
             key_id: b"key-a-id".to_vec(),
             key: vk_a.clone(),
         }];
-        let result = verify_detached_manifest(
+        let result = verify_detached_manifest_with_options(
             image_bytes,
             &manifest,
-            &TrustPolicy::TrustVerifyingKeys(trusted),
+            &DetachedVerificationOptions {
+                caller_verifying_keys: &trusted,
+                ..Default::default()
+            },
         );
 
         // Signature is cryptographically valid (signed with A's private key).
@@ -890,10 +898,13 @@ mod trust_verifying_key_tests {
             key_id: b"key-a-id".to_vec(),
             key: vk_a.clone(),
         }];
-        let result = verify_detached_manifest(
+        let result = verify_detached_manifest_with_options(
             image_bytes,
             &manifest,
-            &TrustPolicy::TrustVerifyingKeys(trusted),
+            &DetachedVerificationOptions {
+                caller_verifying_keys: &trusted,
+                ..Default::default()
+            },
         );
 
         assert!(!result.report.signatures()[0].cryptographically_valid());
@@ -918,10 +929,13 @@ mod trust_verifying_key_tests {
             key_id: b"key-a-id".to_vec(),
             key: key_wrong.verifying_key(),
         }];
-        let result = verify_detached_manifest(
+        let result = verify_detached_manifest_with_options(
             image_bytes,
             &manifest,
-            &TrustPolicy::TrustVerifyingKeys(trusted),
+            &DetachedVerificationOptions {
+                caller_verifying_keys: &trusted,
+                ..Default::default()
+            },
         );
 
         assert!(!result.report.signatures()[0].trusted());
@@ -950,10 +964,13 @@ mod trust_verifying_key_tests {
             key_id: b"key-a-id".to_vec(),
             key: vk_a.clone(),
         }];
-        let result = verify_detached_manifest(
+        let result = verify_detached_manifest_with_options(
             image_bytes,
             &manifest,
-            &TrustPolicy::TrustVerifyingKeys(trusted),
+            &DetachedVerificationOptions {
+                caller_verifying_keys: &trusted,
+                ..Default::default()
+            },
         );
 
         assert!(result.report.signatures()[0].cryptographically_valid());
@@ -983,10 +1000,13 @@ mod trust_verifying_key_tests {
             key_id: b"key-a-id".to_vec(),
             key: vk_a.clone(),
         }];
-        let result = verify_detached_manifest(
+        let result = verify_detached_manifest_with_options(
             image_bytes,
             &manifest,
-            &TrustPolicy::TrustVerifyingKeys(trusted),
+            &DetachedVerificationOptions {
+                caller_verifying_keys: &trusted,
+                ..Default::default()
+            },
         );
 
         let sig = &result.report.signatures()[0];
@@ -1029,10 +1049,13 @@ mod trust_verifying_key_tests {
             key_id: b"key-a-id".to_vec(),
             key: key_b.verifying_key(),
         }];
-        let caller_result = verify_detached_manifest(
+        let caller_result = verify_detached_manifest_with_options(
             image_bytes,
             &manifest,
-            &TrustPolicy::TrustVerifyingKeys(trusted),
+            &DetachedVerificationOptions {
+                caller_verifying_keys: &trusted,
+                ..Default::default()
+            },
         );
         assert!(!caller_result.report.signatures()[0].trusted());
         assert!(!caller_result.report.signatures()[0].key_material_matched());
@@ -1076,10 +1099,13 @@ mod trust_verifying_key_tests {
             key_id: b"key-a-id".to_vec(),
             key: vk_a.clone(),
         }];
-        let result = verify_detached_manifest(
+        let result = verify_detached_manifest_with_options(
             image_bytes,
             &manifest,
-            &TrustPolicy::TrustVerifyingKeys(trusted),
+            &DetachedVerificationOptions {
+                caller_verifying_keys: &trusted,
+                ..Default::default()
+            },
         );
 
         // Manifest is structurally invalid due to duplicate key IDs.
@@ -1106,16 +1132,14 @@ mod trust_verifying_key_tests {
     }
 
     #[test]
-    fn trust_policy_debug_shows_trust_verifying_keys() {
-        let key_a = SigningKey::from_bytes([0xAA; 32], b"key-a-id".to_vec()).unwrap();
-        let vk_a = key_a.verifying_key();
-        let trusted = vec![TrustedVerifyingKey {
-            key_id: b"key-a-id".to_vec(),
-            key: vk_a.clone(),
-        }];
-        let policy = TrustPolicy::TrustVerifyingKeys(trusted);
+    fn trust_policy_debug_shows_variants() {
+        let policy = TrustPolicy::TrustNone;
         let debug = format!("{:?}", policy);
-        assert!(debug.contains("TrustVerifyingKeys"));
+        assert!(debug.contains("TrustNone"));
+
+        let policy = TrustPolicy::TrustKeys(vec![b"key-id".to_vec()]);
+        let debug = format!("{:?}", policy);
+        assert!(debug.contains("TrustKeys"));
     }
 
     #[test]
@@ -1137,12 +1161,14 @@ mod trust_verifying_key_tests {
         let limits = ResourceLimits::builder()
             .max_input_bytes(image_bytes.len() - 1)
             .build();
-        let result = verify_detached_manifest_with_limits_and_mac(
+        let result = verify_detached_manifest_with_options(
             image_bytes,
             &manifest,
-            &TrustPolicy::TrustVerifyingKeys(trusted),
-            Some(&limits),
-            None,
+            &DetachedVerificationOptions {
+                caller_verifying_keys: &trusted,
+                limits: Some(&limits),
+                ..Default::default()
+            },
         );
 
         assert!(!result.manifest_valid);
