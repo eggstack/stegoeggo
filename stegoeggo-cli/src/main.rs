@@ -998,7 +998,10 @@ fn handle_verify_manifest(
         let mut raw_pub = [0u8; 32];
         raw_pub.copy_from_slice(&pub_bytes_vec);
         let vk = VerifyingKey::from_bytes(raw_pub, key_id_hex.into_bytes());
-        TrustPolicy::TrustKeys(vec![vk.key_id().to_vec()])
+        TrustPolicy::TrustVerifyingKeys(vec![stegoeggo::detached::TrustedVerifyingKey {
+            key_id: vk.key_id().to_vec(),
+            key: vk,
+        }])
     } else {
         TrustPolicy::TrustNone
     };

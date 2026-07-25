@@ -1785,6 +1785,19 @@ impl ProtectionContext {
         self.inject_metadata
     }
 
+    /// Determine whether metadata will effectively be emitted for this context.
+    ///
+    /// Returns `true` when the caller has not explicitly disabled metadata
+    /// injection and the protection level is not `Disabled`. This is the
+    /// single source of truth for the payload `rights_metadata` channel flag.
+    #[must_use]
+    pub fn effective_metadata_injection(&self) -> bool {
+        match self.inject_metadata {
+            Some(false) => false,
+            _ => !matches!(self.protection_level, Some(ProtectionLevel::Disabled)),
+        }
+    }
+
     /// Get whether legal claim injection is explicitly overridden.
     ///
     /// Returns the caller's explicit override, if any. `None` means the

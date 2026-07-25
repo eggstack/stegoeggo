@@ -10,16 +10,68 @@ use crate::verification::report::{FieldSource, SignatureVerification, Verificati
 /// Receives a key identifier and returns `true` if the key is trusted.
 pub type TrustCallbackFn = dyn Fn(&[u8]) -> bool + Send + Sync;
 
+/// A caller-owned trusted verifying key.
+///
+/// Unlike [`TrustPolicy::TrustKeys`], which trusts only a key identifier,
+/// this type binds trust to the exact 32-byte Ed25519 public key supplied
+/// by the caller. A manifest cannot substitute alternative key bytes under
+/// a trusted key ID when this policy is used.
+///
+/// `key_id` is used to match against signature records; `key` is the
+/// caller-owned public key used for cryptographic verification.
+#[cfg(feature = "signatures")]
+#[derive(Clone)]
+pub struct TrustedVerifyingKey {
+    /// Key identifier used to match signature records.
+    pub key_id: Vec<u8>,
+    /// Caller-owned Ed25519 verifying key.
+    pub key: crate::signing::VerifyingKey,
+}
+
+#[cfg(feature = "signatures")]
+impl std::fmt::Debug for TrustedVerifyingKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TrustedVerifyingKey")
+            .field("key_id", &hex::encode(&self.key_id))
+            .finish_non_exhaustive()
+    }
+}
+
 /// Trust policy for evaluating detached manifest signatures.
 ///
 /// Controls which public key identifiers are considered trusted
 /// during verification. The library ships no implicit trust store;
 /// trust is always caller-owned.
+///
+/// # Trust modes
+///
+/// - [`TrustPolicy::TrustNone`]: No key is trusted. Signature validity is
+///   reported but `trusted` is always `false`.
+/// - [`TrustPolicy::TrustKeys`]: Trusts key identifiers only. **Does not
+///   bind external key material** — a manifest can supply arbitrary public
+///   key bytes under a trusted key ID. Use only for legacy compatibility;
+///   do not use for `verify-manifest --key`.
+/// - [`TrustPolicy::TrustVerifyingKeys`]: Trusts caller-owned public key
+///   bytes. A manifest cannot substitute attacker key bytes under a
+///   trusted key ID. This is the recommended mode for `verify-manifest --key`.
+/// - [`TrustPolicy::TrustCallback`]: Trusts keys for which the callback
+///   returns `true`.
 pub enum TrustPolicy {
     /// Never trust any key. Signature validity is reported but `trusted` is always false.
     TrustNone,
     /// Trust an exact set of key identifiers.
+    ///
+    /// **Does not bind external key material.** A manifest can supply
+    /// arbitrary public key bytes under a trusted key ID. Use only for
+    /// legacy compatibility; prefer [`TrustPolicy::TrustVerifyingKeys`].
     TrustKeys(Vec<Vec<u8>>),
+    /// Trust caller-owned public key bytes.
+    ///
+    /// Each entry binds a key ID to the exact 32-byte Ed25519 public key
+    /// supplied by the caller. A manifest cannot substitute alternative
+    /// key bytes under a trusted key ID.
+    #[cfg(feature = "signatures")]
+    TrustVerifyingKeys(Vec<TrustedVerifyingKey>),
     /// Trust keys for which the callback returns `true`.
     ///
     /// The callback receives the key identifier from each signature record.
@@ -32,6 +84,10 @@ impl std::fmt::Debug for TrustPolicy {
         match self {
             TrustPolicy::TrustNone => write!(f, "TrustNone"),
             TrustPolicy::TrustKeys(keys) => f.debug_tuple("TrustKeys").field(keys).finish(),
+            #[cfg(feature = "signatures")]
+            TrustPolicy::TrustVerifyingKeys(keys) => {
+                f.debug_tuple("TrustVerifyingKeys").field(keys).finish()
+            }
             TrustPolicy::TrustCallback(_) => write!(f, "TrustCallback(<function>)"),
         }
     }
@@ -266,6 +322,11 @@ fn verify_detached_manifest_inner(
 ) -> ManifestVerification {
     let mut builder = VerificationReport::builder();
 
+    // 0. Validate manifest structure before signature evaluation.
+    // Duplicate/conflicting key records must be rejected before any
+    // signature is evaluated.
+    let manifest_valid = manifest.validate().is_ok();
+
     // 1. Verify instance digest
     let mut hasher = Sha256::new();
     hasher.update(image_bytes);
@@ -309,92 +370,115 @@ fn verify_detached_manifest_inner(
             .iter()
             .find(|k| k.key_id == sig_record.key_id);
 
-        if let Some(pub_entry) = matching_key {
-            if pub_entry.algorithm != "ed25519" {
-                builder = builder.add_signature(
-                    SignatureVerification::builder()
-                        .present(true)
-                        .structurally_valid(false)
-                        .source(FieldSource::DetachedManifest)
-                        .build(),
-                );
-                continue;
-            }
+        // Determine whether a caller-owned trusted verifying key matches this
+        // signature's key ID. When present, verification uses the caller-owned
+        // key bytes directly and requires manifest key bytes (if any) to match.
+        #[cfg(feature = "signatures")]
+        let trusted_vk: Option<&crate::signing::VerifyingKey> = match trust {
+            TrustPolicy::TrustVerifyingKeys(keys) => keys
+                .iter()
+                .find(|t| t.key_id == sig_record.key_id)
+                .map(|t| &t.key),
+            _ => None,
+        };
+        #[cfg(not(feature = "signatures"))]
+        let trusted_vk: Option<()> = None;
 
-            #[cfg(feature = "signatures")]
-            {
-                if let Ok(pub_bytes_vec) = hex::decode(&pub_entry.key_bytes) {
-                    if pub_bytes_vec.len() == 32 {
-                        let mut raw_pub = [0u8; 32];
-                        raw_pub.copy_from_slice(&pub_bytes_vec);
-                        let vk = crate::signing::VerifyingKey::from_bytes(
-                            raw_pub,
-                            sig_record.key_id.clone(),
-                        );
-
-                        let claim_bytes = manifest.claim.canonical_bytes();
-                        let result = vk.verify(&claim_bytes, &sig_bytes);
-
-                        let is_valid = result == crate::signing::SignatureResult::Valid;
-                        _any_signature_valid = _any_signature_valid || is_valid;
-
-                        let key_id_matched = match trust {
-                            TrustPolicy::TrustNone => false,
-                            TrustPolicy::TrustKeys(keys) => {
-                                keys.iter().any(|t| t == &sig_record.key_id)
-                            }
-                            TrustPolicy::TrustCallback(f) => f(&sig_record.key_id),
-                        };
-
-                        let sig_trusted = key_id_matched && is_valid;
-                        _any_signature_trusted = _any_signature_trusted || sig_trusted;
-
-                        builder = builder.add_signature(
-                            SignatureVerification::builder()
-                                .present(true)
-                                .structurally_valid(true)
-                                .cryptographically_valid(is_valid)
-                                .public_key_id(sig_record.key_id.clone())
-                                .key_id_matched(key_id_matched)
-                                .trusted(sig_trusted)
-                                .source(FieldSource::DetachedManifest)
-                                .build(),
-                        );
+        #[cfg(feature = "signatures")]
+        {
+            // Decide which key bytes to use for verification and whether key
+            // material binding holds.
+            let (verify_key_bytes, key_material_matched): (Option<[u8; 32]>, bool) =
+                if let Some(vk) = trusted_vk {
+                    // Caller-owned key: verify with caller bytes, require manifest
+                    // bytes (if present) to match.
+                    let caller_bytes = *vk.as_bytes();
+                    let matched = if let Some(entry) = matching_key {
+                        if entry.algorithm != "ed25519" {
+                            false
+                        } else if let Ok(manifest_bytes) = hex::decode(&entry.key_bytes) {
+                            manifest_bytes.as_slice() == caller_bytes.as_slice()
+                        } else {
+                            false
+                        }
                     } else {
-                        builder = builder.add_signature(
-                            SignatureVerification::builder()
-                                .present(true)
-                                .structurally_valid(false)
-                                .source(FieldSource::DetachedManifest)
-                                .build(),
-                        );
+                        // No manifest key entry — caller key used directly.
+                        true
+                    };
+                    (Some(caller_bytes), matched)
+                } else if let Some(entry) = matching_key {
+                    // Key-ID-only trust or no caller key: use manifest bytes.
+                    if entry.algorithm != "ed25519" {
+                        (None, true)
+                    } else if let Ok(pub_bytes_vec) = hex::decode(&entry.key_bytes) {
+                        if pub_bytes_vec.len() == 32 {
+                            let mut raw = [0u8; 32];
+                            raw.copy_from_slice(&pub_bytes_vec);
+                            (Some(raw), true)
+                        } else {
+                            (None, true)
+                        }
+                    } else {
+                        (None, true)
                     }
                 } else {
-                    builder = builder.add_signature(
-                        SignatureVerification::builder()
-                            .present(true)
-                            .structurally_valid(false)
-                            .source(FieldSource::DetachedManifest)
-                            .build(),
-                    );
-                }
-            }
-            #[cfg(not(feature = "signatures"))]
-            {
+                    (None, true)
+                };
+
+            if let Some(raw_pub) = verify_key_bytes {
+                let vk =
+                    crate::signing::VerifyingKey::from_bytes(raw_pub, sig_record.key_id.clone());
+
+                let claim_bytes = manifest.claim.canonical_bytes();
+                let result = vk.verify(&claim_bytes, &sig_bytes);
+
+                let is_valid = result == crate::signing::SignatureResult::Valid;
+                _any_signature_valid = _any_signature_valid || is_valid;
+
+                let key_id_matched = match trust {
+                    TrustPolicy::TrustNone => false,
+                    TrustPolicy::TrustKeys(keys) => keys.iter().any(|t| t == &sig_record.key_id),
+                    TrustPolicy::TrustVerifyingKeys(keys) => {
+                        keys.iter().any(|t| t.key_id == sig_record.key_id)
+                    }
+                    TrustPolicy::TrustCallback(f) => f(&sig_record.key_id),
+                };
+
+                // Trusted requires: key ID matched AND cryptographically valid
+                // AND (if caller-owned key was used) key material binding holds.
+                let sig_trusted = key_id_matched && is_valid && key_material_matched;
+                _any_signature_trusted = _any_signature_trusted || sig_trusted;
+
                 builder = builder.add_signature(
                     SignatureVerification::builder()
                         .present(true)
                         .structurally_valid(true)
-                        .cryptographically_valid(false)
+                        .cryptographically_valid(is_valid)
+                        .public_key_id(sig_record.key_id.clone())
+                        .key_id_matched(key_id_matched)
+                        .key_material_matched(key_material_matched)
+                        .trusted(sig_trusted)
+                        .source(FieldSource::DetachedManifest)
+                        .build(),
+                );
+            } else {
+                builder = builder.add_signature(
+                    SignatureVerification::builder()
+                        .present(true)
+                        .structurally_valid(false)
+                        .key_material_matched(key_material_matched)
                         .source(FieldSource::DetachedManifest)
                         .build(),
                 );
             }
-        } else {
+        }
+        #[cfg(not(feature = "signatures"))]
+        {
             builder = builder.add_signature(
                 SignatureVerification::builder()
                     .present(true)
-                    .structurally_valid(false)
+                    .structurally_valid(true)
+                    .cryptographically_valid(false)
                     .source(FieldSource::DetachedManifest)
                     .build(),
             );
@@ -535,7 +619,7 @@ fn verify_detached_manifest_inner(
     ManifestVerification {
         report,
         instance_digest_match,
-        manifest_valid: true,
+        manifest_valid,
         embedded_reference_status,
     }
 }

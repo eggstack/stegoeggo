@@ -68,7 +68,6 @@ jobs:
         run: |
           set -o pipefail
           cargo semver-checks check-release 2>&1 | tee semver-report.txt
-        continue-on-error: true
 
       - name: Generate package inventory
         run: |
@@ -117,7 +116,6 @@ jobs:
             --manifest tests/fixtures/conformance/manifest.toml \
             --strict \
             --json conformance-report.json
-        continue-on-error: true
 
       - name: Upload conformance report
         if: always()

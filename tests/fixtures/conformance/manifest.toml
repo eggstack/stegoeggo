@@ -196,7 +196,7 @@ id = "canonical_independent_png"
 path = "canonical/canonical_independent.png"
 format = "png"
 category = "canonical"
-authoring_tool = "exiftool"
+authoring_tool = "python+imagemagick"
 authoring_tool_version = "13.00"
 generation_command = "exiftool -XMP-dc:Rights injection"
 source = "external"
@@ -217,7 +217,7 @@ id = "canonical_independent_jpg"
 path = "canonical/canonical_independent.jpg"
 format = "jpeg"
 category = "canonical"
-authoring_tool = "exiftool"
+authoring_tool = "python+imagemagick"
 authoring_tool_version = "13.00"
 generation_command = "exiftool -XMP-dc:Rights injection"
 source = "external"
@@ -238,7 +238,7 @@ id = "canonical_independent_webp"
 path = "canonical/canonical_independent.webp"
 format = "webp"
 category = "canonical"
-authoring_tool = "exiftool"
+authoring_tool = "python+imagemagick"
 authoring_tool_version = "13.00"
 generation_command = "exiftool -XMP-dc:Rights injection"
 source = "external"
@@ -301,7 +301,7 @@ id = "canonical_multi_creator_png"
 path = "canonical/canonical_multi_creator.png"
 format = "png"
 category = "canonical"
-authoring_tool = "exiftool"
+authoring_tool = "python+imagemagick"
 authoring_tool_version = "13.00"
 generation_command = "exiftool -XMP injection with multi-creator dc:creator"
 source = "external"
@@ -322,7 +322,7 @@ id = "canonical_multi_creator_jpg"
 path = "canonical/canonical_multi_creator.jpg"
 format = "jpeg"
 category = "canonical"
-authoring_tool = "exiftool"
+authoring_tool = "python+imagemagick"
 authoring_tool_version = "13.00"
 generation_command = "exiftool -XMP injection with multi-creator dc:creator"
 source = "external"
@@ -343,7 +343,7 @@ id = "canonical_multi_creator_webp"
 path = "canonical/canonical_multi_creator.webp"
 format = "webp"
 category = "canonical"
-authoring_tool = "exiftool"
+authoring_tool = "python+imagemagick"
 authoring_tool_version = "13.00"
 generation_command = "exiftool -XMP injection with multi-creator dc:creator"
 source = "external"
@@ -862,3 +862,71 @@ expected_internal = "success"
 expected_external = "success"
 required_external_fields = []
 expected_preservation = ["copyright_holder", "usage_terms"]
+
+# === Independent fixtures (authored by ExifTool/Python, not StegoEggo) ===
+# Source: tests/fixtures/conformance/independent/generate_independent_fixtures.sh
+# Tool: exiftool 12.76, ImageMagick convert, Python 3 (stdlib)
+# License: MIT
+
+[[fixture]]
+id = "independent_legacy_dmi_prohibited_png"
+path = "independent/legacy_dmi_prohibited.png"
+format = "png"
+category = "legacy"
+authoring_tool = "python+imagemagick"
+authoring_tool_version = "12.76"
+generation_command = "tests/fixtures/conformance/independent/generate_independent_fixtures.sh"
+source = "external"
+license = "MIT"
+sha256 = "581ea791ce2f792ffd50f4790a16b8e27aaae0db65035e8888c71dcc768a44e6"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { copyright_holder = "2024 Independent Test", creator = "Independent Creator" }
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = ["canonical_data_mining"]
+expected_preservation = []
+
+[[fixture]]
+id = "independent_conflict_canonical_legacy_png"
+path = "independent/conflict_canonical_legacy.png"
+format = "png"
+category = "conflicting"
+authoring_tool = "python+imagemagick"
+authoring_tool_version = "12.76"
+generation_command = "tests/fixtures/conformance/independent/generate_independent_fixtures.sh"
+source = "external"
+license = "MIT"
+sha256 = "8deef1c64f4fb73dd6407ac53193f1e82138096f300476b306d4dad2b557f54f"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = true
+expected_legal_fields = { copyright_holder = "2024 Conflict Test", creator = "Independent Creator" }
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = ["canonical_data_mining"]
+expected_preservation = []
+
+[[fixture]]
+id = "independent_preservation_custom_xmp_png"
+path = "independent/preservation_custom_xmp.png"
+format = "png"
+category = "preservation"
+authoring_tool = "python+imagemagick"
+authoring_tool_version = "12.76"
+generation_command = "tests/fixtures/conformance/independent/generate_independent_fixtures.sh"
+source = "external"
+license = "MIT"
+sha256 = "55461f8c711fbbee1fc6ae08e5501002e321d49484ca158cba22b5e40c356579"
+expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
+expected_conflict = false
+expected_legal_fields = { creator = "Independent Preservation Creator", copyright_holder = "https://independent.test/rights" }
+expected_decode = "pass"
+expected_xmp = "valid"
+expected_internal = "success"
+expected_external = "success"
+required_external_fields = ["canonical_data_mining"]
+expected_preservation = ["creator", "copyright_holder"]

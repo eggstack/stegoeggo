@@ -2453,7 +2453,7 @@ impl SteganographyProtector {
         let has_mac = ctx.mac_key().is_some();
 
         let channels = ProtectionChannels {
-            rights_metadata: true,
+            rights_metadata: ctx.effective_metadata_injection(),
             hidden_marker: true,
             authentication: has_mac,
         };
@@ -4703,5 +4703,119 @@ mod tests {
             .write_to(&mut buf, image::ImageFormat::Jpeg)
             .unwrap();
         buf.into_inner()
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn channel_flags_metadata_disabled_reports_false() {
+        let protector = SteganographyProtector::new();
+        let mut ctx = ProtectionContext::new(0.5, 42);
+        ctx.set_protection_level(crate::ProtectionLevel::Standard);
+        ctx = ctx.with_metadata_injection(false);
+        let payload = protector.generate_payload(&ctx);
+
+        let channels_bits = u16::from_le_bytes([payload[8], payload[9]]);
+        let channels = ProtectionChannels::from_bits(channels_bits).unwrap();
+        assert!(
+            !channels.rights_metadata,
+            "rights_metadata should be false when metadata disabled"
+        );
+        assert!(
+            channels.hidden_marker,
+            "hidden_marker should always be true when payload is generated"
+        );
+        assert!(
+            !channels.authentication,
+            "authentication should be false without MAC key"
+        );
+    }
+
+    #[test]
+    fn channel_flags_metadata_enabled_reports_true() {
+        let protector = SteganographyProtector::new();
+        let mut ctx = ProtectionContext::new(0.5, 42);
+        ctx.set_protection_level(crate::ProtectionLevel::Standard);
+        let payload = protector.generate_payload(&ctx);
+
+        let channels_bits = u16::from_le_bytes([payload[8], payload[9]]);
+        let channels = ProtectionChannels::from_bits(channels_bits).unwrap();
+        assert!(
+            channels.rights_metadata,
+            "rights_metadata should be true when metadata enabled"
+        );
+        assert!(channels.hidden_marker);
+        assert!(!channels.authentication);
+    }
+
+    #[test]
+    fn channel_flags_crc_has_authentication_false() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_no_mac(42);
+        let payload = protector.generate_payload(&ctx);
+
+        let channels_bits = u16::from_le_bytes([payload[8], payload[9]]);
+        let channels = ProtectionChannels::from_bits(channels_bits).unwrap();
+        assert!(
+            !channels.authentication,
+            "CRC payload must have authentication=false"
+        );
+    }
+
+    #[test]
+    fn channel_flags_hmac_has_authentication_true() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_with_mac(42, b"testkey");
+        let payload = protector.generate_payload(&ctx);
+
+        let channels_bits = u16::from_le_bytes([payload[8], payload[9]]);
+        let channels = ProtectionChannels::from_bits(channels_bits).unwrap();
+        assert!(
+            channels.authentication,
+            "HMAC payload must have authentication=true"
+        );
+    }
+
+    #[test]
+    fn channel_flags_tiled_matches_context() {
+        let protector = SteganographyProtector::new();
+        let mut ctx = ProtectionContext::new(0.5, 42);
+        ctx.set_protection_level(crate::ProtectionLevel::Standard);
+        ctx = ctx.with_tile_size(64);
+        let payload = protector.generate_payload(&ctx);
+
+        let flags_bits = u16::from_le_bytes([payload[6], payload[7]]);
+        let flags = crate::payload_v3::types::PayloadFlags::from_bits(flags_bits);
+        assert!(flags.tiled, "tiled flag should match context");
+    }
+
+    #[test]
+    fn channel_flags_progressive_matches_context() {
+        let protector = SteganographyProtector::new();
+        let mut ctx = ProtectionContext::new(0.5, 42);
+        ctx.set_protection_level(crate::ProtectionLevel::Standard);
+        ctx = ctx.with_progressive_jpeg(true);
+        let payload = protector.generate_payload(&ctx);
+
+        let flags_bits = u16::from_le_bytes([payload[6], payload[7]]);
+        let flags = crate::payload_v3::types::PayloadFlags::from_bits(flags_bits);
+        assert!(
+            flags.progressive_jpeg,
+            "progressive_jpeg flag should match context"
+        );
+    }
+
+    #[test]
+    fn channel_flags_disabled_level_reports_no_metadata() {
+        let protector = SteganographyProtector::new();
+        let mut ctx = ProtectionContext::new(0.5, 42);
+        ctx.set_protection_level(crate::ProtectionLevel::Disabled);
+        let payload = protector.generate_payload(&ctx);
+
+        let channels_bits = u16::from_le_bytes([payload[8], payload[9]]);
+        let channels = ProtectionChannels::from_bits(channels_bits).unwrap();
+        assert!(
+            !channels.rights_metadata,
+            "rights_metadata should be false when level is Disabled"
+        );
     }
 }

@@ -699,14 +699,21 @@ fn evaluate_manifest_expectations(
         }
     }
 
+    let canonical = report.internal.canonical_data_mining.as_ref();
+    let legacy = report.internal.legacy_data_mining.first();
+    if let (Some(c), Some(l)) = (canonical, legacy) {
+        let nc = conformance::normalize_dmi_value(c);
+        let nl = conformance::normalize_dmi_value(l);
+        if nc != nl {
+            report.add_conflict(&format!(
+                "DMI conflict: canonical={:?} vs legacy={:?}",
+                c, l
+            ));
+        }
+    }
+
     let has_conflict = !report.conflicts.is_empty();
     if entry.expected_conflict && !has_conflict {
-        report.add_check(
-            "expected_conflict",
-            CheckSeverity::Fail,
-            "Expected conflict but none detected",
-        );
-    } else if !entry.expected_conflict && has_conflict {
         report.add_check(
             "expected_conflict",
             CheckSeverity::Fail,

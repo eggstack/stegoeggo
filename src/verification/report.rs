@@ -466,9 +466,22 @@ pub struct SignatureVerification {
     public_key_id: Option<Vec<u8>>,
     expected_key_id: Option<Vec<u8>>,
     key_id_matched: bool,
+    /// Whether the manifest-supplied public key bytes matched the caller-owned
+    /// key bytes when `TrustPolicy::TrustVerifyingKeys` was used.
+    ///
+    /// `true` when no manifest key entry exists for the key ID (the caller-owned
+    /// key is used directly), when the manifest bytes match the caller-owned key,
+    /// or when key-ID-only trust was used (no caller-owned key to compare).
+    /// `false` when the manifest key bytes differ from the caller-owned key.
+    #[serde(default = "default_true")]
+    key_material_matched: bool,
     trusted: bool,
     claim: Option<Vec<u8>>,
     source: FieldSource,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl SignatureVerification {
@@ -508,6 +521,18 @@ impl SignatureVerification {
         self.key_id_matched
     }
 
+    /// Whether the manifest-supplied public key bytes matched the caller-owned
+    /// key bytes.
+    ///
+    /// Returns `true` when key-ID-only trust was used (no caller-owned key to
+    /// compare) or when the manifest bytes match the caller-owned key.
+    /// Returns `false` when the manifest key bytes differ from the caller-owned
+    /// key under `TrustPolicy::TrustVerifyingKeys`.
+    #[must_use]
+    pub fn key_material_matched(&self) -> bool {
+        self.key_material_matched
+    }
+
     /// Whether the signature is trusted.
     #[must_use]
     pub fn trusted(&self) -> bool {
@@ -535,6 +560,7 @@ impl SignatureVerification {
             public_key_id: None,
             expected_key_id: None,
             key_id_matched: false,
+            key_material_matched: true,
             trusted: false,
             claim: None,
             source: FieldSource::Xmp,
@@ -550,6 +576,7 @@ pub struct SignatureVerificationBuilder {
     public_key_id: Option<Vec<u8>>,
     expected_key_id: Option<Vec<u8>>,
     key_id_matched: bool,
+    key_material_matched: bool,
     trusted: bool,
     claim: Option<Vec<u8>>,
     source: FieldSource,
@@ -598,6 +625,13 @@ impl SignatureVerificationBuilder {
         self
     }
 
+    /// Set whether the manifest-supplied key bytes matched the caller-owned key.
+    #[must_use]
+    pub fn key_material_matched(mut self, matched: bool) -> Self {
+        self.key_material_matched = matched;
+        self
+    }
+
     /// Set trust status.
     #[must_use]
     pub fn trusted(mut self, trusted: bool) -> Self {
@@ -629,6 +663,7 @@ impl SignatureVerificationBuilder {
             public_key_id: self.public_key_id,
             expected_key_id: self.expected_key_id,
             key_id_matched: self.key_id_matched,
+            key_material_matched: self.key_material_matched,
             trusted: self.trusted,
             claim: self.claim,
             source: self.source,

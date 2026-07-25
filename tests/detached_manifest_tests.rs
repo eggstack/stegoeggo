@@ -762,3 +762,390 @@ fn test_embedded_reference_wrong_digest_reports_stripped_without_payload() {
         EmbeddedReferenceStatus::Stripped
     );
 }
+
+#[cfg(feature = "signatures")]
+mod trust_verifying_key_tests {
+    use super::*;
+    use stegoeggo::detached::verify::verify_detached_manifest_with_limits_and_mac;
+    use stegoeggo::detached::TrustedVerifyingKey;
+    use stegoeggo::resource_limits::ResourceLimits;
+
+    fn build_manifest(
+        claim: &ProvenanceClaim,
+        signing_key: &SigningKey,
+        sig_key_id: &[u8],
+        manifest_key_id: &[u8],
+        pub_key_bytes: &[u8; 32],
+    ) -> DetachedManifest {
+        let claim_bytes = claim.canonical_bytes();
+        let sig_bytes = signing_key.sign(&claim_bytes);
+        let sig_hex = hex::encode(&sig_bytes);
+
+        DetachedManifest::new(claim.clone())
+            .with_signature(SignatureRecord {
+                algorithm: "ed25519".to_string(),
+                key_id: sig_key_id.to_vec(),
+                signature: sig_hex,
+            })
+            .with_public_key(PublicKeyEntry {
+                key_id: manifest_key_id.to_vec(),
+                algorithm: "ed25519".to_string(),
+                key_bytes: hex::encode(pub_key_bytes),
+            })
+    }
+
+    fn make_claim(image_bytes: &[u8]) -> ProvenanceClaim {
+        ProvenanceClaim::new(1)
+            .with_content_code("iscc:attack-test".to_string())
+            .with_creation_time(1700000000)
+            .with_source_facts("png", 64, 64, image_bytes.len() as u64)
+            .with_software("stegoeggo/0.2.3")
+            .with_instance_digest(image_bytes)
+    }
+
+    #[test]
+    fn a_id_matching_a_bytes_a_signature_succeeds() {
+        let image_bytes = b"attack test image content";
+        let claim = make_claim(image_bytes);
+
+        let key_a = SigningKey::from_bytes([0xAA; 32], b"key-a-id".to_vec()).unwrap();
+        let vk_a = key_a.verifying_key();
+
+        let manifest = build_manifest(&claim, &key_a, b"key-a-id", b"key-a-id", vk_a.as_bytes());
+
+        let trusted = vec![TrustedVerifyingKey {
+            key_id: b"key-a-id".to_vec(),
+            key: vk_a.clone(),
+        }];
+        let result = verify_detached_manifest(
+            image_bytes,
+            &manifest,
+            &TrustPolicy::TrustVerifyingKeys(trusted),
+        );
+
+        assert!(result.report.signatures()[0].cryptographically_valid());
+        assert!(result.report.signatures()[0].key_id_matched());
+        assert!(result.report.signatures()[0].key_material_matched());
+        assert!(result.report.signatures()[0].trusted());
+        assert_eq!(
+            result.overall_status(),
+            stegoeggo::detached::DetachedOverallStatus::VerifiedTrusted
+        );
+    }
+
+    #[test]
+    fn a_id_with_b_bytes_and_a_signature_fails_key_material() {
+        let image_bytes = b"attack test image content";
+        let claim = make_claim(image_bytes);
+
+        let key_a = SigningKey::from_bytes([0xAA; 32], b"key-a-id".to_vec()).unwrap();
+        let key_b = SigningKey::from_bytes([0xBB; 32], b"key-b-id".to_vec()).unwrap();
+        let vk_a = key_a.verifying_key();
+
+        // Manifest stores B's public bytes under A's key ID.
+        let manifest = build_manifest(
+            &claim,
+            &key_a,
+            b"key-a-id",
+            b"key-a-id",
+            key_b.verifying_key().as_bytes(),
+        );
+
+        let trusted = vec![TrustedVerifyingKey {
+            key_id: b"key-a-id".to_vec(),
+            key: vk_a.clone(),
+        }];
+        let result = verify_detached_manifest(
+            image_bytes,
+            &manifest,
+            &TrustPolicy::TrustVerifyingKeys(trusted),
+        );
+
+        // Signature is cryptographically valid (signed with A's private key).
+        assert!(result.report.signatures()[0].cryptographically_valid());
+        assert!(result.report.signatures()[0].key_id_matched());
+        // But key material does NOT match — manifest has B's bytes.
+        assert!(!result.report.signatures()[0].key_material_matched());
+        assert!(!result.report.signatures()[0].trusted());
+        assert_eq!(
+            result.overall_status(),
+            stegoeggo::detached::DetachedOverallStatus::VerifiedUntrusted
+        );
+    }
+
+    #[test]
+    fn a_id_with_a_bytes_and_b_signature_fails_crypto() {
+        let image_bytes = b"attack test image content";
+        let claim = make_claim(image_bytes);
+
+        let key_a = SigningKey::from_bytes([0xAA; 32], b"key-a-id".to_vec()).unwrap();
+        let key_b = SigningKey::from_bytes([0xBB; 32], b"key-b-id".to_vec()).unwrap();
+        let vk_a = key_a.verifying_key();
+
+        // Manifest stores A's public bytes under A's key ID, but signature
+        // is made with B's private key.
+        let manifest = build_manifest(&claim, &key_b, b"key-a-id", b"key-a-id", vk_a.as_bytes());
+
+        let trusted = vec![TrustedVerifyingKey {
+            key_id: b"key-a-id".to_vec(),
+            key: vk_a.clone(),
+        }];
+        let result = verify_detached_manifest(
+            image_bytes,
+            &manifest,
+            &TrustPolicy::TrustVerifyingKeys(trusted),
+        );
+
+        assert!(!result.report.signatures()[0].cryptographically_valid());
+        assert!(result.report.signatures()[0].key_id_matched());
+        assert!(result.report.signatures()[0].key_material_matched());
+        assert!(!result.report.signatures()[0].trusted());
+    }
+
+    #[test]
+    fn wrong_external_key_returns_untrusted() {
+        let image_bytes = b"attack test image content";
+        let claim = make_claim(image_bytes);
+
+        let key_a = SigningKey::from_bytes([0xAA; 32], b"key-a-id".to_vec()).unwrap();
+        let key_wrong = SigningKey::from_bytes([0xCC; 32], b"key-a-id".to_vec()).unwrap();
+        let vk_a = key_a.verifying_key();
+
+        let manifest = build_manifest(&claim, &key_a, b"key-a-id", b"key-a-id", vk_a.as_bytes());
+
+        // Caller supplies wrong key under the same key ID.
+        let trusted = vec![TrustedVerifyingKey {
+            key_id: b"key-a-id".to_vec(),
+            key: key_wrong.verifying_key(),
+        }];
+        let result = verify_detached_manifest(
+            image_bytes,
+            &manifest,
+            &TrustPolicy::TrustVerifyingKeys(trusted),
+        );
+
+        assert!(!result.report.signatures()[0].trusted());
+        assert!(!result.report.signatures()[0].key_material_matched());
+    }
+
+    #[test]
+    fn trusted_key_without_manifest_entry_verifies_directly() {
+        let image_bytes = b"attack test image content";
+        let claim = make_claim(image_bytes);
+
+        let key_a = SigningKey::from_bytes([0xAA; 32], b"key-a-id".to_vec()).unwrap();
+        let vk_a = key_a.verifying_key();
+
+        let claim_bytes = claim.canonical_bytes();
+        let sig_bytes = key_a.sign(&claim_bytes);
+
+        // Manifest has NO public key entry — caller-owned key is used directly.
+        let manifest = DetachedManifest::new(claim.clone()).with_signature(SignatureRecord {
+            algorithm: "ed25519".to_string(),
+            key_id: b"key-a-id".to_vec(),
+            signature: hex::encode(&sig_bytes),
+        });
+
+        let trusted = vec![TrustedVerifyingKey {
+            key_id: b"key-a-id".to_vec(),
+            key: vk_a.clone(),
+        }];
+        let result = verify_detached_manifest(
+            image_bytes,
+            &manifest,
+            &TrustPolicy::TrustVerifyingKeys(trusted),
+        );
+
+        assert!(result.report.signatures()[0].cryptographically_valid());
+        assert!(result.report.signatures()[0].key_id_matched());
+        assert!(result.report.signatures()[0].key_material_matched());
+        assert!(result.report.signatures()[0].trusted());
+    }
+
+    #[test]
+    fn key_material_mismatch_reported_in_json_and_diagnostics() {
+        let image_bytes = b"attack test image content";
+        let claim = make_claim(image_bytes);
+
+        let key_a = SigningKey::from_bytes([0xAA; 32], b"key-a-id".to_vec()).unwrap();
+        let key_b = SigningKey::from_bytes([0xBB; 32], b"key-b-id".to_vec()).unwrap();
+        let vk_a = key_a.verifying_key();
+
+        let manifest = build_manifest(
+            &claim,
+            &key_a,
+            b"key-a-id",
+            b"key-a-id",
+            key_b.verifying_key().as_bytes(),
+        );
+
+        let trusted = vec![TrustedVerifyingKey {
+            key_id: b"key-a-id".to_vec(),
+            key: vk_a.clone(),
+        }];
+        let result = verify_detached_manifest(
+            image_bytes,
+            &manifest,
+            &TrustPolicy::TrustVerifyingKeys(trusted),
+        );
+
+        let sig = &result.report.signatures()[0];
+        assert!(!sig.key_material_matched());
+        assert!(!sig.trusted());
+
+        // JSON serialization must include key_material_matched.
+        let json = serde_json::to_string(&result.report).unwrap();
+        assert!(json.contains("key_material_matched"));
+        assert!(json.contains("false"));
+    }
+
+    #[test]
+    fn key_id_only_trust_distinguished_from_caller_key_trust() {
+        let image_bytes = b"attack test image content";
+        let claim = make_claim(image_bytes);
+
+        let key_a = SigningKey::from_bytes([0xAA; 32], b"key-a-id".to_vec()).unwrap();
+        let key_b = SigningKey::from_bytes([0xBB; 32], b"key-b-id".to_vec()).unwrap();
+        let vk_a = key_a.verifying_key();
+
+        // Manifest stores A's public bytes under A's key ID (correct).
+        let manifest = build_manifest(&claim, &key_a, b"key-a-id", b"key-a-id", vk_a.as_bytes());
+
+        // Key-ID-only trust: trusted because key ID matches and signature
+        // verifies with the manifest's key bytes.
+        let key_id_result = verify_detached_manifest(
+            image_bytes,
+            &manifest,
+            &TrustPolicy::TrustKeys(vec![b"key-a-id".to_vec()]),
+        );
+        assert!(key_id_result.report.signatures()[0].cryptographically_valid());
+        assert!(key_id_result.report.signatures()[0].trusted());
+        assert!(key_id_result.report.signatures()[0].key_material_matched());
+
+        // Caller-key trust with B's key under A's ID: NOT trusted because
+        // the caller-owned key bytes (B) don't match the manifest's bytes (A),
+        // even though the key ID matches.
+        let trusted = vec![TrustedVerifyingKey {
+            key_id: b"key-a-id".to_vec(),
+            key: key_b.verifying_key(),
+        }];
+        let caller_result = verify_detached_manifest(
+            image_bytes,
+            &manifest,
+            &TrustPolicy::TrustVerifyingKeys(trusted),
+        );
+        assert!(!caller_result.report.signatures()[0].trusted());
+        assert!(!caller_result.report.signatures()[0].key_material_matched());
+    }
+
+    #[test]
+    fn duplicate_manifest_key_records_rejected_before_signature_eval() {
+        let image_bytes = b"attack test image content";
+        let claim = make_claim(image_bytes);
+
+        let key_a = SigningKey::from_bytes([0xAA; 32], b"key-a-id".to_vec()).unwrap();
+        let vk_a = key_a.verifying_key();
+
+        let claim_bytes = claim.canonical_bytes();
+        let sig_bytes = key_a.sign(&claim_bytes);
+
+        let mut manifest = DetachedManifest::new(claim.clone())
+            .with_signature(SignatureRecord {
+                algorithm: "ed25519".to_string(),
+                key_id: b"key-a-id".to_vec(),
+                signature: hex::encode(&sig_bytes),
+            })
+            .with_public_key(PublicKeyEntry {
+                key_id: b"key-a-id".to_vec(),
+                algorithm: "ed25519".to_string(),
+                key_bytes: hex::encode(vk_a.as_bytes()),
+            });
+
+        // Add a conflicting public key entry under the same key ID.
+        manifest.public_keys.push(PublicKeyEntry {
+            key_id: b"key-a-id".to_vec(),
+            algorithm: "ed25519".to_string(),
+            key_bytes: hex::encode(key_a.public_key_bytes()),
+        });
+
+        // Validation should reject duplicate key IDs.
+        let validation = manifest.validate();
+        assert!(validation.is_err(), "duplicate key IDs must be rejected");
+
+        let trusted = vec![TrustedVerifyingKey {
+            key_id: b"key-a-id".to_vec(),
+            key: vk_a.clone(),
+        }];
+        let result = verify_detached_manifest(
+            image_bytes,
+            &manifest,
+            &TrustPolicy::TrustVerifyingKeys(trusted),
+        );
+
+        // Manifest is structurally invalid due to duplicate key IDs.
+        assert!(!result.manifest_valid);
+        assert_eq!(
+            result.overall_status(),
+            stegoeggo::detached::DetachedOverallStatus::InvalidConfiguration
+        );
+    }
+
+    #[test]
+    fn trust_verifying_keys_debug_does_not_expose_key_bytes() {
+        let key_a = SigningKey::from_bytes([0xAA; 32], b"key-a-id".to_vec()).unwrap();
+        let vk_a = key_a.verifying_key();
+        let trusted = TrustedVerifyingKey {
+            key_id: b"key-a-id".to_vec(),
+            key: vk_a.clone(),
+        };
+        let debug = format!("{:?}", trusted);
+        assert!(debug.contains("TrustedVerifyingKey"));
+        assert!(debug.contains("key_id"));
+        let key_hex = hex::encode(vk_a.as_bytes());
+        assert!(!debug.contains(&key_hex));
+    }
+
+    #[test]
+    fn trust_policy_debug_shows_trust_verifying_keys() {
+        let key_a = SigningKey::from_bytes([0xAA; 32], b"key-a-id".to_vec()).unwrap();
+        let vk_a = key_a.verifying_key();
+        let trusted = vec![TrustedVerifyingKey {
+            key_id: b"key-a-id".to_vec(),
+            key: vk_a.clone(),
+        }];
+        let policy = TrustPolicy::TrustVerifyingKeys(trusted);
+        let debug = format!("{:?}", policy);
+        assert!(debug.contains("TrustVerifyingKeys"));
+    }
+
+    #[test]
+    fn resource_limits_enforced_before_verification() {
+        let image_bytes = b"attack test image content";
+        let claim = make_claim(image_bytes);
+
+        let key_a = SigningKey::from_bytes([0xAA; 32], b"key-a-id".to_vec()).unwrap();
+        let vk_a = key_a.verifying_key();
+
+        let manifest = build_manifest(&claim, &key_a, b"key-a-id", b"key-a-id", vk_a.as_bytes());
+
+        let trusted = vec![TrustedVerifyingKey {
+            key_id: b"key-a-id".to_vec(),
+            key: vk_a.clone(),
+        }];
+
+        // Tiny limit should reject before verification.
+        let limits = ResourceLimits::builder()
+            .max_input_bytes(image_bytes.len() - 1)
+            .build();
+        let result = verify_detached_manifest_with_limits_and_mac(
+            image_bytes,
+            &manifest,
+            &TrustPolicy::TrustVerifyingKeys(trusted),
+            Some(&limits),
+            None,
+        );
+
+        assert!(!result.manifest_valid);
+        assert!(!result.instance_digest_match);
+    }
+}

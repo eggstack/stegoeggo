@@ -24,12 +24,22 @@ run() {
 echo "=== Hermetic phase ==="
 
 run cargo fmt --all -- --check
-run cargo clippy --all-targets --all-features -- -D warnings
-run cargo test --all-features --no-fail-fast
-run cargo test --doc
+run cargo clippy --workspace --all-targets --all-features -- -D warnings
+run cargo test --workspace --exclude stegoeggo-fuzz --all-features --no-fail-fast
+run cargo test -p stegoeggo-cli --all-features --no-fail-fast
+run cargo test --doc --workspace --exclude stegoeggo-fuzz
 run cargo package --workspace
 run cargo deny check licenses
 run cargo deny check advisories
+
+echo "=== Feature combination phase ==="
+
+run cargo test -p stegoeggo --no-default-features
+run cargo test -p stegoeggo --no-default-features --features signatures
+run cargo test -p stegoeggo --no-default-features --features detached-manifest
+run cargo test -p stegoeggo --no-default-features --features signatures,detached-manifest
+run cargo test -p stegoeggo --all-features
+run cargo test -p stegoeggo-cli --all-features
 
 if [ "$SKIP_EXTERNAL" = false ]; then
     echo "=== External phase ==="

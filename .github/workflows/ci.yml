@@ -57,10 +57,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
       
       - name: Run tests
-        run: cargo test --all-features
+        run: cargo test --workspace --exclude stegoeggo-fuzz --all-features --no-fail-fast
       
+      - name: Run CLI tests
+        run: cargo test -p stegoeggo-cli --all-features --no-fail-fast
+
       - name: Run doc tests
-        run: cargo test --doc
+        run: cargo test --doc --workspace --exclude stegoeggo-fuzz
 
   lint:
     name: Lint
@@ -77,10 +80,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
       
       - name: Check formatting
-        run: cargo fmt --check
+        run: cargo fmt --all -- --check
       
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   security:
     name: Security Audit
@@ -184,7 +187,6 @@ jobs:
             --manifest tests/fixtures/conformance/manifest.toml \
             --strict \
             --json conformance-report.json
-        continue-on-error: true
 
       - name: Upload conformance report
         if: always()
@@ -230,7 +232,7 @@ jobs:
         run: cargo check --no-default-features --features "${{ matrix.features }}"
 
       - name: Test (${{ matrix.name }})
-        run: cargo test --no-default-features --features "${{ matrix.features }}"
+        run: cargo test --no-default-features --features "${{ matrix.features }}" --no-fail-fast
 
   bench:
     name: Benchmark
