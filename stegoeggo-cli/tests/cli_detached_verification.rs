@@ -1,6 +1,8 @@
 #[cfg(feature = "signatures")]
 mod cli_detached_verification {
-    use image::{GenericImage, GenericImageView};
+    use base64::Engine;
+    use image::GenericImageView;
+    use sha2::{Digest, Sha256};
     use std::fs;
     use std::path::PathBuf;
     use std::process::Command;
@@ -44,10 +46,40 @@ mod cli_detached_verification {
     }
 
     fn compute_digest(path: &std::path::Path) -> String {
-        use sha2::{Digest, Sha256};
         let bytes = fs::read(path).unwrap();
         let mut hasher = Sha256::new();
         hasher.update(&bytes);
+        format!("sha256:{}", hex::encode(hasher.finalize()))
+    }
+
+    fn protect_and_get_payload_digest(
+        input_path: &std::path::Path,
+        output_path: &std::path::Path,
+        mac_key: Option<&[u8]>,
+    ) -> String {
+        let input_bytes = fs::read(input_path).unwrap();
+        let mut ctx = stegoeggo::ProtectionContext::new(0.8, 42);
+        if let Some(key) = mac_key {
+            ctx = ctx.with_mac_key(key.to_vec());
+        }
+        let output_bytes = stegoeggo::process_image_bytes(
+            &input_bytes,
+            stegoeggo::ProtectionLevel::Standard,
+            &ctx,
+        )
+        .unwrap();
+        fs::write(output_path, &output_bytes).unwrap();
+
+        let key = mac_key.unwrap_or(&[]);
+        let stego = stegoeggo::SteganographyProtector::new();
+        let payload = stego
+            .extract_payload_from_bytes_with_key(&output_bytes, key)
+            .expect("payload should be extractable");
+        let raw = payload
+            .raw_payload()
+            .expect("raw payload should be present");
+        let mut hasher = Sha256::new();
+        hasher.update(raw);
         format!("sha256:{}", hex::encode(hasher.finalize()))
     }
 
@@ -543,6 +575,334 @@ mod cli_detached_verification {
         assert!(
             stdout_h.contains("TRUSTED"),
             "human output should say TRUSTED"
+        );
+    }
+
+    // B5.7: Replacing manifest public-key bytes while retaining trusted key ID cannot produce success
+    #[test]
+    fn b5_9_replaced_pubkey_bytes_cannot_produce_success() {
+        let tmp = tempfile::tempdir().unwrap();
+        let image_path = tmp.path().join("test.png");
+        let manifest_path = tmp.path().join("manifest.json");
+        let signed_manifest_path = tmp.path().join("manifest_signed.json");
+        let tampered_manifest_path = tmp.path().join("manifest_tampered.json");
+        let key_dir1 = tmp.path().join("keys1");
+        let key_dir2 = tmp.path().join("keys2");
+
+        create_test_png(&image_path);
+
+        let (code, _, _) = run_cli(&["keygen", "--output-dir", key_dir1.to_str().unwrap()]);
+        assert_eq!(code, 0);
+        let (code, _, _) = run_cli(&["keygen", "--output-dir", key_dir2.to_str().unwrap()]);
+        assert_eq!(code, 0);
+
+        create_manifest_json(&image_path, &manifest_path, None);
+
+        let (code, _, _) = run_cli(&[
+            "sign",
+            "--manifest",
+            manifest_path.to_str().unwrap(),
+            "--key",
+            key_dir1.join("key_private.pem").to_str().unwrap(),
+            "--output",
+            signed_manifest_path.to_str().unwrap(),
+        ]);
+        assert_eq!(code, 0);
+
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&signed_manifest_path).unwrap()).unwrap();
+
+        let key2_pub_hex = fs::read_to_string(key_dir2.join("key_public.pem"))
+            .unwrap()
+            .lines()
+            .filter(|l| !l.starts_with("-----"))
+            .flat_map(|l| l.chars())
+            .filter(|c| c.is_ascii_hexdigit())
+            .collect::<String>();
+        let key2_pub_bytes = hex::decode(&key2_pub_hex).unwrap();
+        let key2_pub_b64 = base64::engine::general_purpose::STANDARD.encode(&key2_pub_bytes);
+
+        if let Some(keys) = manifest["public_keys"].as_array_mut() {
+            if let Some(pk) = keys.first_mut() {
+                pk["key_bytes"] = serde_json::Value::String(key2_pub_b64);
+            }
+        }
+
+        fs::write(
+            &tampered_manifest_path,
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let (code, _, _) = run_cli(&[
+            "verify-manifest",
+            "--manifest",
+            tampered_manifest_path.to_str().unwrap(),
+            "--image",
+            image_path.to_str().unwrap(),
+            "--key",
+            key_dir1.join("key_public.pem").to_str().unwrap(),
+        ]);
+        assert!(
+            code != 0,
+            "replaced pubkey bytes should not verify, got exit {}",
+            code
+        );
+    }
+
+    // B5.9: CRC embedded reference succeeds without --payload-key
+    #[test]
+    fn b5_10_crc_embedded_reference_succeeds_without_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input_path = tmp.path().join("input.png");
+        let output_path = tmp.path().join("output.png");
+        let manifest_path = tmp.path().join("manifest.json");
+        let signed_manifest_path = tmp.path().join("manifest_signed.json");
+        let key_dir = tmp.path().join("keys");
+
+        create_test_png(&input_path);
+
+        let (code, _, _) = run_cli(&["keygen", "--output-dir", key_dir.to_str().unwrap()]);
+        assert_eq!(code, 0);
+
+        let payload_digest = protect_and_get_payload_digest(&input_path, &output_path, None);
+
+        let digest = compute_digest(&output_path);
+        let bytes = fs::read(&output_path).unwrap();
+        let img = image::load_from_memory(&bytes).unwrap();
+        let (w, h) = img.dimensions();
+
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "claim": {
+                "claim_id": "00000000000000000000000000000000",
+                "content_code": "",
+                "created_at": 0u64,
+                "file_size": bytes.len() as u64,
+                "format": "png",
+                "height": h,
+                "instance_digest": digest,
+                "issuer_id": "",
+                "notice_digest": "",
+                "rights_policy": 0u8,
+                "schema_version": 1u8,
+                "software": "stegoeggo-test",
+                "width": w,
+            },
+            "signatures": [],
+            "public_keys": [],
+            "embedded_reference": {
+                "payload_digest": payload_digest,
+                "payload_version": 3,
+            },
+        });
+        fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let (code, _, _) = run_cli(&[
+            "sign",
+            "--manifest",
+            manifest_path.to_str().unwrap(),
+            "--key",
+            key_dir.join("key_private.pem").to_str().unwrap(),
+            "--output",
+            signed_manifest_path.to_str().unwrap(),
+        ]);
+        assert_eq!(code, 0);
+
+        let (code, stdout, _) = run_cli(&[
+            "verify-manifest",
+            "--manifest",
+            signed_manifest_path.to_str().unwrap(),
+            "--image",
+            output_path.to_str().unwrap(),
+            "--key",
+            key_dir.join("key_public.pem").to_str().unwrap(),
+        ]);
+        assert_eq!(
+            code, 0,
+            "CRC embedded reference without --payload-key should succeed: {}",
+            stdout
+        );
+    }
+
+    // B5.11: Correct --payload-key succeeds for HMAC embedded reference
+    #[test]
+    fn b5_11_correct_payload_key_succeeds() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input_path = tmp.path().join("input.png");
+        let output_path = tmp.path().join("output.png");
+        let manifest_path = tmp.path().join("manifest.json");
+        let signed_manifest_path = tmp.path().join("manifest_signed.json");
+        let key_dir = tmp.path().join("keys");
+        let hmac_key = "deadbeef01234567deadbeef01234567";
+
+        create_test_png(&input_path);
+
+        let (code, _, _) = run_cli(&["keygen", "--output-dir", key_dir.to_str().unwrap()]);
+        assert_eq!(code, 0);
+
+        let hmac_key_bytes = hex::decode(hmac_key).unwrap();
+        let payload_digest =
+            protect_and_get_payload_digest(&input_path, &output_path, Some(&hmac_key_bytes));
+
+        let digest = compute_digest(&output_path);
+        let bytes = fs::read(&output_path).unwrap();
+        let img = image::load_from_memory(&bytes).unwrap();
+        let (w, h) = img.dimensions();
+
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "claim": {
+                "claim_id": "00000000000000000000000000000000",
+                "content_code": "",
+                "created_at": 0u64,
+                "file_size": bytes.len() as u64,
+                "format": "png",
+                "height": h,
+                "instance_digest": digest,
+                "issuer_id": "",
+                "notice_digest": "",
+                "rights_policy": 0u8,
+                "schema_version": 1u8,
+                "software": "stegoeggo-test",
+                "width": w,
+            },
+            "signatures": [],
+            "public_keys": [],
+            "embedded_reference": {
+                "payload_digest": payload_digest,
+                "payload_version": 3,
+            },
+        });
+        fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let (code, _, _) = run_cli(&[
+            "sign",
+            "--manifest",
+            manifest_path.to_str().unwrap(),
+            "--key",
+            key_dir.join("key_private.pem").to_str().unwrap(),
+            "--output",
+            signed_manifest_path.to_str().unwrap(),
+        ]);
+        assert_eq!(code, 0);
+
+        let (code, stdout, _) = run_cli(&[
+            "verify-manifest",
+            "--manifest",
+            signed_manifest_path.to_str().unwrap(),
+            "--image",
+            output_path.to_str().unwrap(),
+            "--key",
+            key_dir.join("key_public.pem").to_str().unwrap(),
+            "--payload-key",
+            hmac_key,
+        ]);
+        assert_eq!(code, 0, "correct --payload-key should succeed: {}", stdout);
+    }
+
+    // B5.12: Wrong --payload-key exits 3
+    #[test]
+    fn b5_12_wrong_payload_key_exits_3() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input_path = tmp.path().join("input.png");
+        let output_path = tmp.path().join("output.png");
+        let manifest_path = tmp.path().join("manifest.json");
+        let signed_manifest_path = tmp.path().join("manifest_signed.json");
+        let key_dir = tmp.path().join("keys");
+        let hmac_key = "deadbeef01234567deadbeef01234567";
+        let wrong_key = "00000000000000000000000000000000";
+
+        create_test_png(&input_path);
+
+        let (code, _, _) = run_cli(&["keygen", "--output-dir", key_dir.to_str().unwrap()]);
+        assert_eq!(code, 0);
+
+        let hmac_key_bytes = hex::decode(hmac_key).unwrap();
+        let payload_digest =
+            protect_and_get_payload_digest(&input_path, &output_path, Some(&hmac_key_bytes));
+
+        let digest = compute_digest(&output_path);
+        let bytes = fs::read(&output_path).unwrap();
+        let img = image::load_from_memory(&bytes).unwrap();
+        let (w, h) = img.dimensions();
+
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "claim": {
+                "claim_id": "00000000000000000000000000000000",
+                "content_code": "",
+                "created_at": 0u64,
+                "file_size": bytes.len() as u64,
+                "format": "png",
+                "height": h,
+                "instance_digest": digest,
+                "issuer_id": "",
+                "notice_digest": "",
+                "rights_policy": 0u8,
+                "schema_version": 1u8,
+                "software": "stegoeggo-test",
+                "width": w,
+            },
+            "signatures": [],
+            "public_keys": [],
+            "embedded_reference": {
+                "payload_digest": payload_digest,
+                "payload_version": 3,
+            },
+        });
+        fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let (code, _, _) = run_cli(&[
+            "sign",
+            "--manifest",
+            manifest_path.to_str().unwrap(),
+            "--key",
+            key_dir.join("key_private.pem").to_str().unwrap(),
+            "--output",
+            signed_manifest_path.to_str().unwrap(),
+        ]);
+        assert_eq!(code, 0);
+
+        let (code, stdout, _) = run_cli(&[
+            "verify-manifest",
+            "--manifest",
+            signed_manifest_path.to_str().unwrap(),
+            "--image",
+            output_path.to_str().unwrap(),
+            "--key",
+            key_dir.join("key_public.pem").to_str().unwrap(),
+            "--payload-key",
+            wrong_key,
+        ]);
+        assert!(
+            code != 0,
+            "wrong --payload-key should not exit 0, got {}",
+            code
+        );
+        assert!(
+            code == 3 || code == 4,
+            "wrong --payload-key should exit 3 or 4, got {}",
+            code
+        );
+        assert!(
+            stdout.to_lowercase().contains("authenticat")
+                || stdout.to_lowercase().contains("mismatch")
+                || stdout.to_lowercase().contains("fail"),
+            "should report authentication failure: {}",
+            stdout
         );
     }
 }

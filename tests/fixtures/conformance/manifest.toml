@@ -272,7 +272,7 @@ expected_decode = "pass"
 expected_xmp = "valid"
 expected_internal = "success"
 expected_external = "success"
-required_external_fields = ["canonical_data_mining"]
+required_external_fields = []
 expected_preservation = []
 
 [[fixture]]

@@ -506,6 +506,36 @@ fn extract_xmp_from_image(file: &Path) -> Option<String> {
     })
 }
 
+fn extract_all_creators_from_xmp(xmp: &str) -> Vec<String> {
+    let open = "<dc:creator>";
+    let close = "</dc:creator>";
+    let Some(start) = xmp.find(open) else {
+        return Vec::new();
+    };
+    let seq_start = start + open.len();
+    let Some(seq_end) = xmp[seq_start..].find(close) else {
+        return Vec::new();
+    };
+    let seq_content = &xmp[seq_start..seq_start + seq_end];
+    let li_open = "<rdf:li>";
+    let li_close = "</rdf:li>";
+    let mut results = Vec::new();
+    let mut pos = 0;
+    while let Some(li_start) = seq_content[pos..].find(li_open) {
+        let value_start = pos + li_start + li_open.len();
+        if let Some(li_end) = seq_content[value_start..].find(li_close) {
+            let value = &seq_content[value_start..value_start + li_end];
+            if !value.is_empty() {
+                results.push(value.to_string());
+            }
+            pos = value_start + li_end + li_close.len();
+        } else {
+            break;
+        }
+    }
+    results
+}
+
 fn extract_xmp_from_webp(bytes: &[u8]) -> Option<String> {
     let marker = b"XMP ";
     let mut pos = 0;
@@ -583,12 +613,20 @@ fn extract_xmp_from_jpeg(bytes: &[u8]) -> Option<String> {
 fn internal_extract(file: &Path) -> Option<InternalExtraction> {
     let bytes = std::fs::read(file).ok()?;
     let notice = stegoeggo::verify_legal_notice(&bytes, b"");
-    Some(InternalExtraction {
-        copyright_holder: notice.copyright_holder().map(|s| s.to_string()),
-        creators: notice
+    let creators = extract_xmp_from_image(file)
+        .map(|xmp| extract_all_creators_from_xmp(&xmp))
+        .unwrap_or_default();
+    let creators = if creators.is_empty() {
+        notice
             .creator()
             .map(|s| vec![s.to_string()])
-            .unwrap_or_default(),
+            .unwrap_or_default()
+    } else {
+        creators
+    };
+    Some(InternalExtraction {
+        copyright_holder: notice.copyright_holder().map(|s| s.to_string()),
+        creators,
         copyright_owner: notice.copyright_owner().map(|s| s.to_string()),
         usage_terms: notice.usage_terms().map(|s| s.to_string()),
         web_statement_of_rights: notice.web_statement_of_rights().map(|s| s.to_string()),
