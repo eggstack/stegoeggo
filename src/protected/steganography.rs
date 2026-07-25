@@ -99,6 +99,7 @@ const V3_PROBE_BITS: usize = 384;
 pub(crate) enum V3ProbeResult {
     /// Valid v3 header found; `total_length` is the exact payload size in bytes.
     V3Detected {
+        header_length: usize,
         total_length: usize,
         total_bits: usize,
     },
@@ -867,33 +868,31 @@ impl SteganographyProtector {
         seed: u64,
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
-        for &ecc_bits in &[
-            V3_CRC_PAYLOAD_BITS,
-            V3_HMAC_PAYLOAD_BITS,
-            ECC_PAYLOAD_BITS_V2,
-            ECC_PAYLOAD_BITS,
-        ] {
-            for pass in 0..5 {
-                let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
-
-                if let Some(payload) = self.extract_lsb(img, ecc_bits, offset_seed) {
-                    if Self::try_ecc_decode(&payload).is_some() {
-                        return Some(payload);
+        let prefix_bits = 6 * 8;
+        for pass in 0..5 {
+            let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
+            if let Some(prefix) = self.extract_lsb(img, prefix_bits, offset_seed) {
+                match Self::classify_v3_probe(&prefix) {
+                    V3ProbeResult::V3Detected { total_bits, .. } => {
+                        if let Some(full) = self.extract_lsb(img, total_bits, offset_seed) {
+                            if Self::verify_payload_integrity(&full, mac_key) {
+                                return Some(Self::truncate_to_actual_payload(&full));
+                            }
+                        }
                     }
-                    if Self::verify_payload_integrity(&payload, mac_key) {
-                        return Some(Self::truncate_to_actual_payload(&payload));
-                    }
-                    if let V3ProbeResult::V3Detected { total_bits, .. } =
-                        Self::classify_v3_probe(&payload)
-                    {
-                        if total_bits != ecc_bits {
-                            if let Some(full) = self.extract_lsb(img, total_bits, offset_seed) {
-                                if Self::verify_payload_integrity(&full, mac_key) {
-                                    return Some(Self::truncate_to_actual_payload(&full));
+                    V3ProbeResult::NotV3 => {
+                        for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                            if let Some(payload) = self.extract_lsb(img, ecc_bits, offset_seed) {
+                                if Self::try_ecc_decode(&payload).is_some() {
+                                    return Some(payload);
+                                }
+                                if Self::verify_payload_integrity(&payload, mac_key) {
+                                    return Some(Self::truncate_to_actual_payload(&payload));
                                 }
                             }
                         }
                     }
+                    _ => {}
                 }
             }
         }
@@ -920,42 +919,48 @@ impl SteganographyProtector {
         mac_key: &[u8],
     ) -> CandidateOutcome {
         let mut last_outcome: Option<CandidateOutcome> = None;
-        for &ecc_bits in &[
-            V3_CRC_PAYLOAD_BITS,
-            V3_HMAC_PAYLOAD_BITS,
-            ECC_PAYLOAD_BITS_V2,
-            ECC_PAYLOAD_BITS,
-        ] {
-            for pass in 0..5 {
-                let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
-
-                if let Some(payload) = self.extract_lsb(img, ecc_bits, offset_seed) {
-                    if Self::try_ecc_decode(&payload).is_some() {
-                        return CandidateOutcome::Valid(payload);
+        let prefix_bits = 6 * 8;
+        for pass in 0..5 {
+            let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
+            if let Some(prefix) = self.extract_lsb(img, prefix_bits, offset_seed) {
+                match Self::classify_v3_probe(&prefix) {
+                    V3ProbeResult::V3Detected { total_bits, .. } => {
+                        if let Some(full) = self.extract_lsb(img, total_bits, offset_seed) {
+                            if Self::verify_payload_integrity(&full, mac_key) {
+                                return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
+                                    &full,
+                                ));
+                            }
+                            if last_outcome.is_none() {
+                                last_outcome = Some(Self::classify_auth_failure(&full, mac_key));
+                            }
+                        }
                     }
-                    if Self::verify_payload_integrity(&payload, mac_key) {
-                        return CandidateOutcome::Valid(Self::truncate_to_actual_payload(&payload));
-                    }
-                    if let V3ProbeResult::V3Detected { total_bits, .. } =
-                        Self::classify_v3_probe(&payload)
-                    {
-                        if total_bits != ecc_bits {
-                            if let Some(full) = self.extract_lsb(img, total_bits, offset_seed) {
-                                if Self::verify_payload_integrity(&full, mac_key) {
+                    V3ProbeResult::NotV3 => {
+                        for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                            if let Some(payload) = self.extract_lsb(img, ecc_bits, offset_seed) {
+                                if Self::try_ecc_decode(&payload).is_some() {
+                                    return CandidateOutcome::Valid(payload);
+                                }
+                                if Self::verify_payload_integrity(&payload, mac_key) {
                                     return CandidateOutcome::Valid(
-                                        Self::truncate_to_actual_payload(&full),
+                                        Self::truncate_to_actual_payload(&payload),
                                     );
                                 }
                                 if last_outcome.is_none() {
                                     last_outcome =
-                                        Some(Self::classify_auth_failure(&full, mac_key));
+                                        Some(Self::classify_auth_failure(&payload, mac_key));
                                 }
                             }
                         }
                     }
-                    if last_outcome.is_none() {
-                        last_outcome = Some(Self::classify_auth_failure(&payload, mac_key));
+                    V3ProbeResult::MalformedV3 if last_outcome.is_none() => {
+                        last_outcome = Some(CandidateOutcome::MalformedV3);
                     }
+                    V3ProbeResult::UnsupportedVersion(v) if last_outcome.is_none() => {
+                        last_outcome = Some(CandidateOutcome::UnsupportedVersion(v));
+                    }
+                    _ => {}
                 }
             }
         }
@@ -2082,38 +2087,40 @@ impl SteganographyProtector {
         seed: u64,
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
+        let prefix_bits = 6 * 8;
         for redundancy in 1..=10 {
             let stego_f5 = DctStegoF5::with_redundancy(redundancy);
-            for &bits_needed in &[
-                V3_CRC_PAYLOAD_BITS,
-                V3_HMAC_PAYLOAD_BITS,
-                ECC_PAYLOAD_BITS_V2,
-                ECC_PAYLOAD_BITS,
-            ] {
-                let extracted = stego_f5.extract_f5(coefficients, bits_needed, seed);
-                if extracted.len() < bits_needed {
-                    continue;
-                }
-                let payload_bytes = Self::bits_to_bytes(&extracted);
-                if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                    return Some(Self::truncate_to_actual_payload(&payload_bytes));
-                }
-                if Self::try_ecc_decode(&payload_bytes).is_some() {
-                    return Some(payload_bytes);
-                }
-                if let V3ProbeResult::V3Detected { total_bits, .. } =
-                    Self::classify_v3_probe(&payload_bytes)
-                {
-                    if total_bits != bits_needed {
-                        let full_extracted = stego_f5.extract_f5(coefficients, total_bits, seed);
-                        if full_extracted.len() >= total_bits {
-                            let full_bytes = Self::bits_to_bytes(&full_extracted);
-                            if Self::verify_payload_integrity(&full_bytes, mac_key) {
-                                return Some(Self::truncate_to_actual_payload(&full_bytes));
-                            }
+            let prefix_extracted = stego_f5.extract_f5(coefficients, prefix_bits, seed);
+            if prefix_extracted.len() < prefix_bits {
+                continue;
+            }
+            let prefix_bytes = Self::bits_to_bytes(&prefix_extracted);
+            match Self::classify_v3_probe(&prefix_bytes) {
+                V3ProbeResult::V3Detected { total_bits, .. } => {
+                    let full_extracted = stego_f5.extract_f5(coefficients, total_bits, seed);
+                    if full_extracted.len() >= total_bits {
+                        let full_bytes = Self::bits_to_bytes(&full_extracted);
+                        if Self::verify_payload_integrity(&full_bytes, mac_key) {
+                            return Some(Self::truncate_to_actual_payload(&full_bytes));
                         }
                     }
                 }
+                V3ProbeResult::NotV3 => {
+                    for &bits_needed in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                        let extracted = stego_f5.extract_f5(coefficients, bits_needed, seed);
+                        if extracted.len() < bits_needed {
+                            continue;
+                        }
+                        let payload_bytes = Self::bits_to_bytes(&extracted);
+                        if Self::verify_payload_integrity(&payload_bytes, mac_key) {
+                            return Some(Self::truncate_to_actual_payload(&payload_bytes));
+                        }
+                        if Self::try_ecc_decode(&payload_bytes).is_some() {
+                            return Some(payload_bytes);
+                        }
+                    }
+                }
+                _ => {}
             }
         }
         None
@@ -2127,54 +2134,57 @@ impl SteganographyProtector {
         mac_key: &[u8],
     ) -> CandidateOutcome {
         let mut last_outcome: Option<CandidateOutcome> = None;
+        let prefix_bits = 6 * 8;
         for redundancy in 1..=10 {
             let stego_f5 = DctStegoF5::with_redundancy(redundancy);
-            for &bits_needed in &[
-                V3_CRC_PAYLOAD_BITS,
-                V3_HMAC_PAYLOAD_BITS,
-                ECC_PAYLOAD_BITS_V2,
-                ECC_PAYLOAD_BITS,
-            ] {
-                let extracted = stego_f5.extract_f5(coefficients, bits_needed, seed);
-                if extracted.len() < bits_needed {
-                    continue;
-                }
-                let payload_bytes = Self::bits_to_bytes(&extracted);
-                if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                    return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
-                        &payload_bytes,
-                    ));
-                }
-                if Self::try_ecc_decode(&payload_bytes).is_some() {
-                    return CandidateOutcome::Valid(payload_bytes);
-                }
-                match Self::classify_v3_probe(&payload_bytes) {
-                    V3ProbeResult::V3Detected { total_bits, .. } if total_bits != bits_needed => {
-                        let full_extracted = stego_f5.extract_f5(coefficients, total_bits, seed);
-                        if full_extracted.len() >= total_bits {
-                            let full_bytes = Self::bits_to_bytes(&full_extracted);
-                            if Self::verify_payload_integrity(&full_bytes, mac_key) {
-                                return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
-                                    &full_bytes,
-                                ));
-                            }
-                            if last_outcome.is_none() {
-                                last_outcome =
-                                    Some(Self::classify_auth_failure(&full_bytes, mac_key));
-                            }
+            let prefix_extracted = stego_f5.extract_f5(coefficients, prefix_bits, seed);
+            if prefix_extracted.len() < prefix_bits {
+                continue;
+            }
+            let prefix_bytes = Self::bits_to_bytes(&prefix_extracted);
+            match Self::classify_v3_probe(&prefix_bytes) {
+                V3ProbeResult::V3Detected { total_bits, .. } => {
+                    let full_extracted = stego_f5.extract_f5(coefficients, total_bits, seed);
+                    if full_extracted.len() >= total_bits {
+                        let full_bytes = Self::bits_to_bytes(&full_extracted);
+                        if Self::verify_payload_integrity(&full_bytes, mac_key) {
+                            return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
+                                &full_bytes,
+                            ));
+                        }
+                        if last_outcome.is_none() {
+                            last_outcome = Some(Self::classify_auth_failure(&full_bytes, mac_key));
                         }
                     }
-                    V3ProbeResult::MalformedV3 => {
-                        return CandidateOutcome::MalformedV3;
-                    }
-                    V3ProbeResult::UnsupportedVersion(v) => {
-                        return CandidateOutcome::UnsupportedVersion(v);
-                    }
-                    _ => {}
                 }
-                if last_outcome.is_none() {
-                    last_outcome = Some(Self::classify_auth_failure(&payload_bytes, mac_key));
+                V3ProbeResult::NotV3 => {
+                    for &bits_needed in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                        let extracted = stego_f5.extract_f5(coefficients, bits_needed, seed);
+                        if extracted.len() < bits_needed {
+                            continue;
+                        }
+                        let payload_bytes = Self::bits_to_bytes(&extracted);
+                        if Self::verify_payload_integrity(&payload_bytes, mac_key) {
+                            return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
+                                &payload_bytes,
+                            ));
+                        }
+                        if Self::try_ecc_decode(&payload_bytes).is_some() {
+                            return CandidateOutcome::Valid(payload_bytes);
+                        }
+                        if last_outcome.is_none() {
+                            last_outcome =
+                                Some(Self::classify_auth_failure(&payload_bytes, mac_key));
+                        }
+                    }
                 }
+                V3ProbeResult::MalformedV3 if last_outcome.is_none() => {
+                    last_outcome = Some(CandidateOutcome::MalformedV3);
+                }
+                V3ProbeResult::UnsupportedVersion(v) if last_outcome.is_none() => {
+                    last_outcome = Some(CandidateOutcome::UnsupportedVersion(v));
+                }
+                _ => {}
             }
         }
         match last_outcome {
@@ -2641,8 +2651,8 @@ impl SteganographyProtector {
     /// Classify a set of extracted bytes as v3 header, legacy, or malformed.
     ///
     /// The bytes must be at least 6 bytes (to read `total_length` from
-    /// bytes 4-5). Returns the exact `total_length` when v3 magic is
-    /// present and the header is structurally valid.
+    /// bytes 4-5). Returns the exact `header_length` and `total_length`
+    /// when v3 magic is present and the header is structurally valid.
     pub(crate) fn classify_v3_probe(bytes: &[u8]) -> V3ProbeResult {
         if bytes.len() < 6 {
             return V3ProbeResult::NotV3;
@@ -2656,13 +2666,21 @@ impl SteganographyProtector {
             }
             return V3ProbeResult::NotV3;
         }
+        let header_length = bytes[3] as usize;
         let total_length = u16::from_le_bytes([bytes[4], bytes[5]]) as usize;
-        if total_length < crate::payload_v3::types::V3_CORE_SIZE {
+        if header_length < crate::payload_v3::types::V3_CORE_SIZE {
+            return V3ProbeResult::MalformedV3;
+        }
+        if total_length < header_length {
             return V3ProbeResult::MalformedV3;
         }
         if total_length > crate::payload_v3::types::V3_MAX_EMBEDDED_SIZE {
             return V3ProbeResult::MalformedV3;
         }
+        let total_bits = match total_length.checked_mul(8) {
+            Some(b) => b,
+            None => return V3ProbeResult::MalformedV3,
+        };
         if bytes.len() >= 31 {
             let auth_tag_len = bytes[30] as usize;
             if total_length < crate::payload_v3::types::V3_CORE_SIZE + auth_tag_len {
@@ -2670,8 +2688,9 @@ impl SteganographyProtector {
             }
         }
         V3ProbeResult::V3Detected {
+            header_length,
             total_length,
-            total_bits: total_length * 8,
+            total_bits,
         }
     }
 
