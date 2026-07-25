@@ -100,6 +100,24 @@ jobs:
       - name: Run audit
         run: cargo audit
 
+  semver:
+    name: Semver Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-semver-checks
+        run: cargo install cargo-semver-checks
+
+      - name: Check semver
+        run: cargo semver-checks check-release
+
   deny:
     name: License & Advisory Check
     runs-on: ubuntu-latest

@@ -31,6 +31,8 @@ run cargo test --doc --workspace --exclude stegoeggo-fuzz
 run cargo package --workspace
 run cargo deny check licenses
 run cargo deny check advisories
+run cargo audit
+run cargo semver-checks check-release
 
 echo "=== Feature combination phase ==="
 

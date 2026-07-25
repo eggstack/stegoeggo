@@ -1039,7 +1039,19 @@ fn handle_verify_manifest(
             stegoeggo::detached::DetachedOverallStatus::EmbeddedReferenceFailure => {
                 "embedded_reference_failure"
             }
+            stegoeggo::detached::DetachedOverallStatus::KeyMaterialMismatch => {
+                "key_material_mismatch"
+            }
         };
+
+        #[derive(serde::Serialize)]
+        struct JsonSignatureDetail {
+            key_id: String,
+            cryptographically_valid: bool,
+            key_id_matched: bool,
+            key_material_matched: bool,
+            trusted: bool,
+        }
 
         #[derive(serde::Serialize)]
         struct JsonManifestVerify {
@@ -1051,6 +1063,7 @@ fn handle_verify_manifest(
             signatures_valid: bool,
             trusted: bool,
             evidence_strength: String,
+            signatures: Vec<JsonSignatureDetail>,
         }
 
         let embedded_ref = match result.embedded_reference_status {
@@ -1075,6 +1088,19 @@ fn handle_verify_manifest(
             .any(|s| s.cryptographically_valid());
         let trusted = result.report.trust().trusted();
 
+        let sig_details: Vec<JsonSignatureDetail> = result
+            .report
+            .signatures()
+            .iter()
+            .map(|s| JsonSignatureDetail {
+                key_id: hex::encode(s.public_key_id().unwrap_or(&[])),
+                cryptographically_valid: s.cryptographically_valid(),
+                key_id_matched: s.key_id_matched(),
+                key_material_matched: s.key_material_matched(),
+                trusted: s.trusted(),
+            })
+            .collect();
+
         let json = JsonManifestVerify {
             schema_version: manifest.schema_version as u32,
             overall_status: status_str,
@@ -1084,6 +1110,7 @@ fn handle_verify_manifest(
             signatures_valid: sigs_valid,
             trusted,
             evidence_strength: format!("{:?}", result.report.evidence_strength()),
+            signatures: sig_details,
         };
         println!("{}", serde_json::to_string_pretty(&json)?);
     } else {
@@ -1124,6 +1151,8 @@ fn handle_verify_manifest(
                     "      cryptographically_valid: {}",
                     sig.cryptographically_valid()
                 );
+                println!("      key_id_matched: {}", sig.key_id_matched());
+                println!("      key_material_matched: {}", sig.key_material_matched());
                 println!("      trusted: {}", sig.trusted());
             }
         }

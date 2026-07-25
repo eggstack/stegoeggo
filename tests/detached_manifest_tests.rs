@@ -869,7 +869,7 @@ mod trust_verifying_key_tests {
         assert!(!result.report.signatures()[0].trusted());
         assert_eq!(
             result.overall_status(),
-            stegoeggo::detached::DetachedOverallStatus::VerifiedUntrusted
+            stegoeggo::detached::DetachedOverallStatus::KeyMaterialMismatch
         );
     }
 

@@ -146,6 +146,10 @@ pub enum DetachedOverallStatus {
     SignatureFailure,
     /// Embedded reference check failed (stripped, version mismatch, digest mismatch, etc.).
     EmbeddedReferenceFailure,
+    /// A caller-supplied verifying key matched the key ID but the manifest
+    /// key bytes differ from the caller-owned key. This is an integrity/
+    /// configuration failure, not ordinary absence of trust.
+    KeyMaterialMismatch,
 }
 
 impl DetachedOverallStatus {
@@ -156,7 +160,10 @@ impl DetachedOverallStatus {
             Self::VerifiedTrusted => 0,
             Self::VerifiedUntrusted => 4,
             Self::InvalidConfiguration => 2,
-            Self::BindingFailure | Self::SignatureFailure | Self::EmbeddedReferenceFailure => 3,
+            Self::BindingFailure
+            | Self::SignatureFailure
+            | Self::EmbeddedReferenceFailure
+            | Self::KeyMaterialMismatch => 3,
         }
     }
 }
@@ -177,7 +184,7 @@ pub struct ManifestVerification {
 impl ManifestVerification {
     /// Compute the overall verification status.
     ///
-    /// Priority: InvalidConfiguration > BindingFailure > SignatureFailure > EmbeddedReferenceFailure > Verified.
+    /// Priority: InvalidConfiguration > BindingFailure > SignatureFailure > EmbeddedReferenceFailure > KeyMaterialMismatch > Verified.
     #[must_use]
     pub fn overall_status(&self) -> DetachedOverallStatus {
         if !self.manifest_valid {
@@ -199,7 +206,16 @@ impl ManifestVerification {
             EmbeddedReferenceStatus::NotProvided
             | EmbeddedReferenceStatus::Present
             | EmbeddedReferenceStatus::PresentValid => {
-                if self.report.trust().trusted() {
+                // Key-material mismatch takes priority over ordinary untrusted:
+                // a caller-supplied key matched the ID but manifest bytes differ.
+                let has_key_material_mismatch = self
+                    .report
+                    .signatures()
+                    .iter()
+                    .any(|s| s.key_id_matched() && !s.key_material_matched());
+                if has_key_material_mismatch {
+                    DetachedOverallStatus::KeyMaterialMismatch
+                } else if self.report.trust().trusted() {
                     DetachedOverallStatus::VerifiedTrusted
                 } else {
                     DetachedOverallStatus::VerifiedUntrusted

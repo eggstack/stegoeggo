@@ -91,7 +91,7 @@ src/
 - `SigningKey` / `VerifyingKey` — Ed25519 key types (signatures feature)
 - `VerificationReport` — Structured verification results
 - `PayloadV3Header` — v3 payload header
-- `DetachedOverallStatus` — Overall verification verdict for detached manifests
+- `DetachedOverallStatus` — Overall verification verdict for detached manifests: `VerifiedTrusted` (exit 0), `VerifiedUntrusted` (exit 4), `InvalidConfiguration` (exit 2), `BindingFailure`/`SignatureFailure`/`EmbeddedReferenceFailure`/`KeyMaterialMismatch` (exit 3). `KeyMaterialMismatch` is returned when a caller-supplied verifying key matched the key ID but manifest key bytes differ from the caller-owned key
 - `EmbeddedReferenceStatus` — Status of embedded manifest reference: `PresentValid`, `AuthenticationKeyMissing`, `AuthenticationFailed`, `UnsupportedVersion` (plus deprecated `Present` alias)
 - `CandidateOutcome` — Extraction outcome enum with `Valid`, `Invalid`, `MalformedV3`, `UnsupportedVersion`, `AuthenticationKeyMissing`, `AuthenticationFailed`, `NotFound` variants (crate-internal)
 - `V3ProbeResult` — V3 header probe result: `V3Detected`, `NotV3`, `MalformedV3`, `UnsupportedVersion`, `InsufficientCapacity` (crate-internal)
@@ -232,7 +232,7 @@ Required external tools: `exiftool`, `xmllint`, `imagemagick`, `libvips` (instal
 
 Stable exit codes: 0=pass, 1=fail, 2=config error, 3=digest mismatch, 4=coverage violation, 5=internal error (conformance harness)
 
-CLI exit codes: 0=ok, 1=error, 2=config, 3=integrity, 4=trust (untrusted but valid), 5=internal
+CLI exit codes: 0=ok, 1=error, 2=config, 3=integrity (includes key-material mismatch), 4=trust (valid evidence, no caller trust anchor), 5=internal
 
 ## Things to Watch Out For
 
@@ -242,7 +242,7 @@ CLI exit codes: 0=ok, 1=error, 2=config, 3=integrity, 4=trust (untrusted but val
 - **Canonical rights metadata**: XMP writer emits `plus:DataMining` with PLUS LDF vocabulary keys (e.g., `DMI-PROHIBITED-AIMLTRAINING`). Legacy `Iptc4xmpExt:DMI-*` properties are still parsed for backward compatibility but not emitted by default. `DmiValue::plus_vocab_key()` returns the canonical key; `DmiValue::from_plus_vocab_key()` parses it back.
 - **TDM reservation removed from image output**: `tdm:reserve_tdm` is no longer emitted. TDMRep is a web-distribution mechanism (HTTP headers, `/.well-known/tdmrep.json`), not an image-metadata signal. Legacy files with `tdm:reserve_tdm` remain parseable.
 - **RightsSignalKind**: `NoticeVerification::rights_signal_kind()` classifies the source of the DMI signal as `CanonicalPlusDataMining`, `LegacyStegoEggoDmi`, `LegacyTdmReservation`, or `Unknown`.
-- **DMI conflict detection**: `NoticeVerification::has_dmi_conflict()` returns true when both canonical and legacy DMI values are found and disagree.
+- **DMI conflict detection**: `NoticeVerification::has_dmi_conflict()` returns true when both canonical and legacy DMI values are found and disagree. Conformance harness iterates ALL legacy DMI values (not just the first) when checking for conflicts. The `expected_conflict` check has correct failure messages: "Expected conflict not detected" when expected but absent, "Unexpected conflict detected" when unexpected conflict found.
 - **MetadataTrapProtector::apply()**: Returns `Cow::Borrowed(img)` unchanged — metadata injection is byte-level. The pipeline routes `Light` through `apply_light_bytes()` which encodes → injects → decodes. For byte-level output with metadata, use `apply_bytes()` or `process_bytes()`
 - **`stego_redundancy` is `Option<usize>`**: Default `None` derives from intensity via `effective_redundancy()` (<0.3→1, 0.3-0.7→2, >=0.7→3). Explicit `.with_stego_redundancy(n)` overrides this. Valid range 1-10
 - **Verification API**: `verify_payload_with_key()` and `verify_image_bytes()` return `VerificationStatus` (`Verified`, `Invalid`, `NotFound`), not `Option<bool>`. Use `== VerificationStatus::Verified` in assertions. For richer info, use `verify_image_bytes_detailed()` → `VerificationResult`. For comprehensive legal notice verification, use `verify_legal_notice()` → `NoticeVerification` with `EvidenceStrength` and `EvidenceChannel`
@@ -292,7 +292,7 @@ CLI exit codes: 0=ok, 1=error, 2=config, 3=integrity, 4=trust (untrusted but val
 - **Resolution runs once**: `resolve_request()` validates all input and produces an immutable `ResolvedProtectionPlan`. Pipeline stages consume the plan rather than re-querying mutable context
 - **Payload v3 uses TLV extensions with domain-separated authentication**: v3 payloads support arbitrary key-value extensions with per-domain MAC keys. Domain separation ensures cross-domain forgery is infeasible
 - **V3 channel flags**: The `authentication` flag in the V3 header channels bitfield correctly reflects whether HMAC is actually used (`ctx.mac_key().is_some()`), not always true. The `rights_metadata` and `hidden_marker` flags are always set to `true` for embedded payloads
-- **V3-first extraction**: All extraction paths (LSB non-tiled, LSB tiled, DCT non-tiled, DCT tiled, and all verification variants) try V3 CRC (288 bits) and V3 HMAC (384 bits) sizes first, then fall back to V2 ECC (800 bits) and V1 ECC (608 bits). This ensures V3 payloads are extracted efficiently while maintaining backward compatibility
+- **V3-first extraction**: All extraction paths (LSB non-tiled, LSB tiled, DCT non-tiled, DCT tiled, and all verification variants) use `classify_v3_probe()` as the shared v3 classification implementation. Non-tiled paths try V3 CRC (288 bits) and V3 HMAC (384 bits) sizes first, classify via `classify_v3_probe()`, and fall back to V2 ECC (800 bits) and V1 ECC (608 bits). Tiled paths extract probe bits, classify, then either extract exact `total_length` or fall back to legacy sizes
 - **CLI verify-manifest uses library verifier**: The `verify-manifest` subcommand routes through `verify_detached_manifest()` from `stegoeggo::detached::verify`, using bounded parsing (`DetachedManifest::from_json_with_limits`) and the structured `ManifestVerification` result. It no longer reimplements digest/signature verification inline
 - **CLI exit code 4 (EXIT_TRUST)**: Used when `verify-manifest` finds cryptographically valid evidence but no valid signature is trusted by caller policy
 - **SigningKey does NOT implement Serialize — private keys are never serialized**: `ed25519_dalek::SigningKey` is kept out of serde. Use `to_bytes()` / `from_bytes()` for explicit key serialization

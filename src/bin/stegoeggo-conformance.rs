@@ -699,16 +699,18 @@ fn evaluate_manifest_expectations(
         }
     }
 
-    let canonical = report.internal.canonical_data_mining.as_ref();
-    let legacy = report.internal.legacy_data_mining.first();
-    if let (Some(c), Some(l)) = (canonical, legacy) {
+    let canonical = report.internal.canonical_data_mining.clone();
+    let legacy_values = report.internal.legacy_data_mining.clone();
+    if let Some(c) = &canonical {
         let nc = conformance::normalize_dmi_value(c);
-        let nl = conformance::normalize_dmi_value(l);
-        if nc != nl {
-            report.add_conflict(&format!(
-                "DMI conflict: canonical={:?} vs legacy={:?}",
-                c, l
-            ));
+        for l in &legacy_values {
+            let nl = conformance::normalize_dmi_value(l);
+            if nc != nl {
+                report.add_conflict(&format!(
+                    "DMI conflict: canonical={:?} vs legacy={:?}",
+                    c, l
+                ));
+            }
         }
     }
 
@@ -717,13 +719,19 @@ fn evaluate_manifest_expectations(
         report.add_check(
             "expected_conflict",
             CheckSeverity::Fail,
-            "Unexpected conflict detected",
+            "Expected conflict not detected",
         );
-    } else if entry.expected_conflict {
+    } else if entry.expected_conflict && has_conflict {
         report.add_check(
             "expected_conflict",
             CheckSeverity::Pass,
             "Conflict correctly detected",
+        );
+    } else if !entry.expected_conflict && has_conflict {
+        report.add_check(
+            "expected_conflict",
+            CheckSeverity::Fail,
+            "Unexpected conflict detected",
         );
     }
 
