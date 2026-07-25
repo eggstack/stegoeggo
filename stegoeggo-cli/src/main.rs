@@ -1042,6 +1042,7 @@ fn handle_verify_manifest(
             stegoeggo::detached::DetachedOverallStatus::KeyMaterialMismatch => {
                 "key_material_mismatch"
             }
+            _ => "unknown",
         };
 
         #[derive(serde::Serialize)]

@@ -56,6 +56,7 @@ impl std::fmt::Debug for TrustedVerifyingKey {
 ///   trusted key ID. This is the recommended mode for `verify-manifest --key`.
 /// - [`TrustPolicy::TrustCallback`]: Trusts keys for which the callback
 ///   returns `true`.
+#[non_exhaustive]
 pub enum TrustPolicy {
     /// Never trust any key. Signature validity is reported but `trusted` is always false.
     TrustNone,
@@ -131,6 +132,7 @@ pub enum EmbeddedReferenceStatus {
 
 /// Overall status of detached manifest verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DetachedOverallStatus {
     /// Manifest is valid, binding matches, at least one signature is cryptographically valid,
     /// and a caller-trusted key produced a valid signature.
@@ -454,10 +456,13 @@ fn verify_detached_manifest_inner(
                 let key_id_matched = match trust {
                     TrustPolicy::TrustNone => false,
                     TrustPolicy::TrustKeys(keys) => keys.iter().any(|t| t == &sig_record.key_id),
+                    #[cfg(feature = "signatures")]
                     TrustPolicy::TrustVerifyingKeys(keys) => {
                         keys.iter().any(|t| t.key_id == sig_record.key_id)
                     }
                     TrustPolicy::TrustCallback(f) => f(&sig_record.key_id),
+                    #[allow(unreachable_patterns)]
+                    _ => false,
                 };
 
                 // Trusted requires: key ID matched AND cryptographically valid
