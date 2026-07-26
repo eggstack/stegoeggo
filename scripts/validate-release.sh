@@ -34,6 +34,9 @@ run cargo deny check advisories
 run cargo audit
 run cargo semver-checks check-release
 
+echo "=== MSRV check ==="
+run cargo +1.87 check --all-features
+
 echo "=== Feature combination phase ==="
 
 run cargo test -p stegoeggo --no-default-features

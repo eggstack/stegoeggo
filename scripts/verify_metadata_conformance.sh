@@ -152,14 +152,20 @@ elif [ "$EXIT_CODE" -eq 1 ]; then
     if [ -n "$JSON_PATH" ] && [ -f "$JSON_PATH" ]; then
         echo "JSON report: $JSON_PATH"
     fi
+    exit 1
+elif [ "$EXIT_CODE" -eq 2 ]; then
+    echo -e "${RED}Configuration error.${NC}"
     exit 2
 elif [ "$EXIT_CODE" -eq 3 ]; then
     echo -e "${RED}Fixture digest verification failed.${NC}"
-    exit 2
+    exit 3
 elif [ "$EXIT_CODE" -eq 4 ]; then
     echo -e "${RED}Coverage minimums not met.${NC}"
-    exit 2
+    exit 4
+elif [ "$EXIT_CODE" -eq 5 ]; then
+    echo -e "${RED}Conformance harness internal error.${NC}"
+    exit 5
 else
     echo -e "${RED}Conformance harness encountered an error (exit code $EXIT_CODE).${NC}"
-    exit 2
+    exit "$EXIT_CODE"
 fi
