@@ -423,8 +423,12 @@ fn test_encoding_mismatch_rejected() {
         });
 
     let result = verify_detached_manifest(image_bytes, &manifest, &TrustPolicy::TrustNone);
-    assert_eq!(result.report.signatures().len(), 1);
-    assert!(!result.report.signatures()[0].structurally_valid());
+    assert!(!result.manifest_valid);
+    assert_eq!(
+        result.overall_status(),
+        stegoeggo::detached::DetachedOverallStatus::InvalidConfiguration
+    );
+    assert!(result.report.signatures().is_empty());
 }
 
 #[test]
@@ -639,8 +643,11 @@ fn test_duplicate_key_ids_in_signatures_are_handled() {
 
     assert_eq!(manifest.signatures.len(), 1);
     let result = verify_detached_manifest(image_bytes, &manifest, &TrustPolicy::TrustNone);
-    assert_eq!(result.report.signatures().len(), 1);
-    assert!(result.report.signatures()[0].cryptographically_valid());
+    assert!(result.manifest_valid);
+    assert_eq!(
+        result.overall_status(),
+        stegoeggo::detached::DetachedOverallStatus::VerifiedUntrusted
+    );
 }
 
 #[cfg(feature = "signatures")]
@@ -953,12 +960,18 @@ mod trust_verifying_key_tests {
         let claim_bytes = claim.canonical_bytes();
         let sig_bytes = key_a.sign(&claim_bytes);
 
-        // Manifest has NO public key entry — caller-owned key is used directly.
-        let manifest = DetachedManifest::new(claim.clone()).with_signature(SignatureRecord {
-            algorithm: "ed25519".to_string(),
-            key_id: b"key-a-id".to_vec(),
-            signature: hex::encode(&sig_bytes),
-        });
+        // Manifest has public key entry — caller-owned key is used directly.
+        let manifest = DetachedManifest::new(claim.clone())
+            .with_signature(SignatureRecord {
+                algorithm: "ed25519".to_string(),
+                key_id: b"key-a-id".to_vec(),
+                signature: hex::encode(&sig_bytes),
+            })
+            .with_public_key(stegoeggo::detached::PublicKeyEntry {
+                key_id: b"key-a-id".to_vec(),
+                algorithm: "ed25519".to_string(),
+                key_bytes: hex::encode(vk_a.as_bytes()),
+            });
 
         let trusted = vec![TrustedVerifyingKey {
             key_id: b"key-a-id".to_vec(),

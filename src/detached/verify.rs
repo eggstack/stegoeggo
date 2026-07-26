@@ -194,7 +194,7 @@ pub struct ManifestVerification {
 impl ManifestVerification {
     /// Compute the overall verification status.
     ///
-    /// Priority: InvalidConfiguration > BindingFailure > SignatureFailure > EmbeddedReferenceFailure > KeyMaterialMismatch > Verified.
+    /// Priority: InvalidConfiguration > BindingFailure > KeyMaterialMismatch > SignatureFailure > EmbeddedReferenceFailure > Verified.
     #[must_use]
     pub fn overall_status(&self) -> DetachedOverallStatus {
         if !self.manifest_valid {
@@ -202,6 +202,18 @@ impl ManifestVerification {
         }
         if !self.instance_digest_match {
             return DetachedOverallStatus::BindingFailure;
+        }
+        // Key-material mismatch is checked before generic signature failure:
+        // a caller-supplied key matched the ID but manifest bytes differ.
+        // This contradiction must be reported regardless of whether any
+        // signature is cryptographically valid.
+        let has_key_material_mismatch = self
+            .report
+            .signatures()
+            .iter()
+            .any(|s| s.key_id_matched() && !s.key_material_matched());
+        if has_key_material_mismatch {
+            return DetachedOverallStatus::KeyMaterialMismatch;
         }
         if !self
             .report
@@ -216,16 +228,7 @@ impl ManifestVerification {
             EmbeddedReferenceStatus::NotProvided
             | EmbeddedReferenceStatus::Present
             | EmbeddedReferenceStatus::PresentValid => {
-                // Key-material mismatch takes priority over ordinary untrusted:
-                // a caller-supplied key matched the ID but manifest bytes differ.
-                let has_key_material_mismatch = self
-                    .report
-                    .signatures()
-                    .iter()
-                    .any(|s| s.key_id_matched() && !s.key_material_matched());
-                if has_key_material_mismatch {
-                    DetachedOverallStatus::KeyMaterialMismatch
-                } else if self.report.trust().trusted() {
+                if self.report.trust().trusted() {
                     DetachedOverallStatus::VerifiedTrusted
                 } else {
                     DetachedOverallStatus::VerifiedUntrusted
@@ -350,10 +353,19 @@ fn verify_detached_manifest_inner(
 ) -> ManifestVerification {
     let mut builder = VerificationReport::builder();
 
-    // 0. Validate manifest structure before signature evaluation.
-    // Duplicate/conflicting key records must be rejected before any
-    // signature is evaluated.
+    // 0. Validate manifest structure before any expensive work.
+    // Duplicate/conflicting key records must be rejected before hashing,
+    // signature verification, image decode, or embedded reference extraction.
     let manifest_valid = manifest.validate().is_ok();
+    if !manifest_valid {
+        let report = builder.build();
+        return ManifestVerification {
+            report,
+            instance_digest_match: false,
+            manifest_valid: false,
+            embedded_reference_status: EmbeddedReferenceStatus::NotProvided,
+        };
+    }
 
     // 1. Verify instance digest
     let mut hasher = Sha256::new();

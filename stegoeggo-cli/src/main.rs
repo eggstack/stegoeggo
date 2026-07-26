@@ -1060,6 +1060,7 @@ fn handle_verify_manifest(
         struct JsonManifestVerify {
             schema_version: u32,
             overall_status: &'static str,
+            trust_mode: &'static str,
             instance_digest_match: bool,
             manifest_valid: bool,
             embedded_reference: &'static str,
@@ -1103,9 +1104,16 @@ fn handle_verify_manifest(
             })
             .collect();
 
+        let trust_mode = if !caller_keys.is_empty() {
+            "caller_verifying_key"
+        } else {
+            "none"
+        };
+
         let json = JsonManifestVerify {
             schema_version: manifest.schema_version as u32,
             overall_status: status_str,
+            trust_mode,
             instance_digest_match: result.instance_digest_match,
             manifest_valid: result.manifest_valid,
             embedded_reference: embedded_ref,
@@ -1163,13 +1171,19 @@ fn handle_verify_manifest(
             "\nEmbedded reference: {:?}",
             result.embedded_reference_status
         );
+        let trust_mode_str = if !caller_keys.is_empty() {
+            "caller_verifying_key"
+        } else {
+            "none"
+        };
         println!(
-            "Trust: {}",
+            "Trust: {} (mode: {})",
             if result.report.trust().trusted() {
                 "TRUSTED"
             } else {
                 "UNTRUSTED"
-            }
+            },
+            trust_mode_str
         );
         println!("Evidence strength: {:?}", result.report.evidence_strength());
         println!("Overall status: {:?}", overall);
