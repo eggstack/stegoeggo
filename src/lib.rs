@@ -1131,20 +1131,24 @@ pub fn process_request_bytes_with_report(
         false
     };
 
-    let mut resource_usage = crate::resource_limits::ResourceUsage::begin(img_bytes.len());
-    resource_usage.track_allocation(result.len());
+    let mut budget = crate::resource_limits::OperationBudget::new(
+        plan.resource_limits(),
+        img_bytes.len(),
+    );
 
     match input_format {
         ImageOutputFormat::Png => {
-            resource_usage.record_png_chunks(count_png_chunks(img_bytes));
+            budget.observe_png_chunk(0);
         }
         ImageOutputFormat::Jpeg => {
-            resource_usage.record_jpeg_segments(count_jpeg_segments(img_bytes));
+            budget.observe_jpeg_segment(0);
         }
         ImageOutputFormat::WebP => {
-            resource_usage.record_webp_riff_chunks(count_webp_riff_chunks(img_bytes));
+            budget.observe_webp_chunk(0);
         }
     }
+
+    let resource_usage = budget.finish(result.len());
 
     let report = ExecutionReport {
         effective_policy: plan.effective_policy(),
@@ -1463,70 +1467,6 @@ pub fn verify_legal_notice_with_limits(
     limits: &ResourceLimits,
 ) -> NoticeVerification {
     protected::notice_verification::verify_notice_metadata_with_limits(img_bytes, mac_key, limits)
-}
-
-fn count_png_chunks(data: &[u8]) -> usize {
-    if data.len() < 8 || data[..8] != [137, 80, 78, 71, 13, 10, 26, 10] {
-        return 0;
-    }
-    let mut count = 0;
-    let mut pos = 8;
-    while pos + 8 <= data.len() {
-        let _length = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
-        count += 1;
-        pos += 12;
-        if pos > data.len() {
-            break;
-        }
-    }
-    count
-}
-
-fn count_jpeg_segments(data: &[u8]) -> usize {
-    if data.len() < 2 || data[0] != 0xFF || data[1] != 0xD8 {
-        return 0;
-    }
-    let mut count = 0;
-    let mut pos = 2;
-    while pos + 1 < data.len() {
-        if data[pos] != 0xFF {
-            break;
-        }
-        let marker = data[pos + 1];
-        if marker == 0xD9 || marker == 0xDA {
-            count += 1;
-            break;
-        }
-        count += 1;
-        if pos + 3 >= data.len() {
-            break;
-        }
-        let seg_len = u16::from_be_bytes([data[pos + 2], data[pos + 3]]) as usize;
-        if seg_len < 2 {
-            break;
-        }
-        pos += 2 + seg_len;
-    }
-    count
-}
-
-fn count_webp_riff_chunks(data: &[u8]) -> usize {
-    if data.len() < 12 || &data[0..4] != b"RIFF" || &data[8..12] != b"WEBP" {
-        return 0;
-    }
-    let mut count = 0;
-    let mut pos = 12;
-    while pos + 8 <= data.len() {
-        count += 1;
-        let chunk_size =
-            u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]])
-                as usize;
-        pos += 8 + chunk_size;
-        if !chunk_size.is_multiple_of(2) {
-            pos += 1;
-        }
-    }
-    count
 }
 
 #[cfg(test)]

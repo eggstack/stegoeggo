@@ -992,3 +992,61 @@ mod phase2_embed_outcome {
         assert!(summary.available_capacity >= summary.required_capacity);
     }
 }
+
+mod phase3_resource_limits {
+    use super::*;
+    use stegoeggo::{process_image_bytes, ResourceLimits};
+
+    #[test]
+    fn oversized_input_rejected_before_processing() {
+        let limits = ResourceLimits::builder().max_input_bytes(100).build();
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.5, 42).with_resource_limits(limits);
+        let result = process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("too large"),
+            "Expected input-too-large error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn small_input_within_limit_succeeds() {
+        let limits = ResourceLimits::builder().max_input_bytes(1024 * 1024).build();
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.5, 42).with_resource_limits(limits);
+        let result = process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn resource_usage_reported_in_execution_report() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        let usage = report.resource_usage().expect("resource_usage should be present");
+        assert!(usage.input_bytes > 0);
+        assert!(usage.peak_allocations_bytes >= usage.input_bytes);
+    }
+
+    #[test]
+    fn peak_allocations_honest_not_just_output_length() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (output, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        let usage = report.resource_usage().unwrap();
+        assert!(usage.peak_allocations_bytes >= png_bytes.len());
+        assert!(usage.peak_allocations_bytes >= output.len());
+        assert!(usage.input_bytes == png_bytes.len());
+    }
+}

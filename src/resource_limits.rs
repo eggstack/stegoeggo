@@ -447,6 +447,82 @@ impl fmt::Display for ResourceUsage {
     }
 }
 
+/// Operation-local budget that combines enforcement and observation.
+///
+/// Created at the start of a processing operation and consumed at the end.
+/// Enforcement checks (`check_*`) and observation calls (`observe_*`) happen
+/// together where work occurs, ensuring reports contain observed work rather
+/// than post-hoc estimates.
+#[allow(dead_code)]
+pub(crate) struct OperationBudget<'a> {
+    limits: &'a ResourceLimits,
+    usage: ResourceUsage,
+    peak_alloc: usize,
+}
+
+#[allow(dead_code)]
+impl<'a> OperationBudget<'a> {
+    pub fn new(limits: &'a ResourceLimits, input_bytes: usize) -> Self {
+        Self {
+            limits,
+            usage: ResourceUsage::begin(input_bytes),
+            peak_alloc: input_bytes,
+        }
+    }
+
+    pub fn observe_alloc(&mut self, size: usize) {
+        if size > self.peak_alloc {
+            self.peak_alloc = size;
+        }
+    }
+
+    pub fn observe_png_chunk(&mut self, bytes: usize) {
+        self.usage.png_chunks_scanned += 1;
+        self.usage.metadata_bytes_copied += bytes;
+        self.observe_alloc(bytes);
+    }
+
+    pub fn observe_jpeg_segment(&mut self, bytes: usize) {
+        self.usage.jpeg_segments_scanned += 1;
+        self.usage.metadata_bytes_copied += bytes;
+        self.observe_alloc(bytes);
+    }
+
+    pub fn observe_webp_chunk(&mut self, bytes: usize) {
+        self.usage.webp_riff_chunks_scanned += 1;
+        self.usage.metadata_bytes_copied += bytes;
+        self.observe_alloc(bytes);
+    }
+
+    pub fn observe_xmp_bytes(&mut self, bytes: usize) {
+        self.usage.xmp_bytes_parsed += bytes;
+    }
+
+    pub fn observe_metadata_field(&mut self, field_bytes: usize) {
+        self.usage.metadata_fields_extracted += 1;
+        self.usage.metadata_bytes_copied += field_bytes;
+    }
+
+    pub fn observe_tile_origin(&mut self) {
+        self.usage.tile_origins_checked += 1;
+    }
+
+    pub fn observe_verification_seed(&mut self) {
+        self.usage.verification_seeds_tried += 1;
+    }
+
+    pub fn finish(mut self, output_bytes: usize) -> ResourceUsage {
+        self.observe_alloc(output_bytes);
+        self.usage.peak_allocations_bytes = self.peak_alloc;
+        self.usage
+    }
+
+    #[must_use]
+    pub fn limits(&self) -> &'a ResourceLimits {
+        self.limits
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
