@@ -1,6 +1,6 @@
 #![allow(deprecated)]
 
-use image::GenericImageView;
+use image::{GenericImageView, ImageEncoder};
 use stegoeggo::{
     process_image_bytes, DmiValue, ImageOutputFormat, LegalMetadata, MetadataTrapProtector,
     ProtectionContext, ProtectionLevel,
@@ -587,4 +587,47 @@ fn jpeg_iptc_app13_survives_byte_level_injection() {
         image::load_from_memory(&output).is_ok(),
         "Output with preserved IPTC should decode"
     );
+}
+
+#[test]
+fn public_api_preservation_of_independent_creator() {
+    let mut with_creator = make_test_image_png(64, 64);
+    with_creator.extend_from_slice(b"\x00\x00\x00\x00tEXtCreator\x00Independent Author\x00");
+
+    let ctx_before = ProtectionContext::new(0.5, 42)
+        .with_legal_metadata(LegalMetadata::new().with_creator("StegoEggo".to_string()));
+
+    let result = stegoeggo::process_image_bytes(&with_creator, ProtectionLevel::Standard, &ctx_before).unwrap();
+
+    let notice = stegoeggo::verify_legal_notice(&result, &[]);
+    assert!(
+        notice.has_notice(),
+        "Processed image should contain a legal notice"
+    );
+}
+
+#[test]
+fn conflict_expected_false_observed_false_passes() {
+    let buf = make_test_image_png(64, 64);
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_legal_metadata(LegalMetadata::new().with_copyright_holder("Test".to_string()));
+    let result = stegoeggo::process_image_bytes(&buf, ProtectionLevel::Standard, &ctx).unwrap();
+
+    let notice = stegoeggo::verify_legal_notice(&result, &[]);
+    assert_eq!(notice.has_dmi_conflict(), false);
+}
+
+#[test]
+fn conflict_expected_true_observed_true_passes() {
+    let buf = make_test_image_png(64, 64);
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_legal_metadata(LegalMetadata::new().with_copyright_holder("Test".to_string()))
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let result = stegoeggo::process_image_bytes(&buf, ProtectionLevel::Standard, &ctx).unwrap();
+
+    let notice = stegoeggo::verify_legal_notice(&result, &[]);
+    assert!(notice.has_notice());
+    assert!(notice.dmi().is_some());
 }
