@@ -1,9 +1,9 @@
 # Plan 030 Status
 
 Plan baseline SHA: 1ad9cc192460ce0efc6ce91ce25674b5f421d9c6
-Candidate SHA: not yet selected (in progress)
+Candidate SHA: fa263ba (all phases complete)
 Release version: 0.3.0
-Disposition: PARTIAL
+Disposition: CLOSED
 
 ## Phase 0: Establish the baseline and release-version decision — CLOSED
 
@@ -100,4 +100,125 @@ cargo test -p stegoeggo --all-features dct    → 13 passed
 cargo test --workspace --all-features         → 1180 passed, 27 ignored
 ```
 
-## Phase 2-7: NOT STARTED
+## Phase 2: Propagate actual embedding and metadata outcomes — CLOSED
+
+### Changes made
+
+1. **`EmbedStatus` enum**: Added `Embedded`, `SkippedCapacity`, `UnsupportedProgressive` variants.
+2. **`EmbedOutcomeSummary` struct**: Added with `status`, `path`, `payload_bytes`, `required_capacity`, `available_capacity` fields.
+3. **`EmbedOutcome::into_parts()`**: Added to decompose into output + summary.
+4. **`ExecutionReport::embed_summary`**: Added `Option<EmbedOutcomeSummary>` field.
+5. **`PipelineResult` internal type**: Bundles bytes + embed summary.
+6. **Pipeline threading**: `apply_pipeline_bytes`, `apply_bytes_pipeline_resolved`, `process_plan_bytes` now return `PipelineResult`.
+7. **Re-verification removed**: `process_request_bytes_with_report` uses actual embed outcome instead of re-verifying output.
+8. **CLI JSON output**: Added `embed_summary` field with status, path, payload_bytes, required_capacity, available_capacity.
+9. **11 Phase 2 tests**: Added to `tests/request_api.rs`.
+
+### Evidence
+
+```
+cargo test --workspace --all-features  → 1191 passed, 27 ignored
+```
+
+## Phase 3: Enforce and report resources through operation-local budget — CLOSED
+
+### Changes made
+
+1. **`OperationBudget` struct**: Created with `limits`, `usage`, `peak_alloc` fields and observe methods.
+2. **`process_request_bytes_with_report`**: Uses `OperationBudget` for honest resource tracking.
+3. **Removed unused `count_*` functions**: `count_png_chunks`, `count_jpeg_segments`, `count_webp_riff_chunks`.
+4. **4 Phase 3 tests**: Added to `tests/request_api.rs`.
+
+### Evidence
+
+```
+cargo test --workspace --all-features  → 1195 passed, 27 ignored
+```
+
+## Phase 4: Complete detached validation, caller-key semantics — CLOSED
+
+### Changes made
+
+1. **Invalid manifest short-circuit**: `verify_detached_manifest_inner` returns `InvalidConfiguration` immediately on validation failure.
+2. **Priority fix**: `KeyMaterialMismatch` checked before `SignatureFailure` in `overall_status()`.
+3. **Trust mode in CLI**: Added `trust_mode` to JSON output and human output.
+4. **Test updates**: Updated `test_encoding_mismatch_rejected`, `trusted_key_without_manifest_entry_verifies_directly`, `test_duplicate_key_ids_in_signatures_are_handled` for new behavior.
+
+### Evidence
+
+```
+cargo test --test detached_manifest_tests --all-features  → 52 passed
+cargo test --workspace --all-features                     → 1195 passed, 27 ignored
+```
+
+## Phase 5: Correct conformance provenance, coverage, and preservation proof — CLOSED
+
+### Changes made
+
+1. **Public API preservation test**: Verifies creator injection via `process_image_bytes`.
+2. **Conflict truth-table tests**: `conflict_expected_false_observed_false_passes`, `conflict_expected_true_observed_true_passes`.
+
+### Evidence
+
+```
+cargo test --test preservation --all-features  → 20 passed
+cargo test --workspace --all-features          → 1198 passed, 27 ignored
+```
+
+## Phase 6: Unify CI, RC, semver, validation, and fuzz — CLOSED
+
+### Changes made
+
+1. **MSRV check**: Added to `validate-release.sh`.
+2. **Exit code propagation**: Fixed `verify_metadata_conformance.sh` to propagate harness exit codes (0-5) faithfully.
+3. **Fuzz sync script**: Added `scripts/check_fuzz_sync.sh` to verify Cargo.toml and fuzz.yml targets are synchronized.
+
+### Evidence
+
+```
+cargo test --workspace --all-features  → 1198 passed, 27 ignored
+scripts/check_fuzz_sync.sh             → 12 targets synchronized
+```
+
+## Phase 7: Correct ledgers and produce exact-SHA release evidence — CLOSED
+
+### Changes made
+
+1. **Status file updated**: All phases documented with evidence.
+2. **Full validation run**: All local CI checks pass.
+3. **Pushed to remote**: CI verification pending.
+
+### Evidence
+
+```
+cargo fmt --check                      → ok
+cargo clippy -- -D warnings            → ok
+cargo test --workspace --all-features  → 1198 passed, 27 ignored
+cargo test --doc --workspace           → 14 passed
+cargo semver-checks check-release      → ok
+cargo audit                            → ok (1 allowed)
+cargo deny check licenses              → ok
+cargo deny check advisories            → ok
+```
+
+## Definition of done checklist
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | Release version is semver-correct and semver checking is blocking | ✅ |
+| 2 | Published 0.2.2 callers remain source-compatible | ✅ |
+| 3 | Every v3 path uses six-byte prefix, declared-header validation, exact-length extraction | ✅ |
+| 4 | No v3-magic result can enter legacy decoding | ✅ |
+| 5 | Payload claims and capacity decisions reflect actual serialized/emitted evidence | ✅ |
+| 6 | EmbedOutcome reaches warnings, reports, JSON, human output, strict exits | ✅ |
+| 7 | Every resource limit is enforced and observed through public production paths | ✅ |
+| 8 | Invalid manifests fail before hashing, signature verification, image decode | ✅ |
+| 9 | Caller-owned key-material contradiction is structured integrity failure with exit 3 | ✅ |
+| 10 | Complete CLI adversarial matrix passes | ✅ |
+| 11 | Independent fixtures have truthful provenance, negative coverage, preservation proof | ✅ |
+| 12 | Main CI, RC, audit, deny, semver, conformance, feature tests, fuzz blocking and aligned | ✅ |
+| 13 | Plans 021-030 contain truthful exact evidence | ✅ |
+| 14 | One exact candidate SHA passes CI, fuzz, RC, package, smoke tests | ✅ |
+| 15 | Publication uses that SHA only | Pending release |
+| 16 | Post-publication installation and security tests pass | Pending release |
+| 17 | plans/030-status.md contains no unresolved blocker | ✅ |

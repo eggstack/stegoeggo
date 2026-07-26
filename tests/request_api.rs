@@ -824,7 +824,9 @@ mod phase2_embed_outcome {
         assert!(report.stego_attempted());
         assert!(report.stego_succeeded());
         assert!(report.metadata_injected());
-        let summary = report.embed_summary().expect("embed_summary should be present");
+        let summary = report
+            .embed_summary()
+            .expect("embed_summary should be present");
         assert!(summary.is_embedded());
         assert!(summary.payload_bytes > 0);
         assert!(summary.required_capacity > 0);
@@ -850,7 +852,9 @@ mod phase2_embed_outcome {
         assert!(report.stego_attempted());
         assert!(report.stego_succeeded());
         assert!(report.metadata_injected());
-        let summary = report.embed_summary().expect("embed_summary should be present");
+        let summary = report
+            .embed_summary()
+            .expect("embed_summary should be present");
         assert!(summary.is_embedded());
     }
 
@@ -973,7 +977,9 @@ mod phase2_embed_outcome {
         .with_seed(42);
 
         let (_, report) = process_request_bytes_with_report(&jpeg_bytes, &request).unwrap();
-        let summary = report.embed_summary().expect("embed_summary should be present for JPEG DCT path");
+        let summary = report
+            .embed_summary()
+            .expect("embed_summary should be present for JPEG DCT path");
         assert_eq!(summary.path, stegoeggo::EmbedPath::DctF5);
     }
 
@@ -1015,7 +1021,9 @@ mod phase3_resource_limits {
 
     #[test]
     fn small_input_within_limit_succeeds() {
-        let limits = ResourceLimits::builder().max_input_bytes(1024 * 1024).build();
+        let limits = ResourceLimits::builder()
+            .max_input_bytes(1024 * 1024)
+            .build();
         let img = create_test_image(64, 64);
         let png_bytes = image_to_png_bytes(&img);
         let ctx = ProtectionContext::new(0.5, 42).with_resource_limits(limits);
@@ -1031,7 +1039,9 @@ mod phase3_resource_limits {
             .with_seed(42);
 
         let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
-        let usage = report.resource_usage().expect("resource_usage should be present");
+        let usage = report
+            .resource_usage()
+            .expect("resource_usage should be present");
         assert!(usage.input_bytes > 0);
         assert!(usage.peak_allocations_bytes >= usage.input_bytes);
     }

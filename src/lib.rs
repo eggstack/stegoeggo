@@ -377,7 +377,8 @@ impl ProtectionPipeline {
         }
 
         // Non-JPEG output: pixel stego then encode
-        let (stego_img, embed_summary) = self.steganography.apply_to_image_with_summary(img, ctx)?;
+        let (stego_img, embed_summary) =
+            self.steganography.apply_to_image_with_summary(img, ctx)?;
         let encoded = crate::util::image::encode_image_with_options(
             &stego_img,
             Some(output_format),
@@ -482,13 +483,14 @@ impl ProtectionPipeline {
                 )
                 .map(|r| r.bytes)
             }
-            ProtectionLevel::Standard => self.apply_bytes_pipeline_resolved(
-                img_bytes,
-                input_format,
-                output_format,
-                &ctx_with_level,
-            )
-            .map(|r| r.bytes),
+            ProtectionLevel::Standard => self
+                .apply_bytes_pipeline_resolved(
+                    img_bytes,
+                    input_format,
+                    output_format,
+                    &ctx_with_level,
+                )
+                .map(|r| r.bytes),
         }
     }
 
@@ -1131,10 +1133,8 @@ pub fn process_request_bytes_with_report(
         false
     };
 
-    let mut budget = crate::resource_limits::OperationBudget::new(
-        plan.resource_limits(),
-        img_bytes.len(),
-    );
+    let mut budget =
+        crate::resource_limits::OperationBudget::new(plan.resource_limits(), img_bytes.len());
 
     match input_format {
         ImageOutputFormat::Png => {

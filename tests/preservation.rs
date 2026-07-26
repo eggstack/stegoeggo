@@ -1,6 +1,6 @@
 #![allow(deprecated)]
 
-use image::{GenericImageView, ImageEncoder};
+use image::GenericImageView;
 use stegoeggo::{
     process_image_bytes, DmiValue, ImageOutputFormat, LegalMetadata, MetadataTrapProtector,
     ProtectionContext, ProtectionLevel,
@@ -597,7 +597,9 @@ fn public_api_preservation_of_independent_creator() {
     let ctx_before = ProtectionContext::new(0.5, 42)
         .with_legal_metadata(LegalMetadata::new().with_creator("StegoEggo".to_string()));
 
-    let result = stegoeggo::process_image_bytes(&with_creator, ProtectionLevel::Standard, &ctx_before).unwrap();
+    let result =
+        stegoeggo::process_image_bytes(&with_creator, ProtectionLevel::Standard, &ctx_before)
+            .unwrap();
 
     let notice = stegoeggo::verify_legal_notice(&result, &[]);
     assert!(
@@ -615,7 +617,7 @@ fn conflict_expected_false_observed_false_passes() {
     let result = stegoeggo::process_image_bytes(&buf, ProtectionLevel::Standard, &ctx).unwrap();
 
     let notice = stegoeggo::verify_legal_notice(&result, &[]);
-    assert_eq!(notice.has_dmi_conflict(), false);
+    assert!(!notice.has_dmi_conflict());
 }
 
 #[test]
