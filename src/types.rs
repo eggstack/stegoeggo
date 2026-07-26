@@ -2977,6 +2977,94 @@ impl<T> EmbedOutcome<T> {
             EmbedOutcome::UnsupportedProgressive { .. } => 0,
         }
     }
+
+    /// Decompose into the output value and an [`EmbedOutcomeSummary`].
+    #[must_use]
+    pub fn into_parts(self) -> (T, EmbedOutcomeSummary) {
+        let summary = match &self {
+            EmbedOutcome::Embedded {
+                payload_bytes,
+                required_capacity,
+                available_capacity,
+                path,
+                ..
+            } => EmbedOutcomeSummary {
+                status: EmbedStatus::Embedded,
+                path: *path,
+                payload_bytes: *payload_bytes,
+                required_capacity: *required_capacity,
+                available_capacity: *available_capacity,
+            },
+            EmbedOutcome::SkippedCapacity {
+                payload_bytes,
+                required_capacity,
+                available_capacity,
+                path,
+                ..
+            } => EmbedOutcomeSummary {
+                status: EmbedStatus::SkippedCapacity,
+                path: *path,
+                payload_bytes: *payload_bytes,
+                required_capacity: *required_capacity,
+                available_capacity: *available_capacity,
+            },
+            EmbedOutcome::UnsupportedProgressive { .. } => EmbedOutcomeSummary {
+                status: EmbedStatus::UnsupportedProgressive,
+                path: EmbedPath::QTableSeedOnly,
+                payload_bytes: 0,
+                required_capacity: 0,
+                available_capacity: 0,
+            },
+        };
+        (self.into_inner(), summary)
+    }
+}
+
+/// Status of a steganographic embedding attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbedStatus {
+    /// Payload was successfully embedded.
+    Embedded,
+    /// Payload was skipped due to insufficient carrier capacity.
+    SkippedCapacity,
+    /// Progressive JPEG — fell back to Q-table seed only.
+    UnsupportedProgressive,
+}
+
+impl std::fmt::Display for EmbedStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EmbedStatus::Embedded => write!(f, "embedded"),
+            EmbedStatus::SkippedCapacity => write!(f, "skipped_capacity"),
+            EmbedStatus::UnsupportedProgressive => write!(f, "unsupported_progressive"),
+        }
+    }
+}
+
+/// Summary of a steganographic embedding attempt.
+///
+/// Carries the actual outcome of embedding — status, path, payload size,
+/// and capacity figures — for use in [`ExecutionReport`] and CLI output.
+#[derive(Debug, Clone)]
+pub struct EmbedOutcomeSummary {
+    /// Whether the payload was embedded, skipped, or degraded.
+    pub status: EmbedStatus,
+    /// The embedding path used.
+    pub path: EmbedPath,
+    /// Payload size in bytes.
+    pub payload_bytes: usize,
+    /// Required capacity (in units appropriate to the embedding path).
+    pub required_capacity: usize,
+    /// Available capacity in the carrier.
+    pub available_capacity: usize,
+}
+
+impl EmbedOutcomeSummary {
+    /// Whether the payload was actually embedded.
+    #[must_use]
+    pub fn is_embedded(&self) -> bool {
+        self.status == EmbedStatus::Embedded
+    }
 }
 
 /// Warning about degraded protection during image processing.
@@ -3756,6 +3844,8 @@ pub struct ExecutionReport {
     pub warnings: Vec<ProtectionWarning>,
     /// Observed resource usage during processing, if tracked.
     pub resource_usage: Option<crate::resource_limits::ResourceUsage>,
+    /// Structured embed outcome summary, if steganographic embedding was attempted.
+    pub embed_summary: Option<EmbedOutcomeSummary>,
 }
 
 impl ExecutionReport {
@@ -3805,6 +3895,12 @@ impl ExecutionReport {
     #[must_use]
     pub fn resource_usage(&self) -> Option<&crate::resource_limits::ResourceUsage> {
         self.resource_usage.as_ref()
+    }
+
+    /// Structured embed outcome summary, if steganographic embedding was attempted.
+    #[must_use]
+    pub fn embed_summary(&self) -> Option<&EmbedOutcomeSummary> {
+        self.embed_summary.as_ref()
     }
 
     /// Returns true if any channel executed successfully.

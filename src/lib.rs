@@ -205,13 +205,13 @@ pub use resource_limits::{ResourceLimits, ResourceUsage};
 pub use types::{AuthenticationMode, HiddenMarkerMode, ProcessingOptions};
 #[allow(deprecated)]
 pub use types::{
-    DmiValue, EvidenceChannel, EvidenceProfile, EvidenceStrength, ExecutionReport,
-    ImageOutputFormat, LegalMetadata, LocalizedText, MetadataUpdatePolicy, NoticeVerification,
-    NoticeVerificationBuilder, ProtectionChannels, ProtectionConfig, ProtectionContext,
-    ProtectionLevel, ProtectionPreset, ProtectionRequest, ProtectionWarning,
-    ResolvedProtectionPlan, RightsNotice, RightsPolicy, RightsSignalKind, VerificationResult,
-    VerificationStatus, WarningCategory, WarningSeverity, DEFAULT_OUTPUT_FORMAT,
-    PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
+    DmiValue, EmbedOutcomeSummary, EmbedPath, EmbedStatus, EvidenceChannel, EvidenceProfile,
+    EvidenceStrength, ExecutionReport, ImageOutputFormat, LegalMetadata, LocalizedText,
+    MetadataUpdatePolicy, NoticeVerification, NoticeVerificationBuilder, ProtectionChannels,
+    ProtectionConfig, ProtectionContext, ProtectionLevel, ProtectionPreset, ProtectionRequest,
+    ProtectionWarning, ResolvedProtectionPlan, RightsNotice, RightsPolicy, RightsSignalKind,
+    VerificationResult, VerificationStatus, WarningCategory, WarningSeverity,
+    DEFAULT_OUTPUT_FORMAT, PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
 };
 
 pub use traits::Protector;
@@ -266,6 +266,14 @@ use std::sync::Arc;
 use std::sync::LazyLock;
 
 static DEFAULT_PIPELINE: LazyLock<ProtectionPipeline> = LazyLock::new(ProtectionPipeline::new);
+
+/// Internal pipeline output that carries both the processed bytes and the
+/// structured embedding outcome. Public functions extract just the bytes;
+/// `process_request_bytes_with_report` uses the full result.
+pub(crate) struct PipelineResult {
+    pub bytes: Vec<u8>,
+    pub embed_summary: Option<EmbedOutcomeSummary>,
+}
 
 /// Main pipeline for applying protection to images.
 ///
@@ -339,8 +347,8 @@ impl ProtectionPipeline {
         ctx: &ProtectionContext,
     ) -> Result<DynamicImage> {
         let output_format = resolved_output_format(ctx);
-        let final_bytes = self.apply_pipeline_bytes(img, ctx, output_format)?;
-        Ok(image::load_from_memory(&final_bytes)?)
+        let result = self.apply_pipeline_bytes(img, ctx, output_format)?;
+        Ok(image::load_from_memory(&result.bytes)?)
     }
 
     /// Shared pipeline: stego → encode → metadata injection.
@@ -350,7 +358,7 @@ impl ProtectionPipeline {
         img: &DynamicImage,
         ctx: &ProtectionContext,
         output_format: crate::types::ImageOutputFormat,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<PipelineResult> {
         // JPEG output: encode first, then apply DCT stego to the JPEG bytes
         if output_format == crate::types::ImageOutputFormat::Jpeg {
             let jpeg_bytes = crate::util::image::encode_image_with_options(
@@ -360,18 +368,27 @@ impl ProtectionPipeline {
                 ctx.jpeg_quality(),
             )?;
             let with_stego = self.steganography.apply_dct_stego_bytes(&jpeg_bytes, ctx)?;
-            return self.metadata_trap.inject_bytes(with_stego.output(), ctx);
+            let (output, embed_summary) = with_stego.into_parts();
+            let bytes = self.metadata_trap.inject_bytes(&output, ctx)?;
+            return Ok(PipelineResult {
+                bytes,
+                embed_summary: Some(embed_summary),
+            });
         }
 
         // Non-JPEG output: pixel stego then encode
-        let with_stego = self.steganography.apply(img, ctx)?;
+        let (stego_img, embed_summary) = self.steganography.apply_to_image_with_summary(img, ctx)?;
         let encoded = crate::util::image::encode_image_with_options(
-            &with_stego,
+            &stego_img,
             Some(output_format),
             ctx.progressive_jpeg(),
             ctx.jpeg_quality(),
         )?;
-        self.metadata_trap.inject_bytes(&encoded, ctx)
+        let bytes = self.metadata_trap.inject_bytes(&encoded, ctx)?;
+        Ok(PipelineResult {
+            bytes,
+            embed_summary,
+        })
     }
 
     /// Light level: metadata injection + minimal steganographic seed marker.
@@ -436,6 +453,60 @@ impl ProtectionPipeline {
 
         // Enforce ResourceLimits default dimensions unconditionally, even
         // when the caller did not set an explicit max_dimension.
+        let limits = ctx.resource_limits();
+        if img_bytes.starts_with(&[0xFF, 0xD8]) {
+            let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+            limits.check_dimensions(header.width as u32, header.height as u32)?;
+        } else if let Ok(img) = load_image_from_bytes(img_bytes) {
+            let (width, height) = img.dimensions();
+            limits.check_dimensions(width, height)?;
+        }
+
+        let (ctx_with_level, input_format, output_format) =
+            Self::context_for_bytes(img_bytes, level, ctx)?;
+
+        match level {
+            ProtectionLevel::Disabled => unreachable!("disabled level returned above"),
+            ProtectionLevel::Light => {
+                self.validate_input_dimensions_for_bytes(
+                    img_bytes,
+                    input_format,
+                    ctx_with_level.max_dimension(),
+                    &ctx.resource_limits(),
+                )?;
+                self.apply_light_bytes_pipeline(
+                    img_bytes,
+                    input_format,
+                    output_format,
+                    &ctx_with_level,
+                )
+                .map(|r| r.bytes)
+            }
+            ProtectionLevel::Standard => self.apply_bytes_pipeline_resolved(
+                img_bytes,
+                input_format,
+                output_format,
+                &ctx_with_level,
+            )
+            .map(|r| r.bytes),
+        }
+    }
+
+    pub(crate) fn process_bytes_pipeline(
+        &self,
+        img_bytes: &[u8],
+        level: ProtectionLevel,
+        ctx: &ProtectionContext,
+    ) -> Result<PipelineResult> {
+        if level == ProtectionLevel::Disabled {
+            return Ok(PipelineResult {
+                bytes: img_bytes.to_vec(),
+                embed_summary: None,
+            });
+        }
+
+        ctx.resource_limits().check_input_size(img_bytes.len())?;
+
         let limits = ctx.resource_limits();
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
             let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
@@ -552,7 +623,7 @@ impl ProtectionPipeline {
         input_format: crate::types::ImageOutputFormat,
         output_format: crate::types::ImageOutputFormat,
         ctx: &ProtectionContext,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<PipelineResult> {
         if output_format == crate::types::ImageOutputFormat::Jpeg {
             let encoded = if input_format == crate::types::ImageOutputFormat::Jpeg {
                 img_bytes.to_vec()
@@ -566,9 +637,13 @@ impl ProtectionPipeline {
                 )?
             };
             let with_metadata = self.metadata_trap.apply_bytes(&encoded, ctx)?;
-            return self
+            let bytes = self
                 .steganography
-                .apply_qtable_seed_bytes(&with_metadata, ctx.seed());
+                .apply_qtable_seed_bytes(&with_metadata, ctx.seed())?;
+            return Ok(PipelineResult {
+                bytes,
+                embed_summary: None,
+            });
         }
 
         let mut minimal_ctx = ctx.clone();
@@ -581,7 +656,11 @@ impl ProtectionPipeline {
             ctx.progressive_jpeg(),
             ctx.jpeg_quality(),
         )?;
-        self.metadata_trap.apply_bytes(&encoded, ctx)
+        let bytes = self.metadata_trap.apply_bytes(&encoded, ctx)?;
+        Ok(PipelineResult {
+            bytes,
+            embed_summary: None,
+        })
     }
 
     fn apply_bytes_pipeline_resolved(
@@ -590,7 +669,7 @@ impl ProtectionPipeline {
         input_format: crate::types::ImageOutputFormat,
         output_format: crate::types::ImageOutputFormat,
         ctx: &ProtectionContext,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<PipelineResult> {
         // JPEG-in, JPEG-out: byte-only path (DCT stego + metadata, no pixel decode).
         // This preserves quality and avoids lossy re-encode cycles.
         if input_format == crate::types::ImageOutputFormat::Jpeg
@@ -602,7 +681,12 @@ impl ProtectionPipeline {
                 &ctx.resource_limits(),
             )?;
             let with_stego = self.steganography.apply_dct_stego_bytes(img_bytes, ctx)?;
-            return self.metadata_trap.inject_bytes(with_stego.output(), ctx);
+            let (output, embed_summary) = with_stego.into_parts();
+            let bytes = self.metadata_trap.inject_bytes(&output, ctx)?;
+            return Ok(PipelineResult {
+                bytes,
+                embed_summary: Some(embed_summary),
+            });
         }
 
         // Non-JPEG-in: decode then use shared pipeline
@@ -974,7 +1058,7 @@ pub fn process_request_bytes(img_bytes: &[u8], request: &ProtectionRequest) -> R
         meta.validate()?;
     }
 
-    process_plan_bytes(img_bytes, &plan)
+    process_plan_bytes(img_bytes, &plan).map(|r| r.bytes)
 }
 
 /// Process image bytes using a [`ProtectionRequest`], returning warnings.
@@ -998,7 +1082,7 @@ pub fn process_request_bytes_with_warnings(
 
     let result = process_plan_bytes(img_bytes, &plan)?;
 
-    Ok((result, all_warnings))
+    Ok((result.bytes, all_warnings))
 }
 
 /// Process image bytes using a [`ProtectionRequest`], returning a full execution report.
@@ -1023,27 +1107,21 @@ pub fn process_request_bytes_with_report(
     let output_format = plan.output_format();
     let format_transcoded = input_format != output_format;
 
-    let result = process_plan_bytes(img_bytes, &plan)?;
+    let pipeline_result = process_plan_bytes(img_bytes, &plan)?;
+    let result = pipeline_result.bytes;
 
     let stego_attempted = plan.channels().has_stego();
 
-    let stego_succeeded = if stego_attempted {
-        let had_capacity_warning = warnings.iter().any(|w| {
-            matches!(
-                w,
-                ProtectionWarning::LsbCapacitySkipped | ProtectionWarning::DctCapacityInsufficient
-            )
-        });
-        if had_capacity_warning {
-            false
-        } else {
-            let stego = protected::steganography::SteganographyProtector::new();
-            let mac_key = plan.mac_key().unwrap_or(&[]);
-            stego.verify_payload_from_bytes_with_key(&result, mac_key)
-                == VerificationStatus::Verified
+    let (stego_succeeded, embed_summary) = if stego_attempted {
+        match pipeline_result.embed_summary {
+            Some(summary) => {
+                let succeeded = summary.is_embedded();
+                (succeeded, Some(summary))
+            }
+            None => (false, None),
         }
     } else {
-        false
+        (false, None)
     };
 
     let metadata_injected = if plan.channels().rights_metadata {
@@ -1077,12 +1155,13 @@ pub fn process_request_bytes_with_report(
         format_transcoded,
         warnings,
         resource_usage: Some(resource_usage),
+        embed_summary,
     };
 
     Ok((result, report))
 }
 
-fn process_plan_bytes(img_bytes: &[u8], plan: &ResolvedProtectionPlan) -> Result<Vec<u8>> {
+fn process_plan_bytes(img_bytes: &[u8], plan: &ResolvedProtectionPlan) -> Result<PipelineResult> {
     let pipeline = DEFAULT_PIPELINE.clone();
 
     let limits = plan.resource_limits();
@@ -1100,20 +1179,30 @@ fn process_plan_bytes(img_bytes: &[u8], plan: &ResolvedProtectionPlan) -> Result
     }
 
     if plan.is_metadata_only() {
-        return pipeline.process_metadata_only(img_bytes, plan);
+        let bytes = pipeline.process_metadata_only(img_bytes, plan)?;
+        return Ok(PipelineResult {
+            bytes,
+            embed_summary: None,
+        });
     }
 
     match plan.channels().hidden_marker {
-        HiddenMarkerMode::Disabled => pipeline.process_metadata_only(img_bytes, plan),
+        HiddenMarkerMode::Disabled => {
+            let bytes = pipeline.process_metadata_only(img_bytes, plan)?;
+            Ok(PipelineResult {
+                bytes,
+                embed_summary: None,
+            })
+        }
         HiddenMarkerMode::BestEffort => {
             let level = ProtectionLevel::Standard;
             let ctx = plan_to_context(plan);
-            pipeline.process_bytes(img_bytes, level, &ctx)
+            pipeline.process_bytes_pipeline(img_bytes, level, &ctx)
         }
         HiddenMarkerMode::Tiled { tile_size } => {
             let mut ctx = plan_to_context(plan);
             ctx.set_tile_size(tile_size);
-            pipeline.process_bytes(img_bytes, ProtectionLevel::Standard, &ctx)
+            pipeline.process_bytes_pipeline(img_bytes, ProtectionLevel::Standard, &ctx)
         }
     }
 }

@@ -1248,7 +1248,18 @@ struct JsonExecutionReport {
     stego_succeeded: bool,
     format_transcoded: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    embed_summary: Option<JsonEmbedOutcomeSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     resource_usage: Option<JsonResourceUsage>,
+}
+
+#[derive(serde::Serialize)]
+struct JsonEmbedOutcomeSummary {
+    status: String,
+    path: String,
+    payload_bytes: usize,
+    required_capacity: usize,
+    available_capacity: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -1777,6 +1788,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     stego_attempted: report.stego_attempted(),
                     stego_succeeded: report.stego_succeeded(),
                     format_transcoded: report.format_transcoded(),
+                    embed_summary: report.embed_summary().map(|s| JsonEmbedOutcomeSummary {
+                        status: format!("{}", s.status),
+                        path: format!("{:?}", s.path),
+                        payload_bytes: s.payload_bytes,
+                        required_capacity: s.required_capacity,
+                        available_capacity: s.available_capacity,
+                    }),
                     resource_usage: report.resource_usage().map(|u| JsonResourceUsage {
                         input_bytes: u.input_bytes,
                         png_chunks_scanned: u.png_chunks_scanned,

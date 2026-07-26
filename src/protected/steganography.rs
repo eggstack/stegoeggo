@@ -3174,6 +3174,15 @@ impl SteganographyProtector {
         img: &DynamicImage,
         ctx: &ProtectionContext,
     ) -> Result<DynamicImage> {
+        let (image, _summary) = self.apply_to_image_with_summary(img, ctx)?;
+        Ok(image)
+    }
+
+    pub(crate) fn apply_to_image_with_summary(
+        &self,
+        img: &DynamicImage,
+        ctx: &ProtectionContext,
+    ) -> Result<(DynamicImage, Option<crate::types::EmbedOutcomeSummary>)> {
         let payload = self.generate_payload(ctx);
         let rgba = img.to_rgba8();
 
@@ -3190,9 +3199,9 @@ impl SteganographyProtector {
                 } else {
                     self.embed_lsb(&rgba, &payload, ctx.seed(), redundancy)
                 };
-                let mut result = outcome.into_inner();
+                let (mut result, summary) = outcome.into_parts();
                 Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
-                Ok(DynamicImage::ImageRgba8(result))
+                Ok((DynamicImage::ImageRgba8(result), Some(summary)))
             }
             crate::types::ImageOutputFormat::Jpeg => {
                 let jpeg_bytes = crate::util::image::encode_image_with_options(
@@ -3202,7 +3211,8 @@ impl SteganographyProtector {
                     ctx.jpeg_quality(),
                 )?;
                 let with_stego = self.apply_dct_stego_bytes(&jpeg_bytes, ctx)?;
-                Ok(image::load_from_memory(with_stego.output())?)
+                let (output, summary) = with_stego.into_parts();
+                Ok((image::load_from_memory(&output)?, Some(summary)))
             }
             crate::types::ImageOutputFormat::WebP => {
                 let outcome = if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
@@ -3210,9 +3220,9 @@ impl SteganographyProtector {
                 } else {
                     self.embed_lsb(&rgba, &payload, ctx.seed(), redundancy)
                 };
-                let mut result = outcome.into_inner();
+                let (mut result, summary) = outcome.into_parts();
                 Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
-                Ok(DynamicImage::ImageRgba8(result))
+                Ok((DynamicImage::ImageRgba8(result), Some(summary)))
             }
         }
     }

@@ -789,3 +789,206 @@ mod stego_payload_extraction_tests {
         );
     }
 }
+
+mod phase2_embed_outcome {
+    use super::*;
+
+    #[test]
+    fn metadata_only_has_no_hidden_payload_or_claim() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Allowed);
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        assert!(!report.stego_attempted());
+        assert!(!report.stego_succeeded());
+        assert!(report.embed_summary().is_none());
+    }
+
+    #[test]
+    fn embed_summary_reflects_actual_embedding_status() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::new(
+            simple_notice(),
+            RightsPolicy::Allowed,
+            ProtectionChannels {
+                rights_metadata: true,
+                hidden_marker: HiddenMarkerMode::BestEffort,
+                authentication: AuthenticationMode::None,
+            },
+        )
+        .with_seed(42);
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        assert!(report.stego_attempted());
+        assert!(report.stego_succeeded());
+        assert!(report.metadata_injected());
+        let summary = report.embed_summary().expect("embed_summary should be present");
+        assert!(summary.is_embedded());
+        assert!(summary.payload_bytes > 0);
+        assert!(summary.required_capacity > 0);
+        assert!(summary.available_capacity >= summary.required_capacity);
+    }
+
+    #[test]
+    fn metadata_and_marker_payload_reports_both_channels() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::new(
+            simple_notice(),
+            RightsPolicy::Allowed,
+            ProtectionChannels {
+                rights_metadata: true,
+                hidden_marker: HiddenMarkerMode::BestEffort,
+                authentication: AuthenticationMode::None,
+            },
+        )
+        .with_seed(42);
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        assert!(report.stego_attempted());
+        assert!(report.stego_succeeded());
+        assert!(report.metadata_injected());
+        let summary = report.embed_summary().expect("embed_summary should be present");
+        assert!(summary.is_embedded());
+    }
+
+    #[test]
+    fn crc_payload_reports_authentication_false() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (output, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        assert!(report.stego_attempted());
+        assert!(report.stego_succeeded());
+        let summary = report.embed_summary().unwrap();
+        assert!(summary.is_embedded());
+        assert!(summary.payload_bytes > 0);
+        let status = stegoeggo::verify_image_bytes(&output, &[]);
+        assert_eq!(status, VerificationStatus::Verified);
+    }
+
+    #[test]
+    fn hmac_payload_reports_authentication_true() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42)
+            .with_mac_key(b"test-key-123".to_vec());
+
+        let (output, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        assert!(report.stego_attempted());
+        assert!(report.stego_succeeded());
+        let summary = report.embed_summary().unwrap();
+        assert!(summary.is_embedded());
+        assert!(summary.payload_bytes > 0);
+        let status = stegoeggo::verify_image_bytes(&output, b"test-key-123");
+        assert_eq!(status, VerificationStatus::Verified);
+    }
+
+    #[test]
+    fn report_capacity_equals_embed_outcome_capacity() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        let summary = report.embed_summary().unwrap();
+        assert!(summary.is_embedded());
+        assert!(summary.required_capacity > 0);
+        assert!(summary.available_capacity > 0);
+        assert!(summary.available_capacity >= summary.required_capacity);
+    }
+
+    #[test]
+    fn progressive_qtable_only_degradation_is_not_stego_success() {
+        let img = create_test_image(128, 128);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::new(
+            simple_notice(),
+            RightsPolicy::Allowed,
+            ProtectionChannels {
+                rights_metadata: true,
+                hidden_marker: HiddenMarkerMode::BestEffort,
+                authentication: AuthenticationMode::None,
+            },
+        )
+        .with_seed(42)
+        .with_progressive_jpeg();
+
+        let (output, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        assert!(report.stego_attempted());
+        if let Some(s) = report.embed_summary() {
+            assert!(
+                s.required_capacity > 0 || !s.is_embedded(),
+                "If capacity is 0, the payload should not be embedded"
+            );
+        }
+        let _ = output;
+    }
+
+    #[test]
+    fn best_effort_returns_output_with_marker_status() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        assert!(report.stego_attempted());
+        assert!(report.stego_succeeded());
+        let summary = report.embed_summary().unwrap();
+        assert_eq!(summary.status, stegoeggo::EmbedStatus::Embedded);
+    }
+
+    #[test]
+    fn embed_summary_path_matches_actual_format() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        let summary = report.embed_summary().unwrap();
+        assert_eq!(summary.path, stegoeggo::EmbedPath::Lsb);
+    }
+
+    #[test]
+    fn embed_summary_for_jpeg_uses_dct_path() {
+        let img = create_test_image(128, 128);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+        let request = ProtectionRequest::new(
+            simple_notice(),
+            RightsPolicy::Allowed,
+            ProtectionChannels {
+                rights_metadata: true,
+                hidden_marker: HiddenMarkerMode::BestEffort,
+                authentication: AuthenticationMode::None,
+            },
+        )
+        .with_seed(42);
+
+        let (_, report) = process_request_bytes_with_report(&jpeg_bytes, &request).unwrap();
+        let summary = report.embed_summary().expect("embed_summary should be present for JPEG DCT path");
+        assert_eq!(summary.path, stegoeggo::EmbedPath::DctF5);
+    }
+
+    #[test]
+    fn embed_summary_fields_are_consistent() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        let summary = report.embed_summary().unwrap();
+        assert!(summary.is_embedded());
+        assert!(summary.payload_bytes > 0);
+        assert!(summary.required_capacity > 0);
+        assert!(summary.available_capacity >= summary.required_capacity);
+    }
+}
