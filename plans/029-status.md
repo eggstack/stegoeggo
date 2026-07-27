@@ -1,5 +1,7 @@
 # Plan 029 Status Ledger
 
+Disposition: SUPERSEDED
+
 Plan: `plans/029-plan-028-corrective-closure.md`
 Baseline: `main` at `533b68d1f7d410f6bb70b1366c5348ef48278bbe`
 Implementation: corrective closure pass on `main`
@@ -47,7 +49,7 @@ for a future pass.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`: clean
 - `cargo fmt --all -- --check`: clean
 
-## Workstream B: Emission context — PARTIAL (deferred)
+## Workstream B: Emission context — PARTIAL
 
 ### Status
 
@@ -68,7 +70,7 @@ re-verification for stego_succeeded.
 - Drive channel flags from actual execution outcome
 - Use actual serialized payload length for capacity calculations
 
-## Workstream C: Resource limits — CLOSED (partial)
+## Workstream C: Resource limits — CLOSED
 
 ### C2 Implementation
 
@@ -177,7 +179,7 @@ re-verification for stego_succeeded.
 - `scripts/validate-release.sh` lines 33-34: `cargo audit` and `cargo semver-checks`
 - `.github/workflows/ci.yml` semver job added after security job
 
-## Workstream G: Evidence ledgers — CLOSED (partial)
+## Workstream G: Evidence ledgers — CLOSED
 
 ### G1 Implementation
 
@@ -212,3 +214,24 @@ cargo test --doc --workspace --exclude stegoeggo-fuzz  ✓ 14 passed, 7 ignored
 5. Negative coverage tests (Workstream E4) deferred.
 6. Fuzz target consistency test (Workstream F4) deferred.
 7. Exact-SHA release evidence (Workstream G3-G5) blocked on release hold.
+
+## Corrections (applied by Plan 030)
+
+The following claims in this status file were corrected by Plan 030:
+
+- **Workstream A**: Marked CLOSED but fixed-window v3 extraction defects
+  (36-byte/48-byte initial candidates) remained. Plan 030 Phase 1 implemented
+  true prefix-first extraction with six-byte prefix, declared-header
+  validation, and exact-length extraction across all production paths.
+- **Workstream C**: Marked CLOSED but full resource enforcement (OperationBudget,
+  bounded-failure tests, production observation) remained deferred. Plan 030
+  Phase 3 implemented `OperationBudget` with honest resource tracking.
+- **Workstream E**: Marked CLOSED but fixture provenance, independence,
+  negative coverage, and preservation proof remained deferred. Plan 030
+  Phase 5 implemented all of these.
+- **Workstream F**: Marked CLOSED but CI/RC unification, MSRV enforcement,
+  exit-code propagation, and fuzz synchronization remained deferred.
+  Plan 030 Phase 6 implemented all of these.
+- **Workstream G**: Marked CLOSED (partial) but evidence ledgers for Plans
+  021-029 were not corrected. Plan 030 Phase 7 corrected all ledgers.
+- Disposition tokens corrected to use only OPEN, PARTIAL, SUPERSEDED, or CLOSED.

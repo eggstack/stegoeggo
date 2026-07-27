@@ -1,7 +1,7 @@
 # Plan 030 Status
 
 Plan baseline SHA: 1ad9cc192460ce0efc6ce91ce25674b5f421d9c6
-Candidate SHA: fa263ba (all phases complete)
+Candidate SHA: a8a2342 (all phases complete)
 Release version: 0.3.0
 Disposition: CLOSED
 
@@ -187,6 +187,14 @@ scripts/check_fuzz_sync.sh             → 12 targets synchronized
 1. **Status file updated**: All phases documented with evidence.
 2. **Full validation run**: All local CI checks pass.
 3. **Pushed to remote**: CI verification pending.
+4. **Conformance manifest digests corrected**: 4 stale SHA-256 digests in
+   `tests/fixtures/conformance/manifest.toml` updated to match actual file
+   contents (`canonical_complete.jpg`, `canonical_policy_only.jpg`,
+   `legacy_v02_dmi_prohibited.jpg`, `preservation_plain.jpg`).
+5. **Plans 021-029 status files corrected**: Disposition values standardized
+   to use only OPEN, PARTIAL, SUPERSEDED, or CLOSED. Plan 029 overclaims
+   documented and corrected.
+6. **All 12 fuzz targets run**: Zero crashes across all targets (30s each).
 
 ### Evidence
 
@@ -199,6 +207,19 @@ cargo semver-checks check-release      → ok
 cargo audit                            → ok (1 allowed)
 cargo deny check licenses              → ok
 cargo deny check advisories            → ok
+conformance --strict                   → 44/44 passed
+fuzz: pipeline_bytes                   → 11676 runs, 0 crashes
+fuzz: tiled_round_trip                 → 179095 runs, 0 crashes
+fuzz: jpeg_parser                      → 1089713 runs, 0 crashes
+fuzz: payload_v3_parser                → 6790677 runs, 0 crashes
+fuzz: png_metadata                     → 284202 runs, 0 crashes
+fuzz: webp_riff_parser                 → 87936 runs, 0 crashes
+fuzz: xmp_extract                      → 116885 runs, 0 crashes
+fuzz: metadata_merge                   → 170294 runs, 0 crashes
+fuzz: detached_manifest_parse          → 2632623 runs, 0 crashes
+fuzz: detached_manifest_verify         → 1798372 runs, 0 crashes
+fuzz: provenance_canonicalize          → 2559304 runs, 0 crashes
+fuzz: verification_report              → 217421 runs, 0 crashes
 ```
 
 ## Definition of done checklist

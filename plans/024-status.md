@@ -1,5 +1,7 @@
 # Plan 024 Status: Release 6 — Production and Release Closure
 
+Disposition: SUPERSEDED
+
 ## Release Info
 - **Version**: 0.2.2 (pre-1.0)
 - **MSRV**: Rust 1.87 (stable channel)
