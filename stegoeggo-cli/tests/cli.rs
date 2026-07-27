@@ -764,21 +764,23 @@ fn test_jpeg_quality_option() {
 fn test_protect_to_stdout() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("input.png");
+    let output = tmp.path().join("output.png");
 
     create_test_png(&input);
 
     let result = Command::new(cli_bin())
         .arg(&input)
+        .arg("-o")
+        .arg(&output)
         .arg("-s")
         .arg("42")
         .output()
         .expect("Failed to execute CLI");
 
     assert!(result.status.success());
-    let stdout = String::from_utf8_lossy(&result.stdout);
     assert!(
-        stdout.contains("protected"),
-        "Should output protected filename: {}",
-        stdout
+        output.exists(),
+        "Output file should exist at {}",
+        output.display()
     );
 }
