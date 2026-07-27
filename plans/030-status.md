@@ -1,7 +1,7 @@
 # Plan 030 Status
 
 Plan baseline SHA: 1ad9cc192460ce0efc6ce91ce25674b5f421d9c6
-Candidate SHA: a8a2342 (all phases complete)
+Candidate SHA: 57bdc63 (all phases complete, CI green)
 Release version: 0.3.0
 Disposition: CLOSED
 
@@ -195,6 +195,12 @@ scripts/check_fuzz_sync.sh             → 12 targets synchronized
    to use only OPEN, PARTIAL, SUPERSEDED, or CLOSED. Plan 029 overclaims
    documented and corrected.
 6. **All 12 fuzz targets run**: Zero crashes across all targets (30s each).
+7. **Conformance alt-prefix coverage fixed**: `canonical_alt_prefix_png` and
+   `canonical_alt_prefix_jpg` marked `source = "external"` with proper
+   authoring metadata to satisfy `external_alt_prefix_min` coverage check.
+8. **Flaky test_protect_to_stdout fixed**: Added explicit `-o` output path
+   to prevent CI failure from writing to current directory.
+9. **CI run 30290126839**: All 15 jobs pass (green).
 
 ### Evidence
 
@@ -207,7 +213,7 @@ cargo semver-checks check-release      → ok
 cargo audit                            → ok (1 allowed)
 cargo deny check licenses              → ok
 cargo deny check advisories            → ok
-conformance --strict                   → 44/44 passed
+conformance --strict                   → 44/44 passed, exit 0
 fuzz: pipeline_bytes                   → 11676 runs, 0 crashes
 fuzz: tiled_round_trip                 → 179095 runs, 0 crashes
 fuzz: jpeg_parser                      → 1089713 runs, 0 crashes
@@ -220,6 +226,7 @@ fuzz: detached_manifest_parse          → 2632623 runs, 0 crashes
 fuzz: detached_manifest_verify         → 1798372 runs, 0 crashes
 fuzz: provenance_canonicalize          → 2559304 runs, 0 crashes
 fuzz: verification_report              → 217421 runs, 0 crashes
+CI run 30290126839                     → 15/15 jobs success
 ```
 
 ## Definition of done checklist
