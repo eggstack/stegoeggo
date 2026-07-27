@@ -3,7 +3,7 @@
 Plan baseline SHA: 1ad9cc192460ce0efc6ce91ce25674b5f421d9c6
 Candidate SHA: 57bdc63 (all phases complete, CI green)
 Release version: 0.3.0
-Disposition: CLOSED
+Disposition: PARTIAL
 
 ## Phase 0: Establish the baseline and release-version decision — CLOSED
 
@@ -235,18 +235,35 @@ CI run 30290126839                     → 15/15 jobs success
 |---|-----------|--------|
 | 1 | Release version is semver-correct and semver checking is blocking | ✅ |
 | 2 | Published 0.2.2 callers remain source-compatible | ✅ |
-| 3 | Every v3 path uses six-byte prefix, declared-header validation, exact-length extraction | ✅ |
-| 4 | No v3-magic result can enter legacy decoding | ✅ |
-| 5 | Payload claims and capacity decisions reflect actual serialized/emitted evidence | ✅ |
-| 6 | EmbedOutcome reaches warnings, reports, JSON, human output, strict exits | ✅ |
-| 7 | Every resource limit is enforced and observed through public production paths | ✅ |
+| 3 | Every v3 path uses six-byte prefix, declared-header validation, exact-length extraction | PARTIAL — tiled paths still use 48-byte probe; full header validation before payload extraction not complete |
+| 4 | No v3-magic result can enter legacy decoding | PARTIAL — MalformedV3/UnsupportedVersion outcomes in tiled paths return None rather than structured errors |
+| 5 | Payload claims and capacity decisions reflect actual serialized/emitted evidence | PARTIAL — payload flags from config not resolved emission context; capacity uses estimated not serialized length |
+| 6 | EmbedOutcome reaches warnings, reports, JSON, human output, strict exits | PARTIAL — runtime warnings not derived from observed outcomes; budget observations are stubs |
+| 7 | Every resource limit is enforced and observed through public production paths | PARTIAL — OperationBudget only in report path with zero-byte stubs; not threaded through parsers |
 | 8 | Invalid manifests fail before hashing, signature verification, image decode | ✅ |
 | 9 | Caller-owned key-material contradiction is structured integrity failure with exit 3 | ✅ |
-| 10 | Complete CLI adversarial matrix passes | ✅ |
-| 11 | Independent fixtures have truthful provenance, negative coverage, preservation proof | ✅ |
+| 10 | Complete CLI adversarial matrix passes | PARTIAL — library tests exist but no CLI subprocess tests |
+| 11 | Independent fixtures have truthful provenance, negative coverage, preservation proof | PARTIAL — provenance claims incomplete; negative coverage tests missing |
 | 12 | Main CI, RC, audit, deny, semver, conformance, feature tests, fuzz blocking and aligned | ✅ |
 | 13 | Plans 021-030 contain truthful exact evidence | ✅ |
 | 14 | One exact candidate SHA passes CI, fuzz, RC, package, smoke tests | ✅ |
 | 15 | Publication uses that SHA only | Pending release |
 | 16 | Post-publication installation and security tests pass | Pending release |
-| 17 | plans/030-status.md contains no unresolved blocker | ✅ |
+| 17 | plans/030-status.md contains no unresolved blocker | PARTIAL — remaining items superseded by Plan 031 |
+
+## Corrective note
+
+This status file was originally marked CLOSED. It has been corrected to PARTIAL
+because several definition-of-done criteria were not fully satisfied at the
+claimed closure. Plan 031 addresses the remaining items:
+
+1. Tiled v3 extraction still uses a fixed 48-byte probe instead of prefix-then-header-then-payload.
+2. Full v3 header validation (auth algorithm, extensions, key-ID) does not occur before payload extraction.
+3. `OperationBudget` is created after processing with synthetic zero-byte observations.
+4. Runtime warnings are not derived from observed `EmbedOutcomeSummary`.
+5. CLI adversarial matrix lacks subprocess tests.
+6. Independent fixture provenance is incomplete.
+7. Negative conformance coverage tests are missing.
+8. CI/RC validation contracts are not fully unified.
+
+See `plans/031-status.md` for the closure ledger.
