@@ -11,9 +11,9 @@
 # chunks using Python, with canonical namespace URIs
 # (plus: http://ns.useplus.org/ldf/xmp/1.0/).
 #
-# Tool versions:
-#   ImageMagick convert (any recent version)
-#   Python 3 (stdlib only)
+# Authoring tools:
+#   ImageMagick convert (version recorded at generation time)
+#   Python 3 (stdlib only, version recorded at generation time)
 #
 # License: MIT (same as stegoeggo)
 #
@@ -21,6 +21,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
+
+PYTHON_VERSION=$(python3 --version 2>&1)
+IMAGEMAGICK_VERSION=$(convert --version 2>&1 | head -1)
+GENERATOR_SHA=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+GENERATION_COMMAND="tests/fixtures/conformance/independent/generate_independent_fixtures.sh"
+
+echo "Generating independent fixtures..."
+echo "  Python: $PYTHON_VERSION"
+echo "  ImageMagick: $IMAGEMAGICK_VERSION"
+echo "  Generator SHA: $GENERATOR_SHA"
 
 python3 << 'PYEOF'
 import struct, zlib, os, subprocess
@@ -54,7 +64,7 @@ base_png = os.path.join(SCRIPT_DIR, 'base.png')
 PLUS_NS = 'http://ns.useplus.org/ldf/xmp/1.0/'
 
 xmp_legacy = f"""<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?>
-<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="ExifTool 12.76">
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="python-stdlib-png-xmp-injector">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
   <rdf:Description rdf:about=""
     xmlns:dc="http://purl.org/dc/elements/1.1/"
@@ -76,7 +86,7 @@ write_png_with_xmp_and_text(base_png, os.path.join(SCRIPT_DIR, 'legacy_dmi_prohi
 ])
 
 xmp_conflict = f"""<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?>
-<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="ExifTool 12.76">
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="python-stdlib-png-xmp-injector">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
   <rdf:Description rdf:about=""
     xmlns:dc="http://purl.org/dc/elements/1.1/"
@@ -101,7 +111,7 @@ write_png_with_xmp_and_text(base_png, os.path.join(SCRIPT_DIR, 'conflict_canonic
 ])
 
 xmp_preservation = f"""<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?>
-<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="ExifTool 12.76">
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="python-stdlib-png-xmp-injector">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
   <rdf:Description rdf:about=""
     xmlns:dc="http://purl.org/dc/elements/1.1/"
@@ -130,3 +140,7 @@ print("  legacy_dmi_prohibited.png")
 print("  conflict_canonical_legacy.png")
 print("  preservation_custom_xmp.png")
 PYEOF
+
+echo ""
+echo "Regenerate digests with:"
+echo "  sha256sum legacy_dmi_prohibited.png conflict_canonical_legacy.png preservation_custom_xmp.png"
