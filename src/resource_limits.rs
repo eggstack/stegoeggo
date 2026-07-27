@@ -425,6 +425,16 @@ impl ResourceUsage {
     pub fn record_verification_seeds(&mut self, count: usize) {
         self.verification_seeds_tried = count;
     }
+
+    /// Returns the largest single buffer size observed during this operation.
+    ///
+    /// This measures the largest individual allocation or capacity reservation,
+    /// not total process memory. It is a truthful observation of actual buffer
+    /// sizes, not an allocator-backed peak-memory measurement.
+    #[must_use]
+    pub fn largest_buffer_bytes(&self) -> usize {
+        self.peak_allocations_bytes
+    }
 }
 
 impl fmt::Display for ResourceUsage {
@@ -482,10 +492,40 @@ impl<'a> OperationBudget<'a> {
         self.observe_alloc(bytes);
     }
 
+    pub fn check_and_observe_png_chunk(&mut self, bytes: usize) -> crate::Result<()> {
+        self.limits.check_container_count(
+            "png_chunks",
+            self.usage.png_chunks_scanned + 1,
+            self.limits.max_png_chunks(),
+        )?;
+        self.limits.check_metadata_size(
+            "png_chunk_bytes",
+            bytes,
+            self.limits.max_png_chunk_bytes(),
+        )?;
+        self.observe_png_chunk(bytes);
+        Ok(())
+    }
+
     pub fn observe_jpeg_segment(&mut self, bytes: usize) {
         self.usage.jpeg_segments_scanned += 1;
         self.usage.metadata_bytes_copied += bytes;
         self.observe_alloc(bytes);
+    }
+
+    pub fn check_and_observe_jpeg_segment(&mut self, bytes: usize) -> crate::Result<()> {
+        self.limits.check_container_count(
+            "jpeg_segments",
+            self.usage.jpeg_segments_scanned + 1,
+            self.limits.max_jpeg_segments(),
+        )?;
+        self.limits.check_metadata_size(
+            "jpeg_segment_bytes",
+            bytes,
+            self.limits.max_jpeg_segment_bytes(),
+        )?;
+        self.observe_jpeg_segment(bytes);
+        Ok(())
     }
 
     pub fn observe_webp_chunk(&mut self, bytes: usize) {
@@ -494,8 +534,30 @@ impl<'a> OperationBudget<'a> {
         self.observe_alloc(bytes);
     }
 
+    pub fn check_and_observe_webp_chunk(&mut self, bytes: usize) -> crate::Result<()> {
+        self.limits.check_container_count(
+            "webp_riff_chunks",
+            self.usage.webp_riff_chunks_scanned + 1,
+            self.limits.max_webp_riff_chunks(),
+        )?;
+        self.limits.check_metadata_size(
+            "webp_chunk_bytes",
+            bytes,
+            self.limits.max_webp_riff_bytes(),
+        )?;
+        self.observe_webp_chunk(bytes);
+        Ok(())
+    }
+
     pub fn observe_xmp_bytes(&mut self, bytes: usize) {
         self.usage.xmp_bytes_parsed += bytes;
+    }
+
+    pub fn check_and_observe_xmp_bytes(&mut self, bytes: usize) -> crate::Result<()> {
+        self.limits
+            .check_metadata_size("xmp_bytes", bytes, self.limits.max_xmp_bytes())?;
+        self.observe_xmp_bytes(bytes);
+        Ok(())
     }
 
     pub fn observe_metadata_field(&mut self, field_bytes: usize) {
@@ -503,12 +565,44 @@ impl<'a> OperationBudget<'a> {
         self.usage.metadata_bytes_copied += field_bytes;
     }
 
+    pub fn check_and_observe_metadata_field(&mut self, field_bytes: usize) -> crate::Result<()> {
+        self.limits
+            .check_metadata_field_count(self.usage.metadata_fields_extracted + 1)?;
+        self.limits.check_metadata_size(
+            "metadata_field_bytes",
+            field_bytes,
+            self.limits.max_metadata_field_bytes(),
+        )?;
+        self.observe_metadata_field(field_bytes);
+        Ok(())
+    }
+
     pub fn observe_tile_origin(&mut self) {
         self.usage.tile_origins_checked += 1;
     }
 
+    pub fn check_and_observe_tile_origin(&mut self) -> crate::Result<()> {
+        self.limits.check_container_count(
+            "tile_extraction_origins",
+            self.usage.tile_origins_checked + 1,
+            self.limits.max_tile_extraction_origins(),
+        )?;
+        self.observe_tile_origin();
+        Ok(())
+    }
+
     pub fn observe_verification_seed(&mut self) {
         self.usage.verification_seeds_tried += 1;
+    }
+
+    pub fn check_and_observe_verification_seed(&mut self) -> crate::Result<()> {
+        self.limits.check_container_count(
+            "verification_seeds",
+            self.usage.verification_seeds_tried + 1,
+            self.limits.max_verification_seeds(),
+        )?;
+        self.observe_verification_seed();
+        Ok(())
     }
 
     pub fn finish(mut self, output_bytes: usize) -> ResourceUsage {
@@ -520,6 +614,11 @@ impl<'a> OperationBudget<'a> {
     #[must_use]
     pub fn limits(&self) -> &'a ResourceLimits {
         self.limits
+    }
+
+    #[must_use]
+    pub fn usage(&self) -> &ResourceUsage {
+        &self.usage
     }
 }
 
