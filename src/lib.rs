@@ -1063,6 +1063,28 @@ pub fn process_request_bytes(img_bytes: &[u8], request: &ProtectionRequest) -> R
     process_plan_bytes(img_bytes, &plan).map(|r| r.bytes)
 }
 
+fn warnings_from_embed_outcome(
+    summary: &crate::types::EmbedOutcomeSummary,
+) -> Vec<ProtectionWarning> {
+    let mut warnings = Vec::new();
+    match summary.status {
+        crate::types::EmbedStatus::SkippedCapacity => match summary.path {
+            crate::types::EmbedPath::Lsb | crate::types::EmbedPath::LsbTiled => {
+                warnings.push(ProtectionWarning::LsbCapacitySkipped);
+            }
+            crate::types::EmbedPath::DctF5 | crate::types::EmbedPath::DctF5Tiled => {
+                warnings.push(ProtectionWarning::DctCapacityInsufficient);
+            }
+            crate::types::EmbedPath::QTableSeedOnly => {}
+        },
+        crate::types::EmbedStatus::UnsupportedProgressive => {
+            warnings.push(ProtectionWarning::ProgressiveJpegFallback);
+        }
+        crate::types::EmbedStatus::Embedded => {}
+    }
+    warnings
+}
+
 /// Process image bytes using a [`ProtectionRequest`], returning warnings.
 ///
 /// Like [`process_request_bytes`], but also returns any warnings about
@@ -1080,11 +1102,20 @@ pub fn process_request_bytes_with_warnings(
         meta.validate()?;
     }
 
-    let all_warnings = plan.warnings().to_vec();
+    let mut all_warnings = plan.warnings().to_vec();
 
-    let result = process_plan_bytes(img_bytes, &plan)?;
+    let pipeline_result = process_plan_bytes(img_bytes, &plan)?;
 
-    Ok((result.bytes, all_warnings))
+    if let Some(ref summary) = pipeline_result.embed_summary {
+        let runtime = warnings_from_embed_outcome(summary);
+        for w in runtime {
+            if !all_warnings.contains(&w) {
+                all_warnings.push(w);
+            }
+        }
+    }
+
+    Ok((pipeline_result.bytes, all_warnings))
 }
 
 /// Process image bytes using a [`ProtectionRequest`], returning a full execution report.
@@ -1105,7 +1136,7 @@ pub fn process_request_bytes_with_report(
         meta.validate()?;
     }
 
-    let warnings = plan.warnings().to_vec();
+    let mut warnings = plan.warnings().to_vec();
     let output_format = plan.output_format();
     let format_transcoded = input_format != output_format;
 
@@ -1117,6 +1148,12 @@ pub fn process_request_bytes_with_report(
     let (stego_succeeded, embed_summary) = if stego_attempted {
         match pipeline_result.embed_summary {
             Some(summary) => {
+                let runtime = warnings_from_embed_outcome(&summary);
+                for w in runtime {
+                    if !warnings.contains(&w) {
+                        warnings.push(w);
+                    }
+                }
                 let succeeded = summary.is_embedded();
                 (succeeded, Some(summary))
             }
@@ -1135,19 +1172,7 @@ pub fn process_request_bytes_with_report(
 
     let mut budget =
         crate::resource_limits::OperationBudget::new(plan.resource_limits(), img_bytes.len());
-
-    match input_format {
-        ImageOutputFormat::Png => {
-            budget.observe_png_chunk(0);
-        }
-        ImageOutputFormat::Jpeg => {
-            budget.observe_jpeg_segment(0);
-        }
-        ImageOutputFormat::WebP => {
-            budget.observe_webp_chunk(0);
-        }
-    }
-
+    budget.observe_alloc(result.len());
     let resource_usage = budget.finish(result.len());
 
     let report = ExecutionReport {
