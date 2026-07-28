@@ -5,7 +5,7 @@ use stegoeggo::{
     process_image_bytes, process_request_bytes, process_request_bytes_with_report, resolve_request,
     AuthenticationMode, DmiValue, HiddenMarkerMode, ImageOutputFormat, LegalMetadata,
     ProtectionChannels, ProtectionContext, ProtectionLevel, ProtectionPreset, ProtectionRequest,
-    RightsNotice, RightsPolicy, VerificationStatus,
+    ResourceLimits, RightsNotice, RightsPolicy, VerificationStatus,
 };
 
 fn create_test_image(width: u32, height: u32) -> image::DynamicImage {
@@ -1138,6 +1138,278 @@ mod phase3_resource_limits {
         assert!(
             result.is_err(),
             "Very small max_metadata_field_bytes should reject"
+        );
+    }
+}
+
+mod phase2_payload_emission {
+    use super::*;
+
+    #[test]
+    fn crc_payload_capacity_uses_serialized_length() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        let summary = report.embed_summary().unwrap();
+        assert!(summary.is_embedded());
+        assert_eq!(summary.payload_bytes, 36);
+        assert!(summary.required_capacity > 0);
+        assert!(summary.available_capacity >= summary.required_capacity);
+    }
+
+    #[test]
+    fn hmac_payload_capacity_uses_serialized_length() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42)
+            .with_mac_key(b"test-key".to_vec());
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        let summary = report.embed_summary().unwrap();
+        assert!(summary.is_embedded());
+        assert_eq!(summary.payload_bytes, 48);
+        assert!(summary.required_capacity > 0);
+        assert!(summary.available_capacity >= summary.required_capacity);
+    }
+
+    #[test]
+    fn tiled_report_path_matches_actual_embed_path() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::new(
+            simple_notice(),
+            RightsPolicy::Allowed,
+            ProtectionChannels {
+                rights_metadata: true,
+                hidden_marker: HiddenMarkerMode::Tiled { tile_size: 32 },
+                authentication: AuthenticationMode::None,
+            },
+        )
+        .with_seed(42);
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        let summary = report.embed_summary().unwrap();
+        assert!(summary.is_embedded());
+        assert_eq!(summary.path, stegoeggo::EmbedPath::LsbTiled);
+    }
+
+    #[test]
+    fn report_and_warnings_api_return_same_runtime_warnings() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (_, warnings) =
+            stegoeggo::process_request_bytes_with_warnings(&png_bytes, &request).unwrap();
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+
+        assert_eq!(warnings.len(), report.warnings().len());
+        for w in &warnings {
+            assert!(
+                report.warnings().contains(w),
+                "Warning {:?} in warnings API but not in report",
+                w
+            );
+        }
+    }
+
+    #[test]
+    fn metadata_only_report_has_no_embed_summary() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Allowed);
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        assert!(!report.stego_attempted());
+        assert!(!report.stego_succeeded());
+        assert!(report.embed_summary().is_none());
+    }
+
+    #[test]
+    fn metadata_only_report_records_observed_metadata_injection() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Allowed);
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        assert!(report.metadata_injected());
+    }
+
+    #[test]
+    fn best_effort_capacity_skip_returns_output_and_warning() {
+        let img = create_test_image(1, 1);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (output, warnings) =
+            stegoeggo::process_request_bytes_with_warnings(&png_bytes, &request).unwrap();
+        assert!(!output.is_empty());
+        let has_skip = warnings.iter().any(|w| {
+            matches!(
+                w,
+                stegoeggo::ProtectionWarning::LsbCapacitySkipped
+                    | stegoeggo::ProtectionWarning::DctCapacityInsufficient
+            )
+        });
+        assert!(
+            has_skip,
+            "Expected capacity skip warning for 1x1 image, got: {:?}",
+            warnings
+        );
+    }
+
+    #[test]
+    fn progressive_fallback_payload_does_not_claim_dct_embedding() {
+        let img = create_test_image(128, 128);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::new(
+            simple_notice(),
+            RightsPolicy::Allowed,
+            ProtectionChannels {
+                rights_metadata: true,
+                hidden_marker: HiddenMarkerMode::BestEffort,
+                authentication: AuthenticationMode::None,
+            },
+        )
+        .with_seed(42)
+        .with_progressive_jpeg();
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        assert!(report.stego_attempted());
+        if let Some(summary) = report.embed_summary() {
+            if summary.status == stegoeggo::EmbedStatus::UnsupportedProgressive {
+                assert_eq!(summary.path, stegoeggo::EmbedPath::QTableSeedOnly);
+            }
+        }
+    }
+
+    #[test]
+    fn progressive_fallback_report_is_degraded() {
+        let img = create_test_image(128, 128);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::new(
+            simple_notice(),
+            RightsPolicy::Allowed,
+            ProtectionChannels {
+                rights_metadata: true,
+                hidden_marker: HiddenMarkerMode::BestEffort,
+                authentication: AuthenticationMode::None,
+            },
+        )
+        .with_seed(42)
+        .with_progressive_jpeg();
+
+        let (_, report) = process_request_bytes_with_report(&png_bytes, &request).unwrap();
+        assert!(report.stego_attempted());
+        let has_fallback = report
+            .warnings()
+            .iter()
+            .any(|w| matches!(w, stegoeggo::ProtectionWarning::ProgressiveJpegFallback));
+        if let Some(summary) = report.embed_summary() {
+            if !summary.is_embedded() {
+                assert!(
+                    has_fallback,
+                    "Degraded report should have ProgressiveJpegFallback warning"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn payload_flags_reflect_emission_context() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (output, _) =
+            stegoeggo::process_request_bytes_with_warnings(&png_bytes, &request).unwrap();
+        let status = stegoeggo::verify_image_bytes(&output, &[]);
+        assert_eq!(status, VerificationStatus::Verified);
+    }
+
+    #[test]
+    fn batch_report_preserves_each_file_embed_outcome() {
+        let img1 = create_test_image(64, 64);
+        let img2 = create_test_image(64, 64);
+        let png1 = image_to_png_bytes(&img1);
+        let png2 = image_to_png_bytes(&img2);
+
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (_, report1) = process_request_bytes_with_report(&png1, &request).unwrap();
+        let (_, report2) = process_request_bytes_with_report(&png2, &request).unwrap();
+
+        assert!(report1.stego_succeeded());
+        assert!(report2.stego_succeeded());
+        assert!(report1.embed_summary().is_some());
+        assert!(report2.embed_summary().is_some());
+    }
+}
+
+mod table_c_container_limits {
+    use super::*;
+
+    #[test]
+    fn max_png_chunks_enforced() {
+        let limits = ResourceLimits::builder().max_png_chunks(1).build();
+        let img = create_test_image(8, 8);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_resource_limits(limits)
+            .with_legal_metadata(
+                LegalMetadata::new()
+                    .with_copyright_holder("Test")
+                    .with_usage_terms("All rights reserved")
+                    .with_creator("Creator")
+                    .with_contact_email("test@example.com"),
+            );
+        let result = process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err(), "Very small max_png_chunks should reject");
+    }
+
+    #[test]
+    fn max_jpeg_segments_enforced_on_extraction() {
+        let img = create_test_image(64, 64);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (protected, _) =
+            stegoeggo::process_request_bytes_with_warnings(&jpeg_bytes, &request).unwrap();
+
+        let limits = ResourceLimits::builder().max_jpeg_segments(1).build();
+        let status = stegoeggo::verify_image_bytes_with_limits(&protected, &[], &limits);
+        assert_ne!(
+            status,
+            VerificationStatus::Verified,
+            "Very small max_jpeg_segments should prevent verification"
+        );
+    }
+
+    #[test]
+    fn max_jpeg_segment_bytes_enforced_on_extraction() {
+        let img = create_test_image(64, 64);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42);
+
+        let (protected, _) =
+            stegoeggo::process_request_bytes_with_warnings(&jpeg_bytes, &request).unwrap();
+
+        let limits = ResourceLimits::builder().max_jpeg_segment_bytes(10).build();
+        let status = stegoeggo::verify_image_bytes_with_limits(&protected, &[], &limits);
+        assert_ne!(
+            status,
+            VerificationStatus::Verified,
+            "Very small max_jpeg_segment_bytes should prevent verification"
         );
     }
 }

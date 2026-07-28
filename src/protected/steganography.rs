@@ -6,7 +6,9 @@ use crate::protected::ecc;
 use crate::protected::metadata_trap::MetadataTrapProtector;
 use crate::resource_limits::ResourceLimits;
 use crate::traits::Protector;
-use crate::types::{ProtectionContext, ProtectionLevel, VerificationStatus};
+use crate::types::{
+    PayloadEmissionContext, ProtectionContext, ProtectionLevel, VerificationStatus,
+};
 use crc32fast::Hasher as Crc32Hasher;
 use hmac::{Hmac, Mac};
 use image::{DynamicImage, Rgba, RgbaImage};
@@ -284,7 +286,13 @@ impl SteganographyProtector {
                 let (mut header, coefficients) =
                     JpegTranscoder::decode_coefficients(&canonical_jpeg)?;
 
-                let payload = self.generate_payload(ctx);
+                let payload = self.generate_payload(
+                    &crate::types::PayloadEmissionContext::from_plan_for_context(
+                        ctx,
+                        EmbedPath::DctF5,
+                    ),
+                    ctx,
+                );
                 let redundancy = ctx.effective_redundancy();
                 let payload_bits = payload.len().saturating_mul(8);
 
@@ -413,7 +421,13 @@ impl SteganographyProtector {
                 let (mut header, mut coefficients) =
                     JpegTranscoder::decode_coefficients(&canonical_jpeg)?;
 
-                let payload = self.generate_payload(ctx);
+                let payload = self.generate_payload(
+                    &crate::types::PayloadEmissionContext::from_plan_for_context(
+                        ctx,
+                        EmbedPath::DctF5Tiled,
+                    ),
+                    ctx,
+                );
                 let payload_bits = payload.len() * 8;
 
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
@@ -858,7 +872,17 @@ impl SteganographyProtector {
         img: &DynamicImage,
         ctx: &ProtectionContext,
     ) -> DynamicImage {
-        let payload = self.generate_payload(ctx);
+        let embed_path = ctx
+            .input_format()
+            .map(|f| match f {
+                crate::types::ImageOutputFormat::Jpeg => crate::types::EmbedPath::DctF5,
+                _ => crate::types::EmbedPath::Lsb,
+            })
+            .unwrap_or(crate::types::EmbedPath::Lsb);
+        let payload = self.generate_payload(
+            &crate::types::PayloadEmissionContext::from_plan_for_context(ctx, embed_path),
+            ctx,
+        );
         let rgba = img.to_rgba8();
         let format = ctx
             .input_format()
@@ -1120,7 +1144,10 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> VerificationStatus {
-        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(img_bytes);
+        let metadata_seed = MetadataTrapProtector::extract_seed_from_image_with_limits(
+            img_bytes,
+            Some(&self.limits),
+        );
 
         // JPEG: check DCT stego directly (no re-encode needed)
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
@@ -1252,7 +1279,10 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> (VerificationStatus, Option<Vec<u8>>) {
-        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(img_bytes);
+        let metadata_seed = MetadataTrapProtector::extract_seed_from_image_with_limits(
+            img_bytes,
+            Some(&self.limits),
+        );
 
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
             match self.verify_extract_verified_dct(img_bytes, mac_key) {
@@ -1381,7 +1411,10 @@ impl SteganographyProtector {
         }
 
         if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
-            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image(&encoded) {
+            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image_with_limits(
+                &encoded,
+                Some(&self.limits),
+            ) {
                 if metadata_seed != seed {
                     if let Some(payload) = self.extract_with_redundancy(&rgba, metadata_seed, &[]) {
                         let header = if let Some(decoded) = Self::try_ecc_decode(&payload) {
@@ -1471,7 +1504,10 @@ impl SteganographyProtector {
         }
 
         if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
-            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image(&encoded) {
+            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image_with_limits(
+                &encoded,
+                Some(&self.limits),
+            ) {
                 if metadata_seed != seed {
                     match self.verify_extract_with_redundancy(&rgba, metadata_seed, mac_key) {
                         CandidateOutcome::Valid(payload) => {
@@ -1648,7 +1684,10 @@ impl SteganographyProtector {
     ) -> Option<StegoPayload> {
         // Try extracting seed from metadata first
         if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
-            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image(&encoded) {
+            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image_with_limits(
+                &encoded,
+                Some(&self.limits),
+            ) {
                 if let Some(payload) =
                     self.extract_payload_with_seed_and_key(img, metadata_seed, mac_key)
                 {
@@ -1731,7 +1770,10 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> Option<StegoPayload> {
-        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(img_bytes);
+        let metadata_seed = MetadataTrapProtector::extract_seed_from_image_with_limits(
+            img_bytes,
+            Some(&self.limits),
+        );
 
         // JPEG: try DCT extraction first (avoids pixel decode)
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
@@ -2529,7 +2571,11 @@ impl SteganographyProtector {
     /// - Flags and extension count
     /// - Optional TLV extensions
     /// - Authentication tag (HMAC-SHA256 truncated, or CRC32 + ECC)
-    fn generate_payload(&self, ctx: &ProtectionContext) -> Vec<u8> {
+    fn generate_payload(
+        &self,
+        emission: &PayloadEmissionContext,
+        ctx: &ProtectionContext,
+    ) -> Vec<u8> {
         let intensity_val = (ctx.intensity() * 100.0) as u16;
 
         let dmi_byte = ctx
@@ -2554,20 +2600,20 @@ impl SteganographyProtector {
             })
             .unwrap_or([0u8; 8]);
 
+        let has_mac = emission.has_mac();
+
         let flags = crate::payload_v3::types::PayloadFlags {
-            has_extensions: false,
-            has_key_id: false,
-            tiled: ctx.is_tile_mode_enabled(),
-            progressive_jpeg: ctx.progressive_jpeg(),
+            has_extensions: !emission.extensions.is_empty(),
+            has_key_id: emission.key_id.is_some(),
+            tiled: emission.tiled,
+            progressive_jpeg: emission.progressive_output,
             critical_extension: false,
             signed: false,
             reserved: 0,
         };
 
-        let has_mac = ctx.mac_key().is_some();
-
-        let channels = ProtectionChannels {
-            rights_metadata: ctx.effective_metadata_injection(),
+        let channels = crate::payload_v3::types::ProtectionChannels {
+            rights_metadata: emission.rights_metadata_planned,
             hidden_marker: true,
             authentication: has_mac,
         };
@@ -2614,7 +2660,29 @@ impl SteganographyProtector {
     /// requiring a full image embed/extract cycle.
     #[doc(hidden)]
     pub fn generate_payload_for_context(&self, ctx: &ProtectionContext) -> Vec<u8> {
-        self.generate_payload(ctx)
+        let embed_path = if ctx.is_tile_mode_enabled() {
+            if ctx.input_format() == Some(crate::types::ImageOutputFormat::Jpeg) {
+                crate::types::EmbedPath::DctF5Tiled
+            } else {
+                crate::types::EmbedPath::LsbTiled
+            }
+        } else if ctx.input_format() == Some(crate::types::ImageOutputFormat::Jpeg) {
+            crate::types::EmbedPath::DctF5
+        } else {
+            crate::types::EmbedPath::Lsb
+        };
+        let emission = PayloadEmissionContext::from_plan_for_context(ctx, embed_path);
+        self.generate_payload(&emission, ctx)
+    }
+
+    /// Test-only wrapper: generate payload from a [`ProtectionContext`].
+    ///
+    /// Derives the emission context from the context's fields. For tests
+    /// that call `generate_payload` directly rather than through the
+    /// pipeline.
+    #[cfg(test)]
+    fn generate_payload_from_ctx(&self, ctx: &ProtectionContext) -> Vec<u8> {
+        self.generate_payload_for_context(ctx)
     }
 
     /// Collision-free LCG permutation for stego pixel selection.
@@ -3520,7 +3588,30 @@ impl SteganographyProtector {
         img: &DynamicImage,
         ctx: &ProtectionContext,
     ) -> Result<(DynamicImage, Option<crate::types::EmbedOutcomeSummary>)> {
-        let payload = self.generate_payload(ctx);
+        let format = ctx
+            .input_format()
+            .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
+
+        let is_tiled = ctx.tile_size().filter(|&s| s > 0).is_some();
+        let embed_path = match format {
+            crate::types::ImageOutputFormat::Jpeg => {
+                if is_tiled {
+                    crate::types::EmbedPath::DctF5Tiled
+                } else {
+                    crate::types::EmbedPath::DctF5
+                }
+            }
+            _ => {
+                if is_tiled {
+                    crate::types::EmbedPath::LsbTiled
+                } else {
+                    crate::types::EmbedPath::Lsb
+                }
+            }
+        };
+
+        let emission = crate::types::PayloadEmissionContext::from_plan_for_context(ctx, embed_path);
+        let payload = self.generate_payload(&emission, ctx);
         let rgba = img.to_rgba8();
 
         let format = ctx
@@ -3925,7 +4016,7 @@ mod tests {
     fn verify_payload_integrity_checksum_mode() {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(42);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
         assert_eq!(payload.len(), V3_CRC_PAYLOAD_SIZE);
         assert!(SteganographyProtector::verify_payload_integrity(
             &payload,
@@ -3937,7 +4028,7 @@ mod tests {
     fn verify_payload_integrity_mac_mode() {
         let protector = SteganographyProtector::new();
         let ctx = ctx_with_mac(42, b"secret");
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
         assert_eq!(payload.len(), V3_HMAC_PAYLOAD_SIZE);
         assert!(SteganographyProtector::verify_payload_integrity(
             &payload, b"secret"
@@ -3948,7 +4039,7 @@ mod tests {
     fn verify_payload_integrity_mac_wrong_key() {
         let protector = SteganographyProtector::new();
         let ctx = ctx_with_mac(42, b"correct");
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
         assert!(!SteganographyProtector::verify_payload_integrity(
             &payload, b"wrong"
         ));
@@ -3958,7 +4049,7 @@ mod tests {
     fn verify_payload_integrity_checksum_corrupted() {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(42);
-        let mut payload = protector.generate_payload(&ctx);
+        let mut payload = protector.generate_payload_from_ctx(&ctx);
         payload[5] ^= 0xFF;
         assert!(!SteganographyProtector::verify_payload_integrity(
             &payload,
@@ -3987,7 +4078,7 @@ mod tests {
     fn generate_payload_checksum_mode_length() {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(12345);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
         assert_eq!(payload.len(), V3_CRC_PAYLOAD_SIZE);
     }
 
@@ -3995,7 +4086,7 @@ mod tests {
     fn generate_payload_mac_mode_length() {
         let protector = SteganographyProtector::new();
         let ctx = ctx_with_mac(12345, b"key");
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
         assert_eq!(payload.len(), V3_HMAC_PAYLOAD_SIZE);
     }
 
@@ -4003,7 +4094,7 @@ mod tests {
     fn generate_payload_version_byte() {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(42);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
         assert_eq!(&payload[0..2], &V3_MAGIC);
         assert_eq!(payload[2], 3);
     }
@@ -4013,7 +4104,7 @@ mod tests {
         let seed = 0xDEAD_BEEF_CAFE_BABE;
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(seed);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
 
         let extracted_seed = u64::from_le_bytes([
             payload[11],
@@ -4032,7 +4123,7 @@ mod tests {
     fn generate_payload_intensity_precision() {
         let protector = SteganographyProtector::new();
         let ctx = ProtectionContext::new(0.73, 42);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
 
         let intensity_raw = u16::from_le_bytes([payload[19], payload[20]]);
         let recovered = intensity_raw as f32 / 100.0;
@@ -4043,7 +4134,7 @@ mod tests {
     fn generate_payload_protection_level_byte() {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(42);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
         // V3: channels field at bytes 8-9 encodes protection info
         let channels = u16::from_le_bytes([payload[8], payload[9]]);
         assert_ne!(
@@ -4055,8 +4146,8 @@ mod tests {
     #[test]
     fn generate_payload_different_seeds_differ() {
         let protector = SteganographyProtector::new();
-        let a = protector.generate_payload(&ctx_no_mac(1));
-        let b = protector.generate_payload(&ctx_no_mac(2));
+        let a = protector.generate_payload_from_ctx(&ctx_no_mac(1));
+        let b = protector.generate_payload_from_ctx(&ctx_no_mac(2));
         assert_ne!(a[11..19], b[11..19]); // seed bytes differ in v3
     }
 
@@ -4246,7 +4337,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let tiny = make_test_image(2, 2);
         let ctx = ctx_no_mac(42);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
 
         let result = protector.embed_lsb(&tiny, &payload, 42, 1);
         assert!(result.is_skipped());
@@ -4270,7 +4361,7 @@ mod tests {
         let ctx = ProtectionContext::new(0.5, 42)
             .with_format(crate::types::ImageOutputFormat::Jpeg)
             .with_stego_redundancy(3);
-        let payload_bits = protector.generate_payload(&ctx).len() * 8;
+        let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
         let required_bits = payload_bits * ctx.effective_redundancy();
 
         let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
@@ -4300,7 +4391,7 @@ mod tests {
         let ctx = ProtectionContext::new(0.5, 42)
             .with_format(crate::types::ImageOutputFormat::Jpeg)
             .with_stego_redundancy(3);
-        let payload_bits = protector.generate_payload(&ctx).len() * 8;
+        let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
 
         let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
         assert!(SteganographyProtector::dct_payload_capacity(&coefficients) >= payload_bits * 3);
@@ -4325,7 +4416,7 @@ mod tests {
     fn parse_stego_payload_valid() {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(12345);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
         let parsed = SteganographyProtector::parse_stego_payload(&payload).unwrap();
         assert_eq!(parsed.version(), 3);
         assert_eq!(parsed.seed(), 12345);
@@ -4517,7 +4608,8 @@ mod tests {
         .unwrap();
         let with_metadata = meta.apply_bytes(&png_bytes, &ctx).unwrap();
 
-        let extracted = MetadataTrapProtector::extract_seed_from_image(&with_metadata);
+        let extracted =
+            MetadataTrapProtector::extract_seed_from_image_with_limits(&with_metadata, None);
         assert_eq!(extracted, Some(42));
     }
 
@@ -4672,7 +4764,7 @@ mod tests {
     /// `vec![byte; N]` patterns won't pass the CRC32 check.
     fn real_payload(seed: u64) -> Vec<u8> {
         let ctx = ctx_no_mac(seed);
-        SteganographyProtector::new().generate_payload(&ctx)
+        SteganographyProtector::new().generate_payload_from_ctx(&ctx)
     }
 
     #[test]
@@ -4757,7 +4849,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let img = tileable_test_image();
         let ctx = ctx_with_mac(42, b"my-key");
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
 
         let embedded = protector
             .embed_lsb_tiled(&img, &payload, 42, 64)
@@ -5028,7 +5120,7 @@ mod tests {
         let mut ctx = ProtectionContext::new(0.5, 42);
         ctx.set_protection_level(crate::ProtectionLevel::Standard);
         ctx = ctx.with_metadata_injection(false);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
 
         let channels_bits = u16::from_le_bytes([payload[8], payload[9]]);
         let channels = ProtectionChannels::from_bits(channels_bits).unwrap();
@@ -5051,7 +5143,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let mut ctx = ProtectionContext::new(0.5, 42);
         ctx.set_protection_level(crate::ProtectionLevel::Standard);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
 
         let channels_bits = u16::from_le_bytes([payload[8], payload[9]]);
         let channels = ProtectionChannels::from_bits(channels_bits).unwrap();
@@ -5067,7 +5159,7 @@ mod tests {
     fn channel_flags_crc_has_authentication_false() {
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(42);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
 
         let channels_bits = u16::from_le_bytes([payload[8], payload[9]]);
         let channels = ProtectionChannels::from_bits(channels_bits).unwrap();
@@ -5081,7 +5173,7 @@ mod tests {
     fn channel_flags_hmac_has_authentication_true() {
         let protector = SteganographyProtector::new();
         let ctx = ctx_with_mac(42, b"testkey");
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
 
         let channels_bits = u16::from_le_bytes([payload[8], payload[9]]);
         let channels = ProtectionChannels::from_bits(channels_bits).unwrap();
@@ -5097,7 +5189,7 @@ mod tests {
         let mut ctx = ProtectionContext::new(0.5, 42);
         ctx.set_protection_level(crate::ProtectionLevel::Standard);
         ctx = ctx.with_tile_size(64);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
 
         let flags_bits = u16::from_le_bytes([payload[6], payload[7]]);
         let flags = crate::payload_v3::types::PayloadFlags::from_bits(flags_bits);
@@ -5110,7 +5202,7 @@ mod tests {
         let mut ctx = ProtectionContext::new(0.5, 42);
         ctx.set_protection_level(crate::ProtectionLevel::Standard);
         ctx = ctx.with_progressive_jpeg(true);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
 
         let flags_bits = u16::from_le_bytes([payload[6], payload[7]]);
         let flags = crate::payload_v3::types::PayloadFlags::from_bits(flags_bits);
@@ -5125,7 +5217,7 @@ mod tests {
         let protector = SteganographyProtector::new();
         let mut ctx = ProtectionContext::new(0.5, 42);
         ctx.set_protection_level(crate::ProtectionLevel::Disabled);
-        let payload = protector.generate_payload(&ctx);
+        let payload = protector.generate_payload_from_ctx(&ctx);
 
         let channels_bits = u16::from_le_bytes([payload[8], payload[9]]);
         let channels = ProtectionChannels::from_bits(channels_bits).unwrap();

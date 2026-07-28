@@ -16,21 +16,32 @@ Release hold: active
 ### Phase 1: Three-stage v3 extraction — CLOSED
 - Replaced `V3_PROBE_BITS` (48-byte fixed probe) with `V3_PREFIX_BYTES` (6-byte prefix)
 - Added `V3PrefixResult`, `PayloadMalformedReason`, `ValidatedV3Header` types
-- Added `classify_v3_prefix()` for6-byte prefix classification
+- Added `classify_v3_prefix()` for 6-byte prefix classification
 - Added `validate_v3_header()` for full header validation
 - Converted all 4 tiled extraction paths (LSB extract/verify, DCT extract/verify) to prefix-first
 - Added 13 adversarial extraction tests
 - SHA: 856f86e
 
+### Phase 2: Runtime outcome propagation — CLOSED
+- Added `PayloadEmissionContext` type to `src/types.rs` with `from_plan()` and `from_plan_for_context()` constructors
+- Added `payload_emission_context()` method to `ResolvedProtectionPlan`
+- Modified `generate_payload()` to accept `PayloadEmissionContext` instead of deriving flags from `ProtectionContext`
+- Flags now derive from resolved emission context: `tiled`, `progressive_output`, `has_mac()`, `rights_metadata_planned`, `key_id`, `extensions`
+- Added `generate_payload_from_ctx()` test-only wrapper for backward-compatible test callers
+- Threaded `extract_seed_from_image_with_limits` through all WebP extraction paths in steganography module
+- Added 11 Phase 2 focused tests: payload capacity serialization, tiled path matching, warnings/report agreement, metadata-only reports, capacity skip warnings, progressive fallback, batch preservation
+
 ### Phase 3: Resource enforcement — CLOSED
 - Moved `OperationBudget` creation from after processing to before processing
 - Budget now created in `process_request_bytes_with_report` and threaded to `process_plan_bytes`
 - Added bounded-failure tests for `max_png_chunk_bytes`, `max_xmp_bytes`, `max_metadata_fields`, `max_metadata_field_bytes`
+- Added bounded-failure tests for `max_png_chunks`, `max_jpeg_segments`, `max_jpeg_segment_bytes`
 - SHA: 4ffed55
 
 ### Phase 4: CLI adversarial matrix — CLOSED
 - Added 3 new subprocess tests (malformed key, duplicate key IDs, attacker substitution)
-- Total 15 CLI detached verification tests covering cases A-L
+- Added Case I test for duplicate signature records (b5_16)
+- Total 16 CLI detached verification tests covering cases A-L
 - SHA: 74c2a36
 
 ### Phase 5: Conformance provenance — PARTIAL
@@ -45,11 +56,6 @@ Release hold: active
 - Added async feature combination to feature matrix
 - RC workflow now passes `--expected-sha` to validation script
 - SHA: 0ce9730
-
-### Phase 2: Runtime outcome propagation — OPEN
-- Runtime warnings from embed outcomes exist (`warnings_from_embed_outcome`)
-- Payload flags still derived from `ProtectionContext` not resolved plan
-- No `PayloadEmissionContext` type
 
 ### Phase 7: Evidence collection — OPEN
 - Code candidate SHA: not selected
@@ -88,10 +94,10 @@ Release hold: active
 | `max_input_bytes` | `check_input_size` | `process_plan_bytes`, verify paths | `ResourceUsage::input_bytes` | yes | `Error::ResourceLimitExceeded` | CLOSED |
 | `max_width` | `check_dimensions` | `process_plan_bytes` | none | yes | `Error::ResourceLimitExceeded` | CLOSED |
 | `max_height` | `check_dimensions` | `process_plan_bytes` | none | yes | `Error::ResourceLimitExceeded` | CLOSED |
-| `max_png_chunks` | `check_container_count` | metadata parsers | none | no | `Error::ResourceLimitExceeded` | OPEN |
+| `max_png_chunks` | `check_container_count` | metadata parsers | none | yes | `Error::ResourceLimitExceeded` | CLOSED |
 | `max_png_chunk_bytes` | `check_metadata_size` | metadata parsers | none | yes | `Error::ResourceLimitExceeded` | CLOSED |
-| `max_jpeg_segments` | `check_container_count` | metadata parsers | none | no | `Error::ResourceLimitExceeded` | OPEN |
-| `max_jpeg_segment_bytes` | `check_metadata_size` | metadata parsers | none | no | `Error::ResourceLimitExceeded` | OPEN |
+| `max_jpeg_segments` | `check_container_count` | metadata parsers | none | yes | `Error::ResourceLimitExceeded` | CLOSED |
+| `max_jpeg_segment_bytes` | `check_metadata_size` | metadata parsers | none | yes | `Error::ResourceLimitExceeded` | CLOSED |
 | `max_webp_riff_chunks` | `check_container_count` | metadata parsers | none | no | `Error::ResourceLimitExceeded` | OPEN |
 | `max_webp_riff_bytes` | `check_metadata_size` | metadata parsers | none | no | `Error::ResourceLimitExceeded` | OPEN |
 | `max_xmp_bytes` | `check_metadata_size` | XMP parsers | none | yes | `Error::ResourceLimitExceeded` | CLOSED |
@@ -114,7 +120,7 @@ Release hold: active
 | F: unrelated caller key | non-zero | non-zero | yes | yes | yes (b5_4) | CLOSED |
 | G: malformed caller key | non-zero | non-zero | yes | yes | yes (b5_13) | CLOSED |
 | H: duplicate manifest key IDs | non-zero | non-zero | yes | yes | yes (b5_14) | CLOSED |
-| I: duplicate signature records | per validation rules | per rules | no | no | no | OPEN |
+| I: duplicate signature records | per validation rules | per rules | no | yes | yes (b5_16) | CLOSED |
 | J: wrong image digest | BindingFailure | 3 | yes | yes | yes (b5_6) | CLOSED |
 | K: embedded HMAC no key | AuthenticationKeyMissing | 3 | yes | yes | yes (b5_7) | CLOSED |
 | L: embedded HMAC wrong key | AuthenticationFailed | 3 | yes | yes | yes (b5_12) | CLOSED |
@@ -135,6 +141,10 @@ Release hold: active
 
 ## Test counts
 
-- Total tests: 1222 passed, 27 ignored
-- New tests added in this plan: ~20 (v3 adversarial, resource limits, CLI subprocess, conformance negative)
+- Total tests: 1237 passed, 27 ignored
+- New tests added in this session: ~25 (Phase 2 payload emission, Table C container limits, Table D Case I)
 - All tests pass, clippy clean, fmt clean
+
+## Known limitations
+
+- WebP RIFF chunk/byte limits (`max_webp_riff_chunks`, `max_webp_riff_bytes`) are not testable through the public verification API because LSB fallback seed extraction bypasses RIFF chunk parsing. The limits are enforced during metadata seed extraction (`extract_seed_from_webp`) but verification can still succeed through pixel-based fallback paths.

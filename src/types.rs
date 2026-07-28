@@ -3067,6 +3067,113 @@ impl EmbedOutcomeSummary {
     }
 }
 
+/// Resolved context for steganographic payload generation.
+///
+/// Created after output format and embed path selection to carry the actual
+/// resolved flags that go into the v3 payload header. This avoids deriving
+/// payload fields from the generic mutable [`ProtectionContext`] and makes
+/// the relationship between resolved plan and emitted payload explicit and
+/// testable.
+///
+/// All fields reflect the actual embed attempt — not hypothetical or
+/// hard-coded generic state.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) struct PayloadEmissionContext {
+    /// Whether rights metadata was planned for this operation.
+    pub rights_metadata_planned: bool,
+    /// The embedding path that will be used.
+    pub embed_path: EmbedPath,
+    /// Whether tiled embedding is selected.
+    pub tiled: bool,
+    /// Whether the actual output mode is progressive JPEG.
+    ///
+    /// Must be `false` when the embed path fell back to Q-table seed only
+    /// (e.g. progressive JPEG fallback), so the payload does not falsely
+    /// claim DCT embedding.
+    pub progressive_output: bool,
+    /// The authentication mode used.
+    pub authentication: AuthenticationMode,
+    /// Key ID, if present in the payload.
+    pub key_id: Option<Vec<u8>>,
+    /// Additional TLV extensions to embed.
+    pub extensions: Vec<PayloadExtension>,
+}
+
+impl PayloadEmissionContext {
+    /// Build a [`PayloadEmissionContext`] from a resolved plan and the
+    /// determined embed path.
+    ///
+    /// `progressive_output` is set based on the plan's progressive JPEG
+    /// setting. The caller must override this to `false` if the actual
+    /// embed path fell back to Q-table seed only.
+    #[must_use]
+    #[allow(dead_code)]
+    pub(crate) fn from_plan(
+        plan: &crate::types::ResolvedProtectionPlan,
+        embed_path: EmbedPath,
+    ) -> Self {
+        let tiled = matches!(embed_path, EmbedPath::LsbTiled | EmbedPath::DctF5Tiled);
+        let authentication = if plan.mac_key().is_some() {
+            AuthenticationMode::Hmac
+        } else {
+            AuthenticationMode::None
+        };
+        Self {
+            rights_metadata_planned: plan.channels().rights_metadata,
+            embed_path,
+            tiled,
+            progressive_output: plan.processing().progressive_jpeg,
+            authentication,
+            key_id: None,
+            extensions: Vec::new(),
+        }
+    }
+
+    /// Whether the payload is authenticated with HMAC.
+    #[must_use]
+    pub(crate) fn has_mac(&self) -> bool {
+        self.authentication == AuthenticationMode::Hmac
+    }
+
+    /// Build a [`PayloadEmissionContext`] from a [`ProtectionContext`] for
+    /// backward-compatible callers.
+    ///
+    /// This derives the emission context from the context's fields rather
+    /// than from a resolved plan. Prefer [`from_plan`](Self::from_plan) in
+    /// new code.
+    #[must_use]
+    pub(crate) fn from_plan_for_context(ctx: &ProtectionContext, embed_path: EmbedPath) -> Self {
+        let tiled = matches!(embed_path, EmbedPath::LsbTiled | EmbedPath::DctF5Tiled);
+        let authentication = if ctx.mac_key().is_some() {
+            AuthenticationMode::Hmac
+        } else {
+            AuthenticationMode::None
+        };
+        Self {
+            rights_metadata_planned: ctx.effective_metadata_injection(),
+            embed_path,
+            tiled,
+            progressive_output: ctx.progressive_jpeg(),
+            authentication,
+            key_id: None,
+            extensions: Vec::new(),
+        }
+    }
+}
+
+/// An additional TLV extension embedded in the v3 payload.
+///
+/// Currently unused — reserved for future key-ID and extension support.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) struct PayloadExtension {
+    /// Extension type identifier.
+    pub extension_type: u16,
+    /// Extension value bytes.
+    pub value: Vec<u8>,
+}
+
 /// Warning about degraded protection during image processing.
 ///
 /// Returned by [`process_image_bytes_with_info`](crate::process_image_bytes_with_info)
@@ -3730,6 +3837,18 @@ impl ResolvedProtectionPlan {
     #[must_use]
     pub fn is_metadata_only(&self) -> bool {
         !self.channels.has_stego() && self.channels.rights_metadata
+    }
+
+    /// Build a [`PayloadEmissionContext`] for the given embed path.
+    ///
+    /// The caller must provide the actual [`EmbedPath`] after output format
+    /// and embed path selection. The `progressive_output` field is set from
+    /// the plan's progressive JPEG setting — the caller must override it to
+    /// `false` if the actual embed path fell back to Q-table seed only.
+    #[must_use]
+    #[allow(dead_code)]
+    pub(crate) fn payload_emission_context(&self, embed_path: EmbedPath) -> PayloadEmissionContext {
+        PayloadEmissionContext::from_plan(self, embed_path)
     }
 
     /// Construct a resolved plan from validated parts.

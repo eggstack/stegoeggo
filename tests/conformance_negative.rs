@@ -11,19 +11,11 @@ fn conformance_bin() -> std::path::PathBuf {
     let mut path = manifest_dir.join("target/release/stegoeggo-conformance");
     if !path.exists() {
         let output = std::process::Command::new("cargo")
-            .args([
-                "build",
-                "--release",
-                "--bin",
-                "stegoeggo-conformance",
-            ])
+            .args(["build", "--release", "--bin", "stegoeggo-conformance"])
             .current_dir(&manifest_dir)
             .output()
             .expect("Failed to build conformance harness");
-        assert!(
-            output.status.success(),
-            "Conformance harness build failed"
-        );
+        assert!(output.status.success(), "Conformance harness build failed");
         path = manifest_dir.join("target/release/stegoeggo-conformance");
     }
     path
@@ -106,10 +98,7 @@ fn negative_empty_manifest_rejected() {
     fs::write(tmp.path().join("empty.toml"), "").unwrap();
 
     let (code, _) = run_conformance(&tmp.path().join("empty.toml"), false);
-    assert_ne!(
-        code, 0,
-        "Empty manifest should be rejected"
-    );
+    assert_ne!(code, 0, "Empty manifest should be rejected");
 }
 
 #[test]
@@ -124,9 +113,6 @@ fn negative_duplicate_fixture_ids_rejected() {
         );
         fs::write(tmp.path().join("dup.toml"), dup).unwrap();
         let (code, _) = run_conformance(&tmp.path().join("dup.toml"), false);
-        assert_ne!(
-            code, 0,
-            "Duplicate fixture IDs should be rejected"
-        );
+        assert_ne!(code, 0, "Duplicate fixture IDs should be rejected");
     }
 }

@@ -1085,4 +1085,72 @@ mod cli_detached_verification {
             code
         );
     }
+
+    #[test]
+    fn b5_16_duplicate_signature_records_exits_nonzero() {
+        let tmp = tempfile::tempdir().unwrap();
+        let image_path = tmp.path().join("test.png");
+        let key_dir = tmp.path().join("keys");
+
+        create_test_png(&image_path);
+
+        let (code, _, _) = run_cli(&["keygen", "--output-dir", key_dir.to_str().unwrap()]);
+        assert_eq!(code, 0);
+
+        let pub_hex = fs::read_to_string(key_dir.join("key_public.pem"))
+            .unwrap()
+            .lines()
+            .filter(|l| !l.starts_with("-----"))
+            .flat_map(|l| l.chars())
+            .filter(|c| c.is_ascii_hexdigit())
+            .collect::<String>();
+        let pub_bytes = hex::decode(&pub_hex).unwrap();
+        let pub_b64 = base64::engine::general_purpose::STANDARD.encode(&pub_bytes);
+
+        let sig_b64 = base64::engine::general_purpose::STANDARD.encode(&[0u8; 64]);
+
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "claim": {
+                "claim_id": "00000000000000000000000000000000",
+                "content_code": "",
+                "created_at": 0u64,
+                "file_size": 100u64,
+                "format": "png",
+                "instance_digest": format!("sha256:{}", "a".repeat(64)),
+                "width": 64,
+                "height": 64,
+            },
+            "public_keys": [
+                {"key_id": pub_hex, "key_bytes": pub_b64, "algorithm": "ed25519"},
+            ],
+            "signatures": [
+                {"algorithm": "ed25519", "key_id": pub_hex, "signature": sig_b64},
+                {"algorithm": "ed25519", "key_id": pub_hex, "signature": sig_b64},
+            ],
+        });
+
+        let manifest_path = tmp.path().join("dup_sig_manifest.json");
+        fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let (code, _, stderr) = run_cli(&[
+            "verify-manifest",
+            "--manifest",
+            manifest_path.to_str().unwrap(),
+            "--image",
+            image_path.to_str().unwrap(),
+            "--key",
+            key_dir.join("key_public.pem").to_str().unwrap(),
+        ]);
+        assert!(
+            code != 0,
+            "duplicate signature records should not exit 0, got {}. stderr: {}",
+            code,
+            stderr
+        );
+    }
 }
