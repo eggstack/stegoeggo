@@ -446,8 +446,7 @@ impl std::fmt::Display for LocalizedText {
 /// `RightsNotice` instance, ensuring semantically equivalent metadata
 /// regardless of output format.
 ///
-/// Created by [`ProtectionContext::normalize_rights_notice`] or
-/// [`MetadataTrapProtector::normalize_rights_notice`](crate::MetadataTrapProtector::normalize_rights_notice).
+/// Created by [`ProtectionContext::normalize_rights_notice`].
 #[derive(Debug, Clone, Default)]
 pub struct RightsNotice {
     copyright_holder: Option<String>,
@@ -769,7 +768,7 @@ impl LegalMetadata {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Config`] if any field exceeds [`Self::MAX_FIELD_LEN`] bytes.
+    /// Returns [`crate::Error::Config`] if any field exceeds [`Self::MAX_FIELD_LEN`] bytes.
     ///
     /// URL fields (`license_url`, `web_statement_of_rights`, `licensor_url`)
     /// are also validated for basic syntactic correctness (scheme + authority).
@@ -954,7 +953,7 @@ impl LegalMetadata {
 
     /// Returns the usage terms language tag, if set.
     ///
-    /// Defaults to `"x-default"` when using [`with_usage_terms_localized`].
+    /// Defaults to `"x-default"` when using [`LegalMetadata::with_usage_terms_localized`].
     #[must_use]
     pub fn usage_terms_lang(&self) -> Option<&str> {
         self.usage_terms_lang.as_deref()

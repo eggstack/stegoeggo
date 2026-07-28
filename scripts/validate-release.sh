@@ -71,6 +71,14 @@ run_hermetic() {
         echo "=== Fuzz sync check ==="
         run scripts/check_fuzz_sync.sh
     fi
+    if [ -f scripts/validate-docs-rs.sh ]; then
+        echo "=== Docs.rs-equivalent validation ==="
+        run scripts/validate-docs-rs.sh
+    fi
+    if [ -f scripts/validate-msrv-package.sh ]; then
+        echo "=== MSRV package validation ==="
+        run scripts/validate-msrv-package.sh
+    fi
 }
 
 run_feature() {

@@ -4,8 +4,8 @@ Plan baseline SHA: 158015dc84b9f0bae58ebf6af77179b57dbb2ed9
 Code candidate SHA: d1c7ca3fb7d0e28c2cff9bbd17f114ad92ed4678
 Evidence commit SHA: d1c7ca3fb7d0e28c2cff9bbd17f114ad92ed4678
 Release version: 0.3.0
-Disposition: CLOSED
-Release hold: released
+Disposition: PARTIAL
+Release hold: released (0.3.0 published, superseded by Plan 032 for release-pipeline closure)
 
 ## Implementation Progress
 

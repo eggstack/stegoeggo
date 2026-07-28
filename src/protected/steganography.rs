@@ -218,7 +218,7 @@ fn splitmix64(x: u64) -> u64 {
 /// # JPEG Behavior
 ///
 /// When called through [`apply_bytes`](crate::traits::Protector::apply_bytes) on JPEG
-/// input, the protector uses [`apply_dct_stego_bytes`](Self::apply_dct_stego_bytes),
+/// input, the protector uses `apply_dct_stego_bytes`,
 /// which stores the seed in quantization tables when those tables are preserved and
 /// applies F5 DCT coefficient embedding for baseline JPEGs.
 pub struct SteganographyProtector {
@@ -1266,7 +1266,7 @@ impl SteganographyProtector {
 
     /// Verify protection and return raw payload bytes for embedded reference checks.
     ///
-    /// Like [`verify_payload_from_bytes_with_key`], but also returns the raw
+    /// Like [`Self::verify_payload_from_bytes_with_key`], but also returns the raw
     /// payload bytes when verification fails. This allows callers to inspect
     /// the v3 header (e.g., auth_algo) to distinguish between missing and
     /// wrong HMAC keys.

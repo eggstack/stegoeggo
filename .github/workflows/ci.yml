@@ -29,6 +29,39 @@ jobs:
       - name: Check MSRV
         run: cargo check --all-features
 
+  docs-rs:
+    name: Docs.rs Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Validate docs.rs-equivalent build
+        run: scripts/validate-docs-rs.sh
+
+  msrv-package:
+    name: MSRV Package Consumer
+    runs-on: ubuntu-latest
+    needs: package
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (MSRV)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.87"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Validate packaged crate on MSRV
+        run: scripts/validate-msrv-package.sh
+
   package:
     name: Package Check
     runs-on: ubuntu-latest

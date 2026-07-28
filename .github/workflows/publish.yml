@@ -9,6 +9,10 @@ permissions:
   contents: write
   actions: read
 
+concurrency:
+  group: publish-${{ github.sha }}
+  cancel-in-progress: false
+
 jobs:
   verify-rc:
     name: Verify Release Candidate Exists
@@ -100,47 +104,22 @@ jobs:
         with:
           workspaces: ". -> target"
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Clippy (deny warnings)
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Run tests
-        run: cargo test --all-features --no-fail-fast
-
-      - name: Run doc tests
-        run: cargo test --doc
-
-      - name: Package (strict, no --allow-dirty)
-        run: cargo package --workspace
-
       - name: Install cargo-deny
         run: cargo install cargo-deny
 
-      - name: License and advisory check
-        run: |
-          cargo deny check licenses
-          cargo deny check advisories
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Install cargo-semver-checks
+        run: cargo install cargo-semver-checks
 
       - name: Install external tools
         run: |
           sudo apt-get update
           sudo apt-get install -y libimage-exiftool-perl libxml2-utils imagemagick libvips-tools
 
-      - name: External integration tests
-        run: cargo test --test external_tools -- --ignored
-
-      - name: Build conformance harness
-        run: cargo build --release --bin stegoeggo-conformance
-
-      - name: Run conformance checks
-        run: |
-          ./target/release/stegoeggo-conformance \
-            --fixtures tests/fixtures/conformance \
-            --manifest tests/fixtures/conformance/manifest.toml \
-            --strict \
-            --json conformance-report.json
+      - name: Run authoritative validation
+        run: scripts/validate-release.sh --phase all --expected-sha="$(git rev-parse HEAD)"
 
       - name: Upload conformance report
         if: always()

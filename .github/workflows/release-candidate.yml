@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-candidate-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-candidate-${{ inputs.sha }}
+  cancel-in-progress: false
 
 jobs:
   validate:

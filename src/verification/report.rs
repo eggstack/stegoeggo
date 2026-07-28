@@ -1101,7 +1101,7 @@ impl VerificationReport {
                 && self.authentication.hmac_status() == Some(VerificationStatus::Invalid))
     }
 
-    /// Create a new [`VerificationReportBuilder`].
+    /// Create a new [`VerificationReportBuilder`](crate::verification::VerificationReportBuilder).
     pub fn builder() -> crate::verification::VerificationReportBuilder {
         crate::verification::VerificationReportBuilder::new()
     }

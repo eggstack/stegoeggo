@@ -4,7 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.3.0] - Unreleased
+## [Unreleased]
+
+### Added
+- Docs.rs-equivalent validation script (`scripts/validate-docs-rs.sh`) reproducing nightly/DOCS_RS/cfg(docsrs) conditions
+- MSRV package validation script (`scripts/validate-msrv-package.sh`) for fresh-resolution consumer testing
+- `Docs.rs Build` CI job blocking on nightly rustdoc with all features
+- `MSRV Package Consumer` CI job verifying packaged crate compiles on declared MSRV with fresh resolution
+- Version consistency checks in RC and publish workflows via authoritative validation script
+
+### Changed
+- Tag validation workflow (`release.yml`) now invokes `validate-release.sh` instead of manual command list
+- Publish validation workflow (`publish.yml`) now invokes `validate-release.sh` instead of manual command list
+- Release-candidate workflow concurrency isolation from unrelated branch pushes
+- Publish workflow concurrency isolation from unrelated tag pushes
+
+### Fixed
+- 0.3.0 changelog entry corrected from "Unreleased" to actual publication date
+- README installation examples updated to current 0.3 release line
+- SECURITY.md updated to include 0.3.x as supported
+
+## [0.3.1] - 2026-07-28
+
+### Fixed
+- Crate-root `doc_cfg` attribute placement: moved `#![cfg_attr(docsrs, feature(doc_cfg))]` from module files to `src/lib.rs` crate root to resolve docs.rs build failure
+
+## [0.3.0] - 2026-07-28
 
 ### Fixed
 - V3-first extraction: all LSB/DCT/tiled extraction paths now try V3 CRC (288 bits) and V3 HMAC (384 bits) sizes first, falling back to V2/V1 for backward compatibility
@@ -152,7 +177,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Initial release.
 
-[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/eggstack/stegoeggo/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/eggstack/stegoeggo/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/eggstack/stegoeggo/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/eggstack/stegoeggo/compare/v0.1.0...v0.2.1

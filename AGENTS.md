@@ -29,12 +29,22 @@ cargo test --test external_tools -- --ignored  # External tool tests (requires e
 **Full release validation:**
 ```bash
 ./scripts/validate-release.sh                     # hermetic + external + feature phases
-./scripts/validate-release.sh --skip-external     # hermetic + feature only
+./scripts/validate-release.sh --skip-external     # hermetric + feature only
 ./scripts/validate-release.sh --phase hermetic     # just fmt, clippy, tests, package, deny
 ./scripts/validate-release.sh --phase feature      # feature combination matrix
 ```
 
-The script also runs `cargo semver-checks check-release` and `cargo audit` in the hermetic phase.
+The script also runs `cargo semver-checks check-release`, `cargo audit`, `scripts/validate-docs-rs.sh` (docs.rs-equivalent rustdoc), and `scripts/validate-msrv-package.sh` (fresh MSRV consumer resolution) in the hermetic phase.
+
+**Docs.rs-equivalent validation (nightly, DOCS_RS=1, cfg(docsrs)):**
+```bash
+scripts/validate-docs-rs.sh
+```
+
+**MSRV package validation (fresh resolution, no lockfile):**
+```bash
+scripts/validate-msrv-package.sh
+```
 
 **Conformance (requires external tools: exiftool, xmllint, imagemagick, libvips):**
 ```bash
@@ -60,7 +70,9 @@ GitHub Actions (`.github/workflows/ci.yml`) runs these jobs in parallel:
 8. External integration tests (installs exiftool/xmllint/imagemagick/libvips)
 9. External Conformance (builds + runs `stegoeggo-conformance --strict`)
 10. Feature combination matrix (no-default, async, signatures, detached-manifest, all-features)
-11. Benchmarks (manual dispatch only)
+11. Docs.rs Build (nightly rustdoc with DOCS_RS=1, cfg(docsrs), all features)
+12. MSRV Package Consumer (fresh-resolution compile on declared MSRV)
+13. Benchmarks (manual dispatch only)
 
 ## Code Conventions
 
@@ -156,6 +168,8 @@ These still work but will be removed in the next major version. See `DEPRECATION
 ## Validation Scripts
 
 - `scripts/validate-release.sh` — Phases: hermetic (fmt, clippy, tests, package, deny, audit, semver-checks, MSRV), feature (feature combination matrix), external (external integration + conformance). Supports `--phase` and `--expected-sha` for RC workflows
+- `scripts/validate-docs-rs.sh` — Docs.rs-equivalent rustdoc validation (nightly, DOCS_RS=1, cfg(docsrs), workspace + packaged crate)
+- `scripts/validate-msrv-package.sh` — Fresh MSRV consumer resolution (packages crate, creates clean consumers, tests all feature combos on declared MSRV)
 - `scripts/verify_metadata_conformance.sh` — Shell wrapper for conformance checks
 - `scripts/check_fuzz_sync.sh` — Verifies fuzz harness parity
 
