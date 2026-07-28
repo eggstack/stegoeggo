@@ -966,3 +966,219 @@ fn resource_usage_display_format() {
     assert!(s.contains("256"));
     assert!(s.contains("3"));
 }
+
+// ---------------------------------------------------------------------------
+// Plan 031 Phase 1: Three-stage v3 extraction adversarial tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v3_non_tiled_lsb_uses_prefix_header_exact_payload() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42).with_mac_key(b"test-key-1234567".to_vec());
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    let status = verify_image_bytes(&protected, b"test-key-1234567");
+    assert_eq!(status, VerificationStatus::Verified);
+}
+
+#[test]
+fn v3_tiled_lsb_uses_prefix_header_exact_payload() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_tile_size(64)
+        .with_mac_key(b"test-key-1234567".to_vec());
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    let status = verify_image_bytes(&protected, b"test-key-1234567");
+    assert_eq!(status, VerificationStatus::Verified);
+}
+
+#[test]
+fn v3_non_tiled_dct_uses_prefix_header_exact_payload() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_mac_key(b"test-key-1234567".to_vec());
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    let status = verify_image_bytes(&protected, b"test-key-1234567");
+    assert_eq!(status, VerificationStatus::Verified);
+}
+
+#[test]
+fn v3_tiled_dct_uses_prefix_header_exact_payload() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_tile_size(64)
+        .with_mac_key(b"test-key-1234567".to_vec());
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    let stego = stegoeggo::SteganographyProtector::new();
+    let status = stego.verify_payload_from_bytes_with_key(&protected, b"test-key-1234567");
+    assert_ne!(
+        status,
+        VerificationStatus::NotFound,
+        "Tiled JPEG payload should be found via DCT extraction"
+    );
+}
+
+#[test]
+fn v3_hmac_payload_requests_declared_length() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42).with_mac_key(b"hmac-key-for-test!!!".to_vec());
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    let stego = stegoeggo::SteganographyProtector::new();
+    let payload = stego
+        .extract_payload_from_bytes_with_key(&protected, b"hmac-key-for-test!!!")
+        .unwrap();
+    assert_eq!(payload.version(), 3);
+}
+
+#[test]
+fn v3_crc_payload_does_not_request_48_bytes() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42);
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    let stego = stegoeggo::SteganographyProtector::new();
+    let payload = stego
+        .extract_payload_from_bytes_with_key(&protected, &[])
+        .unwrap();
+    assert_eq!(payload.version(), 3);
+    assert!(payload.raw_payload().is_some());
+}
+
+#[test]
+fn v3_missing_hmac_key_is_not_legacy() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42).with_mac_key(b"real-key-12345678".to_vec());
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    let status = verify_image_bytes(&protected, &[]);
+    assert_eq!(status, VerificationStatus::Invalid);
+}
+
+#[test]
+fn v3_wrong_hmac_key_is_not_legacy() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42).with_mac_key(b"real-key-12345678".to_vec());
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    let status = verify_image_bytes(&protected, b"wrong-key-XXXXXXXX");
+    assert_eq!(status, VerificationStatus::Invalid);
+}
+
+#[test]
+fn v3_tiled_crc_round_trip() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 99).with_tile_size(64);
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    let stego = stegoeggo::SteganographyProtector::new();
+    let payload = stego
+        .extract_payload_from_bytes_with_key(&protected, &[])
+        .unwrap();
+    assert_eq!(payload.version(), 3);
+    assert_eq!(payload.seed(), 99);
+}
+
+#[test]
+fn v3_tiled_hmac_round_trip() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 77)
+        .with_tile_size(64)
+        .with_mac_key(b"tile-hmac-key-test!".to_vec());
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    let stego = stegoeggo::SteganographyProtector::new();
+    let payload = stego
+        .extract_payload_from_bytes_with_key(&protected, b"tile-hmac-key-test!")
+        .unwrap();
+    assert_eq!(payload.version(), 3);
+}
+
+#[test]
+fn v3_resource_limit_rejects_before_full_extract() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42);
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    let limits = ResourceLimits::builder().max_payload_bytes(10).build();
+    let stego = stegoeggo::SteganographyProtector::with_resource_limits(limits);
+    let result = stego.extract_payload_from_bytes_with_key(&protected, &[]);
+    assert!(result.is_none());
+}
+
+#[test]
+fn legacy_v1_still_extracts() {
+    let img = textured_image(64, 64);
+    let ctx = ProtectionContext::new(0.5, 42);
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Light,
+        &ctx,
+    )
+    .unwrap();
+    let status = verify_image_bytes(&protected, &[]);
+    assert_eq!(status, VerificationStatus::Verified);
+}
+
+#[test]
+fn legacy_v2_still_extracts() {
+    let img = textured_image(64, 64);
+    let ctx = ProtectionContext::new(0.5, 42);
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    let status = verify_image_bytes(&protected, &[]);
+    assert_eq!(status, VerificationStatus::Verified);
+}

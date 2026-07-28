@@ -87,13 +87,56 @@ pub(crate) enum CandidateOutcome {
     NotFound,
 }
 
-/// Number of LSB bits to extract for the v3 header probe. 384 bits = 48
-/// bytes covers the full v3 core header (32 bytes) plus the maximum auth
-/// tag length (16 bytes for HMAC-SHA256-truncated), which is enough to
-/// read `total_length` from bytes 4-5 and `auth_tag_len` from byte 30.
-const V3_PROBE_BITS: usize = 384;
+/// Number of bytes in the v3 prefix: magic (2) + version (1) + header_length (1) + total_length (2).
+const V3_PREFIX_BYTES: usize = 6;
 
-/// Result of probing extracted bytes for a v3 header.
+/// Result of classifying the first6 bytes of a potential v3 payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum V3PrefixResult {
+    /// Valid v3 prefix; `header_length` and `total_length` are the declared sizes.
+    Detected {
+        header_length: usize,
+        total_length: usize,
+    },
+    /// Bytes do not begin with v3 magic — legacy payload.
+    NotV3,
+    /// v3 magic found but version is unsupported.
+    UnsupportedVersion(u8),
+    /// v3 magic found but prefix fields are malformed.
+    Malformed(PayloadMalformedReason),
+    /// v3 payload exceeds resource limits.
+    ResourceLimitExceeded,
+}
+
+/// Reason a v3 prefix or header is malformed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) enum PayloadMalformedReason {
+    HeaderTooShort,
+    TotalLessThanHeader,
+    TotalExceedsWireMax,
+    TotalExceedsResourceLimit,
+    BitOverflow,
+    AuthTagLengthInvalid,
+    KeyIdTooLong,
+    HeaderTooShortForKeyId,
+    InvalidAuthAlgorithm,
+    HeaderLengthMismatch,
+}
+
+/// Validated v3 header fields extracted after the prefix stage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ValidatedV3Header {
+    pub header_length: usize,
+    pub total_length: usize,
+    pub auth_algorithm: AuthAlgorithm,
+    pub auth_tag_length: usize,
+    pub key_id_length: usize,
+    pub channels: ProtectionChannels,
+    pub flags: crate::payload_v3::types::PayloadFlags,
+}
+
+/// Result of probing extracted bytes for a v3 header (legacy name retained for call-site compatibility).
 #[derive(Debug)]
 #[allow(dead_code)]
 pub(crate) enum V3ProbeResult {
@@ -113,6 +156,17 @@ pub(crate) enum V3ProbeResult {
     ResourceLimitExceeded,
     /// Image too small to extract the probe bits.
     InsufficientCapacity,
+}
+
+#[cfg(test)]
+#[derive(Default, Debug)]
+#[allow(dead_code)]
+pub(crate) struct ExtractionTrace {
+    pub requested_bit_lengths: Vec<usize>,
+    pub prefix_extractions: usize,
+    pub header_extractions: usize,
+    pub full_extractions: usize,
+    pub legacy_decoder_entries: usize,
 }
 
 /// Minimum tile size that reliably fits an ECC payload in non-MAC mode.
@@ -519,58 +573,73 @@ impl SteganographyProtector {
                         }
                         let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
 
-                        // V3-first probe: extract probe bits, classify, then
-                        // extract exact total_length or fall back to legacy.
+                        // Three-stage v3 extraction: prefix → header → payload.
                         for redundancy in 1..=10 {
                             let stego = DctStegoF5::with_redundancy(redundancy);
-                            let probe_raw = stego.extract_f5_from_blocks(
+                            let prefix_bits = V3_PREFIX_BYTES * 8;
+                            let prefix_raw = stego.extract_f5_from_blocks(
                                 &coefficients,
-                                V3_PROBE_BITS,
+                                prefix_bits,
                                 local_seed,
                                 &tile_blocks,
                             );
-                            if probe_raw.len() < V3_PROBE_BITS {
+                            if prefix_raw.len() < prefix_bits {
                                 continue;
                             }
-                            let probe_bytes = Self::bits_to_bytes(&probe_raw);
+                            let prefix_bytes = Self::bits_to_bytes(&prefix_raw);
 
-                            match Self::classify_v3_probe(&probe_bytes, Some(&self.limits)) {
-                                V3ProbeResult::V3Detected { total_bits, .. } => {
-                                    if total_bits <= V3_PROBE_BITS {
-                                        let full_bytes =
-                                            Self::bits_to_bytes(&probe_raw[..total_bits]);
-                                        if Self::verify_payload_integrity(&full_bytes, mac_key) {
-                                            return Some(Self::truncate_to_actual_payload(
-                                                &full_bytes,
-                                            ));
-                                        }
+                            match Self::classify_v3_prefix(&prefix_bytes, Some(&self.limits)) {
+                                V3PrefixResult::Detected {
+                                    header_length,
+                                    total_length,
+                                } => {
+                                    let header_bits = header_length * 8;
+                                    let header_raw = if header_bits <= prefix_bits {
+                                        prefix_raw[..header_bits].to_vec()
                                     } else {
-                                        let full = stego.extract_f5_from_blocks(
+                                        let h = stego.extract_f5_from_blocks(
+                                            &coefficients,
+                                            header_bits,
+                                            local_seed,
+                                            &tile_blocks,
+                                        );
+                                        if h.len() < header_bits {
+                                            continue;
+                                        }
+                                        h
+                                    };
+                                    let header_bytes = Self::bits_to_bytes(&header_raw);
+                                    if Self::validate_v3_header(&header_bytes, Some(&self.limits))
+                                        .is_err()
+                                    {
+                                        continue;
+                                    }
+                                    let total_bits = total_length * 8;
+                                    let full_raw = if total_bits <= prefix_bits {
+                                        prefix_raw[..total_bits].to_vec()
+                                    } else {
+                                        let f = stego.extract_f5_from_blocks(
                                             &coefficients,
                                             total_bits,
                                             local_seed,
                                             &tile_blocks,
                                         );
-                                        if full.len() >= total_bits {
-                                            let full_bytes = Self::bits_to_bytes(&full);
-                                            if Self::verify_payload_integrity(&full_bytes, mac_key)
-                                            {
-                                                return Some(Self::truncate_to_actual_payload(
-                                                    &full_bytes,
-                                                ));
-                                            }
+                                        if f.len() < total_bits {
+                                            continue;
                                         }
+                                        f
+                                    };
+                                    let full_bytes = Self::bits_to_bytes(&full_raw);
+                                    if Self::verify_payload_integrity(&full_bytes, mac_key) {
+                                        return Some(Self::truncate_to_actual_payload(&full_bytes));
                                     }
                                 }
-                                V3ProbeResult::MalformedV3
-                                | V3ProbeResult::UnsupportedVersion(_)
-                                | V3ProbeResult::ResourceLimitExceeded => {
+                                V3PrefixResult::Malformed(_)
+                                | V3PrefixResult::UnsupportedVersion(_)
+                                | V3PrefixResult::ResourceLimitExceeded => {
                                     return None;
                                 }
-                                V3ProbeResult::InsufficientCapacity => {
-                                    continue;
-                                }
-                                V3ProbeResult::NotV3 => {
+                                V3PrefixResult::NotV3 => {
                                     for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
                                         let extracted = stego.extract_f5_from_blocks(
                                             &coefficients,
@@ -662,73 +731,90 @@ impl SteganographyProtector {
                         }
                         let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
 
-                        // V3-first probe: classify before trying legacy sizes.
+                        // Three-stage v3 extraction: prefix → header → payload.
                         for redundancy in 1..=10 {
                             let stego = DctStegoF5::with_redundancy(redundancy);
-                            let probe_raw = stego.extract_f5_from_blocks(
+                            let prefix_bits = V3_PREFIX_BYTES * 8;
+                            let prefix_raw = stego.extract_f5_from_blocks(
                                 &coefficients,
-                                V3_PROBE_BITS,
+                                prefix_bits,
                                 local_seed,
                                 &tile_blocks,
                             );
-                            if probe_raw.len() < V3_PROBE_BITS {
+                            if prefix_raw.len() < prefix_bits {
                                 continue;
                             }
-                            let probe_bytes = Self::bits_to_bytes(&probe_raw);
+                            let prefix_bytes = Self::bits_to_bytes(&prefix_raw);
 
-                            match Self::classify_v3_probe(&probe_bytes, Some(&self.limits)) {
-                                V3ProbeResult::V3Detected { total_bits, .. } => {
-                                    if total_bits <= V3_PROBE_BITS {
-                                        let full_bytes =
-                                            Self::bits_to_bytes(&probe_raw[..total_bits]);
-                                        if Self::verify_payload_integrity(&full_bytes, mac_key) {
-                                            return CandidateOutcome::Valid(
-                                                Self::truncate_to_actual_payload(&full_bytes),
-                                            );
-                                        }
-                                        if last_outcome.is_none() {
-                                            last_outcome = Some(Self::classify_auth_failure(
-                                                &full_bytes,
-                                                mac_key,
-                                            ));
-                                        }
+                            match Self::classify_v3_prefix(&prefix_bytes, Some(&self.limits)) {
+                                V3PrefixResult::Detected {
+                                    header_length,
+                                    total_length,
+                                } => {
+                                    let header_bits = header_length * 8;
+                                    let header_raw = if header_bits <= prefix_bits {
+                                        prefix_raw[..header_bits].to_vec()
                                     } else {
-                                        let full = stego.extract_f5_from_blocks(
+                                        let h = stego.extract_f5_from_blocks(
+                                            &coefficients,
+                                            header_bits,
+                                            local_seed,
+                                            &tile_blocks,
+                                        );
+                                        if h.len() < header_bits {
+                                            continue;
+                                        }
+                                        h
+                                    };
+                                    let header_bytes = Self::bits_to_bytes(&header_raw);
+                                    if Self::validate_v3_header(&header_bytes, Some(&self.limits))
+                                        .is_err()
+                                    {
+                                        continue;
+                                    }
+                                    let total_bits = total_length * 8;
+                                    let full_raw = if total_bits <= prefix_bits {
+                                        prefix_raw[..total_bits].to_vec()
+                                    } else {
+                                        let f = stego.extract_f5_from_blocks(
                                             &coefficients,
                                             total_bits,
                                             local_seed,
                                             &tile_blocks,
                                         );
-                                        if full.len() >= total_bits {
-                                            let full_bytes = Self::bits_to_bytes(&full);
-                                            if Self::verify_payload_integrity(&full_bytes, mac_key)
-                                            {
-                                                return CandidateOutcome::Valid(
-                                                    Self::truncate_to_actual_payload(&full_bytes),
-                                                );
-                                            }
-                                            if last_outcome.is_none() {
-                                                last_outcome = Some(Self::classify_auth_failure(
-                                                    &full_bytes,
-                                                    mac_key,
-                                                ));
-                                            }
+                                        if f.len() < total_bits {
+                                            continue;
                                         }
+                                        f
+                                    };
+                                    let full_bytes = Self::bits_to_bytes(&full_raw);
+                                    if Self::verify_payload_integrity(&full_bytes, mac_key) {
+                                        return CandidateOutcome::Valid(
+                                            Self::truncate_to_actual_payload(&full_bytes),
+                                        );
+                                    }
+                                    if last_outcome.is_none() {
+                                        last_outcome =
+                                            Some(Self::classify_auth_failure(&full_bytes, mac_key));
                                     }
                                 }
-                                V3ProbeResult::MalformedV3 => {
-                                    return CandidateOutcome::MalformedV3;
+                                V3PrefixResult::Malformed(_) => {
+                                    if last_outcome.is_none() {
+                                        last_outcome = Some(CandidateOutcome::MalformedV3);
+                                    }
                                 }
-                                V3ProbeResult::UnsupportedVersion(v) => {
-                                    return CandidateOutcome::UnsupportedVersion(v);
+                                V3PrefixResult::UnsupportedVersion(v) => {
+                                    if last_outcome.is_none() {
+                                        last_outcome =
+                                            Some(CandidateOutcome::UnsupportedVersion(v));
+                                    }
                                 }
-                                V3ProbeResult::ResourceLimitExceeded => {
-                                    return CandidateOutcome::MalformedV3;
+                                V3PrefixResult::ResourceLimitExceeded => {
+                                    if last_outcome.is_none() {
+                                        last_outcome = Some(CandidateOutcome::MalformedV3);
+                                    }
                                 }
-                                V3ProbeResult::InsufficientCapacity => {
-                                    continue;
-                                }
-                                V3ProbeResult::NotV3 => {
+                                V3PrefixResult::NotV3 => {
                                     for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
                                         let extracted = stego.extract_f5_from_blocks(
                                             &coefficients,
@@ -2686,6 +2772,151 @@ impl SteganographyProtector {
         Some(Self::bits_to_bytes(&bits))
     }
 
+    /// Classify the first6 bytes of a potential v3 payload.
+    ///
+    /// Reads only magic (2), version (1), header_length (1), total_length (2).
+    /// Returns `Detected` with declared sizes when the prefix is valid.
+    /// Does NOT validate the full header — call `validate_v3_header` next.
+    pub(crate) fn classify_v3_prefix(
+        prefix: &[u8],
+        limits: Option<&crate::resource_limits::ResourceLimits>,
+    ) -> V3PrefixResult {
+        if prefix.len() < V3_PREFIX_BYTES {
+            return V3PrefixResult::NotV3;
+        }
+        if prefix[0] != V3_MAGIC[0] || prefix[1] != V3_MAGIC[1] {
+            return V3PrefixResult::NotV3;
+        }
+        if prefix[2] != V3_PAYLOAD_VERSION {
+            if prefix[2] > V3_PAYLOAD_VERSION {
+                return V3PrefixResult::UnsupportedVersion(prefix[2]);
+            }
+            return V3PrefixResult::NotV3;
+        }
+        let header_length = prefix[3] as usize;
+        let total_length = u16::from_le_bytes([prefix[4], prefix[5]]) as usize;
+        if header_length < crate::payload_v3::types::V3_CORE_SIZE {
+            return V3PrefixResult::Malformed(PayloadMalformedReason::HeaderTooShort);
+        }
+        if total_length < header_length {
+            return V3PrefixResult::Malformed(PayloadMalformedReason::TotalLessThanHeader);
+        }
+        if total_length > crate::payload_v3::types::V3_MAX_EMBEDDED_SIZE {
+            return V3PrefixResult::Malformed(PayloadMalformedReason::TotalExceedsWireMax);
+        }
+        if let Some(limits) = limits {
+            if total_length > limits.max_payload_bytes() {
+                return V3PrefixResult::ResourceLimitExceeded;
+            }
+        }
+        V3PrefixResult::Detected {
+            header_length,
+            total_length,
+        }
+    }
+
+    /// Validate a full v3 header (beyond the6-byte prefix).
+    ///
+    /// `header_bytes` must be exactly `header_length` bytes long (the full
+    /// declared header, including the prefix). Returns a [`ValidatedV3Header`]
+    /// on success, or a [`V3PrefixResult`] error on any validation failure.
+    pub(crate) fn validate_v3_header(
+        header_bytes: &[u8],
+        limits: Option<&crate::resource_limits::ResourceLimits>,
+    ) -> std::result::Result<ValidatedV3Header, V3PrefixResult> {
+        if header_bytes.len() < V3_PREFIX_BYTES {
+            return Err(V3PrefixResult::NotV3);
+        }
+        let header_length = header_bytes[3] as usize;
+        let total_length = u16::from_le_bytes([header_bytes[4], header_bytes[5]]) as usize;
+        if header_bytes.len() < header_length {
+            return Err(V3PrefixResult::Malformed(
+                PayloadMalformedReason::HeaderLengthMismatch,
+            ));
+        }
+        if let Some(limits) = limits {
+            if total_length > limits.max_payload_bytes() {
+                return Err(V3PrefixResult::ResourceLimitExceeded);
+            }
+        }
+        let total_bits = total_length
+            .checked_mul(8)
+            .ok_or(V3PrefixResult::Malformed(
+                PayloadMalformedReason::BitOverflow,
+            ))?;
+        let _ = total_bits;
+
+        let auth_tag_length = if header_bytes.len() > 30 {
+            let tag_len = header_bytes[30] as usize;
+            if total_length < crate::payload_v3::types::V3_CORE_SIZE + tag_len {
+                return Err(V3PrefixResult::Malformed(
+                    PayloadMalformedReason::AuthTagLengthInvalid,
+                ));
+            }
+            tag_len
+        } else {
+            0
+        };
+
+        let key_id_length = if header_bytes.len() > 31 {
+            let kid_len = header_bytes[31] as usize;
+            if kid_len > crate::payload_v3::types::V3_MAX_KEY_ID_LEN {
+                return Err(V3PrefixResult::Malformed(
+                    PayloadMalformedReason::KeyIdTooLong,
+                ));
+            }
+            if header_length < crate::payload_v3::types::V3_CORE_SIZE + kid_len {
+                return Err(V3PrefixResult::Malformed(
+                    PayloadMalformedReason::HeaderTooShortForKeyId,
+                ));
+            }
+            kid_len
+        } else {
+            0
+        };
+
+        let auth_algorithm = if header_bytes.len() > 29 {
+            let algo = header_bytes[29];
+            AuthAlgorithm::from_byte(algo).ok_or(V3PrefixResult::Malformed(
+                PayloadMalformedReason::InvalidAuthAlgorithm,
+            ))?
+        } else {
+            AuthAlgorithm::Crc32
+        };
+
+        let channels = if header_bytes.len() >= 10 {
+            let channel_bits = u16::from_le_bytes([header_bytes[8], header_bytes[9]]);
+            ProtectionChannels::from_bits(channel_bits).unwrap_or(ProtectionChannels {
+                rights_metadata: true,
+                hidden_marker: true,
+                authentication: true,
+            })
+        } else {
+            ProtectionChannels {
+                rights_metadata: true,
+                hidden_marker: true,
+                authentication: true,
+            }
+        };
+
+        let flags = if header_bytes.len() >= 8 {
+            let flag_bits = u16::from_le_bytes([header_bytes[6], header_bytes[7]]);
+            crate::payload_v3::types::PayloadFlags::from_bits(flag_bits)
+        } else {
+            crate::payload_v3::types::PayloadFlags::from_bits(0)
+        };
+
+        Ok(ValidatedV3Header {
+            header_length,
+            total_length,
+            auth_algorithm,
+            auth_tag_length,
+            key_id_length,
+            channels,
+            flags,
+        })
+    }
+
     /// Classify a set of extracted bytes as v3 header, legacy, or malformed.
     ///
     /// The bytes must be at least 6 bytes (to read `total_length` from
@@ -2907,41 +3138,56 @@ impl SteganographyProtector {
                     }
                     let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
 
-                    // V3-first probe: extract probe bits, classify, then
-                    // extract exact total_length or fall back to legacy.
+                    // Three-stage v3 extraction: prefix → header → payload.
                     for pass in 0..5 {
                         let offset_seed =
                             local_seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
-                        if let Some(probe_bytes) =
-                            self.extract_lsb(&sub, V3_PROBE_BITS, offset_seed)
+                        let prefix_bits = V3_PREFIX_BYTES * 8;
+                        if let Some(prefix_bytes) = self.extract_lsb(&sub, prefix_bits, offset_seed)
                         {
-                            match Self::classify_v3_probe(&probe_bytes, Some(&self.limits)) {
-                                V3ProbeResult::V3Detected { total_bits, .. } => {
-                                    if total_bits <= V3_PROBE_BITS {
-                                        let full = &probe_bytes[..total_bits / 8];
-                                        if Self::verify_payload_integrity(full, mac_key) {
-                                            return Some(Self::truncate_to_actual_payload(full));
-                                        }
-                                    } else if let Some(full) =
+                            match Self::classify_v3_prefix(&prefix_bytes, Some(&self.limits)) {
+                                V3PrefixResult::Detected {
+                                    header_length,
+                                    total_length,
+                                } => {
+                                    let header_bits = header_length * 8;
+                                    let header_bytes = if header_bits <= prefix_bits {
+                                        prefix_bytes[..header_length].to_vec()
+                                    } else if let Some(h) =
+                                        self.extract_lsb(&sub, header_bits, offset_seed)
+                                    {
+                                        h
+                                    } else {
+                                        continue;
+                                    };
+                                    if Self::validate_v3_header(&header_bytes, Some(&self.limits))
+                                        .is_err()
+                                    {
+                                        continue;
+                                    }
+                                    let total_bits = total_length * 8;
+                                    let full = if total_bits <= prefix_bits {
+                                        prefix_bytes[..total_length].to_vec()
+                                    } else if let Some(f) =
                                         self.extract_lsb(&sub, total_bits, offset_seed)
                                     {
-                                        if Self::verify_payload_integrity(&full, mac_key) {
-                                            return Some(Self::truncate_to_actual_payload(&full));
-                                        }
+                                        f
+                                    } else {
+                                        continue;
+                                    };
+                                    if Self::verify_payload_integrity(&full, mac_key) {
+                                        return Some(Self::truncate_to_actual_payload(&full));
                                     }
                                 }
-                                V3ProbeResult::MalformedV3
-                                | V3ProbeResult::UnsupportedVersion(_)
-                                | V3ProbeResult::ResourceLimitExceeded => {
+                                V3PrefixResult::Malformed(_)
+                                | V3PrefixResult::UnsupportedVersion(_)
+                                | V3PrefixResult::ResourceLimitExceeded => {
                                     return None;
                                 }
-                                V3ProbeResult::InsufficientCapacity => {
-                                    continue;
-                                }
-                                V3ProbeResult::NotV3 => {
+                                V3PrefixResult::NotV3 => {
                                     for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                                        let payload = if ecc_bits <= V3_PROBE_BITS {
-                                            probe_bytes.clone()
+                                        let payload = if ecc_bits <= prefix_bits {
+                                            prefix_bytes.clone()
                                         } else {
                                             match self.extract_lsb(&sub, ecc_bits, offset_seed) {
                                                 Some(p) => p,
@@ -3014,56 +3260,73 @@ impl SteganographyProtector {
                     }
                     let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
 
-                    // V3-first probe: classify before trying legacy sizes.
+                    // Three-stage v3 extraction: prefix → header → payload.
                     for pass in 0..5 {
                         let offset_seed =
                             local_seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
-                        if let Some(probe_bytes) =
-                            self.extract_lsb(&sub, V3_PROBE_BITS, offset_seed)
+                        let prefix_bits = V3_PREFIX_BYTES * 8;
+                        if let Some(prefix_bytes) = self.extract_lsb(&sub, prefix_bits, offset_seed)
                         {
-                            match Self::classify_v3_probe(&probe_bytes, Some(&self.limits)) {
-                                V3ProbeResult::V3Detected { total_bits, .. } => {
-                                    if total_bits <= V3_PROBE_BITS {
-                                        let full = &probe_bytes[..total_bits / 8];
-                                        if Self::verify_payload_integrity(full, mac_key) {
-                                            return CandidateOutcome::Valid(
-                                                Self::truncate_to_actual_payload(full),
-                                            );
-                                        }
-                                        if last_outcome.is_none() {
-                                            last_outcome =
-                                                Some(Self::classify_auth_failure(full, mac_key));
-                                        }
-                                    } else if let Some(full) =
+                            match Self::classify_v3_prefix(&prefix_bytes, Some(&self.limits)) {
+                                V3PrefixResult::Detected {
+                                    header_length,
+                                    total_length,
+                                } => {
+                                    let header_bits = header_length * 8;
+                                    let header_bytes = if header_bits <= prefix_bits {
+                                        prefix_bytes[..header_length].to_vec()
+                                    } else if let Some(h) =
+                                        self.extract_lsb(&sub, header_bits, offset_seed)
+                                    {
+                                        h
+                                    } else {
+                                        continue;
+                                    };
+                                    if Self::validate_v3_header(&header_bytes, Some(&self.limits))
+                                        .is_err()
+                                    {
+                                        continue;
+                                    }
+                                    let total_bits = total_length * 8;
+                                    let full = if total_bits <= prefix_bits {
+                                        prefix_bytes[..total_length].to_vec()
+                                    } else if let Some(f) =
                                         self.extract_lsb(&sub, total_bits, offset_seed)
                                     {
-                                        if Self::verify_payload_integrity(&full, mac_key) {
-                                            return CandidateOutcome::Valid(
-                                                Self::truncate_to_actual_payload(&full),
-                                            );
-                                        }
-                                        if last_outcome.is_none() {
-                                            last_outcome =
-                                                Some(Self::classify_auth_failure(&full, mac_key));
-                                        }
+                                        f
+                                    } else {
+                                        continue;
+                                    };
+                                    if Self::verify_payload_integrity(&full, mac_key) {
+                                        return CandidateOutcome::Valid(
+                                            Self::truncate_to_actual_payload(&full),
+                                        );
+                                    }
+                                    if last_outcome.is_none() {
+                                        last_outcome =
+                                            Some(Self::classify_auth_failure(&full, mac_key));
                                     }
                                 }
-                                V3ProbeResult::MalformedV3 => {
-                                    return CandidateOutcome::MalformedV3;
+                                V3PrefixResult::Malformed(_) => {
+                                    if last_outcome.is_none() {
+                                        last_outcome = Some(CandidateOutcome::MalformedV3);
+                                    }
                                 }
-                                V3ProbeResult::UnsupportedVersion(v) => {
-                                    return CandidateOutcome::UnsupportedVersion(v);
+                                V3PrefixResult::UnsupportedVersion(v) => {
+                                    if last_outcome.is_none() {
+                                        last_outcome =
+                                            Some(CandidateOutcome::UnsupportedVersion(v));
+                                    }
                                 }
-                                V3ProbeResult::ResourceLimitExceeded => {
-                                    return CandidateOutcome::MalformedV3;
+                                V3PrefixResult::ResourceLimitExceeded => {
+                                    if last_outcome.is_none() {
+                                        last_outcome = Some(CandidateOutcome::MalformedV3);
+                                    }
                                 }
-                                V3ProbeResult::InsufficientCapacity => {
-                                    continue;
-                                }
-                                V3ProbeResult::NotV3 => {
+                                V3PrefixResult::NotV3 => {
                                     for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                                        let payload = if ecc_bits <= V3_PROBE_BITS {
-                                            probe_bytes.clone()
+                                        let payload = if ecc_bits <= prefix_bits {
+                                            prefix_bytes.clone()
                                         } else {
                                             match self.extract_lsb(&sub, ecc_bits, offset_seed) {
                                                 Some(p) => p,
