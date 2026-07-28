@@ -1107,7 +1107,7 @@ mod cli_detached_verification {
         let pub_bytes = hex::decode(&pub_hex).unwrap();
         let pub_b64 = base64::engine::general_purpose::STANDARD.encode(&pub_bytes);
 
-        let sig_b64 = base64::engine::general_purpose::STANDARD.encode(&[0u8; 64]);
+        let sig_b64 = base64::engine::general_purpose::STANDARD.encode([0u8; 64]);
 
         let manifest = serde_json::json!({
             "schema_version": 1,
