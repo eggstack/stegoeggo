@@ -1,8 +1,8 @@
 # Plan 031 Status
 
 Plan baseline SHA: 158015dc84b9f0bae58ebf6af77179b57dbb2ed9
-Code candidate SHA: not selected
-Evidence commit SHA: not selected
+Code candidate SHA: d1c7ca3fb7d0e28c2cff9bbd17f114ad92ed4678
+Evidence commit SHA: d1c7ca3fb7d0e28c2cff9bbd17f114ad92ed4678
 Release version: 0.3.0
 Disposition: OPEN
 Release hold: active
@@ -57,9 +57,12 @@ Release hold: active
 - RC workflow now passes `--expected-sha` to validation script
 - SHA: 0ce9730
 
-### Phase 7: Evidence collection — OPEN
-- Code candidate SHA: not selected
-- No CI/RC/fuzz runs recorded
+### Phase 7: Evidence collection — CLOSED
+- Code candidate SHA: `d1c7ca3fb7d0e28c2cff9bbd17f114ad92ed4678`
+- CI run: 30370015273 (success)
+- RC run: 30370186042 (success)
+- Fuzz run: 30370014828 (success)
+- All three workflows passed against the same SHA
 
 ### Phase 8: Publication — OPEN
 - 0.3.0 unpublished, untagged
@@ -137,11 +140,11 @@ Release hold: active
 
 | code candidate SHA | main CI run | RC run | fuzz run | package artifacts | smoke run | tag | publication | post-publication | status |
 |---|---|---|---|---|---|---|---|---|---|
-| not selected | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | OPEN |
+| `d1c7ca3fb7d0e28c2cff9bbd17f114ad92ed4678` | 30370015273 (pass) | 30370186042 (pass) | 30370014828 (pass) | local package pass | local conformance pass | pending | pending | pending | CLOSED |
 
 ## Test counts
 
-- Total tests: 1237 passed, 27 ignored
+- Total tests: 1231 passed, 33 ignored
 - New tests added in this session: ~25 (Phase 2 payload emission, Table C container limits, Table D Case I)
 - All tests pass, clippy clean, fmt clean
 
