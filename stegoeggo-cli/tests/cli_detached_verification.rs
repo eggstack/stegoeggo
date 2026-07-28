@@ -905,4 +905,184 @@ mod cli_detached_verification {
             stdout
         );
     }
+
+    // Case G: Malformed caller key → exit non-zero (CLI returns 1 for parse errors)
+    #[test]
+    fn b5_13_malformed_caller_key_exits_nonzero() {
+        let tmp = tempfile::tempdir().unwrap();
+        let image_path = tmp.path().join("test.png");
+        let manifest_path = tmp.path().join("manifest.json");
+        let signed_manifest_path = tmp.path().join("manifest_signed.json");
+        let key_dir = tmp.path().join("keys");
+
+        create_test_png(&image_path);
+
+        let (code, _, _) = run_cli(&["keygen", "--output-dir", key_dir.to_str().unwrap()]);
+        assert_eq!(code, 0);
+
+        create_manifest_json(&image_path, &manifest_path, None);
+
+        let (code, _, _) = run_cli(&[
+            "sign",
+            "--manifest",
+            manifest_path.to_str().unwrap(),
+            "--key",
+            key_dir.join("key_private.pem").to_str().unwrap(),
+            "--output",
+            signed_manifest_path.to_str().unwrap(),
+        ]);
+        assert_eq!(code, 0);
+
+        let bad_key_path = tmp.path().join("bad_key.pem");
+        fs::write(&bad_key_path, "not-a-valid-key").unwrap();
+
+        let (code, _, _) = run_cli(&[
+            "verify-manifest",
+            "--manifest",
+            signed_manifest_path.to_str().unwrap(),
+            "--image",
+            image_path.to_str().unwrap(),
+            "--key",
+            bad_key_path.to_str().unwrap(),
+        ]);
+        assert!(
+            code != 0,
+            "malformed caller key should not exit 0, got {}",
+            code
+        );
+    }
+
+    // Case H: Duplicate manifest key IDs → exit non-zero
+    #[test]
+    fn b5_14_duplicate_key_ids_exits_nonzero() {
+        let tmp = tempfile::tempdir().unwrap();
+        let image_path = tmp.path().join("test.png");
+        let key_dir = tmp.path().join("keys");
+
+        create_test_png(&image_path);
+
+        let (code, _, _) = run_cli(&["keygen", "--output-dir", key_dir.to_str().unwrap()]);
+        assert_eq!(code, 0);
+
+        let pub_hex = fs::read_to_string(key_dir.join("key_public.pem"))
+            .unwrap()
+            .lines()
+            .filter(|l| !l.starts_with("-----"))
+            .flat_map(|l| l.chars())
+            .filter(|c| c.is_ascii_hexdigit())
+            .collect::<String>();
+        let pub_bytes = hex::decode(&pub_hex).unwrap();
+        let pub_b64 = base64::engine::general_purpose::STANDARD.encode(&pub_bytes);
+
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "claim": {
+                "claim_id": "00000000000000000000000000000000",
+                "content_code": "",
+                "created_at": 0u64,
+                "file_size": 100u64,
+                "format": "png",
+                "instance_digest": format!("sha256:{}", "a".repeat(64)),
+                "width": 64,
+                "height": 64,
+            },
+            "public_keys": [
+                {"key_id": pub_hex, "key_bytes": pub_b64, "algorithm": "ed25519"},
+                {"key_id": pub_hex, "key_bytes": pub_b64, "algorithm": "ed25519"},
+            ],
+            "signatures": [],
+        });
+
+        let manifest_path = tmp.path().join("dup_key_manifest.json");
+        fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let (code, _, _) = run_cli(&[
+            "verify-manifest",
+            "--manifest",
+            manifest_path.to_str().unwrap(),
+            "--image",
+            image_path.to_str().unwrap(),
+        ]);
+        assert!(
+            code != 0,
+            "duplicate key IDs should not exit 0, got {}",
+            code
+        );
+    }
+
+    // Case C: Attacker self-consistent substitution → exit non-zero
+    #[test]
+    fn b5_15_attacker_self_consistent_substitution_exits_nonzero() {
+        let tmp = tempfile::tempdir().unwrap();
+        let image_path = tmp.path().join("test.png");
+        let manifest_path = tmp.path().join("manifest.json");
+        let signed_manifest_path = tmp.path().join("manifest_signed.json");
+        let tampered_path = tmp.path().join("manifest_tampered.json");
+        let key_dir1 = tmp.path().join("keys1");
+        let key_dir2 = tmp.path().join("keys2");
+
+        create_test_png(&image_path);
+
+        let (code, _, _) = run_cli(&["keygen", "--output-dir", key_dir1.to_str().unwrap()]);
+        assert_eq!(code, 0);
+        let (code, _, _) = run_cli(&["keygen", "--output-dir", key_dir2.to_str().unwrap()]);
+        assert_eq!(code, 0);
+
+        create_manifest_json(&image_path, &manifest_path, None);
+
+        let (code, _, _) = run_cli(&[
+            "sign",
+            "--manifest",
+            manifest_path.to_str().unwrap(),
+            "--key",
+            key_dir1.join("key_private.pem").to_str().unwrap(),
+            "--output",
+            signed_manifest_path.to_str().unwrap(),
+        ]);
+        assert_eq!(code, 0);
+
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&signed_manifest_path).unwrap()).unwrap();
+
+        let key2_pub_hex = fs::read_to_string(key_dir2.join("key_public.pem"))
+            .unwrap()
+            .lines()
+            .filter(|l| !l.starts_with("-----"))
+            .flat_map(|l| l.chars())
+            .filter(|c| c.is_ascii_hexdigit())
+            .collect::<String>();
+        let key2_pub_bytes = hex::decode(&key2_pub_hex).unwrap();
+        let key2_pub_b64 = base64::engine::general_purpose::STANDARD.encode(&key2_pub_bytes);
+
+        if let Some(keys) = manifest["public_keys"].as_array_mut() {
+            if let Some(pk) = keys.first_mut() {
+                pk["key_bytes"] = serde_json::Value::String(key2_pub_b64);
+            }
+        }
+
+        fs::write(
+            &tampered_path,
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let (code, _, _) = run_cli(&[
+            "verify-manifest",
+            "--manifest",
+            tampered_path.to_str().unwrap(),
+            "--image",
+            image_path.to_str().unwrap(),
+            "--key",
+            key_dir1.join("key_public.pem").to_str().unwrap(),
+        ]);
+        assert!(
+            code != 0,
+            "attacker substitution should not exit 0, got {}",
+            code
+        );
+    }
 }
