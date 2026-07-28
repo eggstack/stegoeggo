@@ -144,6 +144,7 @@ fn make_webp_with_xmp(xmp: &str) -> Vec<u8> {
 }
 
 #[test]
+#[ignore = "regenerates conformance fixtures — run with --ignored only"]
 fn generate_canonical_fixtures() {
     let base = fixtures_dir().join("canonical");
     ensure_dir(&base);
@@ -306,6 +307,7 @@ fn generate_canonical_fixtures() {
 }
 
 #[test]
+#[ignore = "regenerates conformance fixtures — run with --ignored only"]
 fn generate_canonical_independent_fixtures() {
     let base = fixtures_dir().join("canonical");
     ensure_dir(&base);
@@ -333,6 +335,7 @@ fn generate_canonical_independent_fixtures() {
 }
 
 #[test]
+#[ignore = "regenerates conformance fixtures — run with --ignored only"]
 fn generate_legacy_fixtures() {
     let base = fixtures_dir().join("legacy");
     ensure_dir(&base);
@@ -370,6 +373,7 @@ fn generate_legacy_fixtures() {
 }
 
 #[test]
+#[ignore = "regenerates conformance fixtures — run with --ignored only"]
 fn generate_malformed_fixtures() {
     let base = fixtures_dir().join("malformed");
     ensure_dir(&base);
@@ -465,6 +469,7 @@ fn generate_malformed_fixtures() {
 }
 
 #[test]
+#[ignore = "regenerates conformance fixtures — run with --ignored only"]
 fn generate_conflicting_fixtures() {
     let base = fixtures_dir().join("conflicting");
     ensure_dir(&base);
@@ -535,6 +540,7 @@ fn generate_conflicting_fixtures() {
 }
 
 #[test]
+#[ignore = "regenerates conformance fixtures — run with --ignored only"]
 fn generate_preservation_fixtures() {
     let base = fixtures_dir().join("preservation");
     ensure_dir(&base);

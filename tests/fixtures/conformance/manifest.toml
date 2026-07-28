@@ -33,7 +33,7 @@ authoring_tool_version = "0.2.2"
 generation_command = "cargo test generate_canonical_fixtures -- --ignored"
 source = "generated"
 license = "MIT"
-sha256 = "803514ed31abadd0dcbd4ae945eaddaa7d65d3426987a2894f1e708fa86d5ea5"
+sha256 = "92265125c2ac770273a858ff624359b850300873db84315104225197897b3757"
 expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Conformance Test Holder", creator = "Conformance Creator", copyright_owner = "Conformance Owner", usage_terms = "All rights reserved for conformance testing", web_statement_of_rights = "https://conformance.test/rights", ai_constraints = "No AI training permitted", credit_line = "Photo by Conformance Creator", licensor_name = "Conformance Licensor", licensor_email = "licensor@conformance.test", licensor_url = "https://licensor.conformance.test" }
@@ -96,7 +96,7 @@ authoring_tool_version = "0.2.2"
 generation_command = "cargo test generate_canonical_fixtures -- --ignored"
 source = "generated"
 license = "MIT"
-sha256 = "8a97b16b2ad25ba4a451c3366aaa99e8e3d257cc4b9940f92bcb03ece82f8144"
+sha256 = "4ddde84f5084445b5466ec44c20c1ed11987e4cc267c30642df8fc88f3ff5a6e"
 expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = {}
@@ -390,7 +390,7 @@ authoring_tool_version = "0.2.2"
 generation_command = "cargo test generate_legacy_fixtures -- --ignored"
 source = "generated"
 license = "MIT"
-sha256 = "52e08806f98f866c55c92d4bb76059a04b052042b183494afafc06b2231c44e5"
+sha256 = "6aebc415f9ace9add0647eb67a0a626c83d54f24cda4c85e6a3b43d635fa9c5b"
 expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Legacy Holder", usage_terms = "Legacy Terms" }
@@ -747,7 +747,7 @@ authoring_tool_version = "0.2.2"
 generation_command = "cargo test generate_preservation_fixtures -- --ignored"
 source = "generated"
 license = "MIT"
-sha256 = "3c4324610cfd4565d0b402e888c7bf8abf3884ba16d61fceb67cd6512f12e8c4"
+sha256 = "12853bd0d2df0f963600b5f731445f1ec7ada0243978493914ac345be846ed07"
 expected_dmi = "DMI-PROHIBITED-AIMLTRAINING"
 expected_conflict = false
 expected_legal_fields = { copyright_holder = "Preservation Holder", usage_terms = "Preservation Terms" }
