@@ -7,17 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- Docs.rs-equivalent validation script (`scripts/validate-docs-rs.sh`) reproducing nightly/DOCS_RS/cfg(docsrs) conditions
-- MSRV package validation script (`scripts/validate-msrv-package.sh`) for fresh-resolution consumer testing
-- `Docs.rs Build` CI job blocking on nightly rustdoc with all features
-- `MSRV Package Consumer` CI job verifying packaged crate compiles on declared MSRV with fresh resolution
-- Version consistency checks in RC and publish workflows via authoritative validation script
+- `scripts/check.sh` — fast deterministic checks shared between local development and required CI
+- `scripts/release-check.sh` — bounded local pre-release readiness check (package dry-runs, version lockstep)
+- `RELEASING.md` — manual crates.io publication procedure with immutable version rules and partial-failure handling
 
 ### Changed
-- Tag validation workflow (`release.yml`) now invokes `validate-release.sh` instead of manual command list
-- Publish validation workflow (`publish.yml`) now invokes `validate-release.sh` instead of manual command list
-- Release-candidate workflow concurrency isolation from unrelated branch pushes
-- Publish workflow concurrency isolation from unrelated tag pushes
+- CI now invokes `scripts/check.sh` instead of maintaining a second copy of the command list
+- `scripts/validate-docs-rs.sh` derives version dynamically instead of hard-coding `stegoeggo-0.3.2.crate`
+- `scripts/validate-msrv-package.sh` derives version dynamically and tests minimal/all-feature combos (reduced from six)
+- Conformance harness is now documented as a pre-release check, not a mandatory CI gate
+- `AGENTS.md` describes one-job CI, complexity budget, and targeted specialist checks
+
+### Removed
+- `scripts/validate-release.sh` — replaced by `scripts/check.sh` + `scripts/release-check.sh`
 
 ### Fixed
 - 0.3.0 changelog entry corrected from "Unreleased" to actual publication date

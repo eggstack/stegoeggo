@@ -1,8 +1,8 @@
 # Conformance Architecture
 
 The conformance suite validates that stegoeggo's metadata output is
-interoperable with external parsers. It is a mandatory CI gate and
-release prerequisite.
+interoperable with external parsers. It is a mandatory pre-release check
+for metadata-affecting changes.
 
 ## Components
 
@@ -15,9 +15,8 @@ release prerequisite.
 | Fixture taxonomy | `tests/fixtures/conformance/` | Test images organized by category |
 | Fixture manifest | `tests/fixtures/conformance/manifest.toml` | Machine-readable fixture metadata with SHA-256 digests |
 | Shell wrapper | `scripts/verify_metadata_conformance.sh` | Operator-friendly wrapper around harness |
-| Release validation | `scripts/validate-release.sh` | Centralized validation script (hermetic + external phases) |
-| CI job | `.github/workflows/external-verification.yml` (manual dispatch) | Manual gate, not automatic on PRs |
-| Release gate | `scripts/validate-release.sh` | Local pre-release verification |
+| Pre-release check | `scripts/release-check.sh` | Local pre-release verification (includes package dry-runs) |
+| CI workflow | `.github/workflows/external-verification.yml` (manual dispatch) | Manual gate, not automatic on PRs |
 
 ## Conformance Flow
 
@@ -127,7 +126,7 @@ Exit codes are stable and should not change without a version bump.
 
 ## External Tools
 
-External tools are installed in `.github/workflows/external-verification.yml` (manual dispatch) and `scripts/validate-release.sh` (local).
+External tools are installed in `.github/workflows/external-verification.yml` (manual dispatch) and locally for `scripts/verify_metadata_conformance.sh`.
 The CI workflow installs all tools in a single `apt-get` step. The
 workflow does not use `continue-on-error` for conformance checks.
 
@@ -168,7 +167,7 @@ External tool tests in `tests/external_tools.rs` use `#[ignore = "requires exter
 and are run explicitly with `cargo test --test external_tools -- --ignored`.
 The `.github/workflows/external-verification.yml` manual workflow executes these tests.
 
-### Centralized Validation
+### Local Validation
 
-`scripts/validate-release.sh` runs the full validation pipeline (hermetic + external phases).
-Use `--skip-external` for environments without external tools installed.
+`scripts/verify_metadata_conformance.sh` provides a thin wrapper around the conformance harness.
+Use `--strict` for environments with external tools installed.

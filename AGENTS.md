@@ -13,37 +13,38 @@ Three workspace members:
 
 ## Build & Test Commands
 
+**Fast local check (mirrors required CI):**
 ```bash
-cargo check                              # Compilation
-cargo test --workspace --exclude stegoeggo-fuzz --all-features
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo fmt --all -- --check               # Format check (4-space indent, max width 100)
-cargo package --workspace                # Package dry-run
-cargo test --test external_tools -- --ignored  # External tool tests (requires exiftool/xmllint)
+./scripts/check.sh
 ```
 
-**Single test:** `cargo test --workspace --exclude stegoeggo-fuzz --all-features -- <test_name>`
+This runs formatting, strict clippy, minimal-feature compilation, and all-feature workspace tests. It contains only fast deterministic checks and does not publish, require external tools, or generate artifacts.
 
-**Required CI commands (run these before pushing):**
+**Individual commands:**
 ```bash
-cargo fmt --all -- --check
+cargo fmt --all -- --check               # Format check (4-space indent, max width 100)
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo check -p stegoeggo --no-default-features
 cargo test --workspace --exclude stegoeggo-fuzz --all-features
 ```
 
-**Specialist verification (manual, not run on every push):**
+**Single test:** `cargo test --workspace --exclude stegoeggo-fuzz --all-features -- <test_name>`
+
+**Pre-release check (local only, never publishes):**
 ```bash
-cargo package --workspace
-cargo test --test external_tools -- --ignored
-cargo build --release --bin stegoeggo-conformance
-./target/release/stegoeggo-conformance \
-  --fixtures tests/fixtures/conformance \
-  --manifest tests/fixtures/conformance/manifest.toml \
-  --strict
-scripts/validate-docs-rs.sh
-scripts/validate-msrv-package.sh
+./scripts/release-check.sh
+```
+
+**Specialist verification (manual, targeted, not run on every push):**
+```bash
+scripts/validate-docs-rs.sh              # nightly Rust required
+scripts/verify_metadata_conformance.sh --strict  # exiftool, xmllint, imagemagick, libvips required
+scripts/validate-msrv-package.sh         # Rust 1.87+ required
+scripts/check_fuzz_sync.sh               # after adding/removing fuzz targets
 cargo +nightly fuzz run <target> -- -max_total_time=60
+cargo semver-checks check-release
+cargo deny check licenses
+cargo deny check advisories
 ```
 
 Conformance exit codes: 0=pass, 1=fail, 2=config, 3=digest mismatch, 4=coverage violation, 5=internal.
@@ -153,15 +154,16 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 ## Validation Scripts
 
-- `scripts/validate-release.sh` — Phases: hermetic (fmt, clippy, tests, package, deny, audit, semver-checks, MSRV), feature (feature combination matrix), external (external integration + conformance). Supports `--phase` and `--expected-sha`
+- `scripts/check.sh` — Fast deterministic checks used by local development and required CI (fmt, clippy, no-default-features, tests)
+- `scripts/release-check.sh` — Bounded local pre-release readiness (runs check.sh + package dry-runs + version lockstep verification). Never publishes
 - `scripts/validate-docs-rs.sh` — Docs.rs-equivalent rustdoc validation (nightly, DOCS_RS=1, cfg(docsrs), workspace + packaged crate)
-- `scripts/validate-msrv-package.sh` — Fresh MSRV consumer resolution (packages crate, creates clean consumers, tests all feature combos on declared MSRV)
-- `scripts/verify_metadata_conformance.sh` — Shell wrapper for conformance checks
-- `scripts/check_fuzz_sync.sh` — Verifies fuzz harness parity
+- `scripts/validate-msrv-package.sh` — Fresh MSRV consumer resolution (packages crate, creates clean consumers, tests minimal and all-feature combos on declared MSRV)
+- `scripts/verify_metadata_conformance.sh` — Shell wrapper for conformance checks (delegates to Rust conformance harness)
+- `scripts/check_fuzz_sync.sh` — Verifies fuzz harness parity between fuzz/Cargo.toml and fuzz.yml workflow
 
 ## Conformance Suite
 
-The conformance harness (`src/bin/stegoeggo-conformance.rs`) validates metadata interoperability against ExifTool and xmllint. It produces JSON reports and is a mandatory CI gate.
+The conformance harness (`src/bin/stegoeggo-conformance.rs`) validates metadata interoperability against ExifTool and xmllint. It produces JSON reports and is a mandatory pre-release check for metadata-affecting changes.
 
 Key files: `src/conformance.rs` (report types), `tests/fixtures/conformance/manifest.toml` (fixture manifest with SHA-256 digests).
 
@@ -177,6 +179,19 @@ Releases are manual. GitHub Actions must not publish crates or create releases.
 Use direct Cargo/crates.io publication after local validation.
 Do not push a version tag as a publication mechanism.
 Published crates.io versions are immutable and cannot be reused.
+See `RELEASING.md` for the complete procedure.
+
+## CI Complexity Guardrails
+
+- Required push/PR workflows: one.
+- Required jobs per push/PR: one.
+- No required job matrix.
+- No tag-triggered release workflows.
+- No CI publication.
+- No crates.io token in GitHub Actions.
+- Do not add specialist checks to `scripts/check.sh`.
+- Preserve specialist tests, but invoke them deliberately.
+- Any increase to required CI surface requires an explicit maintainer decision.
 
 ## Other Reference Files
 

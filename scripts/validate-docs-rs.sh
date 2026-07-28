@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # validate-docs-rs.sh — Docs.rs-equivalent rustdoc validation
 #
-# Reproduces the conditions that caused the 0.3.0 docs.rs build failure:
-# - nightly toolchain
-# - DOCS_RS=1 environment
-# - cfg(docsrs) activated
-# - rustdoc warnings denied
-# - all features enabled
-# - workspace and packaged-crate docs both pass
+# Reproduces docs.rs build conditions:
+# nightly toolchain, DOCS_RS=1, cfg(docsrs), all features.
+#
+# Run when changing cfg(docsrs), documentation attributes, docs.rs metadata,
+# feature-gated public API docs, or package inclusion.
+#
+# Prerequisites: nightly Rust toolchain
 #
 # Exit codes:
 #   0 — all checks passed
@@ -25,7 +25,9 @@ if [ "$check_dirty" = "true" ]; then
     fi
 fi
 
-echo "=== Docs.rs-equivalent validation ==="
+VERSION=$(cargo metadata --no-deps --format-version 1 2>/dev/null \
+    | python3 -c "import json,sys; print(json.load(sys.stdin)['packages'][0]['version'])")
+echo "=== Docs.rs-equivalent validation (stegoeggo ${VERSION}) ==="
 echo "Rust version: $(rustc +nightly --version)"
 echo ""
 
@@ -61,7 +63,7 @@ if [ "$check_dirty" = "false" ]; then
 fi
 
 cargo package -p stegoeggo $ALLOW_DIRTY 2>&1 | tail -5
-CRATE_FILE=$(find target/package -maxdepth 1 -name 'stegoeggo-0.3.2.crate' | head -1)
+CRATE_FILE=$(find target/package -maxdepth 1 -name "stegoeggo-${VERSION}.crate" | head -1)
 if [ -z "$CRATE_FILE" ]; then
     echo "ERROR: No .crate file found after packaging" >&2
     exit 1
@@ -79,7 +81,6 @@ fi
 
 echo "Package dir: $PKG_DIR"
 
-# Verify required files exist
 for f in src/lib.rs Cargo.toml; do
     if [ ! -f "$PKG_DIR/$f" ]; then
         echo "ERROR: Package missing $f" >&2
@@ -88,7 +89,6 @@ for f in src/lib.rs Cargo.toml; do
 done
 echo "Package contains required files: OK"
 
-# Build docs from extracted package
 cd "$PKG_DIR"
 export DOCS_RS=1
 export RUSTDOCFLAGS="--cfg docsrs --check-cfg=cfg(docsrs) -D warnings"

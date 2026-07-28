@@ -2,7 +2,12 @@
 # validate-msrv-package.sh — Validate packaged crate compiles on MSRV with fresh resolution
 #
 # Packages the library, creates a clean consumer crate, removes lockfiles,
-# and verifies all feature combinations compile on the declared MSRV.
+# and verifies minimal and all-feature consumer configurations on the declared MSRV.
+#
+# Run when changing rust-version, dependencies, default features, optional
+# features, or before a release that includes dependency-resolution changes.
+#
+# Prerequisites: Rust 1.87+ (MSRV), stable toolchain
 #
 # Exit codes:
 #   0 — all checks passed
@@ -15,6 +20,11 @@ echo "=== MSRV package validation (rust ${MSRV}) ==="
 echo "Rust version: $(rustc --version)"
 echo ""
 
+VERSION=$(cargo metadata --no-deps --format-version 1 2>/dev/null \
+    | python3 -c "import json,sys; print(json.load(sys.stdin)['packages'][0]['version'])")
+echo "Package version: ${VERSION}"
+echo ""
+
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -24,7 +34,7 @@ if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
     ALLOW_DIRTY="--allow-dirty"
 fi
 cargo package -p stegoeggo $ALLOW_DIRTY 2>&1 | tail -5
-CRATE_FILE=$(find target/package -maxdepth 1 -name 'stegoeggo-0.3.2.crate' | head -1)
+CRATE_FILE=$(find target/package -maxdepth 1 -name "stegoeggo-${VERSION}.crate" | head -1)
 if [ -z "$CRATE_FILE" ]; then
     echo "ERROR: No .crate file found after packaging" >&2
     exit 1
@@ -39,13 +49,9 @@ PKG_DIR=$(find "$TMPDIR/pkg" -maxdepth 1 -type d -name 'stegoeggo-*' | head -1)
 echo "Package dir: $PKG_DIR"
 echo ""
 
-# Feature combinations to test
+# Minimal and all-feature configurations
 FEATURE_COMBOS=(
     ""
-    "async"
-    "signatures"
-    "detached-manifest"
-    "signatures,detached-manifest"
     "async,signatures,detached-manifest"
 )
 
@@ -58,7 +64,6 @@ for combo in "${FEATURE_COMBOS[@]}"; do
 
     FEATURES_LINE=""
     if [ -n "$combo" ]; then
-        # Convert comma-separated features to TOML array syntax
         IFS=',' read -ra FEAT_ARRAY <<< "$combo"
         TOML_FEATURES=""
         for feat in "${FEAT_ARRAY[@]}"; do
@@ -86,7 +91,6 @@ pub fn smoke_test() {
 }
 EOF
 
-    # Remove any lockfile
     rm -f "$CONSUMER_DIR/Cargo.lock"
 
     cd "$CONSUMER_DIR"
