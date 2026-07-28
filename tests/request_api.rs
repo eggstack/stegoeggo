@@ -1059,4 +1059,85 @@ mod phase3_resource_limits {
         assert!(usage.peak_allocations_bytes >= output.len());
         assert!(usage.input_bytes == png_bytes.len());
     }
+
+    #[test]
+    fn max_png_chunk_bytes_enforced() {
+        let limits = ResourceLimits::builder().max_png_chunk_bytes(10).build();
+        let img = create_test_image(8, 8);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_resource_limits(limits)
+            .with_legal_metadata(
+                LegalMetadata::new()
+                    .with_copyright_holder("Test")
+                    .with_usage_terms("All rights reserved"),
+            );
+        let result = process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx);
+        assert!(
+            result.is_err(),
+            "Very small max_png_chunk_bytes should reject"
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("too large") || err_msg.contains("limit"),
+            "Expected metadata size error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn max_xmp_bytes_enforced() {
+        let limits = ResourceLimits::builder().max_xmp_bytes(10).build();
+        let img = create_test_image(8, 8);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_resource_limits(limits)
+            .with_legal_metadata(
+                LegalMetadata::new()
+                    .with_copyright_holder("Test")
+                    .with_usage_terms("All rights reserved"),
+            );
+        let result = process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx);
+        assert!(result.is_err(), "Very small max_xmp_bytes should reject");
+    }
+
+    #[test]
+    fn max_metadata_fields_enforced() {
+        let limits = ResourceLimits::builder().max_metadata_fields(1).build();
+        let img = create_test_image(8, 8);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_resource_limits(limits)
+            .with_legal_metadata(
+                LegalMetadata::new()
+                    .with_copyright_holder("Test")
+                    .with_usage_terms("All rights reserved")
+                    .with_creator("Creator")
+                    .with_contact_email("test@example.com"),
+            );
+        let result = process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx);
+        assert!(
+            result.is_err(),
+            "Very small max_metadata_fields should reject"
+        );
+    }
+
+    #[test]
+    fn max_metadata_field_bytes_enforced() {
+        let limits = ResourceLimits::builder()
+            .max_metadata_field_bytes(5)
+            .build();
+        let img = create_test_image(8, 8);
+        let png_bytes = image_to_png_bytes(&img);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_resource_limits(limits)
+            .with_legal_metadata(LegalMetadata::new().with_copyright_holder(
+                "This is a very long copyright holder name that exceeds five bytes",
+            ));
+        let result = process_image_bytes(&png_bytes, ProtectionLevel::Standard, &ctx);
+        assert!(
+            result.is_err(),
+            "Very small max_metadata_field_bytes should reject"
+        );
+    }
 }

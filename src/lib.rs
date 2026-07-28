@@ -1060,7 +1060,9 @@ pub fn process_request_bytes(img_bytes: &[u8], request: &ProtectionRequest) -> R
         meta.validate()?;
     }
 
-    process_plan_bytes(img_bytes, &plan).map(|r| r.bytes)
+    let mut budget =
+        crate::resource_limits::OperationBudget::new(plan.resource_limits(), img_bytes.len());
+    process_plan_bytes(img_bytes, &plan, &mut budget).map(|r| r.bytes)
 }
 
 fn warnings_from_embed_outcome(
@@ -1104,7 +1106,9 @@ pub fn process_request_bytes_with_warnings(
 
     let mut all_warnings = plan.warnings().to_vec();
 
-    let pipeline_result = process_plan_bytes(img_bytes, &plan)?;
+    let mut budget =
+        crate::resource_limits::OperationBudget::new(plan.resource_limits(), img_bytes.len());
+    let pipeline_result = process_plan_bytes(img_bytes, &plan, &mut budget)?;
 
     if let Some(ref summary) = pipeline_result.embed_summary {
         let runtime = warnings_from_embed_outcome(summary);
@@ -1140,7 +1144,10 @@ pub fn process_request_bytes_with_report(
     let output_format = plan.output_format();
     let format_transcoded = input_format != output_format;
 
-    let pipeline_result = process_plan_bytes(img_bytes, &plan)?;
+    let mut budget =
+        crate::resource_limits::OperationBudget::new(plan.resource_limits(), img_bytes.len());
+
+    let pipeline_result = process_plan_bytes(img_bytes, &plan, &mut budget)?;
     let result = pipeline_result.bytes;
 
     let stego_attempted = plan.channels().has_stego();
@@ -1170,8 +1177,6 @@ pub fn process_request_bytes_with_report(
         false
     };
 
-    let mut budget =
-        crate::resource_limits::OperationBudget::new(plan.resource_limits(), img_bytes.len());
     budget.observe_alloc(result.len());
     let resource_usage = budget.finish(result.len());
 
@@ -1190,7 +1195,11 @@ pub fn process_request_bytes_with_report(
     Ok((result, report))
 }
 
-fn process_plan_bytes(img_bytes: &[u8], plan: &ResolvedProtectionPlan) -> Result<PipelineResult> {
+fn process_plan_bytes(
+    img_bytes: &[u8],
+    plan: &ResolvedProtectionPlan,
+    budget: &mut crate::resource_limits::OperationBudget<'_>,
+) -> Result<PipelineResult> {
     let pipeline = DEFAULT_PIPELINE.clone();
 
     let limits = plan.resource_limits();
@@ -1209,6 +1218,7 @@ fn process_plan_bytes(img_bytes: &[u8], plan: &ResolvedProtectionPlan) -> Result
 
     if plan.is_metadata_only() {
         let bytes = pipeline.process_metadata_only(img_bytes, plan)?;
+        budget.observe_alloc(bytes.len());
         return Ok(PipelineResult {
             bytes,
             embed_summary: None,
@@ -1218,6 +1228,7 @@ fn process_plan_bytes(img_bytes: &[u8], plan: &ResolvedProtectionPlan) -> Result
     match plan.channels().hidden_marker {
         HiddenMarkerMode::Disabled => {
             let bytes = pipeline.process_metadata_only(img_bytes, plan)?;
+            budget.observe_alloc(bytes.len());
             Ok(PipelineResult {
                 bytes,
                 embed_summary: None,
