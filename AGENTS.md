@@ -167,7 +167,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 ## Validation Scripts
 
-- `scripts/validate-release.sh` — Phases: hermetic (fmt, clippy, tests, package, deny, audit, semver-checks, MSRV), feature (feature combination matrix), external (external integration + conformance). Supports `--phase` and `--expected-sha` for RC workflows
+- `scripts/validate-release.sh` — Phases: hermetic (fmt, clippy, tests, package, deny, audit, semver-checks, MSRV), feature (feature combination matrix), external (external integration + conformance). Supports `--phase` and `--expected-sha`
 - `scripts/validate-docs-rs.sh` — Docs.rs-equivalent rustdoc validation (nightly, DOCS_RS=1, cfg(docsrs), workspace + packaged crate)
 - `scripts/validate-msrv-package.sh` — Fresh MSRV consumer resolution (packages crate, creates clean consumers, tests all feature combos on declared MSRV)
 - `scripts/verify_metadata_conformance.sh` — Shell wrapper for conformance checks
@@ -184,6 +184,13 @@ External integration tests in `tests/external_tools.rs` are `#[ignore]` — run 
 ## Fuzzing
 
 12 targets in `fuzz/fuzz_targets/`. Run with: `cargo +nightly fuzz run <target> -- -max_total_time=60`. Add regression tests in `tests/robustness.rs` for findings.
+
+## Release Policy
+
+Releases are manual. GitHub Actions must not publish crates or create releases.
+Use direct Cargo/crates.io publication after local validation.
+Do not push a version tag as a publication mechanism.
+Published crates.io versions are immutable and cannot be reused.
 
 ## Other Reference Files
 

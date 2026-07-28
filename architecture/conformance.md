@@ -127,10 +127,9 @@ Exit codes are stable and should not change without a version bump.
 
 ## External Tools in CI
 
-ImageMagick and libvips are installed in both CI and release workflows.
-The CI workflow installs all tools in a single `apt-get` step. The release
-workflow installs them as separate named steps. Neither workflow uses
-`continue-on-error` for conformance checks.
+ImageMagick and libvips are installed in the CI workflow.
+The CI workflow installs all tools in a single `apt-get` step. The
+workflow does not use `continue-on-error` for conformance checks.
 
 ## JSON Report Schema
 
@@ -167,7 +166,7 @@ internal/external extractions, check results, and conflicts.
 
 External tool tests in `tests/external_tools.rs` use `#[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]`
 and are run explicitly with `cargo test --test external_tools -- --ignored`.
-The CI `external-integration` job and release workflow both execute these tests.
+The CI `external-integration` job executes these tests.
 
 ### Centralized Validation
 
