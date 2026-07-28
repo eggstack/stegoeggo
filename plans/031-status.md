@@ -4,8 +4,8 @@ Plan baseline SHA: 158015dc84b9f0bae58ebf6af77179b57dbb2ed9
 Code candidate SHA: d1c7ca3fb7d0e28c2cff9bbd17f114ad92ed4678
 Evidence commit SHA: d1c7ca3fb7d0e28c2cff9bbd17f114ad92ed4678
 Release version: 0.3.0
-Disposition: OPEN
-Release hold: active
+Disposition: CLOSED
+Release hold: released
 
 ## Implementation Progress
 
@@ -64,8 +64,12 @@ Release hold: active
 - Fuzz run: 30370014828 (success)
 - All three workflows passed against the same SHA
 
-### Phase 8: Publication — OPEN
-- 0.3.0 unpublished, untagged
+### Phase 8: Publication — CLOSED
+- Library crate `stegoeggo 0.3.0` published to crates.io
+- CLI crate `stegoeggo-cli 0.3.0` published to crates.io
+- Tag `v0.3.0` created at `d1c7ca3fb7d0e28c2cff9bbd17f114ad92ed4678`
+- GitHub release: https://github.com/eggstack/stegoeggo/releases/tag/v0.3.0
+- Post-publication verification: CLI installed from crates.io, protect/verify/HMAC all work
 
 ## Table A: v3 extraction inventory
 
@@ -140,7 +144,7 @@ Release hold: active
 
 | code candidate SHA | main CI run | RC run | fuzz run | package artifacts | smoke run | tag | publication | post-publication | status |
 |---|---|---|---|---|---|---|---|---|---|
-| `d1c7ca3fb7d0e28c2cff9bbd17f114ad92ed4678` | 30370015273 (pass) | 30370186042 (pass) | 30370014828 (pass) | local package pass | local conformance pass | pending | pending | pending | CLOSED |
+| `d1c7ca3fb7d0e28c2cff9bbd17f114ad92ed4678` | 30370015273 (pass) | 30370186042 (pass) | 30370014828 (pass) | local package pass | local conformance pass | v0.3.0 | published | pass | CLOSED |
 
 ## Test counts
 
