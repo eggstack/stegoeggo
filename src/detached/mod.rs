@@ -1,7 +1,5 @@
 //! Detached signed manifest support for provenance evidence.
 
-#![cfg_attr(docsrs, feature(doc_cfg))]
-
 /// Generate detached manifests from image bytes and claims.
 pub mod generate;
 mod manifest;
