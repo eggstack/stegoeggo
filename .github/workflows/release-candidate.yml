@@ -84,7 +84,7 @@ jobs:
           cat tool-versions.txt
 
       - name: Run authoritative validation
-        run: scripts/validate-release.sh --phase all
+        run: scripts/validate-release.sh --phase all --expected-sha "${{ inputs.sha }}"
 
       - name: Generate package inventory
         run: |

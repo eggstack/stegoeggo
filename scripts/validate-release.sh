@@ -3,6 +3,7 @@ set -euo pipefail
 
 SKIP_EXTERNAL=false
 PHASE="all"
+EXPECTED_SHA=""
 
 for arg in "$@"; do
     case "$arg" in
@@ -17,13 +18,29 @@ for arg in "$@"; do
         --phase=*)
             PHASE="${arg#--phase=}"
             ;;
+        --expected-sha=*)
+            EXPECTED_SHA="${arg#--expected-sha=}"
+            ;;
         *)
             echo "Unknown argument: $arg" >&2
-            echo "Usage: $0 [--skip-external] [--phase hermetic|external|feature|all]" >&2
+            echo "Usage: $0 [--skip-external] [--phase hermetic|external|feature|all] [--expected-sha=<40-char-sha>]" >&2
             exit 1
             ;;
     esac
 done
+
+if [ -n "$EXPECTED_SHA" ]; then
+    ACTUAL_SHA="$(git rev-parse HEAD)"
+    if [ "${#ACTUAL_SHA}" -ne 40 ]; then
+        echo "ERROR: Current HEAD is not a full 40-character SHA" >&2
+        exit 1
+    fi
+    if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+        echo "ERROR: SHA mismatch. Expected $EXPECTED_SHA, got $ACTUAL_SHA" >&2
+        exit 1
+    fi
+    echo "=== SHA verified: $ACTUAL_SHA ==="
+fi
 
 run() {
     echo "=== Running: $* ==="
@@ -44,11 +61,16 @@ run_hermetic() {
     run cargo semver-checks check-release
     echo "=== MSRV check ==="
     run cargo +1.87 check --all-features
+    if [ -f scripts/check_fuzz_sync.sh ]; then
+        echo "=== Fuzz sync check ==="
+        run scripts/check_fuzz_sync.sh
+    fi
 }
 
 run_feature() {
     echo "=== Feature combination phase ==="
     run cargo test -p stegoeggo --no-default-features
+    run cargo test -p stegoeggo --no-default-features --features async
     run cargo test -p stegoeggo --no-default-features --features signatures
     run cargo test -p stegoeggo --no-default-features --features detached-manifest
     run cargo test -p stegoeggo --no-default-features --features signatures,detached-manifest
