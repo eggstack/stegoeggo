@@ -5018,9 +5018,9 @@ mod tests {
         // Crop to a single tile by re-encoding a sub-image as JPEG.
         // First decode the protected JPEG, crop in pixel space, re-encode.
         let img = image::load_from_memory(&protected).unwrap();
-        let rgba = img.to_rgba8();
-        let cropped_rgba = SteganographyProtector::crop_rgba(&rgba, 0, 0, 64, 64);
-        let cropped_img = DynamicImage::ImageRgba8(cropped_rgba);
+        let rgb = img.to_rgb8();
+        let cropped_rgb = image::imageops::crop_imm(&rgb, 0, 0, 64, 64).to_image();
+        let cropped_img = DynamicImage::ImageRgb8(cropped_rgb);
         let mut buf = std::io::Cursor::new(Vec::new());
         cropped_img
             .write_to(&mut buf, image::ImageFormat::Jpeg)
@@ -5106,8 +5106,10 @@ mod tests {
     fn tileable_test_jpeg() -> Vec<u8> {
         let img = tileable_test_image();
         let dyn_img = DynamicImage::ImageRgba8(img);
+        let rgb = dyn_img.to_rgb8();
+        let rgb_img = DynamicImage::ImageRgb8(rgb);
         let mut buf = std::io::Cursor::new(Vec::new());
-        dyn_img
+        rgb_img
             .write_to(&mut buf, image::ImageFormat::Jpeg)
             .unwrap();
         buf.into_inner()
