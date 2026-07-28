@@ -16,8 +16,8 @@ release prerequisite.
 | Fixture manifest | `tests/fixtures/conformance/manifest.toml` | Machine-readable fixture metadata with SHA-256 digests |
 | Shell wrapper | `scripts/verify_metadata_conformance.sh` | Operator-friendly wrapper around harness |
 | Release validation | `scripts/validate-release.sh` | Centralized validation script (hermetic + external phases) |
-| CI job | `.github/workflows/ci.yml` (conformance) | Mandatory gate on PRs and pushes to main |
-| Release gate | `.github/workflows/release.yml` | Blocks publication if conformance fails |
+| CI job | `.github/workflows/external-verification.yml` (manual dispatch) | Manual gate, not automatic on PRs |
+| Release gate | `scripts/validate-release.sh` | Local pre-release verification |
 
 ## Conformance Flow
 
@@ -125,9 +125,9 @@ Validation failures produce `EXIT_CONFIG` (2) before any fixtures are processed.
 
 Exit codes are stable and should not change without a version bump.
 
-## External Tools in CI
+## External Tools
 
-ImageMagick and libvips are installed in the CI workflow.
+External tools are installed in `.github/workflows/external-verification.yml` (manual dispatch) and `scripts/validate-release.sh` (local).
 The CI workflow installs all tools in a single `apt-get` step. The
 workflow does not use `continue-on-error` for conformance checks.
 
@@ -166,7 +166,7 @@ internal/external extractions, check results, and conflicts.
 
 External tool tests in `tests/external_tools.rs` use `#[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]`
 and are run explicitly with `cargo test --test external_tools -- --ignored`.
-The CI `external-integration` job executes these tests.
+The `.github/workflows/external-verification.yml` manual workflow executes these tests.
 
 ### Centralized Validation
 

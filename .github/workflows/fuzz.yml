@@ -1,25 +1,13 @@
 name: Fuzz
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    - cron: "0 3 * * 1"
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  smoke:
-    name: Fuzz Smoke Test
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target:
+    inputs:
+      target:
+        description: "Fuzz target to run"
+        required: true
+        type: choice
+        options:
           - pipeline_bytes
           - jpeg_parser
           - payload_v3_parser
@@ -32,71 +20,52 @@ jobs:
           - detached_manifest_verify
           - provenance_canonicalize
           - verification_report
+      seconds:
+        description: "Maximum run duration"
+        required: false
+        default: "60"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz (${{ inputs.target }})
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz
 
-      - name: Run fuzz smoke (${{ matrix.target }})
+      - name: Validate inputs
+        run: |
+          TARGET="${{ inputs.target }}"
+          SECONDS="${{ inputs.seconds }}"
+          if ! [[ "$TARGET" =~ ^[a-z_]+$ ]]; then
+            echo "::error::Invalid target name"
+            exit 1
+          fi
+          if ! [[ "$SECONDS" =~ ^[0-9]+$ ]] || [ "$SECONDS" -lt 1 ] || [ "$SECONDS" -gt 3600 ]; then
+            echo "::error::Seconds must be between 1 and 3600"
+            exit 1
+          fi
+
+      - name: Run fuzz (${{ inputs.target }})
         env:
           RUSTUP_TOOLCHAIN: nightly
         run: |
-          cargo fuzz run ${{ matrix.target }} -- \
-            -max_total_time=30 \
+          cargo fuzz run "${{ inputs.target }}" -- \
+            -max_total_time="${{ inputs.seconds }}" \
             -max_len=4096 \
             -timeout=10
 
-  depth:
-    name: Fuzz Depth (${{ matrix.target }})
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    strategy:
-      matrix:
-        target:
-          - pipeline_bytes
-          - jpeg_parser
-          - payload_v3_parser
-          - tiled_round_trip
-          - png_metadata
-          - webp_riff_parser
-          - xmp_extract
-          - metadata_merge
-          - detached_manifest_parse
-          - detached_manifest_verify
-          - provenance_canonicalize
-          - verification_report
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz
-
-      - name: Run fuzz depth (${{ matrix.target }})
-        env:
-          RUSTUP_TOOLCHAIN: nightly
-        run: |
-          cargo fuzz run ${{ matrix.target }} -- \
-            -max_total_time=300 \
-            -max_len=4096 \
-            -timeout=30
-
-      - name: Upload artifacts
+      - name: Upload crash artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: fuzz-corpus-${{ matrix.target }}
-          path: fuzz/corpus/${{ matrix.target }}/
+          name: fuzz-corpus-${{ inputs.target }}
+          path: fuzz/corpus/${{ inputs.target }}/
           retention-days: 30

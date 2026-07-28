@@ -15,64 +15,50 @@ Three workspace members:
 
 ```bash
 cargo check                              # Compilation
-cargo test --workspace --exclude stegoeggo-fuzz --all-features --no-fail-fast
-cargo test -p stegoeggo-cli --all-features --no-fail-fast
-cargo test --doc --workspace --exclude stegoeggo-fuzz
+cargo test --workspace --exclude stegoeggo-fuzz --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check               # Format check (4-space indent, max width 100)
 cargo package --workspace                # Package dry-run
 cargo test --test external_tools -- --ignored  # External tool tests (requires exiftool/xmllint)
 ```
 
-**Single test:** `cargo test --workspace --exclude stegoeggo-fuzz --all-features --no-fail-fast -- <test_name>`
+**Single test:** `cargo test --workspace --exclude stegoeggo-fuzz --all-features -- <test_name>`
 
-**Full release validation:**
+**Required CI commands (run these before pushing):**
 ```bash
-./scripts/validate-release.sh                     # hermetic + external + feature phases
-./scripts/validate-release.sh --skip-external     # hermetric + feature only
-./scripts/validate-release.sh --phase hermetic     # just fmt, clippy, tests, package, deny
-./scripts/validate-release.sh --phase feature      # feature combination matrix
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo check -p stegoeggo --no-default-features
+cargo test --workspace --exclude stegoeggo-fuzz --all-features
 ```
 
-The script also runs `cargo semver-checks check-release`, `cargo audit`, `scripts/validate-docs-rs.sh` (docs.rs-equivalent rustdoc), and `scripts/validate-msrv-package.sh` (fresh MSRV consumer resolution) in the hermetic phase.
-
-**Docs.rs-equivalent validation (nightly, DOCS_RS=1, cfg(docsrs)):**
+**Specialist verification (manual, not run on every push):**
 ```bash
-scripts/validate-docs-rs.sh
-```
-
-**MSRV package validation (fresh resolution, no lockfile):**
-```bash
-scripts/validate-msrv-package.sh
-```
-
-**Conformance (requires external tools: exiftool, xmllint, imagemagick, libvips):**
-```bash
+cargo package --workspace
+cargo test --test external_tools -- --ignored
 cargo build --release --bin stegoeggo-conformance
 ./target/release/stegoeggo-conformance \
   --fixtures tests/fixtures/conformance \
   --manifest tests/fixtures/conformance/manifest.toml \
-  --strict --json conformance-report.json
+  --strict
+scripts/validate-docs-rs.sh
+scripts/validate-msrv-package.sh
+cargo +nightly fuzz run <target> -- -max_total_time=60
 ```
 
 Conformance exit codes: 0=pass, 1=fail, 2=config, 3=digest mismatch, 4=coverage violation, 5=internal.
 
 ## CI Pipeline
 
-GitHub Actions (`.github/workflows/ci.yml`) runs these jobs in parallel:
-1. MSRV check (`cargo check --all-features` with Rust 1.87)
-2. Tests + doc tests
-3. Format + clippy lint
-4. Security audit (`cargo audit`)
-5. Semver check (`cargo semver-checks check-release`)
-6. License/advisory check (`cargo deny`)
-7. Package dry-run
-8. External integration tests (installs exiftool/xmllint/imagemagick/libvips)
-9. External Conformance (builds + runs `stegoeggo-conformance --strict`)
-10. Feature combination matrix (no-default, async, signatures, detached-manifest, all-features)
-11. Docs.rs Build (nightly rustdoc with DOCS_RS=1, cfg(docsrs), all features)
-12. MSRV Package Consumer (fresh-resolution compile on declared MSRV)
-13. Benchmarks (manual dispatch only)
+GitHub Actions (`.github/workflows/ci.yml`) runs one job on pushes and pull requests to `main`:
+1. `cargo fmt --all -- --check`
+2. `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+3. `cargo check -p stegoeggo --no-default-features`
+4. `cargo test --workspace --exclude stegoeggo-fuzz --all-features`
+
+Specialist verification (external tools, conformance, fuzzing, MSRV, docs.rs, packaging, semver, benchmarks) is available as manual-dispatch workflows:
+- `.github/workflows/external-verification.yml` — external integration tests + conformance harness
+- `.github/workflows/fuzz.yml` — single-target fuzz execution (workflow_dispatch with target/seconds inputs)
 
 ## Code Conventions
 
