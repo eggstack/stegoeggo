@@ -18,13 +18,19 @@ for arg in "$@"; do
         --phase=*)
             PHASE="${arg#--phase=}"
             ;;
+        --expected-sha)
+            ;;
         --expected-sha=*)
             EXPECTED_SHA="${arg#--expected-sha=}"
             ;;
         *)
-            echo "Unknown argument: $arg" >&2
-            echo "Usage: $0 [--skip-external] [--phase hermetic|external|feature|all] [--expected-sha=<40-char-sha>]" >&2
-            exit 1
+            if [ -n "$EXPECTED_SHA" ] && [ "${#arg}" -eq 40 ]; then
+                EXPECTED_SHA="$arg"
+            else
+                echo "Unknown argument: $arg" >&2
+                echo "Usage: $0 [--skip-external] [--phase hermetic|external|feature|all] [--expected-sha=<40-char-sha>]" >&2
+                exit 1
+            fi
             ;;
     esac
 done
