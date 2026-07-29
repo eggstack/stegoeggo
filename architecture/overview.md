@@ -163,47 +163,74 @@ Progressive JPEGs are handled via seed-in-Q-tables only (coefficient manipulatio
 src/
 ├── lib.rs                     Pipeline orchestration, public API, LazyLock singletons
 ├── types.rs                   ProtectionLevel, ProtectionContext, StegoPayload,
-│                              ImageOutputFormat, DmiValue, LegalMetadata, ProtectionConfig
+│                              ImageOutputFormat, DmiValue, LegalMetadata, ProtectionConfig,
+│                              ProtectionRequest, RightsPolicy, ProtectionPreset,
+│                              ProtectionChannels, ExecutionReport
 ├── traits.rs                  Protector trait (apply/apply_bytes)
 ├── error.rs                   Error enum (thiserror), Result type
-├── async_api.rs               Tokio spawn_blocking wrappers (when async feature enabled)
+├── async_api.rs               Tokio spawn_blocking wrappers (feature: async)
+├── conformance.rs             Machine-readable conformance reporting types
+├── resource_limits.rs         ResourceLimits for parser hardening (DoS prevention)
 │
 ├── protected/                 Protection strategies (all implement Protector trait)
-│   ├── constants.rs           Tuning constants (STEGO_*)
-│   ├── passthrough.rs        No-op for Disabled level
-│   ├── metadata_trap.rs      Metadata injection (tEXt/COM/XMP markers, seed, canonical plus:DataMining DMI)
-│   ├── steganography.rs       LSB embedding (PNG/WebP) + DCT F5 (JPEG)
-│   ├── ecc.rs                3× repetition ECC with majority voting
-│   ├── notice_verification.rs Legal notice verification and evidence strength rating
-│   └── stego_cost.rs         Pixel embedding cost computation (Laplacian, fuzz-only)
+│   ├── constants.rs           Tuning constants (STEGO_*, XORSHIFT_*, SPLITMIX64_*)
+│   ├── passthrough.rs         No-op for Disabled level
+│   ├── metadata_trap.rs       Metadata injection (tEXt/COM/XMP markers, seed,
+│   │                          canonical plus:DataMining DMI, DmiValue mapping)
+│   ├── steganography.rs       LSB embedding (PNG/WebP) + DCT F5 (JPEG),
+│   │                          payload v1/v2/v3 generation and extraction
+│   ├── ecc.rs                 3× repetition ECC with majority voting
+│   ├── notice_verification.rs Legal notice extraction from image bytes,
+│   │                          evidence strength rating, DMI/seed resolution
+│   ├── resolve.rs             ProtectionRequest → ResolvedProtectionPlan resolution
+│   └── stego_cost.rs          Pixel embedding cost computation (Laplacian, fuzz feature)
 │
 ├── jpeg_transcoder/           JPEG-specific DCT coefficient processing
-│   ├── mod.rs                JpegTranscoder (decode/encode_coefficients, assemble_jpeg)
-│   ├── header.rs             JpegHeader, HuffmanTable parsing (DQT/SOF/DHT/SOS)
-│   ├── entropy.rs            CoefficientDecoder, CoefficientEncoder (Huffman codec)
-│   └── stego_f5.rs           DctStegoF5, F5XorShiftRng (F5 DCT coefficient embedding)
+│   ├── mod.rs                 JpegTranscoder (decode/encode_coefficients, assemble_jpeg)
+│   ├── header.rs              JpegHeader, HuffmanTable parsing (DQT/SOF/DHT/SOS)
+│   ├── entropy.rs             CoefficientDecoder, CoefficientEncoder (Huffman codec)
+│   └── stego_f5.rs            DctStegoF5, F5XorShiftRng (F5 DCT coefficient embedding)
 │
-├── payload_v3/                Payload v3 wire format (header, parser, types, errors)
+├── payload_v3/                Payload v3 wire format
+│   ├── mod.rs                 Re-exports
+│   ├── types.rs               AuthAlgorithm, ProtectionChannels, PayloadFlags, constants
+│   ├── header.rs              PayloadV3Header parsing and serialization
+│   ├── parser.rs              Multi-version parser (v1/v2/v3), ParsedPayload enum
+│   ├── writer.rs              PayloadBuilder for constructing v3 payloads
+│   └── errors.rs              PayloadV3ParseError
 │
 ├── provenance/                Provenance claim model
-│   ├── claim.rs              ProvenanceClaim builder and canonical serialization
-│   ├── digest.rs             Content digest computation (SHA-256)
-│   └── canonical.rs          Canonical JSON serialization
+│   ├── claim.rs               ProvenanceClaim builder and canonical serialization
+│   ├── digest.rs              TypedDigest for content hashing (SHA-256)
+│   └── canonical.rs           Canonical JSON serialization helpers
 │
-├── signing/                   Ed25519 signing (feature-gated: signatures)
-│   └── (uses ed25519-dalek)
+├── signing/                   Ed25519 signing (feature: signatures)
+│   ├── mod.rs                 ED25519_OVERHEAD_BYTES, check_signature_capacity()
+│   ├── config.rs              SigningConfig, SignaturePlacement
+│   └── ed25519_impl.rs        SigningKey, VerifyingKey, SignatureResult
 │
-├── detached/                  Detached signed manifests (feature-gated: detached-manifest)
-│   └── manifest.rs           DetachedManifest, ManifestBuilder, sidecar JSON
+├── detached/                  Detached signed manifests (feature: detached-manifest)
+│   ├── manifest.rs            DetachedManifest, SignatureRecord, PublicKeyEntry,
+│   │                          TrustMetadata, EmbeddedReference
+│   ├── generate.rs            create_manifest_from_image(), compute_image_digest()
+│   └── verify.rs              verify_detached_manifest*(), TrustPolicy,
+│                               DetachedOverallStatus, EmbeddedReferenceStatus
 │
 ├── verification/              Structured verification report
-│   └── report.rs             VerificationReport, StegoResult, MetadataResult, SigningResult
+│   ├── report.rs              VerificationReport, RightsVerification,
+│   │                          HiddenMarkerVerification, AuthenticationVerification,
+│   │                          SignatureVerification, BindingVerification,
+│   │                          TrustEvaluation, Diagnostic, FieldSource
+│   └── builder.rs             VerificationReportBuilder (fluent API)
+│
+├── bin/
+│   └── stegoeggo-conformance.rs  Conformance harness binary
 │
 └── util/
-    ├── mod.rs                Module re-exports
-    ├── image.rs              XorShiftRng, encoding
-    ├── iscc.rs               compute_iscc, Iscc content identifiers
-    └── seed.rs               generate_random_seed() via SystemTime + splitmix64
+    ├── mod.rs                 Module re-exports
+    ├── image.rs               PixelSelectionRng (XorShift64), encoding, format detection
+    ├── iscc.rs                ContentIdentifiers (ISCC-like perceptual hashing)
+    └── seed.rs                generate_random_seed() via getrandom (OS CSPRNG)
 ```
 
 ## Component Index
@@ -234,6 +261,9 @@ Each component has a detailed deep-dive document in `architecture/`:
 | **Signing** | [signing.md](signing.md) | Ed25519 signing and verification (feature-gated: signatures) |
 | **Detached Manifests** | [detached.md](detached.md) | Signed sidecar manifests for out-of-band provenance (feature-gated: detached-manifest) |
 | **Verification** | [verification.md](verification.md) | Structured verification report with per-channel sub-results |
+| **Conformance** | [conformance.md](conformance.md) | Machine-readable conformance reporting, external tool integration |
+| **Resource Limits** | [resource-limits.md](resource-limits.md) | Parser hardening, DoS prevention, configurable limits |
+| **Request Resolution** | [resolve.md](resolve.md) | ProtectionRequest → ResolvedProtectionPlan validation and resolution |
 
 ## Key Design Decisions
 
