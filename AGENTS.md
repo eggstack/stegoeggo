@@ -141,7 +141,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 **Warning system:**
 
-- `ProtectionWarning` has 6 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped`, `DctCapacityInsufficient`
+- `ProtectionWarning` has 7 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped`, `DctCapacityInsufficient`, `ContradictoryLegalClaims`
 - `MissingMacKey` is profile-dependent: only emitted for `AuthenticatedProvenance` and `Maximal` profiles
 - `severity_for_profile(profile)` classifies warnings as `Info`, `Warning`, or `Error`
 
