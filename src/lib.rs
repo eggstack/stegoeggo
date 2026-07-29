@@ -708,6 +708,7 @@ impl ProtectionPipeline {
         &self,
         img_bytes: &[u8],
         plan: &ResolvedProtectionPlan,
+        budget: &mut crate::resource_limits::OperationBudget<'_>,
     ) -> Result<Vec<u8>> {
         let input_format = plan.input_format();
         let output_format = plan.output_format();
@@ -715,7 +716,7 @@ impl ProtectionPipeline {
         if input_format != output_format {
             let img = load_image_from_bytes(img_bytes)?;
             let ctx = plan_to_context(plan);
-            return self.metadata_trap.inject_bytes(
+            let result = self.metadata_trap.inject_bytes(
                 &crate::util::image::encode_image_with_options(
                     &img,
                     Some(output_format),
@@ -723,11 +724,107 @@ impl ProtectionPipeline {
                     plan.processing().jpeg_quality,
                 )?,
                 &ctx,
-            );
+            )?;
+            Self::observe_metadata_work(&result, output_format, budget);
+            return Ok(result);
         }
 
         let ctx = plan_to_context(plan);
-        self.metadata_trap.inject_bytes(img_bytes, &ctx)
+        let result = self.metadata_trap.inject_bytes(img_bytes, &ctx)?;
+        Self::observe_metadata_work(&result, output_format, budget);
+        Ok(result)
+    }
+
+    fn observe_metadata_work(
+        img_bytes: &[u8],
+        format: crate::types::ImageOutputFormat,
+        budget: &mut crate::resource_limits::OperationBudget<'_>,
+    ) {
+        match format {
+            crate::types::ImageOutputFormat::Png => {
+                if img_bytes.len() < 8 || &img_bytes[0..8] != b"\x89PNG\r\n\x1a\n" {
+                    return;
+                }
+                let mut pos = 8;
+                while pos + 12 <= img_bytes.len() {
+                    let chunk_len = u32::from_be_bytes([
+                        img_bytes[pos],
+                        img_bytes[pos + 1],
+                        img_bytes[pos + 2],
+                        img_bytes[pos + 3],
+                    ]) as usize;
+                    let chunk_type = &img_bytes[pos + 4..pos + 8];
+                    if chunk_type == b"IEND" {
+                        break;
+                    }
+                    let chunk_total = 12 + chunk_len;
+                    budget.observe_png_chunk(chunk_total);
+                    let data_start = pos + 8;
+                    let data_end = (data_start + chunk_len).min(img_bytes.len());
+                    if (chunk_type == b"tEXt" || chunk_type == b"iTXt") && data_end > data_start {
+                        budget.observe_metadata_field(data_end - data_start);
+                    }
+                    pos += chunk_total;
+                    if pos > img_bytes.len() {
+                        break;
+                    }
+                }
+            }
+            crate::types::ImageOutputFormat::Jpeg => {
+                if img_bytes.len() < 2 || img_bytes[0] != 0xFF || img_bytes[1] != 0xD8 {
+                    return;
+                }
+                let mut pos = 2;
+                while pos + 2 <= img_bytes.len() {
+                    if img_bytes[pos] != 0xFF {
+                        pos += 1;
+                        continue;
+                    }
+                    let marker = img_bytes[pos + 1];
+                    if marker == 0xD9 || marker == 0xDA {
+                        break;
+                    }
+                    if marker == 0x00 {
+                        pos += 1;
+                        continue;
+                    }
+                    if pos + 4 > img_bytes.len() {
+                        break;
+                    }
+                    let seg_len =
+                        u16::from_be_bytes([img_bytes[pos + 2], img_bytes[pos + 3]]) as usize;
+                    let seg_end = pos + 2 + seg_len;
+                    if seg_end > img_bytes.len() {
+                        break;
+                    }
+                    budget.observe_jpeg_segment(seg_end - pos);
+                    if marker == 0xFE {
+                        budget.observe_metadata_field(seg_len.saturating_sub(2));
+                    }
+                    pos = seg_end;
+                }
+            }
+            crate::types::ImageOutputFormat::WebP => {
+                if img_bytes.len() < 12
+                    || &img_bytes[0..4] != b"RIFF"
+                    || &img_bytes[8..12] != b"WEBP"
+                {
+                    return;
+                }
+                let mut pos = 12;
+                while pos + 8 <= img_bytes.len() {
+                    let chunk_size = u32::from_le_bytes([
+                        img_bytes[pos + 4],
+                        img_bytes[pos + 5],
+                        img_bytes[pos + 6],
+                        img_bytes[pos + 7],
+                    ]) as usize;
+                    let padded = chunk_size + (chunk_size & 1);
+                    budget.observe_webp_chunk(8 + padded);
+                    pos += 8 + padded;
+                }
+            }
+        }
     }
 }
 
@@ -1215,11 +1312,16 @@ fn process_plan_bytes(
     } else if let Ok(img) = load_image_from_bytes(img_bytes) {
         let (width, height) = img.dimensions();
         limits.check_dimensions(width, height)?;
+    } else if plan.is_metadata_only() || plan.channels().hidden_marker == HiddenMarkerMode::Disabled
+    {
+        return Err(Error::ImageDecode(
+            "Image could not be decoded; metadata-only processing requires a valid image"
+                .to_string(),
+        ));
     }
 
     if plan.is_metadata_only() {
-        let bytes = pipeline.process_metadata_only(img_bytes, plan)?;
-        budget.observe_alloc(bytes.len());
+        let bytes = pipeline.process_metadata_only(img_bytes, plan, budget)?;
         return Ok(PipelineResult {
             bytes,
             embed_summary: None,
@@ -1228,8 +1330,7 @@ fn process_plan_bytes(
 
     match plan.channels().hidden_marker {
         HiddenMarkerMode::Disabled => {
-            let bytes = pipeline.process_metadata_only(img_bytes, plan)?;
-            budget.observe_alloc(bytes.len());
+            let bytes = pipeline.process_metadata_only(img_bytes, plan, budget)?;
             Ok(PipelineResult {
                 bytes,
                 embed_summary: None,

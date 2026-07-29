@@ -378,6 +378,30 @@ impl MetadataTrapProtector {
             return Err(Error::Metadata("Invalid WebP signature".to_string()));
         }
 
+        let mut has_image_chunk = false;
+        {
+            let mut p = 12;
+            while p + 8 <= webp_data.len() {
+                let cid = &webp_data[p..p + 4];
+                if cid == b"VP8 " || cid == b"VP8L" || cid == b"VP8X" {
+                    has_image_chunk = true;
+                    break;
+                }
+                let cs = u32::from_le_bytes([
+                    webp_data[p + 4],
+                    webp_data[p + 5],
+                    webp_data[p + 6],
+                    webp_data[p + 7],
+                ]) as usize;
+                p += 8 + cs + (cs & 1);
+            }
+        }
+        if !has_image_chunk {
+            return Err(Error::Metadata(
+                "WebP missing mandatory image chunk (VP8/VP8L/VP8X)".to_string(),
+            ));
+        }
+
         let dmi_val = notice.dmi().unwrap_or(DmiValue::Unspecified);
 
         let xmp_chunk =
@@ -658,20 +682,92 @@ impl MetadataTrapProtector {
                 return false;
             }
             let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
-            if marker == 0xED {
-                return true;
+            let seg_end = pos + 2 + segment_len;
+            if seg_end > jpeg_data.len() {
+                break;
             }
-            if marker == 0xE1 {
-                let seg_end = pos + 2 + segment_len;
-                if seg_end > jpeg_data.len() {
-                    break;
-                }
+            if marker == 0xED {
                 let seg_data = &jpeg_data[pos + 4..seg_end];
-                if seg_data.starts_with(b"http://ns.adobe.com/xap/1.0/\0") {
+                if Self::jpeg_payload_has_stego_properties(seg_data) {
                     return true;
                 }
             }
-            pos += 2 + segment_len;
+            if marker == 0xE1 {
+                let seg_data = &jpeg_data[pos + 4..seg_end];
+                if seg_data.starts_with(b"http://ns.adobe.com/xap/1.0/\0") {
+                    let xmp = &seg_data[29..];
+                    if Self::xmp_has_stego_properties(xmp) {
+                        return true;
+                    }
+                }
+            }
+            pos = seg_end;
+        }
+        false
+    }
+
+    fn jpeg_payload_has_stego_properties(data: &[u8]) -> bool {
+        if data.starts_with(b"Photoshop 3.0\0") {
+            let mut scan = &data[14..];
+            while scan.len() >= 6 {
+                let resource_id = u16::from_be_bytes([scan[0], scan[1]]);
+                if resource_id != 0x0404 {
+                    break;
+                }
+                let pascal_len = scan[2] as usize;
+                let header_len = 3 + pascal_len;
+                if header_len + 4 > scan.len() {
+                    break;
+                }
+                let data_size = u32::from_be_bytes([
+                    scan[header_len],
+                    scan[header_len + 1],
+                    scan[header_len + 2],
+                    scan[header_len + 3],
+                ]) as usize;
+                let data_start = header_len + 4;
+                let data_end = data_start + data_size;
+                if data_end > scan.len() {
+                    break;
+                }
+                let iptc = &scan[data_start..data_end];
+                if Self::iptc_has_stego_properties(iptc) {
+                    return true;
+                }
+                let aligned = data_size + (data_size & 1);
+                scan = &scan[header_len + 4 + aligned..];
+            }
+            return false;
+        }
+        Self::iptc_has_stego_properties(data)
+    }
+
+    fn iptc_has_stego_properties(data: &[u8]) -> bool {
+        let mut pos = 0;
+        while pos + 5 <= data.len() {
+            if data[pos] != 0x1C {
+                break;
+            }
+            let record = data[pos + 1];
+            let tag = u16::from_be_bytes([data[pos + 2], data[pos + 3]]);
+            let val_len = u16::from_be_bytes([data[pos + 4], data[pos + 5]]) as usize;
+            if record == 2 && (tag == 0x027A || tag == 0x027C || tag == 0x027D) {
+                return true;
+            }
+            pos += 6 + val_len;
+        }
+        false
+    }
+
+    fn xmp_has_stego_properties(xmp: &[u8]) -> bool {
+        if xmp.windows(20).any(|w| w == b"stegoeggo:") {
+            return true;
+        }
+        if xmp
+            .windows(PLUS_DATA_MINING_PROPERTY.len())
+            .any(|w| w == PLUS_DATA_MINING_PROPERTY.as_bytes())
+        {
+            return true;
         }
         false
     }
@@ -690,8 +786,13 @@ impl MetadataTrapProtector {
                 webp_data[pos + 7],
             ]) as usize;
             let padded_size = chunk_size + (chunk_size & 1);
+            let data_start = pos + 8;
+            let data_end = data_start + chunk_size;
 
-            if chunk_id == b"XMP " || chunk_id == b"EXIF" {
+            if chunk_id == b"XMP "
+                && data_end <= webp_data.len()
+                && Self::xmp_has_stego_properties(&webp_data[data_start..data_end])
+            {
                 return true;
             }
 
@@ -911,6 +1012,43 @@ impl MetadataTrapProtector {
             return Err(Error::Metadata("Invalid PNG signature".to_string()));
         }
 
+        let mut has_ihdr = false;
+        let mut has_iend = false;
+        {
+            let mut p = 8;
+            while p + 12 <= png_data.len() {
+                let cl = u32::from_be_bytes([
+                    png_data[p],
+                    png_data[p + 1],
+                    png_data[p + 2],
+                    png_data[p + 3],
+                ]) as usize;
+                let ct = &png_data[p + 4..p + 8];
+                if ct == b"IHDR" {
+                    has_ihdr = true;
+                }
+                if ct == b"IEND" {
+                    has_iend = true;
+                    break;
+                }
+                let end = p + 12 + cl;
+                if end > png_data.len() {
+                    break;
+                }
+                p = end;
+            }
+        }
+        if !has_ihdr {
+            return Err(Error::Metadata(
+                "PNG missing mandatory IHDR chunk".to_string(),
+            ));
+        }
+        if !has_iend {
+            return Err(Error::Metadata(
+                "PNG missing mandatory IEND chunk".to_string(),
+            ));
+        }
+
         let mut output = Vec::with_capacity(png_data.len() + 1000 * metadata.len() + 500);
         output.extend_from_slice(&png_data[0..8]);
 
@@ -1037,6 +1175,38 @@ impl MetadataTrapProtector {
 
         if jpeg_data.len() < 2 || jpeg_data[0] != 0xFF || jpeg_data[1] != 0xD8 {
             return Err(Error::Metadata("Invalid JPEG signature".to_string()));
+        }
+
+        let mut has_sos = false;
+        {
+            let mut p = 2;
+            while p + 2 <= jpeg_data.len() {
+                if jpeg_data[p] != 0xFF {
+                    p += 1;
+                    continue;
+                }
+                let m = jpeg_data[p + 1];
+                if m == 0xDA || m == 0xD9 {
+                    has_sos = m == 0xDA;
+                    break;
+                }
+                if m == 0x00 {
+                    p += 1;
+                    continue;
+                }
+                if p + 4 > jpeg_data.len() {
+                    break;
+                }
+                let sl = u16::from_be_bytes([jpeg_data[p + 2], jpeg_data[p + 3]]) as usize;
+                let se = p + 2 + sl;
+                if se > jpeg_data.len() {
+                    break;
+                }
+                p = se;
+            }
+        }
+        if !has_sos {
+            return Err(Error::Metadata("JPEG missing SOS marker".to_string()));
         }
 
         let mut output = Vec::with_capacity(jpeg_data.len() + 500 * metadata.len() + 500);
@@ -1857,6 +2027,366 @@ impl MetadataTrapProtector {
         None
     }
 
+    fn is_stego_owned_text_key(key: &[u8]) -> bool {
+        matches!(key, b"X-Protection-Seed" | b"DMI-PROHIBITED")
+    }
+
+    fn strip_stego_owned_png(png_data: &[u8]) -> Result<Vec<u8>> {
+        if png_data.len() < 8 || &png_data[0..8] != b"\x89PNG\r\n\x1a\n" {
+            return Err(Error::Metadata("Invalid PNG signature".to_string()));
+        }
+        let mut output = Vec::with_capacity(png_data.len());
+        output.extend_from_slice(&png_data[0..8]);
+
+        let mut pos = 8;
+        while pos + 12 <= png_data.len() {
+            let chunk_len = u32::from_be_bytes([
+                png_data[pos],
+                png_data[pos + 1],
+                png_data[pos + 2],
+                png_data[pos + 3],
+            ]) as usize;
+            let chunk_type = &png_data[pos + 4..pos + 8];
+
+            let chunk_end = pos
+                .checked_add(12)
+                .and_then(|p| p.checked_add(chunk_len))
+                .ok_or_else(|| Error::ImageTruncated("PNG chunk length overflow".to_string()))?;
+            if chunk_end > png_data.len() {
+                return Err(Error::ImageTruncated(format!(
+                    "PNG chunk at offset {} claims length {} but only {} bytes remain",
+                    pos,
+                    chunk_len,
+                    png_data.len().saturating_sub(pos)
+                )));
+            }
+
+            let is_stego = if chunk_type == b"tEXt" || chunk_type == b"iTXt" {
+                let data = &png_data[pos + 8..chunk_end];
+                if let Some(null_pos) = data.iter().position(|&b| b == 0) {
+                    Self::is_stego_owned_text_key(&data[..null_pos])
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if !is_stego {
+                output.extend_from_slice(&png_data[pos..chunk_end]);
+            }
+
+            pos = chunk_end;
+        }
+
+        Ok(output)
+    }
+
+    fn is_stego_owned_jpeg_segment(marker: u8, seg_data: &[u8]) -> bool {
+        match marker {
+            0xFE => {
+                if seg_data.starts_with(Self::STRUCTURED_COM_MAGIC) {
+                    return true;
+                }
+                if let Ok(s) = std::str::from_utf8(seg_data) {
+                    s.starts_with("X-Protection-Seed: ")
+                        || s.starts_with("DMI-PROHIBITED: ")
+                        || s.starts_with("noai: ")
+                        || s.starts_with("Copyright: ")
+                        || s.starts_with("Contact: ")
+                        || s.starts_with("License: ")
+                        || s.starts_with("UsageTerms: ")
+                        || s.starts_with("DateCreated: ")
+                        || s.starts_with("AIConstraints: ")
+                        || s.starts_with("WebStatementOfRights: ")
+                        || s.starts_with("Creator: ")
+                        || s.starts_with("CreditLine: ")
+                        || s.starts_with("CopyrightOwner: ")
+                        || s.starts_with("LicensorName: ")
+                        || s.starts_with("LicensorEmail: ")
+                        || s.starts_with("LicensorURL: ")
+                        || s.starts_with("MetadataDate: ")
+                        || s.starts_with("NoticeAppliedAt: ")
+                } else {
+                    false
+                }
+            }
+            0xED => Self::jpeg_payload_has_stego_properties_static(seg_data),
+            0xE1 if seg_data.starts_with(b"http://ns.adobe.com/xap/1.0/\0") => {
+                Self::xmp_has_stego_properties(&seg_data[29..])
+            }
+            _ => false,
+        }
+    }
+
+    fn jpeg_payload_has_stego_properties_static(data: &[u8]) -> bool {
+        if data.starts_with(b"Photoshop 3.0\0") {
+            let mut scan = &data[14..];
+            while scan.len() >= 6 {
+                let resource_id = u16::from_be_bytes([scan[0], scan[1]]);
+                if resource_id != 0x0404 {
+                    break;
+                }
+                let pascal_len = scan[2] as usize;
+                let header_len = 3 + pascal_len;
+                if header_len + 4 > scan.len() {
+                    break;
+                }
+                let data_size = u32::from_be_bytes([
+                    scan[header_len],
+                    scan[header_len + 1],
+                    scan[header_len + 2],
+                    scan[header_len + 3],
+                ]) as usize;
+                let data_start = header_len + 4;
+                let data_end = data_start + data_size;
+                if data_end > scan.len() {
+                    break;
+                }
+                let iptc = &scan[data_start..data_end];
+                if Self::iptc_has_stego_properties(iptc) {
+                    return true;
+                }
+                let aligned = data_size + (data_size & 1);
+                scan = &scan[header_len + 4 + aligned..];
+            }
+            false
+        } else {
+            Self::iptc_has_stego_properties(data)
+        }
+    }
+
+    fn strip_stego_owned_jpeg(jpeg_data: &[u8]) -> Result<Vec<u8>> {
+        if jpeg_data.len() < 2 || jpeg_data[0] != 0xFF || jpeg_data[1] != 0xD8 {
+            return Err(Error::Metadata("Invalid JPEG signature".to_string()));
+        }
+        let mut output = Vec::with_capacity(jpeg_data.len());
+        output.extend_from_slice(&jpeg_data[0..2]);
+
+        let mut pos = 2;
+        while pos + 2 <= jpeg_data.len() {
+            if jpeg_data[pos] != 0xFF {
+                pos += 1;
+                continue;
+            }
+            let marker = jpeg_data[pos + 1];
+            if marker == 0xD9 || marker == 0xDA {
+                output.extend_from_slice(&jpeg_data[pos..]);
+                break;
+            }
+            if marker == 0x00 {
+                pos += 1;
+                continue;
+            }
+            if pos + 4 > jpeg_data.len() {
+                return Err(Error::ImageTruncated(format!(
+                    "JPEG segment parsing truncated at byte {}",
+                    pos,
+                )));
+            }
+            let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
+            let segment_end = pos
+                .checked_add(2)
+                .and_then(|v| v.checked_add(segment_len))
+                .ok_or_else(|| {
+                    Error::Metadata(format!("JPEG segment length overflow at byte {}", pos))
+                })?;
+            if segment_end > jpeg_data.len() {
+                return Err(Error::ImageTruncated(format!(
+                    "JPEG segment at byte {} claims length {} but only {} bytes remain",
+                    pos,
+                    segment_len,
+                    jpeg_data.len().saturating_sub(pos + 2)
+                )));
+            }
+
+            if marker == 0xFE || marker == 0xED || marker == 0xE1 {
+                let seg_data = &jpeg_data[pos + 4..segment_end];
+                if Self::is_stego_owned_jpeg_segment(marker, seg_data) {
+                    pos = segment_end;
+                    continue;
+                }
+            }
+
+            output.extend_from_slice(&jpeg_data[pos..segment_end]);
+            pos = segment_end;
+        }
+
+        Ok(output)
+    }
+
+    fn strip_stego_owned_webp(webp_data: &[u8]) -> Result<Vec<u8>> {
+        if webp_data.len() < 12 || &webp_data[0..4] != b"RIFF" || &webp_data[8..12] != b"WEBP" {
+            return Err(Error::Metadata("Invalid WebP signature".to_string()));
+        }
+        let mut output = Vec::with_capacity(webp_data.len());
+        output.extend_from_slice(&webp_data[0..12]);
+
+        let mut pos = 12;
+        while pos + 8 <= webp_data.len() {
+            let chunk_id = &webp_data[pos..pos + 4];
+            let chunk_size = u32::from_le_bytes([
+                webp_data[pos + 4],
+                webp_data[pos + 5],
+                webp_data[pos + 6],
+                webp_data[pos + 7],
+            ]) as usize;
+            let padded_size = chunk_size + (chunk_size & 1);
+            let data_start = pos + 8;
+            let data_end = data_start + chunk_size;
+
+            let is_stego = if chunk_id == b"XMP " && data_end <= webp_data.len() {
+                Self::xmp_has_stego_properties(&webp_data[data_start..data_end])
+            } else {
+                false
+            };
+
+            if !is_stego && data_end <= webp_data.len() {
+                output.extend_from_slice(&webp_data[pos..data_end]);
+                if chunk_size & 1 != 0 {
+                    output.push(0);
+                }
+            }
+
+            pos += 8 + padded_size;
+        }
+
+        let new_riff_size = (output.len() - 8) as u32;
+        output[4] = new_riff_size as u8;
+        output[5] = (new_riff_size >> 8) as u8;
+        output[6] = (new_riff_size >> 16) as u8;
+        output[7] = (new_riff_size >> 24) as u8;
+
+        Ok(output)
+    }
+
+    fn collect_stego_owned_png_keys(png_data: &[u8]) -> Vec<Vec<u8>> {
+        let mut keys = Vec::new();
+        if png_data.len() < 8 || &png_data[0..8] != b"\x89PNG\r\n\x1a\n" {
+            return keys;
+        }
+        let mut pos = 8;
+        while pos + 12 <= png_data.len() {
+            let chunk_len = u32::from_be_bytes([
+                png_data[pos],
+                png_data[pos + 1],
+                png_data[pos + 2],
+                png_data[pos + 3],
+            ]) as usize;
+            let chunk_type = &png_data[pos + 4..pos + 8];
+            if chunk_type == b"IEND" {
+                break;
+            }
+            if chunk_type == b"tEXt" || chunk_type == b"iTXt" {
+                let data_start = pos + 8;
+                let data_end = (data_start + chunk_len).min(png_data.len());
+                let data = &png_data[data_start..data_end];
+                if let Some(null_pos) = data.iter().position(|&b| b == 0) {
+                    let key = &data[..null_pos];
+                    if Self::is_stego_owned_text_key(key) {
+                        keys.push(key.to_vec());
+                    }
+                }
+            }
+            let chunk_end = pos + 12 + chunk_len;
+            if chunk_end > png_data.len() {
+                break;
+            }
+            pos = chunk_end;
+        }
+        keys
+    }
+
+    fn collect_stego_owned_jpeg_keys(jpeg_data: &[u8]) -> Vec<Vec<u8>> {
+        let mut keys = Vec::new();
+        if jpeg_data.len() < 2 || jpeg_data[0] != 0xFF || jpeg_data[1] != 0xD8 {
+            return keys;
+        }
+        let mut pos = 2;
+        while pos + 2 <= jpeg_data.len() {
+            if jpeg_data[pos] != 0xFF {
+                pos += 1;
+                continue;
+            }
+            let marker = jpeg_data[pos + 1];
+            if marker == 0xD9 || marker == 0xDA {
+                break;
+            }
+            if marker == 0x00 {
+                pos += 1;
+                continue;
+            }
+            if pos + 4 > jpeg_data.len() {
+                break;
+            }
+            let seg_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
+            let seg_end = pos + 2 + seg_len;
+            if seg_end > jpeg_data.len() {
+                break;
+            }
+            if marker == 0xFE {
+                let seg_data = &jpeg_data[pos + 4..seg_end];
+                if let Ok(s) = std::str::from_utf8(seg_data) {
+                    for prefix in &[
+                        "X-Protection-Seed: ",
+                        "DMI-PROHIBITED: ",
+                        "noai: ",
+                        "Copyright: ",
+                        "Contact: ",
+                        "License: ",
+                        "UsageTerms: ",
+                        "DateCreated: ",
+                        "AIConstraints: ",
+                        "WebStatementOfRights: ",
+                        "Creator: ",
+                        "CreditLine: ",
+                        "CopyrightOwner: ",
+                        "LicensorName: ",
+                        "LicensorEmail: ",
+                        "LicensorURL: ",
+                        "MetadataDate: ",
+                        "NoticeAppliedAt: ",
+                    ] {
+                        if s.starts_with(prefix) {
+                            let key = prefix.trim_end_matches(": ");
+                            keys.push(key.as_bytes().to_vec());
+                        }
+                    }
+                }
+            }
+            pos = seg_end;
+        }
+        keys
+    }
+
+    fn collect_stego_owned_webp_keys(webp_data: &[u8]) -> Vec<Vec<u8>> {
+        let mut keys = Vec::new();
+        if webp_data.len() < 12 || &webp_data[0..4] != b"RIFF" || &webp_data[8..12] != b"WEBP" {
+            return keys;
+        }
+        let mut pos = 12;
+        while pos + 8 <= webp_data.len() {
+            let chunk_id = &webp_data[pos..pos + 4];
+            let chunk_size = u32::from_le_bytes([
+                webp_data[pos + 4],
+                webp_data[pos + 5],
+                webp_data[pos + 6],
+                webp_data[pos + 7],
+            ]) as usize;
+            let padded_size = chunk_size + (chunk_size & 1);
+            let data_start = pos + 8;
+            let data_end = data_start + chunk_size;
+            if chunk_id == b"XMP "
+                && data_end <= webp_data.len()
+                && Self::xmp_has_stego_properties(&webp_data[data_start..data_end])
+            {
+                keys.push(b"XMP".to_vec());
+            }
+            pos += 8 + padded_size;
+        }
+        keys
+    }
+
     #[doc(hidden)]
     pub fn inject_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
         let should_inject_metadata =
@@ -1894,29 +2424,65 @@ impl MetadataTrapProtector {
             }
             MetadataUpdatePolicy::PreserveExisting => {
                 if self.has_stego_owned_metadata(img_bytes, format) {
-                    return Ok(img_bytes.to_vec());
+                    let existing_keys = match format {
+                        ImageOutputFormat::Png => Self::collect_stego_owned_png_keys(img_bytes),
+                        ImageOutputFormat::Jpeg => Self::collect_stego_owned_jpeg_keys(img_bytes),
+                        ImageOutputFormat::WebP => Self::collect_stego_owned_webp_keys(img_bytes),
+                    };
+                    let metadata: Vec<_> = metadata
+                        .into_iter()
+                        .filter(|(k, _)| !existing_keys.contains(k))
+                        .collect();
+                    if metadata.is_empty() && notice.dmi().is_none() {
+                        return Ok(img_bytes.to_vec());
+                    }
+                    return match format {
+                        ImageOutputFormat::Png => self.inject_text_chunks_png(
+                            img_bytes,
+                            &metadata,
+                            notice.dmi(),
+                            notice.seed(),
+                            Some(&ctx.resource_limits()),
+                        ),
+                        ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg(
+                            img_bytes,
+                            &metadata,
+                            notice.dmi(),
+                            notice.seed(),
+                            Some(ctx),
+                        ),
+                        ImageOutputFormat::WebP => {
+                            self.inject_text_chunks_webp_from_notice(img_bytes, &notice)
+                        }
+                    };
                 }
             }
             MetadataUpdatePolicy::ReplaceStegoOwned => {}
         }
 
+        let stripped = match format {
+            ImageOutputFormat::Png => Self::strip_stego_owned_png(img_bytes)?,
+            ImageOutputFormat::Jpeg => Self::strip_stego_owned_jpeg(img_bytes)?,
+            ImageOutputFormat::WebP => Self::strip_stego_owned_webp(img_bytes)?,
+        };
+
         let with_metadata = match format {
             ImageOutputFormat::Png => self.inject_text_chunks_png(
-                img_bytes,
+                &stripped,
                 &metadata,
                 notice.dmi(),
                 notice.seed(),
                 Some(&ctx.resource_limits()),
             )?,
             ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg(
-                img_bytes,
+                &stripped,
                 &metadata,
                 notice.dmi(),
                 notice.seed(),
                 Some(ctx),
             )?,
             ImageOutputFormat::WebP => {
-                self.inject_text_chunks_webp_from_notice(img_bytes, &notice)?
+                self.inject_text_chunks_webp_from_notice(&stripped, &notice)?
             }
         };
 
