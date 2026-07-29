@@ -7,8 +7,7 @@ description: Use when writing, modifying, or reviewing Rust code in the stegoegg
 
 ## Formatting
 - Rustfmt: 4-space indentation, max width 100
-- Run `cargo fmt --check` before committing
-- Run `cargo clippy --all-targets -- -D warnings` before committing
+- Run `./scripts/check.sh` before committing (runs fmt, clippy, no-default-features check, tests)
 
 ## Code Style
 - No comments in code unless explicitly asked by user
@@ -17,6 +16,7 @@ description: Use when writing, modifying, or reviewing Rust code in the stegoegg
 - `LazyLock` for static singletons (e.g., `DEFAULT_PIPELINE`)
 - `Arc<ProtectionConfig>` for shared heavy config fields
 - Private fields with getter methods on public types
+- `#![forbid(unsafe_code)]` throughout the library crate
 
 ## Type Patterns
 
@@ -42,7 +42,7 @@ fn extract_payload(&self, img: &DynamicImage) -> Option<StegoPayload>
 fn verify_payload(&self, img: &DynamicImage) -> bool
 fn verify_payload_with_key(&self, img: &DynamicImage, mac_key: &[u8]) -> Option<bool>
 fn verify_payload_from_bytes(&self, img_bytes: &[u8], seed: u64) -> bool
-fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8]) -> Option<bool>
+fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus
 ```
 
 ### JPEG transcoder
@@ -55,9 +55,20 @@ fn get_scan_data_start(...) -> Option<usize>
 
 ## Constants
 - `MIN_PAYLOAD_SIZE = 28` (24-byte header + 4-byte CRC32; parsing threshold, not output size)
-- `CURRENT_PAYLOAD_VERSION = 2` (V2 header is 32 bytes; V1 is 24 bytes, still supported for extraction)
+- `V3_PAYLOAD_VERSION = 3` (V3 is the current default; V1/V2 still supported for extraction only)
 - `STEGO_SPREAD_FACTOR = 5` (adjacent pixels per LSB bit)
+- `DEFAULT_TILE_SIZE = 64` (crop-resistant tile size default)
+- `MIN_TILE_SIZE = 32` (minimum tile size for crop resistance)
 - `estimated_latency_ms()` returns `u32` (not `f64`)
+
+## Payload Sizes
+
+| Mode | Size | Notes |
+|------|------|-------|
+| V3 CRC (no MAC) | 36 bytes | 32-byte core + 4-byte CRC32 |
+| V3 HMAC | 48 bytes | 32-byte core + 16-byte HMAC-SHA256 |
+| V2 ECC (legacy) | 100 bytes | 32-byte header × 3 replication + 4 CRC32 |
+| V1 (legacy) | 76 bytes | 24-byte header × 3 + 4 CRC32 |
 
 ## Common Pitfalls
 
@@ -67,15 +78,15 @@ fn get_scan_data_start(...) -> Option<usize>
 4. **`subtle` crate** — use `ConstantTimeEq::ct_eq()` for HMAC verification, not `==`
 5. **F5 seed embedding** — Precondition check fails if any quantization value < 2. Values of 1 cannot represent 0-bits reliably. Use values >= 2.
 6. **ISCC is not standard-compliant** — uses custom component codes (`0x12`, `0x33`), not interoperable with other ISCC implementations.
-7. **V2 payload format** — 32-byte header (version, level, seed, intensity, timestamp, content_hash, dmi, flags, reserved). V1 (24-byte) still supported for extraction. MAC payloads: 40 bytes (32 header + 8 HMAC). ECC payloads: 100 bytes (32 × 3 + 4 CRC32).
+7. **V3 is the current payload format** — V1/V2 are extraction-only legacy. V3 adds TLV extensions with domain-separated authentication.
+8. **`verify_payload_from_bytes_with_key` returns `VerificationStatus`** — not `Option<bool>`.
 
 ## Build & Test
 ```bash
-cargo check                              # Quick compilation check
-cargo test                               # All tests (~245 total)
-cargo test --all-features                # Includes async tests
-cargo clippy --all-targets -- -D warnings # Lint
-cargo fmt --check                        # Format check
+./scripts/check.sh                      # Fast local check (fmt, clippy, no-default-features, tests)
+cargo test --workspace --exclude stegoeggo-fuzz --all-features  # All tests
+cargo clippy --workspace --all-targets --all-features -- -D warnings  # Lint
+cargo fmt --all -- --check              # Format check
 ```
 
 ## Testing Patterns
@@ -83,3 +94,4 @@ cargo fmt --check                        # Format check
 - Integration tests in `tests/` directory
 - Test with `ProtectionContext::new(intensity, seed)` for deterministic results
 - `ProtectionContext::default()` uses CSPRNG-backed seed (via `getrandom`) — safe for production; use `ProtectionContext::new(intensity, seed)` for reproducibility
+- Feature-gated tests: `tests/async_integration.rs` requires `async` feature

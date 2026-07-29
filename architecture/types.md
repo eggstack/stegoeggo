@@ -189,10 +189,15 @@ Tracks which channels executed and any degradation:
 
 ```rust
 pub struct ExecutionReport {
+    pub effective_policy: RightsPolicy,
+    pub effective_dmi: Option<DmiValue>,
     pub metadata_injected: bool,
+    pub stego_attempted: bool,
     pub stego_succeeded: bool,
-    pub authentication_performed: bool,
+    pub format_transcoded: bool,
     pub warnings: Vec<ProtectionWarning>,
+    pub resource_usage: Option<ResourceUsage>,
+    pub embed_summary: Option<EmbedOutcomeSummary>,
 }
 ```
 
@@ -276,7 +281,7 @@ All fields are private — use builder methods (`with_mac_key`, `with_legal_meta
 
 Builder-pattern struct for legal/copyright metadata:
 
-Fields: `copyright_holder`, `contact_email`, `license_url`, `usage_terms`, `creation_date`, `ai_constraints`, `web_statement_of_rights`, `creator`.
+Fields: `copyright_holder`, `contact_email`, `license_url`, `usage_terms`, `usage_terms_lang`, `creation_date`, `ai_constraints`, `web_statement_of_rights`, `creator`, `credit_line`, `copyright_owner`, `licensor_name`, `licensor_email`, `licensor_url`, `metadata_date`, `notice_applied_at`.
 
 ## Migration Guide: v0.3 → v0.4 (Release 4)
 
@@ -458,7 +463,7 @@ Extracted stego data (returned from `SteganographyProtector::extract_payload`):
 
 ## ProtectionWarning
 
-Enum with 6 variants emitted by `process_image_bytes_with_warnings`:
+Enum with 7 variants emitted by `process_image_bytes_with_warnings`:
 
 | Variant | Category | Description |
 |---------|----------|-------------|
@@ -468,6 +473,7 @@ Enum with 6 variants emitted by `process_image_bytes_with_warnings`:
 | `JpegReencodeFragile` | FormatFragility | JPEG output fragile under downstream re-encoding |
 | `LsbCapacitySkipped` | BestEffortStego | Image too small for LSB embedding |
 | `DctCapacityInsufficient` | BestEffortStego | JPEG has too few DCT coefficients for F5 |
+| `ContradictoryLegalClaims` | LegalNotice | Contradictory or inconsistent legal claim fields detected |
 
 ### Helper Methods
 

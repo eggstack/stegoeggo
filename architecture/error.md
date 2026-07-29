@@ -1,6 +1,6 @@
 # Error Types
 
-**Source:** `src/error.rs` (~230 lines)
+**Source:** `src/error.rs` (~347 lines)
 
 Uses `thiserror` for ergonomic error derivation.
 
@@ -11,7 +11,7 @@ Uses `thiserror` for ergonomic error derivation.
 pub enum Error {
     ImageDecode(String),
     ImageEncode(String),
-    Io(std::io::Error),
+    Io(#[from] std::io::Error),
     Serialization(#[from] serde_json::Error),
     Metadata(String),
     Config(String),
@@ -22,6 +22,11 @@ pub enum Error {
     PayloadVerification(String),
     Crypto(String),
     Iscc(String),
+    InputTooLarge { size: usize, limit: usize },
+    DimensionsExceeded { width: u32, height: u32, max_width: u32, max_height: u32 },
+    ContainerLimitExceeded { kind: &'static str, count: usize, limit: usize },
+    MetadataLimitExceeded { kind: &'static str, size: usize, limit: usize },
+    VerificationBudgetExceeded { kind: &'static str, count: usize, limit: usize },
     #[cfg(feature = "async")]
     Task(String),
 }
@@ -44,6 +49,11 @@ pub enum Error {
 | `PayloadVerification` | `SteganographyProtector` | HMAC/checksum verification failed |
 | `Crypto` | `SteganographyProtector` | Cryptographic operation failures |
 | `Iscc` | `util/iscc.rs` | ISCC content identifier generation failures |
+| `InputTooLarge` | Resource limits | Input image exceeds configured size limit |
+| `DimensionsExceeded` | Resource limits | Image dimensions exceed configured maximum |
+| `ContainerLimitExceeded` | Resource limits | Container (e.g., PNG chunks) exceeds count limit |
+| `MetadataLimitExceeded` | Resource limits | Metadata section exceeds size limit |
+| `VerificationBudgetExceeded` | Resource limits | Verification attempts exceed budget |
 | `Task` | `async_api` | Tokio task join errors (async feature only) |
 
 ## Result Type
@@ -54,7 +64,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 ## Design Notes
 
-- All variants wrap `String` for simplicity (no lifetime issues)
+- All string variants wrap `String` for simplicity (no lifetime issues)
 - `Io` variant wraps `std::io::Error` directly for proper error chaining
 - The `#[cfg(feature = "async")]` on `Task` avoids requiring tokio for non-async builds
+- Structured variants (`InputTooLarge`, `DimensionsExceeded`, etc.) carry typed fields for programmatic error handling
 - Error messages are descriptive enough for debugging but don't leak internal details

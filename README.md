@@ -652,7 +652,7 @@ Protected: Yes
 Level: standard (id: 2)
 Seed: 1234567890
 Intensity: 0.50
-Version: 2
+Version: 3
 
 # Unprotected image
 Protected: No

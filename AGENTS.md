@@ -128,7 +128,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Spread spectrum LSB** — Each payload bit embedded across `STEGO_SPREAD_FACTOR` (=5) adjacent pixels via majority voting
 - **`stego_redundancy` is `Option<usize>`** — Default `None` derives from intensity via `effective_redundancy()` (<0.3→1, 0.3-0.7→2, >=0.7→3). Valid range 1-10
 - **F5 redundancy cap** — Max redundancy is 10. Extraction tries all 10 values
-- **Payload version 3 is current** — V1/V2 still supported for extraction. V3 adds TLV extensions with domain-separated authentication. V3 extraction paths (magic bytes `[0x53, 0x45]`) tried first before V2/V1 fallback
+- **Payload version 3 is current** — V1/V2 still supported for extraction only, never written. V3 adds TLV extensions with domain-separated authentication. V3 extraction paths (magic bytes `[0x53, 0x45]`) tried first before V2/V1 fallback. V3 core: 32 bytes. V3 CRC: 36 bytes. V3 HMAC: 48 bytes
 - **Tiled steganography** (`with_tile_size(n)`) — Crop-resistant mode, full payload per tile. `tile_seed(master_seed, tile_x, tile_y)` uses splitmix64
 - **F5 tiled block set** — MCU-interleaved: `block_idx = (mcu_y * mcus_per_row + mcu_x) * h * v + sub_y * h + sub_x`. Do NOT assume row-major ordering
 

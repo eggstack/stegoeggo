@@ -10,7 +10,7 @@ Workflow for executing multi-wave parallel tasks in the stegoeggo codebase using
 ## Quick Reference
 
 - Plans live in `plans/`
-- Worktrees go in `/Users/davidbowman/projects/cloak-wt-taskN`
+- Worktrees go in a temporary directory outside the workspace (e.g., `/tmp/stegoeggo-wt-taskN`)
 - Each task gets its own branch: `fix/taskN-description`
 - Branch naming: `fix/` prefix for bug fixes, `feat/` for features
 
@@ -24,7 +24,7 @@ Understand all tasks, their dependencies, and which are parallelizable.
 
 ```bash
 # One per task, from the current HEAD
-git worktree add /Users/davidbowman/projects/cloak-wt-taskN -b fix/taskN-description master
+git worktree add /tmp/stegoeggo-wt-taskN -b fix/taskN-description HEAD
 ```
 
 For independent items within the same wave, a single worktree can implement multiple items if they are in the same file.
@@ -35,14 +35,14 @@ Use the Task tool with `subagent_type: general` for each task. Each agent must:
 - Work in its own worktree directory
 - Read the relevant source files
 - Implement the fix per the plan's steps
-- Run `cargo test` and `cargo clippy --all-targets -- -D warnings`
+- Run `./scripts/check.sh` to verify
 - Commit changes with a descriptive message
 
 ### 4. Review worktree diffs
 
 Before merging, review each worktree's changes:
 ```bash
-cd /Users/davidbowman/projects/cloak-wt-taskN
+cd /tmp/stegoeggo-wt-taskN
 git log --oneline -3
 git diff HEAD~1 --stat
 git diff HEAD~1 -- src/specific_file.rs
@@ -68,22 +68,19 @@ If conflicts arise:
 ### 6. Run full test suite on main
 
 ```bash
-cargo test --all-features
-cargo clippy --all-targets -- -D warnings
-cargo fmt --check
+./scripts/check.sh
 ```
 
 ### 7. Update documentation
 
 - Update AGENTS.md with new conventions/gotchas
-- Update AGENTS.override.md with implementation notes
 - Update the plan file to mark tasks completed
 - Create/update skills in .skills/ if new patterns emerged
 
 ### 8. Clean up
 
 ```bash
-git worktree remove /Users/davidbowman/projects/cloak-wt-taskN
+git worktree remove /tmp/stegoeggo-wt-taskN
 ```
 
 ## Gotchas
@@ -104,7 +101,7 @@ When launching agents for plan tasks, use this template:
 ```
 You are working on the stegoeggo Rust codebase. Your task is to [description].
 
-**Working directory**: `/Users/davidbowman/projects/cloak-wt-taskN`
+**Working directory**: `/tmp/stegoeggo-wt-taskN`
 **Branch**: `fix/taskN-description`
 
 **Background**: [context from plan]
@@ -122,7 +119,3 @@ You are working on the stegoeggo Rust codebase. Your task is to [description].
 
 When done, report back with: what you changed, test results, and any issues encountered.
 ```
-
-## Completed Plan Reference
-
-The plan in `plans/plan.md` was completed on 2026-05-30. All 11 items across 5 waves were implemented and verified. This workflow remains applicable for future multi-wave plans.

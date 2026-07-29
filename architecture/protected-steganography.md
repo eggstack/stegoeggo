@@ -6,7 +6,28 @@ The most complex module. Handles LSB and DCT-based steganographic embedding for 
 
 ## Payload Format
 
-### V2 Header (32 bytes, current)
+### V3 Header (32 bytes, current default)
+
+```
+Offset  Size  Field
+0       2     Magic bytes ('S', 'E')
+2       1     Version (=3)
+3       1     Header length (includes extensions and key ID)
+4       2     Total payload length
+6       8     Seed (little-endian)
+14      2     Intensity (0–10000, little-endian)
+16      1     DMI policy byte
+17      8     Content hash (truncated)
+25      1     Key ID length (0–32)
+26      1     Auth algorithm (0=CRC32, 1=HMAC-SHA256, 2=Ed25519)
+27      1     Auth tag length
+28      2     Flags
+30      2     Reserved
+```
+
+V3 supports TLV extensions for additional metadata and optionally carries an Ed25519 signature or HMAC-SHA256 authentication tag.
+
+### V2 Header (32 bytes, legacy, extraction only)
 
 ```
 Offset  Size  Field
@@ -21,7 +42,7 @@ Offset  Size  Field
 26      6     Reserved (zeroed)
 ```
 
-### V1 Header (24 bytes, legacy, still supported for extraction)
+### V1 Header (24 bytes, legacy, extraction only)
 
 ```
 Offset  Size  Field
@@ -35,11 +56,11 @@ Offset  Size  Field
 
 ### Payload Sizes
 
-- **MAC mode**: 32-byte V2 header + 8-byte HMAC-SHA256 = 40 bytes total
-- **ECC mode (no MAC)**: 32 bytes × 3 (ECC replication) + 4 CRC32 = 100 bytes
+- **V3 CRC (no MAC)**: 32-byte core + 4-byte CRC32 = 36 bytes total
+- **V3 HMAC**: 32-byte core + 16-byte HMAC-SHA256 = 48 bytes total
+- **V2 ECC (legacy)**: 32-byte header × 3 (ECC replication) + 4 CRC32 = 100 bytes
+- **V1 ECC (legacy)**: 24-byte header × 3 + 4 CRC32 = 76 bytes
 - **`MIN_PAYLOAD_SIZE = 28`**: Parsing threshold (24-byte V1 header + 4-byte CRC32), not the output size
-
-Constants: `ECC_PAYLOAD_SIZE_V2 = 100`, `ECC_PAYLOAD_BITS_V2 = 800`. Legacy V1: `ECC_PAYLOAD_SIZE_V1 = 76`, `ECC_PAYLOAD_BITS = 608`.
 
 ## StegoPayload (Extracted)
 

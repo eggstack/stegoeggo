@@ -316,11 +316,12 @@ static DEFAULT_PIPELINE: LazyLock<ProtectionPipeline> = LazyLock::new(Protection
 
 ### Stego Payload Format
 
-- 24-byte header + 4-byte CRC32 checksum = 28 bytes minimum (`MIN_PAYLOAD_SIZE`)
-- With HMAC key: 24-byte header + 8-byte HMAC = 32 bytes total
-- Non-MAC mode produces 100-byte ECC-encoded payload (32 bytes V2 header × 3 replication + 4 CRC32)
+- V3 is the current default: 32-byte core + TLV extensions (CRC: 36 bytes, HMAC: 48 bytes)
+- V2 (legacy, extraction only): 32-byte header, ECC-encoded: 100 bytes
+- V1 (legacy, extraction only): 24-byte header, ECC-encoded: 76 bytes
+- `MIN_PAYLOAD_SIZE = 28`: Parsing threshold, not output size
 
-### Payload v3 (Release 5)
+### Payload v3
 
 Payload v3 adds TLV (Type-Length-Value) extensions with domain-separated authentication:
 
@@ -400,7 +401,7 @@ Three-state control (`Option<bool>`) for metadata injection:
 | `serde` | 1.0 | Serialization of context and variants |
 | `serde_json` | 1.0 | JSON serialization |
 | `subtle` | 2 | Constant-time HMAC comparison |
-| `ed25519-dalek` | 2 | Ed25519 signing (signatures feature) |
+| `ed25519-dalek` | 3 | Ed25519 signing (signatures feature) |
 | `tokio` | 1.0 (opt) | Async runtime for WAF/CDN integration |
 | `clap` | 4 (CLI) | Command-line argument parsing |
 | `crc32fast` | 1.4 | CRC32 for PNG chunk checksums |
