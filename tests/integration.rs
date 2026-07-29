@@ -169,9 +169,18 @@ mod image_formats {
     }
 
     #[test]
-    #[ignore = "JPEG pixel-based stego does not survive re-encoding due to DCT quantization"]
     fn test_jpeg_round_trip() {
-        let img = create_colored_image(64, 64, 100, 150, 200);
+        let mut img = DynamicImage::new_rgb8(256, 256);
+        let mut rgb_img = img.to_rgb8();
+        for y in 0..256u32 {
+            for x in 0..256u32 {
+                let r = ((x * 3 + y * 7) % 256) as u8;
+                let g = ((x * 5 + y * 11) % 256) as u8;
+                let b = ((x * 7 + y * 13) % 256) as u8;
+                rgb_img.put_pixel(x, y, image::Rgb([r, g, b]));
+            }
+        }
+        img = DynamicImage::ImageRgb8(rgb_img);
         let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
 
         let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
@@ -183,8 +192,12 @@ mod image_formats {
         assert_eq!(protected_img.width(), img.width());
         assert_eq!(protected_img.height(), img.height());
 
-        let stego = SteganographyProtector::new();
-        assert!(stego.verify_payload(&protected_img));
+        let result = stegoeggo::verify_image_bytes(&protected_bytes, &[]);
+        assert_eq!(
+            result,
+            VerificationStatus::Verified,
+            "JPEG round-trip should be verifiable via bytes API"
+        );
     }
 
     #[test]

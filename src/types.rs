@@ -794,19 +794,24 @@ impl LegalMetadata {
         };
         check("copyright_holder", &self.copyright_holder)?;
         check("contact_email", &self.contact_email)?;
-        check_url("license_url", &self.license_url)?;
+        check("license_url", &self.license_url)?;
         check("usage_terms", &self.usage_terms)?;
         check("creation_date", &self.creation_date)?;
         check("ai_constraints", &self.ai_constraints)?;
-        check_url("web_statement_of_rights", &self.web_statement_of_rights)?;
+        check("web_statement_of_rights", &self.web_statement_of_rights)?;
         check("creator", &self.creator)?;
         check("credit_line", &self.credit_line)?;
         check("copyright_owner", &self.copyright_owner)?;
         check("licensor_name", &self.licensor_name)?;
         check("licensor_email", &self.licensor_email)?;
-        check_url("licensor_url", &self.licensor_url)?;
+        check("licensor_url", &self.licensor_url)?;
         check("metadata_date", &self.metadata_date)?;
         check("notice_applied_at", &self.notice_applied_at)?;
+        check("usage_terms_lang", &self.usage_terms_lang)?;
+
+        check_url("license_url", &self.license_url)?;
+        check_url("web_statement_of_rights", &self.web_statement_of_rights)?;
+        check_url("licensor_url", &self.licensor_url)?;
 
         let check_date = |name: &str, val: &Option<String>| -> crate::Result<()> {
             if let Some(v) = val {
@@ -904,6 +909,79 @@ impl LegalMetadata {
                 field_name, value
             )));
         }
+
+        let year: u32 = value[0..4].parse().unwrap_or(0);
+        let month: u32 = value[5..7].parse().unwrap_or(0);
+        let day: u32 = value[8..10].parse().unwrap_or(0);
+
+        if !(1..=9999).contains(&year) {
+            return Err(crate::Error::Config(format!(
+                "Date field '{}' has invalid year {}: must be 0001-9999",
+                field_name, year
+            )));
+        }
+        if !(1..=12).contains(&month) {
+            return Err(crate::Error::Config(format!(
+                "Date field '{}' has invalid month {}: must be 01-12",
+                field_name, month
+            )));
+        }
+
+        let max_day = match month {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 => {
+                if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
+                {
+                    29
+                } else {
+                    28
+                }
+            }
+            _ => unreachable!(),
+        };
+        if day < 1 || day > max_day {
+            return Err(crate::Error::Config(format!(
+                "Date field '{}' has invalid day {} for month {}: must be 01-{}",
+                field_name, day, month, max_day
+            )));
+        }
+
+        if value.len() >= 20 {
+            let hour: u32 = value[11..13].parse().unwrap_or(0);
+            let minute: u32 = value[14..16].parse().unwrap_or(0);
+            let second: u32 = value[17..19].parse().unwrap_or(0);
+            if hour > 23 {
+                return Err(crate::Error::Config(format!(
+                    "Date field '{}' has invalid hour {}: must be 00-23",
+                    field_name, hour
+                )));
+            }
+            if minute > 59 {
+                return Err(crate::Error::Config(format!(
+                    "Date field '{}' has invalid minute {}: must be 00-59",
+                    field_name, minute
+                )));
+            }
+            if second > 59 {
+                return Err(crate::Error::Config(format!(
+                    "Date field '{}' has invalid second {}: must be 00-59",
+                    field_name, second
+                )));
+            }
+        }
+
+        if value.len() == 25 {
+            let offset_hour: u32 = value[20..22].parse().unwrap_or(0);
+            let offset_min: u32 = value[23..25].parse().unwrap_or(0);
+            if offset_hour > 23 || offset_min > 59 {
+                return Err(crate::Error::Config(format!(
+                    "Date field '{}' has invalid UTC offset {}: must be +HH:MM or -HH:MM with HH<=23, MM<=59",
+                    field_name, &value[19..25]
+                )));
+            }
+        }
+
         Ok(())
     }
 
@@ -914,6 +992,7 @@ impl LegalMetadata {
             || self.contact_email.is_some()
             || self.license_url.is_some()
             || self.usage_terms.is_some()
+            || self.usage_terms_lang.is_some()
             || self.creation_date.is_some()
             || self.ai_constraints.is_some()
             || self.web_statement_of_rights.is_some()

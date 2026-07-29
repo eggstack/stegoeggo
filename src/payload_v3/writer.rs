@@ -36,7 +36,7 @@ use crate::payload_v3::types::{
 ///         hidden_marker: true,
 ///         authentication: true,
 ///     })
-///     .auth_algorithm(AuthAlgorithm::Crc32)
+///     .auth_algorithm(AuthAlgorithm::None)
 ///     .build()
 ///     .unwrap();
 ///
@@ -286,7 +286,7 @@ impl PayloadBuilder {
         }
 
         let expected_tag_len = self.auth_algorithm.tag_length().unwrap_or(0);
-        if !self.auth_tag.is_empty() && self.auth_tag.len() != expected_tag_len {
+        if self.auth_tag.len() != expected_tag_len {
             return Err(PayloadV3ParseError::CorruptTag);
         }
 
@@ -426,6 +426,7 @@ mod tests {
                 assert_eq!(v3.header.intensity, 5000);
                 assert_eq!(v3.header.dmi_policy, 2);
                 assert_eq!(v3.key_id, vec![0xAA; 8]);
+                assert!(v3.auth_tag.is_empty());
             }
             _ => panic!("Expected V3"),
         }

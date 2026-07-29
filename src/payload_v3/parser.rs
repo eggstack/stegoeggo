@@ -57,6 +57,8 @@ pub struct V3Payload {
     pub key_id: Vec<u8>,
     /// Parsed TLV extension entries.
     pub extensions: Vec<ExtensionEntry>,
+    /// Authentication tag bytes.
+    pub auth_tag: Vec<u8>,
 }
 
 /// Parse a stego payload from raw bytes, auto-detecting the version.
@@ -191,10 +193,28 @@ fn parse_v3(data: &[u8]) -> Result<ParsedPayload, PayloadV3ParseError> {
         });
     }
 
+    if header.total_length as usize != header.header_length as usize + header.auth_tag_len as usize
+    {
+        return Err(PayloadV3ParseError::CorruptTag);
+    }
+
+    if let Some(algo) = header.auth_algorithm_enum() {
+        if let Some(expected) = algo.tag_length() {
+            if header.auth_tag_len as usize != expected {
+                return Err(PayloadV3ParseError::CorruptTag);
+            }
+        }
+    }
+
+    let auth_tag_start = header.header_length as usize;
+    let auth_tag_end = header.total_length as usize;
+    let auth_tag = data[auth_tag_start..auth_tag_end].to_vec();
+
     Ok(ParsedPayload::V3(V3Payload {
         header,
         key_id,
         extensions,
+        auth_tag,
     }))
 }
 
@@ -209,6 +229,11 @@ fn parse_extensions(data: &[u8]) -> Result<Vec<ExtensionEntry>, PayloadV3ParseEr
         let ext_len = u16::from_le_bytes([data[offset + 2], data[offset + 3]]);
 
         if ext_type == 0xFFFF {
+            for &b in &data[offset..] {
+                if b != 0xFF {
+                    return Err(PayloadV3ParseError::ExtensionsTooLarge);
+                }
+            }
             break;
         }
 
@@ -223,6 +248,11 @@ fn parse_extensions(data: &[u8]) -> Result<Vec<ExtensionEntry>, PayloadV3ParseEr
         }
 
         if extensions.len() >= V3_MAX_EXTENSION_COUNT {
+            for &b in &data[offset..] {
+                if b != 0xFF {
+                    return Err(PayloadV3ParseError::ExtensionsTooLarge);
+                }
+            }
             break;
         }
 
@@ -244,6 +274,14 @@ fn parse_extensions(data: &[u8]) -> Result<Vec<ExtensionEntry>, PayloadV3ParseEr
         });
 
         offset += 4 + ext_len;
+    }
+
+    if offset < data.len() {
+        for &b in &data[offset..] {
+            if b != 0xFF {
+                return Err(PayloadV3ParseError::ExtensionsTooLarge);
+            }
+        }
     }
 
     Ok(extensions)

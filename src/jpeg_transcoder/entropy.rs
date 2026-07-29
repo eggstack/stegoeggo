@@ -159,6 +159,7 @@ struct BitReader<'a> {
     byte_pos: usize,
     bit_pos: u8,
     eoi_reached: bool,
+    restart_seen: bool,
 }
 
 impl<'a> BitReader<'a> {
@@ -168,6 +169,7 @@ impl<'a> BitReader<'a> {
             byte_pos: 0,
             bit_pos: 7,
             eoi_reached: false,
+            restart_seen: false,
         }
     }
 
@@ -184,9 +186,14 @@ impl<'a> BitReader<'a> {
                 if self.data[self.byte_pos] == 0xFF && self.byte_pos + 1 < self.data.len() {
                     let next = self.data[self.byte_pos + 1];
                     if next != 0x00 {
-                        if next == 0xD9 || (0xD0..=0xD7).contains(&next) {
+                        if next == 0xD9 {
                             self.eoi_reached = true;
                             return None;
+                        }
+                        if (0xD0..=0xD7).contains(&next) {
+                            self.byte_pos += 2;
+                            self.restart_seen = true;
+                            return self.read_bit();
                         }
                         self.eoi_reached = true;
                         return None;
@@ -407,6 +414,11 @@ impl CoefficientDecoder {
                                 .push(block);
                         }
                     }
+                }
+
+                if bit_reader.restart_seen {
+                    bit_reader.restart_seen = false;
+                    dc_predictors.clear();
                 }
             }
         }
