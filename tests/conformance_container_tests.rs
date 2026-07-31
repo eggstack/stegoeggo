@@ -3,7 +3,7 @@
 use image::GenericImageView;
 use stegoeggo::{
     process_image_bytes_with_warnings, DmiValue, ImageOutputFormat, LegalMetadata,
-    MetadataTrapProtector, ProtectionContext, ProtectionLevel,
+    ProtectionContext, ProtectionLevel, RightsMetadataProtector,
 };
 
 fn make_test_image_png(width: u32, height: u32) -> Vec<u8> {
@@ -167,7 +167,7 @@ fn png_existing_text_chunk_preserved_through_byte_level() {
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(legal())
         .with_dmi(DmiValue::ProhibitedAiMlTraining);
-    let trap = MetadataTrapProtector::new();
+    let trap = RightsMetadataProtector::new();
     let output = trap.inject_bytes(&base, &ctx).unwrap();
 
     let mut found_author = false;
@@ -289,7 +289,7 @@ fn png_unrelated_xmp_survives_byte_level() {
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(legal())
         .with_dmi(DmiValue::ProhibitedAiMlTraining);
-    let trap = MetadataTrapProtector::new();
+    let trap = RightsMetadataProtector::new();
     let output = trap.inject_bytes(&out, &ctx).unwrap();
 
     let notice = stegoeggo::verify_legal_notice(&output, b"");

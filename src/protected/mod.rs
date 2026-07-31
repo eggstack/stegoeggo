@@ -2,7 +2,7 @@
 //!
 //! This module contains the core protector implementations:
 //! - [`SteganographyProtector`] - LSB/DCT steganographic embedding
-//! - [`MetadataTrapProtector`] - Metadata injection for AI exclusion
+//! - [`RightsMetadataProtector`] - Metadata injection for AI exclusion
 //! - [`PassthroughProtector`] - No-op protector for disabled protection
 
 pub mod constants;

@@ -2,7 +2,7 @@ use image::DynamicImage;
 use image::ImageEncoder;
 use stegoeggo::{
     process_image_bytes, verify_image_bytes, verify_legal_notice, ImageOutputFormat,
-    MetadataTrapProtector, ProtectionContext, ProtectionLevel, SteganographyProtector,
+    ProtectionContext, ProtectionLevel, RightsMetadataProtector, SteganographyProtector,
     VerificationStatus,
 };
 
@@ -61,7 +61,7 @@ mod jpeg_recompression {
         let protected_bytes =
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
-        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
+        let metadata_seed = RightsMetadataProtector::extract_seed_from_image(&protected_bytes);
         assert_eq!(
             metadata_seed,
             Some(seed),
@@ -132,7 +132,7 @@ mod jpeg_recompression {
             process_image_bytes(&image_to_png_bytes(&img), ProtectionLevel::Standard, &ctx)
                 .unwrap();
 
-        let seed_before = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
+        let seed_before = RightsMetadataProtector::extract_seed_from_image(&protected_bytes);
         assert_eq!(
             seed_before,
             Some(seed),
@@ -142,7 +142,7 @@ mod jpeg_recompression {
         let protected_img = image::load_from_memory(&protected_bytes).unwrap();
         let jpeg_bytes = image_to_jpeg_bytes(&protected_img, 85);
 
-        let seed_after = MetadataTrapProtector::extract_seed_from_image(&jpeg_bytes);
+        let seed_after = RightsMetadataProtector::extract_seed_from_image(&jpeg_bytes);
         assert!(
             seed_after.is_none(),
             "PNG tEXt metadata lost when converted to JPEG (different container format)"
@@ -187,7 +187,7 @@ mod metadata_stripping {
         let protected_img = image::load_from_memory(&protected_bytes).unwrap();
         let stripped_bytes = image_to_png_bytes(&protected_img);
 
-        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(&stripped_bytes);
+        let metadata_seed = RightsMetadataProtector::extract_seed_from_image(&stripped_bytes);
         assert!(
             metadata_seed.is_none(),
             "Metadata seed stripped after DynamicImage round-trip (re-encode creates clean PNG)"
@@ -263,7 +263,7 @@ mod format_conversion_round_trip {
         let protected_img = image::load_from_memory(&protected_bytes).unwrap();
         let jpeg_bytes = image_to_jpeg_bytes(&protected_img, 85);
 
-        let seed_after_jpeg = MetadataTrapProtector::extract_seed_from_image(&jpeg_bytes);
+        let seed_after_jpeg = RightsMetadataProtector::extract_seed_from_image(&jpeg_bytes);
         assert!(
             seed_after_jpeg.is_none(),
             "PNG tEXt metadata lost when converting to JPEG format"
@@ -285,7 +285,7 @@ mod format_conversion_round_trip {
         let jpeg_img = image::load_from_memory(&jpeg_bytes).unwrap();
         let final_png = image_to_png_bytes(&jpeg_img);
 
-        let seed_after_roundtrip = MetadataTrapProtector::extract_seed_from_image(&final_png);
+        let seed_after_roundtrip = RightsMetadataProtector::extract_seed_from_image(&final_png);
         assert!(
             seed_after_roundtrip.is_none(),
             "Metadata seed does not survive PNG→JPEG→PNG (lost in JPEG step)"
@@ -334,7 +334,7 @@ mod image_resizing {
         let resized = protected_img.resize(64, 64, image::imageops::FilterType::Lanczos3);
         let resized_bytes = image_to_png_bytes(&resized);
 
-        let extracted_seed = MetadataTrapProtector::extract_seed_from_image(&resized_bytes);
+        let extracted_seed = RightsMetadataProtector::extract_seed_from_image(&resized_bytes);
         assert!(
             extracted_seed.is_none(),
             "Metadata seed lost after resize (image crate re-encode strips tEXt chunks)"
@@ -393,7 +393,7 @@ mod noise_injection {
         let noisy_img = DynamicImage::ImageRgba8(rgba);
         let noisy_bytes = image_to_png_bytes(&noisy_img);
 
-        let extracted_seed = MetadataTrapProtector::extract_seed_from_image(&noisy_bytes);
+        let extracted_seed = RightsMetadataProtector::extract_seed_from_image(&noisy_bytes);
         assert!(
             extracted_seed.is_none(),
             "Metadata seed lost after noise + re-encode (re-encode strips tEXt chunks)"
@@ -486,7 +486,7 @@ mod crop {
         let cropped = protected_img.crop(10, 10, 80, 80);
         let cropped_bytes = image_to_png_bytes(&cropped);
 
-        let extracted_seed = MetadataTrapProtector::extract_seed_from_image(&cropped_bytes);
+        let extracted_seed = RightsMetadataProtector::extract_seed_from_image(&cropped_bytes);
         assert!(
             extracted_seed.is_none(),
             "Metadata seed lost after crop + re-encode (re-encode strips tEXt chunks)"
@@ -569,13 +569,13 @@ mod jpeg_quality_reduction {
         )
         .unwrap();
 
-        let seed_before = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
+        let seed_before = RightsMetadataProtector::extract_seed_from_image(&protected_bytes);
         assert_eq!(seed_before, Some(seed), "Seed embedded in Q-tables at Q=90");
 
         let recompressed =
             image_to_jpeg_bytes(&image::load_from_memory(&protected_bytes).unwrap(), 50);
 
-        let seed_after = MetadataTrapProtector::extract_seed_from_image(&recompressed);
+        let seed_after = RightsMetadataProtector::extract_seed_from_image(&recompressed);
         assert!(
             seed_after.is_none(),
             "Q-table seed lost after image crate re-encoder creates new quantization tables (Q=90→Q=50)"
@@ -601,7 +601,7 @@ mod jpeg_quality_reduction {
             current_bytes = image_to_jpeg_bytes(&img, quality);
         }
 
-        let seed_after = MetadataTrapProtector::extract_seed_from_image(&current_bytes);
+        let seed_after = RightsMetadataProtector::extract_seed_from_image(&current_bytes);
         assert!(
             seed_after.is_none(),
             "Q-table seed lost after image crate re-encoder creates new quantization tables (95→80→60→40)"
@@ -749,7 +749,7 @@ mod metadata_stripping_stego {
         let protected_img = image::load_from_memory(&protected_bytes).unwrap();
         let stripped_bytes = image_to_png_bytes(&protected_img);
 
-        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(&stripped_bytes);
+        let metadata_seed = RightsMetadataProtector::extract_seed_from_image(&stripped_bytes);
         assert!(
             metadata_seed.is_none(),
             "Metadata seed stripped after re-encode (DynamicImage drops tEXt chunks)"
@@ -816,7 +816,7 @@ mod robust_stego_matrix {
 
         let recompressed_same_q =
             image_to_jpeg_bytes(&image::load_from_memory(&protected).unwrap(), 90);
-        let seed_after = MetadataTrapProtector::extract_seed_from_image(&recompressed_same_q);
+        let seed_after = RightsMetadataProtector::extract_seed_from_image(&recompressed_same_q);
 
         assert!(
             seed_after.is_none(),
@@ -850,7 +850,7 @@ mod robust_stego_matrix {
             current = image_to_jpeg_bytes(&image::load_from_memory(&current).unwrap(), q);
         }
 
-        let seed_after = MetadataTrapProtector::extract_seed_from_image(&current);
+        let seed_after = RightsMetadataProtector::extract_seed_from_image(&current);
         assert!(
             seed_after.is_none(),
             "X-Protection-Seed metadata is lost after recompression (image crate strips APP/COM segments): got {seed_after:?}"
@@ -1009,7 +1009,7 @@ mod malformed_input {
         malformed.extend_from_slice(b"tEXt");
         malformed.extend_from_slice(&[0u8; 4]);
 
-        let protector = MetadataTrapProtector::new();
+        let protector = RightsMetadataProtector::new();
         let ctx = ProtectionContext::new(0.5, 42);
 
         let result = std::panic::catch_unwind(|| protector.inject_bytes(&malformed, &ctx));

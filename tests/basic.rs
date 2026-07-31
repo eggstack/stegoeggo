@@ -2,8 +2,8 @@
 
 use image::DynamicImage;
 use stegoeggo::{
-    process_image, process_image_bytes, MetadataTrapProtector, PassthroughProtector,
-    ProtectionContext, ProtectionLevel, ProtectionPipeline, Protector,
+    process_image, process_image_bytes, PassthroughProtector, ProtectionContext, ProtectionLevel,
+    ProtectionPipeline, Protector, RightsMetadataProtector,
 };
 
 fn create_test_image() -> DynamicImage {
@@ -98,7 +98,7 @@ mod protectors {
 
     #[test]
     fn test_metadata_trap() {
-        let poisoner = MetadataTrapProtector::new();
+        let poisoner = RightsMetadataProtector::new();
         let img = create_test_image();
         let ctx = create_test_context();
 

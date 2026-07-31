@@ -773,7 +773,7 @@ mod tests {
 
     #[test]
     fn png_chunk_count_exceeds_limit() {
-        use crate::protected::metadata_trap::MetadataTrapProtector;
+        use crate::protected::metadata_trap::RightsMetadataProtector;
         use crate::types::{ImageOutputFormat, ProtectionContext};
 
         let img = image::DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(16, 16, |x, y| {
@@ -785,14 +785,14 @@ mod tests {
         let ctx = ProtectionContext::new(0.5, 42)
             .with_format(ImageOutputFormat::Png)
             .with_resource_limits(limits);
-        let protector = MetadataTrapProtector::new();
+        let protector = RightsMetadataProtector::new();
         let result = protector.inject_bytes(&png, &ctx);
         assert!(result.is_err());
     }
 
     #[test]
     fn png_chunk_bytes_exceeds_limit() {
-        use crate::protected::metadata_trap::MetadataTrapProtector;
+        use crate::protected::metadata_trap::RightsMetadataProtector;
         use crate::types::{ImageOutputFormat, ProtectionContext};
 
         let img = image::DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(16, 16, |x, y| {
@@ -804,7 +804,7 @@ mod tests {
         let ctx = ProtectionContext::new(0.5, 42)
             .with_format(ImageOutputFormat::Png)
             .with_resource_limits(limits);
-        let protector = MetadataTrapProtector::new();
+        let protector = RightsMetadataProtector::new();
         let result = protector.inject_bytes(&png, &ctx);
         assert!(result.is_err());
     }

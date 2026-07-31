@@ -2,8 +2,8 @@
 
 use image::{DynamicImage, ImageEncoder};
 use stegoeggo::{
-    process_image_bytes, LegalMetadata, MetadataTrapProtector, MetadataUpdatePolicy,
-    ProtectionContext, ProtectionLevel, VerificationStatus,
+    process_image_bytes, LegalMetadata, MetadataUpdatePolicy, ProtectionContext, ProtectionLevel,
+    RightsMetadataProtector, VerificationStatus,
 };
 
 fn create_test_png(width: u32, height: u32) -> Vec<u8> {
@@ -258,7 +258,7 @@ fn custom_text_chunk_survives_metadata_injection() {
         .with_legal_metadata(legal_metadata())
         .with_metadata_injection(true);
 
-    let trap = MetadataTrapProtector::new();
+    let trap = RightsMetadataProtector::new();
     let injected = trap.inject_bytes(&png_with_author, &ctx).unwrap();
 
     assert!(

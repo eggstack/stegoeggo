@@ -20,7 +20,7 @@ pub trait Protector: Send + Sync {
     /// Apply protection to an image, returning either the original (borrowed)
     /// or a new owned image.
     ///
-    /// Some protectors (e.g., [`MetadataTrapProtector`](crate::MetadataTrapProtector))
+    /// Some protectors (e.g., [`RightsMetadataProtector`](crate::RightsMetadataProtector))
     /// operate at the byte level only and their `apply()` may return the image
     /// unchanged. For full protection, callers should use
     /// [`apply_bytes`](Self::apply_bytes).

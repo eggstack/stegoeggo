@@ -3,8 +3,8 @@
 use image::{DynamicImage, ImageEncoder};
 use stegoeggo::{
     process_image, process_image_bytes, process_images_bytes_parallel, process_images_parallel,
-    DmiValue, EvidenceProfile, ImageOutputFormat, LegalMetadata, MetadataTrapProtector,
-    PassthroughProtector, ProtectionContext, ProtectionLevel, ProtectionPipeline,
+    DmiValue, EvidenceProfile, ImageOutputFormat, LegalMetadata, PassthroughProtector,
+    ProtectionContext, ProtectionLevel, ProtectionPipeline, RightsMetadataProtector,
     SteganographyProtector, VerificationStatus,
 };
 
@@ -284,7 +284,7 @@ mod metadata_injection {
         let protected_bytes =
             process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
 
-        let seed = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
+        let seed = RightsMetadataProtector::extract_seed_from_image(&protected_bytes);
         assert!(seed.is_some(), "Light level should inject seed");
     }
 
@@ -340,7 +340,7 @@ mod metadata_injection {
         let protected_bytes =
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
-        let extracted_seed = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
+        let extracted_seed = RightsMetadataProtector::extract_seed_from_image(&protected_bytes);
         assert_eq!(
             extracted_seed,
             Some(seed),
@@ -425,7 +425,7 @@ mod steganography {
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
         // For JPEG, we verify via metadata since pixel-based stego has limited robustness
-        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
+        let metadata_seed = RightsMetadataProtector::extract_seed_from_image(&protected_bytes);
         assert_eq!(
             metadata_seed,
             Some(seed),
@@ -445,7 +445,7 @@ mod steganography {
                 process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
             // For JPEG, verify via metadata
-            let metadata_seed = MetadataTrapProtector::extract_seed_from_image(&protected);
+            let metadata_seed = RightsMetadataProtector::extract_seed_from_image(&protected);
             assert_eq!(
                 metadata_seed,
                 Some(seed),
@@ -467,7 +467,7 @@ mod steganography {
             process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
         // For JPEG, verify via metadata
-        let metadata_seed = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
+        let metadata_seed = RightsMetadataProtector::extract_seed_from_image(&protected_bytes);
         assert_eq!(
             metadata_seed,
             Some(seed),
@@ -491,7 +491,7 @@ mod steganography {
         let stego = SteganographyProtector::new();
 
         // Metadata seed should be extractable from the protected bytes
-        let seed = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
+        let seed = RightsMetadataProtector::extract_seed_from_image(&protected_bytes);
         assert_eq!(seed, Some(42), "Metadata seed should be extractable");
 
         // Verify via DynamicImage round-trip with correct MAC key
@@ -713,7 +713,7 @@ mod protector_individual {
 
     #[test]
     fn test_metadata_trap_injects_correctly() {
-        let protector = MetadataTrapProtector::new();
+        let protector = RightsMetadataProtector::new();
         let img = create_test_image(32, 32);
         let seed = 202020;
         let ctx = ProtectionContext::new(0.5, seed).with_format(ImageOutputFormat::Png);
@@ -721,7 +721,7 @@ mod protector_individual {
         let png_bytes = image_to_png_bytes(&img);
         let protected_bytes = protector.apply_bytes(&png_bytes, &ctx).unwrap();
 
-        let extracted_seed = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
+        let extracted_seed = RightsMetadataProtector::extract_seed_from_image(&protected_bytes);
         assert_eq!(
             extracted_seed,
             Some(seed),
@@ -930,9 +930,9 @@ mod verify_tests {
     use super::*;
     use std::sync::Arc;
     use stegoeggo::{
-        process_image_bytes, verify_image_bytes, verify_image_bytes_detailed,
-        MetadataTrapProtector, ProtectionConfig, ProtectionContext, ProtectionLevel,
-        VerificationResult, VerificationStatus,
+        process_image_bytes, verify_image_bytes, verify_image_bytes_detailed, ProtectionConfig,
+        ProtectionContext, ProtectionLevel, RightsMetadataProtector, VerificationResult,
+        VerificationStatus,
     };
 
     #[test]
@@ -969,7 +969,7 @@ mod verify_tests {
         let img = create_test_image(64, 64);
         let png_bytes = image_to_png_bytes(&img);
         let ctx = ProtectionContext::new(0.5, 777);
-        let metadata_only = MetadataTrapProtector::new()
+        let metadata_only = RightsMetadataProtector::new()
             .inject_bytes(&png_bytes, &ctx)
             .unwrap();
 

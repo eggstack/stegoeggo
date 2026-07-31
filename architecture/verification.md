@@ -56,6 +56,8 @@ Rights and legal-notice metadata extraction results:
 - `source: FieldSource` — Where the data came from
 - `channels: Vec<EvidenceChannel>` — Which evidence channels contributed
 
+DMI values are extracted from canonical `plus:DataMining` XMP properties containing full PLUS LDF URIs (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`). Legacy bare keys (`DMI-PROHIBITED-AIMLTRAINING`) and `Iptc4xmpExt:DMI-*` properties are parsed for backward compatibility but classified as legacy signals, not canonical.
+
 ### `HiddenMarkerVerification`
 
 Steganographic payload extraction results:

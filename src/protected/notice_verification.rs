@@ -748,7 +748,7 @@ fn extract_jpeg_notice(
 
             if comment.starts_with(b"cloakrs:v1:") {
                 if let Some((s, _level, _intensity)) =
-                    crate::protected::metadata_trap::MetadataTrapProtector::parse_structured_com_payload(comment)
+                    crate::protected::metadata_trap::RightsMetadataProtector::parse_structured_com_payload(comment)
                 {
                     if seed.is_none() {
                         *seed = Some(s);

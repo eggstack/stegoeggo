@@ -40,7 +40,7 @@ Fixture manifest (TOML)
 
 | Category | Purpose | Expected Outcome | Minimum (strict) |
 |----------|---------|-----------------|-------------------|
-| `canonical/` | Standard PLUS LDF metadata | All checks PASS | PNG≥1, JPEG≥1, WebP≥1 |
+| `canonical/` | Standard PLUS LDF metadata with full canonical URIs | All checks PASS | PNG≥1, JPEG≥1, WebP≥1 |
 | `legacy/` | v0.3 backward compatibility | Extractable, may warn | ≥3 across ≥2 formats |
 | `malformed/` | Invalid XML, truncated chunks | Graceful degradation | ≥4 total, ≥1 per format (png, jpeg, webp) |
 | `conflicting/` | Contradictory declarations | Conflicts reported | ≥3 |
@@ -51,7 +51,7 @@ Coverage minimums are enforced by `CoverageMinimums` (explicit per-category and 
 ## Check Results
 
 Each check produces a `CheckResult` with:
-- `name`: check identifier (e.g., "copyright", "creators", "canonical_dmi")
+- `name`: check identifier (e.g., "copyright", "creators", "canonical_dmi", "plus_datamining_uri")
 - `severity`: `Pass`, `Warn`, or `Fail`
 - `message`: human-readable description
 - `details`: optional technical details

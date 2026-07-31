@@ -2,8 +2,8 @@
 
 use image::GenericImageView;
 use stegoeggo::{
-    process_image_bytes, DmiValue, ImageOutputFormat, LegalMetadata, MetadataTrapProtector,
-    ProtectionContext, ProtectionLevel,
+    process_image_bytes, DmiValue, ImageOutputFormat, LegalMetadata, ProtectionContext,
+    ProtectionLevel, RightsMetadataProtector,
 };
 
 fn make_test_image_png(width: u32, height: u32) -> Vec<u8> {
@@ -101,7 +101,7 @@ fn png_unrelated_text_chunk_survives_byte_level_injection() {
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(legal())
         .with_dmi(DmiValue::ProhibitedAiMlTraining);
-    let trap = MetadataTrapProtector::new();
+    let trap = RightsMetadataProtector::new();
     let output = trap.inject_bytes(&base, &ctx).unwrap();
 
     assert!(
@@ -122,7 +122,7 @@ fn png_unrelated_text_chunk_survives_double_injection() {
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(legal())
         .with_dmi(DmiValue::ProhibitedAiMlTraining);
-    let trap = MetadataTrapProtector::new();
+    let trap = RightsMetadataProtector::new();
 
     let output1 = trap.inject_bytes(&base, &ctx).unwrap();
     let output2 = trap.inject_bytes(&output1, &ctx).unwrap();
@@ -264,7 +264,7 @@ fn existing_creator_preserved_in_png() {
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(LegalMetadata::new().with_copyright_holder("New Holder"))
         .with_dmi(DmiValue::ProhibitedAiMlTraining);
-    let trap = MetadataTrapProtector::new();
+    let trap = RightsMetadataProtector::new();
     let output = trap.inject_bytes(&base, &ctx).unwrap();
 
     assert!(
@@ -428,7 +428,7 @@ fn png_iccp_chunk_survives_byte_level_injection() {
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(legal())
         .with_dmi(DmiValue::ProhibitedAiMlTraining);
-    let trap = MetadataTrapProtector::new();
+    let trap = RightsMetadataProtector::new();
     let output = trap.inject_bytes(&base, &ctx).unwrap();
 
     assert!(
@@ -505,7 +505,7 @@ fn jpeg_exif_orientation_survives_byte_level_injection() {
         .with_format(ImageOutputFormat::Jpeg)
         .with_legal_metadata(legal())
         .with_dmi(DmiValue::ProhibitedAiMlTraining);
-    let trap = MetadataTrapProtector::new();
+    let trap = RightsMetadataProtector::new();
     let output = trap.inject_bytes(&base, &ctx).unwrap();
 
     assert!(
@@ -576,7 +576,7 @@ fn jpeg_iptc_app13_survives_byte_level_injection() {
         .with_format(ImageOutputFormat::Jpeg)
         .with_legal_metadata(legal())
         .with_dmi(DmiValue::ProhibitedAiMlTraining);
-    let trap = MetadataTrapProtector::new();
+    let trap = RightsMetadataProtector::new();
     let output = trap.inject_bytes(&base, &ctx).unwrap();
 
     assert!(

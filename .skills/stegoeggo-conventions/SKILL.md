@@ -73,7 +73,7 @@ fn get_scan_data_start(...) -> Option<usize>
 ## Common Pitfalls
 
 1. **Two XorShiftRng implementations** — `XorShiftRng` in `util/image.rs` and `F5XorShiftRng` in `stego_f5.rs` use different algorithms. Never interchange.
-2. **Metadata injection survives only in byte paths** — `MetadataTrapProtector::apply()` returns `Cow::Borrowed` unchanged. Use `apply_bytes()` or `process_bytes()` for metadata.
+2. **Metadata injection survives only in byte paths** — `RightsMetadataProtector::apply()` returns `Cow::Borrowed` unchanged. Use `apply_bytes()` or `process_bytes()` for metadata.
 3. **Stego seed derivation** — embed/extract functions internally derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)`. Match seeds when calling directly.
 4. **`subtle` crate** — use `ConstantTimeEq::ct_eq()` for HMAC verification, not `==`
 5. **F5 seed embedding** — Precondition check fails if any quantization value < 2. Values of 1 cannot represent 0-bits reliably. Use values >= 2.

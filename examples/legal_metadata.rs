@@ -5,7 +5,7 @@ use image::{DynamicImage, ImageBuffer, Rgba};
 ///
 /// Demonstrates how to inject copyright and usage restrictions
 /// into images you own for IP protection.
-use stegoeggo::{LegalMetadata, MetadataTrapProtector, ProtectionContext, ProtectionLevel};
+use stegoeggo::{LegalMetadata, ProtectionContext, ProtectionLevel, RightsMetadataProtector};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create an image you own
@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let png_bytes = stegoeggo::encode_image(&protected, image::ImageFormat::Png)?;
 
     // Verify the seed is extractable from metadata
-    if let Some(seed) = MetadataTrapProtector::extract_seed_from_image(&png_bytes) {
+    if let Some(seed) = RightsMetadataProtector::extract_seed_from_image(&png_bytes) {
         println!("Extracted seed from metadata: {}", seed);
     }
 

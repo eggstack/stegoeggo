@@ -3,7 +3,7 @@ use crate::jpeg_transcoder::{DctStegoF5, JpegTranscoder};
 use crate::payload_v3::types::{AuthAlgorithm, ProtectionChannels, V3_MAGIC, V3_PAYLOAD_VERSION};
 use crate::protected::constants::{SPLITMIX64_SEED, STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR};
 use crate::protected::ecc;
-use crate::protected::metadata_trap::MetadataTrapProtector;
+use crate::protected::metadata_trap::RightsMetadataProtector;
 use crate::resource_limits::ResourceLimits;
 use crate::traits::Protector;
 use crate::types::{
@@ -1144,7 +1144,7 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> VerificationStatus {
-        let metadata_seed = MetadataTrapProtector::extract_seed_from_image_with_limits(
+        let metadata_seed = RightsMetadataProtector::extract_seed_from_image_with_limits(
             img_bytes,
             Some(&self.limits),
         );
@@ -1279,7 +1279,7 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> (VerificationStatus, Option<Vec<u8>>) {
-        let metadata_seed = MetadataTrapProtector::extract_seed_from_image_with_limits(
+        let metadata_seed = RightsMetadataProtector::extract_seed_from_image_with_limits(
             img_bytes,
             Some(&self.limits),
         );
@@ -1411,10 +1411,12 @@ impl SteganographyProtector {
         }
 
         if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
-            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image_with_limits(
-                &encoded,
-                Some(&self.limits),
-            ) {
+            if let Some(metadata_seed) =
+                RightsMetadataProtector::extract_seed_from_image_with_limits(
+                    &encoded,
+                    Some(&self.limits),
+                )
+            {
                 if metadata_seed != seed {
                     if let Some(payload) = self.extract_with_redundancy(&rgba, metadata_seed, &[]) {
                         let header = if let Some(decoded) = Self::try_ecc_decode(&payload) {
@@ -1504,10 +1506,12 @@ impl SteganographyProtector {
         }
 
         if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
-            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image_with_limits(
-                &encoded,
-                Some(&self.limits),
-            ) {
+            if let Some(metadata_seed) =
+                RightsMetadataProtector::extract_seed_from_image_with_limits(
+                    &encoded,
+                    Some(&self.limits),
+                )
+            {
                 if metadata_seed != seed {
                     match self.verify_extract_with_redundancy(&rgba, metadata_seed, mac_key) {
                         CandidateOutcome::Valid(payload) => {
@@ -1684,10 +1688,12 @@ impl SteganographyProtector {
     ) -> Option<StegoPayload> {
         // Try extracting seed from metadata first
         if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
-            if let Some(metadata_seed) = MetadataTrapProtector::extract_seed_from_image_with_limits(
-                &encoded,
-                Some(&self.limits),
-            ) {
+            if let Some(metadata_seed) =
+                RightsMetadataProtector::extract_seed_from_image_with_limits(
+                    &encoded,
+                    Some(&self.limits),
+                )
+            {
                 if let Some(payload) =
                     self.extract_payload_with_seed_and_key(img, metadata_seed, mac_key)
                 {
@@ -1770,7 +1776,7 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> Option<StegoPayload> {
-        let metadata_seed = MetadataTrapProtector::extract_seed_from_image_with_limits(
+        let metadata_seed = RightsMetadataProtector::extract_seed_from_image_with_limits(
             img_bytes,
             Some(&self.limits),
         );
@@ -4596,7 +4602,7 @@ mod tests {
 
     #[test]
     fn extract_seed_from_protected_image() {
-        let meta = MetadataTrapProtector::new();
+        let meta = RightsMetadataProtector::new();
         let img = make_large_test_image();
         let ctx = ctx_no_mac(42);
 
@@ -4609,7 +4615,7 @@ mod tests {
         let with_metadata = meta.apply_bytes(&png_bytes, &ctx).unwrap();
 
         let extracted =
-            MetadataTrapProtector::extract_seed_from_image_with_limits(&with_metadata, None);
+            RightsMetadataProtector::extract_seed_from_image_with_limits(&with_metadata, None);
         assert_eq!(extracted, Some(42));
     }
 

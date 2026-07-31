@@ -549,7 +549,7 @@ mod tests {
 
     #[test]
     fn parse_ignores_marker_like_bytes_inside_metadata_payloads() {
-        use crate::protected::metadata_trap::MetadataTrapProtector;
+        use crate::protected::metadata_trap::RightsMetadataProtector;
         use crate::types::{ImageOutputFormat, ProtectionContext};
         use image::DynamicImage;
 
@@ -559,7 +559,7 @@ mod tests {
 
         let jpeg = crate::util::image::encode_image(&img, image::ImageFormat::Jpeg).unwrap();
         let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
-        let injected = MetadataTrapProtector::new()
+        let injected = RightsMetadataProtector::new()
             .inject_bytes(&jpeg, &ctx)
             .unwrap();
 

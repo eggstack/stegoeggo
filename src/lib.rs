@@ -217,7 +217,9 @@ pub use types::{
 
 pub use traits::Protector;
 
+#[allow(deprecated)]
 pub use protected::metadata_trap::MetadataTrapProtector;
+pub use protected::metadata_trap::RightsMetadataProtector;
 pub use protected::passthrough::PassthroughProtector;
 pub use protected::steganography::{SteganographyProtector, StegoPayload};
 
@@ -284,7 +286,7 @@ pub(crate) struct PipelineResult {
 #[non_exhaustive]
 pub struct ProtectionPipeline {
     passthrough: Arc<PassthroughProtector>,
-    metadata_trap: Arc<MetadataTrapProtector>,
+    metadata_trap: Arc<RightsMetadataProtector>,
     steganography: Arc<SteganographyProtector>,
 }
 
@@ -303,7 +305,7 @@ impl ProtectionPipeline {
     pub fn new() -> Self {
         Self {
             passthrough: Arc::new(PassthroughProtector::new()),
-            metadata_trap: Arc::new(MetadataTrapProtector::new()),
+            metadata_trap: Arc::new(RightsMetadataProtector::new()),
             steganography: Arc::new(SteganographyProtector::new()),
         }
     }
@@ -1269,7 +1271,7 @@ pub fn process_request_bytes_with_report(
     };
 
     let metadata_injected = if plan.channels().rights_metadata {
-        protected::metadata_trap::MetadataTrapProtector::new()
+        protected::metadata_trap::RightsMetadataProtector::new()
             .has_stego_owned_metadata(&result, output_format)
     } else {
         false
@@ -1522,7 +1524,7 @@ pub fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> Verifica
         VerificationStatus::NotFound => {}
     }
 
-    if let Some(seed) = MetadataTrapProtector::extract_seed_from_image(img_bytes) {
+    if let Some(seed) = RightsMetadataProtector::extract_seed_from_image(img_bytes) {
         return VerificationResult::MetadataOnly { seed };
     }
 
@@ -1555,7 +1557,7 @@ pub fn verify_image_bytes_detailed_with_limits(
         VerificationStatus::NotFound => {}
     }
 
-    if let Some(seed) = MetadataTrapProtector::extract_seed_from_image(img_bytes) {
+    if let Some(seed) = RightsMetadataProtector::extract_seed_from_image(img_bytes) {
         return VerificationResult::MetadataOnly { seed };
     }
 
@@ -1779,12 +1781,12 @@ mod tests {
             .with_seed(42)
             .with_format(ImageOutputFormat::Png);
 
-        let metadata_protector = MetadataTrapProtector::new();
+        let metadata_protector = RightsMetadataProtector::new();
         let encoded = crate::util::image::encode_image(&img, image::ImageFormat::Png).unwrap();
 
         let protected_bytes = metadata_protector.apply_bytes(&encoded, &ctx).unwrap();
 
-        let seed = MetadataTrapProtector::extract_seed_from_image(&protected_bytes);
+        let seed = RightsMetadataProtector::extract_seed_from_image(&protected_bytes);
 
         assert!(
             seed.is_some(),

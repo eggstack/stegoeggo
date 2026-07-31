@@ -313,7 +313,7 @@ fn test_verify_unprotected_image() {
 
 #[test]
 fn test_verify_metadata_only_does_not_report_verified() {
-    use stegoeggo::{MetadataTrapProtector, ProtectionContext};
+    use stegoeggo::{ProtectionContext, RightsMetadataProtector};
 
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("input.png");
@@ -321,7 +321,7 @@ fn test_verify_metadata_only_does_not_report_verified() {
     let raw = fs::read(&input).unwrap();
 
     let ctx = ProtectionContext::new(0.5, 42);
-    let metadata_only = MetadataTrapProtector::new()
+    let metadata_only = RightsMetadataProtector::new()
         .inject_bytes(&raw, &ctx)
         .unwrap();
 

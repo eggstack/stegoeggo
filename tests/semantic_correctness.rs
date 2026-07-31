@@ -658,3 +658,66 @@ fn prohibited_see_constraints_emits_other_constraints() {
     );
     assert_eq!(report.ai_constraints(), Some("No training without license"));
 }
+
+#[test]
+fn bare_key_plus_datamining_parsed_for_backward_compat() {
+    let bare_key_xmp = r#"<?xpacket begin="\u{feff}" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about=""
+    xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/"
+    plus:DataMining="DMI-PROHIBITED-AIMLTRAINING">
+</rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>"#
+        .to_string();
+    let dyn_img = image::DynamicImage::new_rgb8(1, 1);
+    let mut png = Vec::new();
+    {
+        use image::ImageEncoder;
+        let encoder = image::codecs::png::PngEncoder::new(&mut png);
+        let rgb = dyn_img.to_rgb8();
+        encoder
+            .write_image(&rgb, 1, 1, image::ExtendedColorType::Rgb8)
+            .unwrap();
+    }
+    let keyword = b"XML:com.adobe.xmp";
+    let mut itxt_data = Vec::new();
+    itxt_data.extend_from_slice(keyword);
+    itxt_data.push(0);
+    itxt_data.push(0);
+    itxt_data.push(0);
+    itxt_data.push(0);
+    itxt_data.push(0);
+    itxt_data.extend_from_slice(bare_key_xmp.as_bytes());
+    let itxt_type = b"iTXt";
+    let mut itxt_chunk_data = Vec::new();
+    itxt_chunk_data.extend_from_slice(itxt_type);
+    itxt_chunk_data.extend_from_slice(&itxt_data);
+    let itxt_crc = crc32fast::hash(&itxt_chunk_data);
+    let iend_pos = png
+        .windows(4)
+        .position(|w| w == b"IEND")
+        .expect("IEND not found");
+    let insert_pos = iend_pos - 4;
+    let mut result = Vec::new();
+    result.extend_from_slice(&png[..insert_pos]);
+    result.extend_from_slice(&(itxt_data.len() as u32).to_be_bytes());
+    result.extend_from_slice(&itxt_chunk_data);
+    result.extend_from_slice(&itxt_crc.to_be_bytes());
+    result.extend_from_slice(&png[insert_pos..]);
+
+    let report = stegoeggo::verify_legal_notice(&result, b"");
+    assert_eq!(
+        report.canonical_dmi(),
+        Some(DmiValue::ProhibitedAiMlTraining),
+        "bare key must be parsed for backward compat"
+    );
+    assert_eq!(
+        report.rights_signal_kind(),
+        RightsSignalKind::CanonicalPlusDataMining,
+        "bare key in plus:DataMining is currently classified as canonical \
+         (known gap: should be LegacyBarePlusVocabularyKey per Plan 039 Phase 4)"
+    );
+}
