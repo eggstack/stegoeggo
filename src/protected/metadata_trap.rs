@@ -176,7 +176,7 @@ impl MetadataTrapProtector {
     #[allow(dead_code)]
     fn generate_poison_metadata(
         &self,
-        dmi_value: Option<DmiValue>,
+        _dmi_value: Option<DmiValue>,
         protection_level: Option<ProtectionLevel>,
         seed: Option<u64>,
         legal: Option<&LegalMetadata>,
@@ -197,12 +197,6 @@ impl MetadataTrapProtector {
                     s.to_string().as_bytes().to_vec(),
                 ));
             }
-
-            if let Some(dmi) = Self::resolved_dmi(dmi_value, protection_level, inject_metadata) {
-                metadata.push((b"DMI-PROHIBITED".to_vec(), dmi.as_str().as_bytes().to_vec()));
-            }
-
-            metadata.push((b"noai".to_vec(), b"noindex".to_vec()));
         }
 
         if should_inject_claims && legal.is_some() {
@@ -289,12 +283,6 @@ impl MetadataTrapProtector {
                     s.to_string().as_bytes().to_vec(),
                 ));
             }
-
-            if let Some(dmi) = notice.dmi() {
-                metadata.push((b"DMI-PROHIBITED".to_vec(), dmi.as_str().as_bytes().to_vec()));
-            }
-
-            metadata.push((b"noai".to_vec(), b"noindex".to_vec()));
         }
 
         let should_inject_claims = inject_legal_claims.unwrap_or(notice.has_legal_content());
@@ -437,7 +425,7 @@ impl MetadataTrapProtector {
     }
 
     fn generate_xmp_notice_from_notice(dmi: DmiValue, notice: &RightsNotice) -> Vec<u8> {
-        let vocab_key = dmi.plus_vocab_key();
+        let vocab_uri = dmi.plus_vocab_uri().unwrap_or(dmi.plus_vocab_key());
         let bom = "\u{feff}";
         let seed_attr = notice
             .seed()
@@ -470,6 +458,14 @@ impl MetadataTrapProtector {
                     xml_escape(lang),
                     xml_escape(terms)
                 ));
+            }
+            if dmi == DmiValue::ProhibitedSeeConstraints {
+                if let Some(constraints) = notice.ai_constraints() {
+                    legal_props.push_str(&format!(
+                        "\n   <plus:OtherConstraints>\n    <rdf:Alt>\n     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n    </rdf:Alt>\n   </plus:OtherConstraints>",
+                        xml_escape(constraints)
+                    ));
+                }
             }
             if let Some(constraints) = notice.ai_constraints() {
                 legal_props.push_str(&format!(
@@ -549,7 +545,7 @@ impl MetadataTrapProtector {
              xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n\
              <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
              <rdf:Description rdf:about=\"\"\n\
-              {PLUS_DATA_MINING_PROPERTY}=\"{vocab_key}\"{seed_attr}>{legal_props}\n   </rdf:Description>\n\
+              {PLUS_DATA_MINING_PROPERTY}=\"{vocab_uri}\"{seed_attr}>{legal_props}\n   </rdf:Description>\n\
              </rdf:RDF>\n\
              </x:xmpmeta>\n\
              <?xpacket end=\"w\"?>"
@@ -802,7 +798,7 @@ impl MetadataTrapProtector {
     }
 
     fn generate_xmp_dmi(dmi: DmiValue, seed: Option<u64>) -> Vec<u8> {
-        let vocab_key = dmi.plus_vocab_key();
+        let vocab_uri = dmi.plus_vocab_uri().unwrap_or(dmi.plus_vocab_key());
         let bom = "\u{feff}";
         let seed_attr = seed
             .map(|s| format!("\n             stegoeggo:ProtectionSeed=\"{}\"", s))
@@ -814,7 +810,7 @@ impl MetadataTrapProtector {
              xmlns:stegoeggo=\"https://github.com/eggstack/stegoeggo\">\n\
              <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
              <rdf:Description rdf:about=\"\"\n\
-             {PLUS_DATA_MINING_PROPERTY}=\"{vocab_key}\"{seed_attr}/>\n\
+             {PLUS_DATA_MINING_PROPERTY}=\"{vocab_uri}\"{seed_attr}/>\n\
              </rdf:RDF>\n\
              </x:xmpmeta>\n\
              <?xpacket end=\"w\"?>"
@@ -828,7 +824,7 @@ impl MetadataTrapProtector {
         seed: Option<u64>,
         legal: Option<&LegalMetadata>,
     ) -> Vec<u8> {
-        let vocab_key = dmi.plus_vocab_key();
+        let vocab_uri = dmi.plus_vocab_uri().unwrap_or(dmi.plus_vocab_key());
         let bom = "\u{feff}";
         let seed_attr = seed
             .map(|s| format!("\n             stegoeggo:ProtectionSeed=\"{}\"", s))
@@ -860,6 +856,14 @@ impl MetadataTrapProtector {
                     xml_escape(lang),
                     xml_escape(terms)
                 ));
+            }
+            if dmi == DmiValue::ProhibitedSeeConstraints {
+                if let Some(constraints) = legal.ai_constraints() {
+                    legal_props.push_str(&format!(
+                        "\n   <plus:OtherConstraints>\n    <rdf:Alt>\n     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n    </rdf:Alt>\n   </plus:OtherConstraints>",
+                        xml_escape(constraints)
+                    ));
+                }
             }
             if let Some(constraints) = legal.ai_constraints() {
                 legal_props.push_str(&format!(
@@ -945,7 +949,7 @@ impl MetadataTrapProtector {
              xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n\
              <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
              <rdf:Description rdf:about=\"\"\n\
-              {PLUS_DATA_MINING_PROPERTY}=\"{vocab_key}\"{seed_attr}>{legal_props}\n   </rdf:Description>\n\
+              {PLUS_DATA_MINING_PROPERTY}=\"{vocab_uri}\"{seed_attr}>{legal_props}\n   </rdf:Description>\n\
              </rdf:RDF>\n\
              </x:xmpmeta>\n\
              <?xpacket end=\"w\"?>"
@@ -2565,7 +2569,7 @@ mod tests {
     }
 
     #[test]
-    fn generate_poison_metadata_dmi_auto_mapping() {
+    fn generate_poison_metadata_dmi_auto_mapping_removed() {
         let protector = MetadataTrapProtector::new();
 
         let light = protector.generate_poison_metadata(
@@ -2577,7 +2581,10 @@ mod tests {
             None,
         );
         let dmi = light.iter().find(|(k, _)| k == b"DMI-PROHIBITED");
-        assert_eq!(dmi.unwrap().1, b"Prohibited");
+        assert!(
+            dmi.is_none(),
+            "DMI-PROHIBITED should not be emitted in new output"
+        );
 
         let standard = protector.generate_poison_metadata(
             None,
@@ -2588,11 +2595,14 @@ mod tests {
             None,
         );
         let dmi = standard.iter().find(|(k, _)| k == b"DMI-PROHIBITED");
-        assert_eq!(dmi.unwrap().1, b"ProhibitedAiMlTraining");
+        assert!(
+            dmi.is_none(),
+            "DMI-PROHIBITED should not be emitted in new output"
+        );
     }
 
     #[test]
-    fn generate_poison_metadata_includes_noai() {
+    fn generate_poison_metadata_no_private_markers() {
         let protector = MetadataTrapProtector::new();
         let metadata = protector.generate_poison_metadata(
             None,
@@ -2603,7 +2613,12 @@ mod tests {
             None,
         );
         let noai = metadata.iter().find(|(k, _)| k == b"noai");
-        assert_eq!(noai.unwrap().1, b"noindex");
+        assert!(noai.is_none(), "noai should not be emitted in new output");
+        let dmi = metadata.iter().find(|(k, _)| k == b"DMI-PROHIBITED");
+        assert!(
+            dmi.is_none(),
+            "DMI-PROHIBITED should not be emitted in new output"
+        );
     }
 
     #[test]
@@ -2621,7 +2636,7 @@ mod tests {
     }
 
     #[test]
-    fn generate_poison_metadata_explicit_dmi_overrides_auto() {
+    fn generate_poison_metadata_explicit_dmi_no_private_marker() {
         let protector = MetadataTrapProtector::new();
         let metadata = protector.generate_poison_metadata(
             Some(DmiValue::Allowed),
@@ -2631,10 +2646,11 @@ mod tests {
             None,
             None,
         );
-        // DMI entry is present with the explicit value "Allowed"
         let dmi = metadata.iter().find(|(k, _)| k == b"DMI-PROHIBITED");
-        assert!(dmi.is_some());
-        assert_eq!(dmi.unwrap().1, b"Allowed");
+        assert!(
+            dmi.is_none(),
+            "DMI-PROHIBITED should not be emitted in new output"
+        );
     }
 
     #[test]
@@ -3314,7 +3330,7 @@ mod tests {
             "<xmpRights:WebStatement>",
             "<stegoeggo:AIConstraints>",
             "stegoeggo:ProtectionSeed=\"99\"",
-            "plus:DataMining=\"DMI-PROHIBITED-AIMLTRAINING\"",
+            "plus:DataMining=\"http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING\"",
             "</rdf:Description>",
         ] {
             assert!(
@@ -3405,8 +3421,10 @@ mod tests {
             "TDM reservation should not be present in default output"
         );
         assert!(
-            xmp_str.contains("plus:DataMining=\"DMI-PROHIBITED-AIMLTRAINING\""),
-            "XMP should contain canonical plus:DataMining"
+            xmp_str.contains(
+                "plus:DataMining=\"http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING\""
+            ),
+            "XMP should contain canonical plus:DataMining URI"
         );
     }
 
@@ -3419,8 +3437,8 @@ mod tests {
             "TDM reservation should not be present in default output"
         );
         assert!(
-            xmp_str.contains("plus:DataMining=\"DMI-ALLOWED\""),
-            "XMP should contain canonical plus:DataMining"
+            xmp_str.contains("plus:DataMining=\"http://ns.useplus.org/ldf/vocab/DMI-ALLOWED\""),
+            "XMP should contain canonical plus:DataMining URI"
         );
     }
 

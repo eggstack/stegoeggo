@@ -10,9 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `scripts/check.sh` — fast deterministic checks shared between local development and required CI
 - `scripts/release-check.sh` — bounded local pre-release readiness check (package dry-runs, version lockstep)
 - `RELEASING.md` — manual crates.io publication procedure with immutable version rules and partial-failure handling
+- `DmiValue::plus_vocab_uri()` — returns full canonical PLUS URI (e.g., `http://ns.useplus.org/ldf/vocab/DMI-ALLOWED`) for XMP output
+- `DmiValue::from_plus_vocab_uri()` — parses full canonical PLUS URIs (rejects bare keys and arbitrary origins)
+- `PLUS_VOCAB_PREFIX` constant for the canonical PLUS vocabulary URI prefix
+- `plus:OtherConstraints` XMP emission for `ProhibitedSeeConstraints` policy
 
 ### Changed
 - CI now invokes `scripts/check.sh` instead of maintaining a second copy of the command list
+- XMP `plus:DataMining` now emits full canonical PLUS URIs (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`) instead of bare keys (`DMI-PROHIBITED-AIMLTRAINING`). Bare keys are retained only in `plus_vocab_key()` for backward compatibility
 - `scripts/validate-docs-rs.sh` derives version dynamically instead of hard-coding `stegoeggo-0.3.2.crate`
 - `scripts/validate-msrv-package.sh` derives version dynamically and tests minimal/all-feature combos (reduced from six)
 - Conformance harness is now documented as a pre-release check, not a mandatory CI gate

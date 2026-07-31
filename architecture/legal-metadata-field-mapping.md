@@ -12,9 +12,9 @@
 | Content creation date | `creation_date` | `DateCreated` tEXt | `DateCreated:` COM | **Not injected** | **Not extracted** (no match arm) | IPTC `Iptc4xmpExt:DateCreated` | **Broken round-trip**: written to PNG/JPEG but never extracted. Not in XMP. |
 | AI constraints | `ai_constraints` | `AIConstraints` tEXt | `AIConstraints:` COM | `stegoeggo:AIConstraints` | `AIConstraints` tEXt, `AIConstraints:` COM, `stegoeggo:AIConstraints` | Custom `stegoeggo:` namespace | No standard property exists. Custom namespace is correct approach. |
 | Web statement of rights | `web_statement_of_rights` | `WebStatementOfRights` tEXt | `WebStatementOfRights:` COM | `xmpRights:WebStatement` | `WebStatementOfRights` tEXt → `rights_url`, `WebStatementOfRights:` COM → `rights_url`, `xmpRights:WebStatement` | Adobe XMP Rights `xmpRights:WebStatement` | Conflated with `license_url` in extraction output. |
-| DMI (Data Mining) | `dmi_value` (on ProtectionContext) | `DMI-PROHIBITED` tEXt + XMP `plus:DataMining` | XMP `plus:DataMining` + EXIF UserComment + IPTC Tag 120 | XMP `plus:DataMining` | `plus:DataMining` attr/element, legacy `Iptc4xmpExt:DMI-*` | PLUS LDF ISO 24138:2024 | Canonical PLUS mapping. Legacy backward compat maintained. |
+| DMI (Data Mining) | `dmi_value` (on ProtectionContext) | XMP `plus:DataMining` (full URI) | XMP `plus:DataMining` (full URI) + EXIF UserComment + IPTC Tag 120 | XMP `plus:DataMining` | `plus:DataMining` attr/element (full URI), legacy `Iptc4xmpExt:DMI-*` (bare keys) | PLUS LDF ISO 24138:2024 | Canonical PLUS mapping with full URIs. Legacy bare keys parsed but not emitted. |
 | Protection seed | `seed` (on ProtectionContext) | `X-Protection-Seed` tEXt + `Description` tEXt + XMP `stegoeggo:ProtectionSeed` attr | COM `X-Protection-Seed:` + structured COM `cloakrs:v1:` + IPTC Tag 5 + XMP attr | XMP `stegoeggo:ProtectionSeed` attr + EXIF UserComment | Multiple extraction paths | Custom `stegoeggo:` namespace | IPTC Tag 5/120 technically misused. |
-| noai/noindex | (always injected) | `noai` tEXt = `noindex` | COM `noai: noindex` | **Not injected** | **Not extracted** | No standard | Informal scraper poison pill. Asymmetry: not in WebP. |
+| noai/noindex | (removed) | **Not emitted** | **Not emitted** | **Not injected** | **Not extracted** | No standard | Removed in Plan 039. Previously an informal scraper poison pill; no longer emitted in new output. |
 
 ## Critical Issues
 
@@ -28,4 +28,4 @@
 
 - Custom `stegoeggo:` namespace for AIConstraints and ProtectionSeed — no standard properties exist
 - IPTC Tag 5/120 misuse — pragmatic for seed storage; no standard alternative
-- `noai`/`noindex` — informal scraper poison pill, not a standards-based property
+- ~~`noai`/`noindex` — informal scraper poison pill, not a standards-based property~~ (Removed in Plan 039; no longer emitted)

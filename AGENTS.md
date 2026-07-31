@@ -134,7 +134,9 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 **Canonical metadata format:**
 
-- XMP writer emits `plus:DataMining` with PLUS LDF vocabulary keys (e.g., `DMI-PROHIBITED-AIMLTRAINING`). Legacy `Iptc4xmpExt:DMI-*` properties are parsed for backward compatibility but not emitted
+- XMP writer emits `plus:DataMining` with full PLUS LDF URIs (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`). Legacy bare keys (`DMI-PROHIBITED-AIMLTRAINING`) and `Iptc4xmpExt:DMI-*` properties are parsed for backward compatibility but not emitted
+- `ProhibitedSeeConstraints` emits `plus:OtherConstraints` alongside `plus:DataMining`
+- Private `noai`/`noindex` and `DMI-PROHIBITED` tEXt/COM markers are no longer emitted in new output
 - `tdm:reserve_tdm` is no longer emitted (TDMRep is a web-distribution mechanism, not an image-metadata signal)
 - WebP legal fields live in XMP inside `<rdf:Description>`. `dc:rights` and `xmpRights:UsageTerms` use `<rdf:Alt><rdf:li>` containers. `dc:creator` uses `<rdf:Seq>`
 - WebP exiftool: `exiftool -Copyright` does not resolve `dc:rights` — use `exiftool -XMP-dc:Rights`

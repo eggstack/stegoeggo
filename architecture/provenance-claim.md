@@ -46,8 +46,8 @@ Fields are always serialized in the order shown above (1–15). This order is th
 
 The `rights_policy` field is a single byte encoding the rights/data-mining policy:
 
-| Byte | Variant | PLUS LDF Key |
-|------|---------|--------------|
+| Byte | Variant | PLUS LDF Key (bare) |
+|------|---------|---------------------|
 | `0x00` | Unspecified | `DMI-UNSPECIFIED` |
 | `0x01` | Allowed | `DMI-ALLOWED` |
 | `0x02` | ProhibitedAiMlTraining | `DMI-PROHIBITED-AIMLTRAINING` |
@@ -57,6 +57,8 @@ The `rights_policy` field is a single byte encoding the rights/data-mining polic
 | `0x06` | ProhibitedSeeConstraints | `DMI-PROHIBITED-SEECONSTRAINT` |
 
 Values `0x07`–`0xFF` are reserved for future use. Parsers must reject claims with unknown policy bytes.
+
+Note: These are bare `plus_vocab_key()` values for the provenance byte mapping. XMP `plus:DataMining` attributes use the full URI form (`http://ns.useplus.org/ldf/vocab/{key}`).
 
 This mapping aligns with `RightsPolicy::to_byte()` / `RightsPolicy::from_byte()` in `src/types.rs` and the PLUS controlled-vocabulary keys in `DmiValue::plus_vocab_key()`.
 

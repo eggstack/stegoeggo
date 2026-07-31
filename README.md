@@ -387,7 +387,7 @@ Available values:
 - `Prohibited` - All uses prohibited
 - `ProhibitedSeeConstraints` - Prohibited, see constraints for details
 
-Each variant maps to a canonical PLUS vocabulary key via `DmiValue::plus_vocab_key()` (e.g., `DMI-PROHIBITED-AIMLTRAINING`). Legacy IPTC keys can be parsed back via `DmiValue::from_plus_vocab_key()`.
+Each variant maps to a full canonical PLUS URI via `DmiValue::plus_vocab_uri()` (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`) for XMP output, and to a bare key via `DmiValue::plus_vocab_key()` (e.g., `DMI-PROHIBITED-AIMLTRAINING`) for legacy/internal use. Legacy IPTC keys can be parsed back via `DmiValue::from_plus_vocab_key()`.
 
 ### TDMRep Status
 
@@ -667,12 +667,12 @@ The library injects rights-reservation and AI-training restriction metadata into
 
 **PNG:** tEXt and iTXt chunks
 - `X-Protection-Seed`: Unique identifier for reproducibility
-- `plus:DataMining`: Canonical PLUS LDF DMI value (e.g., `DMI-PROHIBITED-AIMLTRAINING`)
+- `plus:DataMining`: Canonical PLUS LDF DMI value (full URI, e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`)
 - Copyright/Contact/License: When legal claims enabled
 
 **JPEG:** Comment markers and XMP packets
 - COM markers for text metadata
-- APP1 XMP packets with `plus:DataMining` (canonical) and legacy `Iptc4xmpExt:DMI-*` (parsed only)
+- APP1 XMP packets with `plus:DataMining` (full URI canonical) and legacy `Iptc4xmpExt:DMI-*` (parsed only)
 
 **WebP:** EXIF and XML chunks
 - Similar metadata injection with XMP-based DMI

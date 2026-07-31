@@ -399,9 +399,11 @@ pub fn detect_format(bytes: &[u8]) -> Option<String> {
 /// Internal extraction returns `DmiValue::as_str()` values (e.g., "ProhibitedAiMlTraining").
 /// ExifTool returns PLUS vocab keys (e.g., "DMI-PROHIBITED-AIMLTRAINING") or display values
 /// (e.g., "Prohibited for AI/ML training"). This normalizes all forms for comparison.
+/// Also handles full canonical URIs (e.g., "http://ns.useplus.org/ldf/vocab/DMI-ALLOWED").
 #[must_use]
 pub fn normalize_dmi_value(s: &str) -> String {
-    match s {
+    let stripped = s.strip_prefix(crate::types::PLUS_VOCAB_PREFIX).unwrap_or(s);
+    match stripped {
         "DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING" => {
             return "DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING".to_string()
         }

@@ -18,13 +18,14 @@ The XMP payloads follow the W3C RDF/XMP specification and use:
 
 | Scenario | XMP property form | Notes |
 |---|---|---|
-| Canonical attribute | `plus:DataMining="DMI-..."` | Standard attribute on rdf:Description |
-| Canonical element | `<plus:DataMining>DMI-...</plus:DataMining>` | Element child of rdf:Description |
-| Alternate prefix | `myplus:DataMining="DMI-..."` | Arbitrary prefix bound to PLUS namespace |
+| Canonical attribute | `plus:DataMining="http://ns.useplus.org/ldf/vocab/DMI-..."` | Standard attribute on rdf:Description |
+| Canonical element | `<plus:DataMining>http://ns.useplus.org/ldf/vocab/DMI-...</plus:DataMining>` | Element child of rdf:Description |
+| Alternate prefix | `myplus:DataMining="http://ns.useplus.org/ldf/vocab/DMI-..."` | Arbitrary prefix bound to PLUS namespace |
 | Legacy IPTC | `Iptc4xmpExt:DMI-Prohibited="ProhibitedAiMlTraining"` | v0.2-era StegoEggo format |
+| Legacy bare key | `plus:DataMining="DMI-PROHIBITED-AIMLTRAINING"` | Pre-Plan 039 output (still parsed) |
 | Agreeing | Both canonical + legacy with same value | No conflict expected |
 | Conflicting | Canonical + legacy with different values | Conflict expected |
-| Unknown vocab | `plus:DataMining="DMI-UNKNOWN-VALUE"` | Unrecognized URI |
+| Unknown vocab | `plus:DataMining="http://ns.useplus.org/ldf/vocab/DMI-UNKNOWN-VALUE"` | Unrecognized URI |
 | Malformed | Broken XML | Parser must not panic |
 | No metadata | Plain PNG, no XMP | Empty result expected |
 

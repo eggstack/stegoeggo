@@ -518,3 +518,143 @@ fn notice_verification_builder_sets_all_fields() {
     assert_eq!(nv.notice_applied_at(), Some("2025-06-15T12:00:00Z"));
     assert!(nv.has_notice());
 }
+
+// ── Plan 039: Canonical URI handling ────────────────────────────────────────
+
+#[test]
+fn plus_vocab_uri_returns_full_canonical_uri() {
+    assert_eq!(
+        DmiValue::Allowed.plus_vocab_uri(),
+        Some("http://ns.useplus.org/ldf/vocab/DMI-ALLOWED")
+    );
+    assert_eq!(
+        DmiValue::ProhibitedAiMlTraining.plus_vocab_uri(),
+        Some("http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING")
+    );
+    assert_eq!(
+        DmiValue::ProhibitedGenAiMlTraining.plus_vocab_uri(),
+        Some("http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-GENAIMLTRAINING")
+    );
+    assert_eq!(
+        DmiValue::ProhibitedExceptSearchEngineIndexing.plus_vocab_uri(),
+        Some("http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING")
+    );
+    assert_eq!(
+        DmiValue::Prohibited.plus_vocab_uri(),
+        Some("http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED")
+    );
+    assert_eq!(
+        DmiValue::ProhibitedSeeConstraints.plus_vocab_uri(),
+        Some("http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-SEECONSTRAINT")
+    );
+    assert_eq!(DmiValue::Unspecified.plus_vocab_uri(), None);
+}
+
+#[test]
+fn from_plus_vocab_uri_accepts_canonical_uris() {
+    assert_eq!(
+        DmiValue::from_plus_vocab_uri("http://ns.useplus.org/ldf/vocab/DMI-ALLOWED"),
+        Some(DmiValue::Allowed)
+    );
+    assert_eq!(
+        DmiValue::from_plus_vocab_uri(
+            "http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING"
+        ),
+        Some(DmiValue::ProhibitedAiMlTraining)
+    );
+    assert_eq!(
+        DmiValue::from_plus_vocab_uri(
+            "http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-SEECONSTRAINT"
+        ),
+        Some(DmiValue::ProhibitedSeeConstraints)
+    );
+}
+
+#[test]
+fn from_plus_vocab_uri_rejects_bare_keys() {
+    assert_eq!(DmiValue::from_plus_vocab_uri("DMI-ALLOWED"), None);
+    assert_eq!(
+        DmiValue::from_plus_vocab_uri("DMI-PROHIBITED-AIMLTRAINING"),
+        None
+    );
+}
+
+#[test]
+fn from_plus_vocab_uri_rejects_arbitrary_origins() {
+    assert_eq!(
+        DmiValue::from_plus_vocab_uri("https://example.invalid/DMI-ALLOWED"),
+        None
+    );
+    assert_eq!(
+        DmiValue::from_plus_vocab_uri("http://ns.useplus.org/ldf/vocab/DMI-CUSTOM-UNKNOWN"),
+        None
+    );
+}
+
+#[test]
+fn from_plus_vocab_key_accepts_bare_keys_for_backward_compat() {
+    assert_eq!(
+        DmiValue::from_plus_vocab_key("DMI-ALLOWED"),
+        Some(DmiValue::Allowed)
+    );
+    assert_eq!(
+        DmiValue::from_plus_vocab_key("DMI-PROHIBITED-AIMLTRAINING"),
+        Some(DmiValue::ProhibitedAiMlTraining)
+    );
+}
+
+#[test]
+fn xmp_output_contains_full_canonical_uri() {
+    let img = make_test_image_png(1, 1);
+    let legal = LegalMetadata::new().with_copyright_holder("URI Test");
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Png)
+        .with_legal_metadata(legal)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let output = stegoeggo::process_image_bytes(&img, ProtectionLevel::Standard, &ctx).unwrap();
+    let report = stegoeggo::verify_legal_notice(&output, b"");
+    assert_eq!(
+        report.rights_signal_kind(),
+        RightsSignalKind::CanonicalPlusDataMining
+    );
+    assert_eq!(
+        report.canonical_dmi(),
+        Some(DmiValue::ProhibitedAiMlTraining)
+    );
+}
+
+#[test]
+fn allowed_policy_no_prohibition_markers() {
+    let img = make_test_image_png(1, 1);
+    let legal = LegalMetadata::new().with_copyright_holder("Allowed Test");
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Png)
+        .with_legal_metadata(legal)
+        .with_dmi(DmiValue::Allowed);
+    let output = stegoeggo::process_image_bytes(&img, ProtectionLevel::Standard, &ctx).unwrap();
+    let report = stegoeggo::verify_legal_notice(&output, b"");
+    assert_eq!(report.canonical_dmi(), Some(DmiValue::Allowed));
+    assert_eq!(
+        report.rights_signal_kind(),
+        RightsSignalKind::CanonicalPlusDataMining
+    );
+}
+
+#[test]
+fn prohibited_see_constraints_emits_other_constraints() {
+    let img = make_test_image_png(1, 1);
+    let legal = LegalMetadata::new()
+        .with_copyright_holder("Constraints Test")
+        .with_ai_constraints("No training without license");
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Png)
+        .with_legal_metadata(legal)
+        .with_dmi(DmiValue::ProhibitedSeeConstraints);
+    let output = stegoeggo::process_image_bytes(&img, ProtectionLevel::Standard, &ctx).unwrap();
+    let report = stegoeggo::verify_legal_notice(&output, b"");
+    assert_eq!(
+        report.canonical_dmi(),
+        Some(DmiValue::ProhibitedSeeConstraints)
+    );
+    assert_eq!(report.ai_constraints(), Some("No training without license"));
+}

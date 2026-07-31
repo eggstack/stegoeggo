@@ -64,6 +64,9 @@ impl DmiValue {
     }
 
     /// Returns the canonical PLUS controlled-vocabulary key identifier for this DMI value.
+    ///
+    /// This is the bare key portion (e.g. `"DMI-ALLOWED"`) used internally and in
+    /// legacy IPTC properties. For the full XMP-ready URI, use [`plus_vocab_uri`](Self::plus_vocab_uri).
     #[must_use]
     pub fn plus_vocab_key(self) -> &'static str {
         match self {
@@ -79,7 +82,46 @@ impl DmiValue {
         }
     }
 
-    /// Parse a canonical PLUS vocabulary key identifier into a `DmiValue`.
+    /// Returns the full canonical PLUS controlled-vocabulary URI for this DMI value,
+    /// suitable for use as the `plus:DataMining` XMP attribute value.
+    ///
+    /// Returns `None` for `Unspecified` — no `plus:DataMining` property should be
+    /// emitted for an unspecified policy.
+    #[must_use]
+    pub fn plus_vocab_uri(self) -> Option<&'static str> {
+        match self {
+            DmiValue::Unspecified => None,
+            DmiValue::Allowed => Some("http://ns.useplus.org/ldf/vocab/DMI-ALLOWED"),
+            DmiValue::ProhibitedAiMlTraining => {
+                Some("http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING")
+            }
+            DmiValue::ProhibitedGenAiMlTraining => {
+                Some("http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-GENAIMLTRAINING")
+            }
+            DmiValue::ProhibitedExceptSearchEngineIndexing => {
+                Some("http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING")
+            }
+            DmiValue::Prohibited => Some("http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED"),
+            DmiValue::ProhibitedSeeConstraints => {
+                Some("http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-SEECONSTRAINT")
+            }
+        }
+    }
+
+    /// Parse a full canonical PLUS vocabulary URI into a `DmiValue`.
+    ///
+    /// Only accepts URIs beginning with [`PLUS_VOCAB_PREFIX`]. Does not accept
+    /// bare keys or URIs from other origins.
+    #[must_use]
+    pub fn from_plus_vocab_uri(value: &str) -> Option<Self> {
+        let key = value.strip_prefix(PLUS_VOCAB_PREFIX)?;
+        Self::from_plus_vocab_key(key)
+    }
+
+    /// Parse a bare PLUS vocabulary key or a full URI into a `DmiValue`.
+    ///
+    /// Accepts both bare keys (e.g. `"DMI-ALLOWED"`) and full canonical URIs
+    /// (e.g. `"http://ns.useplus.org/ldf/vocab/DMI-ALLOWED"`).
     /// Returns `None` for unknown or malformed values.
     #[must_use]
     pub fn from_plus_vocab_key(key: &str) -> Option<Self> {
@@ -103,6 +145,11 @@ impl DmiValue {
 pub const PLUS_NAMESPACE: &str = "http://ns.useplus.org/ldf/xmp/1.0/";
 /// PLUS Data Mining property name (without prefix).
 pub const PLUS_DATA_MINING_PROPERTY: &str = "plus:DataMining";
+/// PLUS controlled-vocabulary URI prefix for Data Mining values.
+///
+/// Full canonical URIs have the form `{PLUS_VOCAB_PREFIX}{key}`, e.g.
+/// `http://ns.useplus.org/ldf/vocab/DMI-ALLOWED`.
+pub const PLUS_VOCAB_PREFIX: &str = "http://ns.useplus.org/ldf/vocab/";
 
 /// Evidence profile controlling the interpretation of protection warnings
 /// and the default evidence posture.

@@ -17,14 +17,16 @@ The largest module. Injects metadata into image files for the `Light` protection
 Seven variants mapped to canonical PLUS LDF vocabulary keys. Legacy `Iptc4xmpExt:DMI-*` properties are parsed for backward compatibility but not emitted by default:
 
 | DmiValue | Canonical Key (emitted) |
-|----------|------------------------|
+|----------|--------------------------------------|
 | `Unspecified` | Not injected |
 | `Allowed` | `DMI-Allowed` |
 | `Prohibited` | `DMI-Prohibited` |
 | `ProhibitedAiMlTraining` | `DMI-PROHIBITED-AIMLTRAINING` |
 | `ProhibitedGenAiMlTraining` | `DMI-PROHIBITED-GENAIMLTRAINING` |
 | `ProhibitedExceptSearchEngineIndexing` | `DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING` |
-| `ProhibitedSeeConstraints` | `DMI-PROHIBITED-SEECONSTRAINTS` |
+| `ProhibitedSeeConstraints` | `DMI-PROHIBITED-SEECONSTRAINT` |
+
+Note: These are bare `plus_vocab_key()` values. XMP `plus:DataMining` attributes emit the full URI form (`http://ns.useplus.org/ldf/vocab/{key}`).
 
 ### DMI Auto-Mapping
 
@@ -134,7 +136,7 @@ so external RDF parsers (e.g. `exiftool`) can read the legal fields:
 <x:xmpmeta xmlns:plus="..." xmlns:dc="..." xmlns:xmpRights="..." xmlns:photoshop="...">
   <rdf:RDF>
     <rdf:Description rdf:about=""
-      plus:DataMining="DMI-PROHIBITED-AIMLTRAINING"
+      plus:DataMining="http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING"
       stegoeggo:ProtectionSeed="...">
       <dc:creator>
         <rdf:Seq>

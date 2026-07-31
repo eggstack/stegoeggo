@@ -219,7 +219,7 @@ pub enum DmiValue {
 
 Auto-mapped from `ProtectionLevel` via helper in `metadata_trap.rs`: Light→Prohibited, Standard→ProhibitedAiMlTraining. No `impl From<ProtectionLevel> for DmiValue` exists — use the helper function directly.
 
-`plus_vocab_key()` returns the canonical PLUS LDF vocabulary key (e.g., `DMI-PROHIBITED-AIMLTRAINING`). `from_plus_vocab_key()` parses a canonical key back to the enum variant. Legacy `Iptc4xmpExt:DMI-*` values are still parsed for backward compatibility but not emitted by default.
+`plus_vocab_key()` returns the bare PLUS LDF vocabulary key (e.g., `DMI-PROHIBITED-AIMLTRAINING`). `plus_vocab_uri()` returns the full canonical URI (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`), which is emitted in XMP `plus:DataMining` attributes. `from_plus_vocab_key()` parses a bare key (or full URI) back to the enum variant. Legacy `Iptc4xmpExt:DMI-*` values are still parsed for backward compatibility but not emitted by default.
 
 ## ProtectionContext
 
@@ -238,7 +238,7 @@ ProtectionContext::new(intensity, seed)  // intensity clamped to [0.0, 1.0]
 | `input_format` | `Option<ImageOutputFormat>` | None | Hint for format detection |
 | `output_format` | `Option<ImageOutputFormat>` | None | Target output format |
 | `protection_level` | `Option<ProtectionLevel>` | None | Override level (crate-internal) |
-| `dmi_value` | `Option<DmiValue>` | None | DMI override (canonical `plus:DataMining` emitted) |
+| `dmi_value` | `Option<DmiValue>` | None | DMI override (full URI emitted in `plus:DataMining`) |
 | `max_dimension` | `Option<u32>` | None | Resize constraint |
 | `inject_metadata` | `Option<bool>` | None | Enable metadata injection |
 | `inject_legal_claims` | `Option<bool>` | None | Enable legal metadata |
