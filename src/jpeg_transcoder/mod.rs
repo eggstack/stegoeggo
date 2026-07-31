@@ -40,6 +40,99 @@ pub use entropy::{CoefficientDecoder, CoefficientEncoder};
 pub use header::{HuffmanTable, JpegHeader};
 pub use stego_f5::DctStegoF5;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DctSupport {
+    Supported,
+    Unsupported(DctUnsupportedReason),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum DctUnsupportedReason {
+    Progressive,
+    MultipleScans,
+    ArithmeticCoding,
+    LosslessCoding,
+    UnsupportedPrecision,
+    RestartIntervals,
+    UnsupportedColorProcess,
+    MissingTables,
+    MalformedHeader,
+}
+
+impl std::fmt::Display for DctUnsupportedReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Progressive => write!(f, "progressive JPEG"),
+            Self::MultipleScans => write!(f, "multiple scans"),
+            Self::ArithmeticCoding => write!(f, "arithmetic coding"),
+            Self::LosslessCoding => write!(f, "lossless coding"),
+            Self::UnsupportedPrecision => write!(f, "unsupported precision"),
+            Self::RestartIntervals => write!(f, "restart intervals"),
+            Self::UnsupportedColorProcess => write!(f, "unsupported color process"),
+            Self::MissingTables => write!(f, "missing Huffman tables"),
+            Self::MalformedHeader => write!(f, "malformed header"),
+        }
+    }
+}
+
+pub fn probe_dct_support(header: &JpegHeader) -> DctSupport {
+    if header.is_progressive {
+        return DctSupport::Unsupported(DctUnsupportedReason::Progressive);
+    }
+
+    if header.precision != 8 {
+        return DctSupport::Unsupported(DctUnsupportedReason::UnsupportedPrecision);
+    }
+
+    match header.coding_process {
+        header::JpegCodingProcess::ProgressiveDCT => {
+            return DctSupport::Unsupported(DctUnsupportedReason::Progressive);
+        }
+        header::JpegCodingProcess::Lossless => {
+            return DctSupport::Unsupported(DctUnsupportedReason::LosslessCoding);
+        }
+        header::JpegCodingProcess::SequentialDCT => {}
+    }
+
+    if header.restart_interval > 0 {
+        return DctSupport::Unsupported(DctUnsupportedReason::RestartIntervals);
+    }
+
+    if header.components.is_empty() {
+        return DctSupport::Unsupported(DctUnsupportedReason::MalformedHeader);
+    }
+
+    for comp in &header.components {
+        let has_dc = header.get_dc_huffman_table(comp.dc_table_id).is_some()
+            || header.get_dc_huffman_table(0).is_some();
+        let has_ac = header.get_ac_huffman_table(comp.ac_table_id).is_some()
+            || header.get_ac_huffman_table(0).is_some();
+        if !has_dc || !has_ac {
+            return DctSupport::Unsupported(DctUnsupportedReason::MissingTables);
+        }
+    }
+
+    let max_h = header
+        .components
+        .iter()
+        .map(|c| c.h_sampling)
+        .max()
+        .unwrap_or(1);
+    let max_v = header
+        .components
+        .iter()
+        .map(|c| c.v_sampling)
+        .max()
+        .unwrap_or(1);
+
+    if max_h > 4 || max_v > 4 {
+        return DctSupport::Unsupported(DctUnsupportedReason::UnsupportedColorProcess);
+    }
+
+    DctSupport::Supported
+}
+
 /// Main JPEG DCT Transcoder
 /// Provides lossless JPEG transcoding that preserves DCT coefficients
 pub struct JpegTranscoder;
@@ -47,21 +140,16 @@ pub struct JpegTranscoder;
 impl JpegTranscoder {
     /// Decode JPEG and extract raw DCT coefficients
     pub fn decode_coefficients(jpeg_data: &[u8]) -> Result<(JpegHeader, Coefficients)> {
-        // Parse header first to check if progressive
-        let header = match JpegHeader::parse(jpeg_data) {
-            Ok(h) => h,
-            Err(e) => {
-                return Err(e);
-            }
-        };
+        let header = JpegHeader::parse(jpeg_data)?;
 
-        // If progressive, return error — caller should handle via metadata-only path
-        if header.is_progressive {
-            return Err(TranscoderError::Unsupported(
-                "Progressive JPEG: DCT coefficient manipulation not supported, \
-                 falling back to metadata-only protection"
-                    .into(),
-            ));
+        match probe_dct_support(&header) {
+            DctSupport::Supported => {}
+            DctSupport::Unsupported(reason) => {
+                return Err(TranscoderError::Unsupported(format!(
+                    "DCT embedding not supported for {}: {}",
+                    reason, reason
+                )));
+            }
         }
 
         // Find scan data start
@@ -77,19 +165,30 @@ impl JpegTranscoder {
         Ok((header, coefficients))
     }
 
-    /// Encode DCT coefficients back to JPEG
+    /// Encode DCT coefficients back to JPEG using the original byte stream
+    /// for container preservation. Falls back to assemble_jpeg if no original
+    /// is provided.
     pub fn encode_coefficients(
         header: &JpegHeader,
         coefficients: &std::collections::HashMap<u8, Vec<[i16; 64]>>,
+        original_jpeg: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
-        let encoder = CoefficientEncoder::new(header.clone());
-        let scan_data = encoder.encode(coefficients)?;
-
-        // Assemble final JPEG
-        Self::assemble_jpeg(header, &scan_data)
+        match original_jpeg {
+            Some(orig) => Self::encode_coefficients_preserving(header, coefficients, orig),
+            None => {
+                let encoder = CoefficientEncoder::new(header.clone());
+                let scan_data = encoder.encode(coefficients)?;
+                Self::assemble_jpeg(header, &scan_data)
+            }
+        }
     }
 
-    /// Assemble JPEG from header and scan data
+    /// Assemble JPEG from header and scan data.
+    ///
+    /// This rebuilds the JPEG from parsed fields. It preserves APP0, APP1,
+    /// and COM markers stored in the header but drops unknown segments
+    /// (APP2, APP3, ..., APP13, APP14, DRI, etc.). Use
+    /// [`encode_coefficients_preserving`] for container-preserving output.
     fn assemble_jpeg(header: &JpegHeader, scan_data: &[u8]) -> Result<Vec<u8>> {
         let mut output = Vec::new();
 
@@ -242,6 +341,113 @@ impl JpegTranscoder {
         output.extend_from_slice(&table.values);
 
         Ok(())
+    }
+
+    /// Encode DCT coefficients back to JPEG, preserving the original container.
+    ///
+    /// Walks the original byte stream, replacing only DQT markers (with the
+    /// modified quantization tables) and the SOS entropy-coded scan data (with
+    /// the newly encoded scan bytes). All other segments — APP0, APP1, APP2,
+    /// APP13, APP14, COM, DRI, unknown APP markers — are copied verbatim in
+    /// their original order.
+    pub fn encode_coefficients_preserving(
+        header: &JpegHeader,
+        coefficients: &Coefficients,
+        original_jpeg: &[u8],
+    ) -> Result<Vec<u8>> {
+        let encoder = CoefficientEncoder::new(header.clone());
+        let scan_data = encoder.encode(coefficients)?;
+
+        let mut output = Vec::with_capacity(original_jpeg.len() + scan_data.len());
+        output.extend_from_slice(&original_jpeg[0..2]); // SOI
+
+        let mut pos = 2;
+        let mut wrote_qtables = false;
+
+        while pos + 2 <= original_jpeg.len() {
+            if original_jpeg[pos] != 0xFF {
+                pos += 1;
+                continue;
+            }
+
+            let marker = original_jpeg[pos + 1];
+
+            if marker == 0xDA {
+                // Copy the original SOS header verbatim, replace scan data, append EOI.
+                // The SOS header includes component table assignments and spectral
+                // selection which must match the header state.
+                let orig_seg_len =
+                    u16::from_be_bytes([original_jpeg[pos + 2], original_jpeg[pos + 3]]) as usize;
+                let sos_end = pos + 2 + orig_seg_len;
+                if sos_end > original_jpeg.len() {
+                    output.extend_from_slice(&original_jpeg[pos..]);
+                    return Ok(output);
+                }
+                output.extend_from_slice(&original_jpeg[pos..sos_end]); // SOS marker + header
+                output.extend_from_slice(&scan_data);
+                output.push(0xFF);
+                output.push(0xD9); // EOI
+                return Ok(output);
+            }
+
+            if marker == 0xD9 {
+                output.extend_from_slice(&original_jpeg[pos..]);
+                return Ok(output);
+            }
+
+            if marker == 0x00 {
+                pos += 2;
+                continue;
+            }
+
+            if pos + 3 >= original_jpeg.len() {
+                output.extend_from_slice(&original_jpeg[pos..]);
+                return Ok(output);
+            }
+
+            let seg_len =
+                u16::from_be_bytes([original_jpeg[pos + 2], original_jpeg[pos + 3]]) as usize;
+            let seg_end = pos + 2 + seg_len;
+
+            if seg_end > original_jpeg.len() {
+                output.extend_from_slice(&original_jpeg[pos..]);
+                return Ok(output);
+            }
+
+            if marker == 0xDB {
+                pos = seg_end;
+                if !wrote_qtables {
+                    for table in header.quantization_tables.iter().flatten() {
+                        output.push(0xFF);
+                        output.push(0xDB);
+                        let table_data_len = if table.precision == 16 { 129 } else { 65 };
+                        let total_len = table_data_len + 2;
+                        output.extend_from_slice(&(total_len as u16).to_be_bytes());
+                        let precision_bit = if table.precision == 16 { 1 } else { 0 };
+                        output.push((precision_bit << 4) | table.table_id);
+                        if table.precision == 8 {
+                            for &val in &table.values {
+                                output.push(val as u8);
+                            }
+                        } else {
+                            for &val in &table.values {
+                                output.extend_from_slice(&val.to_be_bytes());
+                            }
+                        }
+                    }
+                    wrote_qtables = true;
+                }
+                continue;
+            }
+
+            output.extend_from_slice(&original_jpeg[pos..seg_end]);
+            pos = seg_end;
+        }
+
+        output.extend_from_slice(&scan_data);
+        output.push(0xFF);
+        output.push(0xD9);
+        Ok(output)
     }
 }
 

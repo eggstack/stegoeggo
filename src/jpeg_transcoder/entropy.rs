@@ -318,8 +318,8 @@ impl CoefficientDecoder {
         }
 
         // Process each MCU
-        for mcu_y in 0..mcu_height {
-            for mcu_x in 0..mcus_per_row {
+        for _mcu_y in 0..mcu_height {
+            for _mcu_x in 0..mcus_per_row {
                 // Process each component
                 for comp in &self.header.components {
                     let dc_decoder =
@@ -342,27 +342,19 @@ impl CoefficientDecoder {
                             })?;
 
                     // Number of blocks for this component in the MCU
-                    for by in 0..comp.v_sampling {
-                        for bx in 0..comp.h_sampling {
-                            let block_x = mcu_x * (comp.h_sampling as usize) + (bx as usize);
-                            let block_y = mcu_y * (comp.v_sampling as usize) + (by as usize);
-
-                            // Skip blocks outside image
-                            if block_x * 8 >= self.header.width as usize
-                                || block_y * 8 >= self.header.height as usize
-                            {
-                                continue;
-                            }
-
+                    for _by in 0..comp.v_sampling {
+                        for _bx in 0..comp.h_sampling {
                             let mut block = [0i16; 64];
 
                             // Decode DC coefficient
                             let dc_predictor = dc_predictors.entry(comp.component_id).or_insert(0);
                             if let Some(size) = dc_decoder.decode_symbol(&mut bit_reader) {
-                                let Some(diff) = read_magnitude(&mut bit_reader, size as usize)
-                                else {
-                                    break;
-                                };
+                                let diff = read_magnitude(&mut bit_reader, size as usize)
+                                    .ok_or_else(|| {
+                                        TranscoderError::HuffmanDecode(
+                                            "Truncated DC magnitude in entropy data".into(),
+                                        )
+                                    })?;
                                 let new_val = (*dc_predictor as i32) + (diff as i32);
                                 let clamped =
                                     new_val.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
@@ -391,11 +383,14 @@ impl CoefficientDecoder {
                                             break;
                                         }
 
-                                        let Some(magnitude) =
+                                        let magnitude =
                                             read_magnitude(&mut bit_reader, size as usize)
-                                        else {
-                                            break;
-                                        };
+                                                .ok_or_else(|| {
+                                                    TranscoderError::HuffmanDecode(
+                                                        "Truncated AC magnitude in entropy data"
+                                                            .into(),
+                                                    )
+                                                })?;
 
                                         block[ZIGZAG[k]] = magnitude;
                                         k += 1;
@@ -591,13 +586,18 @@ impl CoefficientEncoder {
                         continue;
                     };
 
-                    // Number of blocks for this component in the MCU
+                    // Block index within this component's block vector.
+                    // The decoder pushes blocks in MCU order: for each MCU, each
+                    // component's sub-blocks are pushed in (by, bx) order.
+                    // Within each MCU, this component's blocks start at
+                    // (mcu_y * mcus_per_row + mcu_x) * h * v.
                     for by in 0..comp.v_sampling {
                         for bx in 0..comp.h_sampling {
-                            let block_idx = (mcu_y * (comp.v_sampling as usize) + (by as usize))
-                                * mcu_width
+                            let block_idx = (mcu_y * mcus_per_row + mcu_x)
                                 * (comp.h_sampling as usize)
-                                + (mcu_x * (comp.h_sampling as usize) + (bx as usize));
+                                * (comp.v_sampling as usize)
+                                + (by as usize) * (comp.h_sampling as usize)
+                                + (bx as usize);
 
                             if block_idx >= blocks.len() {
                                 continue;

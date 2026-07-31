@@ -109,6 +109,14 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **CLI binary location** — `stegoeggo-cli/src/main.rs`, not `src/bin/`
 - **`--require-complete` is removed** — `--strict` is the single complete-validation mode
 
+**JPEG DCT and container correctness:**
+
+- **JPEG DCT subset** — DCT embedding supports only: 8-bit precision, sequential Huffman DCT, single scan, 1-4 components with supported sampling factors, no restart intervals. Unsupported inputs (progressive, restart-bearing, CMYK) route to metadata-only via `probe_dct_support()`.
+- **`encode_coefficients` signature** — Takes `original_jpeg: Option<&[u8]>`. When `Some`, uses `encode_coefficients_preserving` which walks the original byte stream replacing only DQT and SOS scan data. When `None`, uses `assemble_jpeg` which rebuilds from parsed fields (drops unknown segments).
+- **`parse_sos` rejects malformed table IDs** — SOS table IDs > 3 return `InvalidFormat` error instead of clamping. Prevents OOB panics in the entropy decoder.
+- **Truncation is a hard error** — `read_magnitude` returns `Err` on truncated data instead of producing partial blocks.
+- **Metadata-only JPEG is byte-safe** — `inject_text_chunks_jpeg` walks the raw byte stream, preserving all pre-SOS segments verbatim. No coefficient decode/encode occurs.
+
 **Metadata and API traps:**
 
 - **No synthetic defaults** — When no `LegalMetadata` is provided, no "All Rights Reserved" copyright text, no default usage terms, no `DateCreated` are emitted. Each field is emitted only when explicitly provided

@@ -278,7 +278,7 @@ impl JpegHeader {
                 }
                 // SOS - Start of Scan
                 0xDA => {
-                    header.parse_sos(segment_data);
+                    header.parse_sos(segment_data)?;
                     // Stop parsing header - rest is scan data
                     break;
                 }
@@ -459,34 +459,46 @@ impl JpegHeader {
         Ok(())
     }
 
-    fn parse_sos(&mut self, data: &[u8]) {
+    fn parse_sos(&mut self, data: &[u8]) -> Result<()> {
         if data.len() < 3 {
-            return;
+            return Err(TranscoderError::InvalidFormat(
+                "SOS segment too short".into(),
+            ));
         }
 
         let num_components = data[0] as usize;
         if data.len() < 4 + num_components * 2 {
-            return;
+            return Err(TranscoderError::InvalidFormat(
+                "SOS segment too short for components".into(),
+            ));
         }
 
         for i in 0..num_components {
             let component_id = data[1 + i * 2];
             let table_info = data[2 + i * 2];
 
-            // Update components with their Huffman table assignments.
-            // The 4-bit table IDs are clamped to 0-3 because the entropy
-            // decoder/encoder arrays are sized for the JPEG spec maximum of
-            // 4 Huffman tables per class. Malformed SOS segments with IDs > 3
-            // would otherwise cause out-of-bounds array indexing.
+            let dc_table_id = (table_info >> 4) & 0x0F;
+            let ac_table_id = table_info & 0x0F;
+
+            if dc_table_id > 3 || ac_table_id > 3 {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "SOS component {} references invalid Huffman table IDs (dc={}, ac={}); \
+                     valid range is 0-3",
+                    component_id, dc_table_id, ac_table_id
+                )));
+            }
+
             if let Some(comp) = self
                 .components
                 .iter_mut()
                 .find(|c| c.component_id == component_id)
             {
-                comp.dc_table_id = ((table_info >> 4) & 0x0F).min(3);
-                comp.ac_table_id = (table_info & 0x0F).min(3);
+                comp.dc_table_id = dc_table_id;
+                comp.ac_table_id = ac_table_id;
             }
         }
+
+        Ok(())
     }
 
     pub fn get_quantization_table(&self, id: u8) -> Option<&QuantizationTable> {
@@ -596,9 +608,9 @@ mod tests {
 
     /// Regression test for SOS table IDs > 3 causing OOB panic in entropy
     /// decoder. The 4-bit field can encode 0-15 but only 0-3 are valid per
-    /// the JPEG spec. Clamping prevents the panic.
+    /// the JPEG spec. Malformed IDs are now rejected.
     #[test]
-    fn parse_sos_clamps_table_ids_to_valid_range() {
+    fn parse_sos_rejects_invalid_table_ids() {
         let data: &[u8] = &[
             0xFF, 0xD8, // SOI
             0xFF, 0xC0, // SOF0
@@ -629,21 +641,16 @@ mod tests {
             0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8,
             0xD9, 0xDA, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xF1, 0xF2,
             0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, // values
-            // SOS with table IDs = 0x55 (dc=5, ac=5) - should be clamped to 3
+            // SOS with table IDs = 0x55 (dc=5, ac=5) - should be rejected
             0xFF, 0xDA, 0x00, 0x08, // SOS, length=8
             0x01, // 1 component
             0x01, 0x55, // component_id=1, table_info=0x55 (dc=5, ac=5)
             0x00, 0x3F, 0x00, // spectral selection, approx
         ];
-        let header = JpegHeader::parse(data).unwrap();
-        assert_eq!(header.components.len(), 1);
-        assert_eq!(
-            header.components[0].dc_table_id, 3,
-            "dc_table_id should be clamped from 5 to 3"
-        );
-        assert_eq!(
-            header.components[0].ac_table_id, 3,
-            "ac_table_id should be clamped from 5 to 3"
+        let result = JpegHeader::parse(data);
+        assert!(
+            result.is_err(),
+            "SOS with table IDs > 3 must be rejected, not clamped"
         );
     }
 

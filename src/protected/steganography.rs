@@ -282,7 +282,8 @@ impl SteganographyProtector {
 
         match JpegTranscoder::decode_coefficients(jpeg_bytes) {
             Ok((header, coefficients)) => {
-                let canonical_jpeg = JpegTranscoder::encode_coefficients(&header, &coefficients)?;
+                let canonical_jpeg =
+                    JpegTranscoder::encode_coefficients(&header, &coefficients, None)?;
                 let (mut header, coefficients) =
                     JpegTranscoder::decode_coefficients(&canonical_jpeg)?;
 
@@ -319,6 +320,7 @@ impl SteganographyProtector {
                             let attempt_bytes = JpegTranscoder::encode_coefficients(
                                 &header,
                                 &attempt_coefficients,
+                                None,
                             )?;
                             if let Ok((_, roundtrip_coefficients)) =
                                 JpegTranscoder::decode_coefficients(&attempt_bytes)
@@ -345,7 +347,8 @@ impl SteganographyProtector {
                     }
                 }
 
-                let output = JpegTranscoder::encode_coefficients(&header, &coefficients)?;
+                let output =
+                    JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))?;
                 Ok(EmbedOutcome::SkippedCapacity {
                     output,
                     payload_bytes: payload.len(),
@@ -417,7 +420,8 @@ impl SteganographyProtector {
 
         match JpegTranscoder::decode_coefficients(jpeg_bytes) {
             Ok((header, coefficients)) => {
-                let canonical_jpeg = JpegTranscoder::encode_coefficients(&header, &coefficients)?;
+                let canonical_jpeg =
+                    JpegTranscoder::encode_coefficients(&header, &coefficients, None)?;
                 let (mut header, mut coefficients) =
                     JpegTranscoder::decode_coefficients(&canonical_jpeg)?;
 
@@ -475,7 +479,7 @@ impl SteganographyProtector {
 
                 if embedded_any {
                     let attempt_bytes =
-                        JpegTranscoder::encode_coefficients(&header, &coefficients)?;
+                        JpegTranscoder::encode_coefficients(&header, &coefficients, None)?;
                     if let Ok((_, roundtrip_coefficients)) =
                         JpegTranscoder::decode_coefficients(&attempt_bytes)
                     {
@@ -504,7 +508,8 @@ impl SteganographyProtector {
                     }
                 }
 
-                let output = JpegTranscoder::encode_coefficients(&header, &coefficients)?;
+                let output =
+                    JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))?;
                 Ok(EmbedOutcome::SkippedCapacity {
                     output,
                     payload_bytes: payload.len(),
@@ -4399,8 +4404,59 @@ mod tests {
             .with_stego_redundancy(3);
         let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
 
-        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
-        assert!(SteganographyProtector::dct_payload_capacity(&coefficients) >= payload_bits * 3);
+        let (header, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
+        let available = SteganographyProtector::dct_payload_capacity(&coefficients);
+        assert!(
+            available >= payload_bits * 3,
+            "capacity {} should be >= {} (payload_bits * 3)",
+            available,
+            payload_bits * 3
+        );
+
+        // Test that assemble_jpeg roundtrip preserves coefficients
+        let canonical = JpegTranscoder::encode_coefficients(&header, &coefficients, None).unwrap();
+        let (_header2, coefficients2) = JpegTranscoder::decode_coefficients(&canonical).unwrap();
+        for (id, blocks) in &coefficients {
+            let c2 = coefficients2.get(id).unwrap();
+            assert_eq!(
+                blocks.len(),
+                c2.len(),
+                "comp {} block count mismatch: {} vs {}",
+                id,
+                blocks.len(),
+                c2.len()
+            );
+            for (i, (b1, b2)) in blocks.iter().zip(c2.iter()).enumerate() {
+                assert_eq!(
+                    b1, b2,
+                    "comp {} block {} mismatch after assemble_jpeg roundtrip",
+                    id, i
+                );
+            }
+        }
+
+        let mut header_mod = header.clone();
+        DctStegoF5::new()
+            .embed_seed_in_quantization_tables(&mut header_mod, 42)
+            .unwrap();
+        let mut coeffs_mod = coefficients.clone();
+        let payload = protector.generate_payload_from_ctx(&ctx);
+        DctStegoF5::with_redundancy(3)
+            .embed_f5(&mut coeffs_mod, &payload, 42)
+            .unwrap();
+        let embedded_jpeg =
+            JpegTranscoder::encode_coefficients(&header_mod, &coeffs_mod, None).unwrap();
+        match JpegTranscoder::decode_coefficients(&embedded_jpeg) {
+            Ok((_, rt)) => {
+                let rt_bits = DctStegoF5::with_redundancy(3).extract_f5(&rt, payload_bits, 42);
+                let rt_payload = SteganographyProtector::bits_to_bytes(&rt_bits);
+                assert_eq!(
+                    rt_payload, payload,
+                    "F5 roundtrip through assemble_jpeg failed"
+                );
+            }
+            Err(e) => panic!("decode after assemble_jpeg embed failed: {}", e),
+        }
 
         let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
         assert!(outcome.is_embedded());
