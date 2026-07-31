@@ -629,7 +629,201 @@ fn conflict_expected_true_observed_true_passes() {
         .with_dmi(DmiValue::ProhibitedAiMlTraining);
     let result = stegoeggo::process_image_bytes(&buf, ProtectionLevel::Standard, &ctx).unwrap();
 
-    let notice = stegoeggo::verify_legal_notice(&result, &[]);
+    let notice = stegoeggo::verify_legal_notice(&result, b"");
     assert!(notice.has_notice());
     assert!(notice.dmi().is_some());
+}
+
+fn jpeg_find_sos_region(jpeg: &[u8]) -> Option<(usize, usize)> {
+    let mut pos = 2;
+    while pos + 4 <= jpeg.len() {
+        if jpeg[pos] != 0xFF {
+            pos += 1;
+            continue;
+        }
+        let marker = jpeg[pos + 1];
+        if marker == 0xDA {
+            let len = u16::from_be_bytes([jpeg[pos + 2], jpeg[pos + 3]]) as usize;
+            let scan_start = pos + 2 + len;
+            let eoi = jpeg.len();
+            return Some((scan_start, eoi));
+        }
+        if marker == 0xD9 || marker == 0x00 {
+            return None;
+        }
+        if pos + 4 > jpeg.len() {
+            return None;
+        }
+        let seg_len = u16::from_be_bytes([jpeg[pos + 2], jpeg[pos + 3]]) as usize;
+        pos += 2 + seg_len;
+    }
+    None
+}
+
+fn jpeg_find_marker(jpeg: &[u8], target: u8) -> bool {
+    let mut pos = 2;
+    while pos + 4 <= jpeg.len() {
+        if jpeg[pos] != 0xFF {
+            break;
+        }
+        let marker = jpeg[pos + 1];
+        if marker == target {
+            return true;
+        }
+        if marker == 0xD8 || marker == 0xD9 {
+            pos += 2;
+            continue;
+        }
+        let seg_len = u16::from_be_bytes([jpeg[pos + 2], jpeg[pos + 3]]) as usize;
+        pos += 2 + seg_len;
+    }
+    false
+}
+
+fn jpeg_find_com_marker_count(jpeg: &[u8]) -> usize {
+    let mut count = 0;
+    let mut pos = 2;
+    while pos + 4 <= jpeg.len() {
+        if jpeg[pos] != 0xFF {
+            break;
+        }
+        let marker = jpeg[pos + 1];
+        if marker == 0xFE {
+            count += 1;
+        }
+        if marker == 0xD8 || marker == 0xD9 {
+            pos += 2;
+            continue;
+        }
+        let seg_len = u16::from_be_bytes([jpeg[pos + 2], jpeg[pos + 3]]) as usize;
+        pos += 2 + seg_len;
+    }
+    count
+}
+
+#[test]
+fn jpeg_scan_bytes_unchanged_after_metadata_injection() {
+    let img = image::DynamicImage::new_rgb8(64, 64);
+    let mut buf = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
+    let base = buf.into_inner();
+
+    let (orig_scan_start, orig_scan_end) =
+        jpeg_find_sos_region(&base).expect("original should have SOS");
+    let orig_scan_bytes = base[orig_scan_start..orig_scan_end].to_vec();
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_legal_metadata(legal())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let trap = RightsMetadataProtector::new();
+    let output = trap.inject_bytes(&base, &ctx).unwrap();
+
+    let (out_scan_start, out_scan_end) =
+        jpeg_find_sos_region(&output).expect("output should have SOS");
+    let out_scan_bytes = output[out_scan_start..out_scan_end].to_vec();
+
+    assert_eq!(
+        orig_scan_bytes, out_scan_bytes,
+        "SOS scan bytes must be byte-identical after metadata-only injection"
+    );
+}
+
+#[test]
+fn jpeg_scan_bytes_unchanged_after_double_injection() {
+    let img = image::DynamicImage::new_rgb8(64, 64);
+    let mut buf = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
+    let base = buf.into_inner();
+
+    let (orig_scan_start, orig_scan_end) =
+        jpeg_find_sos_region(&base).expect("original should have SOS");
+    let orig_scan_bytes = base[orig_scan_start..orig_scan_end].to_vec();
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_legal_metadata(legal())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let trap = RightsMetadataProtector::new();
+
+    let output1 = trap.inject_bytes(&base, &ctx).unwrap();
+    let output2 = trap.inject_bytes(&output1, &ctx).unwrap();
+
+    let (out_scan_start, out_scan_end) =
+        jpeg_find_sos_region(&output2).expect("output should have SOS");
+    let out_scan_bytes = output2[out_scan_start..out_scan_end].to_vec();
+
+    assert_eq!(
+        orig_scan_bytes, out_scan_bytes,
+        "SOS scan bytes must be byte-identical after double metadata injection"
+    );
+}
+
+#[test]
+fn jpeg_com_markers_preserved_after_injection() {
+    let mut img_bytes = Vec::new();
+    let img = image::DynamicImage::new_rgb8(64, 64);
+    let mut buf = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
+    let base = buf.into_inner();
+
+    let com_data = b"original comment";
+    let com_len = (com_data.len() + 2) as u16;
+    img_bytes.extend_from_slice(&base[..2]);
+    img_bytes.extend_from_slice(&[0xFF, 0xFE]);
+    img_bytes.extend_from_slice(&com_len.to_be_bytes());
+    img_bytes.extend_from_slice(com_data);
+    img_bytes.extend_from_slice(&base[2..]);
+
+    let orig_com_count = jpeg_find_com_marker_count(&img_bytes);
+    assert!(orig_com_count >= 1, "should have at least 1 COM marker");
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_legal_metadata(legal())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let trap = RightsMetadataProtector::new();
+    let output = trap.inject_bytes(&img_bytes, &ctx).unwrap();
+
+    let out_com_count = jpeg_find_com_marker_count(&output);
+    assert!(
+        out_com_count >= orig_com_count,
+        "COM markers should be preserved: had {}, now have {}",
+        orig_com_count,
+        out_com_count
+    );
+}
+
+#[test]
+fn jpeg_app14_adobe_marker_survives_metadata_injection() {
+    let img = image::DynamicImage::new_rgb8(64, 64);
+    let mut buf = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
+    let base = buf.into_inner();
+
+    let adobe_data = [0u8, 0, 0, 0, 0];
+    let adobe_len = (adobe_data.len() + 2) as u16;
+    let mut with_adobe = Vec::with_capacity(base.len() + 4 + adobe_data.len());
+    with_adobe.extend_from_slice(&base[..2]);
+    with_adobe.extend_from_slice(&[0xFF, 0xEE]);
+    with_adobe.extend_from_slice(&adobe_len.to_be_bytes());
+    with_adobe.extend_from_slice(&adobe_data);
+    with_adobe.extend_from_slice(&base[2..]);
+
+    assert!(
+        jpeg_find_marker(&with_adobe, 0xEE),
+        "base should have APP14 marker"
+    );
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_legal_metadata(legal())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let trap = RightsMetadataProtector::new();
+    let output = trap.inject_bytes(&with_adobe, &ctx).unwrap();
+
+    assert!(
+        jpeg_find_marker(&output, 0xEE),
+        "APP14 marker should survive metadata injection"
+    );
 }

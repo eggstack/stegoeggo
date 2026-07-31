@@ -790,6 +790,12 @@ The `NoticeVerification` report lists which evidence channels were detected:
 
 JPEG's lossy compression can destroy steganography payloads embedded in pixel data. This is an inherent limitation of the JPEG format and cannot be fully avoided.
 
+**DCT embedding supported subset:**
+- 8-bit precision, sequential Huffman DCT, single scan
+- 1-4 components with sampling factors up to 4
+- No restart intervals, no progressive, no arithmetic coding, no lossless coding
+- Unsupported inputs (progressive, restart-bearing, CMYK, multi-scan) fall back to metadata-only processing
+
 **Current behavior:**
 - PNG/WebP: LSB steganography is fully supported and verifiable
 - JPEG: F5-style DCT steganography stores a seed in quantization tables when those tables are preserved and embeds payload bits in coefficients
@@ -869,7 +875,7 @@ PNG in / PNG out — the "maximum legal evidence" path:
 
 ### JPEG Fast Path
 
-JPEG-in / JPEG-out bypasses pixel decode entirely and operates directly on DCT coefficients:
+JPEG-in / JPEG-out bypasses pixel decode entirely and operates directly on DCT coefficients. Container semantics (APP0, APP1, APP2, APP13, APP14, COM, DRI, unknown segments) are preserved verbatim — only DQT tables and SOS scan data are replaced.
 
 | Image Size | Time |
 |------------|------|

@@ -66,6 +66,8 @@ Injects four marker types:
 3. **XMP (APP1)** — Full XMP packet with canonical `plus:DataMining` rights signals and legal metadata
 4. **COM** — Human-readable key-value pairs (Copyright, Creator, Contact, CreditLine, CopyrightOwner, LicensorName, LicensorEmail, LicensorURL, MetadataDate, NoticeAppliedAt, UsageTerms, AIConstraints) + structured binary COM (`cloakrs:v1:`)
 
+**Container preservation**: `inject_text_chunks_jpeg` walks the raw JPEG byte stream, copying all pre-SOS segments verbatim and inserting StegoEggo metadata before the SOS marker. The SOS scan data and all segments after it (including EOI) are copied byte-for-byte. This ensures that unrelated APP0, APP1, APP2, APP13, APP14, COM, DRI, and unknown segments survive metadata injection unchanged.
+
 **External visibility**: Legal fields are stored as separate COM markers. External tools like `exiftool` require the `-a` flag to read all COM markers (not just the first). XMP DMI fields use canonical `plus:DataMining` and are visible via standard XMP extraction. TDM reservation is no longer emitted by default.
 
 ### PNG

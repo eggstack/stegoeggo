@@ -101,6 +101,7 @@ pub fn apply_dct_stego_bytes(jpeg_bytes: &[u8], ctx: &ProtectionContext) -> Resu
 - For progressive JPEG: Seed-in-Q-tables only (F5 not supported for progressive)
 - Uses `JpegTranscoder` to decode/encode DCT coefficients
 - Uses `DctStegoF5` for coefficient manipulation
+- `probe_dct_support()` gates DCT entry: rejects progressive, restart-bearing, non-8-bit, multi-scan, and sampling >4 inputs; unsupported inputs fall back to metadata-only processing
 
 ## Extraction & Verification
 

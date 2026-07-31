@@ -69,6 +69,8 @@ Steganographic payload extraction results:
 - `source: FieldSource` — Extraction source
 - `tiled: bool` — Whether tiled steganography was detected
 
+**JPEG DCT support scope**: DCT embedding requires baseline sequential JPEG with 8-bit precision, single scan, 1-4 components with sampling factors up to 4, no restart intervals, no progressive or arithmetic coding. Unsupported inputs (progressive, restart-bearing, multi-scan, CMYK) fall back to metadata-only processing; the stego status is `NotFound` for those inputs.
+
 ### `AuthenticationVerification`
 
 HMAC or Ed25519 authentication results:

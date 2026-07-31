@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `DmiValue::from_plus_vocab_uri()` — parses full canonical PLUS URIs (rejects bare keys and arbitrary origins)
 - `PLUS_VOCAB_PREFIX` constant for the canonical PLUS vocabulary URI prefix
 - `plus:OtherConstraints` XMP emission for `ProhibitedSeeConstraints` policy
+- `probe_dct_support()` — central capability gate for JPEG DCT embedding; rejects progressive, restart-bearing, non-8-bit, and multi-scan inputs before coefficient processing
+- `DctSupport` / `DctUnsupportedReason` enums — structured DCT capability classification
+- `encode_coefficients_preserving()` — container-preserving JPEG DCT encoding that walks the original byte stream, replacing only DQT and SOS scan data; all other segments (APP0, APP1, APP2, APP13, APP14, COM, DRI, unknown) preserved verbatim
+- JPEG container preservation tests: SOS scan byte-equality, APP2/APP13/APP14/COM segment survival, restart-bearing and progressive fallback
 
 ### Changed
 - CI now invokes `scripts/check.sh` instead of maintaining a second copy of the command list
@@ -22,6 +26,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `scripts/validate-msrv-package.sh` derives version dynamically and tests minimal/all-feature combos (reduced from six)
 - Conformance harness is now documented as a pre-release check, not a mandatory CI gate
 - `AGENTS.md` describes one-job CI, complexity budget, and targeted specialist checks
+- `parse_sos()` now returns `Result<()>` and rejects Huffman table IDs > 3 instead of clamping
+- `encode_coefficients()` takes `original_jpeg: Option<&[u8]>` — `Some` uses container-preserving path, `None` uses `assemble_jpeg` fallback
+- Truncated entropy data during DCT decoding returns `TranscoderError::HuffmanDecode` errors instead of silent partial results
+- README documents the supported DCT subset (8-bit sequential, no restart, no progressive)
 
 ### Removed
 - `scripts/validate-release.sh` — replaced by `scripts/check.sh` + `scripts/release-check.sh`
@@ -30,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 0.3.0 changelog entry corrected from "Unreleased" to actual publication date
 - README installation examples updated to current 0.3 release line
 - SECURITY.md updated to include 0.3.x as supported
+- Edge MCU block skip removed — decoder and encoder now both process all blocks specified by MCU geometry
 
 ## [0.3.1] - 2026-07-28
 
