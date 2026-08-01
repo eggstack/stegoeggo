@@ -201,6 +201,8 @@ let ctx = ProtectionContext::default();
 let results = process_images_parallel(&images, ProtectionLevel::Standard, &ctx).unwrap();
 ```
 
+**Note:** `process_image` and `process_images_parallel` operate on pixel data only. File-level metadata (PNG tEXt, JPEG COM/XMP, WebP XMP) is not preserved through the `DynamicImage` roundtrip. Use byte-path APIs (`process_image_bytes`, `process_images_bytes_parallel`) for full metadata injection.
+
 Or process bytes in parallel:
 
 ```rust,ignore

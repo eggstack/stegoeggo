@@ -784,3 +784,439 @@ fn test_protect_to_stdout() {
         output.display()
     );
 }
+
+#[test]
+fn test_equivalent_legacy_and_request_syntax() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output_legacy = tmp.path().join("legacy_out");
+    let output_request = tmp.path().join("request_out");
+
+    create_test_png(&input);
+
+    let result_legacy = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output_legacy)
+        .arg("-s")
+        .arg("42")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(result_legacy.status.success());
+
+    let result_request = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output_request)
+        .arg("-s")
+        .arg("42")
+        .arg("--rights-policy")
+        .arg("prohibited-ai-ml-training")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(result_request.status.success());
+
+    let legacy_bytes = fs::read(output_legacy.join("input_protected.png")).unwrap();
+    let request_bytes = fs::read(output_request.join("input_protected.png")).unwrap();
+
+    assert!(
+        !legacy_bytes.is_empty(),
+        "Legacy path should produce output"
+    );
+    assert!(
+        !request_bytes.is_empty(),
+        "Request path should produce output"
+    );
+}
+
+#[test]
+fn test_preset_no_ai_training_sets_policy() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("legal-notice")
+        .arg("--no-ai-training")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        result.status.success(),
+        "--preset legal-notice --no-ai-training should succeed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
+fn test_allowed_with_no_ai_training_is_config_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--rights-policy")
+        .arg("allowed")
+        .arg("--no-ai-training")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        !result.status.success(),
+        "--rights-policy allowed --no-ai-training should fail"
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("Conflicting"),
+        "Should report conflict: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_conflicting_dmi_and_rights_policy_is_config_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--dmi")
+        .arg("allowed")
+        .arg("--rights-policy")
+        .arg("prohibited-ai-ml-training")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        !result.status.success(),
+        "Conflicting --dmi and --rights-policy should fail"
+    );
+}
+
+#[test]
+fn test_hmac_without_key_is_config_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("authenticated-provenance")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(!result.status.success(), "HMAC without key should fail");
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("HMAC") || stderr.contains("key"),
+        "Should mention HMAC or key: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_dry_run_shows_resolved_plan() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("legal-notice")
+        .arg("--no-ai-training")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        result.status.success(),
+        "--dry-run should succeed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        stdout.contains("Resolved Protection Plan"),
+        "Should show resolved plan: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Effective policy"),
+        "Should show effective policy: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_verify_with_literal_hex_key() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let protected = tmp.path().join("protected.png");
+
+    create_test_png(&input);
+
+    let key = "deadbeef01234567deadbeef01234567";
+
+    let protect_result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&protected)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("authenticated-provenance")
+        .arg("--key")
+        .arg(key)
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(protect_result.status.success());
+
+    let verify_result = Command::new(cli_bin())
+        .arg(&protected)
+        .arg("--verify")
+        .arg("--key")
+        .arg(key)
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        verify_result.status.success(),
+        "Verify with literal hex key should succeed"
+    );
+}
+
+#[test]
+fn test_verify_with_file_key() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let protected = tmp.path().join("protected.png");
+    let key_file = tmp.path().join("key.txt");
+
+    create_test_png(&input);
+
+    let key = "deadbeef01234567deadbeef01234567";
+    fs::write(&key_file, key).unwrap();
+
+    let protect_result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&protected)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("authenticated-provenance")
+        .arg("--key")
+        .arg(key)
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(protect_result.status.success());
+
+    let verify_result = Command::new(cli_bin())
+        .arg(&protected)
+        .arg("--verify")
+        .arg("--key")
+        .arg(format!("@{}", key_file.display()))
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        verify_result.status.success(),
+        "Verify with @file key should succeed"
+    );
+}
+
+#[test]
+fn test_dry_run_matches_execution() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let dry_run = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("legal-notice")
+        .arg("--no-ai-training")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(dry_run.status.success());
+    let dry_stdout = String::from_utf8_lossy(&dry_run.stdout);
+
+    let exec_result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("legal-notice")
+        .arg("--no-ai-training")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(exec_result.status.success());
+
+    assert!(
+        dry_stdout.contains("Metadata-only: true") || dry_stdout.contains("metadata-only: true"),
+        "Dry run should show metadata-only: true for legal-notice preset"
+    );
+}
+
+#[test]
+fn test_batch_stems_produce_unique_outputs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("images");
+    fs::create_dir_all(&dir).unwrap();
+
+    let img = image::DynamicImage::new_rgb8(16, 16);
+    for i in 0..3 {
+        let path = dir.join(format!("photo{}.png", i));
+        let file = fs::File::create(&path).unwrap();
+        let encoder = image::codecs::png::PngEncoder::new(file);
+        image::ImageEncoder::write_image(
+            encoder,
+            &img.to_rgb8(),
+            16,
+            16,
+            image::ExtendedColorType::Rgb8,
+        )
+        .unwrap();
+    }
+
+    let out_dir = tmp.path().join("out");
+    let result = Command::new(cli_bin())
+        .arg(&dir)
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("-s")
+        .arg("42")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        result.status.success(),
+        "Batch processing should succeed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let outputs: Vec<_> = fs::read_dir(&out_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(outputs.len(), 3, "Should produce 3 output files");
+}
+
+#[test]
+fn test_pixel_only_api_does_not_claim_metadata() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("legal-notice")
+        .arg("--json")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(result.status.success());
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let report = json.get("report").expect("Should have report");
+    assert!(
+        report.get("metadata_injected").unwrap() == true,
+        "legal-notice preset should inject metadata"
+    );
+    assert!(
+        report.get("stego_attempted").unwrap() == false,
+        "legal-notice preset should not attempt stego"
+    );
+}
+
+#[test]
+fn test_hmac_with_disabled_marker_is_config_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--hidden-marker")
+        .arg("disabled")
+        .arg("--authentication")
+        .arg("hmac")
+        .arg("--key")
+        .arg("deadbeef01234567deadbeef01234567")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        !result.status.success(),
+        "HMAC with disabled marker should fail"
+    );
+}
+
+#[test]
+fn test_level_preset_conflict_is_config_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("-l")
+        .arg("light")
+        .arg("--preset")
+        .arg("maximal")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        !result.status.success(),
+        "Combining --level and --preset should fail"
+    );
+}

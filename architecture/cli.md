@@ -96,5 +96,5 @@ When `--key` is provided, HMAC-SHA256 is used for stego payload verification.
 
 ## Module Interactions
 
-- **lib.rs**: Calls `process_image_bytes`, `process_images_bytes_parallel`, `verify_image_bytes`
-- **types.rs**: Uses `ProtectionLevel`, `ProtectionContext`, `ImageOutputFormat`, `DmiValue`
+- **lib.rs**: All protection paths route through `build_protection_request()` → `process_request_bytes()` / `process_request_bytes_with_warnings()`. Verify uses `resolve_key_input()` for all key sources (literal hex, `@file`, stdin, env `STEGOEGGO_KEY`)
+- **types.rs**: Uses `ProtectionRequest`, `RightsPolicy`, `ProtectionPreset`, `ImageOutputFormat`

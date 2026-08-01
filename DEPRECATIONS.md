@@ -60,6 +60,12 @@ let iscc = compute_iscc(&img);
 let iscc = compute_content_identifiers(&img);
 ```
 
+## Pixel-Only APIs (Plan 042)
+
+`process_image` and `process_images_parallel` accept `DynamicImage` and return `DynamicImage`. The `DynamicImage` roundtrip **does not preserve file-level metadata** (PNG tEXt, JPEG COM/XMP, WebP XMP). These functions embed steganographic markers in pixel data only. For full metadata injection, use the byte-path APIs (`process_image_bytes`, `process_request_bytes`).
+
+The CLI now always routes through `ProtectionRequest` — there are no dual legacy/request code paths.
+
 ## Policy
 
 - Deprecated APIs are still functional and tested

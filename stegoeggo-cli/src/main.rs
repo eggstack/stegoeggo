@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 use stegoeggo::Error;
 #[allow(deprecated)]
 use stegoeggo::{
-    generate_random_seed, process_image_bytes_with_warnings, process_request_bytes_with_warnings,
-    verify_legal_notice, DmiValue, EvidenceProfile, HiddenMarkerMode, ImageOutputFormat,
-    ProtectionChannels, ProtectionContext, ProtectionLevel, ProtectionPreset, ProtectionWarning,
-    RightsPolicy, StegoPayload, WarningSeverity, DEFAULT_OUTPUT_FORMAT,
+    generate_random_seed, process_request_bytes_with_warnings, verify_legal_notice, DmiValue,
+    EvidenceProfile, HiddenMarkerMode, ImageOutputFormat, ProtectionChannels, ProtectionLevel,
+    ProtectionPreset, ProtectionRequest, ProtectionWarning, RightsPolicy, StegoPayload,
+    WarningSeverity, DEFAULT_OUTPUT_FORMAT,
 };
 
 const EXIT_OK: i32 = 0;
@@ -271,7 +271,7 @@ enum Command {
     },
 }
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, PartialEq, ValueEnum)]
 enum ProtectionLevelArg {
     Disabled,
     Light,
@@ -298,8 +298,6 @@ enum DmiArg {
 }
 
 impl DmiArg {
-    /// Convert CLI DMI arg to library DMI value.
-    /// Returns `None` for `Auto`, meaning the caller should auto-select based on protection level.
     fn into_dmi_value(self) -> Option<DmiValue> {
         match self {
             DmiArg::Auto => None,
@@ -314,7 +312,7 @@ impl DmiArg {
     }
 }
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, PartialEq, ValueEnum)]
 enum ProfileArg {
     LegalNotice,
     LegalNoticeStego,
@@ -414,11 +412,6 @@ impl From<OutputFormatArg> for ImageOutputFormat {
     }
 }
 
-/// Resolve a key from multiple sources with the following priority:
-/// 1. Explicit CLI argument (--key <hex>)
-/// 2. File path (--key @/path/to/file, reads raw hex from file)
-/// 3. Environment variable (STEGOEGGO_KEY)
-/// 4. Stdin (when --key is "-")
 fn resolve_key_input(
     key_arg: &Option<String>,
     env_var: &str,
@@ -564,11 +557,39 @@ fn compute_output_path(
     }
 }
 
-fn display_warnings(warnings: &[ProtectionWarning], ctx: &ProtectionContext, verbose: bool) {
+#[allow(deprecated)]
+fn evidence_profile_for_display(args: &Args) -> EvidenceProfile {
+    if args.preset.is_some() || args.rights_policy.is_some() || args.dry_run {
+        if let Some(preset_arg) = args.preset {
+            return match preset_arg {
+                PresetArg::LegalNotice => EvidenceProfile::LegalNotice,
+                PresetArg::LegalNoticeWithStego => EvidenceProfile::LegalNoticeWithStego,
+                PresetArg::AuthenticatedProvenance => EvidenceProfile::AuthenticatedProvenance,
+                PresetArg::Maximal => EvidenceProfile::Maximal,
+            };
+        }
+        if let Some(ref policy_arg) = args.rights_policy {
+            return match policy_arg {
+                RightsPolicyArg::Unspecified => EvidenceProfile::LegalNotice,
+                RightsPolicyArg::Allowed => EvidenceProfile::LegalNotice,
+                RightsPolicyArg::ProhibitedAiMlTraining => EvidenceProfile::LegalNotice,
+                RightsPolicyArg::ProhibitedGenerativeAiTraining => EvidenceProfile::LegalNotice,
+                RightsPolicyArg::ProhibitedExceptSearchIndexing => EvidenceProfile::LegalNotice,
+                RightsPolicyArg::ProhibitedAllDataMining => EvidenceProfile::LegalNotice,
+                RightsPolicyArg::ProhibitedSeeConstraints => EvidenceProfile::LegalNotice,
+            };
+        }
+        EvidenceProfile::LegalNotice
+    } else {
+        EvidenceProfile::from(args.profile.clone())
+    }
+}
+
+#[allow(deprecated)]
+fn display_warnings(warnings: &[ProtectionWarning], profile: EvidenceProfile, verbose: bool) {
     if warnings.is_empty() {
         return;
     }
-    let profile = ctx.evidence_profile();
     for w in warnings {
         let severity = w.severity_for_profile(profile);
         let prefix = match severity {
@@ -582,79 +603,314 @@ fn display_warnings(warnings: &[ProtectionWarning], ctx: &ProtectionContext, ver
     }
 }
 
-fn process_single_file(
-    input_path: &PathBuf,
-    output_dir: &Option<PathBuf>,
-    output_format: Option<ImageOutputFormat>,
-    ctx_base: &ProtectionContext,
-    protection_level: ProtectionLevel,
-    verbose: bool,
-    override_output: Option<PathBuf>,
-) -> Result<(PathBuf, Vec<ProtectionWarning>), Error> {
-    let input_bytes = fs::read(input_path).map_err(Error::Io)?;
+fn build_legal_metadata(args: &Args) -> (Option<stegoeggo::LegalMetadata>, Option<DmiValue>) {
+    let has_legal_flags = args.copyright_notice.is_some()
+        || args.creator.is_some()
+        || args.contact.is_some()
+        || args.rights_url.is_some()
+        || args.usage_terms.is_some()
+        || args.ai_constraints.is_some()
+        || args.no_ai_training
+        || args.no_genai_training
+        || args.tdm_reserved
+        || args.credit_line.is_some()
+        || args.copyright_owner.is_some()
+        || args.licensor_name.is_some()
+        || args.licensor_email.is_some()
+        || args.licensor_url.is_some()
+        || args.content_created_at.is_some();
 
-    let detected_format =
-        ImageOutputFormat::from_magic_bytes(&input_bytes).unwrap_or(DEFAULT_OUTPUT_FORMAT);
+    if !has_legal_flags {
+        return (None, None);
+    }
 
-    if verbose {
-        if let Some(fmt) = output_format {
-            if fmt != detected_format {
-                eprintln!(
-                    "Warning: output format {:?} differs from detected format {:?}",
-                    fmt, detected_format
-                );
-            }
+    let mut meta = stegoeggo::LegalMetadata::default();
+    let mut dmi_override: Option<DmiValue> = None;
+
+    if let Some(ref v) = args.copyright_notice {
+        meta = meta.with_copyright_holder(v);
+    }
+    if let Some(ref v) = args.creator {
+        meta = meta.with_creator(v);
+    }
+    if let Some(ref v) = args.contact {
+        meta = meta.with_contact_email(v);
+    }
+    if let Some(ref v) = args.rights_url {
+        meta = meta.with_web_statement_of_rights(v);
+    }
+    if let Some(ref v) = args.usage_terms {
+        meta = meta.with_usage_terms(v);
+    }
+    if let Some(ref v) = args.ai_constraints {
+        meta = meta.with_ai_constraints(v);
+    }
+    if let Some(ref v) = args.credit_line {
+        meta = meta.with_credit_line(v);
+    }
+    if let Some(ref v) = args.copyright_owner {
+        meta = meta.with_copyright_owner(v);
+    }
+    if let Some(ref v) = args.licensor_name {
+        meta = meta.with_licensor_name(v);
+    }
+    if let Some(ref v) = args.licensor_email {
+        meta = meta.with_licensor_email(v);
+    }
+    if let Some(ref v) = args.licensor_url {
+        meta = meta.with_licensor_url(v);
+    }
+    if let Some(ref v) = args.content_created_at {
+        meta = meta.with_creation_date(v);
+    }
+
+    if args.no_ai_training {
+        dmi_override = Some(DmiValue::ProhibitedAiMlTraining);
+        if args.ai_constraints.is_none() {
+            meta = meta.with_ai_constraints(
+                "Training for artificial intelligence and machine learning is prohibited",
+            );
+        }
+    } else if args.no_genai_training {
+        dmi_override = Some(DmiValue::ProhibitedGenAiMlTraining);
+        if args.ai_constraints.is_none() {
+            meta = meta.with_ai_constraints(
+                "Training for generative artificial intelligence is prohibited",
+            );
+        }
+    } else if args.tdm_reserved {
+        dmi_override = Some(DmiValue::ProhibitedSeeConstraints);
+        if args.ai_constraints.is_none() {
+            meta = meta.with_ai_constraints("Text and data mining rights reserved");
         }
     }
 
-    let mut ctx = ctx_base.clone();
-    ctx.set_input_format(detected_format);
+    (Some(meta), dmi_override)
+}
 
-    let (output_bytes, warnings) =
-        process_image_bytes_with_warnings(&input_bytes, protection_level, &ctx)?;
+fn has_new_style_flags(args: &Args) -> bool {
+    args.rights_policy.is_some()
+        || args.preset.is_some()
+        || args.hidden_marker.is_some()
+        || args.authentication.is_some()
+        || args.dry_run
+}
 
-    let effective_format = output_format.unwrap_or(detected_format);
+#[allow(deprecated)]
+fn build_protection_request(args: &Args) -> Result<ProtectionRequest, Box<dyn std::error::Error>> {
+    let is_new_style = has_new_style_flags(args);
 
-    let output_path = if let Some(override_path) = override_output {
-        if let Some(parent) = override_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        check_input_output_disjoint(input_path, &override_path)?;
-        write_atomic(&override_path, &output_bytes)?;
-        override_path
-    } else {
-        let stem = input_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("output");
-        let ext = effective_format.extension();
-        let filename = format!("{}_protected.{}", stem, ext);
+    if is_new_style
+        && args.preset.is_some()
+        && (args.level != ProtectionLevelArg::Standard || args.profile != ProfileArg::LegalNotice)
+    {
+        return Err("Cannot combine --preset with --level/--profile; use --preset alone or --level/--profile alone".into());
+    }
 
-        if let Some(ref dir) = output_dir {
-            let out_path = if dir.is_file() || (dir.extension().is_some() && is_image_file(dir)) {
-                if let Some(parent) = dir.parent() {
-                    fs::create_dir_all(parent)?;
+    let (legal_metadata, legal_dmi_override) = build_legal_metadata(args);
+
+    let legal_metadata = if let Some(ref dmi_arg) = args.dmi {
+        if matches!(dmi_arg, DmiArg::ProhibitedConstraints) {
+            if args.ai_constraints.is_none() && args.rights_url.is_none() {
+                match legal_metadata {
+                    Some(meta) => {
+                        Some(meta.with_ai_constraints("Text and data mining rights reserved"))
+                    }
+                    None => {
+                        let mut meta = stegoeggo::LegalMetadata::default();
+                        meta = meta.with_ai_constraints("Text and data mining rights reserved");
+                        Some(meta)
+                    }
                 }
-                dir.clone()
             } else {
-                fs::create_dir_all(dir)?;
-                dir.join(&filename)
-            };
-            check_input_output_disjoint(input_path, &out_path)?;
-            write_atomic(&out_path, &output_bytes)?;
-            out_path
+                legal_metadata
+            }
         } else {
-            let output_path = PathBuf::from(filename);
-            check_input_output_disjoint(input_path, &output_path)?;
-            write_atomic(&output_path, &output_bytes)?;
-            output_path
+            legal_metadata
+        }
+    } else {
+        legal_metadata
+    };
+
+    if args.metadata == Some(false) && legal_metadata.is_some() {
+        return Err("Cannot use --metadata false with legal metadata flags (--copyright-notice, --creator, etc.). Legal metadata requires metadata injection".into());
+    }
+
+    let seed = args.seed.unwrap_or_else(generate_random_seed);
+
+    let mac_key = resolve_key_input(&args.key, "STEGOEGGO_KEY")?;
+
+    let output_format: Option<ImageOutputFormat> = args.format.as_ref().map(|f| f.clone().into());
+
+    let (policy, channels) = if is_new_style {
+        build_new_style_request(args, &legal_metadata, legal_dmi_override)?
+    } else {
+        build_legacy_style_request(args, &legal_metadata, legal_dmi_override)?
+    };
+
+    if matches!(channels.authentication, stegoeggo::AuthenticationMode::Hmac) && mac_key.is_none() {
+        return Err("HMAC authentication requires a key (--key hex, --key @file, --key -, or env STEGOEGGO_KEY)".into());
+    }
+
+    if matches!(channels.authentication, stegoeggo::AuthenticationMode::Hmac)
+        && matches!(channels.hidden_marker, HiddenMarkerMode::Disabled)
+    {
+        return Err("HMAC authentication requires a non-disabled hidden marker (--hidden-marker best-effort)".into());
+    }
+
+    let notice = stegoeggo::RightsNotice::default();
+
+    let mut request = stegoeggo::ProtectionRequest::new(notice, policy, channels)
+        .with_seed(seed)
+        .with_intensity(args.intensity.clamp(0.0, 1.0))
+        .with_jpeg_quality(args.jpeg_quality.clamp(1, 100));
+
+    if let Some(fmt) = output_format {
+        request = request.with_output_format(fmt);
+    }
+    if args.progressive {
+        request = request.with_progressive_jpeg();
+    }
+    if let Some(meta) = legal_metadata {
+        request = request.with_legal_metadata(meta);
+    }
+    if let Some(key) = mac_key {
+        request = request.with_mac_key(key);
+    }
+
+    Ok(request)
+}
+
+#[allow(deprecated)]
+fn build_new_style_request(
+    args: &Args,
+    _legal_metadata: &Option<stegoeggo::LegalMetadata>,
+    legal_dmi_override: Option<DmiValue>,
+) -> Result<(RightsPolicy, ProtectionChannels), Box<dyn std::error::Error>> {
+    let mut policy = args
+        .rights_policy
+        .map(RightsPolicy::from)
+        .unwrap_or(RightsPolicy::Unspecified);
+
+    if let Some(dmi_val) = legal_dmi_override {
+        let dmi_policy = RightsPolicy::from_dmi_value(dmi_val);
+        if args.rights_policy.is_some() && dmi_policy != policy {
+            return Err(format!(
+                "Conflicting policy: --rights-policy {:?} contradicts --no-ai-training/--no-genai-training/--tdm-reserved",
+                args.rights_policy
+            ).into());
+        }
+        policy = dmi_policy;
+    }
+
+    if let Some(ref dmi_arg) = args.dmi {
+        if let Some(dmi_val) = dmi_arg.clone().into_dmi_value() {
+            let dmi_policy = RightsPolicy::from_dmi_value(dmi_val);
+            if args.rights_policy.is_some() && dmi_policy != policy {
+                return Err(format!(
+                    "Conflicting policy: --rights-policy {:?} contradicts --dmi {:?}",
+                    args.rights_policy, dmi_arg
+                )
+                .into());
+            }
+            policy = dmi_policy;
+        }
+    }
+
+    let channels = if let Some(preset_arg) = args.preset {
+        let preset: ProtectionPreset = preset_arg.into();
+        preset.to_channels()
+    } else {
+        let hidden = args
+            .hidden_marker
+            .map(|h| match h {
+                HiddenMarkerArg::Disabled => HiddenMarkerMode::Disabled,
+                HiddenMarkerArg::BestEffort => HiddenMarkerMode::BestEffort,
+            })
+            .unwrap_or(HiddenMarkerMode::Disabled);
+
+        let auth = args
+            .authentication
+            .map(|a| match a {
+                AuthenticationArg::None => stegoeggo::AuthenticationMode::None,
+                AuthenticationArg::Hmac => stegoeggo::AuthenticationMode::Hmac,
+            })
+            .unwrap_or(stegoeggo::AuthenticationMode::None);
+
+        let notice = stegoeggo::RightsNotice::default();
+        let rights_metadata = policy != RightsPolicy::Unspecified
+            || notice.has_legal_content()
+            || _legal_metadata.is_some()
+            || !matches!(hidden, HiddenMarkerMode::Disabled);
+
+        ProtectionChannels {
+            rights_metadata,
+            hidden_marker: hidden,
+            authentication: auth,
         }
     };
 
-    Ok((output_path, warnings))
+    Ok((policy, channels))
 }
 
-fn process_single_file_request(
+#[allow(deprecated)]
+fn build_legacy_style_request(
+    args: &Args,
+    _legal_metadata: &Option<stegoeggo::LegalMetadata>,
+    legal_dmi_override: Option<DmiValue>,
+) -> Result<(RightsPolicy, ProtectionChannels), Box<dyn std::error::Error>> {
+    let protection_level = ProtectionLevel::from(args.level.clone());
+
+    let dmi_value = args.dmi.as_ref().and_then(|d| {
+        d.clone().into_dmi_value().or({
+            Some(match protection_level {
+                ProtectionLevel::Disabled | ProtectionLevel::Light => DmiValue::Unspecified,
+                _ => DmiValue::ProhibitedAiMlTraining,
+            })
+        })
+    });
+
+    let effective_dmi = legal_dmi_override.or(dmi_value);
+    let policy = effective_dmi
+        .map(RightsPolicy::from_dmi_value)
+        .unwrap_or(RightsPolicy::Unspecified);
+
+    let hidden_marker = match protection_level {
+        ProtectionLevel::Disabled => HiddenMarkerMode::Disabled,
+        ProtectionLevel::Light | ProtectionLevel::Standard => HiddenMarkerMode::BestEffort,
+        _ => HiddenMarkerMode::Disabled,
+    };
+
+    let authentication = match args.profile {
+        ProfileArg::AuthenticatedProvenance | ProfileArg::Maximal => {
+            stegoeggo::AuthenticationMode::Hmac
+        }
+        _ => stegoeggo::AuthenticationMode::None,
+    };
+
+    let mut rights_metadata = !matches!(protection_level, ProtectionLevel::Disabled);
+    if let Some(meta) = _legal_metadata {
+        if meta.has_content() {
+            rights_metadata = true;
+        }
+    }
+    if args.metadata == Some(false) {
+        rights_metadata = false;
+    }
+    if args.legal_claims {
+        rights_metadata = true;
+    }
+
+    let channels = ProtectionChannels {
+        rights_metadata,
+        hidden_marker,
+        authentication,
+    };
+
+    Ok((policy, channels))
+}
+
+fn process_single_file(
     input_path: &PathBuf,
     output_dir: &Option<PathBuf>,
     output_format: Option<ImageOutputFormat>,
@@ -729,92 +985,6 @@ fn print_payload_info(payload: &StegoPayload) {
     println!("Seed: {}", payload.seed());
     println!("Intensity: {:.2}", payload.intensity());
     println!("Version: {}", payload.version());
-}
-
-fn build_legal_metadata(args: &Args) -> (Option<stegoeggo::LegalMetadata>, Option<DmiValue>) {
-    let has_legal_flags = args.copyright_notice.is_some()
-        || args.creator.is_some()
-        || args.contact.is_some()
-        || args.rights_url.is_some()
-        || args.usage_terms.is_some()
-        || args.ai_constraints.is_some()
-        || args.no_ai_training
-        || args.no_genai_training
-        || args.tdm_reserved
-        || args.credit_line.is_some()
-        || args.copyright_owner.is_some()
-        || args.licensor_name.is_some()
-        || args.licensor_email.is_some()
-        || args.licensor_url.is_some()
-        || args.content_created_at.is_some();
-
-    if !has_legal_flags {
-        return (None, None);
-    }
-
-    let mut meta = stegoeggo::LegalMetadata::default();
-    let mut dmi_override: Option<DmiValue> = None;
-
-    if let Some(ref v) = args.copyright_notice {
-        meta = meta.with_copyright_holder(v);
-    }
-    if let Some(ref v) = args.creator {
-        meta = meta.with_creator(v);
-    }
-    if let Some(ref v) = args.contact {
-        meta = meta.with_contact_email(v);
-    }
-    if let Some(ref v) = args.rights_url {
-        meta = meta.with_web_statement_of_rights(v);
-    }
-    if let Some(ref v) = args.usage_terms {
-        meta = meta.with_usage_terms(v);
-    }
-    if let Some(ref v) = args.ai_constraints {
-        meta = meta.with_ai_constraints(v);
-    }
-    if let Some(ref v) = args.credit_line {
-        meta = meta.with_credit_line(v);
-    }
-    if let Some(ref v) = args.copyright_owner {
-        meta = meta.with_copyright_owner(v);
-    }
-    if let Some(ref v) = args.licensor_name {
-        meta = meta.with_licensor_name(v);
-    }
-    if let Some(ref v) = args.licensor_email {
-        meta = meta.with_licensor_email(v);
-    }
-    if let Some(ref v) = args.licensor_url {
-        meta = meta.with_licensor_url(v);
-    }
-    if let Some(ref v) = args.content_created_at {
-        meta = meta.with_creation_date(v);
-    }
-
-    // DMI presets (--no-ai-training, --no-genai-training, --tdm-reserved)
-    if args.no_ai_training {
-        dmi_override = Some(DmiValue::ProhibitedAiMlTraining);
-        if args.ai_constraints.is_none() {
-            meta = meta.with_ai_constraints(
-                "Training for artificial intelligence and machine learning is prohibited",
-            );
-        }
-    } else if args.no_genai_training {
-        dmi_override = Some(DmiValue::ProhibitedGenAiMlTraining);
-        if args.ai_constraints.is_none() {
-            meta = meta.with_ai_constraints(
-                "Training for generative artificial intelligence is prohibited",
-            );
-        }
-    } else if args.tdm_reserved {
-        dmi_override = Some(DmiValue::ProhibitedSeeConstraints);
-        if args.ai_constraints.is_none() {
-            meta = meta.with_ai_constraints("Text and data mining rights reserved");
-        }
-    }
-
-    (Some(meta), dmi_override)
 }
 
 #[cfg(feature = "signatures")]
@@ -1301,6 +1471,7 @@ struct JsonVerifyOutput {
     evidence_strength: String,
 }
 
+#[allow(deprecated)]
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
@@ -1382,12 +1553,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        let mac_key = args
-            .key
-            .as_ref()
-            .map(|k| hex::decode(k).map_err(|e| format!("Invalid hex key: {}", e)))
-            .transpose()?
-            .unwrap_or_default();
+        let mac_key = resolve_key_input(&args.key, "STEGOEGGO_KEY")?.unwrap_or_default();
 
         let notice = verify_legal_notice(&bytes_to_verify, &mac_key);
 
@@ -1504,488 +1670,78 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // New request-based API path
-    if args.rights_policy.is_some()
-        || args.preset.is_some()
-        || args.hidden_marker.is_some()
-        || args.authentication.is_some()
-        || args.dry_run
-    {
-        let seed = args.seed.unwrap_or_else(generate_random_seed);
-        let mac_key = resolve_key_input(&args.key, "STEGOEGGO_KEY")?;
+    let request = build_protection_request(&args)?;
 
-        let (legal_metadata, _) = build_legal_metadata(&args);
-
-        let policy = args
-            .rights_policy
-            .map(RightsPolicy::from)
-            .unwrap_or(RightsPolicy::Unspecified);
-
-        let notice = stegoeggo::RightsNotice::default();
-
-        let channels = if let Some(preset_arg) = args.preset {
-            let preset: ProtectionPreset = preset_arg.into();
-            preset.to_channels()
-        } else {
-            let hidden = args
-                .hidden_marker
-                .map(|h| match h {
-                    HiddenMarkerArg::Disabled => HiddenMarkerMode::Disabled,
-                    HiddenMarkerArg::BestEffort => HiddenMarkerMode::BestEffort,
-                })
-                .unwrap_or(HiddenMarkerMode::Disabled);
-
-            let auth = args
-                .authentication
-                .map(|a| match a {
-                    AuthenticationArg::None => stegoeggo::AuthenticationMode::None,
-                    AuthenticationArg::Hmac => stegoeggo::AuthenticationMode::Hmac,
-                })
-                .unwrap_or(stegoeggo::AuthenticationMode::None);
-
-            let rights_metadata = policy != RightsPolicy::Unspecified
-                || notice.has_legal_content()
-                || legal_metadata.is_some()
-                || !matches!(hidden, HiddenMarkerMode::Disabled);
-
-            ProtectionChannels {
-                rights_metadata,
-                hidden_marker: hidden,
-                authentication: auth,
-            }
-        };
-
-        let output_format: Option<ImageOutputFormat> = args.format.map(ImageOutputFormat::from);
-
-        let input_files = collect_input_files(&args.input);
-        if input_files.is_empty() {
-            eprintln!("Error: No input files found");
-            std::process::exit(EXIT_CONFIG);
-        }
-
-        let mut request = stegoeggo::ProtectionRequest::new(notice, policy, channels)
-            .with_seed(seed)
-            .with_intensity(args.intensity.clamp(0.0, 1.0))
-            .with_jpeg_quality(args.jpeg_quality.clamp(1, 100));
-
-        if let Some(fmt) = output_format {
-            request = request.with_output_format(fmt);
-        }
-
-        if args.progressive {
-            request = request.with_progressive_jpeg();
-        }
-        if let Some(meta) = legal_metadata {
-            request = request.with_legal_metadata(meta);
-        }
-        if let Some(key) = mac_key {
-            request = request.with_mac_key(key);
-        }
-
-        let is_batch = input_files.len() > 1 || args.input.iter().any(|p| p.is_dir());
-
-        if is_batch {
-            use rayon::prelude::*;
-
-            #[allow(deprecated)]
-            let ctx_for_display = ProtectionContext::new(args.intensity.clamp(0.0, 1.0), seed)
-                .with_evidence_profile(EvidenceProfile::LegalNotice);
-
-            #[allow(clippy::type_complexity)]
-            let results: Vec<
-                Result<(PathBuf, PathBuf, Vec<ProtectionWarning>), (PathBuf, String)>,
-            > = if args.jobs > 1 {
-                let seen_paths: std::sync::Mutex<HashMap<PathBuf, usize>> =
-                    std::sync::Mutex::new(HashMap::new());
-
-                input_files
-                    .par_iter()
-                    .with_max_len(1)
-                    .map(|input_path| {
-                        let input_bytes_preview = fs::read(input_path)
-                            .map_err(|e| (input_path.clone(), e.to_string()))?;
-                        let detected = ImageOutputFormat::from_magic_bytes(&input_bytes_preview)
-                            .unwrap_or(DEFAULT_OUTPUT_FORMAT);
-                        let effective_format = output_format.unwrap_or(detected);
-
-                        let mut seen = seen_paths.lock().unwrap();
-                        let override_output = compute_output_path(
-                            input_path,
-                            &args.output,
-                            effective_format,
-                            &mut seen,
-                        );
-                        drop(seen);
-
-                        process_single_file_request(
-                            input_path,
-                            &args.output,
-                            output_format,
-                            &request,
-                            args.verbose,
-                            override_output,
-                        )
-                        .map(|(output, warnings)| (input_path.clone(), output, warnings))
-                        .map_err(|e| (input_path.clone(), e.to_string()))
-                    })
-                    .collect()
-            } else {
-                let mut seen: HashMap<PathBuf, usize> = HashMap::new();
-
-                input_files
-                    .iter()
-                    .map(|input_path| {
-                        let detected = ImageOutputFormat::from_magic_bytes(
-                            &fs::read(input_path).unwrap_or_default(),
-                        )
-                        .unwrap_or(DEFAULT_OUTPUT_FORMAT);
-                        let effective_format = output_format.unwrap_or(detected);
-
-                        let override_output = compute_output_path(
-                            input_path,
-                            &args.output,
-                            effective_format,
-                            &mut seen,
-                        );
-
-                        process_single_file_request(
-                            input_path,
-                            &args.output,
-                            output_format,
-                            &request,
-                            args.verbose,
-                            override_output,
-                        )
-                        .map(|(output, warnings)| (input_path.clone(), output, warnings))
-                        .map_err(|e| (input_path.clone(), e.to_string()))
-                    })
-                    .collect()
-            };
-
-            let mut success_count = 0;
-            let mut failed_files: Vec<PathBuf> = Vec::new();
-            let mut has_errors = false;
-
-            for result in results {
-                match result {
-                    Ok((input_path, output_path, warnings)) => {
-                        success_count += 1;
-                        display_warnings(&warnings, &ctx_for_display, args.verbose);
-                        if args.strict
-                            && warnings.iter().any(|w| {
-                                w.severity_for_profile(ctx_for_display.evidence_profile())
-                                    == WarningSeverity::Error
-                            })
-                        {
-                            has_errors = true;
-                        }
-                        if args.verbose {
-                            println!("  {} -> {}", input_path.display(), output_path.display());
-                        } else {
-                            println!("{}", output_path.display());
-                        }
-                    }
-                    Err((path, msg)) => {
-                        failed_files.push(path);
-                        eprintln!("Error: {}", msg);
-                    }
-                }
-            }
-
-            if args.verbose || !failed_files.is_empty() {
-                println!(
-                    "\nCompleted: {} succeeded, {} failed",
-                    success_count,
-                    failed_files.len()
-                );
-            }
-
-            if !failed_files.is_empty() {
-                return Err(format!("{} file(s) failed processing", failed_files.len()).into());
-            }
-
-            if args.strict && has_errors {
-                return Err(
-                    "Strict mode: one or more warnings with error severity (see warnings above)"
-                        .into(),
-                );
-            }
-
-            return Ok(());
-        }
-
-        let input_path = &input_files[0];
-        let input_bytes = fs::read(input_path)?;
-
-        if args.dry_run {
-            let input_format = stegoeggo::ImageOutputFormat::from_magic_bytes(&input_bytes)
-                .unwrap_or(DEFAULT_OUTPUT_FORMAT);
-            let plan = stegoeggo::resolve_request(&request, input_format)?;
-            println!("Resolved Protection Plan:");
-            println!("  Effective policy: {:?}", plan.effective_policy());
-            println!("  Effective DMI: {:?}", plan.effective_dmi());
-            println!(
-                "  Channels: rights_metadata={}, hidden_marker={:?}, auth={:?}",
-                plan.channels().rights_metadata,
-                plan.channels().hidden_marker,
-                plan.channels().authentication
-            );
-            println!("  Input format: {:?}", plan.input_format());
-            println!("  Output format: {:?}", plan.output_format());
-            println!("  Seed: {}", plan.seed());
-            println!("  Intensity: {}", plan.intensity());
-            println!("  Metadata-only: {}", plan.is_metadata_only());
-            if !plan.warnings().is_empty() {
-                println!("  Warnings:");
-                for w in plan.warnings() {
-                    println!("    - {}", w);
-                }
-            }
-            return Ok(());
-        }
-
-        let detected_format =
-            ImageOutputFormat::from_magic_bytes(&input_bytes).unwrap_or(DEFAULT_OUTPUT_FORMAT);
-        if args.verbose {
-            if let Some(fmt) = output_format {
-                if fmt != detected_format {
-                    eprintln!(
-                        "Warning: output format {:?} differs from detected format {:?}",
-                        fmt, detected_format
-                    );
-                }
-            }
-        }
-
-        let output_path = if let Some(ref dir) = args.output {
-            if dir.is_file() || (dir.extension().is_some() && is_image_file(dir)) {
-                if let Some(parent) = dir.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                dir.clone()
-            } else {
-                fs::create_dir_all(dir)?;
-                let stem = input_path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("output");
-                let ext = output_format.unwrap_or(detected_format).extension();
-                dir.join(format!("{}_protected.{}", stem, ext))
-            }
-        } else {
-            let stem = input_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("output");
-            let ext = output_format.unwrap_or(detected_format).extension();
-            PathBuf::from(format!("{}_protected.{}", stem, ext))
-        };
-
-        if args.json {
-            let (output_bytes, report) =
-                stegoeggo::process_request_bytes_with_report(&input_bytes, &request)?;
-            if let Some(parent) = output_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            check_input_output_disjoint(input_path, &output_path)?;
-            write_atomic(&output_path, &output_bytes)?;
-
-            let json_output = JsonOutput {
-                schema_version: 1,
-                status: "ok".to_string(),
-                output_path: Some(output_path.display().to_string()),
-                warnings: report.warnings().iter().map(|w| w.to_string()).collect(),
-                report: Some(JsonExecutionReport {
-                    effective_policy: format!("{:?}", report.effective_policy()),
-                    effective_dmi: report.effective_dmi().map(|d| format!("{:?}", d)),
-                    metadata_injected: report.metadata_injected(),
-                    stego_attempted: report.stego_attempted(),
-                    stego_succeeded: report.stego_succeeded(),
-                    format_transcoded: report.format_transcoded(),
-                    embed_summary: report.embed_summary().map(|s| JsonEmbedOutcomeSummary {
-                        status: format!("{}", s.status),
-                        path: format!("{:?}", s.path),
-                        payload_bytes: s.payload_bytes,
-                        required_capacity: s.required_capacity,
-                        available_capacity: s.available_capacity,
-                    }),
-                    resource_usage: report.resource_usage().map(|u| JsonResourceUsage {
-                        input_bytes: u.input_bytes,
-                        png_chunks_scanned: u.png_chunks_scanned,
-                        jpeg_segments_scanned: u.jpeg_segments_scanned,
-                        webp_riff_chunks_scanned: u.webp_riff_chunks_scanned,
-                        xmp_bytes_parsed: u.xmp_bytes_parsed,
-                        metadata_fields_extracted: u.metadata_fields_extracted,
-                        metadata_bytes_copied: u.metadata_bytes_copied,
-                        tile_origins_checked: u.tile_origins_checked,
-                        verification_seeds_tried: u.verification_seeds_tried,
-                        peak_allocations_bytes: u.peak_allocations_bytes,
-                    }),
-                }),
-            };
-            println!("{}", serde_json::to_string_pretty(&json_output)?);
-        } else {
-            let (output_bytes, warnings) =
-                stegoeggo::process_request_bytes_with_warnings(&input_bytes, &request)?;
-            if let Some(parent) = output_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            check_input_output_disjoint(input_path, &output_path)?;
-            write_atomic(&output_path, &output_bytes)?;
-
-            #[allow(deprecated)]
-            let ctx = ProtectionContext::new(args.intensity.clamp(0.0, 1.0), seed)
-                .with_evidence_profile(EvidenceProfile::LegalNotice);
-            display_warnings(&warnings, &ctx, args.verbose);
-
-            if args.verbose {
-                println!("Output: {:?}", output_path);
-                println!("Done!");
-            } else {
-                println!("{}", output_path.display());
-            }
-
-            if args.strict
-                && warnings.iter().any(|w| {
-                    w.severity_for_profile(ctx.evidence_profile()) == WarningSeverity::Error
-                })
-            {
-                return Err(
-                    "Strict mode: one or more warnings with error severity (see warnings above)"
-                        .into(),
-                );
-            }
-        }
-
-        return Ok(());
-    }
-
-    let seed = args.seed.unwrap_or_else(generate_random_seed);
-
-    let mac_key = resolve_key_input(&args.key, "STEGOEGGO_KEY")?;
-
-    let (legal_metadata, legal_dmi_override) = build_legal_metadata(&args);
-
-    let output_format: Option<ImageOutputFormat> = args.format.map(ImageOutputFormat::from);
-
-    let protection_level = ProtectionLevel::from(args.level);
-    #[allow(deprecated)]
-    let evidence_profile = EvidenceProfile::from(args.profile);
-
-    let dmi_value = args.dmi.as_ref().and_then(|d| {
-        d.clone().into_dmi_value().or({
-            // Auto-select DMI based on protection level
-            Some(match protection_level {
-                ProtectionLevel::Disabled | ProtectionLevel::Light => DmiValue::Unspecified,
-                _ => DmiValue::ProhibitedAiMlTraining,
-            })
-        })
-    });
-
-    if args.metadata == Some(false) && legal_metadata.is_some() {
-        eprintln!(
-            "Error: Cannot use --no-metadata (or -m false) together with legal metadata flags \
-             (--copyright-notice, --creator, --contact, --rights-url, --usage-terms, \
-             --ai-constraints, --no-ai-training, --no-genai-training, --tdm-reserved). \
-             Legal metadata requires metadata injection to be enabled."
-        );
-        std::process::exit(EXIT_CONFIG);
-    }
-
-    #[allow(deprecated)]
-    let mut ctx = ProtectionContext::new(args.intensity.clamp(0.0, 1.0), seed)
-        .with_stego_redundancy(args.stego_redundancy.clamp(1, 10))
-        .with_jpeg_quality(args.jpeg_quality.clamp(1, 100))
-        .with_progressive_jpeg(args.progressive)
-        .with_evidence_profile(evidence_profile);
-
-    if let Some(fmt) = output_format {
-        ctx = ctx.with_format(fmt);
-    }
-
-    let effective_dmi = legal_dmi_override.or(dmi_value);
-    #[allow(deprecated)]
-    if let Some(dmi) = effective_dmi {
-        ctx = ctx.with_dmi(dmi);
-    }
-    #[allow(deprecated)]
-    if let Some(val) = args.metadata {
-        ctx = ctx.with_metadata_injection(val);
-    } else if legal_metadata.is_some() {
-        #[allow(deprecated)]
-        {
-            ctx = ctx.with_metadata_injection(true);
-        }
-    }
-    #[allow(deprecated)]
-    if args.legal_claims {
-        ctx = ctx.with_legal_claims(true);
-    }
-    if let Some(meta) = legal_metadata {
-        ctx = ctx.with_legal_metadata(meta);
-    }
-    if let Some(key) = mac_key {
-        ctx = ctx.with_mac_key(key);
-    }
+    let evidence_profile = evidence_profile_for_display(&args);
 
     if args.verbose {
-        println!("Protection level: {:?}", protection_level);
+        println!(
+            "Protection level: {:?}",
+            ProtectionLevel::from(args.level.clone())
+        );
         println!("Evidence profile: {:?}", evidence_profile);
-        println!("Intensity: {}", ctx.intensity());
-        println!("Seed: {}", ctx.seed());
-        println!("Stego redundancy: {}", ctx.stego_redundancy());
-        if let Some(ref format) = ctx.output_format() {
-            println!("Output format: {:?}", format);
+        println!("Intensity: {}", request.intensity());
+        println!("Seed: {:?}", request.seed());
+        if let Some(ref fmt) = request.processing().output_format {
+            println!("Output format: {:?}", fmt);
         }
-        println!("JPEG quality: {}", ctx.jpeg_quality());
-        println!("Progressive JPEG: {}", ctx.progressive_jpeg());
-        println!("Inject metadata: {:?}", ctx.inject_metadata());
-        println!("Inject legal claims: {:?}", ctx.inject_legal_claims());
+        println!("JPEG quality: {}", request.processing().jpeg_quality);
+        println!(
+            "Progressive JPEG: {}",
+            request.processing().progressive_jpeg
+        );
+        println!("Rights metadata: {}", request.channels().rights_metadata);
+        println!("Hidden marker: {:?}", request.channels().hidden_marker);
+        println!("Authentication: {:?}", request.channels().authentication);
         println!(
             "MAC key: {}",
-            if ctx.mac_key().is_some() {
+            if request.mac_key().is_some() {
                 "set"
             } else {
                 "none"
             }
         );
-        if let Some(ref dmi) = ctx.dmi_value() {
-            let dmi_val: DmiValue = *dmi;
-            println!("DMI: {}", dmi_val.as_str());
+        if let Some(dmi) = request.policy().to_dmi_value() {
+            println!("DMI: {}", dmi.as_str());
         }
         if is_batch {
             println!("Parallel jobs: {}", args.jobs);
         }
     }
 
-    if is_batch {
-        use rayon::prelude::*;
-
-        if args.jobs > 1 {
-            if let Err(e) = rayon::ThreadPoolBuilder::new()
-                .num_threads(args.jobs)
-                .build_global()
-            {
-                if args.verbose {
-                    eprintln!(
-                        "Warning: Could not set thread count to {}: {}",
-                        args.jobs, e
-                    );
-                }
+    if args.dry_run {
+        let input_path = &input_files[0];
+        let input_bytes = fs::read(input_path)?;
+        let input_format = stegoeggo::ImageOutputFormat::from_magic_bytes(&input_bytes)
+            .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+        let plan = stegoeggo::resolve_request(&request, input_format)?;
+        println!("Resolved Protection Plan:");
+        println!("  Effective policy: {:?}", plan.effective_policy());
+        println!("  Effective DMI: {:?}", plan.effective_dmi());
+        println!(
+            "  Channels: rights_metadata={}, hidden_marker={:?}, auth={:?}",
+            plan.channels().rights_metadata,
+            plan.channels().hidden_marker,
+            plan.channels().authentication
+        );
+        println!("  Input format: {:?}", plan.input_format());
+        println!("  Output format: {:?}", plan.output_format());
+        println!("  Seed: {}", plan.seed());
+        println!("  Intensity: {}", plan.intensity());
+        println!("  Metadata-only: {}", plan.is_metadata_only());
+        if !plan.warnings().is_empty() {
+            println!("  Warnings:");
+            for w in plan.warnings() {
+                println!("    - {}", w);
             }
         }
+        return Ok(());
+    }
 
-        let output_dir = args
-            .output
-            .filter(|p| p.is_dir() || !input_files.iter().any(|i| i == p));
+    let output_format: Option<ImageOutputFormat> = args.format.as_ref().map(|f| f.clone().into());
 
-        if args.verbose {
-            println!(
-                "Processing {} files with {} jobs...",
-                input_files.len(),
-                args.jobs
-            );
-        }
+    if is_batch {
+        use rayon::prelude::*;
 
         #[allow(clippy::type_complexity)]
         let results: Vec<
@@ -2006,15 +1762,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
                     let mut seen = seen_paths.lock().unwrap();
                     let override_output =
-                        compute_output_path(input_path, &output_dir, effective_format, &mut seen);
+                        compute_output_path(input_path, &args.output, effective_format, &mut seen);
                     drop(seen);
 
                     process_single_file(
                         input_path,
-                        &output_dir,
+                        &args.output,
                         output_format,
-                        &ctx,
-                        protection_level,
+                        &request,
                         args.verbose,
                         override_output,
                     )
@@ -2035,14 +1790,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let effective_format = output_format.unwrap_or(detected);
 
                     let override_output =
-                        compute_output_path(input_path, &output_dir, effective_format, &mut seen);
+                        compute_output_path(input_path, &args.output, effective_format, &mut seen);
 
                     process_single_file(
                         input_path,
-                        &output_dir,
+                        &args.output,
                         output_format,
-                        &ctx,
-                        protection_level,
+                        &request,
                         args.verbose,
                         override_output,
                     )
@@ -2060,10 +1814,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             match result {
                 Ok((input_path, output_path, warnings)) => {
                     success_count += 1;
-                    display_warnings(&warnings, &ctx, args.verbose);
+                    display_warnings(&warnings, evidence_profile, args.verbose);
                     if args.strict
                         && warnings.iter().any(|w| {
-                            w.severity_for_profile(ctx.evidence_profile()) == WarningSeverity::Error
+                            w.severity_for_profile(evidence_profile) == WarningSeverity::Error
                         })
                     {
                         has_errors = true;
@@ -2090,45 +1844,111 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if !failed_files.is_empty() {
-            return Err(format!(
-                "{} file(s) failed to process: {}",
-                failed_files.len(),
-                failed_files
-                    .iter()
-                    .map(|p| p.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-            .into());
+            return Err(format!("{} file(s) failed processing", failed_files.len()).into());
         }
 
         if args.strict && has_errors {
             return Err(
-                "Strict mode: one or more files produced errors (see warnings above)".into(),
+                "Strict mode: one or more warnings with error severity (see warnings above)".into(),
             );
         }
-    } else {
-        let input_path = &input_files[0];
 
-        if args.verbose {
-            let input_bytes = fs::read(input_path)?;
-            println!("Input size: {} bytes", input_bytes.len());
-            let detected_format =
-                ImageOutputFormat::from_magic_bytes(&input_bytes).unwrap_or(DEFAULT_OUTPUT_FORMAT);
-            println!("Detected format: {:?}", detected_format);
+        return Ok(());
+    }
+
+    let input_path = &input_files[0];
+    let input_bytes = fs::read(input_path)?;
+
+    let detected_format =
+        ImageOutputFormat::from_magic_bytes(&input_bytes).unwrap_or(DEFAULT_OUTPUT_FORMAT);
+    if args.verbose {
+        if let Some(fmt) = output_format {
+            if fmt != detected_format {
+                eprintln!(
+                    "Warning: output format {:?} differs from detected format {:?}",
+                    fmt, detected_format
+                );
+            }
         }
+    }
 
-        let (output_path, warnings) = process_single_file(
-            input_path,
-            &args.output,
-            output_format,
-            &ctx,
-            protection_level,
-            args.verbose,
-            None,
-        )?;
+    let output_path = if let Some(ref dir) = args.output {
+        if dir.is_file() || (dir.extension().is_some() && is_image_file(dir)) {
+            if let Some(parent) = dir.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            dir.clone()
+        } else {
+            fs::create_dir_all(dir)?;
+            let stem = input_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("output");
+            let ext = output_format.unwrap_or(detected_format).extension();
+            dir.join(format!("{}_protected.{}", stem, ext))
+        }
+    } else {
+        let stem = input_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
+        let ext = output_format.unwrap_or(detected_format).extension();
+        PathBuf::from(format!("{}_protected.{}", stem, ext))
+    };
 
-        display_warnings(&warnings, &ctx, args.verbose);
+    if args.json {
+        let (output_bytes, report) =
+            stegoeggo::process_request_bytes_with_report(&input_bytes, &request)?;
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        check_input_output_disjoint(input_path, &output_path)?;
+        write_atomic(&output_path, &output_bytes)?;
+
+        let json_output = JsonOutput {
+            schema_version: 1,
+            status: "ok".to_string(),
+            output_path: Some(output_path.display().to_string()),
+            warnings: report.warnings().iter().map(|w| w.to_string()).collect(),
+            report: Some(JsonExecutionReport {
+                effective_policy: format!("{:?}", report.effective_policy()),
+                effective_dmi: report.effective_dmi().map(|d| format!("{:?}", d)),
+                metadata_injected: report.metadata_injected(),
+                stego_attempted: report.stego_attempted(),
+                stego_succeeded: report.stego_succeeded(),
+                format_transcoded: report.format_transcoded(),
+                embed_summary: report.embed_summary().map(|s| JsonEmbedOutcomeSummary {
+                    status: format!("{}", s.status),
+                    path: format!("{:?}", s.path),
+                    payload_bytes: s.payload_bytes,
+                    required_capacity: s.required_capacity,
+                    available_capacity: s.available_capacity,
+                }),
+                resource_usage: report.resource_usage().map(|u| JsonResourceUsage {
+                    input_bytes: u.input_bytes,
+                    png_chunks_scanned: u.png_chunks_scanned,
+                    jpeg_segments_scanned: u.jpeg_segments_scanned,
+                    webp_riff_chunks_scanned: u.webp_riff_chunks_scanned,
+                    xmp_bytes_parsed: u.xmp_bytes_parsed,
+                    metadata_fields_extracted: u.metadata_fields_extracted,
+                    metadata_bytes_copied: u.metadata_bytes_copied,
+                    tile_origins_checked: u.tile_origins_checked,
+                    verification_seeds_tried: u.verification_seeds_tried,
+                    peak_allocations_bytes: u.peak_allocations_bytes,
+                }),
+            }),
+        };
+        println!("{}", serde_json::to_string_pretty(&json_output)?);
+    } else {
+        let (output_bytes, warnings) =
+            stegoeggo::process_request_bytes_with_warnings(&input_bytes, &request)?;
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        check_input_output_disjoint(input_path, &output_path)?;
+        write_atomic(&output_path, &output_bytes)?;
+
+        display_warnings(&warnings, evidence_profile, args.verbose);
 
         if args.verbose {
             println!("Output: {:?}", output_path);
@@ -2140,7 +1960,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if args.strict
             && warnings
                 .iter()
-                .any(|w| w.severity_for_profile(ctx.evidence_profile()) == WarningSeverity::Error)
+                .any(|w| w.severity_for_profile(evidence_profile) == WarningSeverity::Error)
         {
             return Err(
                 "Strict mode: one or more warnings with error severity (see warnings above)".into(),

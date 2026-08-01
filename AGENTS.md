@@ -103,6 +103,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Pipeline flow order** — JPEG output: encode → DCT stego → metadata. Non-JPEG: pixel stego → encode → metadata. JPEG→JPEG fast path bypasses pixel decode entirely
 - **`MetadataTrapProtector::apply()` returns `Cow::Borrowed(img)` unchanged** — Metadata injection is byte-level. The pipeline routes `Light` through `apply_light_bytes()` which encodes → injects → decodes
 - **`#[serde(skip)]` on `config` field** — MAC keys and legal metadata are lost in serde roundtrips
+- **CLI unified path** — The CLI always routes through `ProtectionRequest`. There is no dual legacy/request code path. Mixed conflicting policy options (e.g., `--rights-policy` contradicting `--no-ai-training`) are configuration errors (exit code 2)
 - **CLI `--verify` always exits 0** — Use output text to determine protection state, not exit code
 - **F5 seed Q-table edge case** — `embed_seed_in_quantization_tables()` fails if any quantization value in the first 2 tables is < 2
 - **`--tdm-reserved` is deprecated** — TDMRep deployment deferred; sets DMI to `ProhibitedSeeConstraints`

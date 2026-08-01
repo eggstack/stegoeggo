@@ -17,6 +17,10 @@ pub async fn verify_image_bytes_async(img_bytes: Vec<u8>, mac_key: Vec<u8>) -> R
 
 ## Design Decisions
 
+### Pixel-only contract
+
+`process_image_async` and `process_images_parallel_async` operate on `DynamicImage` and do not preserve file-level metadata (PNG tEXt, JPEG COM/XMP, WebP XMP). For full metadata injection, use the byte-path async functions.
+
 ### Batch functions
 
 `process_images_parallel_async` and `process_images_bytes_parallel_async` run the **entire batch** inside a single `spawn_blocking`. This delegates to the synchronous rayon-based parallel functions (`process_images_parallel` / `process_images_bytes_parallel`).
