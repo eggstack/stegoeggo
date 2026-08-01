@@ -18,6 +18,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `DctSupport` / `DctUnsupportedReason` enums — structured DCT capability classification
 - `encode_coefficients_preserving()` — container-preserving JPEG DCT encoding that walks the original byte stream, replacing only DQT and SOS scan data; all other segments (APP0, APP1, APP2, APP13, APP14, COM, DRI, unknown) preserved verbatim
 - JPEG container preservation tests: SOS scan byte-equality, APP2/APP13/APP14/COM segment survival, restart-bearing and progressive fallback
+- `webp_container` module — centralized checked RIFF/WebP chunk parser with VP8X dimension/flag handling
+- WebP simple-to-extended conversion: metadata insertion into VP8/VP8L now creates valid VP8X headers with correct 3-byte LE canvas dimensions and feature flags
+- WebP XMP merge/replace: at most one XMP chunk in output; existing non-StegoEggo properties preserved under `ReplaceStegoOwned`
 
 ### Changed
 - CI now invokes `scripts/check.sh` instead of maintaining a second copy of the command list
@@ -28,6 +31,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `AGENTS.md` describes one-job CI, complexity budget, and targeted specialist checks
 - `parse_sos()` now returns `Result<()>` and rejects Huffman table IDs > 3 instead of clamping
 - `encode_coefficients()` takes `original_jpeg: Option<&[u8]>` — `Some` uses container-preserving path, `None` uses `assemble_jpeg` fallback
+- WebP EXIF seed emission retired: no new EXIF seed chunks emitted; seed stored in XMP via `stegoeggo:ProtectionSeed`; historical EXIF seed data still parsed for backward compatibility
+- WebP metadata insertion now produces standards-correct extended WebP containers with VP8X header, correct canvas dimensions, and proper feature flags
 - Truncated entropy data during DCT decoding returns `TranscoderError::HuffmanDecode` errors instead of silent partial results
 - README documents the supported DCT subset (8-bit sequential, no restart, no progressive)
 

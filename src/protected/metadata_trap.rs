@@ -6,6 +6,7 @@ use crate::types::{
 };
 use crc32fast::Hasher as Crc32Hasher;
 use image::DynamicImage;
+use image::ImageDecoder;
 use std::borrow::Cow;
 
 fn xml_escape(s: &str) -> String {
@@ -362,66 +363,153 @@ impl RightsMetadataProtector {
             return Ok(webp_data.to_vec());
         }
 
-        if webp_data.len() < 12 || &webp_data[0..4] != b"RIFF" || &webp_data[8..12] != b"WEBP" {
-            return Err(Error::Metadata("Invalid WebP signature".to_string()));
-        }
-
-        let mut has_image_chunk = false;
-        {
-            let mut p = 12;
-            while p + 8 <= webp_data.len() {
-                let cid = &webp_data[p..p + 4];
-                if cid == b"VP8 " || cid == b"VP8L" || cid == b"VP8X" {
-                    has_image_chunk = true;
-                    break;
-                }
-                let cs = u32::from_le_bytes([
-                    webp_data[p + 4],
-                    webp_data[p + 5],
-                    webp_data[p + 6],
-                    webp_data[p + 7],
-                ]) as usize;
-                p += 8 + cs + (cs & 1);
-            }
-        }
-        if !has_image_chunk {
-            return Err(Error::Metadata(
-                "WebP missing mandatory image chunk (VP8/VP8L/VP8X)".to_string(),
-            ));
-        }
+        let parsed = crate::webp_container::parse_webp(webp_data, None)?;
 
         let dmi_val = notice.dmi().unwrap_or(DmiValue::Unspecified);
-
-        let xmp_chunk =
-            Self::create_webp_xmp_chunk(&Self::generate_xmp_notice_from_notice(dmi_val, notice));
-
-        if xmp_chunk.is_empty() {
+        let xmp_data = Self::generate_xmp_notice_from_notice(dmi_val, notice);
+        if xmp_data.is_empty() {
             return Ok(webp_data.to_vec());
         }
 
-        let exif_chunk = notice.seed().map(Self::create_webp_exif_chunk);
+        let mut metadata_chunks: Vec<([u8; 4], Vec<u8>)> = Vec::new();
 
-        let extra_len = xmp_chunk.len() + exif_chunk.as_ref().map_or(0, |c| c.len());
-        let new_len = webp_data.len() + extra_len;
-        if new_len > u32::MAX as usize + 8 {
-            return Err(Error::Metadata(
-                "WebP file would exceed 4 GiB limit after metadata injection".to_string(),
-            ));
-        }
-        let mut output = Vec::with_capacity(new_len);
-        output.extend_from_slice(webp_data);
-        output.extend_from_slice(&xmp_chunk);
-        if let Some(exif) = exif_chunk {
-            output.extend_from_slice(&exif);
+        if parsed.has_xmp {
+            self.merge_or_replace_webp_xmp(webp_data, &parsed, &xmp_data, &mut metadata_chunks)?;
+        } else {
+            let xmp_chunk = Self::create_webp_xmp_chunk_data(&xmp_data);
+            metadata_chunks.push((*b"XMP ", xmp_chunk));
         }
 
-        let new_riff_size = (output.len() - 8) as u32;
-        output[4] = new_riff_size as u8;
-        output[5] = (new_riff_size >> 8) as u8;
-        output[6] = (new_riff_size >> 16) as u8;
-        output[7] = (new_riff_size >> 24) as u8;
+        let mut vp8x_flags: u8 = 0;
+        if parsed.has_icc {
+            vp8x_flags |= 0x20;
+        }
+        if parsed.has_alpha {
+            vp8x_flags |= 0x10;
+        }
+        if parsed.has_animation {
+            vp8x_flags |= 0x02;
+        }
+        if !metadata_chunks.is_empty() {
+            vp8x_flags |= 0x04;
+        }
+
+        let mut output = Vec::new();
+        output.extend_from_slice(b"RIFF");
+        output.extend_from_slice(&[0, 0, 0, 0]);
+        output.extend_from_slice(b"WEBP");
+
+        match parsed.image_kind {
+            crate::webp_container::WebPImageKind::ExtendedVP8X => {
+                if let Some(idx) = parsed.vp8x_index {
+                    let chunk = &parsed.chunks[idx];
+                    let (width, height) =
+                        crate::webp_container::vp8x_dimensions(&parsed.data, chunk.data_start)
+                            .unwrap_or((0, 0));
+                    let vp8x_data =
+                        crate::webp_container::encode_vp8x_chunk(width, height, vp8x_flags)?;
+                    output.extend_from_slice(b"VP8X");
+                    output.extend_from_slice(&(vp8x_data.len() as u32).to_le_bytes());
+                    output.extend_from_slice(&vp8x_data);
+                    if vp8x_data.len() & 1 != 0 {
+                        output.push(0);
+                    }
+                }
+            }
+            crate::webp_container::WebPImageKind::LossyVP8 => {
+                let (width, height) = self.webp_image_dimensions(webp_data)?.unwrap_or((0, 0));
+                let vp8x_data =
+                    crate::webp_container::encode_vp8x_chunk(width, height, vp8x_flags)?;
+                output.extend_from_slice(b"VP8X");
+                output.extend_from_slice(&(vp8x_data.len() as u32).to_le_bytes());
+                output.extend_from_slice(&vp8x_data);
+                if vp8x_data.len() & 1 != 0 {
+                    output.push(0);
+                }
+            }
+            crate::webp_container::WebPImageKind::LosslessVP8L => {
+                let (width, height) = self.webp_image_dimensions(webp_data)?.unwrap_or((0, 0));
+                let vp8x_data =
+                    crate::webp_container::encode_vp8x_chunk(width, height, vp8x_flags)?;
+                output.extend_from_slice(b"VP8X");
+                output.extend_from_slice(&(vp8x_data.len() as u32).to_le_bytes());
+                output.extend_from_slice(&vp8x_data);
+                if vp8x_data.len() & 1 != 0 {
+                    output.push(0);
+                }
+            }
+        }
+
+        for chunk in &parsed.chunks {
+            if chunk.fourcc_str() == "VP8X" {
+                continue;
+            }
+            let data_end = chunk.data_start + chunk.data_len;
+            if data_end > parsed.data.len() {
+                return Err(Error::Metadata(format!(
+                    "Truncated RIFF chunk '{}'",
+                    chunk.fourcc_str()
+                )));
+            }
+            output.extend_from_slice(&chunk.fourcc);
+            output.extend_from_slice(&(chunk.data_len as u32).to_le_bytes());
+            output.extend_from_slice(&parsed.data[chunk.data_start..data_end]);
+            if chunk.data_len & 1 != 0 {
+                output.push(0);
+            }
+        }
+
+        for (fourcc, data) in &metadata_chunks {
+            output.extend_from_slice(fourcc);
+            output.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            output.extend_from_slice(data);
+            if data.len() & 1 != 0 {
+                output.push(0);
+            }
+        }
+
+        let riff_size = (output.len() - 8) as u32;
+        output[4] = riff_size as u8;
+        output[5] = (riff_size >> 8) as u8;
+        output[6] = (riff_size >> 16) as u8;
+        output[7] = (riff_size >> 24) as u8;
 
         Ok(output)
+    }
+
+    fn webp_image_dimensions(&self, webp_data: &[u8]) -> Result<Option<(u32, u32)>> {
+        let cursor = std::io::Cursor::new(webp_data);
+        match image::codecs::webp::WebPDecoder::new(cursor) {
+            Ok(decoder) => Ok(Some(decoder.dimensions())),
+            Err(_) => Ok(None),
+        }
+    }
+
+    fn merge_or_replace_webp_xmp(
+        &self,
+        _webp_data: &[u8],
+        parsed: &crate::webp_container::ParsedWebP,
+        new_xmp_data: &[u8],
+        metadata_chunks: &mut Vec<([u8; 4], Vec<u8>)>,
+    ) -> Result<()> {
+        for chunk in &parsed.chunks {
+            if chunk.fourcc_str() == "XMP " {
+                let data_end = chunk.data_start + chunk.data_len;
+                if data_end > parsed.data.len() {
+                    continue;
+                }
+                let existing = &parsed.data[chunk.data_start..data_end];
+                if Self::xmp_has_stego_properties(existing) {
+                    continue;
+                }
+                let xmp_chunk = Self::create_webp_xmp_chunk_data(new_xmp_data);
+                metadata_chunks.push((*b"XMP ", xmp_chunk));
+                return Ok(());
+            }
+        }
+        let xmp_chunk = Self::create_webp_xmp_chunk_data(new_xmp_data);
+        metadata_chunks.push((*b"XMP ", xmp_chunk));
+        Ok(())
     }
 
     fn build_legal_props_from_notice(notice: &RightsNotice) -> String {
@@ -1419,6 +1507,10 @@ impl RightsMetadataProtector {
             chunk.push(0);
         }
         chunk
+    }
+
+    fn create_webp_xmp_chunk_data(xmp_data: &[u8]) -> Vec<u8> {
+        xmp_data.to_vec()
     }
 
     /// Creates a WebP EXIF chunk with UserComment containing the seed.

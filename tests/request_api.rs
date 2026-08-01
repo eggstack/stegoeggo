@@ -536,13 +536,12 @@ mod byte_preservation_tests {
         let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Allowed);
         let output = process_request_bytes(&webp_bytes, &request).unwrap();
 
-        // WebP: the VP8/VP8L/VP8X chunk data should be preserved
-        let original_vp8 = extract_webp_image_chunk(&webp_bytes);
-        let output_vp8 = extract_webp_image_chunk(&output);
+        let original_vp8l = extract_webp_vp8l_chunk(&webp_bytes);
+        let output_vp8l = extract_webp_vp8l_chunk(&output);
 
         assert_eq!(
-            original_vp8, output_vp8,
-            "WebP image chunk data should be unchanged in metadata-only path"
+            original_vp8l, output_vp8l,
+            "WebP VP8L image payload should be unchanged in metadata-only path"
         );
     }
 
@@ -595,7 +594,7 @@ mod byte_preservation_tests {
         scan_data
     }
 
-    fn extract_webp_image_chunk(bytes: &[u8]) -> Vec<u8> {
+    fn extract_webp_vp8l_chunk(bytes: &[u8]) -> Vec<u8> {
         let mut chunk_data = Vec::new();
         let mut i = 12;
         while i + 8 <= bytes.len() {
@@ -603,7 +602,7 @@ mod byte_preservation_tests {
                 u32::from_le_bytes([bytes[i + 4], bytes[i + 5], bytes[i + 6], bytes[i + 7]])
                     as usize;
             let chunk_type = &bytes[i..i + 4];
-            if *chunk_type == *b"VP8 " || *chunk_type == *b"VP8L" || *chunk_type == *b"VP8X" {
+            if *chunk_type == *b"VP8L" {
                 chunk_data.extend_from_slice(&bytes[i..i + 8 + chunk_size]);
             }
             i += 8 + chunk_size;

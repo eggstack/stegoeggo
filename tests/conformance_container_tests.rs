@@ -244,6 +244,36 @@ fn webp_container_valid_after_processing() {
     assert!(output.len() >= 12, "WebP should have RIFF+WEBP header");
     assert_eq!(&output[8..12], b"WEBP", "WebP tag should be at offset 8");
 
+    let mut pos = 12;
+    let mut found_vpx = false;
+    let mut found_xmp = false;
+    let mut found_image = false;
+    while pos + 8 <= output.len() {
+        let fourcc = &output[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes([
+            output[pos + 4],
+            output[pos + 5],
+            output[pos + 6],
+            output[pos + 7],
+        ]) as usize;
+        if fourcc == b"VP8X" {
+            found_vpx = true;
+            assert_eq!(chunk_size, 10, "VP8X data should be 10 bytes");
+        }
+        if fourcc == b"XMP " {
+            found_xmp = true;
+        }
+        if fourcc == b"VP8 " || fourcc == b"VP8L" {
+            found_image = true;
+        }
+        let padded = chunk_size + (chunk_size & 1);
+        pos += 8 + padded;
+    }
+
+    assert!(found_vpx, "Output must contain VP8X chunk");
+    assert!(found_xmp, "Output must contain XMP chunk");
+    assert!(found_image, "Output must contain image payload chunk");
+
     let img = image::load_from_memory(&output).expect("WebP should decode");
     assert_eq!(img.dimensions(), (64, 64));
 }
@@ -297,4 +327,185 @@ fn png_unrelated_xmp_survives_byte_level() {
         notice.has_notice(),
         "Legal notice should be present after byte-level injection"
     );
+}
+
+fn count_webp_chunks(bytes: &[u8], target: &[u8; 4]) -> usize {
+    let mut count = 0;
+    let mut pos = 12;
+    while pos + 8 <= bytes.len() {
+        let fourcc = &bytes[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes([
+            bytes[pos + 4],
+            bytes[pos + 5],
+            bytes[pos + 6],
+            bytes[pos + 7],
+        ]) as usize;
+        if fourcc == target {
+            count += 1;
+        }
+        let padded = chunk_size + (chunk_size & 1);
+        pos += 8 + padded;
+    }
+    count
+}
+
+fn webp_vp8x_flags(bytes: &[u8]) -> Option<u8> {
+    let mut pos = 12;
+    while pos + 8 <= bytes.len() {
+        let fourcc = &bytes[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes([
+            bytes[pos + 4],
+            bytes[pos + 5],
+            bytes[pos + 6],
+            bytes[pos + 7],
+        ]) as usize;
+        if fourcc == b"VP8X" && chunk_size >= 1 {
+            return Some(bytes[pos + 8]);
+        }
+        let padded = chunk_size + (chunk_size & 1);
+        pos += 8 + padded;
+    }
+    None
+}
+
+#[test]
+fn webp_simple_to_extended_has_vp8x() {
+    let img = make_test_image_png(32, 32);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(legal())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let output = process_image_bytes_with_warnings(&img, ProtectionLevel::Standard, &ctx)
+        .unwrap()
+        .0;
+
+    assert_eq!(count_webp_chunks(&output, b"VP8X"), 1, "Exactly one VP8X");
+    assert!(
+        count_webp_chunks(&output, b"VP8L") + count_webp_chunks(&output, b"VP8 ") >= 1,
+        "Must have image payload"
+    );
+
+    let img = image::load_from_memory(&output).expect("Simple→extended WebP should decode");
+    assert_eq!(img.dimensions(), (32, 32));
+}
+
+#[test]
+fn webp_xmp_not_duplicated() {
+    let img = make_test_image_png(32, 32);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(legal())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let output = process_image_bytes_with_warnings(&img, ProtectionLevel::Standard, &ctx)
+        .unwrap()
+        .0;
+
+    assert_eq!(
+        count_webp_chunks(&output, b"XMP "),
+        1,
+        "Exactly one XMP chunk"
+    );
+    assert_eq!(
+        count_webp_chunks(&output, b"EXIF"),
+        0,
+        "No EXIF seed chunks emitted"
+    );
+}
+
+#[test]
+fn webp_idempotent_metadata_count() {
+    let img = make_test_image_png(32, 32);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(legal())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    let out1 = process_image_bytes_with_warnings(&img, ProtectionLevel::Standard, &ctx)
+        .unwrap()
+        .0;
+    let out2 = process_image_bytes_with_warnings(&out1, ProtectionLevel::Standard, &ctx)
+        .unwrap()
+        .0;
+
+    assert_eq!(
+        count_webp_chunks(&out1, b"XMP "),
+        count_webp_chunks(&out2, b"XMP "),
+        "XMP chunk count should be idempotent"
+    );
+    assert_eq!(
+        count_webp_chunks(&out1, b"VP8X"),
+        count_webp_chunks(&out2, b"VP8X"),
+        "VP8X chunk count should be idempotent"
+    );
+
+    let img = image::load_from_memory(&out2).expect("Double-processed WebP should decode");
+    assert_eq!(img.dimensions(), (32, 32));
+}
+
+#[test]
+fn webp_vpx_flags_reflect_xmp() {
+    let img = make_test_image_png(32, 32);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(legal())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let output = process_image_bytes_with_warnings(&img, ProtectionLevel::Standard, &ctx)
+        .unwrap()
+        .0;
+
+    let flags = webp_vp8x_flags(&output).expect("VP8X must exist");
+    assert_ne!(
+        flags & 0x04,
+        0,
+        "XMP flag must be set when XMP chunk present"
+    );
+    assert_eq!(
+        flags & 0x08,
+        0,
+        "EXIF flag must not be set when no EXIF chunk"
+    );
+}
+
+#[test]
+fn webp_vp8l_payload_preserved_through_metadata_injection() {
+    let img_bytes = make_test_image_png(32, 32);
+    let img = image::load_from_memory(&img_bytes).unwrap();
+    let webp = {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buf, image::ImageFormat::WebP).unwrap();
+        buf.into_inner()
+    };
+
+    let original_vp8l = extract_webp_vp8l_chunk(&webp);
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(legal())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let trap = RightsMetadataProtector::new();
+    let output = trap.inject_bytes(&webp, &ctx).unwrap();
+
+    let output_vp8l = extract_webp_vp8l_chunk(&output);
+    assert_eq!(
+        original_vp8l, output_vp8l,
+        "VP8L payload must be byte-identical after metadata injection"
+    );
+}
+
+fn extract_webp_vp8l_chunk(bytes: &[u8]) -> Vec<u8> {
+    let mut chunk_data = Vec::new();
+    let mut i = 12;
+    while i + 8 <= bytes.len() {
+        let chunk_size =
+            u32::from_le_bytes([bytes[i + 4], bytes[i + 5], bytes[i + 6], bytes[i + 7]]) as usize;
+        let chunk_type = &bytes[i..i + 4];
+        if *chunk_type == *b"VP8L" || *chunk_type == *b"VP8 " {
+            chunk_data.extend_from_slice(&bytes[i..i + 8 + chunk_size]);
+        }
+        i += 8 + chunk_size;
+        if chunk_size % 2 == 1 {
+            i += 1;
+        }
+    }
+    chunk_data
 }
