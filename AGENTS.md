@@ -77,8 +77,12 @@ Specialist verification (external tools, conformance, fuzzing, MSRV, docs.rs, pa
 | `async` | Tokio-based async API wrappers | No |
 | `signatures` | Ed25519 signing via `ed25519-dalek` | No |
 | `detached-manifest` | Detached signed manifest sidecar | No |
+| `iscc` | ISCC content identifier computation (`compute_content_identifiers`, etc.) | No |
+| `conformance` | Conformance harness binary and manifest parsing (TOML) | No |
+| `parallel` | Rayon-based parallel batch processing (`process_images_parallel`, etc.) | No |
 
 Feature-gated tests: `tests/async_integration.rs` requires `async`.
+The conformance binary (`stegoeggo-conformance`) requires the `conformance` feature.
 
 ## Deprecated API Surfaces
 

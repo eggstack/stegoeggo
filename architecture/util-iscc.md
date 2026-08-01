@@ -1,8 +1,8 @@
 # ISCC Content Identifiers
 
-**Source:** `src/util/iscc.rs` (~308 lines)
+**Source:** `src/util/iscc.rs` (~308 lines) (feature-gated: `iscc`)
 
-Computes ISCC (Immutable Self-Certifying Constituent Content) identifiers for images. Used for content identification, deduplication, and provenance tracking.
+Computes ISCC (Immutable Self-Certifying Constituent Content) identifiers for images. Used for content identification, deduplication, and provenance tracking. Requires the `iscc` feature to compile.
 
 ## Iscc Struct
 

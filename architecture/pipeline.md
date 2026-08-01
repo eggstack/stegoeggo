@@ -2,7 +2,7 @@
 
 **Source:** `src/lib.rs` (~1294 lines)
 
-The pipeline is the central orchestration layer. It selects and composes protectors based on the requested `ProtectionLevel`, handles format routing (JPEG fast path vs pixel path), and provides both sync and parallel entry points.
+The pipeline is the central orchestration layer. It selects and composes protectors based on the requested `ProtectionLevel`, handles format routing (JPEG fast path vs pixel path), and provides both sync and parallel entry points. Parallel batch processing functions require the `parallel` feature.
 
 ## ProtectionPipeline
 

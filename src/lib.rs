@@ -108,6 +108,11 @@
 //! | Feature | Description |
 //! |---------|-------------|
 //! | `async` | Enables Tokio-based async wrappers (`process_image_async`, etc.) for WAF/CDN integration |
+//! | `signatures` | Enables Ed25519 signing via `ed25519-dalek` for provenance claims and detached manifests |
+//! | `detached-manifest` | Enables signed sidecar manifest support |
+//! | `iscc` | Enables ISCC content identifier computation (`compute_content_identifiers`, etc.) |
+//! | `conformance` | Enables the conformance harness binary and manifest parsing (TOML) |
+//! | `parallel` | Enables Rayon-based parallel batch processing (`process_images_parallel`, etc.) |
 //! | `test-seeds` | Enables fallback seed guessing during verification (tries common test/dev seeds). Used by the CLI; not recommended for library consumers |
 //! | `fuzz` | Exposes internal JPEG parser for fuzz harnesses. Not part of the stable API |
 //!
@@ -171,6 +176,8 @@
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+#[cfg(feature = "conformance")]
+#[cfg_attr(docsrs, doc(cfg(feature = "conformance")))]
 pub mod conformance;
 pub mod error;
 /// V3 payload wire format: header, parser, types, and errors.
@@ -248,6 +255,8 @@ pub use util::image::{
     load_image_from_bytes,
 };
 
+#[cfg(feature = "iscc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "iscc")))]
 #[allow(deprecated)]
 pub use util::iscc::{
     compute_content_identifiers, compute_content_identifiers_from_bytes,
@@ -260,8 +269,11 @@ pub use util::seed::generate_random_seed;
 #[cfg(feature = "async")]
 pub use async_api::{
     process_image_async, process_image_bytes_async, process_image_bytes_with_warnings_async,
-    process_images_bytes_parallel_async, process_images_parallel_async, verify_image_bytes_async,
+    verify_image_bytes_async,
 };
+
+#[cfg(all(feature = "async", feature = "parallel"))]
+pub use async_api::{process_images_bytes_parallel_async, process_images_parallel_async};
 
 use image::DynamicImage;
 use image::GenericImageView;
@@ -879,6 +891,8 @@ pub fn process_image(
 /// # Errors
 ///
 /// Returns the first error encountered from any image processing call.
+#[cfg(feature = "parallel")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
 #[must_use = "the protected images should be saved or used"]
 pub fn process_images_parallel(
     images: &[DynamicImage],
@@ -916,6 +930,8 @@ pub fn process_images_parallel(
 /// # Errors
 ///
 /// Returns the first error encountered from any image processing call.
+#[cfg(feature = "parallel")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
 #[must_use = "the protected image bytes should be saved or used"]
 pub fn process_images_bytes_parallel(
     images: &[Vec<u8>],

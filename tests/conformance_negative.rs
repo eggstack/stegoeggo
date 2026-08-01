@@ -11,7 +11,14 @@ fn conformance_bin() -> std::path::PathBuf {
     let mut path = manifest_dir.join("target/release/stegoeggo-conformance");
     if !path.exists() {
         let output = std::process::Command::new("cargo")
-            .args(["build", "--release", "--bin", "stegoeggo-conformance"])
+            .args([
+                "build",
+                "--release",
+                "--bin",
+                "stegoeggo-conformance",
+                "--features",
+                "conformance",
+            ])
             .current_dir(&manifest_dir)
             .output()
             .expect("Failed to build conformance harness");

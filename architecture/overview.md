@@ -169,7 +169,7 @@ src/
 ├── traits.rs                  Protector trait (apply/apply_bytes)
 ├── error.rs                   Error enum (thiserror), Result type
 ├── async_api.rs               Tokio spawn_blocking wrappers (feature: async)
-├── conformance.rs             Machine-readable conformance reporting types
+├── conformance.rs             Machine-readable conformance reporting types (feature: conformance)
 ├── resource_limits.rs         ResourceLimits for parser hardening (DoS prevention)
 │
 ├── protected/                 Protection strategies (all implement Protector trait)
@@ -229,7 +229,7 @@ src/
 └── util/
     ├── mod.rs                 Module re-exports
     ├── image.rs               PixelSelectionRng (XorShift64), encoding, format detection
-    ├── iscc.rs                ContentIdentifiers (ISCC-like perceptual hashing)
+    ├── iscc.rs                ContentIdentifiers (ISCC-like perceptual hashing, feature: iscc)
     └── seed.rs                generate_random_seed() via getrandom (OS CSPRNG)
 ```
 
@@ -391,21 +391,23 @@ Three-state control (`Option<bool>`) for metadata injection:
 
 ## Dependencies
 
-| Crate | Version | Role |
-|-------|---------|------|
-| `image` | 0.25 | Image loading, decoding, encoding (PNG, JPEG, WebP) |
-| `jpeg-encoder` | 0.7 | Direct JPEG encoding with quality/progressive control |
-| `rayon` | 1.10 | Parallel image processing |
-| `sha2` | 0.10 | HMAC-SHA256 for keyed payload verification |
-| `hmac` | 0.12 | HMAC construction |
-| `serde` | 1.0 | Serialization of context and variants |
-| `serde_json` | 1.0 | JSON serialization |
-| `subtle` | 2 | Constant-time HMAC comparison |
-| `ed25519-dalek` | 3 | Ed25519 signing (signatures feature) |
-| `tokio` | 1.0 (opt) | Async runtime for WAF/CDN integration |
-| `clap` | 4 (CLI) | Command-line argument parsing |
-| `crc32fast` | 1.4 | CRC32 for PNG chunk checksums |
-| `thiserror` | 1.0 | Error enum derive |
+| Crate | Version | Role | Feature |
+|-------|---------|------|---------|
+| `image` | 0.25 | Image loading, decoding, encoding (PNG, JPEG, WebP) | — |
+| `jpeg-encoder` | 0.7 | Direct JPEG encoding with quality/progressive control | — |
+| `rayon` | 1.10 | Parallel image processing | `parallel` |
+| `sha2` | 0.10 | HMAC-SHA256 for keyed payload verification | — |
+| `hmac` | 0.12 | HMAC construction | — |
+| `serde` | 1.0 | Serialization of context and variants | — |
+| `serde_json` | 1.0 | JSON serialization | — |
+| `subtle` | 2 | Constant-time HMAC comparison | — |
+| `ed25519-dalek` | 3 | Ed25519 signing | `signatures` |
+| `tokio` | 1.0 | Async runtime for WAF/CDN integration | `async` |
+| `clap` | 4 (CLI) | Command-line argument parsing | CLI-only |
+| `crc32fast` | 1.4 | CRC32 for PNG chunk checksums | — |
+| `thiserror` | 1.0 | Error enum derive | — |
+| `iscc-lib` | 0.4 | ISCC content identifier computation | `iscc` |
+| `toml` | 1.0 | Conformance manifest parsing | `conformance` |
 
 ## Security Notes
 

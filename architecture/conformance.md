@@ -4,12 +4,15 @@ The conformance suite validates that stegoeggo's metadata output is
 interoperable with external parsers. It is a mandatory pre-release check
 for metadata-affecting changes.
 
+**Requires the `conformance` feature.** The conformance module and harness binary
+are compiled only when this feature is enabled.
+
 ## Components
 
 | Component | Location | Role |
 |-----------|----------|------|
-| Report types | `src/conformance.rs` | `ConformanceReport`, `ConformanceRunReport`, `ToolReport`, `ManifestReport`, `CheckSeverity`, `FixtureManifest`, extraction structs |
-| Harness binary | `src/bin/stegoeggo-conformance.rs` | CLI entry point, orchestrates all checks |
+| Report types | `src/conformance.rs` (feature-gated: `conformance`) | `ConformanceReport`, `ConformanceRunReport`, `ToolReport`, `ManifestReport`, `CheckSeverity`, `FixtureManifest`, extraction structs |
+| Harness binary | `src/bin/stegoeggo-conformance.rs` (requires `conformance` feature) | CLI entry point, orchestrates all checks |
 | Regression tests | `tests/conformance_harness_tests.rs` | Report type serialization, expected-negative semantics, coverage |
 | External tool tests | `tests/external_tools.rs` | External tool integration tests (`#[ignore]`, run with `--ignored`) |
 | Fixture taxonomy | `tests/fixtures/conformance/` | Test images organized by category |

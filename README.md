@@ -78,6 +78,20 @@ For Ed25519 signing (provenance claims, detached manifests):
 stegoeggo = { version = "0.3", features = ["signatures", "detached-manifest"] }
 ```
 
+For ISCC content identifier computation:
+
+```toml
+[dependencies]
+stegoeggo = { version = "0.3", features = ["iscc"] }
+```
+
+For parallel batch processing:
+
+```toml
+[dependencies]
+stegoeggo = { version = "0.3", features = ["parallel"] }
+```
+
 ### As a CLI Tool
 
 Build the binary from source:
@@ -185,7 +199,12 @@ let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx)
 
 ### Parallel Processing
 
-Process multiple images concurrently using Rayon:
+Process multiple images concurrently using Rayon. **Requires the `parallel` feature:**
+
+```toml
+[dependencies]
+stegoeggo = { version = "0.3", features = ["parallel"] }
+```
 
 ```rust,no_run
 use stegoeggo::{process_images_parallel, ProtectionContext, ProtectionLevel};
@@ -916,7 +935,14 @@ Standard protection at 512x512: 60 allocations, 5.7 MB peak.
 
 ### ISCC Computation
 
-The library computes ISCC-**like** (Immutable Self-Certifying Constituent Content) identifiers for content identification. **Note:** these identifiers are not guaranteed to be interoperable with the standard ISCC specification — they use a custom DCT-based perceptual hash and SHA-256 instance code. They are suitable for in-application deduplication and provenance tracking, but should not be used for cross-ISCC-tool interoperability:
+The library computes ISCC-**like** (Immutable Self-Certifying Constituent Content) identifiers for content identification. **Note:** these identifiers are not guaranteed to be interoperable with the standard ISCC specification — they use a custom DCT-based perceptual hash and SHA-256 instance code. They are suitable for in-application deduplication and provenance tracking, but should not be used for cross-ISCC-tool interoperability.
+
+**Requires the `iscc` feature:**
+
+```toml
+[dependencies]
+stegoeggo = { version = "0.3", features = ["iscc"] }
+```
 
 ```rust,ignore
 use stegoeggo::{compute_content_identifiers, Iscc};

@@ -6,5 +6,6 @@
 //! - [`seed`] - Random seed generation
 
 pub mod image;
+#[cfg(feature = "iscc")]
 pub mod iscc;
 pub mod seed;

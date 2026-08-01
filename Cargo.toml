@@ -39,6 +39,9 @@ signatures = ["ed25519-dalek"]
 test-seeds = []
 fuzz = []
 detached-manifest = []
+iscc = ["dep:iscc-lib"]
+conformance = ["dep:toml", "unicode-normalization"]
+parallel = ["dep:rayon"]
 
 [dependencies]
 image = { version = "=0.25.6", default-features = false, features = ["png", "jpeg", "webp"] }
@@ -51,14 +54,14 @@ sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
 crc32fast = "1.4"
-iscc-lib = "0.4"
+iscc-lib = { version = "0.4", optional = true }
 getrandom = "0.2"
-rayon = "1.10"
-toml = "1"
+rayon = { version = "1.10", optional = true }
+toml = { version = "1", optional = true }
 subtle = "2"
 ed25519-dalek = { version = "3", features = ["zeroize"], optional = true }
 zeroize = { version = "1", features = ["derive"] }
-unicode-normalization = "0.1"
+unicode-normalization = { version = "0.1", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 
 [dev-dependencies]
@@ -70,6 +73,11 @@ tempfile = "3"
 name = "async_integration"
 path = "tests/async_integration.rs"
 required-features = ["async"]
+
+[[test]]
+name = "conformance_harness_tests"
+path = "tests/conformance_harness_tests.rs"
+required-features = ["conformance"]
 
 [[bench]]
 name = "bench"
@@ -86,6 +94,7 @@ path = "examples/verify_saved.rs"
 [[bin]]
 name = "stegoeggo-conformance"
 path = "src/bin/stegoeggo-conformance.rs"
+required-features = ["conformance"]
 
 [[example]]
 name = "legal_metadata"
@@ -94,3 +103,10 @@ path = "examples/legal_metadata.rs"
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[profile.release]
+lto = true
+strip = "symbols"
+codegen-units = 1
+panic = "abort"
+opt-level = "s"

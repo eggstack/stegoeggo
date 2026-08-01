@@ -123,6 +123,8 @@ pub async fn process_image_bytes_with_warnings_async(
 /// `process_images_parallel` uses rayon internally for per-image
 /// parallelism, avoiding per-image `spawn_blocking` calls that would
 /// cause thread pool overlap and contention.
+#[cfg(feature = "parallel")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
 #[must_use = "the protected images should be saved or used"]
 pub async fn process_images_parallel_async(
     images: Vec<DynamicImage>,
@@ -140,6 +142,8 @@ pub async fn process_images_parallel_async(
 /// `process_images_bytes_parallel` uses rayon internally for per-image
 /// parallelism, avoiding per-image `spawn_blocking` calls that would
 /// cause thread pool overlap and contention.
+#[cfg(feature = "parallel")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
 #[must_use = "the protected image bytes should be saved or used"]
 pub async fn process_images_bytes_parallel_async(
     images: Vec<Vec<u8>>,
