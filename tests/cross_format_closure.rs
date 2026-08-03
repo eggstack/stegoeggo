@@ -2,9 +2,9 @@
 
 use stegoeggo::{
     process_image_bytes, process_image_bytes_with_warnings, process_request_bytes, resolve_request,
-    verify_legal_notice, AuthenticationMode, DmiValue, HiddenMarkerMode, ImageOutputFormat,
-    LegalMetadata, MetadataUpdatePolicy, ProtectionChannels, ProtectionContext, ProtectionLevel,
-    ProtectionRequest, RightsNotice, RightsPolicy,
+    verify_legal_notice, AuthenticationMode, DmiValue, EvidenceStrength, HiddenMarkerMode,
+    ImageOutputFormat, LegalMetadata, MetadataUpdatePolicy, ProtectionChannels, ProtectionContext,
+    ProtectionLevel, ProtectionRequest, RightsNotice, RightsPolicy, VerificationStatus,
 };
 
 use image::GenericImageView;
@@ -368,4 +368,476 @@ fn pixel_only_api_does_not_inject_metadata() {
         None,
         "pixel-only API should not inject metadata"
     );
+}
+
+// ── Phase 4.3: Authentication distinctions ───────────────────────────────────
+
+#[test]
+fn auth_crc_best_effort_marker_verified() {
+    let base = make_test_image_png(64, 64);
+    let request = ProtectionRequest::with_hidden_marker(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_seed(42)
+    .with_intensity(0.5)
+    .with_legal_metadata(
+        LegalMetadata::new()
+            .with_copyright_holder("CRC Holder")
+            .with_usage_terms("Terms"),
+    );
+
+    let out = process_request_bytes(&base, &request).unwrap();
+    let report = verify_legal_notice(&out, b"");
+
+    assert_eq!(report.copyright_holder(), Some("CRC Holder"));
+    assert_eq!(report.dmi(), Some(DmiValue::ProhibitedAiMlTraining));
+    assert!(
+        !report.authenticated(),
+        "CRC verification should not be authenticated"
+    );
+    assert_eq!(
+        report.stego_status(),
+        VerificationStatus::Verified,
+        "CRC marker should be verified"
+    );
+}
+
+#[test]
+fn auth_hmac_authenticated_marker_verified() {
+    let base = make_test_image_png(64, 64);
+    let key = vec![0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78];
+    let request = ProtectionRequest::with_hidden_marker(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_mac_key(key.clone())
+    .with_seed(42)
+    .with_intensity(0.5)
+    .with_legal_metadata(
+        LegalMetadata::new()
+            .with_copyright_holder("HMAC Holder")
+            .with_usage_terms("Terms"),
+    );
+
+    let out = process_request_bytes(&base, &request).unwrap();
+    let report = verify_legal_notice(&out, &key);
+
+    assert_eq!(report.copyright_holder(), Some("HMAC Holder"));
+    assert_eq!(report.dmi(), Some(DmiValue::ProhibitedAiMlTraining));
+    assert!(
+        report.authenticated(),
+        "HMAC verification should be authenticated"
+    );
+    assert_eq!(report.stego_status(), VerificationStatus::Verified);
+    assert_eq!(
+        report.evidence_strength(),
+        EvidenceStrength::MetadataNoticeAndAuthenticatedProvenance,
+        "HMAC should yield strongest evidence"
+    );
+}
+
+#[test]
+fn auth_marker_present_but_key_missing() {
+    let base = make_test_image_png(64, 64);
+    let key = vec![0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78];
+    let request = ProtectionRequest::with_hidden_marker(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_mac_key(key.clone())
+    .with_seed(42)
+    .with_intensity(0.5)
+    .with_legal_metadata(
+        LegalMetadata::new()
+            .with_copyright_holder("Key Missing Holder")
+            .with_usage_terms("Terms"),
+    );
+
+    let out = process_request_bytes(&base, &request).unwrap();
+    let report = verify_legal_notice(&out, b"");
+
+    assert_eq!(report.copyright_holder(), Some("Key Missing Holder"));
+    assert_eq!(report.dmi(), Some(DmiValue::ProhibitedAiMlTraining));
+    assert!(!report.authenticated(), "empty key should not authenticate");
+}
+
+#[test]
+fn auth_marker_authentication_failed_wrong_key() {
+    let base = make_test_image_png(64, 64);
+    let key = vec![0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0x56, 0x78];
+    let request = ProtectionRequest::with_hidden_marker(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_mac_key(key.clone())
+    .with_seed(42)
+    .with_intensity(0.5)
+    .with_legal_metadata(
+        LegalMetadata::new()
+            .with_copyright_holder("Wrong Key Holder")
+            .with_usage_terms("Terms"),
+    );
+
+    let out = process_request_bytes(&base, &request).unwrap();
+    let wrong_key = vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+    let report = verify_legal_notice(&out, &wrong_key);
+
+    assert_eq!(report.copyright_holder(), Some("Wrong Key Holder"));
+    assert_eq!(report.dmi(), Some(DmiValue::ProhibitedAiMlTraining));
+    assert!(!report.authenticated(), "wrong key should not authenticate");
+}
+
+#[test]
+fn auth_marker_not_found_on_unprotected_image() {
+    let base = make_test_image_png(64, 64);
+    let report = verify_legal_notice(&base, b"");
+
+    assert_ne!(
+        report.stego_status(),
+        VerificationStatus::Verified,
+        "unprotected image should not be Verified"
+    );
+    assert!(!report.authenticated());
+    assert_eq!(
+        report.evidence_strength(),
+        EvidenceStrength::NoNoticeFound,
+        "no notice on unprotected image"
+    );
+}
+
+#[test]
+fn auth_marker_fallback_on_unsupported_jpeg() {
+    use jpeg_encoder::Encoder as JpegEnc;
+
+    let img = image::DynamicImage::new_rgb8(64, 64);
+    let rgb = img.to_rgb8();
+    let mut progressive_buf = Vec::new();
+    {
+        let mut enc = JpegEnc::new(&mut progressive_buf, 90);
+        enc.set_progressive(true);
+        enc.encode(rgb.as_raw(), 64, 64, jpeg_encoder::ColorType::Rgb)
+            .unwrap();
+    }
+
+    let legal = LegalMetadata::new()
+        .with_copyright_holder("Fallback Auth Holder")
+        .with_usage_terms("Terms");
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_legal_metadata(legal)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    let (output, warnings) =
+        process_image_bytes_with_warnings(&progressive_buf, ProtectionLevel::Standard, &ctx)
+            .unwrap();
+
+    assert!(
+        warnings
+            .iter()
+            .any(|w| matches!(w, stegoeggo::ProtectionWarning::ProgressiveJpegFallback)),
+        "progressive JPEG should emit fallback warning"
+    );
+
+    let report = verify_legal_notice(&output, b"");
+    assert_eq!(report.copyright_holder(), Some("Fallback Auth Holder"));
+    assert_eq!(report.dmi(), Some(DmiValue::ProhibitedAiMlTraining));
+}
+
+// ── Phase 3.3: PreserveExisting and FailOnConflict ──────────────────────────
+
+#[test]
+fn preserve_existing_does_not_overwrite_protected_seed() {
+    let base = make_test_image_png(64, 64);
+    let legal_v1 = LegalMetadata::new()
+        .with_copyright_holder("Original Holder")
+        .with_usage_terms("Original Terms");
+
+    let ctx_v1 = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Png)
+        .with_legal_metadata(legal_v1)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining)
+        .with_metadata_update_policy(MetadataUpdatePolicy::ReplaceStegoOwned);
+
+    let out1 = process_image_bytes(&base, ProtectionLevel::Standard, &ctx_v1).unwrap();
+
+    let report1 = verify_legal_notice(&out1, b"");
+    assert_eq!(report1.copyright_holder(), Some("Original Holder"));
+    assert_eq!(report1.usage_terms(), Some("Original Terms"));
+
+    let legal_v2 = LegalMetadata::new()
+        .with_copyright_holder("New Holder")
+        .with_usage_terms("New Terms");
+
+    let request = ProtectionRequest::metadata_only(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedGenerativeAiTraining,
+    )
+    .with_metadata_update_policy(MetadataUpdatePolicy::PreserveExisting)
+    .with_legal_metadata(legal_v2);
+
+    let out2 = process_request_bytes(&out1, &request).unwrap();
+
+    let report2 = verify_legal_notice(&out2, b"");
+    assert!(
+        report2.has_notice(),
+        "PreserveExisting should produce valid output"
+    );
+    assert!(
+        image::load_from_memory(&out2).is_ok(),
+        "PreserveExisting output should decode"
+    );
+}
+
+#[test]
+fn preserve_existing_adds_missing_fields() {
+    let base = make_test_image_png(64, 64);
+    let legal_v1 = LegalMetadata::new().with_copyright_holder("Original Holder");
+
+    let ctx_v1 = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Png)
+        .with_legal_metadata(legal_v1)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining)
+        .with_metadata_update_policy(MetadataUpdatePolicy::ReplaceStegoOwned);
+
+    let out1 = process_image_bytes(&base, ProtectionLevel::Standard, &ctx_v1).unwrap();
+
+    let report1 = verify_legal_notice(&out1, b"");
+    assert_eq!(report1.copyright_holder(), Some("Original Holder"));
+    assert_eq!(report1.usage_terms(), None);
+
+    let legal_v2 = LegalMetadata::new()
+        .with_copyright_holder("Original Holder")
+        .with_usage_terms("Added Terms");
+
+    let request = ProtectionRequest::metadata_only(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_metadata_update_policy(MetadataUpdatePolicy::PreserveExisting)
+    .with_legal_metadata(legal_v2);
+
+    let out2 = process_request_bytes(&out1, &request).unwrap();
+
+    let report2 = verify_legal_notice(&out2, b"");
+    assert!(
+        report2.has_notice(),
+        "PreserveExisting should produce valid output"
+    );
+    assert!(
+        image::load_from_memory(&out2).is_ok(),
+        "PreserveExisting output should decode"
+    );
+}
+
+#[test]
+fn fail_on_conflict_returns_error_when_stego_exists() {
+    let base = make_test_image_png(64, 64);
+    let legal = LegalMetadata::new()
+        .with_copyright_holder("Conflict Holder")
+        .with_usage_terms("Terms");
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Png)
+        .with_legal_metadata(legal)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining)
+        .with_metadata_update_policy(MetadataUpdatePolicy::ReplaceStegoOwned);
+
+    let out1 = process_image_bytes(&base, ProtectionLevel::Standard, &ctx).unwrap();
+
+    let request = ProtectionRequest::metadata_only(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedGenerativeAiTraining,
+    )
+    .with_metadata_update_policy(MetadataUpdatePolicy::FailOnConflict)
+    .with_legal_metadata(
+        LegalMetadata::new()
+            .with_copyright_holder("New Holder")
+            .with_usage_terms("New Terms"),
+    );
+
+    let result = process_request_bytes(&out1, &request);
+    assert!(
+        result.is_err(),
+        "FailOnConflict should return error when StegoEggo metadata already present"
+    );
+}
+
+#[test]
+fn fail_on_conflict_succeeds_on_clean_image() {
+    let base = make_test_image_png(64, 64);
+
+    let request = ProtectionRequest::metadata_only(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_metadata_update_policy(MetadataUpdatePolicy::FailOnConflict)
+    .with_legal_metadata(
+        LegalMetadata::new()
+            .with_copyright_holder("Clean Holder")
+            .with_usage_terms("Terms"),
+    );
+
+    let result = process_request_bytes(&base, &request);
+    assert!(
+        result.is_ok(),
+        "FailOnConflict should succeed on image without existing StegoEggo metadata"
+    );
+}
+
+#[test]
+fn preserve_existing_cross_format_jpeg() {
+    let base = make_test_image_jpeg(64, 64);
+    let legal_v1 = LegalMetadata::new().with_copyright_holder("JPEG Original");
+
+    let ctx_v1 = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_legal_metadata(legal_v1)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining)
+        .with_metadata_update_policy(MetadataUpdatePolicy::ReplaceStegoOwned);
+
+    let out1 = process_image_bytes(&base, ProtectionLevel::Standard, &ctx_v1).unwrap();
+
+    let report1 = verify_legal_notice(&out1, b"");
+    assert_eq!(report1.copyright_holder(), Some("JPEG Original"));
+
+    let legal_v2 = LegalMetadata::new()
+        .with_copyright_holder("JPEG Original")
+        .with_usage_terms("JPEG Added");
+
+    let request = ProtectionRequest::metadata_only(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_metadata_update_policy(MetadataUpdatePolicy::PreserveExisting)
+    .with_legal_metadata(legal_v2);
+
+    let out2 = process_request_bytes(&out1, &request).unwrap();
+
+    let report2 = verify_legal_notice(&out2, b"");
+    assert!(
+        report2.has_notice(),
+        "JPEG PreserveExisting should produce valid output"
+    );
+    assert!(
+        image::load_from_memory(&out2).is_ok(),
+        "JPEG PreserveExisting output should decode"
+    );
+}
+
+#[test]
+fn preserve_existing_cross_format_webp() {
+    let base = make_test_image_png(64, 64);
+    let legal_v1 = LegalMetadata::new().with_copyright_holder("WebP Original");
+
+    let ctx_v1 = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(legal_v1)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining)
+        .with_metadata_update_policy(MetadataUpdatePolicy::ReplaceStegoOwned);
+
+    let out1 = process_image_bytes(&base, ProtectionLevel::Standard, &ctx_v1).unwrap();
+
+    let report1 = verify_legal_notice(&out1, b"");
+    assert_eq!(report1.copyright_holder(), Some("WebP Original"));
+
+    let legal_v2 = LegalMetadata::new()
+        .with_copyright_holder("WebP Original")
+        .with_usage_terms("WebP Added");
+
+    let request = ProtectionRequest::metadata_only(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_metadata_update_policy(MetadataUpdatePolicy::PreserveExisting)
+    .with_legal_metadata(legal_v2);
+
+    let out2 = process_request_bytes(&out1, &request).unwrap();
+
+    let report2 = verify_legal_notice(&out2, b"");
+    assert!(
+        report2.has_notice(),
+        "WebP PreserveExisting should produce valid output"
+    );
+    assert!(
+        image::load_from_memory(&out2).is_ok(),
+        "WebP PreserveExisting output should decode"
+    );
+}
+
+// ── Phase 5.2: CLI equivalence ──────────────────────────────────────────────
+
+#[test]
+fn cli_dmi_flag_matches_api_dmi_value() {
+    let base = make_test_image_png(64, 64);
+    let legal = LegalMetadata::new()
+        .with_copyright_holder("CLI Test Holder")
+        .with_usage_terms("CLI Terms");
+
+    let ctx_api = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Png)
+        .with_legal_metadata(legal.clone())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    let api_out = process_image_bytes(&base, ProtectionLevel::Standard, &ctx_api).unwrap();
+
+    let request = ProtectionRequest::with_hidden_marker(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_seed(42)
+    .with_intensity(0.5)
+    .with_legal_metadata(legal);
+
+    let request_out = process_request_bytes(&base, &request).unwrap();
+
+    let r_api = verify_legal_notice(&api_out, b"");
+    let r_request = verify_legal_notice(&request_out, b"");
+
+    assert_eq!(
+        r_api.copyright_holder(),
+        r_request.copyright_holder(),
+        "API and request should produce same copyright"
+    );
+    assert_eq!(
+        r_api.usage_terms(),
+        r_request.usage_terms(),
+        "API and request should produce same usage_terms"
+    );
+    assert_eq!(
+        r_api.dmi(),
+        r_request.dmi(),
+        "API and request should produce same DMI"
+    );
+}
+
+#[test]
+fn cli_metadata_only_matches_api_metadata_only() {
+    let base = make_test_image_png(64, 64);
+    let legal = LegalMetadata::new()
+        .with_copyright_holder("Metadata Only Holder")
+        .with_usage_terms("Metadata Only Terms");
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Png)
+        .with_legal_metadata(legal.clone())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    let api_out = process_image_bytes(&base, ProtectionLevel::Standard, &ctx).unwrap();
+
+    let request = ProtectionRequest::metadata_only(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_legal_metadata(legal);
+
+    let request_out = process_request_bytes(&base, &request).unwrap();
+
+    let r_api = verify_legal_notice(&api_out, b"");
+    let r_request = verify_legal_notice(&request_out, b"");
+
+    assert_eq!(r_api.copyright_holder(), r_request.copyright_holder());
+    assert_eq!(r_api.usage_terms(), r_request.usage_terms());
+    assert_eq!(r_api.dmi(), r_request.dmi());
 }

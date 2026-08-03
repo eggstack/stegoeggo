@@ -1,6 +1,6 @@
 # Plan 044: Cross-Format Correctness and Scope Closure
 
-Status: Ready for implementation
+Status: Complete
 
 Baseline: `main` after Plan 043 planning commit `6dc16ccab97e42b4694d38d728ded306e059a295`
 

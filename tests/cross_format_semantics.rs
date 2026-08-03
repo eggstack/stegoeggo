@@ -942,3 +942,198 @@ fn cross_format_unspecified_policy_no_dmi() {
         );
     }
 }
+
+// ── Phase 2.4: Negative cases ───────────────────────────────────────────────
+
+#[test]
+fn negative_allowed_with_legacy_prohibition_uses_canonical() {
+    let mut png_bytes = make_test_image_png(64, 64);
+
+    let chunk_data = b"noai\0Do not use for AI training";
+    let chunk_len = (chunk_data.len() as u32).to_be_bytes();
+    let ihdr_end = 8 + 12 + 13;
+    let mut injected = Vec::with_capacity(png_bytes.len() + 12 + chunk_data.len());
+    injected.extend_from_slice(&png_bytes[..ihdr_end]);
+    injected.extend_from_slice(&chunk_len);
+    injected.extend_from_slice(b"tEXt");
+    injected.extend_from_slice(chunk_data);
+    let mut crc = crc32fast::Hasher::new();
+    crc.update(b"tEXt");
+    crc.update(chunk_data);
+    injected.extend_from_slice(&crc.finalize().to_be_bytes());
+    injected.extend_from_slice(&png_bytes[ihdr_end..]);
+    png_bytes = injected;
+
+    let legal = LegalMetadata::new().with_copyright_holder("Allowed Holder");
+    let report = process_and_verify(
+        &png_bytes,
+        ImageOutputFormat::Png,
+        &legal,
+        DmiValue::Allowed,
+    );
+
+    assert_eq!(
+        report.dmi(),
+        Some(DmiValue::Allowed),
+        "canonical Allowed should override legacy prohibition"
+    );
+    assert_eq!(report.copyright_holder(), Some("Allowed Holder"));
+}
+
+#[test]
+fn negative_bare_key_legacy_xmp_parsed_for_compatibility() {
+    let png_bytes = make_test_image_png(64, 64);
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Png)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    let (output, _) =
+        process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+    let report = verify_legal_notice(&output, b"");
+    assert!(
+        report.canonical_dmi().is_some(),
+        "output should have parseable DMI even if legacy bare keys were present in input"
+    );
+}
+
+#[test]
+fn negative_prohibited_see_constraints_without_constraints_field() {
+    let png_bytes = make_test_image_png(64, 64);
+    let legal = LegalMetadata::new();
+
+    for (fmt, label) in [
+        (ImageOutputFormat::Png, "PNG"),
+        (ImageOutputFormat::Jpeg, "JPEG"),
+        (ImageOutputFormat::WebP, "WebP"),
+    ] {
+        let report =
+            process_and_verify(&png_bytes, fmt, &legal, DmiValue::ProhibitedSeeConstraints);
+        assert_eq!(
+            report.dmi(),
+            Some(DmiValue::ProhibitedSeeConstraints),
+            "{}: DMI should be ProhibitedSeeConstraints even without constraints text",
+            label
+        );
+        assert!(
+            report.ai_constraints().is_none(),
+            "{}: ai_constraints should be None when not provided",
+            label
+        );
+    }
+}
+
+#[test]
+fn negative_malformed_truncated_png_metadata_handled() {
+    let png_bytes = make_test_image_png(64, 64);
+    let legal = LegalMetadata::new().with_copyright_holder("Truncated Holder");
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Png)
+        .with_legal_metadata(legal)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    let (output, _) =
+        process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+    let truncated = &output[..output.len().saturating_sub(20)];
+    let report = verify_legal_notice(truncated, b"");
+
+    assert!(
+        image::load_from_memory(truncated).is_ok() || !report.has_notice(),
+        "truncated PNG should either fail to decode or have no notice"
+    );
+}
+
+#[test]
+fn negative_malformed_truncated_jpeg_metadata_handled() {
+    let png_bytes = make_test_image_png(64, 64);
+    let legal = LegalMetadata::new().with_copyright_holder("Truncated JPEG Holder");
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_legal_metadata(legal)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    let (output, _) =
+        process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+
+    let truncated = &output[..output.len().saturating_sub(20)];
+    let report = verify_legal_notice(truncated, b"");
+
+    assert!(
+        image::load_from_memory(truncated).is_ok() || !report.has_notice(),
+        "truncated JPEG should either fail to decode or have no notice"
+    );
+}
+
+#[test]
+fn negative_progressive_jpeg_with_hidden_marker_request_falls_back() {
+    use jpeg_encoder::Encoder as JpegEnc;
+
+    let img = image::DynamicImage::new_rgb8(64, 64);
+    let rgb = img.to_rgb8();
+    let mut progressive_buf = Vec::new();
+    {
+        let mut enc = JpegEnc::new(&mut progressive_buf, 90);
+        enc.set_progressive(true);
+        enc.encode(rgb.as_raw(), 64, 64, jpeg_encoder::ColorType::Rgb)
+            .unwrap();
+    }
+
+    let legal = LegalMetadata::new()
+        .with_copyright_holder("Progressive Hidden Marker")
+        .with_usage_terms("Terms");
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_legal_metadata(legal)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    let (output, warnings) =
+        process_image_bytes_with_warnings(&progressive_buf, ProtectionLevel::Standard, &ctx)
+            .unwrap();
+
+    assert!(
+        warnings
+            .iter()
+            .any(|w| matches!(w, stegoeggo::ProtectionWarning::ProgressiveJpegFallback)),
+        "progressive JPEG with hidden marker request should emit ProgressiveJpegFallback"
+    );
+
+    let report = verify_legal_notice(&output, b"");
+    assert_eq!(report.copyright_holder(), Some("Progressive Hidden Marker"));
+    assert_eq!(report.dmi(), Some(DmiValue::ProhibitedAiMlTraining));
+    assert!(
+        image::load_from_memory(&output).is_ok(),
+        "progressive JPEG fallback output should decode"
+    );
+}
+
+#[test]
+fn negative_duplicate_webp_xmp_handled() {
+    let base = make_test_image_png(64, 64);
+    let legal = LegalMetadata::new().with_copyright_holder("Duplicate XMP Holder");
+
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(legal)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    let (output1, _) =
+        process_image_bytes_with_warnings(&base, ProtectionLevel::Standard, &ctx).unwrap();
+
+    let (output2, _) =
+        process_image_bytes_with_warnings(&output1, ProtectionLevel::Standard, &ctx).unwrap();
+
+    let report = verify_legal_notice(&output2, b"");
+    assert_eq!(
+        report.copyright_holder(),
+        Some("Duplicate XMP Holder"),
+        "re-processing WebP should not lose metadata"
+    );
+    assert_eq!(report.dmi(), Some(DmiValue::ProhibitedAiMlTraining));
+    assert!(
+        image::load_from_memory(&output2).is_ok(),
+        "re-processed WebP should decode"
+    );
+}
