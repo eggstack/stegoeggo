@@ -52,6 +52,9 @@ The following modules are experimental. API surfaces within them may change with
 |--------|-------------|-------|
 | `stegoeggo::signing` | `signatures` | Uses `ed25519-dalek` (real Ed25519). Private keys are not serialized. Trust evaluation is caller-owned. |
 | `stegoeggo::detached` | `detached-manifest` | Signed sidecar manifests for distributing provenance outside the image. |
+| `stegoeggo::iscc` | `iscc` | ISCC-like content-identifier computation (`compute_content_identifiers`). Requires `iscc-lib`, `blake3`, `xxhash`. |
+| `stegoeggo::conformance` | `conformance` | Machine-readable conformance reporting types. Requires `toml`, `unicode-normalization`. |
+| `stegoeggo` (parallel) | `parallel` | Rayon-based parallel batch processing (`process_images_parallel`, `process_images_bytes_parallel`). Requires `rayon`. |
 
 ## CLI Stable Commands and Flags
 
@@ -66,6 +69,7 @@ The CLI uses a single-binary design with positional arguments for the `protect`/
 | `stegoeggo keygen` | `signatures` | Generate an Ed25519 key pair |
 | `stegoeggo sign --manifest <path> --key <path>` | `signatures` | Sign a detached manifest |
 | `stegoeggo verify-manifest --manifest <path> --image <path>` | `signatures` | Verify a detached manifest against an image |
+| `stegoeggo-conformance --json` | `conformance` | Run metadata conformance checks against ExifTool and xmllint |
 
 ### CLI Exit Codes
 

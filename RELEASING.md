@@ -21,6 +21,31 @@ Once crates.io accepts a package version, its bytes cannot be replaced. Key impl
 - If a release attempt partially succeeds, do not republish the already accepted crate version.
 - Select the first unused version greater than every published version for the package.
 
+## Build Configuration
+
+The workspace release profile is size-optimized:
+
+```toml
+[profile.release]
+lto = true
+strip = "symbols"
+codegen-units = 1
+panic = "abort"
+opt-level = "s"
+```
+
+The CLI binary enables three optional library features via its `stegoeggo` dependency:
+
+```toml
+stegoeggo = { path = "..", version = "=X.Y.Z", features = ["iscc", "conformance", "parallel"] }
+```
+
+The conformance binary requires the `conformance` feature:
+
+```bash
+cargo build --release --bin stegoeggo-conformance --features conformance
+```
+
 ## Pre-Release Preparation
 
 1. Confirm a clean working tree (`git status` shows no uncommitted changes).

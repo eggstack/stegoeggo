@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `iscc` feature gate — ISCC content-identifier support (`compute_content_identifiers`) is now opt-in; CLI enables it by default
+- `conformance` feature gate — conformance harness binary and manifest parsing are now opt-in; `stegoeggo-conformance` requires `--features conformance`
+- `parallel` feature gate — Rayon-based parallel batch processing (`process_images_parallel`) is now opt-in; CLI enables it by default
+- Release profile: `lto=true`, `strip="symbols"`, `codegen-units=1`, `panic="abort"`, `opt-level="s"` — 41.4% stripped CLI size reduction (2,546,584 → 1,492,432 bytes)
 - `scripts/check.sh` — fast deterministic checks shared between local development and required CI
 - `scripts/release-check.sh` — bounded local pre-release readiness check (package dry-runs, version lockstep)
 - `RELEASING.md` — manual crates.io publication procedure with immutable version rules and partial-failure handling
@@ -38,6 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 - `scripts/validate-release.sh` — replaced by `scripts/check.sh` + `scripts/release-check.sh`
+- Unused `sha2` direct dependency from CLI crate (retained in dev-dependencies for tests)
 
 ### Fixed
 - 0.3.0 changelog entry corrected from "Unreleased" to actual publication date
