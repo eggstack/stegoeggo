@@ -48,6 +48,9 @@ Write output always uses payload v3. Older payload versions are read for backwar
 | `async` | No | Tokio-based async API wrappers |
 | `signatures` | No | Ed25519 signing and key management |
 | `detached-manifest` | No | Detached signed manifest sidecar support |
+| `iscc` | No | ISCC content identifier computation |
+| `conformance` | No | Conformance harness binary and manifest parsing |
+| `parallel` | No | Rayon-based parallel batch processing |
 | `test-seeds` | No | Deterministic seeds for testing |
 | `fuzz` | No | Fuzzing harness support |
 

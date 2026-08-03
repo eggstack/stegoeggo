@@ -721,3 +721,224 @@ fn cross_format_external_parser_comparison() {
         );
     }
 }
+
+#[test]
+fn cross_format_all_dmi_policies() {
+    let png_bytes = make_test_image_png(64, 64);
+    let legal = LegalMetadata::new();
+
+    let policies = [
+        (DmiValue::Allowed, "Allowed"),
+        (DmiValue::ProhibitedAiMlTraining, "ProhibitedAiMlTraining"),
+        (
+            DmiValue::ProhibitedGenAiMlTraining,
+            "ProhibitedGenAiMlTraining",
+        ),
+        (
+            DmiValue::ProhibitedExceptSearchEngineIndexing,
+            "ProhibitedExceptSearchEngineIndexing",
+        ),
+        (DmiValue::Prohibited, "ProhibitedAllDataMining"),
+        (
+            DmiValue::ProhibitedSeeConstraints,
+            "ProhibitedSeeConstraints",
+        ),
+    ];
+
+    for (dmi, label) in policies {
+        for (fmt, fmt_label) in [
+            (ImageOutputFormat::Png, "PNG"),
+            (ImageOutputFormat::Jpeg, "JPEG"),
+            (ImageOutputFormat::WebP, "WebP"),
+        ] {
+            let report = process_and_verify(&png_bytes, fmt, &legal, dmi);
+            assert_eq!(
+                report.dmi(),
+                Some(dmi),
+                "{} {}: DMI should be {:?}, got {:?}",
+                fmt_label,
+                label,
+                dmi,
+                report.dmi()
+            );
+            assert_eq!(
+                report.canonical_dmi(),
+                Some(dmi),
+                "{} {}: canonical DMI should be {:?}",
+                fmt_label,
+                label,
+                dmi
+            );
+        }
+    }
+}
+
+#[test]
+fn cross_format_prohibited_see_constraints_emits_constraints() {
+    let png_bytes = make_test_image_png(64, 64);
+    let legal = LegalMetadata::new().with_ai_constraints("No training, no generation");
+
+    for (fmt, label) in [
+        (ImageOutputFormat::Png, "PNG"),
+        (ImageOutputFormat::Jpeg, "JPEG"),
+        (ImageOutputFormat::WebP, "WebP"),
+    ] {
+        let report =
+            process_and_verify(&png_bytes, fmt, &legal, DmiValue::ProhibitedSeeConstraints);
+        assert_eq!(
+            report.dmi(),
+            Some(DmiValue::ProhibitedSeeConstraints),
+            "{}: DMI should be ProhibitedSeeConstraints",
+            label
+        );
+        assert_eq!(
+            report.ai_constraints(),
+            Some("No training, no generation"),
+            "{}: ai_constraints should be present",
+            label
+        );
+    }
+}
+
+#[test]
+fn cross_format_allowed_no_prohibition_markers() {
+    let png_bytes = make_test_image_png(64, 64);
+    let legal = LegalMetadata::new().with_copyright_holder("Allowed Holder");
+
+    for (fmt, label) in [
+        (ImageOutputFormat::Png, "PNG"),
+        (ImageOutputFormat::Jpeg, "JPEG"),
+        (ImageOutputFormat::WebP, "WebP"),
+    ] {
+        let report = process_and_verify(&png_bytes, fmt, &legal, DmiValue::Allowed);
+        assert_eq!(
+            report.dmi(),
+            Some(DmiValue::Allowed),
+            "{}: DMI should be Allowed",
+            label
+        );
+        assert_eq!(
+            report.copyright_holder(),
+            Some("Allowed Holder"),
+            "{}: copyright_holder should be present",
+            label
+        );
+    }
+}
+
+#[test]
+fn negative_progressive_jpeg_falls_back_to_metadata() {
+    use jpeg_encoder::Encoder as JpegEnc;
+
+    let img = image::DynamicImage::new_rgb8(64, 64);
+    let rgb = img.to_rgb8();
+    let mut progressive_buf = Vec::new();
+    {
+        let mut enc = JpegEnc::new(&mut progressive_buf, 90);
+        enc.set_progressive(true);
+        enc.encode(rgb.as_raw(), 64, 64, jpeg_encoder::ColorType::Rgb)
+            .unwrap();
+    }
+
+    assert!(
+        stegoeggo::is_progressive_jpeg(&progressive_buf),
+        "fixture should be progressive"
+    );
+
+    let legal = LegalMetadata::new().with_copyright_holder("Progressive Holder");
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_legal_metadata(legal.clone())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    let (output, warnings) =
+        process_image_bytes_with_warnings(&progressive_buf, ProtectionLevel::Standard, &ctx)
+            .unwrap();
+
+    assert!(
+        warnings
+            .iter()
+            .any(|w| matches!(w, stegoeggo::ProtectionWarning::ProgressiveJpegFallback)),
+        "should emit ProgressiveJpegFallback warning"
+    );
+
+    let report = verify_legal_notice(&output, b"");
+    assert_eq!(report.copyright_holder(), Some("Progressive Holder"));
+    assert_eq!(
+        report.dmi(),
+        Some(DmiValue::ProhibitedAiMlTraining),
+        "metadata should still be present despite fallback"
+    );
+
+    assert!(
+        image::load_from_memory(&output).is_ok(),
+        "progressive JPEG output should decode"
+    );
+}
+
+#[test]
+fn negative_unsupported_jpeg_metadata_only_fallback() {
+    use jpeg_encoder::Encoder as JpegEnc;
+
+    let img = image::DynamicImage::new_rgb8(64, 64);
+    let rgb = img.to_rgb8();
+    let mut progressive_buf = Vec::new();
+    {
+        let mut enc = JpegEnc::new(&mut progressive_buf, 90);
+        enc.set_progressive(true);
+        enc.encode(rgb.as_raw(), 64, 64, jpeg_encoder::ColorType::Rgb)
+            .unwrap();
+    }
+
+    let legal = LegalMetadata::new()
+        .with_copyright_holder("Fallback Holder")
+        .with_usage_terms("Terms");
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_legal_metadata(legal)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    let (output, warnings) =
+        process_image_bytes_with_warnings(&progressive_buf, ProtectionLevel::Standard, &ctx)
+            .unwrap();
+
+    assert!(
+        !warnings.is_empty(),
+        "progressive JPEG should produce warnings"
+    );
+
+    let report = verify_legal_notice(&output, b"");
+    assert_eq!(report.copyright_holder(), Some("Fallback Holder"));
+    assert_eq!(report.usage_terms(), Some("Terms"));
+
+    assert!(
+        image::load_from_memory(&output).is_ok(),
+        "fallback output should still decode"
+    );
+}
+
+#[test]
+fn cross_format_unspecified_policy_no_dmi() {
+    let png_bytes = make_test_image_png(64, 64);
+    let legal = LegalMetadata::new().with_copyright_holder("No DMI Holder");
+
+    for (fmt, label) in [
+        (ImageOutputFormat::Png, "PNG"),
+        (ImageOutputFormat::Jpeg, "JPEG"),
+        (ImageOutputFormat::WebP, "WebP"),
+    ] {
+        let report = process_and_verify(&png_bytes, fmt, &legal, DmiValue::Unspecified);
+        assert!(
+            report.dmi().is_none() || report.dmi() == Some(DmiValue::Unspecified),
+            "{}: DMI should be absent or Unspecified for unspecified policy, got {:?}",
+            label,
+            report.dmi()
+        );
+        assert_eq!(
+            report.copyright_holder(),
+            Some("No DMI Holder"),
+            "{}: copyright should be present even without DMI",
+            label
+        );
+    }
+}

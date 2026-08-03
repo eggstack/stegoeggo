@@ -116,7 +116,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 **JPEG DCT and container correctness:**
 
-- **JPEG DCT subset** — DCT embedding supports only: 8-bit precision, sequential Huffman DCT, single scan, 1-4 components with supported sampling factors, no restart intervals. Unsupported inputs (progressive, restart-bearing, CMYK) route to metadata-only via `probe_dct_support()`.
+- **JPEG DCT subset** — DCT embedding supports only: 8-bit precision, sequential Huffman DCT, single scan, 1-4 components with supported sampling factors, no restart intervals. Unsupported inputs (progressive, restart-bearing, CMYK) receive Q-table seed only (stego signal without payload) via `probe_dct_support()` gating, with full metadata injection.
 - **`encode_coefficients` signature** — Takes `original_jpeg: Option<&[u8]>`. When `Some`, uses `encode_coefficients_preserving` which walks the original byte stream replacing only DQT and SOS scan data. When `None`, uses `assemble_jpeg` which rebuilds from parsed fields (drops unknown segments).
 - **`parse_sos` rejects malformed table IDs** — SOS table IDs > 3 return `InvalidFormat` error instead of clamping. Prevents OOB panics in the entropy decoder.
 - **Truncation is a hard error** — `read_magnitude` returns `Err` on truncated data instead of producing partial blocks.

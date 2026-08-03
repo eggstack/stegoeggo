@@ -815,7 +815,7 @@ JPEG's lossy compression can destroy steganography payloads embedded in pixel da
 - 8-bit precision, sequential Huffman DCT, single scan
 - 1-4 components with sampling factors up to 4
 - No restart intervals, no progressive, no arithmetic coding, no lossless coding
-- Unsupported inputs (progressive, restart-bearing, CMYK, multi-scan) fall back to metadata-only processing
+- Unsupported inputs (progressive, restart-bearing, CMYK, multi-scan) receive Q-table seed only (stego signal without payload), with full metadata injection
 
 **Current behavior:**
 - PNG/WebP: LSB steganography is fully supported and verifiable
