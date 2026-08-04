@@ -1156,8 +1156,7 @@ fn png_with_fake_xmp_dmi(dmi_value: &str) -> Vec<u8> {
     output.extend_from_slice(&base[0..8]);
     let mut i = 8;
     while i + 8 <= base.len() {
-        let length =
-            u32::from_be_bytes([base[i], base[i + 1], base[i + 2], base[i + 3]]) as usize;
+        let length = u32::from_be_bytes([base[i], base[i + 1], base[i + 2], base[i + 3]]) as usize;
         let chunk_type = &base[i + 4..i + 8];
         if chunk_type == b"IEND" {
             let chunk_len = (raw.len() as u32).to_be_bytes();
