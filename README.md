@@ -37,7 +37,7 @@ stegoeggo embeds multiple layers of rights-reservation and AI-training restricti
 
 ### External Standards
 
-- **PLUS License Data Format** - Emits `plus:DataMining` with official PLUS LDF controlled-vocabulary URIs for machine-readable rights signals (canonical per the [PLUS License Data Format](https://www.useplus.com/) specification). Legacy `Iptc4xmpExt:DMI-*` properties are still parsed for backward compatibility but not emitted by default.
+- **PLUS License Data Format** - Emits `plus:DataMining` with official PLUS LDF controlled-vocabulary URIs for machine-readable rights signals (canonical per the [PLUS License Data Format](https://www.useplus.com/) specification). Legacy bare keys and `Iptc4xmpExt:DMI-*` properties are parsed for backward compatibility but classified as legacy signals, not emitted. `Unspecified` emits no `plus:DataMining` property.
 - **ISCC** - Computes [Immutable Self-Certifying Constituent Content](https://iscc-project.github.io/) identifiers for content identification
 
 ## Release 5 Features
@@ -390,7 +390,7 @@ let protected = process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx)
 
 ### DMI (Data Mining Inhibitor) Values
 
-Set DMI metadata values for AI-training restrictions. The XMP writer emits canonical `plus:DataMining` properties with PLUS LDF vocabulary keys. Legacy `Iptc4xmpExt:DMI-*` properties are still parsed for backward compatibility but not emitted by default:
+Set DMI metadata values for AI-training restrictions. The XMP writer emits canonical `plus:DataMining` properties with full PLUS LDF vocabulary URIs. Legacy bare keys and `Iptc4xmpExt:DMI-*` properties are parsed for backward compatibility but classified as legacy signals. `Unspecified` emits no `plus:DataMining` property:
 
 ```rust
 use stegoeggo::{ProtectionContext, DmiValue, ProtectionLevel};
@@ -408,7 +408,7 @@ Available values:
 - `Prohibited` - All uses prohibited
 - `ProhibitedSeeConstraints` - Prohibited, see constraints for details
 
-Each variant maps to a full canonical PLUS URI via `DmiValue::plus_vocab_uri()` (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`) for XMP output, and to a bare key via `DmiValue::plus_vocab_key()` (e.g., `DMI-PROHIBITED-AIMLTRAINING`) for legacy/internal use. Legacy IPTC keys can be parsed back via `DmiValue::from_plus_vocab_key()`.
+Each variant maps to a full canonical PLUS URI via `DmiValue::plus_vocab_uri()` (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`) for XMP output, and to a bare key via `DmiValue::plus_vocab_key()` (e.g., `DMI-PROHIBITED-AIMLTRAINING`) for legacy/internal use. Legacy bare keys can be parsed back via `DmiValue::from_plus_vocab_key()`. Unknown-origin URIs are rejected.
 
 ### TDMRep Status
 

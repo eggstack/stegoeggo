@@ -18,7 +18,7 @@ Seven variants mapped to canonical PLUS LDF vocabulary keys. Legacy `Iptc4xmpExt
 
 | DmiValue | Canonical Key (emitted) |
 |----------|--------------------------------------|
-| `Unspecified` | Not injected |
+| `Unspecified` | Not injected — no `plus:DataMining` property emitted |
 | `Allowed` | `DMI-Allowed` |
 | `Prohibited` | `DMI-Prohibited` |
 | `ProhibitedAiMlTraining` | `DMI-PROHIBITED-AIMLTRAINING` |

@@ -1,8 +1,8 @@
 use crate::protected::steganography::SteganographyProtector;
 use crate::resource_limits::ResourceLimits;
 use crate::types::{
-    DmiValue, EvidenceChannel, EvidenceStrength, NoticeVerification, RightsSignalKind,
-    VerificationStatus,
+    classify_plus_data_mining_value, DmiValue, EvidenceChannel, EvidenceStrength,
+    NoticeVerification, ParsedDmiRepresentation, RightsSignalKind, VerificationStatus,
 };
 
 type NoticeFields = (
@@ -1424,24 +1424,36 @@ fn parse_xmp_for_dmi(
     rights_signal_kind: &mut Option<RightsSignalKind>,
 ) {
     if canonical_dmi.is_none() {
-        let found = if let Some(val) = extract_xmp_attr(xmp_str, "plus:DataMining") {
-            DmiValue::from_plus_vocab_key(&val)
+        let raw_val = if let Some(val) = extract_xmp_attr(xmp_str, "plus:DataMining") {
+            Some(val)
         } else if let Some(prefix) =
             find_prefix_for_namespace(xmp_str, crate::types::PLUS_NAMESPACE)
         {
             let tag = format!("{}:DataMining", prefix);
-            if let Some(val) = extract_xmp_element(xmp_str, &tag) {
-                DmiValue::from_plus_vocab_key(&val)
-            } else {
-                None
-            }
+            extract_xmp_element(xmp_str, &tag)
         } else {
             None
         };
-        if let Some(v) = found {
-            *canonical_dmi = Some(v);
-            if rights_signal_kind.is_none() {
-                *rights_signal_kind = Some(RightsSignalKind::CanonicalPlusDataMining);
+        if let Some(val) = raw_val {
+            match classify_plus_data_mining_value(&val) {
+                ParsedDmiRepresentation::CanonicalUri(v) => {
+                    *canonical_dmi = Some(v);
+                    if rights_signal_kind.is_none() {
+                        *rights_signal_kind = Some(RightsSignalKind::CanonicalPlusDataMining);
+                    }
+                }
+                ParsedDmiRepresentation::LegacyBareKey(v) => {
+                    if rights_signal_kind.is_none() {
+                        *rights_signal_kind = Some(RightsSignalKind::LegacyBarePlusVocabularyKey);
+                    }
+                    if legacy_dmi.is_none() {
+                        *legacy_dmi = Some(v);
+                    }
+                    if dmi.is_none() {
+                        *dmi = Some(v);
+                    }
+                }
+                ParsedDmiRepresentation::Unknown => {}
             }
         }
     }
@@ -1568,25 +1580,37 @@ fn parse_xmp_for_dmi_with_limits(
     let mut props_checked = 0usize;
 
     if canonical_dmi.is_none() && props_checked < max_props {
-        let found = if let Some(val) = extract_xmp_attr(xmp_str, "plus:DataMining") {
-            DmiValue::from_plus_vocab_key(&val)
+        let raw_val = if let Some(val) = extract_xmp_attr(xmp_str, "plus:DataMining") {
+            Some(val)
         } else if let Some(prefix) =
             find_prefix_for_namespace(xmp_str, crate::types::PLUS_NAMESPACE)
         {
             let tag = format!("{}:DataMining", prefix);
-            if let Some(val) = extract_xmp_element(xmp_str, &tag) {
-                DmiValue::from_plus_vocab_key(&val)
-            } else {
-                None
-            }
+            extract_xmp_element(xmp_str, &tag)
         } else {
             None
         };
         props_checked += 1;
-        if let Some(v) = found {
-            *canonical_dmi = Some(v);
-            if rights_signal_kind.is_none() {
-                *rights_signal_kind = Some(RightsSignalKind::CanonicalPlusDataMining);
+        if let Some(val) = raw_val {
+            match classify_plus_data_mining_value(&val) {
+                ParsedDmiRepresentation::CanonicalUri(v) => {
+                    *canonical_dmi = Some(v);
+                    if rights_signal_kind.is_none() {
+                        *rights_signal_kind = Some(RightsSignalKind::CanonicalPlusDataMining);
+                    }
+                }
+                ParsedDmiRepresentation::LegacyBareKey(v) => {
+                    if rights_signal_kind.is_none() {
+                        *rights_signal_kind = Some(RightsSignalKind::LegacyBarePlusVocabularyKey);
+                    }
+                    if legacy_dmi.is_none() {
+                        *legacy_dmi = Some(v);
+                    }
+                    if dmi.is_none() {
+                        *dmi = Some(v);
+                    }
+                }
+                ParsedDmiRepresentation::Unknown => {}
             }
         }
     }
@@ -1717,18 +1741,18 @@ mod tests {
     fn canonical_plus_datamining_attribute_form() {
         let xmp = r#"plus:DataMining="DMI-PROHIBITED-AIMLTRAINING""#;
         let (canonical, legacy, kind) = helper_parse_dmi(xmp);
-        assert_eq!(canonical, Some(DmiValue::ProhibitedAiMlTraining));
-        assert_eq!(legacy, None);
-        assert_eq!(kind, RightsSignalKind::CanonicalPlusDataMining);
+        assert_eq!(canonical, None);
+        assert_eq!(legacy, Some(DmiValue::ProhibitedAiMlTraining));
+        assert_eq!(kind, RightsSignalKind::LegacyBarePlusVocabularyKey);
     }
 
     #[test]
     fn canonical_plus_datamining_element_form() {
         let xmp = r#"xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/" <plus:DataMining>DMI-PROHIBITED-AIMLTRAINING</plus:DataMining>"#;
         let (canonical, legacy, kind) = helper_parse_dmi(xmp);
-        assert_eq!(canonical, Some(DmiValue::ProhibitedAiMlTraining));
-        assert_eq!(legacy, None);
-        assert_eq!(kind, RightsSignalKind::CanonicalPlusDataMining);
+        assert_eq!(canonical, None);
+        assert_eq!(legacy, Some(DmiValue::ProhibitedAiMlTraining));
+        assert_eq!(kind, RightsSignalKind::LegacyBarePlusVocabularyKey);
     }
 
     #[test]
@@ -1791,13 +1815,13 @@ mod tests {
     }
 
     #[test]
-    fn rights_signal_kind_canonical_preferred_over_legacy() {
+    fn rights_signal_kind_bare_key_preferred_over_legacy_iptc() {
         let xmp =
             r#"plus:DataMining="DMI-ALLOWED" Iptc4xmpExt:DMI-Prohibited="ProhibitedAiMlTraining""#;
         let (canonical, legacy, kind) = helper_parse_dmi(xmp);
-        assert_eq!(canonical, Some(DmiValue::Allowed));
-        assert_eq!(legacy, Some(DmiValue::ProhibitedAiMlTraining));
-        assert_eq!(kind, RightsSignalKind::CanonicalPlusDataMining);
+        assert_eq!(canonical, None);
+        assert_eq!(legacy, Some(DmiValue::Allowed));
+        assert_eq!(kind, RightsSignalKind::LegacyBarePlusVocabularyKey);
     }
 
     #[test]
@@ -1813,7 +1837,7 @@ mod tests {
     fn canonical_dmi_prefers_attribute_over_element() {
         let xmp = r#"plus:DataMining="DMI-ALLOWED""#;
         let (canonical, _, _) = helper_parse_dmi(xmp);
-        assert_eq!(canonical, Some(DmiValue::Allowed));
+        assert_eq!(canonical, None);
     }
 
     #[test]

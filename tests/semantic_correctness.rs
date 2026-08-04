@@ -170,8 +170,13 @@ fn namespace_prefix_independent() {
     let report = stegoeggo::verify_legal_notice(&png, b"");
     assert_eq!(
         report.canonical_dmi(),
+        None,
+        "bare key in plus:DataMining should not set canonical_dmi"
+    );
+    assert_eq!(
+        report.dmi(),
         Some(DmiValue::ProhibitedAiMlTraining),
-        "plus: prefix in iTXt XMP should be detected"
+        "bare key should still be readable"
     );
 }
 
@@ -189,8 +194,13 @@ fn non_standard_prefix_falls_back_to_element_form() {
     let report = stegoeggo::verify_legal_notice(&png, b"");
     assert_eq!(
         report.canonical_dmi(),
+        None,
+        "bare key should not set canonical_dmi"
+    );
+    assert_eq!(
+        report.dmi(),
         Some(DmiValue::Allowed),
-        "non-standard prefix should resolve via xmlns lookup"
+        "bare key should still be readable"
     );
 }
 
@@ -206,7 +216,8 @@ fn attribute_and_element_form_parse() {
     raw_attr.extend_from_slice(attr_val);
     let png_attr = png_with_itxtraw(&raw_attr);
     let report_attr = stegoeggo::verify_legal_notice(&png_attr, b"");
-    assert_eq!(report_attr.canonical_dmi(), Some(DmiValue::Allowed));
+    assert_eq!(report_attr.canonical_dmi(), None);
+    assert_eq!(report_attr.dmi(), Some(DmiValue::Allowed));
 
     let elem_val = br#" xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/" <plus:DataMining>DMI-ALLOWED</plus:DataMining>"#;
     let mut raw_elem = Vec::new();
@@ -217,7 +228,8 @@ fn attribute_and_element_form_parse() {
     raw_elem.extend_from_slice(elem_val);
     let png_elem = png_with_itxtraw(&raw_elem);
     let report_elem = stegoeggo::verify_legal_notice(&png_elem, b"");
-    assert_eq!(report_elem.canonical_dmi(), Some(DmiValue::Allowed));
+    assert_eq!(report_elem.canonical_dmi(), None);
+    assert_eq!(report_elem.dmi(), Some(DmiValue::Allowed));
 }
 
 // ── Workstream C3: Legal-field semantics ────────────────────────────────────
@@ -711,13 +723,12 @@ fn bare_key_plus_datamining_parsed_for_backward_compat() {
     let report = stegoeggo::verify_legal_notice(&result, b"");
     assert_eq!(
         report.canonical_dmi(),
-        Some(DmiValue::ProhibitedAiMlTraining),
-        "bare key must be parsed for backward compat"
+        None,
+        "bare key must not set canonical_dmi"
     );
     assert_eq!(
         report.rights_signal_kind(),
-        RightsSignalKind::CanonicalPlusDataMining,
-        "bare key in plus:DataMining is currently classified as canonical \
-         (known gap: should be LegacyBarePlusVocabularyKey per Plan 039 Phase 4)"
+        RightsSignalKind::LegacyBarePlusVocabularyKey,
+        "bare key in plus:DataMining should be classified as LegacyBarePlusVocabularyKey"
     );
 }

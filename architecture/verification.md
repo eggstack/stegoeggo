@@ -56,7 +56,7 @@ Rights and legal-notice metadata extraction results:
 - `source: FieldSource` — Where the data came from
 - `channels: Vec<EvidenceChannel>` — Which evidence channels contributed
 
-DMI values are extracted from canonical `plus:DataMining` XMP properties containing full PLUS LDF URIs (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`). Legacy bare keys (`DMI-PROHIBITED-AIMLTRAINING`) and `Iptc4xmpExt:DMI-*` properties are parsed for backward compatibility but classified as legacy signals, not canonical.
+DMI values are extracted from canonical `plus:DataMining` XMP properties containing full PLUS LDF URIs (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`). Legacy bare keys (`DMI-PROHIBITED-AIMLTRAINING`) are parsed for backward compatibility but classified as `LegacyBarePlusVocabularyKey`, not `CanonicalPlusDataMining`. `Iptc4xmpExt:DMI-*` properties are similarly classified as legacy signals. Unknown-origin URLs (e.g., `http://evil.example.com/DMI-PROHIBITED-AIMLTRAINING`) are rejected and do not set `canonical_dmi`.
 
 ### `HiddenMarkerVerification`
 

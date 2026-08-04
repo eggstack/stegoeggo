@@ -928,11 +928,18 @@ fn cross_format_unspecified_policy_no_dmi() {
         (ImageOutputFormat::WebP, "WebP"),
     ] {
         let report = process_and_verify(&png_bytes, fmt, &legal, DmiValue::Unspecified);
-        assert!(
-            report.dmi().is_none() || report.dmi() == Some(DmiValue::Unspecified),
-            "{}: DMI should be absent or Unspecified for unspecified policy, got {:?}",
+        assert_eq!(
+            report.dmi(),
+            None,
+            "{}: DMI should be absent for unspecified policy, got {:?}",
             label,
             report.dmi()
+        );
+        assert_eq!(
+            report.canonical_dmi(),
+            None,
+            "{}: canonical_dmi should be None for unspecified policy",
+            label
         );
         assert_eq!(
             report.copyright_holder(),
@@ -1183,9 +1190,14 @@ fn negative_unknown_origin_uri_ending_in_dmi_key() {
 
     let before = verify_legal_notice(&input, b"");
     assert_eq!(
-        before.dmi(),
-        Some(DmiValue::ProhibitedAiMlTraining),
-        "non-canonical URI ending in known DMI key should be parsed via bare-key extraction"
+        before.canonical_dmi(),
+        None,
+        "non-canonical URI must not set canonical_dmi"
+    );
+    assert_ne!(
+        before.rights_signal_kind(),
+        stegoeggo::RightsSignalKind::CanonicalPlusDataMining,
+        "non-canonical URI must not be classified as CanonicalPlusDataMining"
     );
 
     let legal = LegalMetadata::new().with_copyright_holder("Override Holder");

@@ -619,11 +619,15 @@ impl RightsMetadataProtector {
     }
 
     fn build_xmp_packet(dmi: DmiValue, seed: Option<u64>, legal_props: &str) -> Vec<u8> {
-        let vocab_uri = dmi.plus_vocab_uri().unwrap_or(dmi.plus_vocab_key());
+        let vocab_uri = dmi.plus_vocab_uri();
         let bom = "\u{feff}";
         let seed_attr = seed
             .map(|s| format!("\n             stegoeggo:ProtectionSeed=\"{}\"", s))
             .unwrap_or_default();
+        let dmi_attr = match vocab_uri {
+            Some(uri) => format!("\n             {PLUS_DATA_MINING_PROPERTY}=\"{}\"", uri),
+            None => String::new(),
+        };
         format!(
             "<?xpacket begin=\"{bom}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
              <x:xmpmeta xmlns:x=\"adobe:ns:meta/\" \
@@ -634,8 +638,7 @@ impl RightsMetadataProtector {
              xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" \
              xmlns:photoshop=\"http://ns.adobe.com/photoshop/1.0/\">\n\
              <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n\
-             <rdf:Description rdf:about=\"\"\n\
-              {PLUS_DATA_MINING_PROPERTY}=\"{vocab_uri}\"{seed_attr}>{legal_props}\n   </rdf:Description>\n\
+             <rdf:Description rdf:about=\"\"{dmi_attr}{seed_attr}>{legal_props}\n   </rdf:Description>\n\
              </rdf:RDF>\n\
              </x:xmpmeta>\n\
              <?xpacket end=\"w\"?>"

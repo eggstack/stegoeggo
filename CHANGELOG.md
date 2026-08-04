@@ -27,6 +27,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - WebP XMP merge/replace: at most one XMP chunk in output; existing non-StegoEggo properties preserved under `ReplaceStegoOwned`
 
 ### Changed
+- `RightsSignalKind` now has a new variant `LegacyBarePlusVocabularyKey` for bare PLUS vocabulary keys in `plus:DataMining` (e.g., `"DMI-PROHIBITED-AIMLTRAINING"` instead of full URI). Bare keys are parsed for backward compatibility but classified as `LegacyBarePlusVocabularyKey`, not `CanonicalPlusDataMining`
+- `DmiValue::from_plus_vocab_key()` now only accepts bare keys (no longer accepts URIs via `rsplit('/')`). It rejects values containing `/`, `:`, `?`, `#`, or leading/trailing whitespace
+- `DmiValue::from_plus_vocab_uri()` is now strict — only accepts exact canonical vocabulary URIs under `http://ns.useplus.org/ldf/vocab/`. Unknown-origin URLs are rejected and do not set `canonical_dmi`
+- `Unspecified` no longer emits `plus:DataMining` in XMP output. The writer conditionally includes `plus:DataMining` only when `plus_vocab_uri()` returns `Some`
 - CI now invokes `scripts/check.sh` instead of maintaining a second copy of the command list
 - XMP `plus:DataMining` now emits full canonical PLUS URIs (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`) instead of bare keys (`DMI-PROHIBITED-AIMLTRAINING`). Bare keys are retained only in `plus_vocab_key()` for backward compatibility
 - `scripts/validate-docs-rs.sh` derives version dynamically instead of hard-coding `stegoeggo-0.3.2.crate`

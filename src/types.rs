@@ -110,23 +110,43 @@ impl DmiValue {
 
     /// Parse a full canonical PLUS vocabulary URI into a `DmiValue`.
     ///
-    /// Only accepts URIs beginning with [`PLUS_VOCAB_PREFIX`]. Does not accept
+    /// Only accepts URIs beginning with [`PLUS_VOCAB_PREFIX`] followed by a
+    /// recognized bare key. Rejects empty suffixes, embedded slashes, query
+    /// strings, fragments, whitespace, and unknown keys. Does not accept
     /// bare keys or URIs from other origins.
     #[must_use]
     pub fn from_plus_vocab_uri(value: &str) -> Option<Self> {
         let key = value.strip_prefix(PLUS_VOCAB_PREFIX)?;
-        Self::from_plus_vocab_key(key)
+        if key.is_empty()
+            || key.contains('/')
+            || key.contains('?')
+            || key.contains('#')
+            || key.chars().any(|c| c.is_whitespace())
+        {
+            return None;
+        }
+        Self::from_plus_vocab_key_only(key)
     }
 
-    /// Parse a bare PLUS vocabulary key or a full URI into a `DmiValue`.
+    /// Parse a bare PLUS vocabulary key into a `DmiValue`.
     ///
-    /// Accepts both bare keys (e.g. `"DMI-ALLOWED"`) and full canonical URIs
-    /// (e.g. `"http://ns.useplus.org/ldf/vocab/DMI-ALLOWED"`).
+    /// Accepts only bare keys (e.g. `"DMI-ALLOWED"`). Rejects values
+    /// containing `/`, `:`, `?`, `#`, or leading/trailing whitespace.
     /// Returns `None` for unknown or malformed values.
     #[must_use]
     pub fn from_plus_vocab_key(key: &str) -> Option<Self> {
-        let bare = key.rsplit('/').next().unwrap_or(key);
-        match bare {
+        if key.contains('/') || key.contains(':') || key.contains('?') || key.contains('#') {
+            return None;
+        }
+        let trimmed = key.trim();
+        if trimmed != key {
+            return None;
+        }
+        Self::from_plus_vocab_key_only(key)
+    }
+
+    fn from_plus_vocab_key_only(key: &str) -> Option<Self> {
+        match key {
             "DMI-UNSPECIFIED" => Some(DmiValue::Unspecified),
             "DMI-ALLOWED" => Some(DmiValue::Allowed),
             "DMI-PROHIBITED-AIMLTRAINING" => Some(DmiValue::ProhibitedAiMlTraining),
@@ -2315,8 +2335,10 @@ impl std::fmt::Display for EvidenceChannel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum RightsSignalKind {
-    /// Canonical `plus:DataMining` property with a recognized PLUS vocabulary key.
+    /// Canonical `plus:DataMining` property with a recognized PLUS vocabulary URI.
     CanonicalPlusDataMining,
+    /// Legacy bare PLUS vocabulary key in `plus:DataMining` (backward-compatible).
+    LegacyBarePlusVocabularyKey,
     /// Legacy StegoEggo `Iptc4xmpExt:DMI-*` property (v0.2 era).
     LegacyStegoEggoDmi,
     /// Legacy `tdm:reserve_tdm` property.
@@ -2329,11 +2351,39 @@ impl std::fmt::Display for RightsSignalKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RightsSignalKind::CanonicalPlusDataMining => write!(f, "CanonicalPlusDataMining"),
+            RightsSignalKind::LegacyBarePlusVocabularyKey => {
+                write!(f, "LegacyBarePlusVocabularyKey")
+            }
             RightsSignalKind::LegacyStegoEggoDmi => write!(f, "LegacyStegoEggoDmi"),
             RightsSignalKind::LegacyTdmReservation => write!(f, "LegacyTdmReservation"),
             RightsSignalKind::Unknown => write!(f, "Unknown"),
         }
     }
+}
+
+/// Classification of a parsed `plus:DataMining` value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ParsedDmiRepresentation {
+    /// Full canonical PLUS vocabulary URI.
+    CanonicalUri(DmiValue),
+    /// Legacy bare PLUS vocabulary key (backward-compatible).
+    LegacyBareKey(DmiValue),
+    /// Unknown or unrecognized value.
+    Unknown,
+}
+
+/// Classify a `plus:DataMining` value into its representation form.
+///
+/// Canonical URIs must begin with [`PLUS_VOCAB_PREFIX`]. Bare keys are
+/// recognized for backward compatibility but classified as legacy.
+pub(crate) fn classify_plus_data_mining_value(value: &str) -> ParsedDmiRepresentation {
+    if let Some(v) = DmiValue::from_plus_vocab_uri(value) {
+        return ParsedDmiRepresentation::CanonicalUri(v);
+    }
+    if let Some(v) = DmiValue::from_plus_vocab_key(value) {
+        return ParsedDmiRepresentation::LegacyBareKey(v);
+    }
+    ParsedDmiRepresentation::Unknown
 }
 
 /// Legal-notice verification report for a protected image.

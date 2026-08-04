@@ -156,7 +156,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 **Canonical metadata format:**
 
-- XMP writer emits `plus:DataMining` with full PLUS LDF URIs (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`). Legacy bare keys (`DMI-PROHIBITED-AIMLTRAINING`) and `Iptc4xmpExt:DMI-*` properties are parsed for backward compatibility but not emitted
+- XMP writer emits `plus:DataMining` with full PLUS LDF URIs (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`). Legacy bare keys (`DMI-PROHIBITED-AIMLTRAINING`) and `Iptc4xmpExt:DMI-*` properties are parsed for backward compatibility but classified as `LegacyBarePlusVocabularyKey`, not `CanonicalPlusDataMining`. `Unspecified` emits no `plus:DataMining` property (the writer conditionally includes it only when `plus_vocab_uri()` returns `Some`)
 - `ProhibitedSeeConstraints` emits `plus:OtherConstraints` alongside `plus:DataMining`
 - Private `noai`/`noindex` and `DMI-PROHIBITED` tEXt/COM markers are no longer emitted in new output
 - `tdm:reserve_tdm` is no longer emitted (TDMRep is a web-distribution mechanism, not an image-metadata signal)

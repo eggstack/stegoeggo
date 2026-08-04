@@ -45,13 +45,14 @@ fn make_png_with_xmp(xmp_content: &[u8]) -> Vec<u8> {
 }
 
 fn canonical_xmp(vocab_key: &str) -> Vec<u8> {
+    let uri = format!("http://ns.useplus.org/ldf/vocab/{}", vocab_key);
     format!(
         r#"<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
 <rdf:Description rdf:about=""
     xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/"
-    plus:DataMining="{vocab_key}">
+    plus:DataMining="{uri}">
 </rdf:Description>
 </rdf:RDF>
 </x:xmpmeta>
@@ -128,6 +129,7 @@ fn canonical_plus_dmi_unspecified() {
     let png = make_png_with_xmp(&xmp);
     let report = verify_legal_notice(&png, b"");
     assert_eq!(report.canonical_dmi(), Some(DmiValue::Unspecified));
+    assert_eq!(report.dmi(), Some(DmiValue::Unspecified));
 }
 
 #[test]
@@ -180,13 +182,14 @@ fn conflict_detection_canonical_vs_legacy() {
 }
 
 fn canonical_xmp_element_form(vocab_key: &str) -> Vec<u8> {
+    let uri = format!("http://ns.useplus.org/ldf/vocab/{}", vocab_key);
     format!(
         r#"<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
 <rdf:Description rdf:about=""
     xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/">
-    <plus:DataMining>{vocab_key}</plus:DataMining>
+    <plus:DataMining>{uri}</plus:DataMining>
 </rdf:Description>
 </rdf:RDF>
 </x:xmpmeta>
@@ -211,13 +214,14 @@ fn canonical_plus_element_form() {
 }
 
 fn canonical_xmp_alternate_prefix(vocab_key: &str) -> Vec<u8> {
+    let uri = format!("http://ns.useplus.org/ldf/vocab/{}", vocab_key);
     format!(
         r#"<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
 <rdf:Description rdf:about=""
     xmlns:myplus="http://ns.useplus.org/ldf/xmp/1.0/"
-    myplus:DataMining="{vocab_key}">
+    myplus:DataMining="{uri}">
 </rdf:Description>
 </rdf:RDF>
 </x:xmpmeta>
@@ -242,6 +246,7 @@ fn alternate_namespace_prefix_resolves() {
 }
 
 fn canonical_and_legacy_xmp(canonical_key: &str, legacy_value: &str) -> Vec<u8> {
+    let uri = format!("http://ns.useplus.org/ldf/vocab/{}", canonical_key);
     format!(
         r#"<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
@@ -249,7 +254,7 @@ fn canonical_and_legacy_xmp(canonical_key: &str, legacy_value: &str) -> Vec<u8> 
 <rdf:Description rdf:about=""
     xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/"
     xmlns:iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/"
-    plus:DataMining="{canonical_key}"
+    plus:DataMining="{uri}"
     Iptc4xmpExt:DMI-Prohibited="{legacy_value}">
 </rdf:Description>
 </rdf:RDF>

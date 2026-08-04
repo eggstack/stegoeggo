@@ -115,7 +115,13 @@ fn dmi_from_xmp_attribute_form() {
     let notice = stegoeggo::verify_legal_notice(&png, b"");
     assert_eq!(
         notice.canonical_dmi(),
-        Some(DmiValue::ProhibitedAiMlTraining)
+        None,
+        "bare key should not set canonical_dmi"
+    );
+    assert_eq!(
+        notice.dmi(),
+        Some(DmiValue::ProhibitedAiMlTraining),
+        "bare key should still be readable"
     );
 }
 
@@ -134,7 +140,13 @@ fn dmi_from_xmp_element_form() {
     let notice = stegoeggo::verify_legal_notice(&png, b"");
     assert_eq!(
         notice.canonical_dmi(),
-        Some(DmiValue::ProhibitedAiMlTraining)
+        None,
+        "bare key should not set canonical_dmi"
+    );
+    assert_eq!(
+        notice.dmi(),
+        Some(DmiValue::ProhibitedAiMlTraining),
+        "bare key should still be readable"
     );
 }
 
@@ -213,7 +225,13 @@ fn xmp_multiple_descriptions_dmi() {
     let notice = stegoeggo::verify_legal_notice(&png, b"");
     assert_eq!(
         notice.canonical_dmi(),
-        Some(DmiValue::ProhibitedAiMlTraining)
+        None,
+        "bare key should not set canonical_dmi"
+    );
+    assert_eq!(
+        notice.dmi(),
+        Some(DmiValue::ProhibitedAiMlTraining),
+        "bare key should still be readable"
     );
 }
 
@@ -266,7 +284,13 @@ fn text_chunk_with_xmp_combined() {
     assert_eq!(notice.usage_terms(), Some("Combined Terms"));
     assert_eq!(
         notice.canonical_dmi(),
-        Some(DmiValue::ProhibitedAiMlTraining)
+        None,
+        "bare key should not set canonical_dmi"
+    );
+    assert_eq!(
+        notice.dmi(),
+        Some(DmiValue::ProhibitedAiMlTraining),
+        "bare key should still be readable"
     );
 }
 
