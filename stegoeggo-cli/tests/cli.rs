@@ -1220,3 +1220,578 @@ fn test_level_preset_conflict_is_config_error() {
         "Combining --level and --preset should fail"
     );
 }
+
+#[test]
+fn test_default_standard_invocation_resolves_prohibited_policy() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(result.status.success());
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        stdout.contains("ProhibitedAiMlTraining"),
+        "Default Standard invocation should resolve ProhibitedAiMlTraining: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("rights_metadata=true"),
+        "Should have rights_metadata=true: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("hidden_marker=BestEffort"),
+        "Should have hidden_marker=BestEffort: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_omitted_dmi_equals_dmi_auto() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+
+    let omitted = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(omitted.status.success());
+    let omitted_out = String::from_utf8_lossy(&omitted.stdout);
+
+    let auto = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--dmi")
+        .arg("auto")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(auto.status.success());
+    let auto_out = String::from_utf8_lossy(&auto.stdout);
+
+    assert_eq!(
+        omitted_out, auto_out,
+        "Omitted --dmi and --dmi auto should produce identical output"
+    );
+}
+
+#[test]
+fn test_explicit_unspecified_is_distinct_from_default() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+
+    let default = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(default.status.success());
+    let default_out = String::from_utf8_lossy(&default.stdout);
+    assert!(
+        default_out.contains("ProhibitedAiMlTraining"),
+        "Default should be ProhibitedAiMlTraining"
+    );
+
+    let unspecified = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--dmi")
+        .arg("unspecified")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(unspecified.status.success());
+    let unspecified_out = String::from_utf8_lossy(&unspecified.stdout);
+    assert!(
+        unspecified_out.contains("Unspecified"),
+        "Explicit --dmi unspecified should be Unspecified: {}",
+        unspecified_out
+    );
+    assert!(
+        !unspecified_out.contains("ProhibitedAiMlTraining"),
+        "Explicit --dmi unspecified must NOT inherit default prohibition: {}",
+        unspecified_out
+    );
+}
+
+#[test]
+fn test_legacy_dmi_prohibited_ai_matches_rights_policy() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+
+    let dmi = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--dmi")
+        .arg("prohibited-ai")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(dmi.status.success());
+    let dmi_out = String::from_utf8_lossy(&dmi.stdout);
+
+    let policy = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--rights-policy")
+        .arg("prohibited-ai-ml-training")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(policy.status.success());
+    let policy_out = String::from_utf8_lossy(&policy.stdout);
+
+    assert!(
+        dmi_out.contains("ProhibitedAiMlTraining"),
+        "--dmi prohibited-ai should resolve ProhibitedAiMlTraining: {}",
+        dmi_out
+    );
+    assert!(
+        policy_out.contains("ProhibitedAiMlTraining"),
+        "--rights-policy prohibited-ai-ml-training should resolve ProhibitedAiMlTraining: {}",
+        policy_out
+    );
+    assert!(
+        dmi_out.contains("rights_metadata=true"),
+        "--dmi prohibited-ai should have rights_metadata=true: {}",
+        dmi_out
+    );
+    assert!(
+        policy_out.contains("rights_metadata=true"),
+        "--rights-policy should have rights_metadata=true: {}",
+        policy_out
+    );
+}
+
+#[test]
+fn test_legacy_dmi_allowed_matches_rights_policy() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+
+    let dmi = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--dmi")
+        .arg("allowed")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(dmi.status.success());
+    let dmi_out = String::from_utf8_lossy(&dmi.stdout);
+
+    let policy = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--rights-policy")
+        .arg("allowed")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(policy.status.success());
+    let policy_out = String::from_utf8_lossy(&policy.stdout);
+
+    assert!(
+        dmi_out.contains("Allowed"),
+        "--dmi allowed should resolve Allowed: {}",
+        dmi_out
+    );
+    assert!(
+        policy_out.contains("Allowed"),
+        "--rights-policy allowed should resolve Allowed: {}",
+        policy_out
+    );
+}
+
+#[test]
+fn test_no_ai_training_matches_rights_policy() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+
+    let shorthand = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--no-ai-training")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(shorthand.status.success());
+    let shorthand_out = String::from_utf8_lossy(&shorthand.stdout);
+
+    let policy = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--rights-policy")
+        .arg("prohibited-ai-ml-training")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(policy.status.success());
+    let policy_out = String::from_utf8_lossy(&policy.stdout);
+
+    assert!(
+        shorthand_out.contains("ProhibitedAiMlTraining"),
+        "--no-ai-training should resolve ProhibitedAiMlTraining: {}",
+        shorthand_out
+    );
+    assert!(
+        shorthand_out.contains("rights_metadata=true"),
+        "--no-ai-training should have rights_metadata=true: {}",
+        shorthand_out
+    );
+    assert!(
+        policy_out.contains("ProhibitedAiMlTraining"),
+        "--rights-policy should also resolve ProhibitedAiMlTraining: {}",
+        policy_out
+    );
+}
+
+#[test]
+fn test_light_level_produces_correct_output() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--level")
+        .arg("light")
+        .arg("--json")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        result.status.success(),
+        "Light level should succeed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let report = json.get("report").expect("Should have report");
+    assert!(
+        report.get("stego_attempted").unwrap() == true,
+        "Light level should attempt stego"
+    );
+    assert!(
+        report.get("metadata_injected").unwrap() == true,
+        "Light level should inject metadata"
+    );
+}
+
+#[test]
+fn test_disabled_level_produces_bitidentical_output() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+    let original = fs::read(&input).unwrap();
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--level")
+        .arg("disabled")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(result.status.success());
+
+    let protected = fs::read(output.join("input_protected.png")).unwrap();
+    assert_eq!(original, protected, "Disabled level should be bitidentical");
+}
+
+#[test]
+fn test_dry_run_matches_execution_policy() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let dry_run = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("legal-notice")
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(dry_run.status.success());
+    let dry_out = String::from_utf8_lossy(&dry_run.stdout);
+
+    let exec = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("legal-notice")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(exec.status.success());
+
+    let protected = fs::read(output.join("input_protected.png")).unwrap();
+    assert!(!protected.is_empty(), "Execution should produce output");
+    assert!(
+        dry_out.contains("rights_metadata=true"),
+        "Dry run should match execution: {}",
+        dry_out
+    );
+}
+
+#[test]
+fn test_json_and_human_output_share_policy() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output_json = tmp.path().join("out_json");
+    let output_human = tmp.path().join("out_human");
+
+    create_test_png(&input);
+
+    let json_result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output_json)
+        .arg("-s")
+        .arg("42")
+        .arg("--json")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(json_result.status.success());
+    let json_out: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&json_result.stdout)).unwrap();
+    let json_policy = json_out
+        .get("report")
+        .and_then(|r| r.get("effective_policy"))
+        .and_then(|p| p.as_str())
+        .unwrap();
+
+    let human_result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output_human)
+        .arg("-s")
+        .arg("42")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(human_result.status.success());
+
+    assert!(
+        json_policy.contains("ProhibitedAiMlTraining"),
+        "JSON output should report ProhibitedAiMlTraining: {}",
+        json_policy
+    );
+    assert!(
+        json_out
+            .get("report")
+            .and_then(|r| r.get("metadata_injected"))
+            .unwrap()
+            == true,
+        "JSON should show metadata_injected=true"
+    );
+    assert!(
+        json_out
+            .get("report")
+            .and_then(|r| r.get("stego_attempted"))
+            .unwrap()
+            == true,
+        "JSON should show stego_attempted=true"
+    );
+}
+
+#[test]
+fn test_batch_single_file_same_as_direct() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output_single = tmp.path().join("single_out");
+    let output_batch = tmp.path().join("batch_out");
+
+    create_test_png(&input);
+
+    let single = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output_single)
+        .arg("-s")
+        .arg("42")
+        .arg("--json")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(single.status.success());
+
+    let batch = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output_batch)
+        .arg("-s")
+        .arg("42")
+        .arg("--json")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(batch.status.success());
+
+    let single_json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&single.stdout)).unwrap();
+    let batch_json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&batch.stdout)).unwrap();
+
+    let single_policy = single_json
+        .get("report")
+        .and_then(|r| r.get("effective_policy"))
+        .unwrap();
+    let batch_policy = batch_json
+        .get("report")
+        .and_then(|r| r.get("effective_policy"))
+        .unwrap();
+    assert_eq!(
+        single_policy, batch_policy,
+        "Single-file and batch should resolve same policy"
+    );
+}
+
+#[test]
+fn test_conflicting_dmi_and_rights_policy_exits_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--dmi")
+        .arg("allowed")
+        .arg("--rights-policy")
+        .arg("prohibited-ai-ml-training")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        !result.status.success(),
+        "Conflicting --dmi and --rights-policy should fail"
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("Conflicting"),
+        "Should report conflict: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_conflicting_shorthand_and_explicit_policy_exits_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--no-ai-training")
+        .arg("--rights-policy")
+        .arg("allowed")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        !result.status.success(),
+        "--no-ai-training with --rights-policy allowed should fail"
+    );
+}
+
+#[test]
+fn test_metadata_disabled_with_legal_fields_exits_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--metadata")
+        .arg("false")
+        .arg("--copyright-notice")
+        .arg("test")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        !result.status.success(),
+        "--metadata false with legal fields should fail"
+    );
+}
+
+#[test]
+fn test_hmac_without_key_exits_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("authenticated-provenance")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(!result.status.success(), "HMAC without key should fail");
+}
+
+#[test]
+fn test_hmac_with_disabled_marker_exits_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-s")
+        .arg("42")
+        .arg("--hidden-marker")
+        .arg("disabled")
+        .arg("--authentication")
+        .arg("hmac")
+        .arg("--key")
+        .arg("deadbeef01234567deadbeef01234567")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        !result.status.success(),
+        "HMAC with disabled marker should fail"
+    );
+}

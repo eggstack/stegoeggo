@@ -693,7 +693,6 @@ fn has_new_style_flags(args: &Args) -> bool {
         || args.preset.is_some()
         || args.hidden_marker.is_some()
         || args.authentication.is_some()
-        || args.dry_run
 }
 
 #[allow(deprecated)]
@@ -853,6 +852,24 @@ fn build_new_style_request(
     Ok((policy, channels))
 }
 
+fn legacy_default_dmi(level: ProtectionLevel) -> DmiValue {
+    match level {
+        ProtectionLevel::Disabled | ProtectionLevel::Light => DmiValue::Unspecified,
+        ProtectionLevel::Standard => DmiValue::ProhibitedAiMlTraining,
+        _ => DmiValue::ProhibitedAiMlTraining,
+    }
+}
+
+fn resolve_legacy_dmi(args: &Args, level: ProtectionLevel) -> Option<DmiValue> {
+    match args.dmi.as_ref() {
+        None => Some(legacy_default_dmi(level)),
+        Some(dmi_arg) => {
+            let dmi_val = dmi_arg.clone().into_dmi_value();
+            Some(dmi_val.unwrap_or_else(|| legacy_default_dmi(level)))
+        }
+    }
+}
+
 #[allow(deprecated)]
 fn build_legacy_style_request(
     args: &Args,
@@ -861,16 +878,8 @@ fn build_legacy_style_request(
 ) -> Result<(RightsPolicy, ProtectionChannels), Box<dyn std::error::Error>> {
     let protection_level = ProtectionLevel::from(args.level.clone());
 
-    let dmi_value = args.dmi.as_ref().and_then(|d| {
-        d.clone().into_dmi_value().or({
-            Some(match protection_level {
-                ProtectionLevel::Disabled | ProtectionLevel::Light => DmiValue::Unspecified,
-                _ => DmiValue::ProhibitedAiMlTraining,
-            })
-        })
-    });
-
-    let effective_dmi = legal_dmi_override.or(dmi_value);
+    let dmi_from_arg = resolve_legacy_dmi(args, protection_level);
+    let effective_dmi = legal_dmi_override.or(dmi_from_arg);
     let policy = effective_dmi
         .map(RightsPolicy::from_dmi_value)
         .unwrap_or(RightsPolicy::Unspecified);
@@ -1969,4 +1978,286 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn default_args() -> Args {
+        Args {
+            input: vec![PathBuf::from("test.png")],
+            output: None,
+            verify: false,
+            level: ProtectionLevelArg::Standard,
+            profile: ProfileArg::LegalNotice,
+            intensity: 0.5,
+            seed: Some(42),
+            format: None,
+            stego_redundancy: 2,
+            jpeg_quality: 90,
+            progressive: false,
+            verbose: false,
+            dmi: None,
+            metadata: None,
+            legal_claims: false,
+            copyright_notice: None,
+            creator: None,
+            contact: None,
+            rights_url: None,
+            usage_terms: None,
+            ai_constraints: None,
+            no_ai_training: false,
+            no_genai_training: false,
+            tdm_reserved: false,
+            credit_line: None,
+            copyright_owner: None,
+            licensor_name: None,
+            licensor_email: None,
+            licensor_url: None,
+            content_created_at: None,
+            key: None,
+            known_seeds: None,
+            jobs: 1,
+            strict: false,
+            json: false,
+            rights_policy: None,
+            preset: None,
+            hidden_marker: None,
+            authentication: None,
+            dry_run: false,
+            #[cfg(feature = "signatures")]
+            command: None,
+        }
+    }
+
+    #[test]
+    fn test_legacy_default_standard_is_prohibited() {
+        let args = default_args();
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::ProhibitedAiMlTraining);
+        assert!(req.channels().rights_metadata);
+        assert_eq!(req.channels().hidden_marker, HiddenMarkerMode::BestEffort);
+    }
+
+    #[test]
+    fn test_legacy_default_standard_dmi_auto_matches_omitted() {
+        let mut args_omitted = default_args();
+        args_omitted.dmi = None;
+        let req_omitted = build_protection_request(&args_omitted).unwrap();
+
+        let mut args_auto = default_args();
+        args_auto.dmi = Some(DmiArg::Auto);
+        let req_auto = build_protection_request(&args_auto).unwrap();
+
+        assert_eq!(req_omitted.policy(), req_auto.policy());
+        assert_eq!(
+            req_omitted.channels().rights_metadata,
+            req_auto.channels().rights_metadata
+        );
+        assert_eq!(
+            req_omitted.channels().hidden_marker,
+            req_auto.channels().hidden_marker
+        );
+    }
+
+    #[test]
+    fn test_legacy_dmi_unspecified_is_distinct_from_default() {
+        let mut args = default_args();
+        args.dmi = Some(DmiArg::Unspecified);
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::Unspecified);
+    }
+
+    #[test]
+    fn test_legacy_light_level() {
+        let mut args = default_args();
+        args.level = ProtectionLevelArg::Light;
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::Unspecified);
+        assert!(req.channels().rights_metadata);
+        assert_eq!(req.channels().hidden_marker, HiddenMarkerMode::BestEffort);
+    }
+
+    #[test]
+    fn test_legacy_disabled_level() {
+        let mut args = default_args();
+        args.level = ProtectionLevelArg::Disabled;
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::Unspecified);
+        assert!(!req.channels().rights_metadata);
+        assert_eq!(req.channels().hidden_marker, HiddenMarkerMode::Disabled);
+    }
+
+    #[test]
+    fn test_no_ai_training_shorthand_sets_policy() {
+        let mut args = default_args();
+        args.no_ai_training = true;
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::ProhibitedAiMlTraining);
+    }
+
+    #[test]
+    fn test_no_genai_training_shorthand_sets_policy() {
+        let mut args = default_args();
+        args.no_genai_training = true;
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::ProhibitedGenerativeAiTraining);
+    }
+
+    #[test]
+    fn test_tdm_reserved_shorthand_sets_policy() {
+        let mut args = default_args();
+        args.tdm_reserved = true;
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::ProhibitedSeeConstraints);
+    }
+
+    #[test]
+    fn test_explicit_rights_policy_prohibited() {
+        let mut args = default_args();
+        args.rights_policy = Some(RightsPolicyArg::ProhibitedAiMlTraining);
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::ProhibitedAiMlTraining);
+    }
+
+    #[test]
+    fn test_explicit_rights_policy_allowed() {
+        let mut args = default_args();
+        args.rights_policy = Some(RightsPolicyArg::Allowed);
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::Allowed);
+    }
+
+    #[test]
+    fn test_conflicting_dmi_and_rights_policy() {
+        let mut args = default_args();
+        args.dmi = Some(DmiArg::Allowed);
+        args.rights_policy = Some(RightsPolicyArg::ProhibitedAiMlTraining);
+        let result = build_protection_request(&args);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Conflicting"), "Error: {}", err);
+    }
+
+    #[test]
+    fn test_conflicting_shorthand_and_rights_policy() {
+        let mut args = default_args();
+        args.no_ai_training = true;
+        args.rights_policy = Some(RightsPolicyArg::Allowed);
+        let result = build_protection_request(&args);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Conflicting"), "Error: {}", err);
+    }
+
+    #[test]
+    fn test_metadata_false_with_legal_fields() {
+        let mut args = default_args();
+        args.metadata = Some(false);
+        args.copyright_notice = Some("test".to_string());
+        let result = build_protection_request(&args);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Cannot use --metadata false"),
+            "Error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_hmac_without_key_is_error() {
+        let mut args = default_args();
+        args.preset = Some(PresetArg::AuthenticatedProvenance);
+        let result = build_protection_request(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hmac_with_disabled_marker_is_error() {
+        let mut args = default_args();
+        args.hidden_marker = Some(HiddenMarkerArg::Disabled);
+        args.authentication = Some(AuthenticationArg::Hmac);
+        args.key = Some("deadbeef01234567deadbeef01234567".to_string());
+        let result = build_protection_request(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_preset_and_level_conflict() {
+        let mut args = default_args();
+        args.preset = Some(PresetArg::Maximal);
+        args.level = ProtectionLevelArg::Light;
+        let result = build_protection_request(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_seed_and_intensity_preserved() {
+        let mut args = default_args();
+        args.seed = Some(99);
+        args.intensity = 0.8;
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.seed(), Some(99));
+        assert_eq!(req.intensity(), 0.8);
+    }
+
+    #[test]
+    fn test_jpeg_quality_preserved() {
+        let mut args = default_args();
+        args.jpeg_quality = 75;
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.processing().jpeg_quality, 75);
+    }
+
+    #[test]
+    fn test_legacy_dmi_prohibited_ai_matches_rights_policy() {
+        let mut args = default_args();
+        args.dmi = Some(DmiArg::ProhibitedAi);
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::ProhibitedAiMlTraining);
+    }
+
+    #[test]
+    fn test_legacy_dmi_prohibited_gen_ai() {
+        let mut args = default_args();
+        args.dmi = Some(DmiArg::ProhibitedGenAi);
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::ProhibitedGenerativeAiTraining);
+    }
+
+    #[test]
+    fn test_legacy_dmi_allowed() {
+        let mut args = default_args();
+        args.dmi = Some(DmiArg::Allowed);
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::Allowed);
+    }
+
+    #[test]
+    fn test_legacy_dmi_prohibited() {
+        let mut args = default_args();
+        args.dmi = Some(DmiArg::Prohibited);
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::ProhibitedAllDataMining);
+    }
+
+    #[test]
+    fn test_preset_legal_notice_request() {
+        let mut args = default_args();
+        args.preset = Some(PresetArg::LegalNotice);
+        let req = build_protection_request(&args).unwrap();
+        assert!(req.channels().rights_metadata);
+        assert_eq!(req.channels().hidden_marker, HiddenMarkerMode::Disabled);
+    }
+
+    #[test]
+    fn test_preset_legal_notice_stego_request() {
+        let mut args = default_args();
+        args.preset = Some(PresetArg::LegalNoticeWithStego);
+        let req = build_protection_request(&args).unwrap();
+        assert!(req.channels().rights_metadata);
+        assert_eq!(req.channels().hidden_marker, HiddenMarkerMode::BestEffort);
+    }
 }

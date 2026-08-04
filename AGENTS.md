@@ -107,12 +107,14 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Pipeline flow order** — JPEG output: encode → DCT stego → metadata. Non-JPEG: pixel stego → encode → metadata. JPEG→JPEG fast path bypasses pixel decode entirely
 - **`MetadataTrapProtector::apply()` returns `Cow::Borrowed(img)` unchanged** — Metadata injection is byte-level. The pipeline routes `Light` through `apply_light_bytes()` which encodes → injects → decodes
 - **`#[serde(skip)]` on `config` field** — MAC keys and legal metadata are lost in serde roundtrips
-- **CLI unified path** — The CLI always routes through `ProtectionRequest`. There is no dual legacy/request code path. Mixed conflicting policy options (e.g., `--rights-policy` contradicting `--no-ai-training`) are configuration errors (exit code 2)
+- **CLI unified path** — The CLI always routes through `ProtectionRequest`. There is no dual legacy/request code path. `legacy_default_dmi()` computes level defaults: `Standard`→`ProhibitedAiMlTraining`, `Light`/`Disabled`→`Unspecified`. `--dmi auto` and omitted `--dmi` are equivalent. Mixed conflicting policy options (e.g., `--rights-policy` contradicting `--no-ai-training`) are configuration errors (exit code 2)
 - **CLI `--verify` always exits 0** — Use output text to determine protection state, not exit code
 - **F5 seed Q-table edge case** — `embed_seed_in_quantization_tables()` fails if any quantization value in the first 2 tables is < 2
 - **`--tdm-reserved` is deprecated** — TDMRep deployment deferred; sets DMI to `ProhibitedSeeConstraints`
 - **CLI binary location** — `stegoeggo-cli/src/main.rs`, not `src/bin/`
 - **`--require-complete` is removed** — `--strict` is the single complete-validation mode
+- **CLI `--dry-run` is not new-style** — `--dry_run` is excluded from `has_new_style_flags()` so it does not force canonical path; dry-run uses the same `build_protection_request()` as execution
+- **No `test-seeds` in production CLI** — `test-seeds` is test infrastructure only, never in production binary
 
 **JPEG DCT and container correctness:**
 
