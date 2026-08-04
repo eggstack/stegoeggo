@@ -1137,3 +1137,75 @@ fn negative_duplicate_webp_xmp_handled() {
         "re-processed WebP should decode"
     );
 }
+
+fn png_with_fake_xmp_dmi(dmi_value: &str) -> Vec<u8> {
+    let base = make_test_image_png(64, 64);
+    let key = b"XML:com.adobe.xmp";
+    let xmp_value = format!(
+        " xmlns:plus=\"http://ns.useplus.org/ldf/xmp/1.0/\" plus:DataMining=\"{}\"",
+        dmi_value
+    );
+    let mut raw = Vec::new();
+    raw.extend_from_slice(key);
+    raw.push(0);
+    raw.push(0);
+    raw.push(0);
+    raw.extend_from_slice(xmp_value.as_bytes());
+
+    let mut output = Vec::with_capacity(base.len() + raw.len() + 20);
+    output.extend_from_slice(&base[0..8]);
+    let mut i = 8;
+    while i + 8 <= base.len() {
+        let length =
+            u32::from_be_bytes([base[i], base[i + 1], base[i + 2], base[i + 3]]) as usize;
+        let chunk_type = &base[i + 4..i + 8];
+        if chunk_type == b"IEND" {
+            let chunk_len = (raw.len() as u32).to_be_bytes();
+            output.extend_from_slice(&chunk_len);
+            output.extend_from_slice(b"iTXt");
+            output.extend_from_slice(&raw);
+            let mut crc = crc32fast::Hasher::new();
+            crc.update(b"iTXt");
+            crc.update(&raw);
+            output.extend_from_slice(&crc.finalize().to_be_bytes());
+            output.extend_from_slice(&base[i..i + 8 + length + 4]);
+        } else {
+            output.extend_from_slice(&base[i..i + 8 + length + 4]);
+        }
+        i += 8 + length + 4;
+    }
+    output
+}
+
+#[test]
+fn negative_unknown_origin_uri_ending_in_dmi_key() {
+    let fake_uri = "http://evil.example.com/DMI-PROHIBITED-AIMLTRAINING";
+    let input = png_with_fake_xmp_dmi(fake_uri);
+
+    let before = verify_legal_notice(&input, b"");
+    assert_eq!(
+        before.dmi(),
+        Some(DmiValue::ProhibitedAiMlTraining),
+        "non-canonical URI ending in known DMI key should be parsed via bare-key extraction"
+    );
+
+    let legal = LegalMetadata::new().with_copyright_holder("Override Holder");
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Png)
+        .with_legal_metadata(legal)
+        .with_dmi(DmiValue::Allowed);
+    let (output, _warnings) =
+        process_image_bytes_with_warnings(&input, ProtectionLevel::Standard, &ctx).unwrap();
+
+    let report = verify_legal_notice(&output, b"");
+    assert_eq!(
+        report.dmi(),
+        Some(DmiValue::Allowed),
+        "pipeline should replace fake URI with canonical Allowed policy"
+    );
+    assert_eq!(report.copyright_holder(), Some("Override Holder"));
+    assert!(
+        image::load_from_memory(&output).is_ok(),
+        "output with overridden fake URI should decode"
+    );
+}
