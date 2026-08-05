@@ -359,67 +359,70 @@ impl RightsMetadataProtector {
             metadata_chunks.push((*b"XMP ", xmp_chunk));
         }
 
-        let mut vp8x_flags: u8 = 0;
-        if parsed.has_icc {
-            vp8x_flags |= 0x20;
-        }
-        if parsed.has_alpha {
-            vp8x_flags |= 0x10;
-        }
-        if parsed.has_animation {
-            vp8x_flags |= 0x02;
-        }
-        if !metadata_chunks.is_empty() {
-            vp8x_flags |= 0x04;
-        }
-        if parsed.has_exif {
-            vp8x_flags |= 0x08;
-        }
-
         let mut output = Vec::new();
         output.extend_from_slice(b"RIFF");
         output.extend_from_slice(&[0, 0, 0, 0]);
         output.extend_from_slice(b"WEBP");
 
-        match parsed.image_kind {
+        let (width, height) = match parsed.image_kind {
             crate::webp_container::WebPImageKind::ExtendedVP8X => {
                 if let Some(idx) = parsed.vp8x_index {
                     let chunk = &parsed.chunks[idx];
-                    let (width, height) =
-                        crate::webp_container::vp8x_dimensions(&parsed.data, chunk.data_start)
-                            .unwrap_or((0, 0));
-                    let vp8x_data =
-                        crate::webp_container::encode_vp8x_chunk(width, height, vp8x_flags)?;
-                    output.extend_from_slice(b"VP8X");
-                    output.extend_from_slice(&(vp8x_data.len() as u32).to_le_bytes());
-                    output.extend_from_slice(&vp8x_data);
-                    if vp8x_data.len() & 1 != 0 {
-                        output.push(0);
-                    }
+                    crate::webp_container::vp8x_dimensions(&parsed.data, chunk.data_start)
+                        .unwrap_or((0, 0))
+                } else {
+                    (0, 0)
                 }
             }
-            crate::webp_container::WebPImageKind::LossyVP8 => {
-                let (width, height) = self.webp_image_dimensions(webp_data)?.unwrap_or((0, 0));
-                let vp8x_data =
-                    crate::webp_container::encode_vp8x_chunk(width, height, vp8x_flags)?;
-                output.extend_from_slice(b"VP8X");
-                output.extend_from_slice(&(vp8x_data.len() as u32).to_le_bytes());
-                output.extend_from_slice(&vp8x_data);
-                if vp8x_data.len() & 1 != 0 {
-                    output.push(0);
-                }
+            _ => self.webp_image_dimensions(webp_data)?.unwrap_or((0, 0)),
+        };
+
+        let has_metadata = !metadata_chunks.is_empty();
+
+        let mut final_icc = false;
+        let mut final_exif = false;
+        let mut final_xmp = has_metadata;
+        let mut final_animation = false;
+
+        for chunk in &parsed.chunks {
+            match chunk.fourcc_str() {
+                "VP8X" | "XMP " => continue,
+                "ICCP" => final_icc = true,
+                "EXIF" => final_exif = true,
+                "ANMF" => final_animation = true,
+                _ => {}
             }
-            crate::webp_container::WebPImageKind::LosslessVP8L => {
-                let (width, height) = self.webp_image_dimensions(webp_data)?.unwrap_or((0, 0));
-                let vp8x_data =
-                    crate::webp_container::encode_vp8x_chunk(width, height, vp8x_flags)?;
-                output.extend_from_slice(b"VP8X");
-                output.extend_from_slice(&(vp8x_data.len() as u32).to_le_bytes());
-                output.extend_from_slice(&vp8x_data);
-                if vp8x_data.len() & 1 != 0 {
-                    output.push(0);
-                }
+        }
+        for (fourcc, _) in &metadata_chunks {
+            if fourcc == b"XMP " {
+                final_xmp = true;
             }
+        }
+
+        let mut vp8x_flags: u8 = 0;
+        if final_icc {
+            vp8x_flags |= 0x20;
+        }
+        if parsed.has_alpha {
+            vp8x_flags |= 0x10;
+        }
+        if final_animation {
+            vp8x_flags |= 0x02;
+        }
+        if final_xmp {
+            vp8x_flags |= 0x04;
+        }
+        if final_exif {
+            vp8x_flags |= 0x08;
+        }
+
+        let vp8x_data =
+            crate::webp_container::encode_vp8x_chunk(width, height, vp8x_flags)?;
+        output.extend_from_slice(b"VP8X");
+        output.extend_from_slice(&(vp8x_data.len() as u32).to_le_bytes());
+        output.extend_from_slice(&vp8x_data);
+        if vp8x_data.len() & 1 != 0 {
+            output.push(0);
         }
 
         for chunk in &parsed.chunks {
