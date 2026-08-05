@@ -77,11 +77,22 @@ pub struct ScanComponent {
 }
 
 #[derive(Debug, Clone)]
+pub struct JpegScanSpan {
+    pub sos_marker_offset: usize,
+    pub sos_header_end: usize,
+    pub entropy_start: usize,
+    pub entropy_end: usize,
+    pub terminating_marker_offset: usize,
+    pub terminating_marker: u8,
+}
+
+#[derive(Debug, Clone)]
 pub struct JpegStructure {
     pub scan_count: usize,
     pub has_restart_markers: bool,
     pub has_trailing_segments_after_scan: bool,
     pub eoi_offset: Option<usize>,
+    pub scan_spans: Vec<JpegScanSpan>,
 }
 
 #[derive(Debug, Clone)]
@@ -581,10 +592,13 @@ impl JpegHeader {
             has_restart_markers: false,
             has_trailing_segments_after_scan: false,
             eoi_offset: None,
+            scan_spans: Vec::new(),
         };
 
-        let mut pos = 2; // skip SOI
+        let mut pos = 2;
         let mut in_scan = false;
+        let mut current_scan_start: Option<usize> = None;
+        let mut current_scan_sos_header_end: Option<usize> = None;
 
         while pos + 2 <= data.len() {
             if data[pos] != 0xFF {
@@ -621,6 +635,21 @@ impl JpegHeader {
             }
 
             if marker == 0xD9 {
+                if in_scan {
+                    if let (Some(sos_off), Some(sos_hdr_end), Some(entropy_s)) =
+                        (current_scan_start, current_scan_sos_header_end, current_scan_start)
+                    {
+                        structure.scan_spans.push(JpegScanSpan {
+                            sos_marker_offset: sos_off,
+                            sos_header_end: sos_hdr_end,
+                            entropy_start: entropy_s,
+                            entropy_end: pos,
+                            terminating_marker_offset: pos,
+                            terminating_marker: marker,
+                        });
+                    }
+                    in_scan = false;
+                }
                 structure.eoi_offset = Some(pos);
                 break;
             }
@@ -637,12 +666,29 @@ impl JpegHeader {
                     break;
                 }
 
-                pos = seg_end;
+                current_scan_start = Some(seg_end);
+                current_scan_sos_header_end = Some(seg_end);
                 in_scan = true;
+                pos = seg_end;
                 continue;
             }
 
             if in_scan {
+                if let (Some(sos_off), Some(sos_hdr_end), Some(entropy_s)) =
+                    (current_scan_start, current_scan_sos_header_end, current_scan_start)
+                {
+                    structure.scan_spans.push(JpegScanSpan {
+                        sos_marker_offset: sos_off,
+                        sos_header_end: sos_hdr_end,
+                        entropy_start: entropy_s,
+                        entropy_end: pos,
+                        terminating_marker_offset: pos,
+                        terminating_marker: marker,
+                    });
+                }
+                in_scan = false;
+                structure.has_trailing_segments_after_scan = true;
+
                 if pos + 4 > data.len() {
                     break;
                 }
@@ -651,8 +697,6 @@ impl JpegHeader {
                 if seg_end > data.len() {
                     break;
                 }
-                in_scan = false;
-                structure.has_trailing_segments_after_scan = true;
                 pos = seg_end;
                 continue;
             }

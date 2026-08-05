@@ -183,14 +183,17 @@ impl<'a> BitReader<'a> {
         self.byte_pos
     }
 
-    fn finish_scan(&self, total_mcu_count: usize, mcus_decoded: usize) -> Result<()> {
-        if mcus_decoded < total_mcu_count {
+    fn finish_scan(&self, expected_blocks: usize, decoded_blocks: usize) -> Result<()> {
+        if decoded_blocks < expected_blocks {
             return Err(TranscoderError::HuffmanDecode(format!(
-                "Early scan termination: decoded {} of {} expected MCUs",
-                mcus_decoded, total_mcu_count
+                "Early scan termination: decoded {} of {} expected blocks",
+                decoded_blocks, expected_blocks
             )));
         }
-        if self.eoi_reached {
+        if self.eoi_reached && self.bit_pos == 7 {
+            return Ok(());
+        }
+        if self.byte_pos >= self.data.len() && self.bit_pos == 7 {
             return Ok(());
         }
         if self.bit_pos < 7 {
@@ -200,8 +203,8 @@ impl<'a> BitReader<'a> {
             let pad_value = current_byte & mask;
             if pad_value != mask {
                 return Err(TranscoderError::HuffmanDecode(format!(
-                    "Invalid pad bits: expected {} 1-bits, got 0x{:02X}",
-                    remaining_bits, pad_value
+                    "Invalid pad bits: expected all-one padding, got 0x{:02X}",
+                    pad_value
                 )));
             }
         }
@@ -215,9 +218,6 @@ impl<'a> BitReader<'a> {
 
         if self.byte_pos < self.data.len() {
             if self.bit_pos == 7 {
-                // Check for a real marker at byte boundaries. Stuffed 0xFF 0x00
-                // bytes are part of the entropy stream: read the 0xFF data byte,
-                // then skip the 0x00 stuffing byte after consuming the byte.
                 if self.data[self.byte_pos] == 0xFF && self.byte_pos + 1 < self.data.len() {
                     let next = self.data[self.byte_pos + 1];
                     if next != 0x00 {
@@ -303,7 +303,6 @@ impl CoefficientDecoder {
         let mut bit_reader = BitReader::new(&self.scan_data);
         let mut result = HashMap::new();
 
-        // Calculate MCU dimensions
         let max_h_sampling = self
             .header
             .components
@@ -323,10 +322,8 @@ impl CoefficientDecoder {
         let mcu_height = (self.header.height as usize).div_ceil((max_v_sampling as usize) * 8);
         let mcus_per_row = mcu_width;
 
-        // Initialize DC predictors
         let mut dc_predictors: HashMap<u8, i16> = HashMap::new();
 
-        // Pre-build Huffman decoders once (tables are constant for the entire image)
         let mut dc_decoders: [Option<HuffmanDecoder>; 4] = [None, None, None, None];
         let mut ac_decoders: [Option<HuffmanDecoder>; 4] = [None, None, None, None];
 
@@ -360,10 +357,10 @@ impl CoefficientDecoder {
             }
         }
 
-        // Process each MCU
+        let mut decoded_blocks: usize = 0;
+
         for _mcu_y in 0..mcu_height {
             for _mcu_x in 0..mcus_per_row {
-                // Process each component
                 for comp in &self.header.components {
                     let dc_decoder =
                         dc_decoders[comp.dc_table_id as usize]
@@ -384,12 +381,10 @@ impl CoefficientDecoder {
                                 ))
                             })?;
 
-                    // Number of blocks for this component in the MCU
                     for _by in 0..comp.v_sampling {
                         for _bx in 0..comp.h_sampling {
                             let mut block = [0i16; 64];
 
-                            // Decode DC coefficient - mandatory per block
                             let dc_predictor = dc_predictors.entry(comp.component_id).or_insert(0);
                             let size =
                                 dc_decoder.decode_symbol(&mut bit_reader).ok_or_else(|| {
@@ -411,7 +406,6 @@ impl CoefficientDecoder {
                             *dc_predictor = clamped;
                             block[0] = *dc_predictor;
 
-                            // Decode AC coefficients
                             let mut k = 1;
                             while k < 64 {
                                 let ss = ac_decoder
@@ -425,11 +419,9 @@ impl CoefficientDecoder {
 
                                 if size == 0 {
                                     if run == 0 {
-                                        // EOB - end of block
                                         break;
                                     }
                                     if run == 0x0F {
-                                        // ZRL - skip 16 zeros
                                         let new_k = k + 16;
                                         if new_k > 64 {
                                             return Err(TranscoderError::HuffmanDecode(format!(
@@ -445,7 +437,6 @@ impl CoefficientDecoder {
                                         )));
                                     }
                                 } else {
-                                    // Non-zero coefficient: skip leading zeros
                                     let new_k = k + run as usize;
                                     if new_k >= 64 {
                                         return Err(TranscoderError::HuffmanDecode(format!(
@@ -468,13 +459,11 @@ impl CoefficientDecoder {
                                 }
                             }
 
-                            // Block is already in natural order:
-                            // block[ZIGZAG[k]] = magnitude stores each coefficient
-                            // at its natural (row-major) position.
                             result
                                 .entry(comp.component_id)
                                 .or_insert_with(Vec::new)
                                 .push(block);
+                            decoded_blocks += 1;
                         }
                     }
                 }
@@ -487,7 +476,12 @@ impl CoefficientDecoder {
         }
 
         let total_mcu_count = mcu_height * mcus_per_row;
-        bit_reader.finish_scan(total_mcu_count, total_mcu_count)?;
+        let mut expected_blocks: usize = 0;
+        for comp in &self.header.components {
+            expected_blocks +=
+                total_mcu_count * (comp.h_sampling as usize) * (comp.v_sampling as usize);
+        }
+        bit_reader.finish_scan(expected_blocks, decoded_blocks)?;
 
         Ok(result)
     }

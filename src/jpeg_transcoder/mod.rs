@@ -169,24 +169,23 @@ impl JpegTranscoder {
     pub fn decode_coefficients(jpeg_data: &[u8]) -> Result<(JpegHeader, Coefficients)> {
         let header = JpegHeader::parse(jpeg_data)?;
 
-        match probe_dct_support_full(&header, jpeg_data) {
-            DctSupport::Supported => {}
+        let structure = match probe_dct_support_full(&header, jpeg_data) {
+            DctSupport::Supported => JpegHeader::analyze_structure(jpeg_data),
             DctSupport::Unsupported(reason) => {
                 return Err(TranscoderError::Unsupported(format!(
                     "DCT embedding not supported for {}: {}",
                     reason, reason
                 )));
             }
-        }
+        };
 
-        // Find scan data start
-        let scan_start = scan_utils::get_scan_data_start(jpeg_data)
-            .ok_or_else(|| TranscoderError::InvalidFormat("Could not find scan data".into()))?;
+        let scan_span = structure.scan_spans.first().ok_or_else(|| {
+            TranscoderError::InvalidFormat("No scan span found in supported JPEG".into())
+        })?;
 
-        let scan_data = jpeg_data[scan_start..].to_vec();
+        let entropy_slice = &jpeg_data[scan_span.entropy_start..scan_span.entropy_end];
 
-        // Decode coefficients
-        let decoder = CoefficientDecoder::new(header.clone(), scan_data);
+        let decoder = CoefficientDecoder::new(header.clone(), entropy_slice.to_vec());
         let coefficients = decoder.decode()?;
 
         Ok((header, coefficients))
