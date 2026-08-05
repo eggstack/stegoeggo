@@ -438,9 +438,7 @@ impl JpegHeader {
                 counts[i] = data[pos + 1 + i] as u16;
                 total = total
                     .checked_add(counts[i])
-                    .ok_or_else(|| {
-                        TranscoderError::InvalidFormat("DHT count overflow".into())
-                    })?;
+                    .ok_or_else(|| TranscoderError::InvalidFormat("DHT count overflow".into()))?;
             }
 
             if total > 256 {
@@ -490,7 +488,10 @@ impl JpegHeader {
         if total != values.len() {
             return Err(TranscoderError::InvalidFormat(format!(
                 "DHT table {} (class {}): count sum {} != value count {}",
-                table_id, table_class, total, values.len()
+                table_id,
+                table_class,
+                total,
+                values.len()
             )));
         }
 

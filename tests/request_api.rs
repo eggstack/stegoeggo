@@ -4,9 +4,8 @@ use image::ImageEncoder;
 use stegoeggo::{
     process_image_bytes, process_request_bytes, process_request_bytes_with_report, resolve_request,
     AuthenticationMode, DmiValue, HiddenMarkerMode, ImageOutputFormat, LegalMetadata,
-    ProtectionChannels, ProtectionContext, ProtectionLevel, ProtectionPreset,
-    ProtectionRequest, ProtectionWarning, ResourceLimits, RightsNotice, RightsPolicy,
-    VerificationStatus,
+    ProtectionChannels, ProtectionContext, ProtectionLevel, ProtectionPreset, ProtectionRequest,
+    ProtectionWarning, ResourceLimits, RightsNotice, RightsPolicy, VerificationStatus,
 };
 
 fn create_test_image(width: u32, height: u32) -> image::DynamicImage {

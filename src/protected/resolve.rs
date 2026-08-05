@@ -20,7 +20,7 @@ pub fn resolve_request(
         let has_constraints =
             notice.ai_constraints().is_some() || notice.web_statement_of_rights().is_some();
         if !has_constraints {
-            let meta_provides_constraints = request.legal_metadata().map_or(false, |meta| {
+            let meta_provides_constraints = request.legal_metadata().is_some_and(|meta| {
                 meta.ai_constraints().is_some() || meta.web_statement_of_rights().is_some()
             });
             if !meta_provides_constraints {

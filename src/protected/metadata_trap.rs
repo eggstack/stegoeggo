@@ -416,8 +416,7 @@ impl RightsMetadataProtector {
             vp8x_flags |= 0x08;
         }
 
-        let vp8x_data =
-            crate::webp_container::encode_vp8x_chunk(width, height, vp8x_flags)?;
+        let vp8x_data = crate::webp_container::encode_vp8x_chunk(width, height, vp8x_flags)?;
         output.extend_from_slice(b"VP8X");
         output.extend_from_slice(&(vp8x_data.len() as u32).to_le_bytes());
         output.extend_from_slice(&vp8x_data);
