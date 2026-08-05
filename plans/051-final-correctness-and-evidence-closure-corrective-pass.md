@@ -1,6 +1,6 @@
 # Plan 051: Final Correctness and Evidence Closure Corrective Pass
 
-Status: Ready for implementation
+Status: PARTIAL — remaining closure delegated to Plan 052
 
 Audited baseline: `main` at `b3a08587861a17e9b290ba34fd82ca5e65575a92`
 
