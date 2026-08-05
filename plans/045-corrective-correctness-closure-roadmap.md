@@ -1,6 +1,6 @@
 # Roadmap 045: Post-044 Correctness and Evidence Closure
 
-Status: Ready for implementation
+Status: COMPLETE
 
 Audited baseline: `main` at `4d2e849f40049bef6416cfdc4970ba576d269869`
 

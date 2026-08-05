@@ -1,9 +1,10 @@
 use image::{DynamicImage, ImageEncoder};
 use stegoeggo::{
-    process_image_async, process_image_bytes_async, process_images_bytes_parallel_async,
-    process_images_parallel_async, verify_image_bytes_async, ProtectionContext, ProtectionLevel,
-    SteganographyProtector, VerificationStatus,
+    process_image_async, process_image_bytes_async, verify_image_bytes_async, ProtectionContext,
+    ProtectionLevel, SteganographyProtector, VerificationStatus,
 };
+#[cfg(feature = "parallel")]
+use stegoeggo::{process_images_bytes_parallel_async, process_images_parallel_async};
 
 fn create_test_image(width: u32, height: u32) -> DynamicImage {
     DynamicImage::new_rgb8(width, height)
@@ -69,6 +70,7 @@ mod single_image {
     }
 }
 
+#[cfg(feature = "parallel")]
 mod parallel {
     use super::*;
 

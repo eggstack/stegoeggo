@@ -1,6 +1,9 @@
 # Plan 044: Cross-Format Correctness and Scope Closure
 
-Status: Complete
+Status: SUPERSEDED BY 045-050
+
+> This completion claim was corrected by Roadmap 045 and Plans 046-050.
+> The original tests accepted permissive behavior that contradicted the plan criteria.
 
 Baseline: `main` after Plan 043 planning commit `6dc16ccab97e42b4694d38d728ded306e059a295`
 

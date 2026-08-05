@@ -1374,6 +1374,10 @@ fn plan_to_context(plan: &ResolvedProtectionPlan) -> ProtectionContext {
         ProtectionContext::new(plan.intensity(), plan.seed()).with_format(plan.output_format());
     ctx.set_input_format(plan.input_format());
 
+    if let Some(dmi) = plan.effective_dmi() {
+        ctx = ctx.with_dmi(dmi);
+    }
+
     if let Some(key) = plan.mac_key() {
         ctx = ctx.with_mac_key(key.to_vec());
     }
@@ -1402,6 +1406,8 @@ fn plan_to_context(plan: &ResolvedProtectionPlan) -> ProtectionContext {
 
     if let Some(dmi) = plan.effective_dmi() {
         ctx = ctx.with_dmi(dmi);
+    } else if plan.effective_policy() == RightsPolicy::Unspecified {
+        ctx = ctx.with_dmi(DmiValue::Unspecified);
     }
 
     ctx = ctx.with_resource_limits(plan.resource_limits().clone());
@@ -1779,6 +1785,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "parallel")]
     #[test]
     fn test_parallel_processing() {
         let images: Vec<DynamicImage> = (0..4).map(|_| DynamicImage::new_rgb8(16, 16)).collect();

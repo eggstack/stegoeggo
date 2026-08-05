@@ -2,11 +2,12 @@
 
 use image::{DynamicImage, ImageEncoder};
 use stegoeggo::{
-    process_image, process_image_bytes, process_images_bytes_parallel, process_images_parallel,
-    DmiValue, EvidenceProfile, ImageOutputFormat, LegalMetadata, PassthroughProtector,
-    ProtectionContext, ProtectionLevel, ProtectionPipeline, RightsMetadataProtector,
-    SteganographyProtector, VerificationStatus,
+    process_image, process_image_bytes, DmiValue, EvidenceProfile, ImageOutputFormat,
+    LegalMetadata, PassthroughProtector, ProtectionContext, ProtectionLevel, ProtectionPipeline,
+    RightsMetadataProtector, SteganographyProtector, VerificationStatus,
 };
+#[cfg(feature = "parallel")]
+use stegoeggo::{process_images_bytes_parallel, process_images_parallel};
 
 fn create_test_image(width: u32, height: u32) -> DynamicImage {
     DynamicImage::new_rgb8(width, height)
@@ -526,6 +527,7 @@ mod steganography {
     }
 }
 
+#[cfg(feature = "parallel")]
 mod parallel_processing {
     use super::*;
 
@@ -842,6 +844,7 @@ mod utilities {
         assert_eq!(format, Some(ImageOutputFormat::Jpeg));
     }
 
+    #[cfg(feature = "iscc")]
     #[test]
     fn test_iscc_computation() {
         let img = create_test_image(32, 32);
@@ -850,6 +853,7 @@ mod utilities {
         assert!(!ci.full().is_empty(), "ISCC should be computed");
     }
 
+    #[cfg(feature = "iscc")]
     #[test]
     fn test_iscc_from_bytes() {
         let img_bytes = image_to_png_bytes(&create_test_image(32, 32));
