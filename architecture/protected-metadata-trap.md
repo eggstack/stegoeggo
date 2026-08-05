@@ -81,7 +81,7 @@ Injects two chunk types:
 ### WebP
 
 Injects into a valid extended WebP container:
-1. **VP8X chunk** — Created when converting simple VP8/VP8L to extended WebP; contains correct canvas dimensions (3-byte LE) and feature flags (XMP, ICC, Alpha, Animation)
+1. **VP8X chunk** — Created when converting simple VP8/VP8L to extended WebP; contains correct canvas dimensions (3-byte LE) and feature flags derived from final output chunks (XMP=0x04, ICC=0x20, EXIF=0x08, Alpha=0x10, Animation=0x02)
 2. **XMP chunk** — Canonical rights metadata: `plus:DataMining` DMI, seed (`stegoeggo:ProtectionSeed`), plus legal fields (`dc:rights`, `dc:creator`, `xmpRights:UsageTerms`, `stegoeggo:AIConstraints`, `photoshop:Credit`, etc.). At most one XMP chunk in output; existing non-StegoEggo XMP properties preserved under `ReplaceStegoOwned`.
 3. **No EXIF seed emission** — EXIF seed chunks are no longer emitted. Historical EXIF seed data is still parsed for backward compatibility. Seed is available via XMP.
 
@@ -109,7 +109,7 @@ All format writers (PNG tEXt, JPEG COM, WebP XMP) consume the same `RightsNotice
 
 - **PNG**: New tEXt chunks are appended before IEND. Existing StegoEggo tEXt chunks are not removed; extraction returns the most recently written value.
 - **JPEG**: New COM markers are appended before the Start-of-Scan marker. Existing COM markers are not removed; extraction returns the most recently written value.
-- **WebP**: XMP chunk is merged/replaced — existing non-StegoEggo XMP properties are preserved, StegoEggo-owned properties are replaced, result emitted as one XMP chunk. VP8X flags updated to reflect chunk presence.
+- **WebP**: XMP chunk is merged/replaced — existing non-StegoEggo XMP properties are preserved, StegoEggo-owned properties are replaced, result emitted as one XMP chunk. Output loop skips original XMP chunks to prevent duplicates. VP8X flags derived from final emitted chunk inventory.
 - **DMI and seed values**: Always replaced regardless of policy, because they are protection-critical and must match the current processing context.
 
 ### Idempotency

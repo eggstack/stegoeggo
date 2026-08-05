@@ -393,6 +393,9 @@ impl RightsMetadataProtector {
         if !metadata_chunks.is_empty() {
             vp8x_flags |= 0x04;
         }
+        if parsed.has_exif {
+            vp8x_flags |= 0x08;
+        }
 
         let mut output = Vec::new();
         output.extend_from_slice(b"RIFF");
@@ -441,7 +444,7 @@ impl RightsMetadataProtector {
         }
 
         for chunk in &parsed.chunks {
-            if chunk.fourcc_str() == "VP8X" {
+            if chunk.fourcc_str() == "VP8X" || chunk.fourcc_str() == "XMP " {
                 continue;
             }
             let data_end = chunk.data_start + chunk.data_len;
@@ -502,7 +505,8 @@ impl RightsMetadataProtector {
                 if Self::xmp_has_stego_properties(existing) {
                     continue;
                 }
-                let xmp_chunk = Self::create_webp_xmp_chunk_data(new_xmp_data);
+                let merged = Self::merge_xmp_preserve_unrelated(existing, new_xmp_data);
+                let xmp_chunk = Self::create_webp_xmp_chunk_data(&merged);
                 metadata_chunks.push((*b"XMP ", xmp_chunk));
                 return Ok(());
             }
@@ -510,6 +514,92 @@ impl RightsMetadataProtector {
         let xmp_chunk = Self::create_webp_xmp_chunk_data(new_xmp_data);
         metadata_chunks.push((*b"XMP ", xmp_chunk));
         Ok(())
+    }
+
+    fn merge_xmp_preserve_unrelated(existing_xmp: &[u8], new_xmp: &[u8]) -> Vec<u8> {
+        let existing_str = match std::str::from_utf8(existing_xmp) {
+            Ok(s) => s,
+            Err(_) => return new_xmp.to_vec(),
+        };
+        let new_str = match std::str::from_utf8(new_xmp) {
+            Ok(s) => s,
+            Err(_) => return new_xmp.to_vec(),
+        };
+
+        let rdf_start = match existing_str.find("<rdf:RDF") {
+            Some(i) => i,
+            None => return new_xmp.to_vec(),
+        };
+        let rdf_end = match existing_str.rfind("</rdf:RDF>") {
+            Some(i) => i + "</rdf:RDF>".len(),
+            None => return new_xmp.to_vec(),
+        };
+        let rdf_content = &existing_str[rdf_start..rdf_end];
+
+        let mut unrelated_descs = Vec::new();
+        let mut search_from = 0;
+        while let Some(desc_start) = rdf_content[search_from..].find("<rdf:Description") {
+            let abs_start = search_from + desc_start;
+            let tag_content = &rdf_content[abs_start..];
+            let angle_end = match tag_content.find('>') {
+                Some(i) => i,
+                None => break,
+            };
+            let is_self_closing = tag_content[..angle_end].ends_with('/');
+            let desc_end = if is_self_closing {
+                abs_start + angle_end + 1
+            } else {
+                match rdf_content[abs_start..].find("</rdf:Description>") {
+                    Some(i) => abs_start + i + "</rdf:Description>".len(),
+                    None => break,
+                }
+            };
+            let desc_tag_close = abs_start + angle_end + 1;
+            let has_stego = rdf_content[abs_start..desc_tag_close].contains("plus:DataMining")
+                || rdf_content[abs_start..desc_tag_close].contains("stegoeggo:");
+            if has_stego {
+                search_from = desc_end;
+                continue;
+            }
+            let full_desc = &rdf_content[abs_start..desc_end];
+            if !full_desc.contains("stegoeggo:") && !full_desc.contains("plus:DataMining") {
+                unrelated_descs.push(full_desc.to_string());
+            }
+            search_from = desc_end;
+        }
+
+        if unrelated_descs.is_empty() {
+            return new_xmp.to_vec();
+        }
+
+        let new_rdf_start = match new_str.find("<rdf:RDF") {
+            Some(i) => i,
+            None => return new_xmp.to_vec(),
+        };
+        let new_rdf_end = match new_str.rfind("</rdf:RDF>") {
+            Some(i) => i + "</rdf:RDF>".len(),
+            None => return new_xmp.to_vec(),
+        };
+        let new_rdf = &new_str[new_rdf_start..new_rdf_end];
+
+        let mut result = String::new();
+        result.push_str(&new_str[..new_rdf_start]);
+        result.push_str("<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">");
+
+        for desc in &unrelated_descs {
+            result.push_str(desc);
+        }
+
+        let inner_start = match new_rdf.find('>') {
+            Some(i) => i + 1,
+            None => return new_xmp.to_vec(),
+        };
+        let inner_end = new_rdf.rfind('<').unwrap_or(new_rdf.len());
+        result.push_str(&new_rdf[inner_start..inner_end]);
+        result.push_str("</rdf:RDF>");
+        result.push_str(&new_str[new_rdf_end..]);
+
+        result.into_bytes()
     }
 
     fn build_legal_props_from_notice(notice: &RightsNotice) -> String {

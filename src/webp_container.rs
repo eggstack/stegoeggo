@@ -29,6 +29,7 @@ pub(crate) struct ParsedWebP {
     pub chunks: Vec<RiffChunk>,
     pub vp8x_index: Option<usize>,
     pub has_xmp: bool,
+    pub has_exif: bool,
     pub has_icc: bool,
     pub has_alpha: bool,
     pub has_animation: bool,
@@ -59,6 +60,7 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
     let mut image_kind: Option<WebPImageKind> = None;
     let mut vp8x_index: Option<usize> = None;
     let mut has_xmp = false;
+    let mut has_exif = false;
     let mut has_icc = false;
     let mut has_alpha = false;
     let mut has_animation = false;
@@ -123,6 +125,9 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
             b"XMP " => {
                 has_xmp = true;
             }
+            b"EXIF" => {
+                has_exif = true;
+            }
             _ => {}
         }
 
@@ -148,6 +153,7 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
         chunks,
         vp8x_index,
         has_xmp,
+        has_exif,
         has_icc,
         has_alpha,
         has_animation,

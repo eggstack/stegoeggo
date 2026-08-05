@@ -695,8 +695,11 @@ The library injects rights-reservation and AI-training restriction metadata into
 - COM markers for text metadata
 - APP1 XMP packets with `plus:DataMining` (full URI canonical) and legacy `Iptc4xmpExt:DMI-*` (parsed only)
 
-**WebP:** EXIF and XML chunks
-- Similar metadata injection with XMP-based DMI
+**WebP:** XMP chunks in extended container
+- At most one XMP chunk in output; unrelated XMP properties preserved under `ReplaceStegoOwned`
+- VP8X feature flags derived from final output chunks (XMP, ICC, EXIF, Alpha, Animation)
+- Simple VP8/VP8L automatically promoted to extended VP8X when metadata is added
+- No new EXIF seed chunks emitted; historical EXIF seeds still parsed for backward compatibility
 
 ### 2. Steganography (Optional)
 

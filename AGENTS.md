@@ -130,11 +130,13 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 **WebP container correctness:**
 
-- **VP8X dimensions are 3-byte LE** — The `image-webp` decoder reads canvas width/height as 3-byte little-endian values. The4-byte layout in the WebP spec diagram is misleading; use `encode_vp8x_chunk` which writes correct 3-byte encoding.
+- **VP8X dimensions are 3-byte LE** — The `image-webp` decoder reads canvas width/height as 3-byte little-endian values. The 4-byte layout in the WebP spec diagram is misleading; use `encode_vp8x_chunk` which writes correct 3-byte encoding.
 - **VP8X flags bit positions** — ICC=0x20, Alpha=0x10, EXIF=0x08, XMP=0x04, Animation=0x02. The EXIF bit (0x08) must NOT be set when no EXIF chunk is present, or `image-webp` returns `ChunkMissing`.
+- **VP8X flags derived from final output** — Flags are computed from the actual emitted chunk inventory, not from stale input booleans. Existing EXIF causes the EXIF bit to remain set; removed metadata clears the corresponding bit.
 - **Simple → extended conversion** — Metadata insertion into VP8/VP8L creates VP8X with correct dimensions and flags. VP8X is emitted first, image payload preserved byte-identical, metadata appended after.
 - **EXIF seed emission retired** — No new EXIF seed chunks are emitted. Seed is stored in XMP via `stegoeggo:ProtectionSeed`. Historical EXIF seed data is still parsed for backward compatibility.
-- **One effective XMP chunk** — `merge_or_replace_webp_xmp` ensures at most one XMP chunk in output. Existing non-StegoEggo XMP properties are preserved under `ReplaceStegoOwned`.
+- **One effective XMP chunk** — Output loop skips original XMP chunks; `merge_or_replace_webp_xmp` prepares the replacement. Existing non-StegoEggo XMP properties are preserved under `ReplaceStegoOwned`. Identical duplicate XMP chunks collapse to one.
+- **Bounded XMP merge** — `merge_xmp_preserve_unrelated` extracts unrelated `rdf:Description` blocks (including self-closing tags) from the existing XMP and preserves them in the sole output packet alongside the new StegoEggo rights properties.
 - **Animation not rewritten** — Animated WebP metadata insertion operates on container only; frame chunks are not decoded or rewritten.
 
 **Metadata and API traps:**
