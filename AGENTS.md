@@ -126,7 +126,8 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Truncation is a hard error** — `read_magnitude` returns `Err` on truncated data instead of producing partial blocks.
 - **Malformed entropy fails closed** — Missing DC/AC symbols, AC run overflow, invalid zero-size symbols, and truncated magnitude data all return `HuffmanDecode` errors. Malformed entropy never produces partial successful coefficient maps.
 - **Canonical Huffman construction advances unconditionally** — Both decoder and encoder advance the code through every bit-length slot including zero-count lengths. Empty slots get sentinel values. This ensures correct code assignments for tables with intermediate empty lengths.
-- **Huffman table validation** — `validate_huffman_table()` checks count/value sum consistency, non-empty tables, unique symbols, and code-space oversubscription. Tables are rejected deterministically without panic. Exact SOS DC/AC table references are required; table-0 fallback is removed from both decoder and encoder.
+- **Huffman table validation** — `validate_huffman_table()` checks count/value sum consistency, non-empty tables, unique symbols, and code-space oversubscription. Tables are rejected deterministically without panic. Only DHT class 0 (DC) and class 1 (AC) are accepted; classes 2-15 are rejected as malformed. Exact SOS DC/AC table references are required; table-0 fallback is removed from both decoder and encoder.
+- **Shared canonical Huffman representation** — `build_canonical_huffman_entries()` is the single checked builder for both encoder and decoder Huffman state. It validates counts/values, uniqueness, and code-space before constructing entries.
 - **Metadata-only JPEG is byte-safe** — `inject_text_chunks_jpeg` walks the raw byte stream, preserving all pre-SOS segments verbatim. No coefficient decode/encode occurs.
 
 **WebP container correctness:**
@@ -134,10 +135,18 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **VP8X dimensions are 3-byte LE** — The `image-webp` decoder reads canvas width/height as 3-byte little-endian values. The 4-byte layout in the WebP spec diagram is misleading; use `encode_vp8x_chunk` which writes correct 3-byte encoding.
 - **VP8X flags bit positions** — ICC=0x20, Alpha=0x10, EXIF=0x08, XMP=0x04, Animation=0x02. The EXIF bit (0x08) must NOT be set when no EXIF chunk is present, or `image-webp` returns `ChunkMissing`.
 - **VP8X flags derived from final output** — Flags are computed from the actual emitted chunk inventory, not from stale input booleans. Existing EXIF causes the EXIF bit to remain set; removed metadata clears the corresponding bit.
+- **VP8X structural validation** — VP8X payload length must be exactly 10 bytes. Reserved flag bits (0xC3 mask) and reserved bytes 1-3 must be zero. Zero dimensions are rejected.
+- **VP8X-only container rejected** — VP8X without a VP8, VP8L, or ANMF payload is rejected as invalid.
+- **Primary payload rules** — Duplicate VP8, duplicate VP8L, and VP8+VP8L conflicts are rejected. ALPH paired with VP8L is rejected (VP8L has intrinsic alpha). Duplicate ALPH chunks are rejected.
 - **Simple → extended conversion** — Metadata insertion into VP8/VP8L creates VP8X with correct dimensions and flags. VP8X is emitted first, image payload preserved byte-identical, metadata appended after.
+- **RIFF extent equality** — Rewrite parsing requires `declared_end == data.len()`. Both oversized and undersized RIFF declarations are rejected. Chunk padded ends are validated against declared extent.
+- **Final cursor and pad-byte containment** — After chunk iteration, cursor must equal declared extent. Odd-sized chunks require a contained physical pad byte.
+- **VP8L intrinsic alpha** — `vp8l_has_alpha()` parses the VP8L signature byte and reads bit 28 of the 5-byte header to detect intrinsic alpha without full image decode.
+- **ALPH chunk tracking** — `ParsedWebP.alph_indices` tracks ALPH chunks. ALPH without VP8 is structurally invalid.
+- **Final output validator** — `validate_webp_output()` reparses output bytes, recomputes expected VP8X flags from chunk inventory, and verifies exact match.
 - **EXIF seed emission retired** — No new EXIF seed chunks are emitted. Seed is stored in XMP via `stegoeggo:ProtectionSeed`. Historical EXIF seed data is still parsed for backward compatibility.
 - **One effective XMP chunk** — Output loop skips original XMP chunks; `merge_or_replace_webp_xmp` prepares the replacement. Existing non-StegoEggo XMP properties are preserved under `ReplaceStegoOwned`. Identical duplicate XMP chunks collapse to one.
-- **Bounded XMP merge** — `extract_unrelated_descriptions` extracts unrelated `rdf:Description` blocks (including self-closing tags) from all existing XMP packets and preserves them in the sole output packet alongside the new StegoEggo rights properties.
+- **Bounded XMP merge** — `extract_unrelated_descriptions` processes all existing XMP packets (not just non-owned ones). `strip_stego_owned_fields` removes owned attributes and child elements at field level, preserving unrelated content in mixed descriptions.
 - **Animation not rewritten** — Animated WebP metadata insertion operates on container only; frame chunks are not decoded or rewritten.
 
 **Metadata and API traps:**

@@ -7,6 +7,94 @@
 use super::{JpegHeader, Result, TranscoderError};
 use std::collections::HashMap;
 
+#[derive(Clone, Copy, Debug)]
+struct CanonicalHuffmanEntry {
+    symbol: u8,
+    code: u16,
+    bit_len: u8,
+}
+
+fn build_canonical_huffman_entries(
+    counts: &[u16; 16],
+    values: &[u8],
+) -> Result<Vec<CanonicalHuffmanEntry>> {
+    let total: usize = counts.iter().map(|&c| c as usize).sum();
+    if total != values.len() {
+        return Err(TranscoderError::HuffmanDecode(format!(
+            "Canonical Huffman: count sum {} != value count {}",
+            total,
+            values.len()
+        )));
+    }
+    if total == 0 {
+        return Err(TranscoderError::HuffmanDecode(
+            "Canonical Huffman: empty table".into(),
+        ));
+    }
+    if total > 256 {
+        return Err(TranscoderError::HuffmanDecode(format!(
+            "Canonical Huffman: {} symbols exceeds maximum of 256",
+            total
+        )));
+    }
+
+    let mut seen = [false; 256];
+    for &v in values {
+        if seen[v as usize] {
+            return Err(TranscoderError::HuffmanDecode(format!(
+                "Canonical Huffman: duplicate symbol 0x{:02X}",
+                v
+            )));
+        }
+        seen[v as usize] = true;
+    }
+
+    let mut available: i64 = 1;
+    for &count in counts {
+        available = available
+            .checked_mul(2)
+            .ok_or_else(|| TranscoderError::HuffmanDecode("Huffman code space overflow".into()))?;
+        available = available.checked_sub(count as i64).ok_or_else(|| {
+            TranscoderError::HuffmanDecode("Huffman code space oversubscribed".into())
+        })?;
+        if available < 0 {
+            return Err(TranscoderError::HuffmanDecode(
+                "Huffman code space oversubscribed".into(),
+            ));
+        }
+    }
+
+    let mut entries = Vec::with_capacity(total);
+    let mut code: u16 = 0;
+    let mut value_idx = 0;
+
+    for (len, &count) in counts.iter().enumerate() {
+        for _ in 0..count {
+            if value_idx >= values.len() {
+                return Err(TranscoderError::HuffmanDecode(format!(
+                    "Canonical Huffman: value index {} exceeds value count {}",
+                    value_idx,
+                    values.len()
+                )));
+            }
+            entries.push(CanonicalHuffmanEntry {
+                symbol: values[value_idx],
+                code,
+                bit_len: (len + 1) as u8,
+            });
+            code = code.checked_add(1).ok_or_else(|| {
+                TranscoderError::HuffmanDecode("Huffman code increment overflow".into())
+            })?;
+            value_idx += 1;
+        }
+        code = code
+            .checked_shl(1)
+            .ok_or_else(|| TranscoderError::HuffmanDecode("Huffman code shift overflow".into()))?;
+    }
+
+    Ok(entries)
+}
+
 /// Zigzag ordering for 8x8 DCT blocks
 pub const ZIGZAG: [usize; 64] = [
     0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20,
@@ -79,36 +167,19 @@ struct HuffmanEncoderTable {
 
 impl HuffmanEncoderTable {
     fn build(table: &super::HuffmanTable) -> Result<Self> {
+        let entries_canonical = build_canonical_huffman_entries(&table.counts, &table.values)?;
         let mut entries = [(0u16, u8::MAX); 256];
-        let counts = &table.counts;
-        let values = &table.values;
-        let mut code: u16 = 0;
-        let mut value_idx = 0;
-        for (len, &count) in counts.iter().enumerate() {
-            for _ in 0..count {
-                if value_idx >= values.len() {
-                    return Err(TranscoderError::HuffmanEncode(format!(
-                        "Huffman value index {} exceeds value count {}",
-                        value_idx,
-                        values.len()
-                    )));
-                }
-                entries[values[value_idx] as usize] = (code, (len + 1) as u8);
-                code = code.checked_add(1).ok_or_else(|| {
-                    TranscoderError::HuffmanEncode("Huffman code overflow".into())
-                })?;
-                value_idx += 1;
-            }
-            code = code.checked_shl(1).ok_or_else(|| {
-                TranscoderError::HuffmanEncode("Huffman code shift overflow".into())
-            })?;
+        for entry in &entries_canonical {
+            entries[entry.symbol as usize] = (entry.code, entry.bit_len);
         }
         Ok(Self { entries })
     }
 }
 
 impl HuffmanDecoder {
-    fn from_table(counts: &[u16; 16], values: &[u8]) -> Self {
+    fn from_table(counts: &[u16; 16], values: &[u8]) -> Result<Self> {
+        let _entries = build_canonical_huffman_entries(counts, values)?;
+
         let mut min_code = [-1i32; 16];
         let mut max_code = [-1i32; 16];
         let mut val_offset = [-1i32; 16];
@@ -128,12 +199,12 @@ impl HuffmanDecoder {
             code <<= 1;
         }
 
-        Self {
+        Ok(Self {
             min_code,
             max_code,
             val_offset,
             values: values.to_vec(),
-        }
+        })
     }
 
     fn decode_symbol(&self, bit_reader: &mut BitReader) -> Option<u8> {
@@ -217,22 +288,23 @@ impl<'a> BitReader<'a> {
         }
 
         if self.byte_pos < self.data.len() {
-            if self.bit_pos == 7 {
-                if self.data[self.byte_pos] == 0xFF && self.byte_pos + 1 < self.data.len() {
-                    let next = self.data[self.byte_pos + 1];
-                    if next != 0x00 {
-                        if next == 0xD9 {
-                            self.eoi_reached = true;
-                            return None;
-                        }
-                        if (0xD0..=0xD7).contains(&next) {
-                            self.byte_pos += 2;
-                            self.restart_seen = true;
-                            return self.read_bit();
-                        }
+            if self.bit_pos == 7
+                && self.data[self.byte_pos] == 0xFF
+                && self.byte_pos + 1 < self.data.len()
+            {
+                let next = self.data[self.byte_pos + 1];
+                if next != 0x00 {
+                    if next == 0xD9 {
                         self.eoi_reached = true;
                         return None;
                     }
+                    if (0xD0..=0xD7).contains(&next) {
+                        self.byte_pos += 2;
+                        self.restart_seen = true;
+                        return self.read_bit();
+                    }
+                    self.eoi_reached = true;
+                    return None;
                 }
             }
 
@@ -339,7 +411,8 @@ impl CoefficientDecoder {
                             comp.dc_table_id, comp.component_id
                         ))
                     })?;
-                dc_decoders[dc_id] = Some(HuffmanDecoder::from_table(&table.counts, &table.values));
+                dc_decoders[dc_id] =
+                    Some(HuffmanDecoder::from_table(&table.counts, &table.values)?);
             }
 
             let ac_id = comp.ac_table_id as usize;
@@ -353,7 +426,8 @@ impl CoefficientDecoder {
                             comp.ac_table_id, comp.component_id
                         ))
                     })?;
-                ac_decoders[ac_id] = Some(HuffmanDecoder::from_table(&table.counts, &table.values));
+                ac_decoders[ac_id] =
+                    Some(HuffmanDecoder::from_table(&table.counts, &table.values)?);
             }
         }
 

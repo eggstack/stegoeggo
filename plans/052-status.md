@@ -2,7 +2,7 @@
 
 Plan baseline SHA: `c9d4d4f1edf6d43557c85c1d5c121d0071eeeaa1`
 
-Disposition: OPEN
+Disposition: **PARTIAL — implementation complete, pending final CI evidence**
 
 This plan closes the remaining container-boundary and metadata-preservation defects identified by post-Plan-051 audit. It does not authorize format expansion, public API redesign, additional protection policies, new cryptography, release work, or broader CI.
 
@@ -26,27 +26,27 @@ The following Plan 051 items remain correctly closed and are not reopened:
 
 ---
 
-## Open defect rows
+## Completed defect rows
 
-| Item | Status |
-|------|--------|
-| JPEG exact entropy span | OPEN |
-| JPEG exact exhaustion | OPEN |
-| JPEG DHT class validation | OPEN |
-| Shared canonical Huffman representation | OPEN |
-| WebP declared RIFF equality | OPEN |
-| WebP final cursor and pad validation | OPEN |
-| WebP primary payload validation | OPEN |
-| WebP VP8X structural validation | OPEN |
-| Mixed XMP field preservation | OPEN |
-| Malformed XMP fail-closed behavior | OPEN |
-| VP8L alpha detection | OPEN |
-| ANMF alpha detection | OPEN |
-| Final WebP validator | OPEN |
-| Focused fixtures | OPEN |
-| Workspace verification | OPEN |
-| Current-head CI evidence | OPEN |
-| Publication hold | no publication is part of this plan |
+| Item | Status | Evidence |
+|------|--------|----------|
+| JPEG exact entropy span | CLOSED | `JpegScanSpan` returns exact offsets; decoder receives `entropy_start..entropy_end` slice only |
+| JPEG exact exhaustion | CLOSED | `finish_scan()` validates expected vs decoded blocks; pad bits checked |
+| JPEG DHT class validation | CLOSED | `parse_dht()` rejects `table_class > 1` before table storage |
+| Shared canonical Huffman representation | CLOSED | `build_canonical_huffman_entries()` validates and both encoder/decoder derive from it |
+| WebP declared RIFF equality | CLOSED | `parse_webp()` requires `declared_end == data.len()` |
+| WebP final cursor and pad validation | CLOSED | Chunk padded end checked against declared end; final cursor equality enforced |
+| WebP primary payload validation | CLOSED | VP8X-only rejected; duplicate VP8/VP8L rejected; VP8+VP8L conflict rejected |
+| WebP VP8X structural validation | CLOSED | Payload length ==10 validated; reserved bits (0xC3 mask) rejected; reserved bytes rejected; zero dimensions rejected |
+| Mixed XMP field preservation | CLOSED | `extract_unrelated_descriptions()` processes all packets; `strip_stego_owned_fields()` filters at attribute/element level |
+| Malformed XMP fail-closed behavior | CLOSED | UTF-8 validation; missing rdf:RDF fails; owned fields stripped via deterministic parser |
+| VP8L alpha detection | CLOSED | `vp8l_has_alpha()` parses VP8L signature byte and alpha bit from 5-byte header |
+| ANMF alpha detection | CLOSED | ALPH chunk tracking added; ALPH+VP8L conflict rejected; duplicate ALPH rejected |
+| Final WebP validator | CLOSED | `validate_webp_output()` reparses output and verifies VP8X flags match chunk inventory |
+| Focused fixtures | CLOSED | 15 new tests: DHT class, VP8X structure, primary payload, VP8L alpha, output validation |
+| Workspace verification | CLOSED | `cargo fmt`, clippy, no-default-features, full test suite all pass |
+| Current-head CI evidence | PENDING | Local `scripts/check.sh` pass recorded; remote CI pending push |
+| Publication hold | RETAINED | No publication is part of this plan |
 
 ---
 
@@ -54,9 +54,21 @@ The following Plan 051 items remain correctly closed and are not reopened:
 
 | item | audited source path | exact contract | implementation commit | focused fixture/test | observed result | disposition |
 |------|---------------------|----------------|----------------------|---------------------|-----------------|-------------|
-| | | | | | | |
-
-Rows will be populated as each defect is closed.
+| JPEG DHT class >1 rejected | `header.rs:432` | `table_class > 1` fails before storage | pending | `parse_dht_rejects_class_2`, `parse_dht_rejects_class_15` | Error returned | CLOSED |
+| Shared canonical Huffman | `entropy.rs:46-119` | Both encoder/decoder validate through `build_canonical_huffman_entries` | pending | All existing Huffman tests + `dct_stego_high_capacity_*` | 1398 pass | CLOSED |
+| RIFF declared == physical | `webp_container.rs:64` | `declared_end != data.len()` fails | pending | `parse_rejects_riff_size_smaller_than_input` | Error returned | CLOSED |
+| VP8X payload length ==10 | `webp_container.rs:133` | `chunk_size != 10` fails | pending | `parse_rejects_vp8x_wrong_payload_length` | Error returned | CLOSED |
+| VP8X reserved bits | `webp_container.rs:139` | `flags & 0xC3 != 0` fails | pending | `parse_rejects_vp8x_reserved_flags` | Error returned | CLOSED |
+| VP8X reserved bytes | `webp_container.rs:146` | bytes 1-3 non-zero fails | pending | `parse_rejects_vp8x_reserved_bytes` | Error returned | CLOSED |
+| VP8X-only rejected | `webp_container.rs:258` | VP8X without VP8/VP8L/ANMF fails | pending | `parse_rejects_vp8x_only_container` | Error returned | CLOSED |
+| Duplicate VP8 rejected | `webp_container.rs:231` | `vp8_indices.len() > 1` fails | pending | `parse_rejects_duplicate_vp8` | Error returned | CLOSED |
+| VP8+VP8L conflict | `webp_container.rs:235` | Both non-empty fails | pending | `parse_rejects_vp8_and_vp8l_conflict` | Error returned | CLOSED |
+| ALPH validation | `webp_container.rs:240-248` | Duplicate ALPH and ALPH+VP8L rejected | pending | Existing conformance tests | Pass | CLOSED |
+| VP8L intrinsic alpha | `webp_container.rs:305-317` | `vp8l_has_alpha()` reads bit 28 of header | pending | `vp8l_detects_alpha`, `vp8l_detects_no_alpha` | Correct | CLOSED |
+| XMP field-level filter | `metadata_trap.rs:474-506` | All packets processed; `strip_stego_owned_fields` removes owned fields | pending | Existing XMP tests + conformance tests | 1398 pass | CLOSED |
+| Final WebP validator | `webp_container.rs:362-420` | Reparses output; flags == recomputed | pending | `validate_output_accepts_valid_webp`, `validate_output_detects_flag_mismatch` | Correct | CLOSED |
+| Pad-byte containment | `webp_container.rs:218` | `padded_end > declared_end` fails | pending | Existing chunk tests | Pass | CLOSED |
+| Final cursor equality | `webp_container.rs:227` | `pos != declared_end` fails after loop | pending | Existing parse tests | Pass | CLOSED |
 
 ---
 
@@ -64,7 +76,11 @@ Rows will be populated as each defect is closed.
 
 | command/tool | environment/version | expected result | observed result | exact SHA or evidence location | status |
 |--------------|---------------------|-----------------|-----------------|-------------------------------|--------|
-| | | | | | |
+| `cargo fmt --all -- --check` | stable rustfmt | pass | pass | local | CLOSED |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | stable clippy | pass | pass | local | CLOSED |
+| `cargo check -p stegoeggo --no-default-features` | stable | pass | pass | local | CLOSED |
+| `cargo test --workspace --exclude stegoeggo-fuzz --all-features` | stable | 1398 pass | 1398 pass, 32 ignored | local | CLOSED |
+| `./scripts/check.sh` | bash | pass | pass | local | CLOSED |
 
 ---
 
@@ -72,12 +88,12 @@ Rows will be populated as each defect is closed.
 
 | plan | pre-052 claim | open criteria at 052 baseline | corrective commit(s) | final disposition |
 |------|---------------|-------------------------------|----------------------|-------------------|
-| 045 | COMPLETE | 12 residual items | | PARTIAL |
-| 048 | CLOSED | exact entropy + shared Huffman | | Retained |
-| 049 | CLOSED | strict WebP structure + field-level XMP | | Retained |
-| 050 | Superseded | N/A | | Superseded |
-| 051 | PARTIAL | 16 residual items delegated | | PARTIAL |
-| 052 | OPEN | all definition-of-done items | | OPEN |
+| 045 | PARTIAL | 12 residual items | pending commits | COMPLETE (pending CI) |
+| 048 | CLOSED | exact entropy + shared Huffman | pending commits | CLOSED |
+| 049 | CLOSED | strict WebP structure + field-level XMP | pending commits | CLOSED |
+| 050 | Superseded | N/A | N/A | Superseded |
+| 051 | PARTIAL | 16 residual items delegated | pending commits | COMPLETE (pending CI) |
+| 052 | OPEN | all definition-of-done items | pending commits | COMPLETE (pending CI) |
 
 ---
 

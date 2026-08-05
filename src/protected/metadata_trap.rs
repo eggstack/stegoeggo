@@ -487,9 +487,6 @@ impl RightsMetadataProtector {
                 continue;
             }
             let existing = &parsed.data[chunk.data_start..data_end];
-            if Self::xmp_has_stego_properties(existing) {
-                continue;
-            }
             let descs = Self::extract_unrelated_descriptions(existing)?;
             all_unrelated.extend(descs);
         }
@@ -535,19 +532,104 @@ impl RightsMetadataProtector {
                     None => break,
                 }
             };
-            let desc_tag_close = abs_start + angle_end + 1;
-            let has_stego = rdf_content[abs_start..desc_tag_close].contains("plus:DataMining")
-                || rdf_content[abs_start..desc_tag_close].contains("stegoeggo:");
-            if !has_stego {
-                let full_desc = &rdf_content[abs_start..desc_end];
-                if !full_desc.contains("stegoeggo:") && !full_desc.contains("plus:DataMining") {
-                    descs.push(full_desc.to_string());
+            let full_desc = &rdf_content[abs_start..desc_end];
+            let filtered = Self::strip_stego_owned_fields(full_desc);
+            if let Some(clean) = filtered {
+                if !clean.is_empty() {
+                    descs.push(clean);
                 }
             }
             search_from = desc_end;
         }
 
         Ok(descs)
+    }
+
+    fn strip_stego_owned_fields(desc: &str) -> Option<String> {
+        let has_stego = desc.contains("plus:DataMining") || desc.contains("stegoeggo:");
+        if !has_stego {
+            return Some(desc.to_string());
+        }
+
+        let mut result = desc.to_string();
+
+        let owned_attrs = [
+            "plus:DataMining",
+            "plus:OtherConstraints",
+            "stegoeggo:ProtectionSeed",
+            "stegoeggo:ProtectionLevel",
+            "stegoeggo:RightsPolicy",
+        ];
+
+        for attr in &owned_attrs {
+            while let Some(pos) = result.find(attr) {
+                let before = &result[..pos];
+                let after_start = pos + attr.len();
+                if after_start >= result.len() {
+                    result.truncate(pos);
+                    continue;
+                }
+                let after = &result[after_start..];
+
+                if let Some(eq_pos) = after.find('=') {
+                    let after_eq = &after[eq_pos + 1..];
+                    let value_end = if let Some(q) = after_eq.find('"') {
+                        eq_pos + 1 + q + 1
+                    } else if let Some(q) = after_eq.find('\'') {
+                        eq_pos + 1 + q + 1
+                    } else {
+                        after.find(' ').map(|s| eq_pos + s).unwrap_or(after.len())
+                    };
+                    let _between = &after[..eq_pos];
+                    let attr_start = before.rfind([' ', '\t', '\n']).map(|p| p + 1).unwrap_or(0);
+                    result = format!("{}{}", &result[..attr_start], &after[value_end..]);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        let owned_child_elements = [
+            "<dc:creator",
+            "<xmpRights:WebStatement",
+            "<xmpRights:UsageTerms",
+            "<dc:rights",
+            "<photoshop:Credit",
+            "<Iptc4xmpExt:DateCreated",
+            "<stegoeggo:",
+        ];
+
+        for elem in &owned_child_elements {
+            while let Some(start) = result.find(elem) {
+                let tag_name_end = result[start..].find('>').map(|p| start + p + 1);
+                let Some(tag_end) = tag_name_end else {
+                    break;
+                };
+
+                let is_self_closing = result[start..tag_end].ends_with('/');
+                if is_self_closing {
+                    result.replace_range(start..tag_end, "");
+                    continue;
+                }
+
+                let close_tag_start = result[tag_end..].find("</");
+                let Some(close_rel) = close_tag_start else {
+                    break;
+                };
+                let close_abs = tag_end + close_rel;
+                let close_tag_end = result[close_abs..].find('>').map(|p| close_abs + p + 1);
+                let Some(close_end) = close_tag_end else {
+                    break;
+                };
+                result.replace_range(start..close_end, "");
+            }
+        }
+
+        if result.contains("plus:DataMining") || result.contains("stegoeggo:") {
+            return None;
+        }
+
+        Some(result)
     }
 
     fn inject_unrelated_into_xmp(new_xmp: &[u8], unrelated: &[String]) -> Result<Vec<u8>> {

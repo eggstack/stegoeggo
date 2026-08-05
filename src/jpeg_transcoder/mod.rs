@@ -478,6 +478,7 @@ impl JpegTranscoder {
 }
 
 mod scan_utils {
+    #[allow(dead_code)]
     pub fn get_scan_data_start(data: &[u8]) -> Option<usize> {
         // Properly walk JPEG markers to find SOS (0xFFDA).
         // Skips marker segments using their declared lengths to avoid

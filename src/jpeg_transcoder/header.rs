@@ -436,6 +436,13 @@ impl JpegHeader {
             let table_class = (table_info >> 4) & 0x0F;
             let table_id = table_info & 0x0F;
 
+            if table_class > 1 {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "DHT table class {} invalid: only DC (0) and AC (1) are supported",
+                    table_class
+                )));
+            }
+
             if table_id >= 4 {
                 return Err(TranscoderError::InvalidFormat(format!(
                     "DHT table_id {} out of range (0-3)",
@@ -636,9 +643,11 @@ impl JpegHeader {
 
             if marker == 0xD9 {
                 if in_scan {
-                    if let (Some(sos_off), Some(sos_hdr_end), Some(entropy_s)) =
-                        (current_scan_start, current_scan_sos_header_end, current_scan_start)
-                    {
+                    if let (Some(sos_off), Some(sos_hdr_end), Some(entropy_s)) = (
+                        current_scan_start,
+                        current_scan_sos_header_end,
+                        current_scan_start,
+                    ) {
                         structure.scan_spans.push(JpegScanSpan {
                             sos_marker_offset: sos_off,
                             sos_header_end: sos_hdr_end,
@@ -648,7 +657,6 @@ impl JpegHeader {
                             terminating_marker: marker,
                         });
                     }
-                    in_scan = false;
                 }
                 structure.eoi_offset = Some(pos);
                 break;
@@ -674,9 +682,11 @@ impl JpegHeader {
             }
 
             if in_scan {
-                if let (Some(sos_off), Some(sos_hdr_end), Some(entropy_s)) =
-                    (current_scan_start, current_scan_sos_header_end, current_scan_start)
-                {
+                if let (Some(sos_off), Some(sos_hdr_end), Some(entropy_s)) = (
+                    current_scan_start,
+                    current_scan_sos_header_end,
+                    current_scan_start,
+                ) {
                     structure.scan_spans.push(JpegScanSpan {
                         sos_marker_offset: sos_off,
                         sos_header_end: sos_hdr_end,
@@ -940,5 +950,35 @@ mod tests {
         let structure = JpegHeader::analyze_structure(data);
         assert_eq!(structure.scan_count, 1);
         assert!(structure.eoi_offset.is_none());
+    }
+
+    #[test]
+    fn parse_dht_rejects_class_2() {
+        let data: &[u8] = &[
+            0xFF, 0xD8, // SOI
+            0xFF, 0xC4, 0x00, 0x1B, // DHT, length=27, class=2, id=0
+            0x20, // table_info: class=2, id=0
+            0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, // counts
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, // values
+            0xFF, 0xD9, // EOI
+        ];
+        let result = JpegHeader::parse(data);
+        assert!(result.is_err(), "DHT with class 2 must be rejected");
+    }
+
+    #[test]
+    fn parse_dht_rejects_class_15() {
+        let data: &[u8] = &[
+            0xFF, 0xD8, // SOI
+            0xFF, 0xC4, 0x00, 0x1B, // DHT, length=27, class=15, id=3
+            0xF3, // table_info: class=15, id=3
+            0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, // counts
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, // values
+            0xFF, 0xD9, // EOI
+        ];
+        let result = JpegHeader::parse(data);
+        assert!(result.is_err(), "DHT with class 15 must be rejected");
     }
 }
