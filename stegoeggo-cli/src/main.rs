@@ -852,20 +852,26 @@ fn build_new_style_request(
     Ok((policy, channels))
 }
 
-fn legacy_default_dmi(level: ProtectionLevel) -> DmiValue {
-    match level {
-        ProtectionLevel::Disabled | ProtectionLevel::Light => DmiValue::Unspecified,
-        ProtectionLevel::Standard => DmiValue::ProhibitedAiMlTraining,
-        _ => DmiValue::ProhibitedAiMlTraining,
-    }
-}
-
 fn resolve_legacy_dmi(args: &Args, level: ProtectionLevel) -> Option<DmiValue> {
     match args.dmi.as_ref() {
-        None => Some(legacy_default_dmi(level)),
+        None => {
+            let policy = level.default_policy();
+            if policy == RightsPolicy::Unspecified {
+                Some(DmiValue::Unspecified)
+            } else {
+                Some(DmiValue::from(policy))
+            }
+        }
         Some(dmi_arg) => {
             let dmi_val = dmi_arg.clone().into_dmi_value();
-            Some(dmi_val.unwrap_or_else(|| legacy_default_dmi(level)))
+            Some(dmi_val.unwrap_or_else(|| {
+                let policy = level.default_policy();
+                if policy == RightsPolicy::Unspecified {
+                    DmiValue::Unspecified
+                } else {
+                    DmiValue::from(policy)
+                }
+            }))
         }
     }
 }

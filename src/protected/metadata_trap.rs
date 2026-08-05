@@ -154,27 +154,6 @@ impl RightsMetadataProtector {
     }
 
     #[allow(dead_code)]
-    fn resolved_dmi(
-        dmi_value: Option<DmiValue>,
-        protection_level: Option<ProtectionLevel>,
-        inject_metadata: Option<bool>,
-    ) -> Option<DmiValue> {
-        if !Self::should_inject_metadata(inject_metadata, protection_level) {
-            return None;
-        }
-
-        let dmi = dmi_value.or_else(|| {
-            protection_level.and_then(|level| match level {
-                ProtectionLevel::Light => Some(DmiValue::Prohibited),
-                ProtectionLevel::Standard => Some(DmiValue::ProhibitedAiMlTraining),
-                _ => None,
-            })
-        });
-
-        dmi.filter(|value| *value != DmiValue::Unspecified)
-    }
-
-    #[allow(dead_code)]
     fn generate_rights_metadata(
         &self,
         _dmi_value: Option<DmiValue>,

@@ -20,20 +20,11 @@ pub fn resolve_request(
         let has_constraints =
             notice.ai_constraints().is_some() || notice.web_statement_of_rights().is_some();
         if !has_constraints {
-            if let Some(meta) = request.legal_metadata() {
-                if meta.ai_constraints().is_some() || meta.web_statement_of_rights().is_some() {
-                    // Legal metadata provides constraints
-                } else {
-                    return Err(Error::Config(
-                        "ProhibitedSeeConstraints requires ai_constraints or web_statement_of_rights"
-                            .to_string(),
-                    ));
-                }
-            } else {
-                return Err(Error::Config(
-                    "ProhibitedSeeConstraints requires ai_constraints or web_statement_of_rights"
-                        .to_string(),
-                ));
+            let meta_provides_constraints = request.legal_metadata().map_or(false, |meta| {
+                meta.ai_constraints().is_some() || meta.web_statement_of_rights().is_some()
+            });
+            if !meta_provides_constraints {
+                warnings.push(ProtectionWarning::MissingRightsConstraints);
             }
         }
     }

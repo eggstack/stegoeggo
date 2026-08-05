@@ -4,8 +4,9 @@ use image::ImageEncoder;
 use stegoeggo::{
     process_image_bytes, process_request_bytes, process_request_bytes_with_report, resolve_request,
     AuthenticationMode, DmiValue, HiddenMarkerMode, ImageOutputFormat, LegalMetadata,
-    ProtectionChannels, ProtectionContext, ProtectionLevel, ProtectionPreset, ProtectionRequest,
-    ResourceLimits, RightsNotice, RightsPolicy, VerificationStatus,
+    ProtectionChannels, ProtectionContext, ProtectionLevel, ProtectionPreset,
+    ProtectionRequest, ProtectionWarning, ResourceLimits, RightsNotice, RightsPolicy,
+    VerificationStatus,
 };
 
 fn create_test_image(width: u32, height: u32) -> image::DynamicImage {
@@ -107,20 +108,21 @@ mod resolve_request_validation {
     }
 
     #[test]
-    fn prohibited_see_constraints_without_constraints_rejected() {
+    fn prohibited_see_constraints_without_constraints_warns() {
         let request = ProtectionRequest::metadata_only(
             RightsNotice::new(),
             RightsPolicy::ProhibitedSeeConstraints,
         );
 
         let result = resolve_request(&request, ImageOutputFormat::Png);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
+        assert!(result.is_ok());
+        let plan = result.unwrap();
         assert!(
-            err.to_string()
-                .contains("ProhibitedSeeConstraints requires"),
-            "Expected constraints error, got: {}",
-            err
+            plan.warnings()
+                .iter()
+                .any(|w| matches!(w, ProtectionWarning::MissingRightsConstraints)),
+            "Expected MissingRightsConstraints warning, got: {:?}",
+            plan.warnings()
         );
     }
 

@@ -4,9 +4,13 @@ use std::sync::Arc;
 /// IPTC Photo Metadata Standard 2023.1 - DMI (Data Mining) tags for AI exclusion.
 /// These tags communicate whether content may be used for AI/ML training.
 ///
-/// When injected into XMP metadata, the TDM Reservation Protocol (ISO/IEC 21000-21)
-/// property `tdm:reserve_tdm` is also included: `"1"` for all prohibition values,
-/// `"0"` for `Allowed`. This is the standard referenced by the EU AI Act (2024).
+/// When injected into XMP metadata, the canonical PLUS controlled-vocabulary URI
+/// is emitted as the `plus:DataMining` property value (e.g.
+/// `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`).
+/// `Unspecified` emits no `plus:DataMining` property.
+///
+/// Legacy `tdm:reserve_tdm` properties are parsed for backward compatibility
+/// but are not emitted in current output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[non_exhaustive]
 pub enum DmiValue {
@@ -305,6 +309,20 @@ impl ProtectionLevel {
             1 => Some(ProtectionLevel::Light),
             2 => Some(ProtectionLevel::Standard),
             _ => None,
+        }
+    }
+
+    /// Returns the default [`RightsPolicy`] for this legacy protection level.
+    ///
+    /// This is the single canonical compatibility mapping used by both the CLI
+    /// and the library when translating a level into policy. `Light` maps to
+    /// `Unspecified` because processing intensity must not silently create an
+    /// all-data-mining legal restriction.
+    #[must_use]
+    pub fn default_policy(self) -> RightsPolicy {
+        match self {
+            ProtectionLevel::Disabled | ProtectionLevel::Light => RightsPolicy::Unspecified,
+            ProtectionLevel::Standard => RightsPolicy::ProhibitedAiMlTraining,
         }
     }
 
@@ -3404,6 +3422,13 @@ pub enum ProtectionWarning {
     /// should not be provided if injection is not desired. The legal metadata
     /// will be silently ignored.
     ContradictoryLegalClaims,
+    /// `ProhibitedSeeConstraints` policy was selected without providing constraints.
+    ///
+    /// The DMI value is `ProhibitedSeeConstraints` but no `ai_constraints` or
+    /// `web_statement_of_rights` was provided. The output will emit the
+    /// `plus:DataMining` URI but no `plus:OtherConstraints` property. For strict
+    /// evidence profiles this should be treated as an error.
+    MissingRightsConstraints,
 }
 
 impl std::fmt::Display for ProtectionWarning {
@@ -3442,6 +3467,12 @@ impl std::fmt::Display for ProtectionWarning {
                 "Legal claims explicitly disabled but legal metadata is present: \
                  the legal metadata will be ignored. Remove the legal metadata or \
                  stop disabling legal claims."
+            ),
+            ProtectionWarning::MissingRightsConstraints => write!(
+                f,
+                "ProhibitedSeeConstraints policy selected without constraints: \
+                 no ai_constraints or web_statement_of_rights was provided. \
+                 The output will emit the prohibition URI but no companion constraint text."
             ),
         }
     }
@@ -3493,6 +3524,7 @@ impl ProtectionWarning {
             ProtectionWarning::LsbCapacitySkipped => WarningCategory::BestEffortStego,
             ProtectionWarning::DctCapacityInsufficient => WarningCategory::BestEffortStego,
             ProtectionWarning::ContradictoryLegalClaims => WarningCategory::LegalNotice,
+            ProtectionWarning::MissingRightsConstraints => WarningCategory::LegalNotice,
         }
     }
 
@@ -3523,6 +3555,14 @@ impl ProtectionWarning {
                 }
             }
             ProtectionWarning::ContradictoryLegalClaims => WarningSeverity::Warning,
+            ProtectionWarning::MissingRightsConstraints => match profile {
+                EvidenceProfile::LegalNotice | EvidenceProfile::LegalNoticeWithStego => {
+                    WarningSeverity::Error
+                }
+                EvidenceProfile::AuthenticatedProvenance | EvidenceProfile::Maximal => {
+                    WarningSeverity::Error
+                }
+            },
         }
     }
 }
