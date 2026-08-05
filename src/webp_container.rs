@@ -125,6 +125,11 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
                 vp8l_indices.push(chunk_idx);
             }
             b"VP8X" => {
+                if vp8x_index.is_some() {
+                    return Err(Error::Metadata(
+                        "Duplicate VP8X chunk in WebP file".to_string(),
+                    ));
+                }
                 image_kind = Some(WebPImageKind::ExtendedVP8X);
                 vp8x_index = Some(chunk_idx);
             }
@@ -326,5 +331,35 @@ mod tests {
     fn encode_vp8x_rejects_zero_dimensions() {
         assert!(encode_vp8x_chunk(0, 100, 0).is_err());
         assert!(encode_vp8x_chunk(100, 0, 0).is_err());
+    }
+
+    #[test]
+    fn parse_rejects_duplicate_vp8x() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        data.extend_from_slice(b"VP8X");
+        let vp8x_payload = vec![0u8; 10];
+        data.extend_from_slice(&(vp8x_payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x_payload);
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x_payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x_payload);
+        data.extend_from_slice(b"VP8 ");
+        let payload = vec![0u8; 30];
+        data.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&payload);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+
+        let result = parse_webp(&data, None);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Duplicate VP8X"),
+            "Expected duplicate VP8X error, got: {}",
+            err_msg
+        );
     }
 }

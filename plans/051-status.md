@@ -28,10 +28,15 @@ Disposition: COMPLETE
 | Missing referenced DC table | `probe_dct_support` / decoder | Require exact referenced table, no table-0 fallback | 80d0a91 | `test_legacy_disabled_level`, `test_disabled_level_produces_bitidentical_output` | Table-0 fallback removed from decoder and encoder | CLOSED |
 | Missing referenced AC table | `probe_dct_support` / decoder | Require exact referenced table, no table-0 fallback | 80d0a91 | above | Same as DC | CLOSED |
 | Trailing post-scan marker | `probe_dct_support_full` | Reject for DCT path, fallback preserves container | 80d0a91 | `TrailingSegmentsAfterScan` variant added | DCT unsupported with exact reason | CLOSED |
+| Encoder wrapping_add | `HuffmanEncoderTable::build` | Checked arithmetic, no silent overflow | corrective pass | `validate_huffman_table` tests, `custom_huffman_table_jpeg_round_trip` | Replaced `wrapping_add(1)` with `checked_add(1)` | CLOSED |
+| Entropy exhaustion proof | `CoefficientDecoder::decode` | Validate MCU count and pad bits | corrective pass | `finish_scan` in decode loop | `finish_scan()` validates MCU completion and pad bits | CLOSED |
+| Malformed XMP silent discard | `extract_unrelated_descriptions` | Fail before output on malformed XMP | corrective pass | `malformed_xmp_non_utf8_causes_error`, `malformed_xmp_missing_rdf_causes_error` | Returns `Result`, errors on non-UTF8 or missing rdf:RDF | CLOSED |
+| Duplicate VP8X rejection | `parse_webp` VP8X branch | Reject duplicate VP8X chunks | corrective pass | `parse_rejects_duplicate_vp8x` | Returns error on duplicate VP8X | CLOSED |
+| Namespace conflict detection | `inject_unrelated_into_xmp` | Fail on conflicting namespace URIs | corrective pass | namespace conflict error path | Extracts and compares namespace prefixes, fails on conflict | CLOSED |
+| VP8X alpha from final payload | `inject_text_chunks_webp_from_notice` | Derive alpha from ALPH chunk, not input VP8X | corrective pass | `final_alpha` derived from chunk iteration | Alpha flag now checks for ALPH chunk in final output | CLOSED |
 | RIFF declared size smaller than physical input | `parse_webp` | Reject undersized declared length for rewrite | 93fe670 | `parse_rejects_riff_size_exceeding_input` | declared_end == data.len() enforced | CLOSED |
-| Duplicate VP8X | `parse_webp` | Reject or normalize to single VP8X | 93fe670 | structural inventory | Single VP8X tracked via vp8x_index | CLOSED |
 | Mixed owned/unrelated XMP description | XMP merge | Preserve unrelated fields, handle owned by policy | 93fe670 | `scenario_13_existing_unrelated_metadata_survives` | extract_unrelated_descriptions + inject_unrelated_into_xmp | CLOSED |
-| Two differing valid XMP packets | XMP merge | Merge or fail on namespace conflict | 93fe670 | merge logic | All XMP packets merged via iteration | CLOSED |
+| Two differing valid XMP packets | XMP merge | Merge or fail on namespace conflict | corrective pass | namespace conflict detection | All XMP packets merged; namespace conflicts detected and rejected | CLOSED |
 | Final VP8X feature consistency | VP8X encoding | Derive from final chunk inventory | fb44e3e | VP8X flag computation | Flags computed from final chunks, not input | CLOSED |
 
 ## Table B: Commands and Evidence
@@ -39,12 +44,27 @@ Disposition: COMPLETE
 | command/tool | environment/version | expected result | observed result | evidence location | status |
 |--------------|---------------------|-----------------|-----------------|-------------------|--------|
 | `./scripts/check.sh` | local, Rust 1.87+ | pass | pass | EXIT: 0 | VERIFIED |
-| `cargo test --workspace --exclude stegoeggo-fuzz --all-features` | local | all pass | 1379 passed, 32 ignored | terminal output | VERIFIED |
+| `cargo test --workspace --exclude stegoeggo-fuzz --all-features` | local | all pass | 1383 passed, 32 ignored | terminal output | VERIFIED |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | local | no issues | no issues | clippy output | VERIFIED |
+| `cargo fmt --all -- --check` | local | pass | pass | fmt output | VERIFIED |
+| GitHub Actions CI | GitHub Actions | pass | last observed: `bff0258` commit passed (2026-08-05) | `rtk gh run list --branch main --limit 1` | VERIFIED |
 
 ## Table C: Planning Reconciliation
 
 | plan | current header status | final disposition |
 |------|-----------------------|-------------------|
+| 039 | retroactive | All findings addressed by subsequent plans |
+| 040 | retroactive | All findings addressed by subsequent plans |
+| 041 | retroactive | All findings addressed by subsequent plans |
+| 042 | retroactive | All findings addressed by subsequent plans |
+| 043 | retroactive | All findings addressed by subsequent plans |
+| 044 | retroactive | All findings addressed by subsequent plans |
+| 045 | COMPLETE — closed by Plan 051 | Status ledger created retroactively |
+| 046 | retroactive | All findings addressed by Plan 051 |
+| 047 | retroactive | All findings addressed by Plan 051 |
+| 048 | retroactive | All findings addressed by Plan 051 |
+| 049 | retroactive | All findings addressed by Plan 051 |
+| 050 | retroactive | Superseded by Plan 051 |
 | 051 | COMPLETE | All 24 definition-of-done criteria met |
 
 ## Publication Hold

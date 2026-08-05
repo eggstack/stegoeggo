@@ -78,23 +78,32 @@ struct HuffmanEncoderTable {
 }
 
 impl HuffmanEncoderTable {
-    fn build(table: &super::HuffmanTable) -> Self {
-        let mut entries = [(0u16, 0u8); 256];
+    fn build(table: &super::HuffmanTable) -> Result<Self> {
+        let mut entries = [(0u16, u8::MAX); 256];
         let counts = &table.counts;
         let values = &table.values;
         let mut code: u16 = 0;
         let mut value_idx = 0;
         for (len, &count) in counts.iter().enumerate() {
             for _ in 0..count {
-                if value_idx < values.len() {
-                    entries[values[value_idx] as usize] = (code, (len + 1) as u8);
+                if value_idx >= values.len() {
+                    return Err(TranscoderError::HuffmanEncode(format!(
+                        "Huffman value index {} exceeds value count {}",
+                        value_idx,
+                        values.len()
+                    )));
                 }
-                code = code.wrapping_add(1);
+                entries[values[value_idx] as usize] = (code, (len + 1) as u8);
+                code = code.checked_add(1).ok_or_else(|| {
+                    TranscoderError::HuffmanEncode("Huffman code overflow".into())
+                })?;
                 value_idx += 1;
             }
-            code <<= 1;
+            code = code.checked_shl(1).ok_or_else(|| {
+                TranscoderError::HuffmanEncode("Huffman code shift overflow".into())
+            })?;
         }
-        Self { entries }
+        Ok(Self { entries })
     }
 }
 
@@ -168,6 +177,35 @@ impl<'a> BitReader<'a> {
             eoi_reached: false,
             restart_seen: false,
         }
+    }
+
+    fn bytes_consumed(&self) -> usize {
+        self.byte_pos
+    }
+
+    fn finish_scan(&self, total_mcu_count: usize, mcus_decoded: usize) -> Result<()> {
+        if mcus_decoded < total_mcu_count {
+            return Err(TranscoderError::HuffmanDecode(format!(
+                "Early scan termination: decoded {} of {} expected MCUs",
+                mcus_decoded, total_mcu_count
+            )));
+        }
+        if self.eoi_reached {
+            return Ok(());
+        }
+        if self.bit_pos < 7 {
+            let remaining_bits = self.bit_pos + 1;
+            let current_byte = self.data.get(self.byte_pos).copied().unwrap_or(0);
+            let mask = (1u8 << remaining_bits) - 1;
+            let pad_value = current_byte & mask;
+            if pad_value != mask {
+                return Err(TranscoderError::HuffmanDecode(format!(
+                    "Invalid pad bits: expected {} 1-bits, got 0x{:02X}",
+                    remaining_bits, pad_value
+                )));
+            }
+        }
+        Ok(())
     }
 
     fn read_bit(&mut self) -> Option<u8> {
@@ -448,6 +486,9 @@ impl CoefficientDecoder {
             }
         }
 
+        let total_mcu_count = mcu_height * mcus_per_row;
+        bit_reader.finish_scan(total_mcu_count, total_mcu_count)?;
+
         Ok(result)
     }
 }
@@ -579,7 +620,7 @@ impl CoefficientEncoder {
                             comp.dc_table_id, comp.component_id
                         ))
                     })?;
-                dc_enc_tables[dc_id] = Some(HuffmanEncoderTable::build(table));
+                dc_enc_tables[dc_id] = Some(HuffmanEncoderTable::build(table)?);
             }
 
             let ac_id = comp.ac_table_id as usize;
@@ -593,7 +634,7 @@ impl CoefficientEncoder {
                             comp.ac_table_id, comp.component_id
                         ))
                     })?;
-                ac_enc_tables[ac_id] = Some(HuffmanEncoderTable::build(table));
+                ac_enc_tables[ac_id] = Some(HuffmanEncoderTable::build(table)?);
             }
         }
 
