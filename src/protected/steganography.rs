@@ -282,11 +282,6 @@ impl SteganographyProtector {
 
         match JpegTranscoder::decode_coefficients(jpeg_bytes) {
             Ok((header, coefficients)) => {
-                let canonical_jpeg =
-                    JpegTranscoder::encode_coefficients(&header, &coefficients, None)?;
-                let (mut header, coefficients) =
-                    JpegTranscoder::decode_coefficients(&canonical_jpeg)?;
-
                 let payload = self.generate_payload(
                     &crate::types::PayloadEmissionContext::from_plan_for_context(
                         ctx,
@@ -299,6 +294,7 @@ impl SteganographyProtector {
 
                 let available_coeffs = Self::dct_payload_capacity(&coefficients);
 
+                let mut header = header;
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
 
                 if available_coeffs >= payload_bits {
@@ -320,7 +316,7 @@ impl SteganographyProtector {
                             let attempt_bytes = JpegTranscoder::encode_coefficients(
                                 &header,
                                 &attempt_coefficients,
-                                None,
+                                Some(jpeg_bytes),
                             )?;
                             if let Ok((_, roundtrip_coefficients)) =
                                 JpegTranscoder::decode_coefficients(&attempt_bytes)
@@ -420,10 +416,8 @@ impl SteganographyProtector {
 
         match JpegTranscoder::decode_coefficients(jpeg_bytes) {
             Ok((header, coefficients)) => {
-                let canonical_jpeg =
-                    JpegTranscoder::encode_coefficients(&header, &coefficients, None)?;
-                let (mut header, mut coefficients) =
-                    JpegTranscoder::decode_coefficients(&canonical_jpeg)?;
+                let mut header = header;
+                let mut coefficients = coefficients;
 
                 let payload = self.generate_payload(
                     &crate::types::PayloadEmissionContext::from_plan_for_context(
@@ -478,8 +472,11 @@ impl SteganographyProtector {
                 }
 
                 if embedded_any {
-                    let attempt_bytes =
-                        JpegTranscoder::encode_coefficients(&header, &coefficients, None)?;
+                    let attempt_bytes = JpegTranscoder::encode_coefficients(
+                        &header,
+                        &coefficients,
+                        Some(jpeg_bytes),
+                    )?;
                     if let Ok((_, roundtrip_coefficients)) =
                         JpegTranscoder::decode_coefficients(&attempt_bytes)
                     {

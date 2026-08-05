@@ -19,9 +19,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `PLUS_VOCAB_PREFIX` constant for the canonical PLUS vocabulary URI prefix
 - `plus:OtherConstraints` XMP emission for `ProhibitedSeeConstraints` policy
 - `probe_dct_support()` — central capability gate for JPEG DCT embedding; rejects progressive, restart-bearing, non-8-bit, and multi-scan inputs before coefficient processing
+- `probe_dct_support_full()` — full DCT support probe including structural scan analysis; verifies single scan and valid EOI in addition to header properties
 - `DctSupport` / `DctUnsupportedReason` enums — structured DCT capability classification
+- `JpegStructure` / `JpegHeader::analyze_structure()` — scan structure walker that counts scans, detects restart markers, and locates EOI without decoding coefficients
 - `encode_coefficients_preserving()` — container-preserving JPEG DCT encoding that walks the original byte stream, replacing only DQT and SOS scan data; all other segments (APP0, APP1, APP2, APP13, APP14, COM, DRI, unknown) preserved verbatim
-- JPEG container preservation tests: SOS scan byte-equality, APP2/APP13/APP14/COM segment survival, restart-bearing and progressive fallback
+- JPEG DCT success path now uses preserving encoding for all embedding attempts — `assemble_jpeg` is never reachable from the normal original-JPEG DCT success path
+- Canonical Huffman table construction now advances code unconditionally through zero-count bit lengths — fixes incorrect code assignments for tables with empty intermediate lengths
+- Malformed entropy decoding fails closed — missing DC/AC symbols, AC run overflow, invalid zero-size symbols, and truncated magnitude data all return errors instead of partial coefficient maps
+- JPEG container preservation tests: SOS scan byte-equality, APP2/APP13/APP14/COM/unknown-APP segment survival through DCT stego, restart-bearing and progressive fallback, grayscale baseline DCT round-trip, multi-scan sequential rejection, malformed entropy handling
 - `webp_container` module — centralized checked RIFF/WebP chunk parser with VP8X dimension/flag handling
 - WebP simple-to-extended conversion: metadata insertion into VP8/VP8L now creates valid VP8X headers with correct 3-byte LE canvas dimensions and feature flags
 - WebP XMP merge/replace: at most one XMP chunk in output; existing non-StegoEggo properties preserved under `ReplaceStegoOwned`

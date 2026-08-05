@@ -89,7 +89,7 @@ impl HuffmanEncoderTable {
                 if value_idx < values.len() {
                     entries[values[value_idx] as usize] = (code, (len + 1) as u8);
                 }
-                code += 1;
+                code = code.wrapping_add(1);
                 value_idx += 1;
             }
             code <<= 1;
@@ -100,26 +100,23 @@ impl HuffmanEncoderTable {
 
 impl HuffmanDecoder {
     fn from_table(counts: &[u16; 16], values: &[u8]) -> Self {
-        let mut min_code = [0i32; 16];
-        let mut max_code = [0i32; 16];
-        let mut val_offset = [0i32; 16];
+        let mut min_code = [-1i32; 16];
+        let mut max_code = [-1i32; 16];
+        let mut val_offset = [-1i32; 16];
 
         let mut code: i32 = 0;
-        let mut k = 0;
+        let mut value_index: usize = 0;
 
         for i in 0..16 {
             let count = counts[i] as i32;
-            if count == 0 {
-                min_code[i] = -1;
-                max_code[i] = -1;
-            } else {
+            if count > 0 {
                 min_code[i] = code;
                 max_code[i] = code + count - 1;
-                val_offset[i] = k as i32 - code;
+                val_offset[i] = value_index as i32 - code;
+                value_index += count as usize;
                 code += count;
-                code <<= 1;
             }
-            k += counts[i] as usize;
+            code <<= 1;
         }
 
         Self {
@@ -346,57 +343,82 @@ impl CoefficientDecoder {
                         for _bx in 0..comp.h_sampling {
                             let mut block = [0i16; 64];
 
-                            // Decode DC coefficient
+                            // Decode DC coefficient - mandatory per block
                             let dc_predictor = dc_predictors.entry(comp.component_id).or_insert(0);
-                            if let Some(size) = dc_decoder.decode_symbol(&mut bit_reader) {
-                                let diff = read_magnitude(&mut bit_reader, size as usize)
-                                    .ok_or_else(|| {
-                                        TranscoderError::HuffmanDecode(
-                                            "Truncated DC magnitude in entropy data".into(),
-                                        )
-                                    })?;
-                                let new_val = (*dc_predictor as i32) + (diff as i32);
-                                let clamped =
-                                    new_val.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-                                *dc_predictor = clamped;
-                                block[0] = *dc_predictor;
-                            }
+                            let size =
+                                dc_decoder.decode_symbol(&mut bit_reader).ok_or_else(|| {
+                                    TranscoderError::HuffmanDecode(format!(
+                                    "Missing or truncated DC symbol at MCU ({},{}) component {}",
+                                    _mcu_x, _mcu_y, comp.component_id
+                                ))
+                                })?;
+                            let diff = read_magnitude(&mut bit_reader, size as usize).ok_or_else(
+                                || {
+                                    TranscoderError::HuffmanDecode(format!(
+                                        "Truncated DC magnitude at MCU ({},{}) component {}",
+                                        _mcu_x, _mcu_y, comp.component_id
+                                    ))
+                                },
+                            )?;
+                            let new_val = (*dc_predictor as i32) + (diff as i32);
+                            let clamped = new_val.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                            *dc_predictor = clamped;
+                            block[0] = *dc_predictor;
 
                             // Decode AC coefficients
                             let mut k = 1;
                             while k < 64 {
-                                if let Some(ss) = ac_decoder.decode_symbol(&mut bit_reader) {
-                                    let run = (ss >> 4) & 0x0F;
-                                    let size = ss & 0x0F;
+                                let ss = ac_decoder
+                                    .decode_symbol(&mut bit_reader)
+                                    .ok_or_else(|| TranscoderError::HuffmanDecode(format!(
+                                        "Missing or truncated AC symbol at MCU ({},{}) component {} coefficient {}",
+                                        _mcu_x, _mcu_y, comp.component_id, k
+                                    )))?;
+                                let run = (ss >> 4) & 0x0F;
+                                let size = ss & 0x0F;
 
-                                    if size == 0 {
-                                        if run == 0 {
-                                            // EOB - end of block
-                                            break;
+                                if size == 0 {
+                                    if run == 0 {
+                                        // EOB - end of block
+                                        break;
+                                    }
+                                    if run == 0x0F {
+                                        // ZRL - skip 16 zeros
+                                        let new_k = k + 16;
+                                        if new_k > 64 {
+                                            return Err(TranscoderError::HuffmanDecode(format!(
+                                                "ZRL run overflows block at MCU ({},{}) component {}",
+                                                _mcu_x, _mcu_y, comp.component_id
+                                            )));
                                         }
-                                        // ZRL - skip 16 zeros (0xF0).
-                                        k += (run as usize) + 1;
+                                        k = new_k;
                                     } else {
-                                        // Skip leading zeros before placing this coefficient.
-                                        k += run as usize;
-                                        if k >= 64 {
-                                            break;
-                                        }
-
-                                        let magnitude =
-                                            read_magnitude(&mut bit_reader, size as usize)
-                                                .ok_or_else(|| {
-                                                    TranscoderError::HuffmanDecode(
-                                                        "Truncated AC magnitude in entropy data"
-                                                            .into(),
-                                                    )
-                                                })?;
-
-                                        block[ZIGZAG[k]] = magnitude;
-                                        k += 1;
+                                        return Err(TranscoderError::HuffmanDecode(format!(
+                                            "Invalid zero-size symbol 0x{:02X} at MCU ({},{}) component {}",
+                                            ss, _mcu_x, _mcu_y, comp.component_id
+                                        )));
                                     }
                                 } else {
-                                    break;
+                                    // Non-zero coefficient: skip leading zeros
+                                    let new_k = k + run as usize;
+                                    if new_k >= 64 {
+                                        return Err(TranscoderError::HuffmanDecode(format!(
+                                            "AC run overflows block at MCU ({},{}) component {}",
+                                            _mcu_x, _mcu_y, comp.component_id
+                                        )));
+                                    }
+
+                                    let magnitude =
+                                        read_magnitude(&mut bit_reader, size as usize)
+                                            .ok_or_else(|| {
+                                                TranscoderError::HuffmanDecode(format!(
+                                                    "Truncated AC magnitude at MCU ({},{}) component {}",
+                                                    _mcu_x, _mcu_y, comp.component_id
+                                                ))
+                                            })?;
+
+                                    block[ZIGZAG[new_k]] = magnitude;
+                                    k = new_k + 1;
                                 }
                             }
 

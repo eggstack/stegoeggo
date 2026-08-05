@@ -118,10 +118,14 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 **JPEG DCT and container correctness:**
 
-- **JPEG DCT subset** — DCT embedding supports only: 8-bit precision, sequential Huffman DCT, single scan, 1-4 components with supported sampling factors, no restart intervals. Unsupported inputs (progressive, restart-bearing, CMYK) receive Q-table seed only (stego signal without payload) via `probe_dct_support()` gating, with full metadata injection.
+- **JPEG DCT subset** — DCT embedding supports only: 8-bit precision, sequential Huffman DCT, single scan, 1-4 components with supported sampling factors, no restart intervals, valid terminal EOI. Unsupported inputs (progressive, restart-bearing, multi-scan, CMYK) receive Q-table seed only (stego signal without payload) via `probe_dct_support_full()` gating, with full metadata injection.
 - **`encode_coefficients` signature** — Takes `original_jpeg: Option<&[u8]>`. When `Some`, uses `encode_coefficients_preserving` which walks the original byte stream replacing only DQT and SOS scan data. When `None`, uses `assemble_jpeg` which rebuilds from parsed fields (drops unknown segments).
+- **DCT success path uses preserving encoding** — All successful DCT embedding attempts encode via `encode_coefficients(header, coefficients, Some(original_jpeg))`. The `assemble_jpeg` path is never reachable from the normal original-JPEG DCT success path. This ensures APP2, APP13, APP14, COM, unknown APP, and other unrelated segments survive byte-for-byte.
+- **`probe_dct_support_full` checks scan structure** — Beyond header properties, walks the complete JPEG byte stream to count scans (must be exactly 1) and verify EOI presence. Multi-scan sequential JPEGs are rejected as `Unsupported(MultipleScans)`.
 - **`parse_sos` rejects malformed table IDs** — SOS table IDs > 3 return `InvalidFormat` error instead of clamping. Prevents OOB panics in the entropy decoder.
 - **Truncation is a hard error** — `read_magnitude` returns `Err` on truncated data instead of producing partial blocks.
+- **Malformed entropy fails closed** — Missing DC/AC symbols, AC run overflow, invalid zero-size symbols, and truncated magnitude data all return `HuffmanDecode` errors. Malformed entropy never produces partial successful coefficient maps.
+- **Canonical Huffman construction advances unconditionally** — Both decoder and encoder advance the code through every bit-length slot including zero-count lengths. Empty slots get sentinel values. This ensures correct code assignments for tables with intermediate empty lengths.
 - **Metadata-only JPEG is byte-safe** — `inject_text_chunks_jpeg` walks the raw byte stream, preserving all pre-SOS segments verbatim. No coefficient decode/encode occurs.
 
 **WebP container correctness:**

@@ -30,7 +30,7 @@ impl JpegTranscoder {
 ### Decode Flow
 
 1. Parse JPEG header (`JpegHeader::parse`)
-2. Probe DCT support (`probe_dct_support`) — rejects progressive, restart-bearing, missing-table, and other unsupported inputs
+2. Probe full DCT support (`probe_dct_support_full`) — checks header properties plus scan count and EOI validity
 3. Find scan data start (`scan_utils::get_scan_data_start`)
 4. Decode Huffman-encoded coefficients (`CoefficientDecoder`)
 5. Return header + coefficients
@@ -39,8 +39,10 @@ impl JpegTranscoder {
 
 Two paths:
 
-- **`assemble_jpeg`** (when `original_jpeg` is `None`): Rebuilds JPEG from parsed header fields. Preserves APP0, APP1, COM markers from header. Drops unknown segments (APP2, APP13, APP14, DRI, etc.). Used for canonicalization round-trips.
-- **`encode_coefficients_preserving`** (when `original_jpeg` is `Some`): Walks the original byte stream, replacing only DQT markers and SOS scan data. All other segments preserved verbatim in original order. Used for final DCT embedding output.
+- **`assemble_jpeg`** (when `original_jpeg` is `None`): Rebuilds JPEG from parsed header fields. Preserves APP0, APP1, COM markers from header. Drops unknown segments (APP2, APP13, APP14, DRI, etc.). Used only for non-original round-trip canonicalization.
+- **`encode_coefficients_preserving`** (when `original_jpeg` is `Some`): Walks the original byte stream, replacing only DQT markers and SOS scan data. All other segments preserved verbatim in original order. Used for all DCT embedding output (success path and capacity-downgrade fallback).
+
+The DCT success path always uses `encode_coefficients_preserving` (the `Some(original_jpeg)` path) for both roundtrip verification and final output. `assemble_jpeg` is never reachable from the normal original-JPEG DCT success path.
 
 ### Assemble
 
@@ -55,9 +57,10 @@ pub enum DctSupport {
 }
 
 pub fn probe_dct_support(header: &JpegHeader) -> DctSupport
+pub fn probe_dct_support_full(header: &JpegHeader, jpeg_data: &[u8]) -> DctSupport
 ```
 
-Central capability probe that decides whether DCT embedding is supported. Checks:
+`probe_dct_support` checks header-only properties:
 - Progressive mode
 - Precision (must be 8-bit)
 - Coding process (must be Sequential DCT)
@@ -65,7 +68,24 @@ Central capability probe that decides whether DCT embedding is supported. Checks
 - Component validity (must have DC+AC Huffman tables)
 - Sampling factors (must be ≤ 4)
 
+`probe_dct_support_full` additionally walks the complete JPEG structure to verify:
+- Exactly one sequential scan (rejects multi-scan)
+- Valid terminal EOI (rejects truncated input)
+
 Unsupported inputs are routed to metadata-only processing.
+
+## JpegStructure
+
+```rust
+pub struct JpegStructure {
+    pub scan_count: usize,
+    pub has_restart_markers: bool,
+    pub has_trailing_segments_after_scan: bool,
+    pub eoi_offset: Option<usize>,
+}
+```
+
+Returned by `JpegHeader::analyze_structure(data)`. Walks the complete JPEG byte stream without decoding coefficients to count scans, detect restart markers, and locate EOI. Handles entropy stuffing (0xFF 0x00) correctly.
 
 ## Coefficients Type
 
@@ -104,10 +124,25 @@ pub enum TranscoderError {
 }
 ```
 
+## Canonical Huffman Construction
+
+Both `HuffmanDecoder` and `HuffmanEncoderTable` construct canonical Huffman codes using the standard JPEG algorithm: advance code unconditionally after every bit-length slot (including zero-count lengths). Empty slots get sentinel values (-1 for decoder, zero-length for encoder). The decoder validates code ranges against min/max code arrays; the encoder validates symbol presence via zero-length entries.
+
+## Malformed Entropy Handling
+
+The coefficient decoder fails closed on malformed entropy:
+- Missing DC symbol → `HuffmanDecode` error
+- Missing AC symbol → `HuffmanDecode` error
+- AC run overflow (beyond coefficient 63) → `HuffmanDecode` error
+- Invalid zero-size symbols (not EOB or ZRL) → `HuffmanDecode` error
+- Truncated magnitude data → `HuffmanDecode` error
+
+Malformed entropy never produces partial successful coefficient maps.
+
 ## Module Interactions
 
-- **header.rs**: `JpegHeader::parse` for header parsing; `parse_sos` returns `Result<()>` and rejects malformed table IDs
-- **entropy.rs**: `CoefficientDecoder` / `CoefficientEncoder` for Huffman codec; decoder rejects truncated entropy data
+- **header.rs**: `JpegHeader::parse` for header parsing; `JpegHeader::analyze_structure` for scan structure detection; `parse_sos` returns `Result<()>` and rejects malformed table IDs
+- **entropy.rs**: `CoefficientDecoder` / `CoefficientEncoder` for Huffman codec; decoder fails closed on truncated/malformed entropy data; canonical code construction advances through zero-count lengths
 - **stego_f5.rs**: `DctStegoF5` for coefficient manipulation
-- **protected/steganography.rs**: `apply_dct_stego_bytes` calls transcoder for JPEG fast path
+- **protected/steganography.rs**: `apply_dct_stego_bytes` calls transcoder for JPEG fast path; uses preserving encoding for all DCT output
 - **lib.rs**: Used in `apply_bytes_pipeline` when input/output are both JPEG
