@@ -23,11 +23,19 @@ impl RiffChunk {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub(crate) struct ParsedWebP {
     pub data: Vec<u8>,
     pub image_kind: WebPImageKind,
     pub chunks: Vec<RiffChunk>,
     pub vp8x_index: Option<usize>,
+    pub xmp_indices: Vec<usize>,
+    pub exif_indices: Vec<usize>,
+    pub icc_indices: Vec<usize>,
+    pub vp8_indices: Vec<usize>,
+    pub vp8l_indices: Vec<usize>,
+    pub anim_indices: Vec<usize>,
+    pub anmf_indices: Vec<usize>,
     pub has_xmp: bool,
     pub has_exif: bool,
     pub has_icc: bool,
@@ -49,7 +57,11 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
     }
 
     let riff_size = u32::from_le_bytes([data[4], data[5], data[6], data[7]]) as usize;
-    if riff_size.saturating_add(8) > data.len() {
+    let declared_end = 8usize
+        .checked_add(riff_size)
+        .ok_or_else(|| Error::Metadata("RIFF size overflow".to_string()))?;
+
+    if declared_end > data.len() {
         return Err(Error::Metadata(
             "RIFF declared size exceeds input length".to_string(),
         ));
@@ -59,13 +71,15 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
     let mut pos = 12;
     let mut image_kind: Option<WebPImageKind> = None;
     let mut vp8x_index: Option<usize> = None;
-    let mut has_xmp = false;
-    let mut has_exif = false;
-    let mut has_icc = false;
-    let mut has_alpha = false;
-    let mut has_animation = false;
+    let mut xmp_indices = Vec::new();
+    let mut exif_indices = Vec::new();
+    let mut icc_indices = Vec::new();
+    let mut vp8_indices = Vec::new();
+    let mut vp8l_indices = Vec::new();
+    let mut anim_indices = Vec::new();
+    let mut anmf_indices = Vec::new();
 
-    while pos + 8 <= data.len() {
+    while pos + 8 <= declared_end {
         let fourcc = [data[pos], data[pos + 1], data[pos + 2], data[pos + 3]];
         let chunk_size =
             u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]])
@@ -76,13 +90,13 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
             .checked_add(chunk_size)
             .ok_or_else(|| Error::Metadata("RIFF chunk size overflow".to_string()))?;
 
-        if data_end > data.len() {
+        if data_end > declared_end {
             return Err(Error::Metadata(format!(
-                "RIFF chunk '{}' at offset {} declares {} bytes but only {} remain",
+                "RIFF chunk '{}' at offset {} declares {} bytes but RIFF extent ends at {}",
                 std::str::from_utf8(&fourcc).unwrap_or("????"),
                 pos,
                 chunk_size,
-                data.len() - data_start,
+                declared_end,
             )));
         }
 
@@ -95,38 +109,39 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
             lim.check_metadata_size("webp_chunk_bytes", chunk_size, lim.max_webp_riff_bytes())?;
         }
 
+        let chunk_idx = chunks.len();
+
         match &fourcc {
             b"VP8 " => {
                 if image_kind.is_none() {
                     image_kind = Some(WebPImageKind::LossyVP8);
                 }
+                vp8_indices.push(chunk_idx);
             }
             b"VP8L" => {
                 if image_kind.is_none() {
                     image_kind = Some(WebPImageKind::LosslessVP8L);
                 }
+                vp8l_indices.push(chunk_idx);
             }
             b"VP8X" => {
                 image_kind = Some(WebPImageKind::ExtendedVP8X);
-                vp8x_index = Some(chunks.len());
-                if chunk_size >= 10 {
-                    let flags = data[data_start];
-                    has_icc = (flags & 0x20) != 0;
-                    has_alpha = (flags & 0x10) != 0;
-                    has_animation = (flags & 0x02) != 0;
-                }
+                vp8x_index = Some(chunk_idx);
             }
             b"ICCP" => {
-                has_icc = true;
+                icc_indices.push(chunk_idx);
+            }
+            b"ANIM" => {
+                anim_indices.push(chunk_idx);
             }
             b"ANMF" => {
-                has_animation = true;
+                anmf_indices.push(chunk_idx);
             }
             b"XMP " => {
-                has_xmp = true;
+                xmp_indices.push(chunk_idx);
             }
             b"EXIF" => {
-                has_exif = true;
+                exif_indices.push(chunk_idx);
             }
             _ => {}
         }
@@ -147,11 +162,32 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
         Error::Metadata("WebP missing mandatory image chunk (VP8/VP8L/VP8X)".to_string())
     })?;
 
+    let has_xmp = !xmp_indices.is_empty();
+    let has_exif = !exif_indices.is_empty();
+    let has_icc = !icc_indices.is_empty();
+    let has_animation = !anmf_indices.is_empty() || !anim_indices.is_empty();
+
+    let mut has_alpha = false;
+    if let Some(idx) = vp8x_index {
+        let chunk = &chunks[idx];
+        if chunk.data_len >= 10 {
+            let flags = data[chunk.data_start];
+            has_alpha = (flags & 0x10) != 0;
+        }
+    }
+
     Ok(ParsedWebP {
         data: data.to_vec(),
         image_kind,
         chunks,
         vp8x_index,
+        xmp_indices,
+        exif_indices,
+        icc_indices,
+        vp8_indices,
+        vp8l_indices,
+        anim_indices,
+        anmf_indices,
         has_xmp,
         has_exif,
         has_icc,

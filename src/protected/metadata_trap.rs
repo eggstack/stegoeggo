@@ -474,48 +474,50 @@ impl RightsMetadataProtector {
         new_xmp_data: &[u8],
         metadata_chunks: &mut Vec<([u8; 4], Vec<u8>)>,
     ) -> Result<()> {
-        for chunk in &parsed.chunks {
-            if chunk.fourcc_str() == "XMP " {
-                let data_end = chunk.data_start + chunk.data_len;
-                if data_end > parsed.data.len() {
-                    continue;
-                }
-                let existing = &parsed.data[chunk.data_start..data_end];
-                if Self::xmp_has_stego_properties(existing) {
-                    continue;
-                }
-                let merged = Self::merge_xmp_preserve_unrelated(existing, new_xmp_data);
-                let xmp_chunk = Self::create_webp_xmp_chunk_data(&merged);
-                metadata_chunks.push((*b"XMP ", xmp_chunk));
-                return Ok(());
+        let mut all_unrelated = Vec::new();
+
+        for &idx in &parsed.xmp_indices {
+            let chunk = &parsed.chunks[idx];
+            let data_end = chunk.data_start + chunk.data_len;
+            if data_end > parsed.data.len() {
+                continue;
             }
+            let existing = &parsed.data[chunk.data_start..data_end];
+            if Self::xmp_has_stego_properties(existing) {
+                continue;
+            }
+            let descs = Self::extract_unrelated_descriptions(existing);
+            all_unrelated.extend(descs);
         }
-        let xmp_chunk = Self::create_webp_xmp_chunk_data(new_xmp_data);
+
+        let merged = if all_unrelated.is_empty() {
+            new_xmp_data.to_vec()
+        } else {
+            Self::inject_unrelated_into_xmp(new_xmp_data, &all_unrelated)
+        };
+
+        let xmp_chunk = Self::create_webp_xmp_chunk_data(&merged);
         metadata_chunks.push((*b"XMP ", xmp_chunk));
         Ok(())
     }
 
-    fn merge_xmp_preserve_unrelated(existing_xmp: &[u8], new_xmp: &[u8]) -> Vec<u8> {
-        let existing_str = match std::str::from_utf8(existing_xmp) {
+    fn extract_unrelated_descriptions(xmp_data: &[u8]) -> Vec<String> {
+        let xmp_str = match std::str::from_utf8(xmp_data) {
             Ok(s) => s,
-            Err(_) => return new_xmp.to_vec(),
-        };
-        let new_str = match std::str::from_utf8(new_xmp) {
-            Ok(s) => s,
-            Err(_) => return new_xmp.to_vec(),
+            Err(_) => return Vec::new(),
         };
 
-        let rdf_start = match existing_str.find("<rdf:RDF") {
+        let rdf_start = match xmp_str.find("<rdf:RDF") {
             Some(i) => i,
-            None => return new_xmp.to_vec(),
+            None => return Vec::new(),
         };
-        let rdf_end = match existing_str.rfind("</rdf:RDF>") {
+        let rdf_end = match xmp_str.rfind("</rdf:RDF>") {
             Some(i) => i + "</rdf:RDF>".len(),
-            None => return new_xmp.to_vec(),
+            None => return Vec::new(),
         };
-        let rdf_content = &existing_str[rdf_start..rdf_end];
+        let rdf_content = &xmp_str[rdf_start..rdf_end];
 
-        let mut unrelated_descs = Vec::new();
+        let mut descs = Vec::new();
         let mut search_from = 0;
         while let Some(desc_start) = rdf_content[search_from..].find("<rdf:Description") {
             let abs_start = search_from + desc_start;
@@ -536,20 +538,23 @@ impl RightsMetadataProtector {
             let desc_tag_close = abs_start + angle_end + 1;
             let has_stego = rdf_content[abs_start..desc_tag_close].contains("plus:DataMining")
                 || rdf_content[abs_start..desc_tag_close].contains("stegoeggo:");
-            if has_stego {
-                search_from = desc_end;
-                continue;
-            }
-            let full_desc = &rdf_content[abs_start..desc_end];
-            if !full_desc.contains("stegoeggo:") && !full_desc.contains("plus:DataMining") {
-                unrelated_descs.push(full_desc.to_string());
+            if !has_stego {
+                let full_desc = &rdf_content[abs_start..desc_end];
+                if !full_desc.contains("stegoeggo:") && !full_desc.contains("plus:DataMining") {
+                    descs.push(full_desc.to_string());
+                }
             }
             search_from = desc_end;
         }
 
-        if unrelated_descs.is_empty() {
-            return new_xmp.to_vec();
-        }
+        descs
+    }
+
+    fn inject_unrelated_into_xmp(new_xmp: &[u8], unrelated: &[String]) -> Vec<u8> {
+        let new_str = match std::str::from_utf8(new_xmp) {
+            Ok(s) => s,
+            Err(_) => return new_xmp.to_vec(),
+        };
 
         let new_rdf_start = match new_str.find("<rdf:RDF") {
             Some(i) => i,
@@ -559,22 +564,24 @@ impl RightsMetadataProtector {
             Some(i) => i + "</rdf:RDF>".len(),
             None => return new_xmp.to_vec(),
         };
-        let new_rdf = &new_str[new_rdf_start..new_rdf_end];
 
         let mut result = String::new();
         result.push_str(&new_str[..new_rdf_start]);
         result.push_str("<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">");
 
-        for desc in &unrelated_descs {
+        for desc in unrelated {
             result.push_str(desc);
         }
 
-        let inner_start = match new_rdf.find('>') {
-            Some(i) => i + 1,
+        let inner_start = match new_str[new_rdf_start..new_rdf_end].find('>') {
+            Some(i) => new_rdf_start + i + 1,
             None => return new_xmp.to_vec(),
         };
-        let inner_end = new_rdf.rfind('<').unwrap_or(new_rdf.len());
-        result.push_str(&new_rdf[inner_start..inner_end]);
+        let inner_end = new_rdf_start
+            + new_str[new_rdf_start..new_rdf_end]
+                .rfind('<')
+                .unwrap_or(new_rdf_end - new_rdf_start);
+        result.push_str(&new_str[inner_start..inner_end]);
         result.push_str("</rdf:RDF>");
         result.push_str(&new_str[new_rdf_end..]);
 
