@@ -951,3 +951,67 @@ fn webp_vp8x_no_exif_when_no_exif_chunk() {
     );
     assert_eq!(count_webp_chunks(&output, b"EXIF"), 0, "No EXIF chunks");
 }
+
+#[test]
+fn webp_unrelated_plus_field_survives() {
+    let xmp_data = br#"<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/"
+    plus:License="https://creativecommons.org/licenses/by/4.0/"
+    plus:DataSource="test-source"/>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>"#;
+    let webp = make_webp_with_extra_chunks(&[(b"XMP ", xmp_data)], 32, 32);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(legal())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let trap = RightsMetadataProtector::new();
+    let output = trap.inject_bytes(&webp, &ctx).unwrap();
+
+    assert_eq!(
+        count_webp_chunks(&output, b"XMP "),
+        1,
+        "Exactly one XMP chunk"
+    );
+    let xmps = get_webp_xmp_raw(&output);
+    assert_eq!(xmps.len(), 1);
+    let xmp_str = String::from_utf8_lossy(&xmps[0]);
+    assert!(
+        xmp_str.contains("plus:License"),
+        "Unrelated plus:License must survive stripping"
+    );
+    assert!(
+        xmp_str.contains("plus:DataSource"),
+        "Unrelated plus:DataSource must survive stripping"
+    );
+    assert!(
+        xmp_str.contains("plus:DataMining"),
+        "StegoEggo plus:DataMining must be present"
+    );
+}
+
+#[test]
+fn xmp_namespace_conflict_detected() {
+    let existing = r#"xmlns:dc="http://purl.org/dc/elements/1.1/""#;
+    let conflicting = r#"xmlns:dc="http://example.com/different-namespace""#;
+    let result = stegoeggo::xmp::check_namespace_conflict(existing, conflicting);
+    assert!(result.is_err(), "Namespace conflict should fail");
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("namespace conflict"),
+        "Error should mention namespace conflict: {}",
+        err_msg
+    );
+}
+
+#[test]
+fn xmp_namespace_compatible_no_conflict() {
+    let existing = r#"xmlns:dc="http://purl.org/dc/elements/1.1/""#;
+    let compatible = r#"xmlns:dc="http://purl.org/dc/elements/1.1/""#;
+    let result = stegoeggo::xmp::check_namespace_conflict(existing, compatible);
+    assert!(result.is_ok(), "Compatible namespaces should not conflict");
+}

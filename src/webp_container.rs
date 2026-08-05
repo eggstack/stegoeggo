@@ -146,7 +146,7 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
                     ));
                 }
                 let flags = data[data_start];
-                let reserved_bits = flags & 0xC3;
+                let reserved_bits = flags & 0xC1;
                 if reserved_bits != 0 {
                     return Err(Error::Metadata(format!(
                         "VP8X flags contain reserved bits: 0x{:02X}",
@@ -287,6 +287,60 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
             }
         }
     }
+    if !has_alpha {
+        for &idx in &anmf_indices {
+            let chunk = &chunks[idx];
+            let frame_end = chunk.data_start + chunk.data_len;
+            if frame_end > data.len() {
+                continue;
+            }
+            let frame_data = &data[chunk.data_start..frame_end];
+            if frame_data.len() < 16 {
+                continue;
+            }
+            let mut sub_pos = 16;
+            while sub_pos + 8 <= frame_data.len() {
+                let sub_fourcc = [
+                    frame_data[sub_pos],
+                    frame_data[sub_pos + 1],
+                    frame_data[sub_pos + 2],
+                    frame_data[sub_pos + 3],
+                ];
+                let sub_size = u32::from_le_bytes([
+                    frame_data[sub_pos + 4],
+                    frame_data[sub_pos + 5],
+                    frame_data[sub_pos + 6],
+                    frame_data[sub_pos + 7],
+                ]) as usize;
+                let sub_data_start = sub_pos + 8;
+                let sub_data_end = sub_data_start + sub_size;
+                if sub_data_end > frame_data.len() {
+                    break;
+                }
+                match &sub_fourcc {
+                    b"ALPH" => {
+                        has_alpha = true;
+                        break;
+                    }
+                    b"VP8L" => {
+                        if let Ok(alpha) = vp8l_has_alpha(&frame_data[sub_data_start..sub_data_end])
+                        {
+                            if alpha {
+                                has_alpha = true;
+                                break;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                let padded = sub_size + (sub_size & 1);
+                sub_pos = sub_data_start + padded;
+            }
+            if has_alpha {
+                break;
+            }
+        }
+    }
 
     Ok(ParsedWebP {
         data: data.to_vec(),
@@ -359,49 +413,99 @@ pub(crate) fn vp8l_has_alpha(payload: &[u8]) -> Result<bool> {
     Ok(alpha_bit == 1)
 }
 
-#[allow(dead_code)]
 pub(crate) fn validate_webp_output(data: &[u8]) -> Result<()> {
     let parsed = parse_webp(data, None)?;
 
-    if let Some(idx) = parsed.vp8x_index {
-        let chunk = &parsed.chunks[idx];
-        if chunk.data_len < 10 {
-            return Err(Error::Metadata("VP8X too short in output".to_string()));
-        }
-        let flags = data[chunk.data_start];
+    if parsed.vp8x_index.is_none() {
+        return Err(Error::Metadata(
+            "Output WebP missing VP8X chunk".to_string(),
+        ));
+    }
 
-        let has_icc_out = parsed.has_icc;
-        let has_exif_out = parsed.has_exif;
-        let has_xmp_out = parsed.has_xmp;
-        let has_anim_out = parsed.has_animation;
+    let vp8x_idx = parsed.vp8x_index.unwrap();
+    let chunk = &parsed.chunks[vp8x_idx];
+    if chunk.data_len < 10 {
+        return Err(Error::Metadata("VP8X too short in output".to_string()));
+    }
+    let flags = data[chunk.data_start];
 
-        let mut has_alpha_out = parsed.has_alpha;
-        if has_alpha_out && parsed.vp8x_index.is_some() {
-            let vp8x_flags = data[chunk.data_start];
-            has_alpha_out = (vp8x_flags & 0x10) != 0;
-        }
+    let vp8x_count = parsed
+        .chunks
+        .iter()
+        .filter(|c| c.fourcc == *b"VP8X")
+        .count();
+    if vp8x_count != 1 {
+        return Err(Error::Metadata(format!(
+            "Expected exactly 1 VP8X chunk, found {}",
+            vp8x_count
+        )));
+    }
 
-        let mut expected_flags: u8 = 0;
-        if has_icc_out {
-            expected_flags |= 0x20;
-        }
-        if has_xmp_out {
-            expected_flags |= 0x04;
-        }
-        if has_exif_out {
-            expected_flags |= 0x08;
-        }
-        if has_alpha_out {
-            expected_flags |= 0x10;
-        }
-        if has_anim_out {
-            expected_flags |= 0x02;
-        }
+    let has_icc_out = parsed.has_icc;
+    let has_exif_out = parsed.has_exif;
+    let has_xmp_out = parsed.has_xmp;
+    let has_anim_out = parsed.has_animation;
 
-        if flags != expected_flags {
+    let has_alpha_out = parsed.has_alpha;
+
+    let mut expected_flags: u8 = 0;
+    if has_icc_out {
+        expected_flags |= 0x20;
+    }
+    if has_xmp_out {
+        expected_flags |= 0x04;
+    }
+    if has_exif_out {
+        expected_flags |= 0x08;
+    }
+    if has_alpha_out {
+        expected_flags |= 0x10;
+    }
+    if has_anim_out {
+        expected_flags |= 0x02;
+    }
+
+    if flags != expected_flags {
+        return Err(Error::Metadata(format!(
+            "VP8X flags mismatch: expected 0x{:02X}, got 0x{:02X}",
+            expected_flags, flags
+        )));
+    }
+
+    let vp8_count = parsed.vp8_indices.len();
+    let vp8l_count = parsed.vp8l_indices.len();
+    let anmf_count = parsed.anmf_indices.len();
+    if vp8_count + vp8l_count + anmf_count == 0 {
+        return Err(Error::Metadata(
+            "Output WebP has no primary image payload".to_string(),
+        ));
+    }
+    if vp8_count > 1 {
+        return Err(Error::Metadata(
+            "Output WebP has duplicate VP8 chunks".to_string(),
+        ));
+    }
+    if vp8l_count > 1 {
+        return Err(Error::Metadata(
+            "Output WebP has duplicate VP8L chunks".to_string(),
+        ));
+    }
+    if vp8_count > 0 && vp8l_count > 0 {
+        return Err(Error::Metadata(
+            "Output WebP has conflicting VP8 and VP8L".to_string(),
+        ));
+    }
+
+    if has_xmp_out {
+        let xmp_count = parsed
+            .chunks
+            .iter()
+            .filter(|c| c.fourcc == *b"XMP ")
+            .count();
+        if xmp_count != 1 {
             return Err(Error::Metadata(format!(
-                "VP8X flags mismatch: expected 0x{:02X}, got 0x{:02X}",
-                expected_flags, flags
+                "Expected exactly 1 XMP chunk when XMP present, found {}",
+                xmp_count
             )));
         }
     }
@@ -716,8 +820,132 @@ mod tests {
     }
 
     #[test]
+    fn anmf_with_alph_detects_alpha() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let mut vp8x_payload = vec![0u8; 10];
+        vp8x_payload[0] = 0x02;
+        vp8x_payload[4] = 0x01;
+        vp8x_payload[7] = 0x01;
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x_payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x_payload);
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&8u32.to_le_bytes());
+        data.extend_from_slice(&[0u8; 8]);
+        let mut anmf_payload = vec![0u8; 16];
+        anmf_payload[4] = 0x20;
+        anmf_payload[12] = 0x20;
+        data.extend_from_slice(b"ANMF");
+        let alph_data = vec![0u8; 4];
+        let anmf_size = 16 + 8 + 4;
+        data.extend_from_slice(&(anmf_size as u32).to_le_bytes());
+        data.extend_from_slice(&anmf_payload);
+        data.extend_from_slice(b"ALPH");
+        data.extend_from_slice(&(alph_data.len() as u32).to_le_bytes());
+        data.extend_from_slice(&alph_data);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let parsed = parse_webp(&data, None).unwrap();
+        assert!(parsed.has_alpha, "ANMF with ALPH should set has_alpha");
+    }
+
+    #[test]
+    fn anmf_with_vp8l_alpha_detects_alpha() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let mut vp8x_payload = vec![0u8; 10];
+        vp8x_payload[0] = 0x02;
+        vp8x_payload[4] = 0x01;
+        vp8x_payload[7] = 0x01;
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x_payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x_payload);
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&8u32.to_le_bytes());
+        data.extend_from_slice(&[0u8; 8]);
+        let mut anmf_payload = vec![0u8; 16];
+        anmf_payload[4] = 0x20;
+        anmf_payload[12] = 0x20;
+        let mut vp8l_payload = vec![0x2Fu8, 0, 0, 0, 0];
+        let bits = (1u32 << 28) | (15 << 14) | 15;
+        vp8l_payload[1..5].copy_from_slice(&bits.to_le_bytes());
+        let anmf_size = 16 + 8 + vp8l_payload.len();
+        data.extend_from_slice(b"ANMF");
+        data.extend_from_slice(&(anmf_size as u32).to_le_bytes());
+        data.extend_from_slice(&anmf_payload);
+        data.extend_from_slice(b"VP8L");
+        data.extend_from_slice(&(vp8l_payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8l_payload);
+        if anmf_size & 1 != 0 {
+            data.push(0);
+        }
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let parsed = parse_webp(&data, None).unwrap();
+        assert!(
+            parsed.has_alpha,
+            "ANMF with alpha VP8L should set has_alpha"
+        );
+    }
+
+    #[test]
+    fn anmf_with_opaque_vp8_no_alpha() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let mut vp8x_payload = vec![0u8; 10];
+        vp8x_payload[4] = 0x01;
+        vp8x_payload[7] = 0x01;
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x_payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x_payload);
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&8u32.to_le_bytes());
+        data.extend_from_slice(&[0u8; 8]);
+        let mut anmf_payload = vec![0u8; 16];
+        anmf_payload[4] = 0x20;
+        anmf_payload[12] = 0x20;
+        data.extend_from_slice(b"ANMF");
+        let vp8_data = vec![0u8; 10];
+        let anmf_size = 16 + 8 + vp8_data.len();
+        data.extend_from_slice(&(anmf_size as u32).to_le_bytes());
+        data.extend_from_slice(&anmf_payload);
+        data.extend_from_slice(b"VP8 ");
+        data.extend_from_slice(&(vp8_data.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8_data);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let parsed = parse_webp(&data, None).unwrap();
+        assert!(
+            !parsed.has_alpha,
+            "ANMF with opaque VP8 should not set has_alpha"
+        );
+    }
+
+    #[test]
     fn validate_output_accepts_valid_webp() {
-        let data = make_simple_vp8_webp();
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let mut vp8x_payload = vec![0u8; 10];
+        vp8x_payload[4] = 0x01;
+        vp8x_payload[7] = 0x01;
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x_payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x_payload);
+        data.extend_from_slice(b"VP8 ");
+        let payload = vec![0u8; 30];
+        data.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&payload);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
         assert!(validate_webp_output(&data).is_ok());
     }
 

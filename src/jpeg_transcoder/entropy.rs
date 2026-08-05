@@ -261,11 +261,11 @@ impl<'a> BitReader<'a> {
                 decoded_blocks, expected_blocks
             )));
         }
-        if self.eoi_reached && self.bit_pos == 7 {
-            return Ok(());
-        }
-        if self.byte_pos >= self.data.len() && self.bit_pos == 7 {
-            return Ok(());
+        if decoded_blocks > expected_blocks {
+            return Err(TranscoderError::HuffmanDecode(format!(
+                "Block count overflow: decoded {} but only {} expected",
+                decoded_blocks, expected_blocks
+            )));
         }
         if self.bit_pos < 7 {
             let remaining_bits = self.bit_pos + 1;
@@ -276,6 +276,24 @@ impl<'a> BitReader<'a> {
                 return Err(TranscoderError::HuffmanDecode(format!(
                     "Invalid pad bits: expected all-one padding, got 0x{:02X}",
                     pad_value
+                )));
+            }
+            let next_byte_pos = self.byte_pos + 1;
+            if next_byte_pos < self.data.len() {
+                return Err(TranscoderError::HuffmanDecode(format!(
+                    "Extra entropy bytes remain after pad bits: {} bytes at offset {}",
+                    self.data.len() - next_byte_pos,
+                    next_byte_pos
+                )));
+            }
+        } else {
+            if self.eoi_reached {
+                return Ok(());
+            }
+            if self.byte_pos < self.data.len() {
+                return Err(TranscoderError::HuffmanDecode(format!(
+                    "Extra complete entropy byte at offset {}",
+                    self.byte_pos
                 )));
             }
         }

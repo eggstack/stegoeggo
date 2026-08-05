@@ -198,6 +198,8 @@ pub(crate) mod protected;
 pub(crate) mod util;
 pub(crate) mod webp_container;
 
+pub mod xmp;
+
 #[cfg(feature = "async")]
 pub mod async_api;
 

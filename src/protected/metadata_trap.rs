@@ -392,6 +392,18 @@ impl RightsMetadataProtector {
                 "EXIF" => final_exif = true,
                 "ANMF" => final_animation = true,
                 "ALPH" => final_alpha = true,
+                "VP8L" => {
+                    let payload_end = chunk.data_start + chunk.data_len;
+                    if payload_end <= parsed.data.len() {
+                        if let Ok(alpha) = crate::webp_container::vp8l_has_alpha(
+                            &parsed.data[chunk.data_start..payload_end],
+                        ) {
+                            if alpha {
+                                final_alpha = true;
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -459,6 +471,8 @@ impl RightsMetadataProtector {
         output[5] = (riff_size >> 8) as u8;
         output[6] = (riff_size >> 16) as u8;
         output[7] = (riff_size >> 24) as u8;
+
+        crate::webp_container::validate_webp_output(&output)?;
 
         Ok(output)
     }
@@ -551,85 +565,12 @@ impl RightsMetadataProtector {
             return Some(desc.to_string());
         }
 
-        let mut result = desc.to_string();
-
-        let owned_attrs = [
-            "plus:DataMining",
-            "plus:OtherConstraints",
-            "stegoeggo:ProtectionSeed",
-            "stegoeggo:ProtectionLevel",
-            "stegoeggo:RightsPolicy",
-        ];
-
-        for attr in &owned_attrs {
-            while let Some(pos) = result.find(attr) {
-                let before = &result[..pos];
-                let after_start = pos + attr.len();
-                if after_start >= result.len() {
-                    result.truncate(pos);
-                    continue;
-                }
-                let after = &result[after_start..];
-
-                if let Some(eq_pos) = after.find('=') {
-                    let after_eq = &after[eq_pos + 1..];
-                    let value_end = if let Some(q) = after_eq.find('"') {
-                        eq_pos + 1 + q + 1
-                    } else if let Some(q) = after_eq.find('\'') {
-                        eq_pos + 1 + q + 1
-                    } else {
-                        after.find(' ').map(|s| eq_pos + s).unwrap_or(after.len())
-                    };
-                    let _between = &after[..eq_pos];
-                    let attr_start = before.rfind([' ', '\t', '\n']).map(|p| p + 1).unwrap_or(0);
-                    result = format!("{}{}", &result[..attr_start], &after[value_end..]);
-                } else {
-                    break;
-                }
-            }
+        let prefix_map = crate::xmp::build_prefix_map(desc);
+        if let Some(filtered) = crate::xmp::strip_owned_fields_from_description(desc, &prefix_map) {
+            return Some(filtered);
         }
 
-        let owned_child_elements = [
-            "<dc:creator",
-            "<xmpRights:WebStatement",
-            "<xmpRights:UsageTerms",
-            "<dc:rights",
-            "<photoshop:Credit",
-            "<Iptc4xmpExt:DateCreated",
-            "<stegoeggo:",
-        ];
-
-        for elem in &owned_child_elements {
-            while let Some(start) = result.find(elem) {
-                let tag_name_end = result[start..].find('>').map(|p| start + p + 1);
-                let Some(tag_end) = tag_name_end else {
-                    break;
-                };
-
-                let is_self_closing = result[start..tag_end].ends_with('/');
-                if is_self_closing {
-                    result.replace_range(start..tag_end, "");
-                    continue;
-                }
-
-                let close_tag_start = result[tag_end..].find("</");
-                let Some(close_rel) = close_tag_start else {
-                    break;
-                };
-                let close_abs = tag_end + close_rel;
-                let close_tag_end = result[close_abs..].find('>').map(|p| close_abs + p + 1);
-                let Some(close_end) = close_tag_end else {
-                    break;
-                };
-                result.replace_range(start..close_end, "");
-            }
-        }
-
-        if result.contains("plus:DataMining") || result.contains("stegoeggo:") {
-            return None;
-        }
-
-        Some(result)
+        None
     }
 
     fn inject_unrelated_into_xmp(new_xmp: &[u8], unrelated: &[String]) -> Result<Vec<u8>> {
@@ -643,19 +584,8 @@ impl RightsMetadataProtector {
             Error::Metadata("New XMP data missing </rdf:RDF> closing element".to_string())
         })? + "</rdf:RDF>".len();
 
-        let new_namespaces = Self::extract_namespace_prefixes(&new_str[..new_rdf_start]);
         for desc in unrelated {
-            let desc_namespaces = Self::extract_namespace_prefixes(desc);
-            for (prefix, uri) in &desc_namespaces {
-                if let Some(new_uri) = new_namespaces.get(prefix) {
-                    if new_uri != uri {
-                        return Err(Error::Metadata(format!(
-                            "XMP namespace conflict: prefix '{}' maps to '{}' in existing metadata but '{}' in new metadata",
-                            prefix, uri, new_uri
-                        )));
-                    }
-                }
-            }
+            crate::xmp::check_namespace_conflict(&new_str[..new_rdf_start], desc)?;
         }
 
         let mut result = String::new();
@@ -681,6 +611,7 @@ impl RightsMetadataProtector {
         Ok(result.into_bytes())
     }
 
+    #[allow(dead_code)]
     fn extract_namespace_prefixes(xml_section: &str) -> std::collections::HashMap<String, String> {
         let mut map = std::collections::HashMap::new();
         let mut search_from = 0;

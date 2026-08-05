@@ -133,7 +133,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 **WebP container correctness:**
 
 - **VP8X dimensions are 3-byte LE** — The `image-webp` decoder reads canvas width/height as 3-byte little-endian values. The 4-byte layout in the WebP spec diagram is misleading; use `encode_vp8x_chunk` which writes correct 3-byte encoding.
-- **VP8X flags bit positions** — ICC=0x20, Alpha=0x10, EXIF=0x08, XMP=0x04, Animation=0x02. The EXIF bit (0x08) must NOT be set when no EXIF chunk is present, or `image-webp` returns `ChunkMissing`.
+- **VP8X flags bit positions** — ICC=0x20, Alpha=0x10, EXIF=0x08, XMP=0x04, Animation=0x02. The reserved mask is 0xC1 (bits 0, 6, 7). The EXIF bit (0x08) must NOT be set when no EXIF chunk is present, or `image-webp` returns `ChunkMissing`.
 - **VP8X flags derived from final output** — Flags are computed from the actual emitted chunk inventory, not from stale input booleans. Existing EXIF causes the EXIF bit to remain set; removed metadata clears the corresponding bit.
 - **VP8X structural validation** — VP8X payload length must be exactly 10 bytes. Reserved flag bits (0xC3 mask) and reserved bytes 1-3 must be zero. Zero dimensions are rejected.
 - **VP8X-only container rejected** — VP8X without a VP8, VP8L, or ANMF payload is rejected as invalid.
