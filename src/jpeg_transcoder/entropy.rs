@@ -298,8 +298,10 @@ impl CoefficientDecoder {
                 let table = self
                     .header
                     .get_dc_huffman_table(comp.dc_table_id)
-                    .or_else(|| self.header.get_dc_huffman_table(0))
-                    .ok_or_else(|| TranscoderError::HuffmanDecode("Missing DC table".into()))?;
+                    .ok_or_else(|| TranscoderError::HuffmanDecode(format!(
+                        "Missing DC Huffman table {} referenced by component {}",
+                        comp.dc_table_id, comp.component_id
+                    )))?;
                 dc_decoders[dc_id] = Some(HuffmanDecoder::from_table(&table.counts, &table.values));
             }
 
@@ -308,8 +310,10 @@ impl CoefficientDecoder {
                 let table = self
                     .header
                     .get_ac_huffman_table(comp.ac_table_id)
-                    .or_else(|| self.header.get_ac_huffman_table(0))
-                    .ok_or_else(|| TranscoderError::HuffmanDecode("Missing AC table".into()))?;
+                    .ok_or_else(|| TranscoderError::HuffmanDecode(format!(
+                        "Missing AC Huffman table {} referenced by component {}",
+                        comp.ac_table_id, comp.component_id
+                    )))?;
                 ac_decoders[ac_id] = Some(HuffmanDecoder::from_table(&table.counts, &table.values));
             }
         }
@@ -565,8 +569,10 @@ impl CoefficientEncoder {
                 let table = self
                     .header
                     .get_dc_huffman_table(comp.dc_table_id)
-                    .or_else(|| self.header.get_dc_huffman_table(0))
-                    .ok_or_else(|| TranscoderError::HuffmanEncode("Missing DC table".into()))?;
+                    .ok_or_else(|| TranscoderError::HuffmanEncode(format!(
+                        "Missing DC Huffman table {} referenced by component {}",
+                        comp.dc_table_id, comp.component_id
+                    )))?;
                 dc_enc_tables[dc_id] = Some(HuffmanEncoderTable::build(table));
             }
 
@@ -575,8 +581,10 @@ impl CoefficientEncoder {
                 let table = self
                     .header
                     .get_ac_huffman_table(comp.ac_table_id)
-                    .or_else(|| self.header.get_ac_huffman_table(0))
-                    .ok_or_else(|| TranscoderError::HuffmanEncode("Missing AC table".into()))?;
+                    .ok_or_else(|| TranscoderError::HuffmanEncode(format!(
+                        "Missing AC Huffman table {} referenced by component {}",
+                        comp.ac_table_id, comp.component_id
+                    )))?;
                 ac_enc_tables[ac_id] = Some(HuffmanEncoderTable::build(table));
             }
         }

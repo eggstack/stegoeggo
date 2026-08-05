@@ -58,6 +58,7 @@ pub enum DctUnsupportedReason {
     UnsupportedColorProcess,
     MissingTables,
     MalformedHeader,
+    TrailingSegmentsAfterScan,
 }
 
 impl std::fmt::Display for DctUnsupportedReason {
@@ -72,6 +73,7 @@ impl std::fmt::Display for DctUnsupportedReason {
             Self::UnsupportedColorProcess => write!(f, "unsupported color process"),
             Self::MissingTables => write!(f, "missing Huffman tables"),
             Self::MalformedHeader => write!(f, "malformed header"),
+            Self::TrailingSegmentsAfterScan => write!(f, "trailing segments after scan"),
         }
     }
 }
@@ -104,10 +106,8 @@ pub fn probe_dct_support(header: &JpegHeader) -> DctSupport {
     }
 
     for comp in &header.components {
-        let has_dc = header.get_dc_huffman_table(comp.dc_table_id).is_some()
-            || header.get_dc_huffman_table(0).is_some();
-        let has_ac = header.get_ac_huffman_table(comp.ac_table_id).is_some()
-            || header.get_ac_huffman_table(0).is_some();
+        let has_dc = header.get_dc_huffman_table(comp.dc_table_id).is_some();
+        let has_ac = header.get_ac_huffman_table(comp.ac_table_id).is_some();
         if !has_dc || !has_ac {
             return DctSupport::Unsupported(DctUnsupportedReason::MissingTables);
         }
@@ -151,6 +151,10 @@ pub fn probe_dct_support_full(header: &JpegHeader, jpeg_data: &[u8]) -> DctSuppo
 
     if structure.eoi_offset.is_none() {
         return DctSupport::Unsupported(DctUnsupportedReason::MalformedHeader);
+    }
+
+    if structure.has_trailing_segments_after_scan {
+        return DctSupport::Unsupported(DctUnsupportedReason::TrailingSegmentsAfterScan);
     }
 
     DctSupport::Supported

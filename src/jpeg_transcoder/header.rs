@@ -436,7 +436,18 @@ impl JpegHeader {
             let mut total = 0u16;
             for i in 0..16 {
                 counts[i] = data[pos + 1 + i] as u16;
-                total += counts[i];
+                total = total
+                    .checked_add(counts[i])
+                    .ok_or_else(|| {
+                        TranscoderError::InvalidFormat("DHT count overflow".into())
+                    })?;
+            }
+
+            if total > 256 {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "DHT table {} has {} values, exceeds maximum of 256",
+                    table_id, total
+                )));
             }
 
             let values_start = pos + 17;
@@ -447,6 +458,8 @@ impl JpegHeader {
                 ));
             }
             let values = data[values_start..values_end].to_vec();
+
+            Self::validate_huffman_table(&counts, &values, table_class, table_id)?;
 
             let table = HuffmanTable {
                 table_class,
@@ -462,6 +475,53 @@ impl JpegHeader {
             }
 
             pos = values_end;
+        }
+
+        Ok(())
+    }
+
+    fn validate_huffman_table(
+        counts: &[u16; 16],
+        values: &[u8],
+        table_class: u8,
+        table_id: u8,
+    ) -> Result<()> {
+        let total: usize = counts.iter().map(|&c| c as usize).sum();
+        if total != values.len() {
+            return Err(TranscoderError::InvalidFormat(format!(
+                "DHT table {} (class {}): count sum {} != value count {}",
+                table_id, table_class, total, values.len()
+            )));
+        }
+
+        if total == 0 {
+            return Err(TranscoderError::InvalidFormat(format!(
+                "DHT table {} (class {}): empty table",
+                table_id, table_class
+            )));
+        }
+
+        let mut seen = [false; 256];
+        for &v in values {
+            if seen[v as usize] {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "DHT table {} (class {}): duplicate symbol 0x{:02X}",
+                    table_id, table_class, v
+                )));
+            }
+            seen[v as usize] = true;
+        }
+
+        let mut available: i64 = 1;
+        for &count in counts {
+            available *= 2;
+            available -= count as i64;
+            if available < 0 {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "DHT table {} (class {}): code space oversubscribed",
+                    table_id, table_class
+                )));
+            }
         }
 
         Ok(())
