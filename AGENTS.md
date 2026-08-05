@@ -107,7 +107,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Pipeline flow order** — JPEG output: encode → DCT stego → metadata. Non-JPEG: pixel stego → encode → metadata. JPEG→JPEG fast path bypasses pixel decode entirely
 - **`MetadataTrapProtector::apply()` returns `Cow::Borrowed(img)` unchanged** — Metadata injection is byte-level. The pipeline routes `Light` through `apply_light_bytes()` which encodes → injects → decodes
 - **`#[serde(skip)]` on `config` field** — MAC keys and legal metadata are lost in serde roundtrips
-- **CLI unified path** — The CLI always routes through `ProtectionRequest`. There is no dual legacy/request code path. `legacy_default_dmi()` computes level defaults: `Standard`→`ProhibitedAiMlTraining`, `Light`/`Disabled`→`Unspecified`. `--dmi auto` and omitted `--dmi` are equivalent. Mixed conflicting policy options (e.g., `--rights-policy` contradicting `--no-ai-training`) are configuration errors (exit code 2)
+- **CLI unified path** — The CLI always routes through `ProtectionRequest`. There is no dual legacy/request code path. `ProtectionLevel::default_policy()` computes level defaults: `Standard`→`ProhibitedAiMlTraining`, `Light`/`Disabled`→`Unspecified`. `--dmi auto` and omitted `--dmi` are equivalent. Mixed conflicting policy options (e.g., `--rights-policy` contradicting `--no-ai-training`) are configuration errors (exit code 2)
 - **CLI `--verify` always exits 0** — Use output text to determine protection state, not exit code
 - **F5 seed Q-table edge case** — `embed_seed_in_quantization_tables()` fails if any quantization value in the first 2 tables is < 2
 - **`--tdm-reserved` is deprecated** — TDMRep deployment deferred; sets DMI to `ProhibitedSeeConstraints`
@@ -121,11 +121,12 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **JPEG DCT subset** — DCT embedding supports only: 8-bit precision, sequential Huffman DCT, single scan, 1-4 components with supported sampling factors, no restart intervals, valid terminal EOI. Unsupported inputs (progressive, restart-bearing, multi-scan, CMYK) receive Q-table seed only (stego signal without payload) via `probe_dct_support_full()` gating, with full metadata injection.
 - **`encode_coefficients` signature** — Takes `original_jpeg: Option<&[u8]>`. When `Some`, uses `encode_coefficients_preserving` which walks the original byte stream replacing only DQT and SOS scan data. When `None`, uses `assemble_jpeg` which rebuilds from parsed fields (drops unknown segments).
 - **DCT success path uses preserving encoding** — All successful DCT embedding attempts encode via `encode_coefficients(header, coefficients, Some(original_jpeg))`. The `assemble_jpeg` path is never reachable from the normal original-JPEG DCT success path. This ensures APP2, APP13, APP14, COM, unknown APP, and other unrelated segments survive byte-for-byte.
-- **`probe_dct_support_full` checks scan structure** — Beyond header properties, walks the complete JPEG byte stream to count scans (must be exactly 1) and verify EOI presence. Multi-scan sequential JPEGs are rejected as `Unsupported(MultipleScans)`.
+- **`probe_dct_support_full` checks scan structure** — Beyond header properties, walks the complete JPEG byte stream to count scans (must be exactly 1), verify EOI presence, and reject trailing post-scan segments. Multi-scan sequential JPEGs are rejected as `Unsupported(MultipleScans)`. Trailing segments after scan are rejected as `Unsupported(TrailingSegmentsAfterScan)`.
 - **`parse_sos` rejects malformed table IDs** — SOS table IDs > 3 return `InvalidFormat` error instead of clamping. Prevents OOB panics in the entropy decoder.
 - **Truncation is a hard error** — `read_magnitude` returns `Err` on truncated data instead of producing partial blocks.
 - **Malformed entropy fails closed** — Missing DC/AC symbols, AC run overflow, invalid zero-size symbols, and truncated magnitude data all return `HuffmanDecode` errors. Malformed entropy never produces partial successful coefficient maps.
 - **Canonical Huffman construction advances unconditionally** — Both decoder and encoder advance the code through every bit-length slot including zero-count lengths. Empty slots get sentinel values. This ensures correct code assignments for tables with intermediate empty lengths.
+- **Huffman table validation** — `validate_huffman_table()` checks count/value sum consistency, non-empty tables, unique symbols, and code-space oversubscription. Tables are rejected deterministically without panic. Exact SOS DC/AC table references are required; table-0 fallback is removed from both decoder and encoder.
 - **Metadata-only JPEG is byte-safe** — `inject_text_chunks_jpeg` walks the raw byte stream, preserving all pre-SOS segments verbatim. No coefficient decode/encode occurs.
 
 **WebP container correctness:**
@@ -136,7 +137,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Simple → extended conversion** — Metadata insertion into VP8/VP8L creates VP8X with correct dimensions and flags. VP8X is emitted first, image payload preserved byte-identical, metadata appended after.
 - **EXIF seed emission retired** — No new EXIF seed chunks are emitted. Seed is stored in XMP via `stegoeggo:ProtectionSeed`. Historical EXIF seed data is still parsed for backward compatibility.
 - **One effective XMP chunk** — Output loop skips original XMP chunks; `merge_or_replace_webp_xmp` prepares the replacement. Existing non-StegoEggo XMP properties are preserved under `ReplaceStegoOwned`. Identical duplicate XMP chunks collapse to one.
-- **Bounded XMP merge** — `merge_xmp_preserve_unrelated` extracts unrelated `rdf:Description` blocks (including self-closing tags) from the existing XMP and preserves them in the sole output packet alongside the new StegoEggo rights properties.
+- **Bounded XMP merge** — `extract_unrelated_descriptions` extracts unrelated `rdf:Description` blocks (including self-closing tags) from all existing XMP packets and preserves them in the sole output packet alongside the new StegoEggo rights properties.
 - **Animation not rewritten** — Animated WebP metadata insertion operates on container only; frame chunks are not decoded or rewritten.
 
 **Metadata and API traps:**
@@ -173,8 +174,8 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 **Warning system:**
 
-- `ProtectionWarning` has 7 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped`, `DctCapacityInsufficient`, `ContradictoryLegalClaims`
-- `MissingMacKey` is profile-dependent: only emitted for `AuthenticatedProvenance` and `Maximal` profiles
+- `ProtectionWarning` has 8 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped`, `DctCapacityInsufficient`, `ContradictoryLegalClaims`, `MissingRightsConstraints`
+- `MissingRightsConstraints` is profile-dependent: only emitted for `ProhibitedSeeConstraints` without `ai_constraints` or `web_statement_of_rights`
 - `severity_for_profile(profile)` classifies warnings as `Info`, `Warning`, or `Error`
 
 ## Architecture
