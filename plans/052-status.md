@@ -2,7 +2,9 @@
 
 Plan baseline SHA: `c9d4d4f1edf6d43557c85c1d5c121d0071eeeaa1`
 
-Disposition: **PARTIAL — implementation complete, pending final CI evidence**
+Disposition: **COMPLETE**
+
+Final implementation SHA: `c092fe0ca58d8e01679924017e4ee5b57c80d576`
 
 This plan closes the remaining container-boundary and metadata-preservation defects identified by post-Plan-051 audit. It does not authorize format expansion, public API redesign, additional protection policies, new cryptography, release work, or broader CI.
 
@@ -45,7 +47,7 @@ The following Plan 051 items remain correctly closed and are not reopened:
 | Final WebP validator | CLOSED | `validate_webp_output()` reparses output and verifies VP8X flags match chunk inventory |
 | Focused fixtures | CLOSED | 15 new tests: DHT class, VP8X structure, primary payload, VP8L alpha, output validation |
 | Workspace verification | CLOSED | `cargo fmt`, clippy, no-default-features, full test suite all pass |
-| Current-head CI evidence | PENDING | Local `scripts/check.sh` pass recorded; remote CI pending push |
+| Current-head CI evidence | CLOSED | GitHub Actions CI #31035378131 passed for `c092fe0` |
 | Publication hold | RETAINED | No publication is part of this plan |
 
 ---
@@ -79,8 +81,9 @@ The following Plan 051 items remain correctly closed and are not reopened:
 | `cargo fmt --all -- --check` | stable rustfmt | pass | pass | local | CLOSED |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | stable clippy | pass | pass | local | CLOSED |
 | `cargo check -p stegoeggo --no-default-features` | stable | pass | pass | local | CLOSED |
-| `cargo test --workspace --exclude stegoeggo-fuzz --all-features` | stable | 1398 pass | 1398 pass, 32 ignored | local | CLOSED |
-| `./scripts/check.sh` | bash | pass | pass | local | CLOSED |
+| `cargo test --workspace --exclude stegoeggo-fuzz --all-features` | stable | 1398 pass | 1398 pass, 32 ignored | local `c092fe0` | CLOSED |
+| `./scripts/check.sh` | bash | pass | pass | local `c092fe0` | CLOSED |
+| GitHub Actions CI | GitHub Actions | pass | pass | CI #31035378131 for `c092fe0` | CLOSED |
 
 ---
 
@@ -88,12 +91,12 @@ The following Plan 051 items remain correctly closed and are not reopened:
 
 | plan | pre-052 claim | open criteria at 052 baseline | corrective commit(s) | final disposition |
 |------|---------------|-------------------------------|----------------------|-------------------|
-| 045 | PARTIAL | 12 residual items | pending commits | COMPLETE (pending CI) |
-| 048 | CLOSED | exact entropy + shared Huffman | pending commits | CLOSED |
-| 049 | CLOSED | strict WebP structure + field-level XMP | pending commits | CLOSED |
+| 045 | PARTIAL | 12 residual items | c092fe0 | COMPLETE |
+| 048 | CLOSED | exact entropy + shared Huffman | c092fe0 | COMPLETE |
+| 049 | CLOSED | strict WebP structure + field-level XMP | c092fe0 | COMPLETE |
 | 050 | Superseded | N/A | N/A | Superseded |
-| 051 | PARTIAL | 16 residual items delegated | pending commits | COMPLETE (pending CI) |
-| 052 | OPEN | all definition-of-done items | pending commits | COMPLETE (pending CI) |
+| 051 | PARTIAL | 16 residual items delegated | c092fe0 | COMPLETE |
+| 052 | OPEN | all definition-of-done items | c092fe0 | COMPLETE |
 
 ---
 
