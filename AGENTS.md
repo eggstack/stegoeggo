@@ -128,6 +128,9 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Canonical Huffman construction advances unconditionally** — Both decoder and encoder advance the code through every bit-length slot including zero-count lengths. Empty slots get sentinel values. This ensures correct code assignments for tables with intermediate empty lengths.
 - **Huffman table validation** — `validate_huffman_table()` checks count/value sum consistency, non-empty tables, unique symbols, and code-space oversubscription. Tables are rejected deterministically without panic. Only DHT class 0 (DC) and class 1 (AC) are accepted; classes 2-15 are rejected as malformed. Exact SOS DC/AC table references are required; table-0 fallback is removed from both decoder and encoder.
 - **Shared canonical Huffman representation** — `build_canonical_huffman_entries()` is the single checked builder for both encoder and decoder Huffman state. It validates counts/values, uniqueness, and code-space before constructing entries.
+- **Decoder derived from canonical entries** — `HuffmanDecoder::from_table` populates a per-length sorted vector of `(code, symbol)` pairs directly from the canonical entries. No second canonical-code algorithm remains. Empty intermediate bit-length buckets are allowed.
+- **Restart-bearing scans unsupported** — `probe_dct_support_full` rejects any scan with detected restart markers, regardless of DRI marker presence. The supported path does not consume RST markers.
+- **Scan-span offsets** — `JpegScanSpan.sos_marker_offset` points to the leading `0xff` of the SOS marker, `sos_header_end` is the first byte after the complete SOS segment, and `entropy_start` equals `sos_header_end`.
 - **Metadata-only JPEG is byte-safe** — `inject_text_chunks_jpeg` walks the raw byte stream, preserving all pre-SOS segments verbatim. No coefficient decode/encode occurs.
 
 **WebP container correctness:**
@@ -137,16 +140,20 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **VP8X flags derived from final output** — Flags are computed from the actual emitted chunk inventory, not from stale input booleans. Existing EXIF causes the EXIF bit to remain set; removed metadata clears the corresponding bit.
 - **VP8X structural validation** — VP8X payload length must be exactly 10 bytes. Reserved flag bits (0xC3 mask) and reserved bytes 1-3 must be zero. Zero dimensions are rejected.
 - **VP8X-only container rejected** — VP8X without a VP8, VP8L, or ANMF payload is rejected as invalid.
-- **Primary payload rules** — Duplicate VP8, duplicate VP8L, and VP8+VP8L conflicts are rejected. ALPH paired with VP8L is rejected (VP8L has intrinsic alpha). Duplicate ALPH chunks are rejected.
+- **Primary payload rules** — Duplicate VP8, duplicate VP8L, and VP8+VP8L conflicts are rejected. ALPH paired with VP8L is rejected (VP8L has intrinsic alpha). Duplicate ALPH chunks are rejected. Duplicate ANIM, ICCP, and EXIF chunks are rejected.
+- **Animation coherence** — Exactly one ANIM (six-byte payload), at least one ANMF, no top-level VP8/VP8L when ANIM/ANMF present, animated WebP requires VP8X. Frame ANMF requires 16-byte header with reserved bits zero, bounded nested chunks with final cursor matching the frame end, exactly one VP8 or VP8L image payload, and ALPH only paired with VP8.
+- **Derived features** — `WebPFeatures` is computed from actual chunks and payload headers (VP8L intrinsic alpha, ANMF alpha, ALPH presence, ICCP/EXIF/XMP/ANIM chunk presence). The writer emits `WebPFeatures::as_vp8x_flags()` directly. `validate_webp_output` requires exact equality between declared and independently derived flags.
 - **Simple → extended conversion** — Metadata insertion into VP8/VP8L creates VP8X with correct dimensions and flags. VP8X is emitted first, image payload preserved byte-identical, metadata appended after.
 - **RIFF extent equality** — Rewrite parsing requires `declared_end == data.len()`. Both oversized and undersized RIFF declarations are rejected. Chunk padded ends are validated against declared extent.
 - **Final cursor and pad-byte containment** — After chunk iteration, cursor must equal declared extent. Odd-sized chunks require a contained physical pad byte.
-- **VP8L intrinsic alpha** — `vp8l_has_alpha()` parses the VP8L signature byte and reads bit 28 of the 5-byte header to detect intrinsic alpha without full image decode.
+- **VP8L intrinsic alpha** — `parse_vp8l_header()` parses the VP8L signature byte, extracts width from bits 0..13, height from bits 14..27, alpha from bit 28, and rejects non-zero version in bits 29..31. VP8L dimensions and alpha are stored as width/height/alpha where raw stored zero decodes to actual dimension one.
 - **ALPH chunk tracking** — `ParsedWebP.alph_indices` tracks ALPH chunks. ALPH without VP8 is structurally invalid.
 - **Final output validator** — `validate_webp_output()` reparses output bytes, recomputes expected VP8X flags from chunk inventory, and verifies exact match.
 - **EXIF seed emission retired** — No new EXIF seed chunks are emitted. Seed is stored in XMP via `stegoeggo:ProtectionSeed`. Historical EXIF seed data is still parsed for backward compatibility.
 - **One effective XMP chunk** — Output loop skips original XMP chunks; `merge_or_replace_webp_xmp` prepares the replacement. Existing non-StegoEggo XMP properties are preserved under `ReplaceStegoOwned`. Identical duplicate XMP chunks collapse to one.
-- **Bounded XMP merge** — `extract_unrelated_descriptions` processes all existing XMP packets (not just non-owned ones). `strip_stego_owned_fields` removes owned attributes and child elements at field level, preserving unrelated content in mixed descriptions.
+- **Strict XMP filter** — `crate::xmp::filter_xmp_packet` is the single whole-packet `quick-xml::NsReader` pipeline. It identifies `rdf:Description` by namespace URI plus local name, captures inherited prefix declarations, removes owned attributes and element subtrees by URI plus local name, and rejects malformed packets before output. Malformed XMP fails the entire rewrite.
+- **Self-contained preserved descriptions** — Each preserved `rdf:Description` is serialized with the inherited `xmlns:rdf` declaration plus any namespace declarations that were in scope at the moment of capture, so unrelated content reparses correctly outside its original packet.
+- **`xmp` module is `pub(crate)`** — The XMP parser and helpers are internal; integration tests exercise XMP behavior through the public injection API.
 - **Animation not rewritten** — Animated WebP metadata insertion operates on container only; frame chunks are not decoded or rewritten.
 
 **Metadata and API traps:**

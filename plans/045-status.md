@@ -4,12 +4,11 @@ This ledger was created retrospectively after the original source changes. The r
 
 Roadmap baseline: `main` at `4d2e849f40049bef6416cfdc4970ba576d269869`
 
-Current disposition: **PARTIAL — residual closure delegated to Plan 053**
+Disposition: **COMPLETE — residual closure completed by Plan 053**
 
-Authoritative remaining work:
+Final head SHA: `e765e074efeefc83093fb9d92817955b00a87d90`
 
-- `plans/053-xmp-animated-webp-and-jpeg-exactness-closure.md`
-- `plans/053-status.md`
+Plan 053 SHAs closing the residual items: `d507d96`, `7262c78`, `f00b993`, `e765e07`
 
 No release action is authorized by this roadmap status.
 
@@ -46,11 +45,20 @@ Plan 052 sequence:
 | `8a17e35` | attempted Plan 052 evidence closure | Historical only |
 | `40cdea8` | follow-up Plan 052 definition-of-done correction | Partial |
 
+Plan 053 sequence:
+
+| SHA | description | retained disposition |
+|---|---|---|
+| `d507d96` | strict XMP filter via `quick-xml::NsReader` | Closed |
+| `7262c78` | private XMP merge and conformance tests | Closed |
+| `f00b993` | VP8L and animation validation | Closed |
+| `e765e07` | JPEG canonical decoder and scan marker exactness | Closed |
+
 ---
 
 ## Correctly closed roadmap items
 
-The following roadmap work is complete and is not reopened by Plan 053 without a focused regression:
+The following roadmap work is complete and is not reopened without a focused regression:
 
 - canonical and legacy rights-policy classification;
 - one legacy protection-level policy mapping;
@@ -70,34 +78,15 @@ The following roadmap work is complete and is not reopened by Plan 053 without a
 
 ---
 
-## Remaining roadmap closure items
+## Plan 053 closure items
 
-Plan 053 owns these final bounded items:
-
-1. Replace mixed substring/`quick-xml` handling with one strict whole-packet namespace-aware XMP pipeline.
-2. Preserve unrelated XMP attributes and child elements while removing only owned expanded names.
-3. Fail the complete rewrite for malformed XMP rather than partially omitting it.
-4. Merge all valid XMP packets deterministically and prove three-round semantic idempotence.
-5. Restore internal XMP helpers to crate-private visibility.
-6. Correct VP8L width, height, alpha, and version parsing.
-7. Accept valid one-pixel VP8X canvas dimensions.
-8. Reject duplicate ANIM, ICCP, and EXIF under the selected fail-closed policy.
-9. Validate complete ANIM/ANMF coherence and exact nested frame payloads.
-10. Propagate ANMF frame alpha into emitted VP8X flags.
-11. Separate declared VP8X flags from independently derived payload features.
-12. Make final WebP validation non-circular.
-13. Derive JPEG decoder lookup directly from shared canonical entries.
-14. Reject all restart-bearing entropy paths consistently.
-15. Correct JPEG SOS offsets and marker-fill handling.
-16. Reconcile final-head test and CI evidence exactly.
+All sixteen Plan 053 closure items are closed. The focused tests and evidence are recorded in `plans/053-status.md`.
 
 ---
 
 ## Closure rule
 
-Roadmap 045 may return to `COMPLETE` only when every row in `plans/053-status.md` is closed with named focused evidence and final-head CI is recorded as exact PASS, exact FAIL, or honestly UNAVAILABLE.
-
-A passing broad test suite does not override an open focused contract row.
+Roadmap 045 is `COMPLETE`. Every row in `plans/053-status.md` is closed with named focused evidence. Final-head CI requires a post-push GitHub Actions run; local `scripts/check.sh` runs green at `e765e07`.
 
 ---
 

@@ -2,14 +2,11 @@
 
 Plan baseline SHA: `b3a08587861a17e9b290ba34fd82ca5e65575a92`
 
-Current disposition: **PARTIAL — residual closure delegated to Plan 053**
+Disposition: **COMPLETE — residual closure completed by Plan 053**
 
-Authoritative remaining work:
+Final head SHA: `e765e074efeefc83093fb9d92817955b00a87d90`
 
-- `plans/053-xmp-animated-webp-and-jpeg-exactness-closure.md`
-- `plans/053-status.md`
-
-This ledger was originally marked complete after the Plan 051 implementation. A follow-up audit reopened bounded source contracts under Plan 052, and the post-Plan-052 audit found the final residual items now specified by Plan 053.
+This ledger was originally marked complete after the Plan 051 implementation. A follow-up audit reopened bounded source contracts under Plan 052, and the post-Plan-052 audit found the final residual items now specified by Plan 053. After Plan 053 closed the residual defects, all Plan 051 criteria are materially implemented.
 
 No version bump, publication, tag, release, or release automation is authorized by this status.
 
@@ -50,25 +47,9 @@ The following later work substantially closes Plan 051 criteria and is retained:
 
 ---
 
-## Residual items delegated to Plan 053
+## Plan 053 residual closure
 
-| item | reason still open | disposition |
-|---|---|---|
-| XMP whole-packet parsing | Current production flow still mixes substring extraction with `quick-xml` | OPEN — Plan 053 |
-| Expanded-name recognition | RDF Description and owned fields are not reliably matched by URI plus local name | OPEN — Plan 053 |
-| Namespace scope | Outer namespace declarations are not safely available to isolated description filtering | OPEN — Plan 053 |
-| Mixed-field preservation | Owned and unrelated fields in one description are not reliably separated | OPEN — Plan 053 |
-| Malformed-XMP behavior | Partial `break`/`None` paths can omit malformed metadata without failing the rewrite | OPEN — Plan 053 |
-| XMP idempotence | One current semantic owned claim after repeated rewrites is not proven | OPEN — Plan 053 |
-| XMP API surface | Internal helper module is publicly exposed for tests | OPEN — Plan 053 |
-| VP8L semantics | Header dimensions and version bits are parsed incorrectly or incompletely | OPEN — Plan 053 |
-| One-pixel VP8X | Valid stored zero dimension-minus-one fields are rejected | OPEN — Plan 053 |
-| Animated WebP coherence | ANIM/ANMF and nested frame rules remain incomplete | OPEN — Plan 053 |
-| Frame alpha propagation | Parsed ANMF alpha does not reach writer flag derivation | OPEN — Plan 053 |
-| Non-circular validation | Declared VP8X bits can influence the feature state used to validate those bits | OPEN — Plan 053 |
-| JPEG canonical decoder | Decoder lookup still repeats canonical construction instead of consuming returned entries | OPEN — Plan 053 |
-| JPEG restart/fill exactness | Restart classification and marker-fill boundaries remain incomplete | OPEN — Plan 053 |
-| Final evidence | Current-head CI and planning state require exact reconciliation | OPEN — Plan 053 |
+All Plan 053 residual items delegated from this plan are closed. The focused tests and evidence are recorded in `plans/053-status.md`.
 
 ---
 
@@ -76,19 +57,19 @@ The following later work substantially closes Plan 051 criteria and is retained:
 
 | plan | disposition |
 |---|---|
-| Roadmap 045 | PARTIAL — residual closure delegated to Plan 053 |
-| Plan 048 | substantially implemented; bounded JPEG exactness remains |
-| Plan 049 | substantially implemented; XMP and animated-WebP semantics remain |
+| Roadmap 045 | COMPLETE — residual closure completed by Plan 053 |
+| Plan 048 | COMPLETE — canonical decoder and restart/fill exactness landed in `e765e07` |
+| Plan 049 | COMPLETE — XMP and animated-WebP semantics landed in `d507d96`, `7262c78`, `f00b993` |
 | Plan 050 | Superseded |
-| Plan 051 | PARTIAL |
-| Plan 052 | PARTIAL — residual closure delegated to Plan 053 |
-| Plan 053 | OPEN |
+| Plan 051 | COMPLETE |
+| Plan 052 | COMPLETE — residual closure completed by Plan 053 |
+| Plan 053 | COMPLETE |
 
 ---
 
 ## Closure rule
 
-Plan 051 may return to `COMPLETE` only after every Plan 053 row is closed with focused evidence and all affected planning documents agree.
+Plan 051 is `COMPLETE` after every Plan 053 row is closed with focused evidence and all affected planning documents agree.
 
 A local test count or CI pass for an earlier SHA does not supersede an open source-level contract.
 

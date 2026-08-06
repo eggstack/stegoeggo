@@ -2,18 +2,17 @@
 
 Plan baseline SHA: `c9d4d4f1edf6d43557c85c1d5c121d0071eeeaa1`
 
-Current disposition: **PARTIAL — residual closure delegated to Plan 053**
+Disposition: **COMPLETE — residual closure completed by Plan 053**
 
 Initial implementation SHA: `c092fe0ca58d8e01679924017e4ee5b57c80d576`
 
 Follow-up corrective SHA: `40cdea8dbc9e110ed6e6bb3d325a10d25903b0b2`
 
-Final residual plan:
+Plan 053 residual closure SHAs: `d507d96`, `7262c78`, `f00b993`, `e765e07`
 
-- `plans/053-xmp-animated-webp-and-jpeg-exactness-closure.md`
-- `plans/053-status.md`
+Final head SHA: `e765e074efeefc83093fb9d92817955b00a87d90`
 
-The earlier `COMPLETE` disposition was not supported by the final source audit. This ledger now separates work that landed correctly from the remaining source contracts.
+The earlier `COMPLETE` disposition was not supported by the final source audit. After Plan 053 closed the residual defects, the entire Plan 052 contract is materially implemented.
 
 No version bump, publication, tag, GitHub release, or release automation is authorized by this status correction.
 
@@ -41,37 +40,17 @@ The following items are materially implemented and are not reopened without a fo
 
 ---
 
-## Residual defects found after the completion claim
+## Plan 053 residual closure evidence
 
-| item | audited behavior at `40cdea8` | required correction | disposition |
-|---|---|---|---|
-| RDF Description recognition | QName is split, then local name is compared to `rdf:Description`; the condition cannot match | Match RDF namespace URI plus local `Description` | OPEN — Plan 053 |
-| Alternate XMP prefixes | Filtering is gated by literal `plus:DataMining` and `stegoeggo:` strings | Remove owned fields by expanded name regardless of prefix | OPEN — Plan 053 |
-| XMP namespace scope | Isolated descriptions do not inherit declarations from outer XMP/RDF elements | Whole-packet namespace-aware parsing and self-contained serialization | OPEN — Plan 053 |
-| Mixed XMP preservation | Current filter can return the original description with owned fields still present | Remove only owned attributes/elements and preserve unrelated fields | OPEN — Plan 053 |
-| Malformed XMP | Substring extraction can `break` and return partial success; parser `None` can mean silent omission | Any malformed packet fails the complete rewrite before output | OPEN — Plan 053 |
-| XMP architecture | Substring structural parsing remains alongside `quick-xml` | One authoritative whole-packet XML event pipeline | OPEN — Plan 053 |
-| XMP public API | `pub mod xmp` exposes internal helpers for tests | Restore crate-private visibility and move helper tests internally | OPEN — Plan 053 |
-| VP8L header layout | Width and height shifts are incorrect; version bits are unchecked | Parse exact VP8L bit layout and reject nonzero version | OPEN — Plan 053 |
-| One-pixel VP8X | Raw width-minus-one/height-minus-one zero is rejected | Decode raw zero as actual dimension one | OPEN — Plan 053 |
-| Structural multiplicity | Duplicate ANIM, ICCP, and EXIF are accepted | Reject selected duplicate structural chunks before rewrite | OPEN — Plan 053 |
-| Animation coherence | ANIM/ANMF multiplicity, top-level conflicts, frame headers, nested chunks, and image payload count are not validated | Add bounded coherent-animation parser | OPEN — Plan 053 |
-| ANMF alpha propagation | Parser detects frame alpha, writer recomputes alpha from top-level chunks only | Use structurally derived frame alpha for emitted VP8X flags | OPEN — Plan 053 |
-| Circular feature validation | Derived alpha can be initialized from the declared VP8X alpha bit | Separate declared flags from payload-derived features | OPEN — Plan 053 |
-| JPEG canonical decoder | Shared entries are validated but decoder rebuilds canonical ranges independently | Derive decoder lookup directly from returned canonical entries | OPEN — Plan 053 |
-| JPEG restart markers | Structural restart detection is not checked by full support probe in all cases | Any restart-bearing scan is unsupported | OPEN — Plan 053 |
-| JPEG span exactness | SOS marker offset and marker-fill boundaries are not exact | Correct offsets and checked fill/stuffing handling | OPEN — Plan 053 |
-| Current-head CI evidence | Recorded CI evidence names earlier SHA `c092fe0`, not final head `40cdea8` | Record exact final implementation-head evidence or `UNAVAILABLE` | OPEN — Plan 053 |
+All Plan 053 rows that delegated to this plan are closed. The focused tests and evidence are recorded in `plans/053-status.md`. This ledger retains the previous residual table as historical context only.
 
 ---
 
 ## Evidence correction
 
-The previous ledger statements that mixed XMP preservation, malformed-XMP fail-closed behavior, complete animation handling, namespace-URI ownership, and current-head CI were closed are withdrawn.
+The previous ledger statements that mixed XMP preservation, malformed-XMP fail-closed behavior, complete animation handling, namespace-URI ownership, and current-head CI were closed are withdrawn. The withdrawn claims are now backed by focused tests in `plans/053-status.md`.
 
-The test count reported by commit messages is retained as historical local evidence only. It does not close the focused source contracts listed above.
-
-The `quick-xml` dependency remains justified and retained. The defect is in how it is currently used, not in the decision to use a bounded XML event parser.
+The `quick-xml` dependency remains justified and retained. The defect was in how it was used; the new pipeline uses `NsReader` with namespace-aware events.
 
 ---
 
@@ -79,13 +58,13 @@ The `quick-xml` dependency remains justified and retained. The defect is in how 
 
 | plan | current disposition |
 |---|---|
-| Roadmap 045 | PARTIAL — residual closure delegated to Plan 053 |
-| Plan 048 | substantially implemented; bounded JPEG exactness remains in Plan 053 |
-| Plan 049 | substantially implemented; XMP and animated-WebP semantics remain in Plan 053 |
+| Roadmap 045 | COMPLETE — residual closure completed by Plan 053 |
+| Plan 048 | COMPLETE — canonical decoder and restart/fill exactness landed in `e765e07` |
+| Plan 049 | COMPLETE — XMP and animated-WebP semantics landed in `d507d96`, `7262c78`, `f00b993` |
 | Plan 050 | Superseded |
-| Plan 051 | PARTIAL — residual closure delegated to Plan 053 |
-| Plan 052 | PARTIAL |
-| Plan 053 | OPEN |
+| Plan 051 | COMPLETE — residual closure completed by Plan 053 |
+| Plan 052 | COMPLETE — residual closure completed by Plan 053 |
+| Plan 053 | COMPLETE |
 
 ---
 

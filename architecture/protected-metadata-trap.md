@@ -109,7 +109,7 @@ All format writers (PNG tEXt, JPEG COM, WebP XMP) consume the same `RightsNotice
 
 - **PNG**: New tEXt chunks are appended before IEND. Existing StegoEggo tEXt chunks are not removed; extraction returns the most recently written value.
 - **JPEG**: New COM markers are appended before the Start-of-Scan marker. Existing COM markers are not removed; extraction returns the most recently written value.
-- **WebP**: XMP chunk is merged/replaced — existing non-StegoEggo XMP properties are preserved, StegoEggo-owned properties are replaced, result emitted as one XMP chunk. Output loop skips original XMP chunks to prevent duplicates. VP8X flags derived from final emitted chunk inventory.
+- **WebP**: XMP chunk is merged/replaced via `crate::xmp::filter_xmp_packet` (the whole-packet namespace-aware `quick-xml::NsReader` pipeline). Existing non-StegoEggo XMP properties are preserved, StegoEggo-owned fields are removed by namespace URI plus local name, and the result is emitted as one XMP chunk. Output loop skips original XMP chunks to prevent duplicates. VP8X flags are derived from final emitted chunk inventory via `WebPFeatures` and validated independently against the declared flags. Malformed XMP fails the complete rewrite before any output byte is returned.
 - **DMI and seed values**: Always replaced regardless of policy, because they are protection-critical and must match the current processing context.
 
 ### Idempotency
