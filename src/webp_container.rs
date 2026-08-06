@@ -44,6 +44,130 @@ pub(crate) struct ParsedWebP {
     pub has_animation: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FrameImageKind {
+    LossyVP8,
+    LosslessVP8L,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct AnmfFrameInfo {
+    pub has_alpha: bool,
+    pub image_kind: Option<FrameImageKind>,
+}
+
+pub(crate) fn parse_anmf_frame(frame_data: &[u8]) -> Result<AnmfFrameInfo> {
+    if frame_data.len() < 16 {
+        return Err(Error::Metadata(format!(
+            "ANMF frame is {} bytes, must be at least 16",
+            frame_data.len()
+        )));
+    }
+    let reserved = u32::from_le_bytes([frame_data[0], frame_data[1], frame_data[2], frame_data[3]]);
+    if reserved != 0 {
+        return Err(Error::Metadata(format!(
+            "ANMF reserved bits are non-zero: 0x{:08X}",
+            reserved
+        )));
+    }
+    let mut info = AnmfFrameInfo {
+        has_alpha: false,
+        image_kind: None,
+    };
+    let mut sub_pos = 16;
+    let mut has_image = false;
+    let mut has_alph = false;
+    while sub_pos + 8 <= frame_data.len() {
+        let sub_fourcc = [
+            frame_data[sub_pos],
+            frame_data[sub_pos + 1],
+            frame_data[sub_pos + 2],
+            frame_data[sub_pos + 3],
+        ];
+        let sub_size = u32::from_le_bytes([
+            frame_data[sub_pos + 4],
+            frame_data[sub_pos + 5],
+            frame_data[sub_pos + 6],
+            frame_data[sub_pos + 7],
+        ]) as usize;
+        let sub_data_start = sub_pos + 8;
+        let sub_data_end = sub_data_start
+            .checked_add(sub_size)
+            .ok_or_else(|| Error::Metadata("ANMF nested chunk overflow".to_string()))?;
+        if sub_data_end > frame_data.len() {
+            return Err(Error::Metadata(format!(
+                "ANMF nested chunk '{}' at offset {} exceeds frame bounds",
+                std::str::from_utf8(&sub_fourcc).unwrap_or("????"),
+                sub_pos
+            )));
+        }
+        match &sub_fourcc {
+            b"VP8 " => {
+                if has_image {
+                    return Err(Error::Metadata(
+                        "ANMF has duplicate VP8 image chunk".to_string(),
+                    ));
+                }
+                has_image = true;
+                info.image_kind = Some(FrameImageKind::LossyVP8);
+            }
+            b"VP8L" => {
+                if has_image {
+                    return Err(Error::Metadata(
+                        "ANMF has conflicting VP8L/VP8 image chunks".to_string(),
+                    ));
+                }
+                has_image = true;
+                info.image_kind = Some(FrameImageKind::LosslessVP8L);
+                if sub_size >= 5 {
+                    if let Ok(h) = parse_vp8l_header(&frame_data[sub_data_start..sub_data_end]) {
+                        if h.alpha {
+                            info.has_alpha = true;
+                        }
+                    }
+                }
+            }
+            b"ALPH" => {
+                if has_alph {
+                    return Err(Error::Metadata("ANMF has duplicate ALPH chunk".to_string()));
+                }
+                if info.image_kind == Some(FrameImageKind::LosslessVP8L) {
+                    return Err(Error::Metadata(
+                        "ANMF ALPH paired with VP8L (VP8L has intrinsic alpha)".to_string(),
+                    ));
+                }
+                has_alph = true;
+                info.has_alpha = true;
+            }
+            _ => {}
+        }
+        let padded = sub_size + (sub_size & 1);
+        let next_pos = sub_data_start
+            .checked_add(padded)
+            .ok_or_else(|| Error::Metadata("ANMF nested chunk padded overflow".to_string()))?;
+        if next_pos > frame_data.len() {
+            return Err(Error::Metadata(format!(
+                "ANMF nested chunk '{}' pad byte exceeds frame bounds",
+                std::str::from_utf8(&sub_fourcc).unwrap_or("????")
+            )));
+        }
+        sub_pos = next_pos;
+    }
+    if !has_image {
+        return Err(Error::Metadata(
+            "ANMF missing image payload (VP8 or VP8L)".to_string(),
+        ));
+    }
+    if sub_pos != frame_data.len() {
+        return Err(Error::Metadata(format!(
+            "ANMF final cursor {} does not match frame end {}",
+            sub_pos,
+            frame_data.len()
+        )));
+    }
+    Ok(info)
+}
+
 pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result<ParsedWebP> {
     if data.len() < 12 {
         return Err(Error::Metadata(
@@ -161,12 +285,18 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
                         "VP8X reserved bytes are non-zero".to_string(),
                     ));
                 }
-                let w = u32::from(data[data_start + 4])
+                let w_raw = u32::from(data[data_start + 4])
                     | (u32::from(data[data_start + 5]) << 8)
                     | (u32::from(data[data_start + 6]) << 16);
-                let h = u32::from(data[data_start + 7])
+                let h_raw = u32::from(data[data_start + 7])
                     | (u32::from(data[data_start + 8]) << 8)
                     | (u32::from(data[data_start + 9]) << 16);
+                let w = w_raw
+                    .checked_add(1)
+                    .ok_or_else(|| Error::Metadata("VP8X width overflow".to_string()))?;
+                let h = h_raw
+                    .checked_add(1)
+                    .ok_or_else(|| Error::Metadata("VP8X height overflow".to_string()))?;
                 if w == 0 || h == 0 {
                     return Err(Error::Metadata("VP8X dimensions are zero".to_string()));
                 }
@@ -245,6 +375,15 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
             "ALPH chunk paired with VP8L (VP8L has intrinsic alpha)".to_string(),
         ));
     }
+    if icc_indices.len() > 1 {
+        return Err(Error::Metadata("Duplicate ICCP chunks".to_string()));
+    }
+    if exif_indices.len() > 1 {
+        return Err(Error::Metadata("Duplicate EXIF chunks".to_string()));
+    }
+    if anim_indices.len() > 1 {
+        return Err(Error::Metadata("Duplicate ANIM chunks".to_string()));
+    }
 
     let image_kind = image_kind.ok_or_else(|| {
         Error::Metadata("WebP missing mandatory image chunk (VP8/VP8L/VP8X)".to_string())
@@ -260,29 +399,60 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
         ));
     }
 
+    let is_animated = !anim_indices.is_empty() || !anmf_indices.is_empty();
+    if is_animated {
+        if anim_indices.len() != 1 {
+            return Err(Error::Metadata(
+                "Animation coherence: exactly one ANIM chunk required".to_string(),
+            ));
+        }
+        if anmf_indices.is_empty() {
+            return Err(Error::Metadata(
+                "Animation coherence: ANIM requires at least one ANMF frame".to_string(),
+            ));
+        }
+        if !vp8_indices.is_empty() || !vp8l_indices.is_empty() {
+            return Err(Error::Metadata(
+                "Animation coherence: top-level VP8/VP8L forbidden when ANIM/ANMF present"
+                    .to_string(),
+            ));
+        }
+        if vp8x_index.is_none() {
+            return Err(Error::Metadata(
+                "Animation coherence: animated WebP requires VP8X".to_string(),
+            ));
+        }
+        for &idx in &anim_indices {
+            let chunk = &chunks[idx];
+            if chunk.data_len != 6 {
+                return Err(Error::Metadata(format!(
+                    "ANIM payload length {} invalid: expected exactly 6 bytes",
+                    chunk.data_len
+                )));
+            }
+        }
+    } else {
+        if !anim_indices.is_empty() || !anmf_indices.is_empty() {
+            return Err(Error::Metadata(
+                "Non-animated container cannot contain ANIM or ANMF chunks".to_string(),
+            ));
+        }
+    }
+
     let has_xmp = !xmp_indices.is_empty();
     let has_exif = !exif_indices.is_empty();
     let has_icc = !icc_indices.is_empty();
     let has_animation = !anmf_indices.is_empty() || !anim_indices.is_empty();
 
     let mut has_alpha = false;
-    if let Some(idx) = vp8x_index {
+    for &idx in &vp8l_indices {
         let chunk = &chunks[idx];
-        if chunk.data_len >= 10 {
-            let flags = data[chunk.data_start];
-            has_alpha = (flags & 0x10) != 0;
-        }
-    }
-    if !has_alpha {
-        for &idx in &vp8l_indices {
-            let chunk = &chunks[idx];
-            let payload_end = chunk.data_start + chunk.data_len;
-            if payload_end <= data.len() {
-                if let Ok(alpha) = vp8l_has_alpha(&data[chunk.data_start..payload_end]) {
-                    if alpha {
-                        has_alpha = true;
-                        break;
-                    }
+        let payload_end = chunk.data_start + chunk.data_len;
+        if payload_end <= data.len() {
+            if let Ok(alpha) = vp8l_has_alpha(&data[chunk.data_start..payload_end]) {
+                if alpha {
+                    has_alpha = true;
+                    break;
                 }
             }
         }
@@ -292,54 +462,21 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
             let chunk = &chunks[idx];
             let frame_end = chunk.data_start + chunk.data_len;
             if frame_end > data.len() {
-                continue;
+                return Err(Error::Metadata(format!(
+                    "ANMF frame at chunk {} exceeds RIFF extent",
+                    chunk.fourcc_str()
+                )));
             }
             let frame_data = &data[chunk.data_start..frame_end];
-            if frame_data.len() < 16 {
-                continue;
-            }
-            let mut sub_pos = 16;
-            while sub_pos + 8 <= frame_data.len() {
-                let sub_fourcc = [
-                    frame_data[sub_pos],
-                    frame_data[sub_pos + 1],
-                    frame_data[sub_pos + 2],
-                    frame_data[sub_pos + 3],
-                ];
-                let sub_size = u32::from_le_bytes([
-                    frame_data[sub_pos + 4],
-                    frame_data[sub_pos + 5],
-                    frame_data[sub_pos + 6],
-                    frame_data[sub_pos + 7],
-                ]) as usize;
-                let sub_data_start = sub_pos + 8;
-                let sub_data_end = sub_data_start + sub_size;
-                if sub_data_end > frame_data.len() {
-                    break;
-                }
-                match &sub_fourcc {
-                    b"ALPH" => {
-                        has_alpha = true;
-                        break;
-                    }
-                    b"VP8L" => {
-                        if let Ok(alpha) = vp8l_has_alpha(&frame_data[sub_data_start..sub_data_end])
-                        {
-                            if alpha {
-                                has_alpha = true;
-                                break;
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-                let padded = sub_size + (sub_size & 1);
-                sub_pos = sub_data_start + padded;
-            }
-            if has_alpha {
+            let info = parse_anmf_frame(frame_data)?;
+            if info.has_alpha {
+                has_alpha = true;
                 break;
             }
         }
+    }
+    if !has_alpha && !alph_indices.is_empty() {
+        has_alpha = true;
     }
 
     Ok(ParsedWebP {
@@ -361,6 +498,55 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
         has_alpha,
         has_animation,
     })
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct WebPFeatures {
+    pub icc: bool,
+    pub alpha: bool,
+    pub exif: bool,
+    pub xmp: bool,
+    pub animation: bool,
+}
+
+impl WebPFeatures {
+    #[must_use]
+    pub fn as_vp8x_flags(&self) -> u8 {
+        let mut flags = 0u8;
+        if self.icc {
+            flags |= 0x20;
+        }
+        if self.alpha {
+            flags |= 0x10;
+        }
+        if self.exif {
+            flags |= 0x08;
+        }
+        if self.xmp {
+            flags |= 0x04;
+        }
+        if self.animation {
+            flags |= 0x02;
+        }
+        flags
+    }
+
+    #[must_use]
+    #[allow(dead_code)]
+    pub fn with_xmp(mut self, on: bool) -> Self {
+        self.xmp = on;
+        self
+    }
+}
+
+pub(crate) fn derive_features(parsed: &ParsedWebP) -> WebPFeatures {
+    WebPFeatures {
+        icc: parsed.has_icc,
+        alpha: parsed.has_alpha,
+        exif: parsed.has_exif,
+        xmp: parsed.has_xmp,
+        animation: parsed.has_animation,
+    }
 }
 
 pub(crate) fn vp8x_dimensions(data: &[u8], vp8x_data_start: usize) -> Option<(u32, u32)> {
@@ -396,7 +582,14 @@ pub(crate) fn encode_vp8x_chunk(width: u32, height: u32, flags: u8) -> Result<Ve
     Ok(data)
 }
 
-pub(crate) fn vp8l_has_alpha(payload: &[u8]) -> Result<bool> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Vp8lHeader {
+    pub width: u32,
+    pub height: u32,
+    pub alpha: bool,
+}
+
+pub(crate) fn parse_vp8l_header(payload: &[u8]) -> Result<Vp8lHeader> {
     if payload.len() < 5 {
         return Err(Error::Metadata("VP8L payload too short".to_string()));
     }
@@ -404,13 +597,25 @@ pub(crate) fn vp8l_has_alpha(payload: &[u8]) -> Result<bool> {
         return Err(Error::Metadata("VP8L signature byte mismatch".to_string()));
     }
     let bits = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
-    let width = (bits >> 14) & 0x3FFF;
-    let height = (bits >> 2) & 0x3FFF;
-    if width == 0 || height == 0 {
-        return Err(Error::Metadata("VP8L dimensions are zero".to_string()));
+    let width = (bits & 0x3FFF) + 1;
+    let height = ((bits >> 14) & 0x3FFF) + 1;
+    let alpha = ((bits >> 28) & 1) != 0;
+    let version = (bits >> 29) & 0x7;
+    if version != 0 {
+        return Err(Error::Metadata(format!(
+            "VP8L version {} is non-zero (only version 0 is supported)",
+            version
+        )));
     }
-    let alpha_bit = (bits >> 28) & 1;
-    Ok(alpha_bit == 1)
+    Ok(Vp8lHeader {
+        width,
+        height,
+        alpha,
+    })
+}
+
+pub(crate) fn vp8l_has_alpha(payload: &[u8]) -> Result<bool> {
+    parse_vp8l_header(payload).map(|h| h.alpha)
 }
 
 pub(crate) fn validate_webp_output(data: &[u8]) -> Result<()> {
@@ -441,34 +646,12 @@ pub(crate) fn validate_webp_output(data: &[u8]) -> Result<()> {
         )));
     }
 
-    let has_icc_out = parsed.has_icc;
-    let has_exif_out = parsed.has_exif;
-    let has_xmp_out = parsed.has_xmp;
-    let has_anim_out = parsed.has_animation;
-
-    let has_alpha_out = parsed.has_alpha;
-
-    let mut expected_flags: u8 = 0;
-    if has_icc_out {
-        expected_flags |= 0x20;
-    }
-    if has_xmp_out {
-        expected_flags |= 0x04;
-    }
-    if has_exif_out {
-        expected_flags |= 0x08;
-    }
-    if has_alpha_out {
-        expected_flags |= 0x10;
-    }
-    if has_anim_out {
-        expected_flags |= 0x02;
-    }
-
+    let derived = derive_features(&parsed);
+    let expected_flags = derived.as_vp8x_flags();
     if flags != expected_flags {
         return Err(Error::Metadata(format!(
-            "VP8X flags mismatch: expected 0x{:02X}, got 0x{:02X}",
-            expected_flags, flags
+            "VP8X declared flags 0x{:02X} do not match derived features 0x{:02X}",
+            flags, expected_flags
         )));
     }
 
@@ -496,7 +679,7 @@ pub(crate) fn validate_webp_output(data: &[u8]) -> Result<()> {
         ));
     }
 
-    if has_xmp_out {
+    if derived.xmp {
         let xmp_count = parsed
             .chunks
             .iter()
@@ -613,7 +796,10 @@ mod tests {
 
         let parsed = parse_webp(&data, None).unwrap();
         assert_eq!(parsed.image_kind, WebPImageKind::ExtendedVP8X);
-        assert!(parsed.has_alpha);
+        assert!(
+            !parsed.has_alpha,
+            "derived alpha must be false when no ALPH or alpha-bearing VP8L/ANMF present"
+        );
         assert!(parsed.vp8x_index.is_some());
     }
 
@@ -809,6 +995,37 @@ mod tests {
     }
 
     #[test]
+    fn vp8l_header_parses_1x1_opaque() {
+        let mut payload = vec![0x2Fu8, 0, 0, 0, 0];
+        let bits = 0u32;
+        payload[1..5].copy_from_slice(&bits.to_le_bytes());
+        let header = parse_vp8l_header(&payload).expect("parse 1x1");
+        assert_eq!(header.width, 1);
+        assert_eq!(header.height, 1);
+        assert!(!header.alpha);
+    }
+
+    #[test]
+    fn vp8l_header_parses_dimensions_and_alpha() {
+        let mut payload = vec![0x2Fu8, 0, 0, 0, 0];
+        let bits: u32 = (1 << 28) | (4 << 14) | 8;
+        payload[1..5].copy_from_slice(&bits.to_le_bytes());
+        let header = parse_vp8l_header(&payload).expect("parse");
+        assert_eq!(header.width, 9);
+        assert_eq!(header.height, 5);
+        assert!(header.alpha);
+    }
+
+    #[test]
+    fn vp8l_header_rejects_nonzero_version() {
+        let mut payload = vec![0x2Fu8, 0, 0, 0, 0];
+        let bits: u32 = 1 << 31;
+        payload[1..5].copy_from_slice(&bits.to_le_bytes());
+        let result = parse_vp8l_header(&payload);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn vp8l_rejects_short_payload() {
         assert!(vp8l_has_alpha(&[0x2F, 0x00]).is_err());
     }
@@ -817,6 +1034,396 @@ mod tests {
     fn vp8l_rejects_bad_signature() {
         let payload = vec![0x00u8, 0, 0, 0, 0];
         assert!(vp8l_has_alpha(&payload).is_err());
+    }
+
+    fn webp_with_vp8x_and_vp8(
+        vp8x_flags: u8,
+        width_minus_one: u32,
+        height_minus_one: u32,
+    ) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let mut vp8x = vec![vp8x_flags, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        vp8x[4] = (width_minus_one & 0xFF) as u8;
+        vp8x[5] = ((width_minus_one >> 8) & 0xFF) as u8;
+        vp8x[6] = ((width_minus_one >> 16) & 0xFF) as u8;
+        vp8x[7] = (height_minus_one & 0xFF) as u8;
+        vp8x[8] = ((height_minus_one >> 8) & 0xFF) as u8;
+        vp8x[9] = ((height_minus_one >> 16) & 0xFF) as u8;
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let vp8 = vec![0u8; 30];
+        data.extend_from_slice(b"VP8 ");
+        data.extend_from_slice(&(vp8.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        data
+    }
+
+    #[test]
+    fn vp8x_accepts_1x1_canvas() {
+        let webp = webp_with_vp8x_and_vp8(0, 0, 0);
+        let parsed = parse_webp(&webp, None).expect("1x1 canvas must parse");
+        let vp8x_idx = parsed.vp8x_index.expect("has VP8X");
+        let (w, h) = vp8x_dimensions(&webp, parsed.chunks[vp8x_idx].data_start).expect("dims");
+        assert_eq!((w, h), (1, 1));
+    }
+
+    #[test]
+    fn vp8x_accepts_1xn_and_nx1_canvas() {
+        let webp_1xn = webp_with_vp8x_and_vp8(0, 0, 99);
+        let parsed = parse_webp(&webp_1xn, None).expect("1xN must parse");
+        let vp8x_idx = parsed.vp8x_index.expect("has VP8X");
+        let dims = vp8x_dimensions(&webp_1xn, parsed.chunks[vp8x_idx].data_start).expect("dims");
+        assert_eq!(dims, (1, 100));
+
+        let webp_nx1 = webp_with_vp8x_and_vp8(0, 99, 0);
+        let parsed = parse_webp(&webp_nx1, None).expect("Nx1 must parse");
+        let vp8x_idx = parsed.vp8x_index.expect("has VP8X");
+        let dims = vp8x_dimensions(&webp_nx1, parsed.chunks[vp8x_idx].data_start).expect("dims");
+        assert_eq!(dims, (100, 1));
+    }
+
+    #[test]
+    fn duplicate_anim_rejected() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let vp8x = vec![0x02u8, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let anim = vec![0u8; 6];
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&(anim.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anim);
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&(anim.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anim);
+        let anmf_payload = vec![0u8; 16];
+        data.extend_from_slice(b"ANMF");
+        data.extend_from_slice(&(anmf_payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anmf_payload);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let result = parse_webp(&data, None);
+        assert!(result.is_err(), "duplicate ANIM must be rejected");
+    }
+
+    #[test]
+    fn duplicate_iccp_rejected() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let vp8x = vec![0x20u8, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let icc = vec![0u8; 4];
+        data.extend_from_slice(b"ICCP");
+        data.extend_from_slice(&(icc.len() as u32).to_le_bytes());
+        data.extend_from_slice(&icc);
+        data.extend_from_slice(b"ICCP");
+        data.extend_from_slice(&(icc.len() as u32).to_le_bytes());
+        data.extend_from_slice(&icc);
+        let vp8 = vec![0u8; 30];
+        data.extend_from_slice(b"VP8 ");
+        data.extend_from_slice(&(vp8.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let result = parse_webp(&data, None);
+        assert!(result.is_err(), "duplicate ICCP must be rejected");
+    }
+
+    #[test]
+    fn duplicate_exif_rejected() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let vp8x = vec![0x08u8, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let exif = vec![0u8; 4];
+        data.extend_from_slice(b"EXIF");
+        data.extend_from_slice(&(exif.len() as u32).to_le_bytes());
+        data.extend_from_slice(&exif);
+        data.extend_from_slice(b"EXIF");
+        data.extend_from_slice(&(exif.len() as u32).to_le_bytes());
+        data.extend_from_slice(&exif);
+        let vp8 = vec![0u8; 30];
+        data.extend_from_slice(b"VP8 ");
+        data.extend_from_slice(&(vp8.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let result = parse_webp(&data, None);
+        assert!(result.is_err(), "duplicate EXIF must be rejected");
+    }
+
+    #[test]
+    fn anim_without_anmf_rejected() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let vp8x = vec![0x02u8, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let anim = vec![0u8; 6];
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&(anim.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anim);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let result = parse_webp(&data, None);
+        assert!(result.is_err(), "ANIM without ANMF must be rejected");
+    }
+
+    #[test]
+    fn anmf_without_anim_rejected() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let vp8x = vec![0x02u8, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let anmf_payload = vec![0u8; 16];
+        data.extend_from_slice(b"ANMF");
+        data.extend_from_slice(&(anmf_payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anmf_payload);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let result = parse_webp(&data, None);
+        assert!(result.is_err(), "ANMF without ANIM must be rejected");
+    }
+
+    #[test]
+    fn anmf_short_header_rejected() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let vp8x = vec![0x02u8, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let anim = vec![0u8; 6];
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&(anim.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anim);
+        let anmf_payload = vec![0u8; 8];
+        data.extend_from_slice(b"ANMF");
+        data.extend_from_slice(&(anmf_payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anmf_payload);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let result = parse_webp(&data, None);
+        assert!(result.is_err(), "short ANMF header must be rejected");
+    }
+
+    #[test]
+    fn anmf_missing_image_payload_rejected() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let vp8x = vec![0x02u8, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let anim = vec![0u8; 6];
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&(anim.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anim);
+        let anmf_payload = vec![0u8; 16];
+        data.extend_from_slice(b"ANMF");
+        data.extend_from_slice(&(anmf_payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anmf_payload);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let result = parse_webp(&data, None);
+        assert!(result.is_err(), "ANMF missing image must be rejected");
+    }
+
+    #[test]
+    fn anmf_duplicate_vp8_rejected() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let vp8x = vec![0x02u8, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let anim = vec![0u8; 6];
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&(anim.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anim);
+        let mut anmf_payload = vec![0u8; 16];
+        let vp8 = vec![0u8; 4];
+        let extra_len = 8 + vp8.len() + 8 + vp8.len();
+        let anmf_size = (anmf_payload.len() + extra_len) as u32;
+        anmf_payload.extend(std::iter::repeat_n(0u8, extra_len));
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"ANMF");
+        buf.extend_from_slice(&anmf_size.to_le_bytes());
+        buf.extend_from_slice(&anmf_payload);
+        buf.extend_from_slice(b"VP8 ");
+        buf.extend_from_slice(&(vp8.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&vp8);
+        buf.extend_from_slice(b"VP8 ");
+        buf.extend_from_slice(&(vp8.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&vp8);
+        let riff_size = (buf.len() - 8) as u32;
+        buf[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let result = parse_webp(&buf, None);
+        assert!(result.is_err(), "duplicate VP8 in ANMF must be rejected");
+    }
+
+    #[test]
+    fn anmf_vp8_and_vp8l_conflict_rejected() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let vp8x = vec![0x02u8, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let anim = vec![0u8; 6];
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&(anim.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anim);
+        let anmf_payload = vec![0u8; 16];
+        let vp8 = vec![0u8; 4];
+        let vp8l = vec![0x2Fu8, 0x00, 0x00, 0x00, 0x00];
+        let anmf_size = (anmf_payload.len() + 8 + vp8.len() + 8 + vp8l.len()) as u32;
+        data.extend_from_slice(b"ANMF");
+        data.extend_from_slice(&anmf_size.to_le_bytes());
+        data.extend_from_slice(&anmf_payload);
+        data.extend_from_slice(b"VP8 ");
+        data.extend_from_slice(&(vp8.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8);
+        data.extend_from_slice(b"VP8L");
+        data.extend_from_slice(&(vp8l.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8l);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let result = parse_webp(&data, None);
+        assert!(result.is_err(), "ANMF VP8+VP8L conflict must be rejected");
+    }
+
+    #[test]
+    fn anmf_alph_with_vp8l_rejected() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let vp8x = vec![0x02u8, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let anim = vec![0u8; 6];
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&(anim.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anim);
+        let anmf_payload = vec![0u8; 16];
+        let vp8l = vec![0x2Fu8, 0x00, 0x00, 0x00, 0x00];
+        let alph = vec![0u8; 4];
+        let anmf_size = (anmf_payload.len() + 8 + vp8l.len() + 8 + alph.len()) as u32;
+        data.extend_from_slice(b"ANMF");
+        data.extend_from_slice(&anmf_size.to_le_bytes());
+        data.extend_from_slice(&anmf_payload);
+        data.extend_from_slice(b"VP8L");
+        data.extend_from_slice(&(vp8l.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8l);
+        data.extend_from_slice(b"ALPH");
+        data.extend_from_slice(&(alph.len() as u32).to_le_bytes());
+        data.extend_from_slice(&alph);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let result = parse_webp(&data, None);
+        assert!(
+            result.is_err(),
+            "ANMF ALPH with VP8L must be rejected (VP8L has intrinsic alpha)"
+        );
+    }
+
+    #[test]
+    fn valid_opaque_vp8_frame_accepted() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let vp8x = vec![0x02u8, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let anim = vec![0u8; 6];
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&(anim.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anim);
+        let anmf_payload = vec![0u8; 16];
+        let vp8 = vec![0u8; 4];
+        let anmf_size = (anmf_payload.len() + 8 + vp8.len()) as u32;
+        data.extend_from_slice(b"ANMF");
+        data.extend_from_slice(&anmf_size.to_le_bytes());
+        data.extend_from_slice(&anmf_payload);
+        data.extend_from_slice(b"VP8 ");
+        data.extend_from_slice(&(vp8.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8);
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let parsed = parse_webp(&data, None).expect("valid animation should parse");
+        assert!(parsed.has_animation);
+    }
+
+    #[test]
+    fn valid_alpha_vp8l_frame_accepted() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"RIFF");
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        data.extend_from_slice(b"WEBP");
+        let vp8x = vec![0x02u8, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        data.extend_from_slice(b"VP8X");
+        data.extend_from_slice(&(vp8x.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8x);
+        let anim = vec![0u8; 6];
+        data.extend_from_slice(b"ANIM");
+        data.extend_from_slice(&(anim.len() as u32).to_le_bytes());
+        data.extend_from_slice(&anim);
+        let anmf_payload = vec![0u8; 16];
+        let mut vp8l = vec![0x2Fu8, 0, 0, 0, 0];
+        let bits: u32 = 1 << 28;
+        vp8l[1..5].copy_from_slice(&bits.to_le_bytes());
+        let vp8l_padded = vp8l.len() + (vp8l.len() & 1);
+        let anmf_size = (anmf_payload.len() + 8 + vp8l_padded) as u32;
+        data.extend_from_slice(b"ANMF");
+        data.extend_from_slice(&anmf_size.to_le_bytes());
+        data.extend_from_slice(&anmf_payload);
+        data.extend_from_slice(b"VP8L");
+        data.extend_from_slice(&(vp8l.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8l);
+        if vp8l.len() & 1 != 0 {
+            data.push(0);
+        }
+        let riff_size = (data.len() - 8) as u32;
+        data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let parsed = parse_webp(&data, None).expect("valid alpha VP8L animation should parse");
+        assert!(parsed.has_animation);
+        assert!(parsed.has_alpha);
     }
 
     #[test]
@@ -833,23 +1440,32 @@ mod tests {
         data.extend_from_slice(&(vp8x_payload.len() as u32).to_le_bytes());
         data.extend_from_slice(&vp8x_payload);
         data.extend_from_slice(b"ANIM");
-        data.extend_from_slice(&8u32.to_le_bytes());
-        data.extend_from_slice(&[0u8; 8]);
+        data.extend_from_slice(&6u32.to_le_bytes());
+        data.extend_from_slice(&[0u8; 6]);
         let mut anmf_payload = vec![0u8; 16];
         anmf_payload[4] = 0x20;
         anmf_payload[12] = 0x20;
-        data.extend_from_slice(b"ANMF");
+        let vp8_data = vec![0u8; 4];
         let alph_data = vec![0u8; 4];
-        let anmf_size = 16 + 8 + 4;
-        data.extend_from_slice(&(anmf_size as u32).to_le_bytes());
+        let vp8_chunk = 8 + vp8_data.len();
+        let alph_chunk = 8 + alph_data.len();
+        let anmf_size = (16 + vp8_chunk + alph_chunk) as u32;
+        data.extend_from_slice(b"ANMF");
+        data.extend_from_slice(&anmf_size.to_le_bytes());
         data.extend_from_slice(&anmf_payload);
+        data.extend_from_slice(b"VP8 ");
+        data.extend_from_slice(&(vp8_data.len() as u32).to_le_bytes());
+        data.extend_from_slice(&vp8_data);
         data.extend_from_slice(b"ALPH");
         data.extend_from_slice(&(alph_data.len() as u32).to_le_bytes());
         data.extend_from_slice(&alph_data);
         let riff_size = (data.len() - 8) as u32;
         data[4..8].copy_from_slice(&riff_size.to_le_bytes());
         let parsed = parse_webp(&data, None).unwrap();
-        assert!(parsed.has_alpha, "ANMF with ALPH should set has_alpha");
+        assert!(
+            parsed.has_alpha,
+            "ANMF with VP8 + ALPH should set has_alpha"
+        );
     }
 
     #[test]
@@ -866,22 +1482,23 @@ mod tests {
         data.extend_from_slice(&(vp8x_payload.len() as u32).to_le_bytes());
         data.extend_from_slice(&vp8x_payload);
         data.extend_from_slice(b"ANIM");
-        data.extend_from_slice(&8u32.to_le_bytes());
-        data.extend_from_slice(&[0u8; 8]);
+        data.extend_from_slice(&6u32.to_le_bytes());
+        data.extend_from_slice(&[0u8; 6]);
         let mut anmf_payload = vec![0u8; 16];
         anmf_payload[4] = 0x20;
         anmf_payload[12] = 0x20;
-        let mut vp8l_payload = vec![0x2Fu8, 0, 0, 0, 0];
-        let bits = (1u32 << 28) | (15 << 14) | 15;
+        let mut vp8l_payload = vec![0x2Fu8, 0, 0, 0, 0, 0];
+        let bits: u32 = 1 << 28;
         vp8l_payload[1..5].copy_from_slice(&bits.to_le_bytes());
-        let anmf_size = 16 + 8 + vp8l_payload.len();
+        let vp8l_padded = vp8l_payload.len() + (vp8l_payload.len() & 1);
+        let anmf_size = (16 + 8 + vp8l_padded) as u32;
         data.extend_from_slice(b"ANMF");
-        data.extend_from_slice(&(anmf_size as u32).to_le_bytes());
+        data.extend_from_slice(&anmf_size.to_le_bytes());
         data.extend_from_slice(&anmf_payload);
         data.extend_from_slice(b"VP8L");
         data.extend_from_slice(&(vp8l_payload.len() as u32).to_le_bytes());
         data.extend_from_slice(&vp8l_payload);
-        if anmf_size & 1 != 0 {
+        if vp8l_payload.len() & 1 != 0 {
             data.push(0);
         }
         let riff_size = (data.len() - 8) as u32;
@@ -906,15 +1523,16 @@ mod tests {
         data.extend_from_slice(&(vp8x_payload.len() as u32).to_le_bytes());
         data.extend_from_slice(&vp8x_payload);
         data.extend_from_slice(b"ANIM");
-        data.extend_from_slice(&8u32.to_le_bytes());
-        data.extend_from_slice(&[0u8; 8]);
+        data.extend_from_slice(&6u32.to_le_bytes());
+        data.extend_from_slice(&[0u8; 6]);
         let mut anmf_payload = vec![0u8; 16];
         anmf_payload[4] = 0x20;
         anmf_payload[12] = 0x20;
+        let vp8_data = vec![0u8; 4];
+        let vp8_padded = vp8_data.len();
+        let anmf_size = (16 + 8 + vp8_padded) as u32;
         data.extend_from_slice(b"ANMF");
-        let vp8_data = vec![0u8; 10];
-        let anmf_size = 16 + 8 + vp8_data.len();
-        data.extend_from_slice(&(anmf_size as u32).to_le_bytes());
+        data.extend_from_slice(&anmf_size.to_le_bytes());
         data.extend_from_slice(&anmf_payload);
         data.extend_from_slice(b"VP8 ");
         data.extend_from_slice(&(vp8_data.len() as u32).to_le_bytes());
