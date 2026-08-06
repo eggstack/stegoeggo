@@ -379,56 +379,9 @@ impl RightsMetadataProtector {
 
         let has_metadata = !metadata_chunks.is_empty();
 
-        let mut final_icc = false;
-        let mut final_exif = false;
-        let mut final_xmp = has_metadata;
-        let mut final_animation = false;
-        let mut final_alpha = false;
-
-        for chunk in &parsed.chunks {
-            match chunk.fourcc_str() {
-                "VP8X" | "XMP " => continue,
-                "ICCP" => final_icc = true,
-                "EXIF" => final_exif = true,
-                "ANMF" => final_animation = true,
-                "ALPH" => final_alpha = true,
-                "VP8L" => {
-                    let payload_end = chunk.data_start + chunk.data_len;
-                    if payload_end <= parsed.data.len() {
-                        if let Ok(alpha) = crate::webp_container::vp8l_has_alpha(
-                            &parsed.data[chunk.data_start..payload_end],
-                        ) {
-                            if alpha {
-                                final_alpha = true;
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        for (fourcc, _) in &metadata_chunks {
-            if fourcc == b"XMP " {
-                final_xmp = true;
-            }
-        }
-
-        let mut vp8x_flags: u8 = 0;
-        if final_icc {
-            vp8x_flags |= 0x20;
-        }
-        if final_alpha {
-            vp8x_flags |= 0x10;
-        }
-        if final_animation {
-            vp8x_flags |= 0x02;
-        }
-        if final_xmp {
-            vp8x_flags |= 0x04;
-        }
-        if final_exif {
-            vp8x_flags |= 0x08;
-        }
+        let derived = crate::webp_container::derive_features(&parsed);
+        let features = derived.with_xmp(has_metadata);
+        let vp8x_flags = features.as_vp8x_flags();
 
         let vp8x_data = crate::webp_container::encode_vp8x_chunk(width, height, vp8x_flags)?;
         output.extend_from_slice(b"VP8X");
@@ -498,11 +451,14 @@ impl RightsMetadataProtector {
             let chunk = &parsed.chunks[idx];
             let data_end = chunk.data_start + chunk.data_len;
             if data_end > parsed.data.len() {
-                continue;
+                return Err(Error::Metadata(format!(
+                    "Truncated XMP chunk '{}' in WebP file",
+                    chunk.fourcc_str()
+                )));
             }
             let existing = &parsed.data[chunk.data_start..data_end];
             let descs = Self::extract_unrelated_descriptions(existing)?;
-            all_unrelated.extend(descs);
+            all_unrelated.extend(descs.into_iter().map(|d| d.xml));
         }
 
         let merged = if all_unrelated.is_empty() {
@@ -516,64 +472,13 @@ impl RightsMetadataProtector {
         Ok(())
     }
 
-    fn extract_unrelated_descriptions(xmp_data: &[u8]) -> Result<Vec<String>> {
-        let xmp_str = std::str::from_utf8(xmp_data)
-            .map_err(|e| Error::Metadata(format!("XMP data is not valid UTF-8: {}", e)))?;
-
-        let rdf_start = xmp_str
-            .find("<rdf:RDF")
-            .ok_or_else(|| Error::Metadata("XMP data missing <rdf:RDF> element".to_string()))?;
-        let rdf_end = xmp_str.rfind("</rdf:RDF>").ok_or_else(|| {
-            Error::Metadata("XMP data missing </rdf:RDF> closing element".to_string())
-        })? + "</rdf:RDF>".len();
-        let rdf_content = &xmp_str[rdf_start..rdf_end];
-
-        let mut descs = Vec::new();
-        let mut search_from = 0;
-        while let Some(desc_start) = rdf_content[search_from..].find("<rdf:Description") {
-            let abs_start = search_from + desc_start;
-            let tag_content = &rdf_content[abs_start..];
-            let angle_end = match tag_content.find('>') {
-                Some(i) => i,
-                None => break,
-            };
-            let is_self_closing = tag_content[..angle_end].ends_with('/');
-            let desc_end = if is_self_closing {
-                abs_start + angle_end + 1
-            } else {
-                match rdf_content[abs_start..].find("</rdf:Description>") {
-                    Some(i) => abs_start + i + "</rdf:Description>".len(),
-                    None => break,
-                }
-            };
-            let full_desc = &rdf_content[abs_start..desc_end];
-            let filtered = Self::strip_stego_owned_fields(full_desc);
-            if let Some(clean) = filtered {
-                if !clean.is_empty() {
-                    descs.push(clean);
-                }
-            }
-            search_from = desc_end;
-        }
-
-        Ok(descs)
+    fn extract_unrelated_descriptions(
+        xmp_data: &[u8],
+    ) -> Result<Vec<crate::xmp::PreservedDescription>> {
+        crate::xmp::filter_xmp_packet(xmp_data)
     }
 
-    fn strip_stego_owned_fields(desc: &str) -> Option<String> {
-        let has_stego = desc.contains("plus:DataMining") || desc.contains("stegoeggo:");
-        if !has_stego {
-            return Some(desc.to_string());
-        }
-
-        let prefix_map = crate::xmp::build_prefix_map(desc);
-        if let Some(filtered) = crate::xmp::strip_owned_fields_from_description(desc, &prefix_map) {
-            return Some(filtered);
-        }
-
-        None
-    }
-
-    fn inject_unrelated_into_xmp(new_xmp: &[u8], unrelated: &[String]) -> Result<Vec<u8>> {
+    fn inject_unrelated_into_xmp(new_xmp: &[u8], unrelated: &[Vec<u8>]) -> Result<Vec<u8>> {
         let new_str = std::str::from_utf8(new_xmp)
             .map_err(|e| Error::Metadata(format!("New XMP data is not valid UTF-8: {}", e)))?;
 
@@ -585,7 +490,10 @@ impl RightsMetadataProtector {
         })? + "</rdf:RDF>".len();
 
         for desc in unrelated {
-            crate::xmp::check_namespace_conflict(&new_str[..new_rdf_start], desc)?;
+            crate::xmp::check_namespace_conflict(
+                &new_str.as_bytes()[..new_rdf_start],
+                desc.as_slice(),
+            )?;
         }
 
         let mut result = String::new();
@@ -593,7 +501,10 @@ impl RightsMetadataProtector {
         result.push_str("<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">");
 
         for desc in unrelated {
-            result.push_str(desc);
+            let s = std::str::from_utf8(desc).map_err(|e| {
+                Error::Metadata(format!("Preserved XMP description is not UTF-8: {}", e))
+            })?;
+            result.push_str(s);
         }
 
         let inner_start = match new_str[new_rdf_start..new_rdf_end].find('>') {
@@ -609,35 +520,6 @@ impl RightsMetadataProtector {
         result.push_str(&new_str[new_rdf_end..]);
 
         Ok(result.into_bytes())
-    }
-
-    #[allow(dead_code)]
-    fn extract_namespace_prefixes(xml_section: &str) -> std::collections::HashMap<String, String> {
-        let mut map = std::collections::HashMap::new();
-        let mut search_from = 0;
-        while let Some(pos) = xml_section[search_from..].find("xmlns:") {
-            let abs = search_from + pos;
-            let after_prefix = &xml_section[abs + 6..];
-            if let Some(eq_pos) = after_prefix.find('=') {
-                let prefix = after_prefix[..eq_pos].to_string();
-                let rest = &after_prefix[eq_pos + 1..];
-                if let Some(stripped) = rest.strip_prefix('"') {
-                    if let Some(end) = stripped.find('"') {
-                        map.insert(prefix, stripped[..end].to_string());
-                        search_from = abs + 6 + eq_pos + 1 + end + 1;
-                        continue;
-                    }
-                } else if let Some(stripped) = rest.strip_prefix('\'') {
-                    if let Some(end) = stripped.find('\'') {
-                        map.insert(prefix, stripped[..end].to_string());
-                        search_from = abs + 6 + eq_pos + 1 + end + 1;
-                        continue;
-                    }
-                }
-            }
-            search_from = abs + 6;
-        }
-        map
     }
 
     fn build_legal_props_from_notice(notice: &RightsNotice) -> String {
@@ -3926,16 +3808,31 @@ mod tests {
     }
 
     #[test]
-    fn malformed_xmp_missing_rdf_causes_error() {
-        let bad_xmp = b"<xml>no rdf here</xml>";
-        let result = RightsMetadataProtector::extract_unrelated_descriptions(bad_xmp);
-        assert!(result.is_err(), "XMP without rdf:RDF must fail");
+    fn malformed_xmp_no_description_returns_empty() {
+        let no_desc_xmp = br#"<?xml version="1.0"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+<other>nothing here</other>
+</x:xmpmeta>"#;
+        let result = RightsMetadataProtector::extract_unrelated_descriptions(no_desc_xmp)
+            .expect("should parse");
+        assert!(
+            result.is_empty(),
+            "XMP without rdf:Description returns no descriptions"
+        );
     }
 
     #[test]
-    fn malformed_xmp_missing_rdf_close_causes_error() {
-        let bad_xmp = b"<xml><rdf:RDF>unclosed";
+    fn malformed_xmp_unclosed_description_causes_error() {
+        let bad_xmp = br#"<?xml version="1.0"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF>
+<rdf:Description rdf:about="">
+</rdf:RDF>
+</x:xmpmeta>"#;
         let result = RightsMetadataProtector::extract_unrelated_descriptions(bad_xmp);
-        assert!(result.is_err(), "XMP without closing rdf:RDF must fail");
+        assert!(
+            result.is_err(),
+            "XMP with unclosed rdf:Description must fail"
+        );
     }
 }

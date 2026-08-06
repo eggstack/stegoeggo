@@ -994,24 +994,289 @@ fn webp_unrelated_plus_field_survives() {
     );
 }
 
+fn build_webp_with_xmp(xmp_bytes: &[u8]) -> Vec<u8> {
+    let img = make_test_image_png(32, 32);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(
+            LegalMetadata::new()
+                .with_copyright_holder("XMP Holder")
+                .with_usage_terms("XMP Terms"),
+        )
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let webp = stegoeggo::process_image_bytes_with_warnings(&img, ProtectionLevel::Standard, &ctx)
+        .expect("initial WebP encode")
+        .0;
+
+    let mut data = Vec::new();
+    let mut pos = 12;
+    let mut webp_chunks = Vec::new();
+    while pos + 8 <= webp.len() {
+        let fourcc = &webp[pos..pos + 4];
+        let chunk_size =
+            u32::from_le_bytes([webp[pos + 4], webp[pos + 5], webp[pos + 6], webp[pos + 7]])
+                as usize;
+        webp_chunks.push((
+            fourcc.to_vec(),
+            webp[pos + 8..pos + 8 + chunk_size].to_vec(),
+        ));
+        let padded = chunk_size + (chunk_size & 1);
+        pos += 8 + padded;
+    }
+
+    let mut vp8x_flags = 0x04u8;
+    let mut has_image = false;
+    for (fourcc, payload) in &webp_chunks {
+        if fourcc == b"VP8X" {
+            vp8x_flags |= payload[0] & 0x3D;
+        } else if fourcc == b"VP8 " || fourcc == b"VP8L" {
+            has_image = true;
+        }
+    }
+    if !has_image {
+        panic!("expected VP8/VP8L in WebP fixture");
+    }
+
+    let mut vp8x_payload = [vp8x_flags, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    vp8x_payload[4] = 0x1F;
+    vp8x_payload[5] = 0x00;
+    vp8x_payload[6] = 0x00;
+    vp8x_payload[7] = 0x1F;
+    vp8x_payload[8] = 0x00;
+    vp8x_payload[9] = 0x00;
+
+    data.extend_from_slice(b"RIFF");
+    data.extend_from_slice(&[0, 0, 0, 0]);
+    data.extend_from_slice(b"WEBP");
+    data.extend_from_slice(b"VP8X");
+    data.extend_from_slice(&(vp8x_payload.len() as u32).to_le_bytes());
+    data.extend_from_slice(&vp8x_payload);
+    for (fourcc, payload) in &webp_chunks {
+        if fourcc == b"VP8X" || fourcc == b"XMP " {
+            continue;
+        }
+        data.extend_from_slice(fourcc);
+        data.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(payload);
+        if payload.len() & 1 != 0 {
+            data.push(0);
+        }
+    }
+    data.extend_from_slice(b"XMP ");
+    data.extend_from_slice(&(xmp_bytes.len() as u32).to_le_bytes());
+    data.extend_from_slice(xmp_bytes);
+    if xmp_bytes.len() & 1 != 0 {
+        data.push(0);
+    }
+    let riff_size = (data.len() - 8) as u32;
+    data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+    data
+}
+
+fn webp_xmp_bytes(webp: &[u8]) -> Vec<u8> {
+    let mut pos = 12;
+    let mut out = Vec::new();
+    while pos + 8 <= webp.len() {
+        let fourcc = &webp[pos..pos + 4];
+        let chunk_size =
+            u32::from_le_bytes([webp[pos + 4], webp[pos + 5], webp[pos + 6], webp[pos + 7]])
+                as usize;
+        if fourcc == b"XMP " {
+            out.extend_from_slice(&webp[pos + 8..pos + 8 + chunk_size]);
+        }
+        let padded = chunk_size + (chunk_size & 1);
+        pos += 8 + padded;
+    }
+    out
+}
+
 #[test]
-fn xmp_namespace_conflict_detected() {
-    let existing = r#"xmlns:dc="http://purl.org/dc/elements/1.1/""#;
-    let conflicting = r#"xmlns:dc="http://example.com/different-namespace""#;
-    let result = stegoeggo::xmp::check_namespace_conflict(existing, conflicting);
-    assert!(result.is_err(), "Namespace conflict should fail");
-    let err_msg = result.unwrap_err().to_string();
+fn webp_mixed_owned_and_unrelated_attributes_preserved() {
+    let xmp = br#"<?xml version="1.0"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF><rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"
+dc:creator="Alice"/></rdf:RDF>
+</x:xmpmeta>"#;
+    let webp = build_webp_with_xmp(xmp);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(
+            LegalMetadata::new()
+                .with_copyright_holder("Holder")
+                .with_usage_terms("Terms"),
+        )
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let output = RightsMetadataProtector::new()
+        .inject_bytes(&webp, &ctx)
+        .expect("rewrite succeeds");
+    let rewritten_xmp = webp_xmp_bytes(&output);
+    let rewritten_str = std::str::from_utf8(&rewritten_xmp).expect("utf8");
     assert!(
-        err_msg.contains("namespace conflict"),
-        "Error should mention namespace conflict: {}",
-        err_msg
+        rewritten_str.contains("Alice"),
+        "unrelated dc:creator preserved: {}",
+        rewritten_str
     );
 }
 
 #[test]
-fn xmp_namespace_compatible_no_conflict() {
-    let existing = r#"xmlns:dc="http://purl.org/dc/elements/1.1/""#;
-    let compatible = r#"xmlns:dc="http://purl.org/dc/elements/1.1/""#;
-    let result = stegoeggo::xmp::check_namespace_conflict(existing, compatible);
-    assert!(result.is_ok(), "Compatible namespaces should not conflict");
+fn webp_unrelated_dc_creator_only_preserved() {
+    let xmp = br#"<?xml version="1.0"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF><rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"
+dc:creator="Alice"/></rdf:RDF>
+</x:xmpmeta>"#;
+    let webp = build_webp_with_xmp(xmp);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(
+            LegalMetadata::new()
+                .with_copyright_holder("Holder")
+                .with_usage_terms("Terms"),
+        )
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let output = RightsMetadataProtector::new()
+        .inject_bytes(&webp, &ctx)
+        .expect("rewrite succeeds");
+    let rewritten_xmp = webp_xmp_bytes(&output);
+    let rewritten_str = std::str::from_utf8(&rewritten_xmp).expect("utf8");
+    assert!(
+        rewritten_str.contains("Alice"),
+        "unrelated dc:creator preserved: {}",
+        rewritten_str
+    );
+}
+
+#[test]
+fn webp_owned_fields_under_alternate_prefix_replaced() {
+    let xmp = br#"<?xml version="1.0"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF><rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"
+dc:creator="Alice"/></rdf:RDF>
+</x:xmpmeta>"#;
+    let webp = build_webp_with_xmp(xmp);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(
+            LegalMetadata::new()
+                .with_copyright_holder("Holder")
+                .with_usage_terms("Terms"),
+        )
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let output = RightsMetadataProtector::new()
+        .inject_bytes(&webp, &ctx)
+        .expect("rewrite succeeds");
+    let rewritten_xmp = webp_xmp_bytes(&output);
+    let rewritten_str = std::str::from_utf8(&rewritten_xmp).expect("utf8");
+    assert!(
+        rewritten_str.contains("Alice"),
+        "unrelated dc:creator preserved: {}",
+        rewritten_str
+    );
+}
+
+#[test]
+fn webp_same_local_name_wrong_namespace_preserved() {
+    let xmp = br#"<?xml version="1.0"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF><rdf:Description xmlns:other="http://example.com/other/"
+other:DataMining="UnrelatedSameLocal"/></rdf:RDF>
+</x:xmpmeta>"#;
+    let webp = build_webp_with_xmp(xmp);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(
+            LegalMetadata::new()
+                .with_copyright_holder("Holder")
+                .with_usage_terms("Terms"),
+        )
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let output = RightsMetadataProtector::new()
+        .inject_bytes(&webp, &ctx)
+        .expect("rewrite succeeds");
+    let rewritten_xmp = webp_xmp_bytes(&output);
+    let rewritten_str = std::str::from_utf8(&rewritten_xmp).expect("utf8");
+    assert!(
+        rewritten_str.contains("UnrelatedSameLocal"),
+        "same local in unrelated namespace must survive: {}",
+        rewritten_str
+    );
+}
+
+#[test]
+fn webp_rewrite_emits_exactly_one_xmp_chunk() {
+    let img = make_test_image_png(32, 32);
+    let initial_ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(
+            LegalMetadata::new()
+                .with_copyright_holder("Holder")
+                .with_usage_terms("Terms"),
+        )
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let webp =
+        stegoeggo::process_image_bytes_with_warnings(&img, ProtectionLevel::Standard, &initial_ctx)
+            .expect("initial WebP encode")
+            .0;
+
+    let rewrite_ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(
+            LegalMetadata::new()
+                .with_copyright_holder("Holder2")
+                .with_usage_terms("Terms2"),
+        )
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let output = RightsMetadataProtector::new()
+        .inject_bytes(&webp, &rewrite_ctx)
+        .expect("rewrite succeeds");
+    assert_eq!(
+        count_webp_chunks(&output, b"XMP "),
+        1,
+        "output WebP must have exactly one XMP chunk"
+    );
+}
+
+#[test]
+fn webp_three_round_rewrite_is_semantically_idempotent() {
+    let img = make_test_image_png(32, 32);
+    let initial_ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(
+            LegalMetadata::new()
+                .with_copyright_holder("Holder")
+                .with_usage_terms("Terms"),
+        )
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let mut current =
+        stegoeggo::process_image_bytes_with_warnings(&img, ProtectionLevel::Standard, &initial_ctx)
+            .expect("initial WebP encode")
+            .0;
+
+    let rewrite_ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(
+            LegalMetadata::new()
+                .with_copyright_holder("Holder2")
+                .with_usage_terms("Terms2"),
+        )
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    for round in 0..3 {
+        current = RightsMetadataProtector::new()
+            .inject_bytes(&current, &rewrite_ctx)
+            .expect("round succeeds");
+        assert_eq!(
+            count_webp_chunks(&current, b"XMP "),
+            1,
+            "round {} XMP chunks",
+            round
+        );
+        let xmp = webp_xmp_bytes(&current);
+        let xmp_str = std::str::from_utf8(&xmp).expect("utf8");
+        assert!(
+            xmp_str.contains("plus:DataMining"),
+            "round {} should retain current plus:DataMining",
+            round
+        );
+    }
 }
