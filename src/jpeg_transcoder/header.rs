@@ -643,7 +643,7 @@ impl JpegHeader {
 
             if marker == 0xD9 {
                 if in_scan {
-                    if let (Some(sos_off), Some(sos_hdr_end), Some(entropy_s)) = (
+                    if let (Some(sos_off), Some(sos_hdr_end), Some(_entropy_s)) = (
                         current_scan_start,
                         current_scan_sos_header_end,
                         current_scan_start,
@@ -651,7 +651,7 @@ impl JpegHeader {
                         structure.scan_spans.push(JpegScanSpan {
                             sos_marker_offset: sos_off,
                             sos_header_end: sos_hdr_end,
-                            entropy_start: entropy_s,
+                            entropy_start: sos_hdr_end,
                             entropy_end: pos,
                             terminating_marker_offset: pos,
                             terminating_marker: marker,
@@ -674,7 +674,7 @@ impl JpegHeader {
                     break;
                 }
 
-                current_scan_start = Some(seg_end);
+                current_scan_start = Some(pos);
                 current_scan_sos_header_end = Some(seg_end);
                 in_scan = true;
                 pos = seg_end;
@@ -682,7 +682,7 @@ impl JpegHeader {
             }
 
             if in_scan {
-                if let (Some(sos_off), Some(sos_hdr_end), Some(entropy_s)) = (
+                if let (Some(sos_off), Some(sos_hdr_end), Some(_entropy_s)) = (
                     current_scan_start,
                     current_scan_sos_header_end,
                     current_scan_start,
@@ -690,7 +690,7 @@ impl JpegHeader {
                     structure.scan_spans.push(JpegScanSpan {
                         sos_marker_offset: sos_off,
                         sos_header_end: sos_hdr_end,
-                        entropy_start: entropy_s,
+                        entropy_start: sos_hdr_end,
                         entropy_end: pos,
                         terminating_marker_offset: pos,
                         terminating_marker: marker,
@@ -980,5 +980,31 @@ mod tests {
         ];
         let result = JpegHeader::parse(data);
         assert!(result.is_err(), "DHT with class 15 must be rejected");
+    }
+
+    #[test]
+    fn sos_marker_offset_points_to_sos() {
+        let data: &[u8] = &[
+            0xFF, 0xD8, // SOI
+            0xFF, 0xDA, // SOS marker
+            0x00, 0x08, // length 8
+            0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0x7F, 0x80, // entropy bytes
+            0xFF, 0xD9, // EOI
+        ];
+        let structure = JpegHeader::analyze_structure(data);
+        assert_eq!(structure.scan_count, 1);
+        let span = &structure.scan_spans[0];
+        assert_eq!(span.sos_marker_offset, 2);
+    }
+
+    #[test]
+    fn entropy_start_equals_sos_header_end() {
+        let data: &[u8] = &[
+            0xFF, 0xD8, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0x7F, 0x80,
+            0xFF, 0xD9,
+        ];
+        let structure = JpegHeader::analyze_structure(data);
+        let span = &structure.scan_spans[0];
+        assert_eq!(span.entropy_start, span.sos_header_end);
     }
 }

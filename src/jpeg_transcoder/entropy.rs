@@ -155,10 +155,7 @@ pub const STD_CHROMINANCE_AC: ([u8; 16], &[u8]) = (
 );
 
 struct HuffmanDecoder {
-    min_code: [i32; 16],
-    max_code: [i32; 16],
-    val_offset: [i32; 16],
-    values: Vec<u8>,
+    by_len: [Vec<(u16, u8)>; 16],
 }
 
 struct HuffmanEncoderTable {
@@ -178,55 +175,30 @@ impl HuffmanEncoderTable {
 
 impl HuffmanDecoder {
     fn from_table(counts: &[u16; 16], values: &[u8]) -> Result<Self> {
-        let _entries = build_canonical_huffman_entries(counts, values)?;
-
-        let mut min_code = [-1i32; 16];
-        let mut max_code = [-1i32; 16];
-        let mut val_offset = [-1i32; 16];
-
-        let mut code: i32 = 0;
-        let mut value_index: usize = 0;
-
-        for i in 0..16 {
-            let count = counts[i] as i32;
-            if count > 0 {
-                min_code[i] = code;
-                max_code[i] = code + count - 1;
-                val_offset[i] = value_index as i32 - code;
-                value_index += count as usize;
-                code += count;
+        let canonical = build_canonical_huffman_entries(counts, values)?;
+        let mut by_len: [Vec<(u16, u8)>; 16] = Default::default();
+        for entry in canonical {
+            let idx = (entry.bit_len as usize).saturating_sub(1);
+            if idx < 16 {
+                by_len[idx].push((entry.code, entry.symbol));
             }
-            code <<= 1;
         }
-
-        Ok(Self {
-            min_code,
-            max_code,
-            val_offset,
-            values: values.to_vec(),
-        })
+        for bucket in &mut by_len {
+            bucket.sort_by_key(|&(code, _)| code);
+        }
+        Ok(Self { by_len })
     }
 
     fn decode_symbol(&self, bit_reader: &mut BitReader) -> Option<u8> {
-        // Read bits until we match a code
         let mut code: u16 = 0;
-        #[allow(unused_assignments)]
-        let mut valid_bits = 0;
-
         for i in 0..16 {
             let bit = bit_reader.read_bit()?;
             code = (code << 1) | (bit as u16);
-            valid_bits = i + 1;
-
-            let idx = (valid_bits - 1) as usize;
-            if code >= self.min_code[idx] as u16 && code <= self.max_code[idx] as u16 {
-                let val_idx = ((code as i32) + self.val_offset[idx]) as usize;
-                if val_idx < self.values.len() {
-                    return Some(self.values[val_idx]);
-                }
+            let bucket = &self.by_len[i];
+            if let Ok(pos) = bucket.binary_search_by_key(&code, |&(c, _)| c) {
+                return Some(bucket[pos].1);
             }
         }
-
         None
     }
 }
@@ -951,6 +923,36 @@ impl CoefficientEncoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decoder_lookup_derived_from_canonical_entries() {
+        let counts: [u16; 16] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+        let values: Vec<u8> = (0..16).collect();
+        let decoder = HuffmanDecoder::from_table(&counts, &values).expect("decoder");
+        assert_eq!(decoder.by_len.len(), 16);
+        let total: usize = decoder.by_len.iter().map(|b| b.len()).sum();
+        assert_eq!(total, 16, "decoder should have 16 entries");
+        for bucket in &decoder.by_len {
+            assert_eq!(bucket.len(), 1);
+        }
+    }
+
+    #[test]
+    fn valid_zero_count_intermediate_lengths_decode() {
+        let counts: [u16; 16] = [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0];
+        let values: Vec<u8> = (0..8).collect();
+        let decoder =
+            HuffmanDecoder::from_table(&counts, &values).expect("decoder with zero-count slot");
+        let total: usize = decoder.by_len.iter().map(|b| b.len()).sum();
+        assert_eq!(total, 8);
+        for (i, bucket) in decoder.by_len.iter().enumerate() {
+            if i % 2 == 0 {
+                assert_eq!(bucket.len(), 1);
+            } else {
+                assert_eq!(bucket.len(), 0);
+            }
+        }
+    }
 
     #[test]
     fn test_zigzag_is_valid_permutation() {

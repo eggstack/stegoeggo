@@ -153,6 +153,10 @@ pub fn probe_dct_support_full(header: &JpegHeader, jpeg_data: &[u8]) -> DctSuppo
         return DctSupport::Unsupported(DctUnsupportedReason::MalformedHeader);
     }
 
+    if structure.has_restart_markers {
+        return DctSupport::Unsupported(DctUnsupportedReason::RestartIntervals);
+    }
+
     if structure.has_trailing_segments_after_scan {
         return DctSupport::Unsupported(DctUnsupportedReason::TrailingSegmentsAfterScan);
     }
