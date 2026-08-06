@@ -2,103 +2,93 @@
 
 Plan baseline SHA: `c9d4d4f1edf6d43557c85c1d5c121d0071eeeaa1`
 
-Disposition: **COMPLETE**
+Current disposition: **PARTIAL — residual closure delegated to Plan 053**
 
 Initial implementation SHA: `c092fe0ca58d8e01679924017e4ee5b57c80d576`
-Corrective pass SHA: pending (this session)
 
-This plan closes the remaining container-boundary and metadata-preservation defects identified by post-Plan-051 audit. It does not authorize format expansion, public API redesign, additional protection policies, new cryptography, release work, or broader CI.
+Follow-up corrective SHA: `40cdea8dbc9e110ed6e6bb3d325a10d25903b0b2`
 
----
+Final residual plan:
 
-## Retained Plan 051 work (not reopened)
+- `plans/053-xmp-animated-webp-and-jpeg-exactness-closure.md`
+- `plans/053-status.md`
 
-The following Plan 051 items remain correctly closed and are not reopened:
+The earlier `COMPLETE` disposition was not supported by the final source audit. This ledger now separates work that landed correctly from the remaining source contracts.
 
-- one legacy `ProtectionLevel` to `RightsPolicy` mapping;
-- `Light -> Unspecified` and `Standard -> ProhibitedAiMlTraining` compatibility behavior;
-- structured `MissingRightsConstraints` reporting;
-- removal of stale current-output TDM emission claims;
-- basic JPEG Huffman count/value, empty-table, duplicate-symbol, and oversubscription checks;
-- exact SOS DC/AC table references rather than table-0 fallback;
-- rejection of JPEG post-scan marker segments from the supported DCT path;
-- duplicate top-level WebP VP8X rejection;
-- basic final-output VP8X ICC, EXIF, XMP, animation, and ALPH-chunk flag derivation;
-- creation of retrospective planning ledgers;
-- retention of one required CI job and manual release policy.
+No version bump, publication, tag, GitHub release, or release automation is authorized by this status correction.
 
 ---
 
-## Corrective pass (this session)
+## Correctly retained Plan 052 work
 
-The initial `c092fe0` implementation left 8 definition-of-done gaps. This corrective pass closes all of them:
+The following items are materially implemented and are not reopened without a focused failing fixture:
 
-| Gap | Resolution |
-|-----|------------|
-| ANMF frame alpha not detected | `parse_webp()` now parses ANMF sub-payloads for ALPH chunks and VP8L intrinsic alpha |
-| `finish_scan()` missing `decoded > expected` check | Added explicit overflow rejection |
-| `finish_scan()` missing extra-byte rejection | Added explicit check after pad bits |
-| `validate_webp_output()` incomplete (4/9 conditions) | Extended to check VP8X count, primary payload count, XMP count; removed `#[allow(dead_code)]`; called in production |
-| VP8X reserved bits mask wrong (0xC3) | Corrected to 0xC1 (bits 0, 6, 7 only; animation bit 0x02 is valid) |
-| XMP ownership prefix-based, not namespace-URI-based | Added `quick-xml` dependency; new `src/xmp.rs` module with `OWNED_FIELDS` matched by namespace URI + local name |
-| No test for unrelated PLUS field survival | Added `webp_unrelated_plus_field_survives` test |
-| No test for namespace conflict | Added `xmp_namespace_conflict_detected` and `xmp_namespace_compatible_no_conflict` tests |
-| VP8L alpha not detected in flag derivation | `inject_text_chunks_webp_from_notice` now checks VP8L intrinsic alpha |
-
----
-
-## Completed defect rows
-
-| Item | Status | Evidence |
-|------|--------|----------|
-| JPEG exact entropy span | CLOSED | `JpegScanSpan` returns exact offsets; decoder receives `entropy_start..entropy_end` slice only |
-| JPEG exact exhaustion | CLOSED | `finish_scan()` validates expected vs decoded blocks; overflow check; pad bits checked; extra bytes rejected |
-| JPEG DHT class validation | CLOSED | `parse_dht()` rejects `table_class > 1` before table storage |
-| Shared canonical Huffman representation | CLOSED | `build_canonical_huffman_entries()` validates and both encoder/decoder derive from it |
-| WebP declared RIFF equality | CLOSED | `parse_webp()` requires `declared_end == data.len()` |
-| WebP final cursor and pad validation | CLOSED | Chunk padded end checked against declared end; final cursor equality enforced |
-| WebP primary payload validation | CLOSED | VP8X-only rejected; duplicate VP8/VP8L rejected; VP8+VP8L conflict rejected |
-| WebP VP8X structural validation | CLOSED | Payload length ==10 validated; reserved bits (0xC1 mask) rejected; reserved bytes rejected; zero dimensions rejected |
-| Mixed XMP field preservation | CLOSED | `strip_stego_owned_fields()` uses `quick-xml` + `OWNED_FIELDS` matched by namespace URI + local name |
-| Malformed XMP fail-closed behavior | CLOSED | UTF-8 validation; missing rdf:RDF fails; owned fields stripped via `quick-xml` parser |
-| VP8L alpha detection | CLOSED | `vp8l_has_alpha()` parses VP8L signature byte and alpha bit from 5-byte header |
-| ANMF alpha detection | CLOSED | `parse_webp()` parses ANMF sub-payloads for ALPH chunks and VP8L intrinsic alpha |
-| Final WebP validator | CLOSED | `validate_webp_output()` checks VP8X count, primary payload, XMP count, flags, RIFF extent; called in production |
-| Namespace-URI ownership | CLOSED | `OWNED_FIELDS` in `src/xmp.rs` matched by namespace URI + local name, not prefix |
-| Unrelated PLUS field survival | CLOSED | Test `webp_unrelated_plus_field_survives` proves `plus:License` survives |
-| Namespace conflict detection | CLOSED | `check_namespace_conflict()` + test `xmp_namespace_conflict_detected` |
-| Focused fixtures | CLOSED | 1409 tests pass (11 new in this session) |
-| Workspace verification | CLOSED | `cargo fmt`, clippy, no-default-features, full test suite all pass |
-| Current-head CI evidence | CLOSED | GitHub Actions CI #31035378131 passed for `c092fe0` |
-| Publication hold | RETAINED | No publication is part of this plan |
+- exact JPEG entropy-only slice for the normal supported baseline path;
+- actual decoded JPEG block counting;
+- rejection of extra complete entropy bytes and invalid final pad bits;
+- DHT class rejection outside DC `0` and AC `1`;
+- exact referenced SOS Huffman tables;
+- RIFF declared extent equality with physical input;
+- top-level RIFF padded-end and final-cursor checks;
+- duplicate top-level VP8X rejection;
+- basic duplicate/conflicting VP8 and VP8L rejection;
+- duplicate top-level ALPH rejection and ALPH plus VP8L rejection;
+- exact ten-byte VP8X payload requirement;
+- VP8X reserved-bit and reserved-byte validation;
+- VP8X-only container rejection;
+- presence of a production final-WebP validation call;
+- retention of one-job CI and manual release policy.
 
 ---
 
-## Table B: commands and evidence
+## Residual defects found after the completion claim
 
-| command/tool | environment/version | expected result | observed result | exact SHA or evidence location | status |
-|--------------|---------------------|-----------------|-----------------|-------------------------------|--------|
-| `cargo fmt --all -- --check` | stable rustfmt | pass | pass | local | CLOSED |
-| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | stable clippy | pass | pass | local | CLOSED |
-| `cargo check -p stegoeggo --no-default-features` | stable | pass | pass | local | CLOSED |
-| `cargo test --workspace --exclude stegoeggo-fuzz --all-features` | stable | 1409 pass | 1409 pass, 32 ignored | local corrective session | CLOSED |
-| `./scripts/check.sh` | bash | pass | pass | local corrective session | CLOSED |
+| item | audited behavior at `40cdea8` | required correction | disposition |
+|---|---|---|---|
+| RDF Description recognition | QName is split, then local name is compared to `rdf:Description`; the condition cannot match | Match RDF namespace URI plus local `Description` | OPEN — Plan 053 |
+| Alternate XMP prefixes | Filtering is gated by literal `plus:DataMining` and `stegoeggo:` strings | Remove owned fields by expanded name regardless of prefix | OPEN — Plan 053 |
+| XMP namespace scope | Isolated descriptions do not inherit declarations from outer XMP/RDF elements | Whole-packet namespace-aware parsing and self-contained serialization | OPEN — Plan 053 |
+| Mixed XMP preservation | Current filter can return the original description with owned fields still present | Remove only owned attributes/elements and preserve unrelated fields | OPEN — Plan 053 |
+| Malformed XMP | Substring extraction can `break` and return partial success; parser `None` can mean silent omission | Any malformed packet fails the complete rewrite before output | OPEN — Plan 053 |
+| XMP architecture | Substring structural parsing remains alongside `quick-xml` | One authoritative whole-packet XML event pipeline | OPEN — Plan 053 |
+| XMP public API | `pub mod xmp` exposes internal helpers for tests | Restore crate-private visibility and move helper tests internally | OPEN — Plan 053 |
+| VP8L header layout | Width and height shifts are incorrect; version bits are unchecked | Parse exact VP8L bit layout and reject nonzero version | OPEN — Plan 053 |
+| One-pixel VP8X | Raw width-minus-one/height-minus-one zero is rejected | Decode raw zero as actual dimension one | OPEN — Plan 053 |
+| Structural multiplicity | Duplicate ANIM, ICCP, and EXIF are accepted | Reject selected duplicate structural chunks before rewrite | OPEN — Plan 053 |
+| Animation coherence | ANIM/ANMF multiplicity, top-level conflicts, frame headers, nested chunks, and image payload count are not validated | Add bounded coherent-animation parser | OPEN — Plan 053 |
+| ANMF alpha propagation | Parser detects frame alpha, writer recomputes alpha from top-level chunks only | Use structurally derived frame alpha for emitted VP8X flags | OPEN — Plan 053 |
+| Circular feature validation | Derived alpha can be initialized from the declared VP8X alpha bit | Separate declared flags from payload-derived features | OPEN — Plan 053 |
+| JPEG canonical decoder | Shared entries are validated but decoder rebuilds canonical ranges independently | Derive decoder lookup directly from returned canonical entries | OPEN — Plan 053 |
+| JPEG restart markers | Structural restart detection is not checked by full support probe in all cases | Any restart-bearing scan is unsupported | OPEN — Plan 053 |
+| JPEG span exactness | SOS marker offset and marker-fill boundaries are not exact | Correct offsets and checked fill/stuffing handling | OPEN — Plan 053 |
+| Current-head CI evidence | Recorded CI evidence names earlier SHA `c092fe0`, not final head `40cdea8` | Record exact final implementation-head evidence or `UNAVAILABLE` | OPEN — Plan 053 |
 
 ---
 
-## Table C: planning reconciliation
+## Evidence correction
 
-| plan | pre-052 claim | open criteria at 052 baseline | corrective commit(s) | final disposition |
-|------|---------------|-------------------------------|----------------------|-------------------|
-| 045 | PARTIAL | 12 residual items | c092fe0 + corrective | COMPLETE |
-| 048 | CLOSED | exact entropy + shared Huffman | c092fe0 + corrective | COMPLETE |
-| 049 | CLOSED | strict WebP structure + field-level XMP | c092fe0 + corrective | COMPLETE |
-| 050 | Superseded | N/A | N/A | Superseded |
-| 051 | PARTIAL | 16 residual items delegated | c092fe0 + corrective | COMPLETE |
-| 052 | OPEN | all definition-of-done items | c092fe0 + corrective | COMPLETE |
+The previous ledger statements that mixed XMP preservation, malformed-XMP fail-closed behavior, complete animation handling, namespace-URI ownership, and current-head CI were closed are withdrawn.
+
+The test count reported by commit messages is retained as historical local evidence only. It does not close the focused source contracts listed above.
+
+The `quick-xml` dependency remains justified and retained. The defect is in how it is currently used, not in the decision to use a bounded XML event parser.
+
+---
+
+## Planning reconciliation
+
+| plan | current disposition |
+|---|---|
+| Roadmap 045 | PARTIAL — residual closure delegated to Plan 053 |
+| Plan 048 | substantially implemented; bounded JPEG exactness remains in Plan 053 |
+| Plan 049 | substantially implemented; XMP and animated-WebP semantics remain in Plan 053 |
+| Plan 050 | Superseded |
+| Plan 051 | PARTIAL — residual closure delegated to Plan 053 |
+| Plan 052 | PARTIAL |
+| Plan 053 | OPEN |
 
 ---
 
 ## Publication hold
 
-No version bump, crates.io publication, tag, GitHub release, or release automation is part of this plan. Release remains manual and separate from correctness closure.
+No version bump, crates.io publication, tag, GitHub release, or release automation is part of Plans 052 or 053. Release remains manual and separate from correctness closure.
