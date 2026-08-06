@@ -10,7 +10,7 @@ Follow-up corrective SHA: `40cdea8dbc9e110ed6e6bb3d325a10d25903b0b2`
 
 Plan 053 residual closure SHAs: `d507d96`, `7262c78`, `f00b993`, `e765e07`
 
-Final head SHA: `e765e074efeefc83093fb9d92817955b00a87d90`
+Final head SHA: `7810d41960d79e06e910ed0fccb5026339c2b7eb`
 
 The earlier `COMPLETE` disposition was not supported by the final source audit. After Plan 053 closed the residual defects, the entire Plan 052 contract is materially implemented.
 

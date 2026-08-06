@@ -6,7 +6,7 @@ Roadmap baseline: `main` at `4d2e849f40049bef6416cfdc4970ba576d269869`
 
 Disposition: **COMPLETE — residual closure completed by Plan 053**
 
-Final head SHA: `e765e074efeefc83093fb9d92817955b00a87d90`
+Final head SHA: `7810d41960d79e06e910ed0fccb5026339c2b7eb`
 
 Plan 053 SHAs closing the residual items: `d507d96`, `7262c78`, `f00b993`, `e765e07`
 
