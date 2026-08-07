@@ -2,11 +2,11 @@
 
 Plan baseline SHA: `b3a08587861a17e9b290ba34fd82ca5e65575a92`
 
-Disposition: **COMPLETE — residual closure completed by Plan 053**
+Disposition: **PARTIAL — final residual closure delegated to Plans 054 and 055**
 
-Final head SHA: `7810d41960d79e06e910ed0fccb5026339c2b7eb`
+Post-Plan-053 audit head: `e683c87785d7e4ec60b17fa8ec961d983e4b6fac`
 
-This ledger was originally marked complete after the Plan 051 implementation. A follow-up audit reopened bounded source contracts under Plan 052, and the post-Plan-052 audit found the final residual items now specified by Plan 053. After Plan 053 closed the residual defects, all Plan 051 criteria are materially implemented.
+This ledger was previously marked complete after Plan 053. A later source audit found bounded XMP, animated-WebP, JPEG structural, and final-evidence criteria still open. Those remaining contracts are now split between Plans 054 and 055.
 
 No version bump, publication, tag, release, or release automation is authorized by this status.
 
@@ -16,60 +16,80 @@ No version bump, publication, tag, release, or release automation is authorized 
 
 | item | retained result | disposition |
 |---|---|---|
-| Legacy Light policy mapping | CLI and library use one compatibility mapping; Light maps to Unspecified | CLOSED |
+| Legacy Light policy mapping | one compatibility mapping; Light maps to Unspecified | CLOSED |
 | Standard legacy default | Standard maps to ProhibitedAiMlTraining | CLOSED |
-| Explicit Unspecified precedence | Explicit policy is not replaced by level fallback | CLOSED |
-| Missing constraints reporting | Structured warning exists with strict-error severity | CLOSED |
-| Stale TDM emission documentation | Current output no longer claims to emit `tdm:reserve_tdm` | CLOSED |
-| Basic Huffman table validation | Count/value equality, empty table, duplicate symbols, and oversubscription checks exist | CLOSED |
-| Exact SOS table references | Table-0 fallback was removed | CLOSED |
-| JPEG post-scan containment | Post-scan marker segments are excluded from DCT-success classification | CLOSED |
-| Duplicate top-level VP8X | Parser rejects a second VP8X chunk | CLOSED |
-| Status-file existence | Retrospective ledgers exist and are labeled historical | CLOSED |
-| CI/release scope | One required CI job and manual release policy retained | CLOSED |
+| Explicit Unspecified precedence | explicit policy is not replaced by level fallback | CLOSED |
+| Missing constraints reporting | structured warning exists with strict-error severity | CLOSED |
+| Stale TDM emission documentation | current output no longer claims `tdm:reserve_tdm` emission | CLOSED |
+| Basic Huffman table validation | count/value equality, empty table, duplicate symbols, oversubscription checks | CLOSED |
+| Exact SOS table references | table-0 fallback removed | CLOSED |
+| JPEG post-scan containment | post-scan marker segments excluded from DCT-success classification | CLOSED |
+| Duplicate top-level VP8X | parser rejects a second VP8X | CLOSED |
+| RIFF extent/final cursor improvements | later Plan 052 work materially landed | CLOSED |
+| CI/release scope | one required CI job and manual release policy retained | CLOSED |
 
 ---
 
-## Plan 052 improvements retained
+## Later improvements retained
 
-The following later work substantially closes Plan 051 criteria and is retained:
+The following work from Plans 052-053 substantially satisfies delegated Plan 051 criteria and is retained:
 
 - exact normal-path JPEG entropy-only slicing;
 - actual decoded-block counting;
-- extra entropy-byte and invalid pad-bit rejection;
+- unread entropy byte and final pad-bit rejection;
 - DHT class rejection outside DC/AC;
-- RIFF declared-size equality;
-- top-level RIFF padded-end and final-cursor validation;
-- basic VP8X structural validation;
-- duplicate/conflicting top-level VP8 and VP8L validation;
-- production invocation of final WebP validation;
-- adoption of `quick-xml` as the bounded XML parser dependency.
+- decoder lookup derived from shared canonical Huffman entries;
+- restart-bearing scan rejection at the full DCT probe;
+- strict RIFF declared-size, padded-end, and final-cursor checks;
+- VP8X structural length and reserved-field checks;
+- corrected VP8L bit layout/version helper;
+- duplicate ANIM/ICCP/EXIF checks;
+- declared-vs-derived WebP feature separation;
+- crate-private namespace-aware XMP parser foundation.
 
 ---
 
-## Plan 053 residual closure
+## Remaining delegated work
 
-All Plan 053 residual items delegated from this plan are closed. The focused tests and evidence are recorded in `plans/053-status.md`.
+Plan 054 owns the residual XMP and animated-WebP semantic contracts:
+
+- RDF-qualified preserved descriptions;
+- exact owned-element subtree removal;
+- event-based XMP merge;
+- real description deduplication and semantic idempotence;
+- standards-correct ANMF header/frame bounds;
+- order-independent frame ALPH/VP8L rules;
+- malformed VP8L propagation;
+- animated rewrite proof.
+
+Plan 055 owns the residual JPEG/evidence contracts:
+
+- checked structural analysis instead of partial best-effort state;
+- exact repeated-marker-fill boundary handling;
+- checked probe/decode routing;
+- final exact-head workspace/CI evidence and planning reconciliation.
 
 ---
 
-## Planning reconciliation
+## Current planning reconciliation
 
 | plan | disposition |
 |---|---|
-| Roadmap 045 | COMPLETE — residual closure completed by Plan 053 |
-| Plan 048 | COMPLETE — canonical decoder and restart/fill exactness landed in `e765e07` |
-| Plan 049 | COMPLETE — XMP and animated-WebP semantics landed in `d507d96`, `7262c78`, `f00b993` |
+| Roadmap 045 | PARTIAL — final closure requires Plans 054 and 055 |
+| Plan 048 | substantially closed; checked JPEG structural residuals in Plan 055 |
+| Plan 049 | substantially closed; XMP/animation residuals in Plan 054 |
 | Plan 050 | Superseded |
-| Plan 051 | COMPLETE |
-| Plan 052 | COMPLETE — residual closure completed by Plan 053 |
-| Plan 053 | COMPLETE |
+| Plan 051 | PARTIAL |
+| Plan 052 | PARTIAL — final closure requires Plans 054 and 055 |
+| Plan 053 | PARTIAL — residual closure delegated |
+| Plan 054 | OPEN |
+| Plan 055 | OPEN |
 
 ---
 
 ## Closure rule
 
-Plan 051 is `COMPLETE` after every Plan 053 row is closed with focused evidence and all affected planning documents agree.
+Plan 051 may return to `COMPLETE` only after Plans 054 and 055 are complete and their focused evidence supports all remaining delegated criteria.
 
 A local test count or CI pass for an earlier SHA does not supersede an open source-level contract.
 
@@ -77,4 +97,4 @@ A local test count or CI pass for an earlier SHA does not supersede an open sour
 
 ## Publication hold
 
-No version bump, crates.io publication, tag, GitHub release, or release automation is part of Plan 053. Release remains manual and separate.
+No version bump, crates.io publication, tag, GitHub release, or release automation is part of Plans 054-055. Release remains manual and separate.
