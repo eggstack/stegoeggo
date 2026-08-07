@@ -1,6 +1,6 @@
 # JPEG Header Parser
 
-**Source:** `src/jpeg_transcoder/header.rs` (~642 lines)
+**Source:** `src/jpeg_transcoder/header.rs`
 
 Parses JPEG file headers to extract quantization tables, Huffman tables, component definitions, and structural metadata.
 
@@ -30,10 +30,9 @@ pub struct JpegHeader {
 pub fn parse(data: &[u8]) -> Result<JpegHeader>
 ```
 
-Handles:
-- Embedded thumbnails (finds last SOI marker)
-- Bounds validation (`data.len() < 2`, `end_pos < 10`)
-- Segment data end uses `.max(segment_data_start)` to prevent inverted slice ranges
+Header parsing validates the SOI marker, segment lengths, marker-specific payloads,
+Huffman tables, and SOS table references. Structural decisions for the DCT fast path
+are made separately by the checked scan analyzer described below.
 
 ### Parsed Markers
 
@@ -91,3 +90,23 @@ pub struct ScanComponent {
 - **entropy.rs**: Header data used to build Huffman decoders/encoders
 - **stego_f5.rs**: Quantization tables modified for seed embedding
 - **steganography.rs**: Header used for JPEG reassembly after DCT stego
+
+## Checked Scan Structure
+
+`JpegHeader::analyze_structure_checked(data) -> Result<JpegStructure>` walks the
+complete marker stream without decoding DCT coefficients. It rejects truncated marker
+runs, missing or short segment lengths, segment extents beyond the input, malformed SOS
+boundaries, and entropy scans that reach EOF without a terminating marker.
+
+The analyzer treats `SOI`, `EOI`, `RST0..RST7`, and `TEM` as standalone markers. Other
+markers use their declared two-byte segment length, which must be at least two bytes.
+Inside entropy, exactly `FF 00` is retained as stuffed data. A repeated `FF` run before
+a real marker is excluded from the entropy span: both `sos_marker_offset` and the span's
+`terminating_marker_offset` point to the first `FF` in the run. `FF FF 00` is rejected as
+malformed rather than treated as stuffing. Restart markers are recorded and scanning
+continues structurally, but the DCT support probe still rejects restart-bearing input.
+
+`analyze_structure(data)` remains only as a compatibility wrapper and returns an empty
+structure for malformed data. Support probing and coefficient decoding use the checked
+analyzer directly, so malformed input cannot become a supported or partially analyzed
+JPEG.

@@ -137,31 +137,42 @@ pub fn probe_dct_support(header: &JpegHeader) -> DctSupport {
 ///
 /// Checks header properties plus scan count, EOI validity, and trailing
 /// segment presence. Accepts raw JPEG bytes for structural analysis.
+#[allow(dead_code)]
 pub fn probe_dct_support_full(header: &JpegHeader, jpeg_data: &[u8]) -> DctSupport {
-    let header_result = probe_dct_support(header);
-    if header_result != DctSupport::Supported {
-        return header_result;
+    match checked_supported_structure(header, jpeg_data) {
+        Ok(_) => DctSupport::Supported,
+        Err(reason) => DctSupport::Unsupported(reason),
+    }
+}
+
+fn checked_supported_structure(
+    header: &JpegHeader,
+    jpeg_data: &[u8],
+) -> std::result::Result<header::JpegStructure, DctUnsupportedReason> {
+    if let DctSupport::Unsupported(reason) = probe_dct_support(header) {
+        return Err(reason);
     }
 
-    let structure = JpegHeader::analyze_structure(jpeg_data);
+    let structure = JpegHeader::analyze_structure_checked(jpeg_data)
+        .map_err(|_| DctUnsupportedReason::MalformedHeader)?;
 
     if structure.scan_count != 1 {
-        return DctSupport::Unsupported(DctUnsupportedReason::MultipleScans);
+        return Err(DctUnsupportedReason::MultipleScans);
     }
 
     if structure.eoi_offset.is_none() {
-        return DctSupport::Unsupported(DctUnsupportedReason::MalformedHeader);
+        return Err(DctUnsupportedReason::MalformedHeader);
     }
 
     if structure.has_restart_markers {
-        return DctSupport::Unsupported(DctUnsupportedReason::RestartIntervals);
+        return Err(DctUnsupportedReason::RestartIntervals);
     }
 
     if structure.has_trailing_segments_after_scan {
-        return DctSupport::Unsupported(DctUnsupportedReason::TrailingSegmentsAfterScan);
+        return Err(DctUnsupportedReason::TrailingSegmentsAfterScan);
     }
 
-    DctSupport::Supported
+    Ok(structure)
 }
 
 /// Main JPEG DCT Transcoder
@@ -173,15 +184,12 @@ impl JpegTranscoder {
     pub fn decode_coefficients(jpeg_data: &[u8]) -> Result<(JpegHeader, Coefficients)> {
         let header = JpegHeader::parse(jpeg_data)?;
 
-        let structure = match probe_dct_support_full(&header, jpeg_data) {
-            DctSupport::Supported => JpegHeader::analyze_structure(jpeg_data),
-            DctSupport::Unsupported(reason) => {
-                return Err(TranscoderError::Unsupported(format!(
-                    "DCT embedding not supported for {}: {}",
-                    reason, reason
-                )));
-            }
-        };
+        let structure = checked_supported_structure(&header, jpeg_data).map_err(|reason| {
+            TranscoderError::Unsupported(format!(
+                "DCT embedding not supported for {}: {}",
+                reason, reason
+            ))
+        })?;
 
         let scan_span = structure.scan_spans.first().ok_or_else(|| {
             TranscoderError::InvalidFormat("No scan span found in supported JPEG".into())
@@ -592,6 +600,96 @@ mod tests {
         let bytes = result.unwrap();
         assert!(bytes.starts_with(&[0xFF, 0xD8]));
         assert!(bytes.ends_with(&[0xFF, 0xD9]));
+    }
+
+    fn valid_structure_probe_header() -> JpegHeader {
+        let mut header = JpegHeader::default();
+        header.components.push(header::ScanComponent {
+            component_id: 1,
+            h_sampling: 1,
+            v_sampling: 1,
+            quant_table_id: 0,
+            dc_table_id: 0,
+            ac_table_id: 0,
+        });
+        let table = HuffmanTable {
+            table_class: 0,
+            table_id: 0,
+            counts: [0; 16],
+            values: Vec::new(),
+        };
+        header.huffman_tables_dc[0] = Some(table.clone());
+        header.huffman_tables_ac[0] = Some(HuffmanTable {
+            table_class: 1,
+            ..table
+        });
+        header
+    }
+
+    fn minimal_structural_jpeg(entropy: &[u8], terminator: &[u8]) -> Vec<u8> {
+        let mut data = vec![0xFF, 0xD8, 0xFF, 0xDA, 0x00, 0x04, 0x00, 0x00];
+        data.extend_from_slice(entropy);
+        data.extend_from_slice(terminator);
+        data
+    }
+
+    #[test]
+    fn probe_dct_support_full_rejects_restart_without_dri() {
+        let header = valid_structure_probe_header();
+        let data = minimal_structural_jpeg(&[0x7F, 0xFF, 0xD0, 0x3F], &[0xFF, 0xD9]);
+        assert_eq!(
+            probe_dct_support_full(&header, &data),
+            DctSupport::Unsupported(DctUnsupportedReason::RestartIntervals)
+        );
+    }
+
+    #[test]
+    fn probe_dct_support_full_rejects_restart_with_dri() {
+        let mut header = valid_structure_probe_header();
+        header.restart_interval = 1;
+        let data = minimal_structural_jpeg(&[0x7F], &[0xFF, 0xD9]);
+        assert_eq!(
+            probe_dct_support_full(&header, &data),
+            DctSupport::Unsupported(DctUnsupportedReason::RestartIntervals)
+        );
+    }
+
+    #[test]
+    fn probe_dct_support_full_rejects_truncated_marker_run() {
+        let header = valid_structure_probe_header();
+        assert_eq!(
+            probe_dct_support_full(&header, &[0xFF, 0xD8, 0xFF]),
+            DctSupport::Unsupported(DctUnsupportedReason::MalformedHeader)
+        );
+    }
+
+    #[test]
+    fn probe_dct_support_full_rejects_short_segment() {
+        let header = valid_structure_probe_header();
+        assert_eq!(
+            probe_dct_support_full(&header, &[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x01]),
+            DctSupport::Unsupported(DctUnsupportedReason::MalformedHeader)
+        );
+    }
+
+    #[test]
+    fn probe_dct_support_full_rejects_post_scan_segment() {
+        let header = valid_structure_probe_header();
+        let data = minimal_structural_jpeg(&[0x7F], &[0xFF, 0xC0, 0x00, 0x02, 0xFF, 0xD9]);
+        assert_eq!(
+            probe_dct_support_full(&header, &data),
+            DctSupport::Unsupported(DctUnsupportedReason::TrailingSegmentsAfterScan)
+        );
+    }
+
+    #[test]
+    fn probe_dct_support_full_accepts_supported_baseline_structure() {
+        let header = valid_structure_probe_header();
+        let data = minimal_structural_jpeg(&[0x7F], &[0xFF, 0xD9]);
+        assert_eq!(
+            probe_dct_support_full(&header, &data),
+            DctSupport::Supported
+        );
     }
 
     #[test]

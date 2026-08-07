@@ -30,8 +30,8 @@ impl JpegTranscoder {
 ### Decode Flow
 
 1. Parse JPEG header (`JpegHeader::parse`)
-2. Probe full DCT support (`probe_dct_support_full`) — checks header properties plus scan count and EOI validity
-3. Find scan data start (`scan_utils::get_scan_data_start`)
+2. Run checked structural analysis and the full DCT support probe — checks header properties, exact scan count, EOI validity, restart markers, and post-scan segments
+3. Slice each supported scan using `entropy_start..entropy_end`; marker fill, EOI, and trailing segments are excluded
 4. Decode Huffman-encoded coefficients (`CoefficientDecoder`)
 5. Return header + coefficients
 
@@ -71,21 +71,43 @@ pub fn probe_dct_support_full(header: &JpegHeader, jpeg_data: &[u8]) -> DctSuppo
 `probe_dct_support_full` additionally walks the complete JPEG structure to verify:
 - Exactly one sequential scan (rejects multi-scan)
 - Valid terminal EOI (rejects truncated input)
+- No restart markers, including scans without a DRI marker
+- No post-scan marker segments
+- Checked marker/segment boundaries and exact entropy spans
 
 Unsupported inputs are routed to metadata-only processing.
 
 ## JpegStructure
 
 ```rust
+pub struct JpegScanSpan {
+    pub sos_marker_offset: usize,
+    pub sos_header_end: usize,
+    pub entropy_start: usize,
+    pub entropy_end: usize,
+    pub terminating_marker_offset: usize,
+    pub terminating_marker: u8,
+}
+
 pub struct JpegStructure {
     pub scan_count: usize,
     pub has_restart_markers: bool,
     pub has_trailing_segments_after_scan: bool,
     pub eoi_offset: Option<usize>,
+    pub scan_spans: Vec<JpegScanSpan>,
 }
 ```
 
-Returned by `JpegHeader::analyze_structure(data)`. Walks the complete JPEG byte stream without decoding coefficients to count scans, detect restart markers, and locate EOI. Handles entropy stuffing (0xFF 0x00) correctly.
+Each `JpegScanSpan` records the SOS marker and header end plus the exact entropy slice
+boundaries. `JpegHeader::analyze_structure_checked(data)` returns `Result` and fails
+closed on malformed marker runs, short or overlong segments, malformed SOS extents, and
+unterminated entropy. It preserves the first `FF` of repeated marker-fill runs as the
+marker offset, keeps exactly `FF 00` inside entropy, and rejects `FF FF 00`. Restart
+markers are recorded without ending the structural scan; `probe_dct_support_full`
+continues to classify them as unsupported.
+
+`analyze_structure(data)` is retained as a compatibility wrapper only. Supported-path
+probing and decoding never use its best-effort compatibility behavior.
 
 ## Coefficients Type
 
@@ -141,7 +163,7 @@ Malformed entropy never produces partial successful coefficient maps.
 
 ## Module Interactions
 
-- **header.rs**: `JpegHeader::parse` for header parsing; `JpegHeader::analyze_structure` for scan structure detection; `parse_sos` returns `Result<()>` and rejects malformed table IDs
+- **header.rs**: `JpegHeader::parse` for header parsing; `JpegHeader::analyze_structure_checked` for scan structure detection; `parse_sos` returns `Result<()>` and rejects malformed table IDs
 - **entropy.rs**: `CoefficientDecoder` / `CoefficientEncoder` for Huffman codec; decoder fails closed on truncated/malformed entropy data; canonical code construction advances through zero-count lengths
 - **stego_f5.rs**: `DctStegoF5` for coefficient manipulation
 - **protected/steganography.rs**: `apply_dct_stego_bytes` calls transcoder for JPEG fast path; uses preserving encoding for all DCT output

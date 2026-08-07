@@ -24,8 +24,10 @@ pub struct CoefficientDecoder { /* ... */ }
 ### Key Details
 
 - Handles DC prediction (previous block's DC subtracted from current)
-- Processes restart markers (RST0–RST7) for error recovery
-- Handles spectral selection limits for progressive JPEG
+- Decodes the sequential, non-restart entropy slice selected by the checked JPEG
+  structural analyzer
+- Restart-bearing and progressive scans are rejected by the DCT support probe before
+  this decoder is used
 
 ## CoefficientEncoder
 

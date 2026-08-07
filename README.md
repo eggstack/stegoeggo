@@ -901,6 +901,12 @@ PNG in / PNG out — the "maximum legal evidence" path:
 
 JPEG-in / JPEG-out bypasses pixel decode entirely and operates directly on DCT coefficients. Container semantics (APP0, APP1, APP2, APP13, APP14, COM, DRI, unknown segments) are preserved verbatim — only DQT tables and SOS scan data are replaced.
 
+Before coefficient decoding, the fast path performs checked structural analysis. It
+rejects truncated marker runs, invalid segment lengths, malformed SOS extents, and
+unterminated entropy; exact scan spans exclude marker fill and EOI bytes while retaining
+valid `FF 00` stuffing. Restart-bearing, progressive, and multi-scan JPEGs remain
+metadata-only fallback cases.
+
 | Image Size | Time |
 |------------|------|
 | 256x256 | **1.3 us** |

@@ -95,6 +95,13 @@ pub struct JpegStructure {
     pub scan_spans: Vec<JpegScanSpan>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct MarkerRun {
+    run_start: usize,
+    marker_code_offset: usize,
+    marker: u8,
+}
+
 #[derive(Debug, Clone)]
 pub struct JpegHeader {
     pub width: u16,
@@ -588,12 +595,105 @@ impl JpegHeader {
         Ok(())
     }
 
+    fn checked_marker_run(data: &[u8], run_start: usize) -> Result<MarkerRun> {
+        if data.get(run_start) != Some(&0xFF) {
+            return Err(TranscoderError::InvalidFormat(format!(
+                "Expected marker run at byte offset {}",
+                run_start
+            )));
+        }
+
+        let first_marker_offset = run_start
+            .checked_add(1)
+            .ok_or_else(|| TranscoderError::InvalidFormat("Marker run offset overflow".into()))?;
+        let mut marker_code_offset = first_marker_offset;
+        while data.get(marker_code_offset) == Some(&0xFF) {
+            marker_code_offset = marker_code_offset.checked_add(1).ok_or_else(|| {
+                TranscoderError::InvalidFormat("Marker run offset overflow".into())
+            })?;
+        }
+
+        let marker = *data.get(marker_code_offset).ok_or_else(|| {
+            TranscoderError::InvalidFormat(format!(
+                "Truncated marker run at byte offset {}",
+                run_start
+            ))
+        })?;
+
+        if marker == 0x00 && marker_code_offset != first_marker_offset {
+            return Err(TranscoderError::InvalidFormat(
+                "Multiple FF bytes before stuffed zero".into(),
+            ));
+        }
+
+        Ok(MarkerRun {
+            run_start,
+            marker_code_offset,
+            marker,
+        })
+    }
+
+    fn checked_segment_end(data: &[u8], marker_code_offset: usize) -> Result<usize> {
+        let length_start = marker_code_offset.checked_add(1).ok_or_else(|| {
+            TranscoderError::InvalidFormat("JPEG segment length offset overflow".into())
+        })?;
+        let length_end = length_start.checked_add(2).ok_or_else(|| {
+            TranscoderError::InvalidFormat("JPEG segment length offset overflow".into())
+        })?;
+        if length_end > data.len() {
+            return Err(TranscoderError::InvalidFormat(format!(
+                "Truncated segment length at byte offset {}",
+                marker_code_offset
+            )));
+        }
+
+        let segment_len = u16::from_be_bytes([data[length_start], data[length_start + 1]]) as usize;
+        if segment_len < 2 {
+            return Err(TranscoderError::InvalidFormat(format!(
+                "JPEG segment at byte offset {} has invalid length {}",
+                marker_code_offset, segment_len
+            )));
+        }
+
+        let segment_end = length_start
+            .checked_add(segment_len)
+            .ok_or_else(|| TranscoderError::InvalidFormat("JPEG segment extent overflow".into()))?;
+        if segment_end > data.len() {
+            return Err(TranscoderError::InvalidFormat(format!(
+                "JPEG segment at byte offset {} extends beyond input",
+                marker_code_offset
+            )));
+        }
+
+        Ok(segment_end)
+    }
+
     /// Analyze the complete scan structure of the JPEG without decoding entropy.
     ///
-    /// Walks marker segments and entropy-coded data to count scans, detect
-    /// restart markers, identify trailing segments after scan, and locate EOI.
-    /// Does not decode any DCT coefficients.
+    /// This compatibility wrapper returns an empty structure for malformed input.
+    /// Supported-path decisions use [`Self::analyze_structure_checked`] so malformed
+    /// input cannot be mistaken for a valid or partially analyzed JPEG.
     pub fn analyze_structure(data: &[u8]) -> JpegStructure {
+        Self::analyze_structure_checked(data).unwrap_or_else(|_| JpegStructure {
+            scan_count: 0,
+            has_restart_markers: false,
+            has_trailing_segments_after_scan: false,
+            eoi_offset: None,
+            scan_spans: Vec::new(),
+        })
+    }
+
+    /// Analyze JPEG marker and entropy structure with checked bounds handling.
+    pub(crate) fn analyze_structure_checked(data: &[u8]) -> Result<JpegStructure> {
+        if data.len() < 2 {
+            return Err(TranscoderError::InvalidFormat(
+                "JPEG input is shorter than SOI".into(),
+            ));
+        }
+        if data[0] != 0xFF || data[1] != 0xD8 {
+            return Err(TranscoderError::InvalidFormat("No SOI marker found".into()));
+        }
+
         let mut structure = JpegStructure {
             scan_count: 0,
             has_restart_markers: false,
@@ -601,138 +701,114 @@ impl JpegHeader {
             eoi_offset: None,
             scan_spans: Vec::new(),
         };
-
         let mut pos = 2;
-        let mut in_scan = false;
-        let mut current_scan_start: Option<usize> = None;
-        let mut current_scan_sos_header_end: Option<usize> = None;
+        let mut current_scan: Option<(usize, usize)> = None;
 
-        while pos + 2 <= data.len() {
-            if data[pos] != 0xFF {
-                if in_scan {
+        while pos < data.len() {
+            if let Some((sos_marker_offset, sos_header_end)) = current_scan {
+                if data[pos] != 0xFF {
                     pos += 1;
                     continue;
                 }
-                pos += 1;
-                continue;
-            }
 
-            let marker = data[pos + 1];
-
-            if marker == 0x00 {
-                if in_scan {
+                if pos.checked_add(1).and_then(|next| data.get(next)) == Some(&0x00) {
                     pos += 2;
                     continue;
                 }
-                pos += 2;
-                continue;
-            }
 
-            if (0xD0..=0xD7).contains(&marker) {
-                if in_scan {
+                let run = Self::checked_marker_run(data, pos)?;
+                if (0xD0..=0xD7).contains(&run.marker) {
                     structure.has_restart_markers = true;
-                }
-                pos += 2;
-                continue;
-            }
-
-            if marker == 0xFF {
-                pos += 1;
-                continue;
-            }
-
-            if marker == 0xD9 {
-                if in_scan {
-                    if let (Some(sos_off), Some(sos_hdr_end), Some(_entropy_s)) = (
-                        current_scan_start,
-                        current_scan_sos_header_end,
-                        current_scan_start,
-                    ) {
-                        structure.scan_spans.push(JpegScanSpan {
-                            sos_marker_offset: sos_off,
-                            sos_header_end: sos_hdr_end,
-                            entropy_start: sos_hdr_end,
-                            entropy_end: pos,
-                            terminating_marker_offset: pos,
-                            terminating_marker: marker,
-                        });
-                    }
-                }
-                structure.eoi_offset = Some(pos);
-                break;
-            }
-
-            if marker == 0xDA {
-                structure.scan_count += 1;
-
-                if pos + 4 > data.len() {
-                    break;
-                }
-                let seg_len = u16::from_be_bytes([data[pos + 2], data[pos + 3]]) as usize;
-                let seg_end = pos + 2 + seg_len;
-                if seg_end > data.len() {
-                    break;
+                    pos = run.marker_code_offset.checked_add(1).ok_or_else(|| {
+                        TranscoderError::InvalidFormat("Marker offset overflow".into())
+                    })?;
+                    continue;
                 }
 
-                current_scan_start = Some(pos);
-                current_scan_sos_header_end = Some(seg_end);
-                in_scan = true;
-                pos = seg_end;
-                continue;
-            }
-
-            if in_scan {
-                if let (Some(sos_off), Some(sos_hdr_end), Some(_entropy_s)) = (
-                    current_scan_start,
-                    current_scan_sos_header_end,
-                    current_scan_start,
-                ) {
+                if run.marker == 0xD9 {
                     structure.scan_spans.push(JpegScanSpan {
-                        sos_marker_offset: sos_off,
-                        sos_header_end: sos_hdr_end,
-                        entropy_start: sos_hdr_end,
-                        entropy_end: pos,
-                        terminating_marker_offset: pos,
-                        terminating_marker: marker,
+                        sos_marker_offset,
+                        sos_header_end,
+                        entropy_start: sos_header_end,
+                        entropy_end: run.run_start,
+                        terminating_marker_offset: run.run_start,
+                        terminating_marker: run.marker,
                     });
+                    structure.eoi_offset = Some(run.run_start);
+                    current_scan = None;
+                    break;
                 }
-                in_scan = false;
-                structure.has_trailing_segments_after_scan = true;
 
-                if pos + 4 > data.len() {
-                    break;
-                }
-                let seg_len = u16::from_be_bytes([data[pos + 2], data[pos + 3]]) as usize;
-                let seg_end = pos + 2 + seg_len;
-                if seg_end > data.len() {
-                    break;
-                }
-                pos = seg_end;
+                structure.scan_spans.push(JpegScanSpan {
+                    sos_marker_offset,
+                    sos_header_end,
+                    entropy_start: sos_header_end,
+                    entropy_end: run.run_start,
+                    terminating_marker_offset: run.run_start,
+                    terminating_marker: run.marker,
+                });
+                structure.has_trailing_segments_after_scan = true;
+                current_scan = None;
+                pos = run.run_start;
                 continue;
             }
 
-            if pos + 4 > data.len() {
-                break;
+            if data[pos] != 0xFF {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "Unexpected data outside entropy at byte offset {}",
+                    pos
+                )));
             }
-            let seg_len = u16::from_be_bytes([data[pos + 2], data[pos + 3]]) as usize;
-            let seg_end = pos + 2 + seg_len;
-            if seg_end > data.len() {
-                break;
+
+            let run = Self::checked_marker_run(data, pos)?;
+            match run.marker {
+                0x00 => {
+                    return Err(TranscoderError::InvalidFormat(
+                        "Stuffed zero outside entropy-coded scan".into(),
+                    ));
+                }
+                0xD8 | 0xD0..=0xD7 | 0x01 => {
+                    pos = run.marker_code_offset.checked_add(1).ok_or_else(|| {
+                        TranscoderError::InvalidFormat("Marker offset overflow".into())
+                    })?;
+                }
+                0xD9 => {
+                    structure.eoi_offset = Some(run.run_start);
+                    break;
+                }
+                0xDA => {
+                    let segment_end = Self::checked_segment_end(data, run.marker_code_offset)?;
+                    structure.scan_count += 1;
+                    current_scan = Some((run.run_start, segment_end));
+                    pos = segment_end;
+                }
+                _ => {
+                    pos = Self::checked_segment_end(data, run.marker_code_offset)?;
+                }
             }
-            pos = seg_end;
         }
 
-        structure
+        if current_scan.is_some() {
+            return Err(TranscoderError::InvalidFormat(
+                "Entropy-coded scan has no terminating marker".into(),
+            ));
+        }
+
+        Ok(structure)
     }
 
     /// Return the number of scans detected in the JPEG.
     pub fn scan_count(data: &[u8]) -> usize {
-        JpegHeader::analyze_structure(data).scan_count
+        JpegHeader::analyze_structure_checked(data)
+            .map(|structure| structure.scan_count)
+            .unwrap_or(0)
     }
 
     /// Check if the JPEG has a valid terminal EOI.
     pub fn has_valid_eoi(data: &[u8]) -> bool {
-        JpegHeader::analyze_structure(data).eoi_offset.is_some()
+        JpegHeader::analyze_structure_checked(data)
+            .map(|structure| structure.eoi_offset.is_some())
+            .unwrap_or(false)
     }
 
     pub fn get_quantization_table(&self, id: u8) -> Option<&QuantizationTable> {
@@ -931,7 +1007,7 @@ mod tests {
             0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0x7F, 0x80, // minimal scan data
             0xFF, 0xD9, // EOI
         ];
-        let structure = JpegHeader::analyze_structure(data);
+        let structure = JpegHeader::analyze_structure_checked(data).unwrap();
         assert_eq!(structure.scan_count, 1);
         assert!(!structure.has_restart_markers);
         assert!(!structure.has_trailing_segments_after_scan);
@@ -947,9 +1023,7 @@ mod tests {
             0x08, // SOS
             0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0x7F, 0x80, // scan data, no EOI
         ];
-        let structure = JpegHeader::analyze_structure(data);
-        assert_eq!(structure.scan_count, 1);
-        assert!(structure.eoi_offset.is_none());
+        assert!(JpegHeader::analyze_structure_checked(data).is_err());
     }
 
     #[test]
@@ -991,7 +1065,7 @@ mod tests {
             0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0x7F, 0x80, // entropy bytes
             0xFF, 0xD9, // EOI
         ];
-        let structure = JpegHeader::analyze_structure(data);
+        let structure = JpegHeader::analyze_structure_checked(data).unwrap();
         assert_eq!(structure.scan_count, 1);
         let span = &structure.scan_spans[0];
         assert_eq!(span.sos_marker_offset, 2);
@@ -1003,8 +1077,143 @@ mod tests {
             0xFF, 0xD8, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0x7F, 0x80,
             0xFF, 0xD9,
         ];
-        let structure = JpegHeader::analyze_structure(data);
+        let structure = JpegHeader::analyze_structure_checked(data).unwrap();
         let span = &structure.scan_spans[0];
         assert_eq!(span.entropy_start, span.sos_header_end);
+    }
+
+    fn structural_scan(entropy: &[u8], terminator: &[u8]) -> Vec<u8> {
+        let mut data = vec![0xFF, 0xD8, 0xFF, 0xDA, 0x00, 0x04, 0x00, 0x00];
+        data.extend_from_slice(entropy);
+        data.extend_from_slice(terminator);
+        data
+    }
+
+    #[test]
+    fn checked_structure_rejects_truncated_ff_run() {
+        assert!(JpegHeader::analyze_structure_checked(&[0xFF, 0xD8, 0xFF]).is_err());
+        assert!(
+            JpegHeader::analyze_structure_checked(&structural_scan(&[0x7F, 0xFF], &[])).is_err()
+        );
+    }
+
+    #[test]
+    fn checked_structure_rejects_segment_missing_length_bytes() {
+        assert!(JpegHeader::analyze_structure_checked(&[0xFF, 0xD8, 0xFF, 0xE0]).is_err());
+        assert!(JpegHeader::analyze_structure_checked(&[0xFF, 0xD8, 0xFF, 0xE0, 0x00]).is_err());
+    }
+
+    #[test]
+    fn checked_structure_rejects_segment_length_zero() {
+        assert!(
+            JpegHeader::analyze_structure_checked(&[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x00]).is_err()
+        );
+    }
+
+    #[test]
+    fn checked_structure_rejects_segment_length_one() {
+        assert!(
+            JpegHeader::analyze_structure_checked(&[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x01]).is_err()
+        );
+    }
+
+    #[test]
+    fn checked_structure_rejects_segment_extending_past_input() {
+        assert!(
+            JpegHeader::analyze_structure_checked(&[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x04, 0x00])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn checked_structure_rejects_truncated_sos() {
+        assert!(
+            JpegHeader::analyze_structure_checked(&[0xFF, 0xD8, 0xFF, 0xDA, 0x00, 0x04, 0x00])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn checked_structure_rejects_entropy_without_terminator() {
+        let data = structural_scan(&[0x7F], &[]);
+        assert!(JpegHeader::analyze_structure_checked(&data).is_err());
+    }
+
+    #[test]
+    fn sos_marker_offset_points_to_first_sos_ff_checked() {
+        let data = vec![
+            0xFF, 0xD8, 0xFF, 0xFF, 0xDA, 0x00, 0x04, 0x00, 0x00, 0x7F, 0xFF, 0xD9,
+        ];
+        let structure = JpegHeader::analyze_structure_checked(&data).unwrap();
+        assert_eq!(structure.scan_spans[0].sos_marker_offset, 2);
+    }
+
+    #[test]
+    fn entropy_start_equals_sos_header_end_checked() {
+        let data = structural_scan(&[0x7F], &[0xFF, 0xD9]);
+        let structure = JpegHeader::analyze_structure_checked(&data).unwrap();
+        let span = &structure.scan_spans[0];
+        assert_eq!(span.entropy_start, span.sos_header_end);
+    }
+
+    #[test]
+    fn entropy_end_excludes_single_marker_prefix() {
+        let data = structural_scan(&[0x7F], &[0xFF, 0xD9]);
+        let structure = JpegHeader::analyze_structure_checked(&data).unwrap();
+        let span = &structure.scan_spans[0];
+        assert_eq!(span.entropy_end, data.len() - 2);
+        assert_eq!(span.terminating_marker_offset, data.len() - 2);
+    }
+
+    #[test]
+    fn entropy_end_excludes_all_repeated_marker_fill_bytes() {
+        let data = structural_scan(&[0x7F], &[0xFF, 0xFF, 0xFF, 0xD9]);
+        let structure = JpegHeader::analyze_structure_checked(&data).unwrap();
+        let span = &structure.scan_spans[0];
+        assert_eq!(span.entropy_end, data.len() - 4);
+        assert_eq!(span.terminating_marker_offset, data.len() - 4);
+    }
+
+    #[test]
+    fn terminating_marker_offset_points_to_first_fill_ff() {
+        let data = structural_scan(&[0x7F], &[0xFF, 0xFF, 0xD9]);
+        let structure = JpegHeader::analyze_structure_checked(&data).unwrap();
+        let span = &structure.scan_spans[0];
+        assert_eq!(span.terminating_marker_offset, span.entropy_end);
+        assert_eq!(data[span.terminating_marker_offset], 0xFF);
+    }
+
+    #[test]
+    fn stuffed_ff00_remains_inside_entropy() {
+        let data = structural_scan(&[0x7F, 0xFF, 0x00, 0x3F], &[0xFF, 0xD9]);
+        let structure = JpegHeader::analyze_structure_checked(&data).unwrap();
+        let span = &structure.scan_spans[0];
+        assert_eq!(
+            &data[span.entropy_start..span.entropy_end],
+            &[0x7F, 0xFF, 0x00, 0x3F]
+        );
+    }
+
+    #[test]
+    fn multiple_ff_before_00_is_rejected() {
+        let data = structural_scan(&[0x7F, 0xFF, 0xFF, 0x00], &[0xFF, 0xD9]);
+        assert!(JpegHeader::analyze_structure_checked(&data).is_err());
+    }
+
+    #[test]
+    fn restart_marker_inside_scan_is_recorded() {
+        let data = structural_scan(&[0x7F, 0xFF, 0xD0, 0x3F], &[0xFF, 0xD9]);
+        let structure = JpegHeader::analyze_structure_checked(&data).unwrap();
+        assert!(structure.has_restart_markers);
+        assert_eq!(structure.scan_count, 1);
+    }
+
+    #[test]
+    fn restart_marker_does_not_end_scan_structure() {
+        let data = structural_scan(&[0x7F, 0xFF, 0xD0, 0x3F], &[0xFF, 0xD9]);
+        let structure = JpegHeader::analyze_structure_checked(&data).unwrap();
+        let span = &structure.scan_spans[0];
+        assert_eq!(span.terminating_marker, 0xD9);
+        assert_eq!(structure.eoi_offset, Some(span.terminating_marker_offset));
     }
 }
