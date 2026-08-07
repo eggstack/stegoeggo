@@ -358,7 +358,7 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
                     }
 
                     let mut out = Vec::new();
-                    append_description_open(&mut out, &start, &ns_stack, &reader)?;
+                    append_description_open(&mut out, &start, &ns_stack, &reader, false)?;
                     current_out = Some(out);
                 } else {
                     ns_stack.push_frame();
@@ -377,9 +377,10 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
                             ns_stack.declare(&prefix, &value);
                         }
                     }
-                    let owned = start_element_is_owned(start.name().as_ref(), &ns_stack);
-                    if owned {
+                    if owned_depth > 0 {
                         owned_depth += 1;
+                    } else if start_element_is_owned(start.name().as_ref(), &ns_stack) {
+                        owned_depth = 1;
                     } else {
                         description_has_unrelated = true;
                         let out = current_out
@@ -450,14 +451,15 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
                         })
                     });
                     let mut out = Vec::new();
-                    append_description_open(&mut out, &empty, &ns_stack, &reader)?;
+                    append_description_open(&mut out, &empty, &ns_stack, &reader, true)?;
                     if has_unrelated_attr {
-                        out.extend_from_slice(b"/>");
                         descriptions.push(PreservedDescription {
                             xml: out,
                             has_unrelated: true,
                         });
                     }
+                    ns_stack.pop_frame();
+                } else if owned_depth > 0 {
                     ns_stack.pop_frame();
                 } else {
                     let owned = start_element_is_owned(empty.name().as_ref(), &ns_stack);
@@ -490,14 +492,24 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
                 if !in_description {
                     continue;
                 }
+                let (resolve, _) = reader.resolver().resolve_element(end.name());
                 let local = end.local_name();
-                let is_rdf_desc = local_name_eq(local.as_ref(), "Description");
+                let ns_uri = if let ResolveResult::Bound(ns) = resolve {
+                    Some(ns.as_ref().to_vec())
+                } else {
+                    None
+                };
+                let is_rdf_desc = local_name_eq(local.as_ref(), "Description")
+                    && ns_uri
+                        .as_deref()
+                        .map(|u| u == RDF_NAMESPACE.as_bytes())
+                        .unwrap_or(false);
 
                 if is_rdf_desc {
                     let mut out = current_out
                         .take()
                         .ok_or_else(|| xmp_internal_error("writer missing"))?;
-                    out.extend_from_slice(b"</Description>");
+                    out.extend_from_slice(b"</rdf:Description>");
                     let xml = out;
                     if description_has_unrelated {
                         descriptions.push(PreservedDescription {
@@ -574,6 +586,222 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
     Ok(descriptions)
 }
 
+/// Merge one or more preserved descriptions into the canonical new XMP packet
+/// using a structural XML event stream (no substring parsing).
+///
+/// The canonical packet's RDF container is identified by expanded name
+/// (`{RDF_NS}RDF`). The preserved descriptions are inserted immediately
+/// before the matching `</rdf:RDF>` end event.
+///
+/// The canonical packet must contain exactly one usable RDF container.
+/// Malformed input returns `Err` rather than falling back to the unmodified
+/// packet.
+pub(crate) fn merge_preserved_descriptions(
+    canonical_new_packet: &[u8],
+    preserved: &[PreservedDescription],
+) -> Result<Vec<u8>> {
+    let packet_str = std::str::from_utf8(canonical_new_packet)
+        .map_err(|e| Error::Metadata(format!("Canonical XMP packet is not valid UTF-8: {}", e)))?;
+
+    let mut reader = NsReader::from_str(packet_str);
+    reader.config_mut().trim_text(true);
+    reader.config_mut().expand_empty_elements = false;
+    reader.config_mut().check_end_names = true;
+
+    let mut buf = Vec::new();
+    let mut output = Vec::new();
+    let mut rdf_depth: usize = 0;
+    let mut rdf_open_seen = false;
+    let mut inserted = false;
+
+    fn write_attr_value(value: &[u8], out: &mut Vec<u8>) {
+        for &b in value {
+            match b {
+                b'&' => out.extend_from_slice(b"&amp;"),
+                b'<' => out.extend_from_slice(b"&lt;"),
+                b'>' => out.extend_from_slice(b"&gt;"),
+                b'"' => out.extend_from_slice(b"&quot;"),
+                _ => out.push(b),
+            }
+        }
+    }
+
+    fn write_escaped_text(value: &[u8], out: &mut Vec<u8>) {
+        for &b in value {
+            match b {
+                b'&' => out.extend_from_slice(b"&amp;"),
+                b'<' => out.extend_from_slice(b"&lt;"),
+                b'>' => out.extend_from_slice(b"&gt;"),
+                _ => out.push(b),
+            }
+        }
+    }
+
+    loop {
+        let event = reader.read_event_into(&mut buf).map_err(xmp_xml_error)?;
+
+        match event {
+            Event::Eof => break,
+            Event::Decl(decl) => {
+                let bytes = decl.as_ref();
+                output.extend_from_slice(b"<?");
+                output.extend_from_slice(bytes);
+                output.extend_from_slice(b"?>");
+            }
+            Event::Comment(c) => {
+                output.extend_from_slice(b"<!--");
+                output.extend_from_slice(c.as_ref());
+                output.extend_from_slice(b"-->");
+            }
+            Event::PI(pi) => {
+                output.push(b'<');
+                output.push(b'?');
+                output.extend_from_slice(pi.as_ref());
+                output.extend_from_slice(b"?>");
+            }
+            Event::Start(start) => {
+                let (resolve, _) = reader.resolver().resolve_element(start.name());
+                let local = start.local_name();
+                let ns_uri = if let ResolveResult::Bound(ns) = resolve {
+                    Some(ns.as_ref().to_vec())
+                } else {
+                    None
+                };
+                let is_rdf = local_name_eq(local.as_ref(), "RDF")
+                    && ns_uri
+                        .as_deref()
+                        .map(|u| u == RDF_NAMESPACE.as_bytes())
+                        .unwrap_or(false);
+
+                output.push(b'<');
+                output.extend_from_slice(start.name().as_ref());
+                for attr_res in start.attributes() {
+                    let attr = attr_res.map_err(xmp_attr_error)?;
+                    output.push(b' ');
+                    output.extend_from_slice(attr.key.as_ref());
+                    output.extend_from_slice(b"=\"");
+                    let raw_value = attr.value.as_ref();
+                    write_attr_value(raw_value, &mut output);
+                    output.push(b'"');
+                }
+                output.push(b'>');
+
+                if is_rdf {
+                    rdf_open_seen = true;
+                    rdf_depth += 1;
+                }
+            }
+            Event::Empty(empty) => {
+                output.push(b'<');
+                output.extend_from_slice(empty.name().as_ref());
+                for attr_res in empty.attributes() {
+                    let attr = attr_res.map_err(xmp_attr_error)?;
+                    output.push(b' ');
+                    output.extend_from_slice(attr.key.as_ref());
+                    output.extend_from_slice(b"=\"");
+                    let raw_value = attr.value.as_ref();
+                    write_attr_value(raw_value, &mut output);
+                    output.push(b'"');
+                }
+                output.extend_from_slice(b"/>");
+            }
+            Event::Text(text) => {
+                let bytes: &[u8] = text.as_ref();
+                let is_meaningful = !bytes
+                    .iter()
+                    .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r'));
+                if is_meaningful {
+                    write_escaped_text(bytes, &mut output);
+                }
+            }
+            Event::CData(cdata) => {
+                output.extend_from_slice(b"<![CDATA[");
+                output.extend_from_slice(cdata.as_ref());
+                output.extend_from_slice(b"]]>");
+            }
+            Event::End(end) => {
+                let (resolve, _) = reader.resolver().resolve_element(end.name());
+                let local = end.local_name();
+                let ns_uri = if let ResolveResult::Bound(ns) = resolve {
+                    Some(ns.as_ref().to_vec())
+                } else {
+                    None
+                };
+                let is_rdf = local_name_eq(local.as_ref(), "RDF")
+                    && ns_uri
+                        .as_deref()
+                        .map(|u| u == RDF_NAMESPACE.as_bytes())
+                        .unwrap_or(false);
+
+                if is_rdf && !inserted {
+                    for desc in preserved {
+                        output.extend_from_slice(&desc.xml);
+                    }
+                    inserted = true;
+                }
+                output.push(b'<');
+                output.push(b'/');
+                output.extend_from_slice(end.name().as_ref());
+                output.push(b'>');
+
+                if is_rdf {
+                    rdf_depth -= 1;
+                }
+            }
+            Event::GeneralRef(_) => {
+                return Err(Error::Metadata(
+                    "Entity references are not supported in XMP".to_string(),
+                ));
+            }
+            other => {
+                return Err(Error::Metadata(format!(
+                    "Unsupported XMP event in merge: {:?}",
+                    other
+                )));
+            }
+        }
+        buf.clear();
+    }
+
+    if !rdf_open_seen {
+        return Err(Error::Metadata(
+            "Canonical XMP packet missing rdf:RDF container".to_string(),
+        ));
+    }
+    if rdf_depth != 0 {
+        return Err(Error::Metadata(
+            "Canonical XMP packet RDF container was not closed".to_string(),
+        ));
+    }
+    if !inserted {
+        return Err(Error::Metadata(
+            "Canonical XMP packet did not contain a closing rdf:RDF".to_string(),
+        ));
+    }
+
+    Ok(output)
+}
+
+/// Deduplicate preserved descriptions by byte-identical serialized XML,
+/// preserving the first occurrence's order. Also excludes any preserved
+/// description that is byte-identical to a canonical description.
+pub(crate) fn deduplicate_descriptions(
+    descs: &[PreservedDescription],
+    canonical: &[PreservedDescription],
+) -> Vec<PreservedDescription> {
+    let mut seen: std::collections::HashSet<Vec<u8>> = std::collections::HashSet::new();
+    for c in canonical {
+        seen.insert(c.xml.clone());
+    }
+    let mut out: Vec<PreservedDescription> = Vec::new();
+    for d in descs {
+        if seen.insert(d.xml.clone()) {
+            out.push(d.clone());
+        }
+    }
+    out
+}
+
 #[allow(dead_code)]
 fn namespace_uri_eq(a: quick_xml::name::Namespace<'_>, b: &str) -> bool {
     if let Ok(s) = std::str::from_utf8(a.as_ref()) {
@@ -605,9 +833,12 @@ fn append_description_open(
     start: &quick_xml::events::BytesStart<'_>,
     ns_stack: &NsStack,
     reader: &NsReader<&[u8]>,
+    self_closing: bool,
 ) -> Result<()> {
     out.push(b'<');
-    out.extend_from_slice(b"Description");
+    out.extend_from_slice(b"rdf:Description");
+
+    let mut written: std::collections::BTreeSet<Vec<u8>> = std::collections::BTreeSet::new();
 
     for attr_res in start.attributes() {
         let attr = attr_res.map_err(xmp_attr_error)?;
@@ -617,24 +848,37 @@ fn append_description_open(
         }
         let value = attr_raw_value(&attr, reader)?;
         append_attr(out, key, &value);
+        written.insert(key.to_vec());
     }
 
     let rdf_uri = RDF_NAMESPACE.as_bytes();
-    let has_rdf = start.attributes().any(|a| {
-        a.as_ref()
-            .is_ok_and(|attr| attr.key.as_ref() == b"xmlns:rdf" && attr.value.as_ref() == rdf_uri)
-    });
-    if !has_rdf {
-        append_attr(out, b"xmlns:rdf", rdf_uri);
+    let rdf_attr = b"xmlns:rdf" as &[u8];
+    let has_rdf_decl = written.contains(rdf_attr);
+    if !has_rdf_decl {
+        let already = start.attributes().any(|a| {
+            a.as_ref()
+                .is_ok_and(|attr| attr.key.as_ref() == rdf_attr && attr.value.as_ref() == rdf_uri)
+        });
+        if !already {
+            append_attr(out, rdf_attr, rdf_uri);
+            written.insert(rdf_attr.to_vec());
+        }
     }
 
-    for (prefix, uri) in ns_stack.snapshot() {
-        if prefix.is_empty() {
-            continue;
-        }
+    let mut inherited: Vec<(Vec<u8>, Vec<u8>)> = ns_stack
+        .snapshot()
+        .into_iter()
+        .filter(|(p, _)| !p.is_empty())
+        .collect();
+    inherited.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (prefix, uri) in inherited {
         let mut attr_name = Vec::with_capacity(prefix.len() + 6);
         attr_name.extend_from_slice(b"xmlns:");
         attr_name.extend_from_slice(&prefix);
+        if written.contains(&attr_name) {
+            continue;
+        }
         let already = start.attributes().any(|a| {
             a.as_ref().is_ok_and(|attr| {
                 attr.key.as_ref() == attr_name.as_slice() && attr.value.as_ref() == uri.as_slice()
@@ -644,9 +888,14 @@ fn append_description_open(
             continue;
         }
         append_attr(out, &attr_name, &uri);
+        written.insert(attr_name);
     }
 
-    out.push(b'>');
+    if self_closing {
+        out.extend_from_slice(b"/>");
+    } else {
+        out.push(b'>');
+    }
     Ok(())
 }
 
@@ -758,126 +1007,7 @@ fn append_empty(
     Ok(())
 }
 
-/// Check for namespace prefix conflicts between existing and new XMP metadata.
-pub(crate) fn check_namespace_conflict(existing_xmp: &[u8], new_xmp: &[u8]) -> Result<()> {
-    let existing_descs = filter_xmp_packet(existing_xmp)?;
-    let new_descs = filter_xmp_packet(new_xmp)?;
-
-    let existing_map = merge_prefix_maps(&existing_descs);
-    let new_map = merge_prefix_maps(&new_descs);
-
-    for (prefix, new_uri) in &new_map {
-        if let Some(existing_uri) = existing_map.get(prefix) {
-            if existing_uri != new_uri {
-                return Err(Error::Metadata(format!(
-                    "XMP namespace conflict: prefix '{}' maps to '{}' in existing metadata but '{}' in new metadata",
-                    String::from_utf8_lossy(prefix),
-                    String::from_utf8_lossy(existing_uri),
-                    String::from_utf8_lossy(new_uri)
-                )));
-            }
-        }
-    }
-
-    let existing_raw_map = extract_prefix_declarations(existing_xmp);
-    let new_raw_map = extract_prefix_declarations(new_xmp);
-
-    for (prefix, new_uri) in &new_raw_map {
-        if let Some(existing_uri) = existing_raw_map.get(prefix) {
-            if existing_uri != new_uri {
-                return Err(Error::Metadata(format!(
-                    "XMP namespace conflict: prefix '{}' maps to '{}' in existing metadata but '{}' in new metadata",
-                    String::from_utf8_lossy(prefix),
-                    String::from_utf8_lossy(existing_uri),
-                    String::from_utf8_lossy(new_uri)
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn extract_prefix_declarations(packet: &[u8]) -> std::collections::BTreeMap<Vec<u8>, Vec<u8>> {
-    let mut map = std::collections::BTreeMap::new();
-    let packet_str = match std::str::from_utf8(packet) {
-        Ok(s) => s,
-        Err(_) => return map,
-    };
-    let mut reader = NsReader::from_str(packet_str);
-    let mut buf = Vec::new();
-    while let Ok(event) = reader.read_event_into(&mut buf) {
-        match event {
-            Event::Start(start) => {
-                for attr_res in start.attributes() {
-                    let Ok(attr) = attr_res else { continue };
-                    let key = attr.key.as_ref();
-                    if !key.starts_with(b"xmlns:") {
-                        continue;
-                    }
-                    let prefix = key[6..].to_vec();
-                    if prefix.is_empty() {
-                        continue;
-                    }
-                    let value = match attr.decoded_and_normalized_value(
-                        quick_xml::XmlVersion::Implicit1_0,
-                        reader.decoder(),
-                    ) {
-                        Ok(v) => v.into_owned().into_bytes(),
-                        Err(_) => continue,
-                    };
-                    map.entry(prefix).or_insert(value);
-                }
-            }
-            Event::Empty(start) => {
-                for attr_res in start.attributes() {
-                    let Ok(attr) = attr_res else { continue };
-                    let key = attr.key.as_ref();
-                    if !key.starts_with(b"xmlns:") {
-                        continue;
-                    }
-                    let prefix = key[6..].to_vec();
-                    if prefix.is_empty() {
-                        continue;
-                    }
-                    let value = match attr.decoded_and_normalized_value(
-                        quick_xml::XmlVersion::Implicit1_0,
-                        reader.decoder(),
-                    ) {
-                        Ok(v) => v.into_owned().into_bytes(),
-                        Err(_) => continue,
-                    };
-                    map.entry(prefix).or_insert(value);
-                }
-            }
-            Event::Eof => break,
-            _ => {}
-        }
-        buf.clear();
-    }
-    map
-}
-
-fn merge_prefix_maps(
-    descs: &[PreservedDescription],
-) -> std::collections::BTreeMap<Vec<u8>, Vec<u8>> {
-    let mut out = std::collections::BTreeMap::new();
-    for desc in descs {
-        let xml_str = std::str::from_utf8(&desc.xml).unwrap_or("");
-        let reader = NsReader::from_str(xml_str);
-        let bindings: Vec<_> = reader.resolver().bindings().collect();
-        for (prefix_decl, ns) in bindings {
-            if let quick_xml::name::PrefixDeclaration::Named(prefix) = prefix_decl {
-                if prefix.is_empty() {
-                    continue;
-                }
-                out.entry(prefix.to_vec())
-                    .or_insert_with(|| ns.as_ref().to_vec());
-            }
-        }
-    }
-    out
-}
-
+#[cfg(test)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1215,5 +1345,284 @@ plus:DataMining="old-claim"/></rdf:RDF>
         assert!(xml.contains("Alice"));
         assert!(!xml.contains("old-claim"));
         assert!(!xml.contains("plus:DataMining"));
+    }
+
+    fn assert_rdf_qualified(xml: &[u8]) {
+        let packet_str = std::str::from_utf8(xml).expect("utf8");
+        let mut reader = NsReader::from_str(packet_str);
+        let mut buf = Vec::new();
+        let mut found_rdf_desc = false;
+        loop {
+            let event = reader.read_event_into(&mut buf).expect("parse");
+            match event {
+                Event::Start(s) | Event::Empty(s) => {
+                    let (resolve, _) = reader.resolver().resolve_element(s.name());
+                    if let ResolveResult::Bound(ns) = resolve {
+                        let ns_str = ns.as_ref();
+                        if local_name_eq(s.local_name().as_ref(), "Description")
+                            && ns_str == RDF_NAMESPACE.as_bytes()
+                        {
+                            found_rdf_desc = true;
+                        }
+                    }
+                }
+                Event::Eof => break,
+                _ => {}
+            }
+        }
+        assert!(
+            found_rdf_desc,
+            "rdf:Description (RDF namespace) not found in: {}",
+            packet_str
+        );
+    }
+
+    #[test]
+    fn preserved_description_remains_rdf_qualified() {
+        let packet = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF>
+<rdf:Description rdf:about="">
+<dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/">Example</dc:creator>
+</rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>"#
+            .as_bytes()
+            .to_vec();
+        let result = filter_xmp_packet(&packet).expect("should parse");
+        assert_eq!(result.len(), 1);
+        assert_rdf_qualified(&result[0].xml);
+    }
+
+    #[test]
+    fn preserved_description_reparses_as_rdf_description() {
+        let packet = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF>
+<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/"
+dc:creator="Example"/>
+</rdf:RDF>
+</x:xmpmeta>"#
+            .as_bytes()
+            .to_vec();
+        let result = filter_xmp_packet(&packet).expect("should parse");
+        assert_eq!(result.len(), 1);
+        let xml = std::str::from_utf8(&result[0].xml).expect("utf8");
+        let mut reader = NsReader::from_str(xml);
+        let mut buf = Vec::new();
+        let mut found = false;
+        loop {
+            let event = reader.read_event_into(&mut buf).expect("reparse");
+            match event {
+                Event::Empty(s) => {
+                    let (resolve, _) = reader.resolver().resolve_element(s.name());
+                    if let ResolveResult::Bound(ns) = resolve {
+                        if ns.as_ref() == RDF_NAMESPACE.as_bytes()
+                            && local_name_eq(s.local_name().as_ref(), "Description")
+                        {
+                            found = true;
+                        }
+                    }
+                }
+                Event::Eof => break,
+                _ => {}
+            }
+        }
+        assert!(
+            found,
+            "preserved description did not reparse as RDF Description"
+        );
+    }
+
+    #[test]
+    fn preserved_description_outer_namespace_becomes_self_contained() {
+        let packet = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+            xmlns:dc="http://purl.org/dc/elements/1.1/">
+<rdf:RDF>
+<rdf:Description rdf:about="">
+<dc:creator>OuterNsCreator</dc:creator>
+</rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>"#
+            .as_bytes()
+            .to_vec();
+        let result = filter_xmp_packet(&packet).expect("should parse");
+        assert_eq!(result.len(), 1);
+        let xml = std::str::from_utf8(&result[0].xml).expect("utf8");
+        assert!(
+            xml.contains("xmlns:dc"),
+            "dc namespace must be self-contained: {}",
+            xml
+        );
+        let reader = NsReader::from_str(xml);
+        let mut buf = Vec::new();
+        let mut reader = reader;
+        loop {
+            let event = reader.read_event_into(&mut buf).expect("reparse");
+            if let Event::Eof = event {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn alternate_rdf_prefix_normalizes_without_semantic_loss() {
+        let packet = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<r:Description xmlns:r="http://www.w3.org/1999/02/22-rdf-syntax-ns#" rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" dc:creator="Example"/>
+</rdf:RDF>
+</x:xmpmeta>"#
+            .as_bytes()
+            .to_vec();
+        let result = filter_xmp_packet(&packet).expect("should parse");
+        assert_eq!(result.len(), 1);
+        let xml = std::str::from_utf8(&result[0].xml).expect("utf8");
+        assert!(xml.contains("Example"), "value must survive: {}", xml);
+        assert_rdf_qualified(&result[0].xml);
+    }
+
+    #[test]
+    fn owned_other_constraints_with_rdf_alt_is_removed_whole() {
+        let packet = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF>
+<rdf:Description xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/">
+<plus:OtherConstraints>
+<rdf:Alt>
+<rdf:li xml:lang="x-default">old constraints</rdf:li>
+</rdf:Alt>
+</plus:OtherConstraints>
+</rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>"#
+            .as_bytes()
+            .to_vec();
+        let result = filter_xmp_packet(&packet).expect("should parse");
+        assert!(
+            result.is_empty(),
+            "all-owned description must be removed: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn owned_data_mining_with_nested_rdf_structure_is_removed_whole() {
+        let packet = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF>
+<rdf:Description xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/">
+<plus:DataMining>
+<rdf:Seq>
+<rdf:li>claim</rdf:li>
+</rdf:Seq>
+</plus:DataMining>
+</rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>"#
+            .as_bytes()
+            .to_vec();
+        let result = filter_xmp_packet(&packet).expect("should parse");
+        assert!(
+            result.is_empty(),
+            "all-owned description must be removed: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn owned_subtree_between_two_unrelated_children_preserves_both_neighbors() {
+        let packet = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF>
+<rdf:Description xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/"
+                xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:creator>BeforeNeighbor</dc:creator>
+<plus:DataMining>
+<rdf:Seq>
+<rdf:li>secret</rdf:li>
+</rdf:Seq>
+</plus:DataMining>
+<dc:rights>AfterNeighbor</dc:rights>
+</rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>"#
+            .as_bytes()
+            .to_vec();
+        let result = filter_xmp_packet(&packet).expect("should parse");
+        let xml = std::str::from_utf8(&result[0].xml).expect("utf8");
+        assert!(xml.contains("BeforeNeighbor"));
+        assert!(xml.contains("AfterNeighbor"));
+        assert!(!xml.contains("secret"));
+    }
+
+    #[test]
+    fn owned_subtree_with_nested_same_local_wrong_namespace_still_removed_whole() {
+        let packet = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF>
+<rdf:Description xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/">
+<plus:DataMining>
+<other:DataMining xmlns:other="http://example.com/other/">nestedWrong</other:DataMining>
+</plus:DataMining>
+</rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>"#
+            .as_bytes()
+            .to_vec();
+        let result = filter_xmp_packet(&packet).expect("should parse");
+        assert!(
+            result.is_empty(),
+            "all-owned description must be removed: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn owned_empty_element_removed_without_affecting_following_sibling() {
+        let packet = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF>
+<rdf:Description xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/"
+                xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:creator>Before</dc:creator>
+<plus:DataMining/>
+<dc:rights>After</dc:rights>
+</rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>"#
+            .as_bytes()
+            .to_vec();
+        let result = filter_xmp_packet(&packet).expect("should parse");
+        let xml = std::str::from_utf8(&result[0].xml).expect("utf8");
+        assert!(xml.contains("Before"));
+        assert!(xml.contains("After"));
+        assert!(!xml.contains("DataMining"));
+    }
+
+    #[test]
+    fn owned_nested_depth_returns_to_zero_exactly_once() {
+        let packet = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF>
+<rdf:Description xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/"
+                xmlns:dc="http://purl.org/dc/elements/1.1/">
+<plus:DataMining>
+<rdf:Alt>
+<rdf:li xml:lang="x-default">deep</rdf:li>
+</rdf:Alt>
+</plus:DataMining>
+<dc:creator>AfterDepth</dc:creator>
+</rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>"#
+            .as_bytes()
+            .to_vec();
+        let result = filter_xmp_packet(&packet).expect("should parse");
+        let xml = std::str::from_utf8(&result[0].xml).expect("utf8");
+        assert!(xml.contains("AfterDepth"));
+        assert!(!xml.contains("deep"));
+        assert!(!xml.contains("DataMining"));
     }
 }

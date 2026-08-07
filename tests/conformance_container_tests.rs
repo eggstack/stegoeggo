@@ -730,7 +730,18 @@ fn webp_unrelated_xmp_preserved_in_sole_packet() {
         .with_legal_metadata(legal())
         .with_dmi(DmiValue::ProhibitedAiMlTraining);
     let trap = RightsMetadataProtector::new();
-    let output = trap.inject_bytes(&webp, &ctx).unwrap();
+    let output = match trap.inject_bytes(&webp, &ctx) {
+        Ok(o) => o,
+        Err(e) => {
+            let xmps = get_webp_xmp_raw(&webp);
+            panic!(
+                "inject_bytes failed: {}. Existing XMP chunks: {}. Original XMP:\n{}",
+                e,
+                xmps.len(),
+                String::from_utf8_lossy(&xmps[0])
+            );
+        }
+    };
 
     assert_eq!(
         count_webp_chunks(&output, b"XMP "),
@@ -742,7 +753,8 @@ fn webp_unrelated_xmp_preserved_in_sole_packet() {
     let xmp_str = String::from_utf8_lossy(&xmps[0]);
     assert!(
         xmp_str.contains("dc:subject"),
-        "Unrelated dc:subject must survive in sole XMP packet"
+        "Unrelated dc:subject must survive in sole XMP packet. Got: {}",
+        xmp_str
     );
     assert!(
         xmp_str.contains("xmp:Rating"),
@@ -1279,4 +1291,547 @@ fn webp_three_round_rewrite_is_semantically_idempotent() {
             round
         );
     }
+}
+
+#[derive(Debug, Default)]
+struct XmpSemanticFacts {
+    #[allow(dead_code)]
+    data_mining_count: usize,
+    data_mining_uris: Vec<String>,
+    owned_field_counts: std::collections::BTreeMap<(String, String), usize>,
+    unrelated_values: Vec<XmpAttribute>,
+    rdf_description_count: usize,
+    #[allow(dead_code)]
+    preserved_rdf_description_count: usize,
+}
+
+#[derive(Debug, Clone)]
+struct XmpAttribute {
+    #[allow(dead_code)]
+    namespace_uri: String,
+    #[allow(dead_code)]
+    local_name: String,
+    value: String,
+}
+
+fn parse_xmp_semantic_facts(xml: &[u8]) -> XmpSemanticFacts {
+    use quick_xml::events::Event;
+    use quick_xml::name::ResolveResult;
+    use quick_xml::reader::NsReader;
+
+    let packet_str = std::str::from_utf8(xml).expect("utf8");
+    let mut reader = NsReader::from_str(packet_str);
+    let mut buf = Vec::new();
+    let mut facts = XmpSemanticFacts::default();
+    let mut current_element_ns: Option<(String, String)> = None;
+
+    loop {
+        let event = reader.read_event_into(&mut buf).expect("parse");
+        match event {
+            Event::Start(ref s) | Event::Empty(ref s) => {
+                let (resolve, _) = reader.resolver().resolve_element(s.name());
+                let ns_uri = if let ResolveResult::Bound(ns) = resolve {
+                    String::from_utf8_lossy(ns.as_ref()).into_owned()
+                } else {
+                    String::new()
+                };
+                let local = String::from_utf8_lossy(s.local_name().as_ref()).into_owned();
+                let is_rdf_desc = ns_uri == "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+                    && local == "Description";
+                if is_rdf_desc {
+                    facts.rdf_description_count += 1;
+                }
+                let stego_ns = "https://github.com/eggstack/stegoeggo";
+                let stego_owned: &[&str] = &[
+                    "ProtectionSeed",
+                    "ProtectionLevel",
+                    "RightsPolicy",
+                    "AIConstraints",
+                    "CopyrightOwner",
+                    "LicensorName",
+                    "LicensorEmail",
+                    "LicensorURL",
+                    "NoticeAppliedAt",
+                ];
+                if ns_uri == stego_ns {
+                    for n in stego_owned {
+                        if local == *n {
+                            *facts
+                                .owned_field_counts
+                                .entry((ns_uri.clone(), local.clone()))
+                                .or_insert(0) += 1;
+                        }
+                    }
+                }
+                if ns_uri == "http://ns.useplus.org/ldf/xmp/1.0/" && local == "OtherConstraints" {
+                    *facts
+                        .owned_field_counts
+                        .entry((ns_uri.clone(), local.clone()))
+                        .or_insert(0) += 1;
+                }
+                for attr_res in s.attributes() {
+                    let Ok(attr) = attr_res else { continue };
+                    let key = attr.key.as_ref();
+                    if key.starts_with(b"xmlns") || key.starts_with(b"rdf:") {
+                        continue;
+                    }
+                    let attr_uri = resolve_attr_uri(&reader, key);
+                    let attr_local = String::from_utf8_lossy(
+                        if let Some(colon) = key.iter().position(|&b| b == b':') {
+                            &key[colon + 1..]
+                        } else {
+                            key
+                        },
+                    )
+                    .into_owned();
+                    let value = String::from_utf8_lossy(attr.value.as_ref()).into_owned();
+                    if attr_uri == "http://ns.useplus.org/ldf/xmp/1.0/"
+                        && attr_local == "DataMining"
+                    {
+                        facts.data_mining_count += 1;
+                        if !value.is_empty() {
+                            facts.data_mining_uris.push(value.clone());
+                        }
+                    }
+                    let skip_attr = is_stegoeggo_owned_attr(key, &attr_uri)
+                        || (attr_uri == "http://ns.useplus.org/ldf/xmp/1.0/"
+                            && (attr_local == "DataMining" || attr_local == "OtherConstraints"));
+                    if skip_attr {
+                        continue;
+                    }
+                    facts.unrelated_values.push(XmpAttribute {
+                        namespace_uri: attr_uri,
+                        local_name: attr_local,
+                        value,
+                    });
+                }
+                let skip_element = ns_uri == "http://ns.useplus.org/ldf/xmp/1.0/"
+                    && (local == "DataMining" || local == "OtherConstraints");
+                if !skip_element && !is_rdf_desc && !ns_uri.is_empty() {
+                    current_element_ns = Some((ns_uri.clone(), local.clone()));
+                } else {
+                    current_element_ns = None;
+                }
+            }
+            Event::End(_) => {
+                current_element_ns = None;
+            }
+            Event::Text(ref t) => {
+                let text = String::from_utf8_lossy(t.as_ref()).into_owned();
+                if let Some((ns, local)) = &current_element_ns {
+                    if !text.trim().is_empty() {
+                        facts.unrelated_values.push(XmpAttribute {
+                            namespace_uri: ns.clone(),
+                            local_name: local.clone(),
+                            value: text,
+                        });
+                    }
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    facts
+}
+
+fn resolve_attr_uri(reader: &quick_xml::reader::NsReader<&[u8]>, key: &[u8]) -> String {
+    let resolver = reader.resolver();
+    let (resolve, _) = resolver.resolve_attribute(quick_xml::name::QName(key));
+    match resolve {
+        quick_xml::name::ResolveResult::Bound(ns) => {
+            String::from_utf8_lossy(ns.as_ref()).into_owned()
+        }
+        _ => String::new(),
+    }
+}
+
+fn is_stegoeggo_owned_attr(key: &[u8], ns_uri: &str) -> bool {
+    if ns_uri != "https://github.com/eggstack/stegoeggo" {
+        return false;
+    }
+    let local = if let Some(colon) = key.iter().position(|&b| b == b':') {
+        &key[colon + 1..]
+    } else {
+        key
+    };
+    let local_str = String::from_utf8_lossy(local).into_owned();
+    matches!(
+        local_str.as_str(),
+        "ProtectionSeed"
+            | "ProtectionLevel"
+            | "RightsPolicy"
+            | "AIConstraints"
+            | "CopyrightOwner"
+            | "LicensorName"
+            | "LicensorEmail"
+            | "LicensorURL"
+            | "NoticeAppliedAt"
+    )
+}
+
+fn get_webp_xmp_packets(bytes: &[u8]) -> Vec<Vec<u8>> {
+    let mut xmps = Vec::new();
+    let mut pos = 12;
+    while pos + 8 <= bytes.len() {
+        let fourcc = &bytes[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes([
+            bytes[pos + 4],
+            bytes[pos + 5],
+            bytes[pos + 6],
+            bytes[pos + 7],
+        ]) as usize;
+        if fourcc == b"XMP " {
+            let data_start = pos + 8;
+            let data_end = data_start + chunk_size;
+            if data_end <= bytes.len() {
+                xmps.push(bytes[data_start..data_end].to_vec());
+            }
+        }
+        let padded = chunk_size + (chunk_size & 1);
+        pos += 8 + padded;
+    }
+    xmps
+}
+
+#[test]
+fn webp_three_round_rewrite_xmp_is_parser_idempotent() {
+    let img = make_test_image_png(32, 32);
+    let initial_ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(
+            LegalMetadata::new()
+                .with_copyright_holder("Holder")
+                .with_usage_terms("Terms")
+                .with_creator("Creator")
+                .with_ai_constraints("No AI training"),
+        )
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let initial_webp =
+        stegoeggo::process_image_bytes_with_warnings(&img, ProtectionLevel::Standard, &initial_ctx)
+            .expect("initial WebP encode")
+            .0;
+    let mut current = initial_webp;
+
+    let rewrite_ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(
+            LegalMetadata::new()
+                .with_copyright_holder("Holder2")
+                .with_usage_terms("Terms2"),
+        )
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+
+    let mut round_xml: Vec<Vec<u8>> = Vec::new();
+    for _round in 0..3 {
+        current = RightsMetadataProtector::new()
+            .inject_bytes(&current, &rewrite_ctx)
+            .expect("round succeeds");
+        let xmps = get_webp_xmp_packets(&current);
+        assert_eq!(xmps.len(), 1, "exactly one XMP chunk per round");
+        round_xml.push(xmps[0].clone());
+    }
+
+    let facts: Vec<XmpSemanticFacts> = round_xml
+        .iter()
+        .map(|x| parse_xmp_semantic_facts(x))
+        .collect();
+
+    for (i, facts) in facts.iter().enumerate() {
+        assert_eq!(
+            facts.rdf_description_count, 2,
+            "Round {} should have 2 rdf:Description (preserved + current): {:?}",
+            i, facts
+        );
+        assert_eq!(
+            facts.data_mining_count, 1,
+            "Round {} should have exactly one DataMining (PLUS): {:?}",
+            i, facts
+        );
+        assert_eq!(
+            facts.data_mining_uris.len(),
+            1,
+            "Round {} should have exactly one DataMining URI: {:?}",
+            i,
+            facts
+        );
+        assert!(
+            facts.data_mining_uris[0].contains("DMI-PROHIBITED-AIMLTRAINING"),
+            "Round {} current DataMining URI must remain: {:?}",
+            i,
+            facts
+        );
+    }
+
+    for (label, facts) in [
+        ("round1", &facts[0]),
+        ("round2", &facts[1]),
+        ("round3", &facts[2]),
+    ] {
+        let notice_count = facts
+            .owned_field_counts
+            .get(&(
+                "https://github.com/eggstack/stegoeggo".to_string(),
+                "NoticeAppliedAt".to_string(),
+            ))
+            .copied()
+            .unwrap_or(0);
+        assert_eq!(
+            notice_count, 1,
+            "{} must have exactly one NoticeAppliedAt (current canonical): {:?}",
+            label, facts.owned_field_counts
+        );
+    }
+
+    let has_creator = facts[0]
+        .unrelated_values
+        .iter()
+        .any(|a| a.value == "Creator");
+    assert!(
+        has_creator,
+        "Creator value from round 0 must survive in round 1: {:?}",
+        facts[0].unrelated_values
+    );
+}
+
+fn build_animation_webp(
+    canvas_width: u32,
+    canvas_height: u32,
+    anmf_payloads: &[[u8; 16]],
+    frames: &[Vec<u8>],
+    with_xmp: bool,
+) -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(b"RIFF");
+    data.extend_from_slice(&[0, 0, 0, 0]);
+    data.extend_from_slice(b"WEBP");
+    let mut vp8x_payload = vec![0u8; 10];
+    vp8x_payload[0] = if with_xmp { 0x06 } else { 0x02 };
+    vp8x_payload[4] = (canvas_width - 1) as u8;
+    vp8x_payload[7] = (canvas_height - 1) as u8;
+    data.extend_from_slice(b"VP8X");
+    data.extend_from_slice(&(vp8x_payload.len() as u32).to_le_bytes());
+    data.extend_from_slice(&vp8x_payload);
+    data.extend_from_slice(b"ANIM");
+    data.extend_from_slice(&6u32.to_le_bytes());
+    data.extend_from_slice(&[0u8; 6]);
+    for (i, payload) in anmf_payloads.iter().enumerate() {
+        let frame = &frames[i];
+        let padded = frame.len() + (frame.len() & 1);
+        let anmf_size = (16 + 8 + padded) as u32;
+        data.extend_from_slice(b"ANMF");
+        data.extend_from_slice(&anmf_size.to_le_bytes());
+        data.extend_from_slice(payload);
+        data.extend_from_slice(b"VP8 ");
+        data.extend_from_slice(&(frame.len() as u32).to_le_bytes());
+        data.extend_from_slice(frame);
+        if frame.len() & 1 != 0 {
+            data.push(0);
+        }
+    }
+    if with_xmp {
+        let xmp = b"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description rdf:about=\"\"/></rdf:RDF></x:xmpmeta>";
+        data.extend_from_slice(b"XMP ");
+        data.extend_from_slice(&(xmp.len() as u32).to_le_bytes());
+        data.extend_from_slice(xmp);
+        if xmp.len() & 1 != 0 {
+            data.push(0);
+        }
+    }
+    let riff_size = (data.len() - 8) as u32;
+    data[4..8].copy_from_slice(&riff_size.to_le_bytes());
+    data
+}
+
+fn extract_anmf_payloads(webp: &[u8]) -> Vec<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut pos = 12;
+    while pos + 8 <= webp.len() {
+        let fourcc = &webp[pos..pos + 4];
+        let chunk_size =
+            u32::from_le_bytes([webp[pos + 4], webp[pos + 5], webp[pos + 6], webp[pos + 7]])
+                as usize;
+        if fourcc == b"ANMF" {
+            let data_start = pos + 8;
+            let data_end = data_start + chunk_size;
+            if data_end <= webp.len() {
+                out.push(webp[data_start..data_end].to_vec());
+            }
+        }
+        let padded = chunk_size + (chunk_size & 1);
+        pos += 8 + padded;
+    }
+    out
+}
+
+fn rewrite_animation(webp: &[u8]) -> Vec<u8> {
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_dmi(DmiValue::ProhibitedAiMlTraining)
+        .with_legal_metadata(
+            LegalMetadata::new()
+                .with_copyright_holder("Container Test Holder")
+                .with_usage_terms("Container Test Terms")
+                .with_creator("Container Creator"),
+        );
+    RightsMetadataProtector::new()
+        .inject_bytes(webp, &ctx)
+        .expect("rewrite succeeds")
+}
+
+fn assert_animated_rewrite_correct(label: &str, webp_before: &[u8], expected_anmf: &[Vec<u8>]) {
+    let output = rewrite_animation(webp_before);
+
+    assert_eq!(
+        count_webp_chunks(&output, b"VP8X"),
+        1,
+        "{}: exactly one VP8X",
+        label
+    );
+    assert_eq!(
+        count_webp_chunks(&output, b"XMP "),
+        1,
+        "{}: exactly one XMP",
+        label
+    );
+    assert_eq!(
+        count_webp_chunks(&output, b"ANIM"),
+        1,
+        "{}: exactly one ANIM",
+        label
+    );
+    let output_anmfs = extract_anmf_payloads(&output);
+    assert_eq!(
+        output_anmfs.len(),
+        expected_anmf.len(),
+        "{}: ANMF count",
+        label
+    );
+    for (i, expected) in expected_anmf.iter().enumerate() {
+        let output_header = &output_anmfs[i][..16];
+        assert_eq!(
+            output_header,
+            expected.as_slice(),
+            "{}: ANMF frame {} 16-byte header must be byte-identical",
+            label,
+            i
+        );
+    }
+    let flags = webp_vp8x_flags(&output).expect("VP8X must exist");
+    assert_ne!(flags & 0x02, 0, "{}: animation flag must be set", label);
+    let xmp = get_webp_xmp_raw(&output);
+    let xmp_str = String::from_utf8_lossy(&xmp[0]);
+    assert!(
+        xmp_str.contains("plus:DataMining") || xmp_str.contains("DMI-PROHIBITED-AIMLTRAINING"),
+        "{}: DataMining present: {}",
+        label,
+        xmp_str
+    );
+}
+
+#[test]
+fn webp_animated_opaque_vp8_rewrite_succeeds() {
+    let canvas_width = 8u32;
+    let canvas_height = 8u32;
+    let anmf_payloads = vec![vec![0u8; 16], vec![0u8; 16]];
+    let frames = vec![vec![0u8; 4], vec![0u8; 4]];
+    let anmf_byte_arrays: Vec<[u8; 16]> = anmf_payloads
+        .iter()
+        .map(|v| {
+            let mut arr = [0u8; 16];
+            arr.copy_from_slice(v);
+            arr
+        })
+        .collect();
+    let webp = build_animation_webp(
+        canvas_width,
+        canvas_height,
+        &anmf_byte_arrays,
+        &frames,
+        false,
+    );
+    assert_animated_rewrite_correct("opaque", &webp, &anmf_payloads);
+}
+
+#[test]
+fn webp_animated_multiple_frame_rewrite_byte_identical() {
+    let canvas_width = 8u32;
+    let canvas_height = 8u32;
+    let anmf_payloads = vec![vec![0u8; 16], vec![0u8; 16], vec![0u8; 16]];
+    let frames = vec![vec![0u8; 4], vec![0u8; 4], vec![0u8; 4]];
+    let anmf_byte_arrays: Vec<[u8; 16]> = anmf_payloads
+        .iter()
+        .map(|v| {
+            let mut arr = [0u8; 16];
+            arr.copy_from_slice(v);
+            arr
+        })
+        .collect();
+    let webp = build_animation_webp(
+        canvas_width,
+        canvas_height,
+        &anmf_byte_arrays,
+        &frames,
+        false,
+    );
+    assert_animated_rewrite_correct("multi", &webp, &anmf_payloads);
+}
+
+#[test]
+fn webp_animated_with_xmp_rewrite_succeeds() {
+    let canvas_width = 8u32;
+    let canvas_height = 8u32;
+    let anmf_payloads = vec![vec![0u8; 16], vec![0u8; 16]];
+    let frames = vec![vec![0u8; 4], vec![0u8; 4]];
+    let anmf_byte_arrays: Vec<[u8; 16]> = anmf_payloads
+        .iter()
+        .map(|v| {
+            let mut arr = [0u8; 16];
+            arr.copy_from_slice(v);
+            arr
+        })
+        .collect();
+    let webp = build_animation_webp(
+        canvas_width,
+        canvas_height,
+        &anmf_byte_arrays,
+        &frames,
+        true,
+    );
+    assert_animated_rewrite_correct("with_xmp", &webp, &anmf_payloads);
+}
+
+#[test]
+fn webp_animated_unknown_top_level_chunk_preserved() {
+    let canvas_width = 8u32;
+    let canvas_height = 8u32;
+    let anmf_payloads = vec![[0u8; 16]];
+    let frames = vec![vec![0u8; 4]];
+    let mut webp =
+        build_animation_webp(canvas_width, canvas_height, &anmf_payloads, &frames, false);
+    webp.extend_from_slice(b"TEST");
+    webp.extend_from_slice(&4u32.to_le_bytes());
+    webp.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD, 0]);
+    let riff_size = (webp.len() - 8) as u32;
+    webp[4..8].copy_from_slice(&riff_size.to_le_bytes());
+
+    let output = rewrite_animation(&webp);
+    let mut found = false;
+    let mut pos = 12;
+    while pos + 8 <= output.len() {
+        let fourcc = &output[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes([
+            output[pos + 4],
+            output[pos + 5],
+            output[pos + 6],
+            output[pos + 7],
+        ]) as usize;
+        if fourcc == b"TEST" {
+            found = true;
+        }
+        let padded = chunk_size + (chunk_size & 1);
+        pos += 8 + padded;
+    }
+    assert!(found, "unknown TEST chunk must be preserved");
 }

@@ -445,7 +445,7 @@ impl RightsMetadataProtector {
         new_xmp_data: &[u8],
         metadata_chunks: &mut Vec<([u8; 4], Vec<u8>)>,
     ) -> Result<()> {
-        let mut all_unrelated = Vec::new();
+        let mut all_descs: Vec<crate::xmp::PreservedDescription> = Vec::new();
 
         for &idx in &parsed.xmp_indices {
             let chunk = &parsed.chunks[idx];
@@ -457,69 +457,22 @@ impl RightsMetadataProtector {
                 )));
             }
             let existing = &parsed.data[chunk.data_start..data_end];
-            let descs = Self::extract_unrelated_descriptions(existing)?;
-            all_unrelated.extend(descs.into_iter().map(|d| d.xml));
+            let descs = crate::xmp::filter_xmp_packet(existing)?;
+            all_descs.extend(descs);
         }
 
-        let merged = if all_unrelated.is_empty() {
+        let canonical_descs = crate::xmp::filter_xmp_packet(new_xmp_data)?;
+        let deduped = crate::xmp::deduplicate_descriptions(&all_descs, &canonical_descs);
+
+        let merged = if deduped.is_empty() {
             new_xmp_data.to_vec()
         } else {
-            Self::inject_unrelated_into_xmp(new_xmp_data, &all_unrelated)?
+            crate::xmp::merge_preserved_descriptions(new_xmp_data, &deduped)?
         };
 
         let xmp_chunk = Self::create_webp_xmp_chunk_data(&merged);
         metadata_chunks.push((*b"XMP ", xmp_chunk));
         Ok(())
-    }
-
-    fn extract_unrelated_descriptions(
-        xmp_data: &[u8],
-    ) -> Result<Vec<crate::xmp::PreservedDescription>> {
-        crate::xmp::filter_xmp_packet(xmp_data)
-    }
-
-    fn inject_unrelated_into_xmp(new_xmp: &[u8], unrelated: &[Vec<u8>]) -> Result<Vec<u8>> {
-        let new_str = std::str::from_utf8(new_xmp)
-            .map_err(|e| Error::Metadata(format!("New XMP data is not valid UTF-8: {}", e)))?;
-
-        let new_rdf_start = new_str
-            .find("<rdf:RDF")
-            .ok_or_else(|| Error::Metadata("New XMP data missing <rdf:RDF> element".to_string()))?;
-        let new_rdf_end = new_str.rfind("</rdf:RDF>").ok_or_else(|| {
-            Error::Metadata("New XMP data missing </rdf:RDF> closing element".to_string())
-        })? + "</rdf:RDF>".len();
-
-        for desc in unrelated {
-            crate::xmp::check_namespace_conflict(
-                &new_str.as_bytes()[..new_rdf_start],
-                desc.as_slice(),
-            )?;
-        }
-
-        let mut result = String::new();
-        result.push_str(&new_str[..new_rdf_start]);
-        result.push_str("<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">");
-
-        for desc in unrelated {
-            let s = std::str::from_utf8(desc).map_err(|e| {
-                Error::Metadata(format!("Preserved XMP description is not UTF-8: {}", e))
-            })?;
-            result.push_str(s);
-        }
-
-        let inner_start = match new_str[new_rdf_start..new_rdf_end].find('>') {
-            Some(i) => new_rdf_start + i + 1,
-            None => return Ok(new_xmp.to_vec()),
-        };
-        let inner_end = new_rdf_start
-            + new_str[new_rdf_start..new_rdf_end]
-                .rfind('<')
-                .unwrap_or(new_rdf_end - new_rdf_start);
-        result.push_str(&new_str[inner_start..inner_end]);
-        result.push_str("</rdf:RDF>");
-        result.push_str(&new_str[new_rdf_end..]);
-
-        Ok(result.into_bytes())
     }
 
     fn build_legal_props_from_notice(notice: &RightsNotice) -> String {
@@ -2247,7 +2200,6 @@ impl RightsMetadataProtector {
 
         let mut pos = 12;
         while pos + 8 <= webp_data.len() {
-            let chunk_id = &webp_data[pos..pos + 4];
             let chunk_size = u32::from_le_bytes([
                 webp_data[pos + 4],
                 webp_data[pos + 5],
@@ -2258,13 +2210,7 @@ impl RightsMetadataProtector {
             let data_start = pos + 8;
             let data_end = data_start + chunk_size;
 
-            let is_stego = if chunk_id == b"XMP " && data_end <= webp_data.len() {
-                Self::xmp_has_stego_properties(&webp_data[data_start..data_end])
-            } else {
-                false
-            };
-
-            if !is_stego && data_end <= webp_data.len() {
+            if data_end <= webp_data.len() {
                 output.extend_from_slice(&webp_data[pos..data_end]);
                 if chunk_size & 1 != 0 {
                     output.push(0);
@@ -3800,7 +3746,7 @@ mod tests {
     #[test]
     fn malformed_xmp_non_utf8_causes_error() {
         let bad_xmp: &[u8] = &[0xFF, 0xFE, 0x00, 0x3C];
-        let result = RightsMetadataProtector::extract_unrelated_descriptions(bad_xmp);
+        let result = crate::xmp::filter_xmp_packet(bad_xmp);
         assert!(
             result.is_err(),
             "non-UTF8 XMP must fail, not silently discard"
@@ -3813,8 +3759,7 @@ mod tests {
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
 <other>nothing here</other>
 </x:xmpmeta>"#;
-        let result = RightsMetadataProtector::extract_unrelated_descriptions(no_desc_xmp)
-            .expect("should parse");
+        let result = crate::xmp::filter_xmp_packet(no_desc_xmp).expect("should parse");
         assert!(
             result.is_empty(),
             "XMP without rdf:Description returns no descriptions"
@@ -3829,7 +3774,7 @@ mod tests {
 <rdf:Description rdf:about="">
 </rdf:RDF>
 </x:xmpmeta>"#;
-        let result = RightsMetadataProtector::extract_unrelated_descriptions(bad_xmp);
+        let result = crate::xmp::filter_xmp_packet(bad_xmp);
         assert!(
             result.is_err(),
             "XMP with unclosed rdf:Description must fail"
