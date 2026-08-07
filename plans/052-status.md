@@ -2,7 +2,7 @@
 
 Plan baseline SHA: `c9d4d4f1edf6d43557c85c1d5c121d0071eeeaa1`
 
-Disposition: **PARTIAL — final residual closure delegated to Plans 054 and 055**
+Disposition: **COMPLETE — final residual closure completed by Plans 054 and 055**
 
 Initial implementation SHA: `c092fe0ca58d8e01679924017e4ee5b57c80d576`
 
@@ -11,6 +11,8 @@ Follow-up corrective SHA: `40cdea8dbc9e110ed6e6bb3d325a10d25903b0b2`
 Plan 053 implementation SHAs: `d507d96`, `7262c78`, `f00b993`, `e765e07`
 
 Post-Plan-053 audit head: `e683c87785d7e4ec60b17fa8ec961d983e4b6fac`
+
+Final corrective implementation head: `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15`
 
 The previous `COMPLETE` disposition is withdrawn. Plan 053 closed much of the Plan 052 residual scope, but source review found remaining semantic and structural gaps now assigned to Plans 054 and 055.
 
@@ -51,7 +53,7 @@ Plan 053 additionally retained:
 
 ---
 
-## Residual work delegated to Plan 054
+## Historical residual work closed by Plan 054
 
 The following Plan 052/053 WebP-XMP closure claims remain incomplete:
 
@@ -67,11 +69,11 @@ The following Plan 052/053 WebP-XMP closure claims remain incomplete:
 10. Malformed classified VP8L payloads must propagate errors.
 11. Valid opaque and alpha animation metadata rewrites must be proven end to end.
 
-See `plans/054-status.md` for authoritative OPEN/CLOSED state.
+See `plans/054-status.md` for the authoritative CLOSED evidence.
 
 ---
 
-## Residual work delegated to Plan 055
+## Historical residual work closed by Plan 055
 
 The following JPEG/evidence closure claims remain incomplete:
 
@@ -82,7 +84,7 @@ The following JPEG/evidence closure claims remain incomplete:
 5. Exact final-head verification/CI evidence must be reconciled truthfully.
 6. Historical Plans 045/051/052/053 may close only after Plans 054 and 055 both close.
 
-See `plans/055-status.md` for authoritative OPEN/CLOSED state.
+See `plans/055-status.md` for the authoritative CLOSED evidence.
 
 ---
 
@@ -90,15 +92,15 @@ See `plans/055-status.md` for authoritative OPEN/CLOSED state.
 
 | plan | current disposition |
 |---|---|
-| Roadmap 045 | PARTIAL — final closure requires Plans 054 and 055 |
+| Roadmap 045 | COMPLETE — final closure completed by Plans 054 and 055 |
 | Plan 048 | substantially closed; checked JPEG structure delegated to Plan 055 |
 | Plan 049 | substantially closed; XMP/animation semantics delegated to Plan 054 |
 | Plan 050 | Superseded |
-| Plan 051 | PARTIAL |
-| Plan 052 | PARTIAL |
-| Plan 053 | PARTIAL |
-| Plan 054 | OPEN |
-| Plan 055 | OPEN |
+| Plan 051 | COMPLETE |
+| Plan 052 | COMPLETE |
+| Plan 053 | COMPLETE |
+| Plan 054 | COMPLETE |
+| Plan 055 | COMPLETE |
 
 ---
 

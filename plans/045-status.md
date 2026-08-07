@@ -4,11 +4,13 @@ This ledger was created retrospectively after the original source changes. The r
 
 Roadmap baseline: `main` at `4d2e849f40049bef6416cfdc4970ba576d269869`
 
-Disposition: **PARTIAL — final residual closure delegated to Plans 054 and 055**
+Disposition: **COMPLETE — final residual closure completed by Plans 054 and 055**
 
 Post-Plan-053 audit head: `e683c87785d7e4ec60b17fa8ec961d983e4b6fac`
 
-Authoritative remaining work:
+Final corrective implementation head: `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15`
+
+Historical corrective work, now closed:
 
 - `plans/054-xmp-and-animated-webp-semantic-closure.md`
 - `plans/054-status.md`
@@ -97,9 +99,16 @@ Plan 055 owns:
 
 ---
 
+## Final closure reconciliation
+
+Plans 054 and 055 closed all residual XMP, animated-WebP, JPEG structural, and evidence
+criteria. Local verification and exact implementation-head CI are recorded in
+`plans/055-status.md`; CI run `31219089804` passed for `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15`.
+
 ## Closure rule
 
-Roadmap 045 may return to `COMPLETE` only after both `plans/054-status.md` and `plans/055-status.md` satisfy every required definition-of-done item.
+Roadmap 045 is `COMPLETE` because both `plans/054-status.md` and `plans/055-status.md`
+satisfy every required definition-of-done item.
 
 A broad test pass cannot override an open source-level contract. A CI result from an earlier SHA cannot serve as final-head evidence.
 

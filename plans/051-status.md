@@ -2,9 +2,11 @@
 
 Plan baseline SHA: `b3a08587861a17e9b290ba34fd82ca5e65575a92`
 
-Disposition: **PARTIAL — final residual closure delegated to Plans 054 and 055**
+Disposition: **COMPLETE — final residual closure completed by Plans 054 and 055**
 
 Post-Plan-053 audit head: `e683c87785d7e4ec60b17fa8ec961d983e4b6fac`
+
+Final corrective implementation head: `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15`
 
 This ledger was previously marked complete after Plan 053. A later source audit found bounded XMP, animated-WebP, JPEG structural, and final-evidence criteria still open. Those remaining contracts are now split between Plans 054 and 055.
 
@@ -49,7 +51,7 @@ The following work from Plans 052-053 substantially satisfies delegated Plan 051
 
 ---
 
-## Remaining delegated work
+## Historical residual work closed by Plans 054 and 055
 
 Plan 054 owns the residual XMP and animated-WebP semantic contracts:
 
@@ -75,21 +77,22 @@ Plan 055 owns the residual JPEG/evidence contracts:
 
 | plan | disposition |
 |---|---|
-| Roadmap 045 | PARTIAL — final closure requires Plans 054 and 055 |
+| Roadmap 045 | COMPLETE — final closure completed by Plans 054 and 055 |
 | Plan 048 | substantially closed; checked JPEG structural residuals in Plan 055 |
 | Plan 049 | substantially closed; XMP/animation residuals in Plan 054 |
 | Plan 050 | Superseded |
-| Plan 051 | PARTIAL |
-| Plan 052 | PARTIAL — final closure requires Plans 054 and 055 |
-| Plan 053 | PARTIAL — residual closure delegated |
-| Plan 054 | OPEN |
-| Plan 055 | OPEN |
+| Plan 051 | COMPLETE |
+| Plan 052 | COMPLETE |
+| Plan 053 | COMPLETE — residual closure completed |
+| Plan 054 | COMPLETE |
+| Plan 055 | COMPLETE |
 
 ---
 
 ## Closure rule
 
-Plan 051 may return to `COMPLETE` only after Plans 054 and 055 are complete and their focused evidence supports all remaining delegated criteria.
+Plan 051 is `COMPLETE` after Plans 054 and 055 closed the remaining delegated criteria;
+their focused evidence and exact-head verification are recorded in `plans/055-status.md`.
 
 A local test count or CI pass for an earlier SHA does not supersede an open source-level contract.
 
