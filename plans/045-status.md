@@ -4,18 +4,18 @@ This ledger was created retrospectively after the original source changes. The r
 
 Roadmap baseline: `main` at `4d2e849f40049bef6416cfdc4970ba576d269869`
 
-Disposition: **COMPLETE — final residual closure completed by Plans 054 and 055**
+Disposition: **PARTIAL — final XMP reference/serialization closure delegated to Plan 056**
 
 Post-Plan-053 audit head: `e683c87785d7e4ec60b17fa8ec961d983e4b6fac`
 
-Final corrective implementation head: `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15`
+Plan 054/055 corrective implementation head: `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15`
 
-Historical corrective work, now closed:
+Post-closure audit baseline: `81c934d02dd43578482e01a15ea645a62ec0209b`
 
-- `plans/054-xmp-and-animated-webp-semantic-closure.md`
-- `plans/054-status.md`
-- `plans/055-jpeg-structure-and-final-evidence-closure.md`
-- `plans/055-status.md`
+Authoritative remaining work:
+
+- `plans/056-xmp-reference-and-serialization-final-closure.md`
+- `plans/056-status.md`
 
 No release action is authorized by this roadmap status.
 
@@ -39,12 +39,14 @@ Plan 053 implementation sequence:
 
 | SHA | description | post-audit disposition |
 |---|---|---|
-| `d507d96` | strict XMP parser foundation | Substantially closed; serializer/subtree/merge residuals remain |
-| `7262c78` | XMP merge/privacy and conformance tests | Partial; dedup/idempotence proof remains |
-| `f00b993` | VP8L and animation validation | Partial; exact ANMF semantics remain |
-| `e765e07` | JPEG canonical decoder and marker work | Substantially closed; checked structure/fill exactness remains |
+| `d507d96` | strict XMP parser foundation | Substantially closed; serializer/subtree/merge residuals remained |
+| `7262c78` | XMP merge/privacy and conformance tests | Partial; dedup/idempotence proof remained |
+| `f00b993` | VP8L and animation validation | Partial; exact ANMF semantics remained |
+| `e765e07` | JPEG canonical decoder and marker work | Substantially closed; checked structure/fill exactness remained |
 | `7810d41` | attempted final evidence closure | Historical only; completion claim withdrawn |
 | `e683c87` | empty CI-trigger commit | Not correctness evidence |
+
+Plans 054 and 055 then materially closed the previously identified XMP/animation/JPEG residuals. A later source audit found a narrower final XMP reference/serialization defect set now assigned to Plan 056.
 
 ---
 
@@ -60,26 +62,33 @@ The following remains closed unless a focused regression demonstrates otherwise:
 - exact normal-path entropy-only decoding and block-count/finalization checks;
 - DHT class rejection;
 - decoder lookup derived from shared canonical Huffman entries;
+- checked JPEG structure and first-fill-byte entropy boundaries;
 - restart-bearing scan rejection at the full support probe;
 - strict WebP RIFF extent, chunk padding, and final cursor checks;
-- duplicate top-level VP8X/VP8/VP8L/ALPH/ANIM/ICCP/EXIF checks already present;
+- duplicate top-level VP8X/VP8/VP8L/ALPH/ANIM/ICCP/EXIF checks;
 - corrected VP8L bit layout and version helper;
 - one-pixel VP8X canvas acceptance;
 - declared/derived VP8X feature separation;
+- exact ANMF frame header, bounds, flags, nested payload, and alpha semantics;
+- animated WebP metadata rewrite with unchanged frame payloads;
+- RDF-qualified XMP descriptions;
+- namespace-expanded owned-field matching;
+- event-based XMP merge architecture;
+- byte-identical preserved-description deduplication;
 - crate-private XMP module;
 - one required CI job and manual release policy.
 
 ---
 
-## Remaining roadmap closure items
+## Historical residual work closed by Plans 054 and 055
 
-Plan 054 owns:
+Plan 054 materially closed:
 
 1. RDF-qualified preserved XMP descriptions.
-2. Exact owned-element subtree suppression.
+2. Owned-element subtree suppression for the originally covered nested element/text cases.
 3. Event-based XMP merge without substring RDF boundary searches.
 4. Exact filtered-description deduplication.
-5. Parser-based multi-round semantic idempotence.
+5. Parser-based multi-round semantic idempotence for the originally covered values.
 6. Correct scope handling for namespace prefix reuse.
 7. Exact ANMF X/Y/W/H/duration/flag decoding.
 8. Frame rectangle/canvas bounds.
@@ -88,32 +97,41 @@ Plan 054 owns:
 11. Propagation of malformed top-level/nested VP8L errors.
 12. End-to-end valid animated metadata rewrite evidence.
 
-Plan 055 owns:
+Plan 055 materially closed:
 
 13. Checked JPEG structural analysis.
 14. Malformed marker/segment boundary errors instead of partial state.
 15. First-fill-byte entropy termination for repeated FF marker runs.
 16. Checked support/decode routing through the exact structure.
-17. Final workspace and current-head CI evidence reconciliation.
-18. Final agreement among Roadmap 045 and Plans 051-055.
+17. Exact-head workspace/CI evidence for the Plan 054/055 implementation head.
 
 ---
 
-## Final closure reconciliation
+## Remaining roadmap closure items — Plan 056 only
 
-Plans 054 and 055 closed all residual XMP, animated-WebP, JPEG structural, and evidence
-criteria. Local verification and exact implementation-head CI are recorded in
-`plans/055-status.md`; CI run `31219089804` passed for `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15`.
+Plan 056 owns the final bounded XMP residuals:
+
+1. Accept XML predefined references (`amp`, `lt`, `gt`, `apos`, `quot`) without adding DTD/entity-expansion machinery.
+2. Accept valid decimal and hexadecimal numeric character references and reject invalid references.
+3. Keep unresolved custom named entities and DOCTYPE expansion unsupported.
+4. Decode/normalize attribute semantic values before exactly one escaping pass in structural merge.
+5. Apply the attribute rule to both Start and Empty events.
+6. Make `owned_depth` End handling take precedence over nested RDF-description close detection.
+7. Suppress comments and processing instructions inside owned subtrees.
+8. Ensure valid reference events inside owned subtrees cannot leak into preserved output.
+9. Prove reference-bearing XMP semantics across the public WebP rewrite path and three rewrite rounds.
+10. Run exact final-head verification and reconcile the historical status chain truthfully.
+
+---
 
 ## Closure rule
 
-Roadmap 045 is `COMPLETE` because both `plans/054-status.md` and `plans/055-status.md`
-satisfy every required definition-of-done item.
+Roadmap 045 may return to `COMPLETE` only after `plans/056-status.md` satisfies every required Plan 056 definition-of-done item and final verification is recorded against the actual implementation head.
 
-A broad test pass cannot override an open source-level contract. A CI result from an earlier SHA cannot serve as final-head evidence.
+A broad historical test pass cannot override an open source-level contract. A CI result from an earlier SHA cannot serve as final-head evidence for Plan 056.
 
 ---
 
 ## Publication hold
 
-No version bump, crates.io publication, tag, GitHub release, or release automation is part of Plans 054 or 055. Release remains manual and separate from this roadmap.
+No version bump, crates.io publication, tag, GitHub release, or release automation is part of Plan 056. Release remains manual and separate from this roadmap.
