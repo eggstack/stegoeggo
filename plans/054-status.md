@@ -2,11 +2,18 @@
 
 Plan baseline SHA: `e683c87785d7e4ec60b17fa8ec961d983e4b6fac`
 
-Disposition: **COMPLETE**
+Disposition: **PARTIAL — core Plan 054 work landed; final XMP reference/serialization residuals delegated to Plan 056**
 
-Implementation head: `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15`
+Plan 054 implementation head: `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15`
 
-Plan 054 owns only the residual XMP semantic-preservation and animated-WebP correctness defects identified after the Plan 053 audit.
+Post-closure audit baseline: `81c934d02dd43578482e01a15ea645a62ec0209b`
+
+Authoritative remaining work:
+
+- `plans/056-xmp-reference-and-serialization-final-closure.md`
+- `plans/056-status.md`
+
+Plan 054 owns the residual XMP semantic-preservation and animated-WebP correctness defects identified after the Plan 053 audit. Its animated-WebP product work remains closed. A later source audit found a narrower XMP reference/serialization gap outside the fixtures used for the original completion claim.
 
 No release, version, tag, publication, or CI expansion is authorized.
 
@@ -15,12 +22,12 @@ No release, version, tag, publication, or CI expansion is authorized.
 
 ```text
 XMP qualified RDF description serialization: CLOSED
-XMP owned-subtree suppression: CLOSED
-XMP expanded-name description close handling: CLOSED
+XMP owned-subtree suppression for originally tested element/text cases: CLOSED
+XMP expanded-name description close handling: CLOSED for ordinary preserved descriptions
 XMP deterministic namespace serialization: CLOSED
 XMP structural merge without substring parsing: CLOSED
 XMP exact filtered-description deduplication: CLOSED
-XMP semantic three-round idempotence: CLOSED
+XMP semantic three-round idempotence for originally tested values: CLOSED
 XMP safe scoped-prefix behavior: CLOSED
 ANMF uint24/header decoding: CLOSED
 ANMF frame flag validation: CLOSED
@@ -32,8 +39,12 @@ Malformed top-level VP8L propagation: CLOSED
 Malformed nested VP8L propagation: CLOSED
 Animated alpha/feature derivation: CLOSED
 Valid animated metadata rewrite: CLOSED
-Focused verification: CLOSED
-Workspace verification: CLOSED
+XML predefined/numeric reference handling: OPEN — Plan 056
+Merge attribute decode-before-escape: OPEN — Plan 056
+Owned-subtree event-complete suppression: OPEN — Plan 056
+Reference-aware three-round semantic proof: OPEN — Plan 056
+Focused verification: HISTORICALLY CLOSED for Plan 054 scope; Plan 056 verification OPEN
+Workspace verification: HISTORICALLY CLOSED for `0df12ede`; final closure verification OPEN in Plan 056
 Publication hold: RETAINED
 ```
 
@@ -43,12 +54,12 @@ Publication hold: RETAINED
 | item | baseline behavior | exact closure contract | implementation SHA | focused evidence | disposition |
 |---|---|---|---|---|---|
 | RDF description qualification | preserved description serialized as bare `Description` | serialize an RDF-qualified description that reparses with RDF expanded name | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `preserved_description_remains_rdf_qualified`, `preserved_description_reparses_as_rdf_description` | CLOSED |
-| Owned subtree filtering | nested events can escape an owned element skip | suppress the entire owned element subtree until matching end | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `owned_other_constraints_with_rdf_alt_is_removed_whole`, `owned_nested_depth_returns_to_zero_exactly_once` | CLOSED |
-| Description close identity | local-name-only close handling | require RDF namespace + local `Description` | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `preserved_description_remains_rdf_qualified` | CLOSED |
+| Owned subtree filtering | nested events can escape an owned element skip | suppress the entire owned element subtree until matching end | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `owned_other_constraints_with_rdf_alt_is_removed_whole`, `owned_nested_depth_returns_to_zero_exactly_once` | PARTIAL — comment/PI/nested-RDF end precedence delegated to Plan 056 |
+| Description close identity | local-name-only close handling | require RDF namespace + local `Description` | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `preserved_description_remains_rdf_qualified` | PARTIAL — nested owned RDF close precedence delegated to Plan 056 |
 | Namespace self-containment | inherited bindings are partially reconstructed | every serialized preserved description reparses standalone | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `preserved_description_outer_namespace_becomes_self_contained` | CLOSED |
-| Structural XMP merge | `metadata_trap.rs` uses `find/rfind` on `rdf:RDF` | insert preserved descriptions through XML events | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `merge_preserved_descriptions` + conformance rewrite tests | CLOSED |
+| Structural XMP merge | `metadata_trap.rs` uses `find/rfind` on `rdf:RDF` | insert preserved descriptions through XML events | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `merge_preserved_descriptions` + conformance rewrite tests | CLOSED architecture; reference serialization residual in Plan 056 |
 | Description dedup | filtered descriptions are appended without exact dedup | deduplicate byte-identical filtered serialization, preserving first order | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `webp_three_round_rewrite_xmp_is_parser_idempotent` | CLOSED |
-| Semantic idempotence | current test checks one chunk + substring presence | parser-based 3-round uniqueness/preservation proof | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `webp_three_round_rewrite_xmp_is_parser_idempotent` | CLOSED |
+| Semantic idempotence | current test checks one chunk + substring presence | parser-based 3-round uniqueness/preservation proof | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `webp_three_round_rewrite_xmp_is_parser_idempotent` | PARTIAL — reference-bearing value proof delegated to Plan 056 |
 | Scoped prefix reuse | global prefix conflict can over-reject | sibling self-contained scopes may reuse textual prefix for different URI | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `deduplicate_descriptions` scoped-safe behavior | CLOSED |
 | ANMF header | first four bytes treated as reserved | decode X/Y/W/H/duration/flags from all 16 bytes | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `anmf_decodes_x_y_width_height_duration_and_flags` | CLOSED |
 | ANMF flags | real reserved/blend/dispose layout not validated | require `(flags & 0xFC) == 0`, preserve bits 1/0 semantics | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `anmf_reserved_flag_bits_rejected` | CLOSED |
@@ -60,24 +71,28 @@ Publication hold: RETAINED
 | Nested malformed VP8L | parse error can be ignored during frame feature derivation | malformed nested VP8L fails | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `malformed_nested_vp8l_header_rejected` | CLOSED |
 | Animation feature derivation | partial frame alpha support | derive alpha/animation only from validated payload semantics | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `anmf_with_alph_detects_alpha`, `valid_alpha_vp8l_frame_accepted` | CLOSED |
 | Animated rewrite | parser tests do not fully prove writer behavior | valid animation rewrites with unchanged ANMF payloads and correct flags | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | `webp_animated_opaque_vp8_rewrite_succeeds`, `webp_animated_multiple_frame_rewrite_byte_identical`, `webp_animated_with_xmp_rewrite_succeeds`, `webp_animated_unknown_top_level_chunk_preserved` | CLOSED |
+| Predefined/numeric XML references | all `Event::GeneralRef` values rejected | accept valid predefined/numeric references while retaining bounded entity policy | — | Plan 056 fixtures | OPEN — Plan 056 |
+| Merge attribute escaping | raw `Attribute::value` bytes are escaped again | decode/normalize semantic value before exactly one escaping pass | — | Plan 056 attribute fixtures | OPEN — Plan 056 |
 
 ---
 ## Verification ledger
 
+The following evidence remains valid for the Plan 054 implementation scope, but it does not close Plan 056 reference fixtures.
+
 | command | observed result | exact SHA | status |
 |---|---|---|---|
-| `cargo test -p stegoeggo xmp --all-features` | 81 passed, 5 ignored, 1310 filtered out | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | CLOSED |
-| `cargo test -p stegoeggo webp --all-features` | 129 passed, 10 ignored, 1257 filtered out | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | CLOSED |
-| `cargo test -p stegoeggo --test conformance_container_tests --all-features` | 34 passed | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | CLOSED |
-| `cargo fmt --all -- --check` | no diff | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | CLOSED |
-| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | no issues found | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | CLOSED |
-| `cargo check -p stegoeggo --no-default-features` | clean | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | CLOSED |
-| `cargo test --workspace --exclude stegoeggo-fuzz --all-features` | 1503 passed, 32 ignored | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | CLOSED |
-| `./scripts/check.sh` | clean | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | CLOSED |
+| `cargo test -p stegoeggo xmp --all-features` | 81 passed, 5 ignored, 1310 filtered out | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | HISTORICAL PASS |
+| `cargo test -p stegoeggo webp --all-features` | 129 passed, 10 ignored, 1257 filtered out | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | HISTORICAL PASS |
+| `cargo test -p stegoeggo --test conformance_container_tests --all-features` | 34 passed | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | HISTORICAL PASS |
+| `cargo fmt --all -- --check` | no diff | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | HISTORICAL PASS |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | no issues found | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | HISTORICAL PASS |
+| `cargo check -p stegoeggo --no-default-features` | clean | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | HISTORICAL PASS |
+| `cargo test --workspace --exclude stegoeggo-fuzz --all-features` | 1503 passed, 32 ignored | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | HISTORICAL PASS |
+| `./scripts/check.sh` | clean | `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15` | HISTORICAL PASS |
 
 ---
 ## Closure rule
 
-Plan 054 may be marked `COMPLETE` only when every defect row is backed by focused evidence and all required verification commands are recorded against the actual implementation head.
+Plan 054's animated-WebP work is closed. Its final XMP semantic closure remains PARTIAL until Plan 056 closes predefined/numeric reference handling, exact attribute serialization, event-complete owned-subtree suppression, and reference-aware multi-round public rewrite evidence.
 
-Plan 054 completion does **not** close Roadmap 045 or Plans 051-053. Plan 055 owns the remaining JPEG structural exactness and final cross-plan evidence reconciliation.
+A broad historical test pass cannot override an open source-level Plan 056 contract.
