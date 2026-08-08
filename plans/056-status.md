@@ -56,7 +56,7 @@ The JPEG structural and animated-WebP container work from Plans 054/055 remains 
 | `cargo check -p stegoeggo --no-default-features` | clean | `96926b761275e70c83c6def2be0f667154799037` | PASS |
 | `cargo test --workspace --exclude stegoeggo-fuzz --all-features` | 1511 passed, 32 ignored | `96926b761275e70c83c6def2be0f667154799037` | PASS |
 | `./scripts/check.sh` | clean; required checks and doctests passed | `96926b761275e70c83c6def2be0f667154799037` | PASS |
-| Exact-head GitHub Actions evidence | not yet independently observable before push | `96926b761275e70c83c6def2be0f667154799037` | UNAVAILABLE |
+| Exact pushed closure-head GitHub Actions evidence | run `31236059210` passed for closure head `404fa8b76b015a16925a4806171cdac15b0f798a` | `404fa8b76b015a16925a4806171cdac15b0f798a` | PASS |
 
 ## Closure
 
