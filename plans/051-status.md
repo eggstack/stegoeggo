@@ -2,13 +2,18 @@
 
 Plan baseline SHA: `b3a08587861a17e9b290ba34fd82ca5e65575a92`
 
-Disposition: **COMPLETE — final residual closure completed by Plans 054 and 055**
+Disposition: **PARTIAL — final XMP reference/serialization closure delegated to Plan 056**
 
 Post-Plan-053 audit head: `e683c87785d7e4ec60b17fa8ec961d983e4b6fac`
 
-Final corrective implementation head: `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15`
+Plan 054/055 corrective implementation head: `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15`
 
-This ledger was previously marked complete after Plan 053. A later source audit found bounded XMP, animated-WebP, JPEG structural, and final-evidence criteria still open. Those remaining contracts are now split between Plans 054 and 055.
+Post-closure audit baseline: `81c934d02dd43578482e01a15ea645a62ec0209b`
+
+Authoritative remaining work:
+
+- `plans/056-xmp-reference-and-serialization-final-closure.md`
+- `plans/056-status.md`
 
 No version bump, publication, tag, release, or release automation is authorized by this status.
 
@@ -34,42 +39,36 @@ No version bump, publication, tag, release, or release automation is authorized 
 
 ## Later improvements retained
 
-The following work from Plans 052-053 substantially satisfies delegated Plan 051 criteria and is retained:
+The following later corrective work remains accepted and is not reopened without a focused failing fixture:
 
-- exact normal-path JPEG entropy-only slicing;
-- actual decoded-block counting;
-- unread entropy byte and final pad-bit rejection;
-- DHT class rejection outside DC/AC;
-- decoder lookup derived from shared canonical Huffman entries;
-- restart-bearing scan rejection at the full DCT probe;
+- exact JPEG entropy-only slicing, block counting, unread-byte and pad-bit rejection;
+- checked JPEG structural analysis and exact repeated-marker-fill boundaries;
+- DHT class rejection and shared canonical Huffman-derived decoder lookup;
+- restart-bearing JPEG rejection;
 - strict RIFF declared-size, padded-end, and final-cursor checks;
-- VP8X structural length and reserved-field checks;
-- corrected VP8L bit layout/version helper;
-- duplicate ANIM/ICCP/EXIF checks;
-- declared-vs-derived WebP feature separation;
-- crate-private namespace-aware XMP parser foundation.
+- VP8X structural and feature validation;
+- corrected VP8L header layout/version handling;
+- ANMF exact frame semantics, bounds, flags, nested payload validation, and alpha derivation;
+- animated WebP metadata rewrite preserving frame payloads;
+- crate-private namespace-aware XMP parser foundation;
+- RDF-qualified preserved descriptions;
+- event-based XMP merge architecture;
+- preserved-description deduplication.
 
 ---
 
-## Historical residual work closed by Plans 054 and 055
+## Remaining delegated work — Plan 056
 
-Plan 054 owns the residual XMP and animated-WebP semantic contracts:
+A post-Plan-054/055 source audit found a narrower XMP semantic gap not exercised by the prior completion fixtures:
 
-- RDF-qualified preserved descriptions;
-- exact owned-element subtree removal;
-- event-based XMP merge;
-- real description deduplication and semantic idempotence;
-- standards-correct ANMF header/frame bounds;
-- order-independent frame ALPH/VP8L rules;
-- malformed VP8L propagation;
-- animated rewrite proof.
+- predefined XML references are rejected unconditionally as `Event::GeneralRef`;
+- valid numeric character references are rejected likewise;
+- structural merge can double-escape raw attribute values;
+- nested owned `rdf:Description` End handling can outrank `owned_depth`;
+- comments and processing instructions can leak from owned subtrees;
+- reference-aware public rewrite/idempotence evidence is missing.
 
-Plan 055 owns the residual JPEG/evidence contracts:
-
-- checked structural analysis instead of partial best-effort state;
-- exact repeated-marker-fill boundary handling;
-- checked probe/decode routing;
-- final exact-head workspace/CI evidence and planning reconciliation.
+Plan 056 owns only those residuals. It does not reopen the closed JPEG or animated-WebP work.
 
 ---
 
@@ -77,22 +76,22 @@ Plan 055 owns the residual JPEG/evidence contracts:
 
 | plan | disposition |
 |---|---|
-| Roadmap 045 | COMPLETE — final closure completed by Plans 054 and 055 |
-| Plan 048 | substantially closed; checked JPEG structural residuals in Plan 055 |
-| Plan 049 | substantially closed; XMP/animation residuals in Plan 054 |
+| Roadmap 045 | PARTIAL — final closure requires Plan 056 |
+| Plan 048 | substantially closed |
+| Plan 049 | substantially closed; final XMP residuals now narrowed to Plan 056 |
 | Plan 050 | Superseded |
-| Plan 051 | COMPLETE |
-| Plan 052 | COMPLETE |
-| Plan 053 | COMPLETE — residual closure completed |
-| Plan 054 | COMPLETE |
-| Plan 055 | COMPLETE |
+| Plan 051 | PARTIAL — final closure requires Plan 056 |
+| Plan 052 | PARTIAL — final closure requires Plan 056 |
+| Plan 053 | PARTIAL — final closure requires Plan 056 |
+| Plan 054 | PARTIAL — animated-WebP closed; final XMP residuals in Plan 056 |
+| Plan 055 | PARTIAL only for final cross-plan reconciliation; JPEG closed |
+| Plan 056 | OPEN |
 
 ---
 
 ## Closure rule
 
-Plan 051 is `COMPLETE` after Plans 054 and 055 closed the remaining delegated criteria;
-their focused evidence and exact-head verification are recorded in `plans/055-status.md`.
+Plan 051 may return to `COMPLETE` only after Plan 056 closes every remaining XMP reference/serialization criterion and records exact implementation-head verification.
 
 A local test count or CI pass for an earlier SHA does not supersede an open source-level contract.
 
@@ -100,4 +99,4 @@ A local test count or CI pass for an earlier SHA does not supersede an open sour
 
 ## Publication hold
 
-No version bump, crates.io publication, tag, GitHub release, or release automation is part of Plans 054-055. Release remains manual and separate.
+No version bump, crates.io publication, tag, GitHub release, or release automation is part of Plan 056. Release remains manual and separate.
