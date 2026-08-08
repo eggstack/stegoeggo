@@ -45,6 +45,7 @@ cargo +nightly fuzz run <target> -- -max_total_time=60
 cargo semver-checks check-release
 cargo deny check licenses
 cargo deny check advisories
+scripts/measure_binary_size.sh              # binary size tracking (no CI gate)
 ```
 
 Conformance exit codes: 0=pass, 1=fail, 2=config, 3=digest mismatch, 4=coverage violation, 5=internal.
@@ -108,13 +109,15 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **`MetadataTrapProtector::apply()` returns `Cow::Borrowed(img)` unchanged** — Metadata injection is byte-level. The pipeline routes `Light` through `apply_light_bytes()` which encodes → injects → decodes
 - **`#[serde(skip)]` on `config` field** — MAC keys and legal metadata are lost in serde roundtrips
 - **CLI unified path** — The CLI always routes through `ProtectionRequest`. There is no dual legacy/request code path. `ProtectionLevel::default_policy()` computes level defaults: `Standard`→`ProhibitedAiMlTraining`, `Light`/`Disabled`→`Unspecified`. `--dmi auto` and omitted `--dmi` are equivalent. Mixed conflicting policy options (e.g., `--rights-policy` contradicting `--no-ai-training`) are configuration errors (exit code 2)
-- **CLI `--verify` always exits 0** — Use output text to determine protection state, not exit code
+- **CLI exit codes** — `0`=ok, `1`=error, `2`=config, `3`=integrity, `5`=internal. `--verify` always exits 0; use output text to determine protection state, not exit code
+- **CLI new-style flags** — `--rights-policy`, `--preset`, `--hidden-marker`, `--authentication` route through canonical `ProtectionRequest`. `--preset` cannot combine with `--level`/`--profile`. `--rights-policy` replaces `--dmi`
+- **CLI subcommands (feature: `signatures`)** — `keygen`, `sign`, `verify-manifest` are feature-gated. `verify-manifest` accepts `--payload-key` for HMAC verification. `--json` enables machine-readable output on verify and verify-manifest
+- **No `test-seeds` in production CLI** — `test-seeds` is test infrastructure only, never in production binary
 - **F5 seed Q-table edge case** — `embed_seed_in_quantization_tables()` fails if any quantization value in the first 2 tables is < 2
 - **`--tdm-reserved` is deprecated** — TDMRep deployment deferred; sets DMI to `ProhibitedSeeConstraints`
 - **CLI binary location** — `stegoeggo-cli/src/main.rs`, not `src/bin/`
 - **`--require-complete` is removed** — `--strict` is the single complete-validation mode
 - **CLI `--dry-run` is not new-style** — `--dry_run` is excluded from `has_new_style_flags()` so it does not force canonical path; dry-run uses the same `build_protection_request()` as execution
-- **No `test-seeds` in production CLI** — `test-seeds` is test infrastructure only, never in production binary
 
 **JPEG DCT and container correctness:**
 
@@ -253,4 +256,4 @@ See `RELEASING.md` for the complete procedure.
 - `DEPRECATIONS.md` — Deprecated API inventory
 - `SUPPORT.md` — Support matrix
 - `STABILITY.md` — Stability tiers
-- `architecture/` — Architecture documentation (24 files, verified against source)
+- `architecture/` — Architecture documentation (30 files, verified against source)
