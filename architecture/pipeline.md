@@ -1,6 +1,6 @@
 # Pipeline & Public API
 
-**Source:** `src/lib.rs` (~1294 lines)
+**Source:** `src/lib.rs` (~2203 lines)
 
 The pipeline is the central orchestration layer. It selects and composes protectors based on the requested `ProtectionLevel`, handles format routing (JPEG fast path vs pixel path), and provides both sync and parallel entry points. Parallel batch processing functions require the `parallel` feature.
 
@@ -11,7 +11,7 @@ The main struct. Holds `Arc`-wrapped protectors for all levels.
 ```rust
 pub struct ProtectionPipeline {
     passthrough: Arc<PassthroughProtector>,
-    metadata_trap: Arc<MetadataTrapProtector>,
+    metadata_trap: Arc<RightsMetadataProtector>,
     steganography: Arc<SteganographyProtector>,
 }
 ```

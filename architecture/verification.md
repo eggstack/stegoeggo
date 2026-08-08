@@ -36,11 +36,10 @@ Computed automatically by the builder from the sub-results:
 
 ```rust
 pub enum EvidenceStrength {
-    NoNoticeFound,     // No rights metadata or stego found
-    MetadataOnly,      // Rights metadata found, no stego
-    StegoOnly,         // Stego found, no rights metadata
-    MetadataAndStego,  // Both channels present
-    Authenticated,     // Both + HMAC/Ed25519 verification
+    NoNoticeFound,                          // No metadata or stego found
+    MetadataNoticeOnly,                     // Rights metadata found, no stego verified
+    MetadataNoticeAndBestEffortStego,       // Metadata + unauthenticated stego
+    MetadataNoticeAndAuthenticatedProvenance, // Metadata + MAC-authenticated stego
 }
 ```
 
@@ -108,9 +107,8 @@ Image-to-claim binding results:
 Trust chain evaluation:
 
 - `trusted: bool` — Overall trust decision
-- `policy: String` — Trust policy used
+- `trust_model: String` — Trust model used
 - `reason: String` — Human-readable trust reason
-- `chain_valid: Option<bool>` — Certificate chain validity (if applicable)
 
 ### `Diagnostic`
 
@@ -165,8 +163,8 @@ let report = VerificationReportBuilder::new()
   "authentication": { "attempted": true, "hmac_status": "Verified", ... },
   "signatures": [...],
   "bindings": { "instance_digest_match": true, ... },
-  "trust": { "trusted": true, "policy": "TrustKeys", ... },
-  "evidence_strength": "Authenticated",
+  "trust": { "trusted": true, "trust_model": "TrustKeys", ... },
+  "evidence_strength": "MetadataNoticeAndAuthenticatedProvenance",
   "diagnostics": [...]
 }
 ```

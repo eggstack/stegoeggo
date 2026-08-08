@@ -41,7 +41,8 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 | Wrong enum variants | Actual enum variants | `DmiValue`, `TranscoderError` |
 | `String` fields | `Option<String>` fields | `Iscc.meta` |
 | V2 as current payload | V3 is the default | `steganography.rs`, `payload_v3/` |
-| 14 Error variants | 19 Error variants | `error.rs` |
+| 14 Error variants | 17 Error variants (16 + 1 async) | `error.rs` |
+| 7 ProtectionWarning variants | 8 ProtectionWarning variants | `types.rs` |
 | `Option<bool>` returns | `VerificationStatus` returns | `verify_payload_from_bytes_with_key` |
 
 ### 4. Key source files to always check
@@ -87,12 +88,14 @@ These have been fixed in documentation — if the code hasn't changed, these are
 - **CLI batch** does NOT preserve directory structure — outputs flat to `-o` dir
 - **`LegalMetadata`** field is `ai_constraints` (not `ai_training_constraints`)
 - **`ProtectionContext::with_format()`** (not `with_output_format()`)
-- **DmiValue mapping** is via helper in `metadata_trap.rs` — no `impl From<ProtectionLevel> for DmiValue`
-- **Error enum** has 19 variants, not 14 — 5 structured variants (`InputTooLarge`, `DimensionsExceeded`, `ContainerLimitExceeded`, `MetadataLimitExceeded`, `VerificationBudgetExceeded`) were added for resource limits
-- **`ProtectionWarning`** has 7 variants — `ContradictoryLegalClaims` was added
+- **DmiValue mapping** is via `ProtectionLevel::default_policy()` in `types.rs` — no `impl From<ProtectionLevel> for DmiValue`
+- **Error enum** has 17 variants (16 always-available + 1 async-only `Task`) — 5 structured variants (`InputTooLarge`, `DimensionsExceeded`, `ContainerLimitExceeded`, `MetadataLimitExceeded`, `VerificationBudgetExceeded`) were added for resource limits
+- **`ProtectionWarning`** has 8 variants — `ContradictoryLegalClaims` and `MissingRightsConstraints` were added
 - **`ExecutionReport`** has 9 fields — `authentication_performed` does not exist; replaced by `effective_policy`, `effective_dmi`, `stego_attempted`, `format_transcoded`, `resource_usage`, `embed_summary`
 - **`LegalMetadata`** has 16 fields — 8 additional fields: `usage_terms_lang`, `credit_line`, `copyright_owner`, `licensor_name`, `licensor_email`, `licensor_url`, `metadata_date`, `notice_applied_at`
 - **Tile size** clamp is `32..=1024` (0 disables), not `>= 16`
 - **`ed25519-dalek`** version is `3`, not `2`
 - **V3 is current** — `V3_PAYLOAD_VERSION = 3` is the default; V2/V1 are extraction-only legacy
 - **`CURRENT_PAYLOAD_VERSION`** does not exist — the constant is `V3_PAYLOAD_VERSION` in `src/payload_v3/types.rs`
+- **`EvidenceStrength`** has 4 variants: `NoNoticeFound`, `MetadataNoticeOnly`, `MetadataNoticeAndBestEffortStego`, `MetadataNoticeAndAuthenticatedProvenance`
+- **`TrustEvaluation`** has `trust_model: String`, `trusted: bool`, `reason: String` — no `chain_valid` field

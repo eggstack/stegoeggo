@@ -8,7 +8,7 @@ Defines the core trait contracts that all protectors implement.
 
 ```rust
 pub trait Protector: Send + Sync {
-    fn apply(&self, img: &DynamicImage, ctx: &ProtectionContext) -> Result<Cow<DynamicImage>>;
+    fn apply<'a>(&self, img: &'a DynamicImage, ctx: &ProtectionContext) -> Result<Cow<'a, DynamicImage>>;
     fn apply_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>>;
     fn name(&self) -> &'static str;
     fn protection_level(&self) -> ProtectionLevel;
@@ -33,7 +33,7 @@ pub trait Protector: Send + Sync {
 | Protector | Level | modifies_pixels | estimated_latency_ms |
 |-----------|-------|-----------------|---------------------|
 | `PassthroughProtector` | Disabled | false | 0 |
-| `MetadataTrapProtector` | Light | false | 2 |
+| `RightsMetadataProtector` | Light | false | 2 |
 | `SteganographyProtector` | Standard | true | 2 |
 
 ## Module Interactions

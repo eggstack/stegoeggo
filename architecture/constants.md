@@ -10,7 +10,7 @@ Tuning constants used across the protection modules.
 |----------|-------|-------------|---------|
 | `STEGO_OFFSET_SEED_1` | `0x517cc1b727220a95` | `protected/constants.rs` | Multiplicative offset for stego pixel selection |
 | `STEGO_SPREAD_FACTOR` | `5` | `protected/constants.rs` | Number of adjacent pixels each LSB bit is spread across |
-| `XORSHIFT_SEED_OFFSET` | `0x123456789ABCDEF0` | `util/image.rs` | XOR offset for XorShiftRng initialization |
+| `XORSHIFT_SEED_OFFSET` | `0x123456789ABCDEF0` | `protected/constants.rs` | XOR offset for XorShiftRng initialization |
 | `SPLITMIX64_SEED` | `0x9e3779b97f4a7c15` | `protected/constants.rs`, `util/seed.rs` | Splitmix64 mixing constant |
 | `DEFAULT_TILE_SIZE` | `64` | `protected/steganography.rs` | Default crop-resistant tile size |
 | `MIN_TILE_SIZE` | `32` | `protected/steganography.rs` | Minimum tile size for crop resistance |

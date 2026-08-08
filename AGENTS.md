@@ -205,9 +205,10 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 ## Architecture
 
-- **Strategy pattern** via `Protector` trait (`src/traits.rs`) with three levels: Disabled, Light, Standard
-- **Pipeline** (`src/lib.rs`): `ProtectionPipeline` orchestrates protectors
-- **JPEG fast path**: When input/output are both JPEG, operates directly on DCT coefficients via `src/jpeg_transcoder/`, bypassing pixel decode/encode
+- **Strategy pattern** via `Protector` trait (`src/traits.rs`) with three levels: Disabled, Light, Standard — see `architecture/traits.md`
+- **Pipeline** (`src/lib.rs`): `ProtectionPipeline` orchestrates protectors — see `architecture/pipeline.md`
+- **JPEG fast path**: When input/output are both JPEG, operates directly on DCT coefficients via `src/jpeg_transcoder/`, bypassing pixel decode/encode — see `architecture/jpeg-transcoder.md`
+- **Policy-first API**: `ProtectionRequest` + `RightsPolicy` are the canonical API — see `architecture/types.md`
 - **`#![forbid(unsafe_code)]`** throughout the library crate
 
 ## Validation Scripts
@@ -257,3 +258,22 @@ See `RELEASING.md` for the complete procedure.
 - `SUPPORT.md` — Support matrix
 - `STABILITY.md` — Stability tiers
 - `architecture/` — Architecture documentation (30 files, verified against source)
+  - `architecture/overview.md` — Module map, protection levels, pipeline flow
+  - `architecture/pipeline.md` — Pipeline orchestration and public API
+  - `architecture/traits.md` — Protector trait definition
+  - `architecture/types.md` — Core type definitions (ProtectionRequest, RightsPolicy, etc.)
+  - `architecture/constants.md` — Tuning constants and their values
+  - `architecture/error.md` — Error variants (17 total: 16 always-available + 1 async-only)
+  - `architecture/verification.md` — VerificationReport and sub-verification types
+  - `architecture/cli.md` — CLI flags, subcommands, and exit codes
+  - `architecture/jpeg-transcoder.md` — JPEG DCT coefficient processing
+  - `architecture/jpeg-header.md` — JPEG header parsing and scan analysis
+  - `analysis/jpeg-stego-f5.md` — F5-style DCT steganography
+  - `architecture/protected-steganography.md` — LSB and DCT embedding methods
+  - `architecture/protected-metadata-trap.md` — Metadata injection (RightsMetadataProtector)
+  - `architecture/payload-v3.md` — V3 payload wire format and TLV extensions
+  - `architecture/provenance.md` — Provenance claims and digest binding
+  - `architecture/signing.md` — Ed25519 signing module
+  - `architecture/detached.md` — Detached manifest sidecar
+  - `architecture/conformance.md` — Conformance harness and reporting
+  - `architecture/resource-limits.md` — Input validation and resource bounds

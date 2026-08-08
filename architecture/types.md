@@ -217,7 +217,7 @@ pub enum DmiValue {
 }
 ```
 
-Auto-mapped from `ProtectionLevel` via helper in `metadata_trap.rs`: Light→Prohibited, Standard→ProhibitedAiMlTraining. No `impl From<ProtectionLevel> for DmiValue` exists — use the helper function directly.
+Auto-mapped from `ProtectionLevel` via `ProtectionLevel::default_policy()` in `types.rs`: Disabled|Light→Unspecified, Standard→ProhibitedAiMlTraining. No `impl From<ProtectionLevel> for DmiValue` exists — use the helper function directly.
 
 `plus_vocab_key()` returns the bare PLUS LDF vocabulary key (e.g., `DMI-PROHIBITED-AIMLTRAINING`). `plus_vocab_uri()` returns the full canonical URI (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`), which is emitted in XMP `plus:DataMining` attributes. `from_plus_vocab_key()` parses a bare key (or full URI) back to the enum variant. Legacy `Iptc4xmpExt:DMI-*` values are still parsed for backward compatibility but not emitted by default.
 
@@ -463,7 +463,7 @@ Extracted stego data (returned from `SteganographyProtector::extract_payload`):
 
 ## ProtectionWarning
 
-Enum with 7 variants emitted by `process_image_bytes_with_warnings`:
+Enum with 8 variants emitted by `process_image_bytes_with_warnings`:
 
 | Variant | Category | Description |
 |---------|----------|-------------|
@@ -474,6 +474,7 @@ Enum with 7 variants emitted by `process_image_bytes_with_warnings`:
 | `LsbCapacitySkipped` | BestEffortStego | Image too small for LSB embedding |
 | `DctCapacityInsufficient` | BestEffortStego | JPEG has too few DCT coefficients for F5 |
 | `ContradictoryLegalClaims` | LegalNotice | Contradictory or inconsistent legal claim fields detected |
+| `MissingRightsConstraints` | LegalNotice | ProhibitedSeeConstraints without ai_constraints or web_statement_of_rights |
 
 ### Helper Methods
 
