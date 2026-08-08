@@ -2,13 +2,41 @@
 
 `stegoeggo` is a Rust library and CLI for protecting images from unauthorized AI model training through rights-reservation metadata and steganographic markers. It applies multiple layers of protection — metadata injection and steganographic embedding — to serve as legal evidence of image ownership.
 
+## Getting Oriented
+
+Start with the component you're investigating. This document is the index — each component links to a dedicated deep-dive.
+
+| I want to understand... | Read this |
+|-------------------------|-----------|
+| How the pipeline routes and orchestrates protection | [pipeline.md](pipeline.md) |
+| What `ProtectionRequest`, `ProtectionContext`, and other core types look like | [types.md](types.md) |
+| How protectors implement the `Protector` trait | [traits.md](traits.md) |
+| Error handling and all failure modes | [error.md](error.md) |
+| How the CLI works end-to-end | [cli.md](cli.md) |
+| How metadata gets injected into images | [protected-metadata-trap.md](protected-metadata-trap.md) |
+| How steganographic payloads are embedded and extracted | [protected-steganography.md](protected-steganography.md) |
+| How the JPEG DCT fast path works | [jpeg-transcoder.md](jpeg-transcoder.md) |
+| The payload wire format (v3 with TLV extensions) | [payload-v3.md](payload-v3.md) |
+| Provenance claims and canonical serialization | [provenance.md](provenance.md) |
+| Ed25519 signing for provenance | [signing.md](signing.md) |
+| Detached signed manifests | [detached.md](detached.md) |
+| Verification reports and evidence strength | [verification.md](verification.md) |
+| The conformance testing suite | [conformance.md](conformance.md) |
+| Async API for WAF/CDN integration | [async-api.md](async-api.md) |
+| Parser hardening and DoS prevention | [resource-limits.md](resource-limits.md) |
+| How `ProtectionRequest` resolves into an execution plan | [resolve.md](resolve.md) |
+| Why C2PA integration is deferred | [adr-c2pa.md](adr-c2pa.md) |
+| The full detached manifest specification | [detached-manifest.md](detached-manifest.md) |
+| Legal metadata field mapping across formats | [legal-metadata-field-mapping.md](legal-metadata-field-mapping.md) |
+| Provenance claim design specification | [provenance-claim.md](provenance-claim.md) |
+
 ## System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              PUBLIC API                                      │
 │  process_image() | process_image_bytes() | process_images_*_parallel()     │
-│  verify_image_bytes()                                                        │
+│  process_request_bytes() | verify_image_bytes()                            │
 └─────────────────────────────────┬───────────────────────────────────────────┘
                                   │
                                   ▼
@@ -36,7 +64,7 @@
            ▼                       ▼             ▼
 ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌─────────────────┐
 │Steganography│ │Metadata  │ │ Precomputed│ │ JpegTranscoder │
-│(steganography)│  Trap    │ │             │ │                 │
+│(LSB/DCT)   │ │  Trap    │ │             │ │                 │
 └───────────┘ └───────────┘ └───────────┘ └─────────────────┘
                               │
                               ▼
@@ -56,9 +84,9 @@
 
 Each level above `Disabled` activates metadata injection. `Light` adds the cheapest recoverable seed marker for the output format. `Standard` applies the full LSB or DCT payload.
 
-## Request-Based API Flow (Release 4)
+## Request-Based API Flow (Release 4+)
 
-Release 4 introduces a policy-first architecture where `ProtectionRequest` is the canonical entry point. The flow separates request construction, resolution, and execution:
+Release 4 introduced a policy-first architecture where `ProtectionRequest` is the canonical entry point. The flow separates request construction, resolution, and execution:
 
 ```
 ProtectionRequest (user constructs)
@@ -73,26 +101,6 @@ ResolvedProtectionPlan (immutable)
         ├── process_request_bytes_with_warnings() → (Vec<u8>, Vec<ProtectionWarning>)
         └── process_request_bytes_with_report()   → (Vec<u8>, ExecutionReport)
 ```
-
-### Why Resolution Runs Once
-
-`resolve_request()` validates all inputs and produces an immutable `ResolvedProtectionPlan`. Pipeline stages consume the plan rather than re-querying mutable context. This ensures:
-- Single validation point (no repeated checks)
-- Immutable execution plan (no mid-flight mutations)
-- Clean separation between request construction and execution
-
-### Presets vs Direct Channels
-
-Presets (`ProtectionPreset`) expand into `ProtectionChannels` at construction time:
-
-| Preset | Channels |
-|--------|----------|
-| `LegalNotice` | `{ rights_metadata: true, hidden_marker: Disabled, authentication: None }` |
-| `LegalNoticeWithStego` | `{ rights_metadata: true, hidden_marker: BestEffort, authentication: None }` |
-| `AuthenticatedProvenance` | `{ rights_metadata: true, hidden_marker: BestEffort, authentication: Hmac }` |
-| `Maximal` | `{ rights_metadata: true, hidden_marker: BestEffort, authentication: Hmac }` |
-
-For finer control, construct `ProtectionChannels` directly instead of using a preset.
 
 ## Data Flow
 
@@ -171,6 +179,8 @@ src/
 ├── async_api.rs               Tokio spawn_blocking wrappers (feature: async)
 ├── conformance.rs             Machine-readable conformance reporting types (feature: conformance)
 ├── resource_limits.rs         ResourceLimits for parser hardening (DoS prevention)
+├── xmp.rs                     XMP parsing, namespace-aware filtering, packet merging (pub(crate))
+├── webp_container.rs          WebP RIFF parsing, VP8X/VP8/VP8L/ANMF handling (pub(crate))
 │
 ├── protected/                 Protection strategies (all implement Protector trait)
 │   ├── constants.rs           Tuning constants (STEGO_*, XORSHIFT_*, SPLITMIX64_*)
@@ -233,37 +243,71 @@ src/
     └── seed.rs                generate_random_seed() via getrandom (OS CSPRNG)
 ```
 
-## Component Index
+## Component Index — Deep Dives
 
-Each component has a detailed deep-dive document in `architecture/`:
+### Core Pipeline & API
 
-| Component | File | Description |
-|-----------|------|-------------|
-| **Pipeline & API** | [pipeline.md](pipeline.md) | Orchestration, format routing, parallel processing, LazyLock singletons |
-| **Core Types** | [types.md](types.md) | ProtectionLevel, ProtectionContext, config builders, Arc-wrapping |
-| **Traits** | [traits.md](traits.md) | Protector trait |
-| **Error Types** | [error.md](error.md) | Error enum (ImageDecode, Steganography, JpegTranscode, etc.) |
-| **Async API** | [async-api.md](async-api.md) | Tokio spawn_blocking wrappers for batch processing |
-| **Image Utilities** | [util-image.md](util-image.md) | XorShiftRng, encoding |
-| **ISCC Identifiers** | [util-iscc.md](util-iscc.md) | Perceptual content hashing (non-standard ISCC-like) |
-| **Seed Generation** | [util-seed.md](util-seed.md) | getrandom (OS CSPRNG), with time-based splitmix64 fallback |
-| **Passthrough** | [protected-passthrough.md](protected-passthrough.md) | No-op for Disabled level |
-| **Metadata Trap** | [protected-metadata-trap.md](protected-metadata-trap.md) | Canonical `plus:DataMining` XMP injection, seed embedding, legacy IPTC DMI parsing; notice_verification.rs handles legal-notice verification and evidence strength rating |
-| **Steganography** | [protected-steganography.md](protected-steganography.md) | LSB + DCT F5, payload generation/verification |
-| **JPEG Transcoder** | [jpeg-transcoder.md](jpeg-transcoder.md) | DCT decode/encode, assemble, scan data utilities |
-| **JPEG Header** | [jpeg-header.md](jpeg-header.md) | Marker parsing (DQT/SOF/DHT/SOS), component extraction |
-| **JPEG Entropy** | [jpeg-entropy.md](jpeg-entropy.md) | Huffman encoding/decoding, CoefficientEncoder/Decoder |
-| **F5 DCT Stego** | [jpeg-stego-f5.md](jpeg-stego-f5.md) | F5-style embedding, no-zero variant, quantization table seed |
-| **Constants** | [constants.md](constants.md) | All tuning constants (STEGO_*, XORSHIFT_*, SPLITMIX64_*) |
-| **CLI** | [cli.md](cli.md) | Command-line interface, batch processing, filename collision handling |
-| **Payload v3** | [payload-v3.md](payload-v3.md) | TLV extension format, domain-separated authentication |
-| **Provenance** | [provenance.md](provenance.md) | Canonical provenance claims, digest binding, serialization |
-| **Signing** | [signing.md](signing.md) | Ed25519 signing and verification (feature-gated: signatures) |
-| **Detached Manifests** | [detached.md](detached.md) | Signed sidecar manifests for out-of-band provenance (feature-gated: detached-manifest) |
-| **Verification** | [verification.md](verification.md) | Structured verification report with per-channel sub-results |
-| **Conformance** | [conformance.md](conformance.md) | Machine-readable conformance reporting, external tool integration |
-| **Resource Limits** | [resource-limits.md](resource-limits.md) | Parser hardening, DoS prevention, configurable limits |
-| **Request Resolution** | [resolve.md](resolve.md) | ProtectionRequest → ResolvedProtectionPlan validation and resolution |
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Pipeline** | [pipeline.md](pipeline.md) | `ProtectionPipeline` orchestration, format routing, JPEG fast path, LazyLock singletons, parallel threshold scaling |
+| **Types** | [types.md](types.md) | `ProtectionLevel`, `ProtectionContext`, `RightsPolicy`, `ProtectionRequest`, `ProtectionPreset`, `ProtectionChannels`, `ExecutionReport`, v0.3→v0.4 migration |
+| **Traits** | [traits.md](traits.md) | `Protector` trait contract, `apply`/`apply_bytes` methods, implementation table |
+| **Error Types** | [error.md](error.md) | `Error` enum variants, structured resource-limit errors, async `Task` variant |
+| **Request Resolution** | [resolve.md](resolve.md) | `resolve_request()` single validation point, immutable plan construction |
+
+### Protection Strategies
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Passthrough** | [protected-passthrough.md](protected-passthrough.md) | No-op for Disabled level, zero-allocation `Cow::Borrowed` return |
+| **Metadata Trap** | [protected-metadata-trap.md](protected-metadata-trap.md) | Canonical `plus:DataMining` XMP injection, seed embedding, legal metadata fields, format-specific injection (PNG tEXt, JPEG COM/APP, WebP XMP), metadata merge policies, idempotency |
+| **Steganography** | [protected-steganography.md](protected-steganography.md) | LSB (PNG/WebP) + DCT F5 (JPEG), v3/v2/v1 payload generation/verification, majority voting, redundancy, tiled crop-resistant embedding |
+| **Constants** | [constants.md](constants.md) | All tuning constants: `STEGO_SPREAD_FACTOR`, `XORSHIFT_SEED_OFFSET`, `SPLITMIX64_SEED`, tile defaults, payload version |
+
+### JPEG DCT Subsystem
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **JPEG Transcoder** | [jpeg-transcoder.md](jpeg-transcoder.md) | `JpegTranscoder` decode/encode flow, `DctSupport` probe, canonical Huffman construction, malformed entropy handling |
+| **JPEG Header** | [jpeg-header.md](jpeg-header.md) | `JpegHeader` parser: DQT/SOF/DHT/SOS markers, component extraction, checked scan structure analysis |
+| **JPEG Entropy** | [jpeg-entropy.md](jpeg-entropy.md) | Huffman codec: `CoefficientDecoder`/`CoefficientEncoder`, `BitReader`/`BitWriter`, zigzag order, standard Huffman tables |
+| **F5 DCT Stego** | [jpeg-stego-f5.md](jpeg-stego-f5.md) | F5-style embedding, no-zero variant, seed in Q-table LSBs, `F5XorShiftRng`, tiled F5 |
+
+### Payload & Encoding
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Payload v3** | [payload-v3.md](payload-v3.md) | TLV wire format, domain-separated authentication, ECC encoding, backward compatibility, parsing algorithm, security model |
+| **Provenance** | [provenance.md](provenance.md) | `ProvenanceClaim` builder, canonical JSON serialization, `TypedDigest`, usage in v3 payloads and detached manifests |
+
+### Authentication & Signing
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Signing** | [signing.md](signing.md) | Ed25519 signing (feature-gated `signatures`), `SigningKey`/`VerifyingKey` with zeroize, capacity check |
+| **Detached Manifests** | [detached.md](detached.md) | Signed sidecar manifests (feature-gated `detached-manifest`), `TrustPolicy`, verification flow |
+| **Verification** | [verification.md](verification.md) | Structured `VerificationReport`, per-channel sub-results, `EvidenceStrength` computation, builder API |
+
+### Utilities & Integration
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Image Utilities** | [util-image.md](util-image.md) | `PixelSelectionRng` (XorShift64 PRNG), encoding, format detection, image hashing |
+| **ISCC Identifiers** | [util-iscc.md](util-iscc.md) | Non-standard ISCC-like perceptual hashing, `ContentIdentifiers` |
+| **Seed Generation** | [util-seed.md](util-seed.md) | CSPRNG via `getrandom`, time-based splitmix64 fallback |
+| **Async API** | [async-api.md](async-api.md) | Tokio `spawn_blocking` wrappers for WAF/CDN integration |
+| **Resource Limits** | [resource-limits.md](resource-limits.md) | Parser hardening, DoS prevention, configurable limits with structured errors |
+| **Conformance** | [conformance.md](conformance.md) | External tool integration (ExifTool, xmllint), fixture manifest, strict mode, exit codes |
+| **CLI** | [cli.md](cli.md) | Command-line interface, all flags, batch processing, verification mode |
+
+### Specifications & Design Records
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Detached Manifest Spec** | [detached-manifest.md](detached-manifest.md) | Full JSON schema, signing protocol, size bounds, error handling |
+| **Provenance Claim Spec** | [provenance-claim.md](provenance-claim.md) | 15-field schema, rights policy discriminants, binary encoding, test vectors |
+| **Legal Metadata Mapping** | [legal-metadata-field-mapping.md](legal-metadata-field-mapping.md) | Field mapping across PNG/JPEG/WebP, round-trip issues |
+| **C2PA ADR** | [adr-c2pa.md](adr-c2pa.md) | Architecture Decision Record: deferred C2PA integration |
 
 ## Key Design Decisions
 
@@ -320,61 +364,6 @@ static DEFAULT_PIPELINE: LazyLock<ProtectionPipeline> = LazyLock::new(Protection
 - V2 (legacy, extraction only): 32-byte header, ECC-encoded: 100 bytes
 - V1 (legacy, extraction only): 24-byte header, ECC-encoded: 76 bytes
 - `MIN_PAYLOAD_SIZE = 28`: Parsing threshold, not output size
-
-### Payload v3
-
-Payload v3 adds TLV (Type-Length-Value) extensions with domain-separated authentication:
-
-```
-v3 Header (24 bytes)
-├── Version (1 byte, =3)
-├── Flags (1 byte)
-├── Seed (8 bytes, little-endian)
-├── Intensity (2 bytes)
-├── Timestamp (8 bytes)
-└── Extension count + reserved (4 bytes)
-
-Extensions (variable, TLV format)
-├── Type (1 byte: domain + key)
-├── Length (1 byte)
-└── Value (N bytes)
-
-Authentication
-├── Per-domain MAC keys (domain separation)
-└── Truncated HMAC-SHA256
-```
-
-Domain separation ensures cross-domain forgery is infeasible — each extension domain uses a distinct MAC key derived from the master key.
-
-### Provenance Claims (Release 5)
-
-`ProvenanceClaim` provides a canonical provenance assertion:
-
-```rust
-let claim = ProvenanceClaim::builder()
-    .with_creator("Jane Artist")
-    .with_copyright("© 2025 Jane Artist")
-    .with_source_hash(image_bytes)
-    .with_timestamp(Utc::now())
-    .build();
-```
-
-Claims are serialized using canonical JSON (sorted keys, no whitespace) for deterministic signing. The claim digest is bound to the image content via SHA-256.
-
-### Detached Manifests (Release 5)
-
-`DetachedManifest` is a signed sidecar for distributing provenance outside the image file:
-
-```
-{
-  "stegoeggo_manifest_version": 1,
-  "provenance_claim": { ... },
-  "signature": "base64-encoded Ed25519 signature",
-  "verifying_key": "base64-encoded public key"
-}
-```
-
-Manifests are independent of image format — they can be distributed alongside images via sidecar files, API responses, or database records. Verification checks the signature against the embedded claim and image digest.
 
 ### Metadata Injection Semantics
 
