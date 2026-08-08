@@ -2,7 +2,7 @@
 
 Plan baseline SHA: `40cdea8dbc9e110ed6e6bb3d325a10d25903b0b2`
 
-Disposition: **PARTIAL — final XMP reference/serialization closure delegated to Plan 056**
+Disposition: **COMPLETE**
 
 Last attempted implementation/planning head: `7810d41960d79e06e910ed0fccb5026339c2b7eb`
 
@@ -12,10 +12,9 @@ Post-implementation audit head: `e683c87785d7e4ec60b17fa8ec961d983e4b6fac`
 
 Post-closure audit baseline: `81c934d02dd43578482e01a15ea645a62ec0209b`
 
-Authoritative remaining work:
+Final closure implementation head: `96926b761275e70c83c6def2be0f667154799037`
 
-- `plans/056-xmp-reference-and-serialization-final-closure.md`
-- `plans/056-status.md`
+Final delegated XMP work is closed in `plans/056-status.md`.
 
 No release, version, tag, publication, or CI expansion is authorized.
 
@@ -48,10 +47,10 @@ The following work is accepted and is not reopened without a focused regression:
 | item | original required correction | owner | current disposition |
 |---|---|---|---|
 | Preserved RDF identity | serialize RDF-qualified descriptions by expanded name | Plan 054 | CLOSED for original scope |
-| Owned XMP subtree removal | suppress owned nested element/text subtrees | Plan 054 | PARTIAL only for later-discovered event-class edge cases; Plan 056 |
+| Owned XMP subtree removal | suppress owned nested element/text subtrees | Plans 054/056 | CLOSED; event-complete suppression is covered by Plan 056 |
 | XMP structural merge | replace substring RDF insertion with XML events | Plan 054 | CLOSED architecture |
 | Filtered-description dedup | deterministic first-seen exact dedup | Plan 054 | CLOSED |
-| XMP three-round proof | parser-based semantic uniqueness/preservation | Plan 054 | PARTIAL only for later-discovered reference-bearing values; Plan 056 |
+| XMP three-round proof | parser-based semantic uniqueness/preservation | Plans 054/056 | CLOSED; reference-bearing values are covered by Plan 056 |
 | Scoped namespace conflicts | accept safe self-contained sibling prefix reuse | Plan 054 | CLOSED |
 | ANMF header semantics | parse exact 16-byte frame header | Plan 054 | CLOSED |
 | Frame rectangle bounds | checked frame/canvas containment | Plan 054 | CLOSED |
@@ -66,7 +65,7 @@ The following work is accepted and is not reopened without a focused regression:
 
 ---
 
-## Remaining residual defects — Plan 056
+## Residual defects closed by Plan 056
 
 The Plan 054/055 completion claim did not exercise the following source-level cases:
 
@@ -98,27 +97,27 @@ In particular:
 
 | plan | disposition |
 |---|---|
-| Roadmap 045 | PARTIAL — final closure requires Plan 056 |
+| Roadmap 045 | COMPLETE |
 | Plan 048 | substantially closed |
 | Plan 049 | substantially closed; final XMP residuals now narrowed to Plan 056 |
 | Plan 050 | Superseded |
-| Plan 051 | PARTIAL — final closure requires Plan 056 |
-| Plan 052 | PARTIAL — final closure requires Plan 056 |
-| Plan 053 | PARTIAL — final closure requires Plan 056 |
-| Plan 054 | PARTIAL — animated-WebP closed; final XMP residuals in Plan 056 |
-| Plan 055 | PARTIAL only for final cross-plan reconciliation; JPEG closed |
-| Plan 056 | OPEN |
+| Plan 051 | COMPLETE |
+| Plan 052 | COMPLETE |
+| Plan 053 | COMPLETE |
+| Plan 054 | COMPLETE |
+| Plan 055 | COMPLETE |
+| Plan 056 | COMPLETE |
 
 ---
 
 ## Closure rule
 
-Plan 053 may return to `COMPLETE` only after:
+Plan 053 is COMPLETE because:
 
 1. every required Plan 056 source/test row is closed;
 2. final workspace verification is recorded against the actual Plan 056 implementation head;
 3. exact-head CI is recorded as PASS/FAIL only if independently available, otherwise honestly `UNAVAILABLE`;
-4. no required Plan 056 status row remains OPEN/PENDING.
+4. all required Plan 056 status rows are CLOSED.
 
 ---
 

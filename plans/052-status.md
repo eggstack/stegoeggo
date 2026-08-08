@@ -2,7 +2,7 @@
 
 Plan baseline SHA: `c9d4d4f1edf6d43557c85c1d5c121d0071eeeaa1`
 
-Disposition: **PARTIAL — final XMP reference/serialization closure delegated to Plan 056**
+Disposition: **COMPLETE**
 
 Initial implementation SHA: `c092fe0ca58d8e01679924017e4ee5b57c80d576`
 
@@ -16,10 +16,9 @@ Plan 054/055 corrective implementation head: `0df12ede57bdbcc74194cbb8a8cb5a406f
 
 Post-closure audit baseline: `81c934d02dd43578482e01a15ea645a62ec0209b`
 
-Authoritative remaining work:
+Final closure implementation head: `96926b761275e70c83c6def2be0f667154799037`
 
-- `plans/056-xmp-reference-and-serialization-final-closure.md`
-- `plans/056-status.md`
+Final delegated XMP work is closed in `plans/056-status.md`.
 
 No version bump, publication, tag, GitHub release, or release automation is authorized.
 
@@ -57,7 +56,7 @@ Those closures remain accepted for the behavior they actually exercised.
 
 ---
 
-## Remaining delegated work — Plan 056
+## Delegated work closed by Plan 056
 
 A later source audit found a smaller XMP reference/serialization gap:
 
@@ -68,7 +67,7 @@ A later source audit found a smaller XMP reference/serialization gap:
 5. comments and processing instructions can leak from owned subtrees;
 6. reference-bearing semantic idempotence is not proven through the public WebP rewrite path.
 
-Plan 056 owns these items exclusively and retains the bounded no-DTD/no-custom-entity design.
+Plan 056 closed these items exclusively and retained the bounded no-DTD/no-custom-entity design.
 
 ---
 
@@ -76,22 +75,22 @@ Plan 056 owns these items exclusively and retains the bounded no-DTD/no-custom-e
 
 | plan | current disposition |
 |---|---|
-| Roadmap 045 | PARTIAL — final closure requires Plan 056 |
+| Roadmap 045 | COMPLETE |
 | Plan 048 | substantially closed |
 | Plan 049 | substantially closed; final XMP residuals now narrowed to Plan 056 |
 | Plan 050 | Superseded |
-| Plan 051 | PARTIAL — final closure requires Plan 056 |
-| Plan 052 | PARTIAL — final closure requires Plan 056 |
-| Plan 053 | PARTIAL — final closure requires Plan 056 |
-| Plan 054 | PARTIAL — animated-WebP closed; final XMP residuals in Plan 056 |
-| Plan 055 | PARTIAL only for final cross-plan reconciliation; JPEG closed |
-| Plan 056 | OPEN |
+| Plan 051 | COMPLETE |
+| Plan 052 | COMPLETE |
+| Plan 053 | COMPLETE |
+| Plan 054 | COMPLETE |
+| Plan 055 | COMPLETE |
+| Plan 056 | COMPLETE |
 
 ---
 
 ## Closure rule
 
-Plan 052 may return to `COMPLETE` only after Plan 056 closes the remaining XMP reference/serialization contracts and exact implementation-head verification is recorded.
+Plan 052 is COMPLETE because Plan 056 closed the remaining XMP reference/serialization contracts and recorded exact implementation-head verification.
 
 ---
 

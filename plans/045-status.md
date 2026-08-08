@@ -4,7 +4,7 @@ This ledger was created retrospectively after the original source changes. The r
 
 Roadmap baseline: `main` at `4d2e849f40049bef6416cfdc4970ba576d269869`
 
-Disposition: **PARTIAL — final XMP reference/serialization closure delegated to Plan 056**
+Disposition: **COMPLETE**
 
 Post-Plan-053 audit head: `e683c87785d7e4ec60b17fa8ec961d983e4b6fac`
 
@@ -12,10 +12,9 @@ Plan 054/055 corrective implementation head: `0df12ede57bdbcc74194cbb8a8cb5a406f
 
 Post-closure audit baseline: `81c934d02dd43578482e01a15ea645a62ec0209b`
 
-Authoritative remaining work:
+Plan 056 implementation head: `96926b761275e70c83c6def2be0f667154799037`
 
-- `plans/056-xmp-reference-and-serialization-final-closure.md`
-- `plans/056-status.md`
+Final XMP reference/serialization closure is recorded in `plans/056-status.md`.
 
 No release action is authorized by this roadmap status.
 
@@ -107,9 +106,9 @@ Plan 055 materially closed:
 
 ---
 
-## Remaining roadmap closure items — Plan 056 only
+## Final XMP closure — Plan 056
 
-Plan 056 owns the final bounded XMP residuals:
+Plan 056 closed the final bounded XMP residuals:
 
 1. Accept XML predefined references (`amp`, `lt`, `gt`, `apos`, `quot`) without adding DTD/entity-expansion machinery.
 2. Accept valid decimal and hexadecimal numeric character references and reject invalid references.
@@ -126,7 +125,7 @@ Plan 056 owns the final bounded XMP residuals:
 
 ## Closure rule
 
-Roadmap 045 may return to `COMPLETE` only after `plans/056-status.md` satisfies every required Plan 056 definition-of-done item and final verification is recorded against the actual implementation head.
+Roadmap 045 is COMPLETE because `plans/056-status.md` satisfies every required Plan 056 definition-of-done item and final verification is recorded against implementation head `96926b761275e70c83c6def2be0f667154799037`.
 
 A broad historical test pass cannot override an open source-level contract. A CI result from an earlier SHA cannot serve as final-head evidence for Plan 056.
 

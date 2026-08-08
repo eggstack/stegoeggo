@@ -2,18 +2,17 @@
 
 Plan baseline SHA: `e683c87785d7e4ec60b17fa8ec961d983e4b6fac`
 
-Disposition: **PARTIAL — JPEG product work is COMPLETE; final cross-plan XMP closure delegated to Plan 056**
+Disposition: **COMPLETE**
 
 Plan 055 implementation head: `0df12ede57bdbcc74194cbb8a8cb5a406f4d9a15`
 
 Post-closure audit baseline: `81c934d02dd43578482e01a15ea645a62ec0209b`
 
-Authoritative remaining work:
+Final cross-plan closure implementation head: `96926b761275e70c83c6def2be0f667154799037`
 
-- `plans/056-xmp-reference-and-serialization-final-closure.md`
-- `plans/056-status.md`
+Final cross-plan XMP closure is recorded in `plans/056-status.md`.
 
-Plan 055 materially closed the remaining JPEG structural-analysis exactness defects. Its historical final cross-plan reconciliation depended on Plan 054 being fully complete; a later XMP audit found narrow reference/serialization residuals now owned by Plan 056. No JPEG criterion is reopened by that finding.
+Plan 055 materially closed the remaining JPEG structural-analysis exactness defects. Plan 056 finalized the dependent XMP reference/serialization reconciliation. No JPEG criterion was reopened.
 
 No release, version, tag, publication, or CI expansion was performed or is authorized.
 
@@ -34,9 +33,9 @@ Focused JPEG malformed fixtures: CLOSED
 Focused JPEG roundtrip verification: CLOSED
 Plan 055 JPEG workspace verification: CLOSED at 0df12ede
 Plan 054 animated-WebP dependency: CLOSED
-Plan 054 final XMP semantic dependency: PARTIAL — Plan 056
+Plan 054 final XMP semantic dependency: CLOSED by Plan 056
 Historical exact-head CI evidence for 0df12ede: CLOSED
-Final Roadmap 045 reconciliation: OPEN — Plan 056
+Final Roadmap 045 reconciliation: CLOSED
 Publication hold: RETAINED
 ```
 
@@ -76,8 +75,8 @@ These results remain valid for the Plan 055 JPEG implementation head. They do no
 
 ## Cross-plan reconciliation
 
-Plan 055's JPEG product scope is COMPLETE and should not be reimplemented. Plan 054's animated-WebP scope is likewise retained. The final Roadmap 045 completion claim is reopened only because Plan 056 owns newly identified XMP reference/serialization residuals.
+Plan 055's JPEG product scope is COMPLETE and should not be reimplemented. Plan 054's animated-WebP and XMP scopes are COMPLETE. The final Roadmap 045 completion claim is reconciled through Plan 056 at implementation head `96926b761275e70c83c6def2be0f667154799037`.
 
-Roadmap 045 and inherited Plans 051-055 may return to an overall COMPLETE disposition only after `plans/056-status.md` is complete with exact implementation-head verification.
+Roadmap 045 and inherited Plans 051-055 are COMPLETE with exact implementation-head verification recorded in `plans/056-status.md`.
 
 The implementation commit was pushed directly to `main`; no no-op CI-trigger commit, release, version, tag, publication, or CI architecture change is needed for Plan 056.
