@@ -77,7 +77,7 @@ Plan 056 closed only those residuals. It did not reopen the closed JPEG or anima
 |---|---|
 | Roadmap 045 | COMPLETE |
 | Plan 048 | substantially closed |
-| Plan 049 | substantially closed; final XMP residuals now narrowed to Plan 056 |
+| Plan 049 | substantially closed; final XMP residuals closed by Plan 056 |
 | Plan 050 | Superseded |
 | Plan 051 | COMPLETE |
 | Plan 052 | COMPLETE |
