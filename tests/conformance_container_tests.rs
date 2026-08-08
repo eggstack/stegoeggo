@@ -1384,7 +1384,13 @@ fn parse_xmp_semantic_facts(xml: &[u8]) -> XmpSemanticFacts {
                         },
                     )
                     .into_owned();
-                    let value = String::from_utf8_lossy(attr.value.as_ref()).into_owned();
+                    let value = attr
+                        .decoded_and_normalized_value(
+                            quick_xml::XmlVersion::Implicit1_0,
+                            reader.decoder(),
+                        )
+                        .expect("attribute value should decode")
+                        .into_owned();
                     if attr_uri == "http://ns.useplus.org/ldf/xmp/1.0/"
                         && attr_local == "DataMining"
                     {
@@ -1493,6 +1499,59 @@ fn get_webp_xmp_packets(bytes: &[u8]) -> Vec<Vec<u8>> {
         pos += 8 + padded;
     }
     xmps
+}
+
+#[test]
+fn webp_xmp_reference_values_are_semantically_stable_three_rounds() {
+    let xmp = br#"<?xml version="1.0"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF><rdf:Description xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/" dc:title="A &amp; B">
+<plus:OtherConstraints><rdf:Description><rdf:value>owned &amp; nested</rdf:value><!-- owned comment --><?owned test?></rdf:Description></plus:OtherConstraints>
+<dc:creator>decimal &#169; and hex &#x1F642;</dc:creator>
+</rdf:Description></rdf:RDF>
+</x:xmpmeta>"#;
+    let webp = build_webp_with_xmp(xmp);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::WebP)
+        .with_legal_metadata(legal())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining);
+    let trap = RightsMetadataProtector::new();
+    let mut current = webp;
+    let mut facts = Vec::new();
+
+    for _ in 0..3 {
+        current = trap.inject_bytes(&current, &ctx).expect("rewrite succeeds");
+        let packets = get_webp_xmp_packets(&current);
+        assert_eq!(packets.len(), 1, "exactly one XMP chunk");
+        facts.push(parse_xmp_semantic_facts(&packets[0]));
+    }
+
+    for (round, fact) in facts.iter().enumerate() {
+        assert_eq!(fact.rdf_description_count, 2, "round {round}");
+        assert_eq!(fact.data_mining_count, 1, "round {round}");
+        assert!(
+            fact.unrelated_values.iter().any(|value| {
+                value.namespace_uri == "http://purl.org/dc/elements/1.1/"
+                    && value.local_name == "title"
+                    && value.value == "A & B"
+            }),
+            "round {round} must preserve the decoded attribute"
+        );
+        assert!(
+            fact.unrelated_values.iter().any(|value| {
+                value.namespace_uri == "http://purl.org/dc/elements/1.1/"
+                    && value.local_name == "creator"
+                    && value.value == "decimal © and hex 🙂"
+            }),
+            "round {round} must preserve decoded text"
+        );
+        assert!(
+            fact.unrelated_values
+                .iter()
+                .all(|value| !value.value.contains("owned")),
+            "round {round} must suppress owned nested content"
+        );
+    }
 }
 
 #[test]

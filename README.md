@@ -697,6 +697,7 @@ The library injects rights-reservation and AI-training restriction metadata into
 
 **WebP:** XMP chunks in extended container
 - At most one XMP chunk in output; unrelated XMP properties preserved under `ReplaceStegoOwned`
+- XMP rewrites preserve predefined and valid numeric XML references semantically, while rejecting custom entities, DTDs, and malformed references
 - VP8X feature flags derived from final output chunks (XMP, ICC, EXIF, Alpha, Animation)
 - Simple VP8/VP8L automatically promoted to extended VP8X when metadata is added
 - No new EXIF seed chunks emitted; historical EXIF seeds still parsed for backward compatibility

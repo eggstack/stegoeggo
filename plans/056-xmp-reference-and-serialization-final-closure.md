@@ -1,6 +1,6 @@
 # Plan 056: XMP Reference and Serialization Final Closure
 
-Status: Ready for implementation
+Status: COMPLETE — implementation and verification recorded in `plans/056-status.md`
 
 Audited baseline: `main` at `81c934d02dd43578482e01a15ea645a62ec0209b`
 

@@ -109,13 +109,15 @@ All format writers (PNG tEXt, JPEG COM, WebP XMP) consume the same `RightsNotice
 
 - **PNG**: New tEXt chunks are appended before IEND. Existing StegoEggo tEXt chunks are not removed; extraction returns the most recently written value.
 - **JPEG**: New COM markers are appended before the Start-of-Scan marker. Existing COM markers are not removed; extraction returns the most recently written value.
-- **WebP**: XMP chunk is merged/replaced via `crate::xmp::filter_xmp_packet` (the whole-packet namespace-aware `quick-xml::NsReader` pipeline). Existing non-StegoEggo XMP properties are preserved under `ReplaceStegoOwned`. Output loop skips original XMP chunks to prevent duplicates. VP8X flags are derived from final emitted chunk inventory via `WebPFeatures` and validated independently against the declared flags. Malformed XMP fails the complete rewrite before any output byte is returned.
+- **WebP**: XMP chunk is merged/replaced via `crate::xmp::filter_xmp_packet` (the whole-packet namespace-aware `quick-xml::NsReader` pipeline). Existing non-StegoEggo XMP properties are preserved under `ReplaceStegoOwned`. Output loop skips original XMP chunks to prevent duplicates. XML predefined and valid numeric references are preserved semantically; custom entities, DTDs, and malformed references fail closed. Owned subtree suppression covers nested elements, references, comments, and processing instructions. VP8X flags are derived from final emitted chunk inventory via `WebPFeatures` and validated independently against the declared flags. Malformed XMP fails the complete rewrite before any output byte is returned.
 - **Animated WebP**: `inject_text_chunks_webp_from_notice` copies existing ANIM and ANMF chunk bytes unchanged. It only adjusts VP8X flags, replaces the XMP chunk set, and recomputes RIFF size and padding. Frame payloads are never re-encoded.
 - **DMI and seed values**: Always replaced regardless of policy, because they are protection-critical and must match the current processing context.
 
 ### XMP Merge Mechanics
 
 `merge_preserved_descriptions` is the single merge site. It parses the canonical new packet structurally via `quick-xml`, identifies the RDF container by namespace URI + local name, streams every event to the output, and inserts deduped preserved descriptions immediately before the matching `</rdf:RDF>` End event. The canonical packet must contain exactly one usable RDF container; malformed input returns `Err` rather than falling back to the unmodified packet.
+
+Reference events are limited to the five XML predefined entities and valid XML 1.0 decimal/hexadecimal character references. Attribute values are decoded and normalized before exactly one escaping pass, so an input such as `A &amp; B` remains the semantic value `A & B` after repeated rewrites. Unresolved named entities, invalid numeric references, and DTD/DOCTYPE expansion are rejected.
 
 `deduplicate_descriptions` keeps only the first occurrence of byte-identical preserved XML and excludes any preserved that is byte-identical to a canonical description. Safe sibling-local namespace prefix reuse (the same textual prefix mapping to different URIs in separate descriptions) is not treated as a global conflict.
 

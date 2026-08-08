@@ -261,6 +261,39 @@ fn escape_text_value(value: &[u8], out: &mut Vec<u8>) {
     }
 }
 
+fn append_xml_reference(
+    reference: &quick_xml::events::BytesRef<'_>,
+    out: &mut Vec<u8>,
+) -> Result<()> {
+    let character = reference
+        .resolve_char_ref()
+        .map_err(|e| Error::Metadata(format!("Invalid XML character reference: {}", e)))?
+        .or_else(|| match &reference[..] {
+            b"amp" => Some('&'),
+            b"lt" => Some('<'),
+            b"gt" => Some('>'),
+            b"apos" => Some('\''),
+            b"quot" => Some('"'),
+            _ => None,
+        })
+        .ok_or_else(|| Error::Metadata("Unknown XML entity reference".to_string()))?;
+
+    let valid = matches!(character, '\u{9}' | '\u{a}' | '\u{d}')
+        || ('\u{20}'..='\u{d7ff}').contains(&character)
+        || ('\u{e000}'..='\u{fffd}').contains(&character)
+        || ('\u{10000}'..='\u{10ffff}').contains(&character);
+    if !valid {
+        return Err(Error::Metadata(
+            "XML character reference resolves to an illegal XML 1.0 character".to_string(),
+        ));
+    }
+
+    let mut encoded = [0; 4];
+    let value = character.encode_utf8(&mut encoded);
+    escape_text_value(value.as_bytes(), out);
+    Ok(())
+}
+
 fn append_attr(out: &mut Vec<u8>, key: &[u8], value: &[u8]) {
     out.push(b' ');
     out.extend_from_slice(key);
@@ -278,7 +311,6 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
         .map_err(|e| Error::Metadata(format!("XMP packet is not valid UTF-8: {}", e)))?;
 
     let mut reader = NsReader::from_str(packet_str);
-    reader.config_mut().trim_text(true);
     reader.config_mut().expand_empty_elements = false;
     reader.config_mut().check_end_names = true;
 
@@ -506,6 +538,11 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
                         .unwrap_or(false);
 
                 if is_rdf_desc {
+                    if owned_depth > 0 {
+                        owned_depth -= 1;
+                        ns_stack.pop_frame();
+                        continue;
+                    }
                     let mut out = current_out
                         .take()
                         .ok_or_else(|| xmp_internal_error("writer missing"))?;
@@ -537,7 +574,10 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
             }
             Event::Eof => break,
             Event::Comment(c) => {
-                if let Some(out) = current_out.as_mut() {
+                if in_description && owned_depth == 0 {
+                    let out = current_out
+                        .as_mut()
+                        .ok_or_else(|| xmp_internal_error("writer missing"))?;
                     out.extend_from_slice(b"<!--");
                     out.extend_from_slice(c.as_ref());
                     out.extend_from_slice(b"-->");
@@ -555,17 +595,26 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
                 }
             }
             Event::PI(pi) => {
-                if let Some(out) = current_out.as_mut() {
+                if in_description && owned_depth == 0 {
+                    let out = current_out
+                        .as_mut()
+                        .ok_or_else(|| xmp_internal_error("writer missing"))?;
                     out.push(b'<');
                     out.push(b'?');
                     out.extend_from_slice(pi.as_ref());
                     out.extend_from_slice(b"?>");
                 }
             }
-            Event::GeneralRef(_) => {
-                return Err(Error::Metadata(
-                    "Entity references are not supported in XMP".to_string(),
-                ));
+            Event::GeneralRef(reference) => {
+                let mut value = Vec::new();
+                append_xml_reference(&reference, &mut value)?;
+                if in_description && owned_depth == 0 {
+                    description_has_unrelated = true;
+                    let out = current_out
+                        .as_mut()
+                        .ok_or_else(|| xmp_internal_error("writer missing"))?;
+                    out.extend_from_slice(&value);
+                }
             }
             other => {
                 return Err(Error::Metadata(format!(
@@ -604,7 +653,6 @@ pub(crate) fn merge_preserved_descriptions(
         .map_err(|e| Error::Metadata(format!("Canonical XMP packet is not valid UTF-8: {}", e)))?;
 
     let mut reader = NsReader::from_str(packet_str);
-    reader.config_mut().trim_text(true);
     reader.config_mut().expand_empty_elements = false;
     reader.config_mut().check_end_names = true;
 
@@ -680,8 +728,8 @@ pub(crate) fn merge_preserved_descriptions(
                     output.push(b' ');
                     output.extend_from_slice(attr.key.as_ref());
                     output.extend_from_slice(b"=\"");
-                    let raw_value = attr.value.as_ref();
-                    write_attr_value(raw_value, &mut output);
+                    let value = attr_raw_value(&attr, &reader)?;
+                    write_attr_value(&value, &mut output);
                     output.push(b'"');
                 }
                 output.push(b'>');
@@ -699,20 +747,15 @@ pub(crate) fn merge_preserved_descriptions(
                     output.push(b' ');
                     output.extend_from_slice(attr.key.as_ref());
                     output.extend_from_slice(b"=\"");
-                    let raw_value = attr.value.as_ref();
-                    write_attr_value(raw_value, &mut output);
+                    let value = attr_raw_value(&attr, &reader)?;
+                    write_attr_value(&value, &mut output);
                     output.push(b'"');
                 }
                 output.extend_from_slice(b"/>");
             }
             Event::Text(text) => {
                 let bytes: &[u8] = text.as_ref();
-                let is_meaningful = !bytes
-                    .iter()
-                    .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r'));
-                if is_meaningful {
-                    write_escaped_text(bytes, &mut output);
-                }
+                write_escaped_text(bytes, &mut output);
             }
             Event::CData(cdata) => {
                 output.extend_from_slice(b"<![CDATA[");
@@ -748,10 +791,8 @@ pub(crate) fn merge_preserved_descriptions(
                     rdf_depth -= 1;
                 }
             }
-            Event::GeneralRef(_) => {
-                return Err(Error::Metadata(
-                    "Entity references are not supported in XMP".to_string(),
-                ));
+            Event::GeneralRef(reference) => {
+                append_xml_reference(&reference, &mut output)?;
             }
             other => {
                 return Err(Error::Metadata(format!(
@@ -1624,5 +1665,113 @@ dc:creator="Example"/>
         assert!(xml.contains("AfterDepth"));
         assert!(!xml.contains("deep"));
         assert!(!xml.contains("DataMining"));
+    }
+
+    #[test]
+    fn filter_accepts_xml_references_in_unrelated_text() {
+        let packet = build_packet(
+            r#"<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>A &amp; B &lt; C &gt; D &apos;Q&apos; &quot;Q&quot; &#169; &#x1F642;</dc:title></rdf:Description>"#,
+        );
+        let result = filter_xmp_packet(&packet).expect("valid XML references should parse");
+        let xml = String::from_utf8(result[0].xml.clone()).expect("UTF-8");
+        assert!(
+            xml.contains("A &amp; B &lt; C &gt; D 'Q' \"Q\" © 🙂"),
+            "{xml}"
+        );
+    }
+
+    #[test]
+    fn merge_accepts_xml_references_and_reparses() {
+        let packet = build_packet(
+            r#"<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>A &amp; B &#169; &#x1F642;</dc:title></rdf:Description>"#,
+        );
+        let output = merge_preserved_descriptions(&packet, &[]).expect("references should merge");
+        let xml = String::from_utf8(output).expect("UTF-8");
+        assert!(xml.contains("A &amp; B © 🙂"), "{xml}");
+        let mut reader = NsReader::from_str(&xml);
+        let mut buf = Vec::new();
+        loop {
+            if matches!(
+                reader.read_event_into(&mut buf).expect("reparse"),
+                Event::Eof
+            ) {
+                break;
+            }
+            buf.clear();
+        }
+    }
+
+    #[test]
+    fn unknown_named_entity_is_rejected() {
+        let packet = build_packet(
+            r#"<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>A &companyName;</dc:title></rdf:Description>"#,
+        );
+        assert!(filter_xmp_packet(&packet).is_err());
+        assert!(merge_preserved_descriptions(&packet, &[]).is_err());
+    }
+
+    #[test]
+    fn invalid_numeric_reference_is_rejected() {
+        for reference in ["&#0;", "&#x0;", "&#x110000;", "&#xZZ;"] {
+            let packet = build_packet(&format!(
+                r#"<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>A {reference}</dc:title></rdf:Description>"#
+            ));
+            assert!(
+                filter_xmp_packet(&packet).is_err(),
+                "filter accepted {reference}"
+            );
+            assert!(
+                merge_preserved_descriptions(&packet, &[]).is_err(),
+                "merge accepted {reference}"
+            );
+        }
+    }
+
+    #[test]
+    fn merge_attribute_references_are_decoded_before_escaping() {
+        let packet = build_packet(
+            r#"<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/" dc:title="A &amp; B &#169; &#x1F642;"/>"#,
+        );
+        let output = merge_preserved_descriptions(&packet, &[]).expect("attribute should merge");
+        let xml = String::from_utf8(output).expect("UTF-8");
+        assert!(xml.contains("dc:title=\"A &amp; B © 🙂\""));
+        assert!(!xml.contains("&amp;amp;"));
+    }
+
+    #[test]
+    fn owned_nested_rdf_description_does_not_close_outer_description() {
+        let packet = build_packet(
+            r#"<rdf:Description xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/"><plus:OtherConstraints><rdf:Description><rdf:value>owned &amp; nested</rdf:value><!-- owned comment --><?owned test?></rdf:Description></plus:OtherConstraints><dc:title>must survive</dc:title></rdf:Description>"#,
+        );
+        let result = filter_xmp_packet(&packet).expect("nested owned RDF should parse");
+        assert_eq!(result.len(), 1);
+        let xml = String::from_utf8(result[0].xml.clone()).expect("UTF-8");
+        assert!(xml.contains("must survive"));
+        assert!(!xml.contains("owned"));
+        assert!(!xml.contains("rdf:value"));
+        let mut reader = NsReader::from_str(&xml);
+        let mut buf = Vec::new();
+        loop {
+            if matches!(
+                reader.read_event_into(&mut buf).expect("reparse"),
+                Event::Eof
+            ) {
+                break;
+            }
+            buf.clear();
+        }
+    }
+
+    #[test]
+    fn unrelated_comments_and_processing_instructions_are_preserved() {
+        let packet = build_packet(
+            r#"<rdf:Description xmlns:plus="http://ns.useplus.org/ldf/xmp/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/"><plus:OtherConstraints><!-- owned comment --><?owned test?><rdf:Description/></plus:OtherConstraints><!-- unrelated comment --><?unrelated test?><dc:title>survives</dc:title></rdf:Description>"#,
+        );
+        let result = filter_xmp_packet(&packet).expect("comments and PIs should parse");
+        let xml = String::from_utf8(result[0].xml.clone()).expect("UTF-8");
+        assert!(xml.contains("unrelated comment"));
+        assert!(xml.contains("unrelated test"));
+        assert!(!xml.contains("owned comment"));
+        assert!(!xml.contains("owned test"));
     }
 }
