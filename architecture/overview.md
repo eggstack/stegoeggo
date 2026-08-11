@@ -182,13 +182,18 @@ src/
 ├── xmp.rs                     XMP parsing, namespace-aware filtering, packet merging (pub(crate))
 ├── webp_container.rs          WebP RIFF parsing, VP8X/VP8/VP8L/ANMF handling (pub(crate))
 │
+├── stego/                      Generic carrier mechanics (application-neutral)
+│   ├── mod.rs                 Module declarations
+│   ├── lsb.rs                 LSB carrier: permutations, embed/extract, crop, seed fallback
+│   └── jpeg.rs                JPEG carrier: DCT capacity, Q-table reassembly, seed hint
+│
 ├── protected/                 Protection strategies (all implement Protector trait)
 │   ├── constants.rs           Tuning constants (STEGO_*, XORSHIFT_*, SPLITMIX64_*)
 │   ├── passthrough.rs         No-op for Disabled level
 │   ├── metadata_trap.rs       Metadata injection (tEXt/COM/XMP markers, seed,
 │   │                          canonical plus:DataMining DMI, DmiValue mapping)
-│   ├── steganography.rs       LSB embedding (PNG/WebP) + DCT F5 (JPEG),
-│   │                          payload v1/v2/v3 generation and extraction
+│   ├── steganography.rs       StegoEggo application adapter: payload v1/v2/v3,
+│   │                          seed discovery, verification, delegates carrier to src/stego/
 │   ├── ecc.rs                 3× repetition ECC with majority voting
 │   ├── notice_verification.rs Legal notice extraction from image bytes,
 │   │                          evidence strength rating, DMI/seed resolution

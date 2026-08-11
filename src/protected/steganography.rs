@@ -1,17 +1,19 @@
 use crate::error::{Error, Result};
 use crate::jpeg_transcoder::{DctStegoF5, JpegTranscoder};
 use crate::payload_v3::types::{AuthAlgorithm, ProtectionChannels, V3_MAGIC, V3_PAYLOAD_VERSION};
-use crate::protected::constants::{SPLITMIX64_SEED, STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR};
+use crate::protected::constants::STEGO_OFFSET_SEED_1;
 use crate::protected::ecc;
 use crate::protected::metadata_trap::RightsMetadataProtector;
 use crate::resource_limits::ResourceLimits;
+use crate::stego::jpeg as carrier_jpeg;
+use crate::stego::lsb as carrier_lsb;
 use crate::traits::Protector;
 use crate::types::{
     PayloadEmissionContext, ProtectionContext, ProtectionLevel, VerificationStatus,
 };
 use crc32fast::Hasher as Crc32Hasher;
 use hmac::{Hmac, Mac};
-use image::{DynamicImage, Rgba, RgbaImage};
+use image::{DynamicImage, RgbaImage};
 use sha2::Sha256;
 use std::borrow::Cow;
 use subtle::ConstantTimeEq;
@@ -61,12 +63,6 @@ const SUPPORTED_PAYLOAD_VERSIONS: &[u8] = &[1, 2, 3];
 /// metadata-based extraction path.
 #[cfg(feature = "test-seeds")]
 const FALLBACK_SEEDS: &[u64] = &[42, 0, 1, 12345, 99999, 123456789];
-
-/// Default tile size in pixels (used when tiled embedding is enabled but
-/// `tile_size` is left at its default). 64×64 = 4096 pixels × 3 channels =
-/// 12,288 LSB slots, which comfortably fits a 76-byte ECC payload with the
-/// `STEGO_SPREAD_FACTOR = 5` majority-vote redundancy.
-pub const DEFAULT_TILE_SIZE: u32 = 64;
 
 /// Outcome for stego payload candidate extraction used by the verification
 /// path. Distinguishing `Invalid` from `NotFound` lets
@@ -171,33 +167,8 @@ pub(crate) struct ExtractionTrace {
     pub legacy_decoder_entries: usize,
 }
 
-/// Minimum tile size that reliably fits an ECC payload in non-MAC mode.
-/// Smaller tiles would fail the `embed_lsb` capacity check and the payload
-/// would silently be skipped.
-#[allow(dead_code)]
-pub const MIN_TILE_SIZE: u32 = 32;
-
-/// Derive a per-tile seed from a master seed and the tile's grid coordinate.
-///
-/// Tiles use this seed for the LSB pixel-selection permutation, so the same
-/// tile in a cropped image is reproducible without knowing the original
-/// dimensions. The two coordinate hashes are wrapped with `splitmix64` to
-/// mix the bits; the result depends only on `(master_seed, x, y)`, not on
-/// any image metadata the extractor may not have.
-pub fn tile_seed(master_seed: u64, tile_x: u32, tile_y: u32) -> u64 {
-    let mut z = master_seed;
-    z ^= (tile_x as u64).wrapping_mul(0x9E3779B97F4A7C15);
-    z ^= (tile_y as u64).wrapping_mul(0xBF58476D1CE4E5B9);
-    splitmix64(z)
-}
-
-#[inline(always)]
-fn splitmix64(x: u64) -> u64 {
-    let mut z = x.wrapping_add(SPLITMIX64_SEED);
-    z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
-    z ^ (z >> 31)
-}
+pub use crate::stego::lsb::tile_seed;
+pub use crate::stego::lsb::DEFAULT_TILE_SIZE;
 
 /// Steganographic protection: embeds hidden payloads in image pixels or DCT coefficients.
 ///
@@ -364,7 +335,7 @@ impl SteganographyProtector {
 
     pub(crate) fn lsb_pixels_needed(ctx: &ProtectionContext) -> usize {
         let payload_bits = Self::payload_bits_for_context(ctx);
-        Self::lsb_slots_needed_for_bits(payload_bits)
+        carrier_lsb::lsb_required_slots_legacy(payload_bits)
     }
 
     fn payload_bits_for_context(ctx: &ProtectionContext) -> usize {
@@ -373,10 +344,6 @@ impl SteganographyProtector {
         } else {
             V3_CRC_PAYLOAD_BITS
         }
-    }
-
-    fn lsb_slots_needed_for_bits(payload_bits: usize) -> usize {
-        Self::lsb_required_slots_legacy(payload_bits)
     }
 
     /// Embed only the seed in JPEG quantization tables (no DCT coefficient modification).
@@ -914,96 +881,17 @@ impl SteganographyProtector {
         }
     }
 
-    /// Replace quantization tables in a JPEG byte stream with those from header.
-    /// Preserves the rest of the byte stream verbatim (including progressive scans).
     fn reassemble_jpeg_with_qtables(
         jpeg_bytes: &[u8],
         header: &crate::jpeg_transcoder::JpegHeader,
     ) -> Result<Vec<u8>> {
-        let mut output = Vec::with_capacity(jpeg_bytes.len() + 256);
-        output.extend_from_slice(&jpeg_bytes[0..2]); // SOI
-
-        let mut pos = 2;
-        let mut wrote_tables = false;
-
-        while pos + 4 <= jpeg_bytes.len() {
-            if jpeg_bytes[pos] != 0xFF {
-                pos += 1;
-                continue;
-            }
-
-            let marker = jpeg_bytes[pos + 1];
-
-            // End of headers — write remaining data as-is
-            if marker == 0xDA || marker == 0xD9 {
-                output.extend_from_slice(&jpeg_bytes[pos..]);
-                break;
-            }
-
-            if marker == 0xDB {
-                // DQT marker — skip original, write modified tables (once)
-                let segment_len =
-                    u16::from_be_bytes([jpeg_bytes[pos + 2], jpeg_bytes[pos + 3]]) as usize;
-                pos += 2 + segment_len;
-
-                if !wrote_tables {
-                    for table in header.quantization_tables.iter().flatten() {
-                        output.push(0xFF);
-                        output.push(0xDB);
-                        let table_data_len = if table.precision == 16 { 129 } else { 65 };
-                        let total_len = table_data_len + 2;
-                        output.extend_from_slice(&(total_len as u16).to_be_bytes());
-                        let precision_bit = if table.precision == 16 { 1 } else { 0 };
-                        output.push((precision_bit << 4) | table.table_id);
-                        if table.precision == 8 {
-                            for &val in &table.values {
-                                output.push(val as u8);
-                            }
-                        } else {
-                            for &val in &table.values {
-                                output.extend_from_slice(&val.to_be_bytes());
-                            }
-                        }
-                    }
-                    wrote_tables = true;
-                }
-                continue;
-            }
-
-            // Copy other markers verbatim
-            if marker == 0x00 {
-                pos += 1;
-                continue;
-            }
-
-            let segment_len =
-                u16::from_be_bytes([jpeg_bytes[pos + 2], jpeg_bytes[pos + 3]]) as usize;
-            if pos + 2 + segment_len > jpeg_bytes.len() {
-                return Err(Error::Steganography(
-                    "Malformed JPEG segment length exceeds buffer".into(),
-                ));
-            }
-            output.extend_from_slice(&jpeg_bytes[pos..pos + 2 + segment_len]);
-            pos += 2 + segment_len;
-        }
-
-        Ok(output)
+        carrier_jpeg::reassemble_jpeg_with_qtables(jpeg_bytes, header)
     }
 
     pub(crate) fn dct_payload_capacity(
         coefficients: &crate::jpeg_transcoder::Coefficients,
     ) -> usize {
-        coefficients
-            .values()
-            .flat_map(|blocks| blocks.iter())
-            .map(|block| {
-                block
-                    .iter()
-                    .skip(1)
-                    .filter(|&&coef| coef.abs() >= 2)
-                    .count()
-            })
-            .sum()
+        carrier_jpeg::dct_payload_capacity(coefficients)
     }
 
     fn extract_with_redundancy(
@@ -2916,198 +2804,8 @@ impl SteganographyProtector {
         self.generate_payload_for_context(ctx)
     }
 
-    /// Collision-free LCG permutation for stego pixel selection (legacy scheme).
-    /// Maps `index` to a unique pixel position in `[0, total)`.
-    /// Uses a bijective LCG (a odd) which is a permutation when m is a power of 2.
-    /// For non-power-of-2 totals, the slight bias is negligible for steganography.
-    ///
-    /// This is the legacy carrier mapping. It maps logical bit positions to pixel
-    /// indices, with the RGB channel derived from `bit_index % 3`. Retained for
-    /// backward-compatible extraction of images embedded with the legacy scheme.
-    #[inline(always)]
-    fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize {
-        let a = splitmix64(seed).wrapping_mul(2) | 1;
-        let b = splitmix64(seed.wrapping_add(0x9e3779b97f4a7c15));
-        a.wrapping_mul(index as u64).wrapping_add(b) as usize % total_pixels
-    }
-
-    /// Corrected permutation over RGB carrier slots.
-    ///
-    /// Returns a true bijection over `[0, slot_count)` for any nonzero `slot_count`,
-    /// including non-power-of-two composite counts.
-    ///
-    /// Uses a bijective LCG over the next power-of-two modulus, with cycle-walking
-    /// to map outputs into `[0, slot_count)`. Expected ~2 iterations per lookup.
-    ///
-    /// The carrier domain is `width * height * 3` (one slot per RGB channel per pixel).
-    /// Alpha is never a carrier.
-    #[inline(always)]
-    fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> usize {
-        if slot_count <= 1 {
-            return index.min(slot_count);
-        }
-
-        let m = slot_count.next_power_of_two();
-
-        let a = splitmix64(seed).wrapping_mul(2) | 1;
-        let b = splitmix64(seed.wrapping_add(SPLITMIX64_SEED));
-
-        let mut x = (a.wrapping_mul(index as u64).wrapping_add(b)) % (m as u64);
-        while (x as usize) >= slot_count {
-            x = (a.wrapping_mul(x).wrapping_add(b)) % (m as u64);
-        }
-        x as usize
-    }
-
-    /// Map a carrier slot index to `(pixel_index, channel)` in an RGB image.
-    ///
-    /// `slot / 3` gives the pixel index (row-major), `slot % 3` gives the
-    /// channel (0=R, 1=G, 2=B). Alpha is never a carrier.
-    #[inline(always)]
-    fn carrier_v2_slot_to_pixel_channel(slot: usize, width: u32, height: u32) -> (usize, usize) {
-        let total_pixels = (width as usize).checked_mul(height as usize).unwrap_or(0);
-        let pixel_index = slot / 3;
-        let channel = slot % 3;
-        if pixel_index >= total_pixels {
-            return (0, 0);
-        }
-        (pixel_index, channel)
-    }
-
-    /// Total RGB carrier slots in an image (width * height * 3).
-    #[inline(always)]
-    fn lsb_available_slots(width: u32, height: u32) -> usize {
-        (width as usize)
-            .checked_mul(height as usize)
-            .and_then(|p| p.checked_mul(3))
-            .unwrap_or(0)
-    }
-
-    /// Required capacity in RGB carrier slots for a payload of `payload_bits`
-    /// bits with the given redundancy level.
-    #[inline(always)]
-    fn lsb_required_capacity_v2(payload_bits: usize, redundancy: usize) -> usize {
-        payload_bits
-            .checked_mul(STEGO_SPREAD_FACTOR)
-            .and_then(|r| r.checked_mul(redundancy))
-            .unwrap_or(usize::MAX)
-    }
-
-    /// Required capacity in RGB carrier slots for the legacy carrier scheme.
-    ///
-    /// Legacy capacity model: `slots_needed = ceil(payload_bits / 3) * STEGO_SPREAD_FACTOR * 3`.
-    /// The division by 3 accounts for R/G/B channels cycled per bit; the final
-    /// multiplication by 3 converts from pixels to RGB slots for consistent
-    /// reporting in `EmbedOutcomeSummary`.
-    #[inline(always)]
-    fn lsb_required_slots_legacy(payload_bits: usize) -> usize {
-        payload_bits.div_ceil(3) * STEGO_SPREAD_FACTOR * 3
-    }
-
-    /// Capacity helper that returns `(required, available)` for the V2 carrier.
-    #[cfg(test)]
-    pub(crate) fn lsb_capacity_for_image(
-        width: u32,
-        height: u32,
-        payload_bits: usize,
-        redundancy: usize,
-    ) -> (usize, usize) {
-        (
-            Self::lsb_required_capacity_v2(payload_bits, redundancy),
-            Self::lsb_available_slots(width, height),
-        )
-    }
-
-    fn embed_lsb(
-        &self,
-        img: &RgbaImage,
-        payload: &[u8],
-        seed: u64,
-        redundancy: usize,
-    ) -> crate::types::EmbedOutcome<RgbaImage> {
-        use crate::types::EmbedOutcome;
-
-        let (width, height) = img.dimensions();
-        let mut output = img.clone();
-
-        let payload_bits = Self::bytes_to_bits(payload);
-
-        let total_pixels = (width * height) as usize;
-        let total_pixels_needed = payload_bits.len().div_ceil(3) * STEGO_SPREAD_FACTOR;
-        let available_slots = Self::lsb_available_slots(width, height);
-        let required_slots = Self::lsb_required_slots_legacy(payload_bits.len());
-
-        if total_pixels_needed > total_pixels {
-            return EmbedOutcome::SkippedCapacity {
-                output,
-                payload_bytes: payload.len(),
-                required_capacity: required_slots,
-                available_capacity: available_slots,
-                path: crate::types::EmbedPath::Lsb,
-            };
-        }
-
-        for pass in 0..redundancy {
-            let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
-
-            for (i, &bit) in payload_bits.iter().enumerate() {
-                let channel = i % 3;
-                for s in 0..STEGO_SPREAD_FACTOR {
-                    let logical = i * STEGO_SPREAD_FACTOR + s;
-                    let idx = Self::stego_permutation(logical, total_pixels, offset_seed);
-
-                    let x = idx as u32 % width;
-                    let y = idx as u32 / width;
-
-                    Self::embed_bit_in_pixel(&mut output, x, y, channel, bit);
-                }
-            }
-        }
-
-        EmbedOutcome::Embedded {
-            output,
-            payload_bytes: payload.len(),
-            required_capacity: required_slots,
-            available_capacity: available_slots,
-            path: crate::types::EmbedPath::Lsb,
-        }
-    }
-
     fn extract_lsb(&self, img: &RgbaImage, expected_bits: usize, seed: u64) -> Option<Vec<u8>> {
-        let (width, height) = img.dimensions();
-        let total_pixels = (width * height) as usize;
-
-        if expected_bits * STEGO_SPREAD_FACTOR > total_pixels * 3 {
-            return None;
-        }
-
-        let mut bits = Vec::with_capacity(expected_bits);
-        let threshold = (STEGO_SPREAD_FACTOR / 2) as u32;
-
-        for i in 0..expected_bits {
-            let channel = i % 3;
-            let mut ones = 0u32;
-
-            for s in 0..STEGO_SPREAD_FACTOR {
-                let logical = i * STEGO_SPREAD_FACTOR + s;
-                let idx = Self::stego_permutation(logical, total_pixels, seed);
-
-                let x = idx as u32 % width;
-                let y = idx as u32 / width;
-                let pixel = img.get_pixel(x, y);
-
-                let bit = match channel {
-                    0 => pixel[0] & 1,
-                    1 => pixel[1] & 1,
-                    _ => pixel[2] & 1,
-                };
-                ones += bit as u32;
-            }
-
-            bits.push(if ones > threshold { 1 } else { 0 });
-        }
-
-        Some(Self::bits_to_bytes(&bits))
+        carrier_lsb::extract_lsb(img, expected_bits, seed)
     }
 
     /// Extract LSBs from a specific bit range `[offset, offset + count)`.
@@ -3125,43 +2823,7 @@ impl SteganographyProtector {
         count: usize,
         seed: u64,
     ) -> Option<Vec<u8>> {
-        let (width, height) = img.dimensions();
-        let total_pixels = (width * height) as usize;
-
-        if expected_bits * STEGO_SPREAD_FACTOR > total_pixels * 3 {
-            return None;
-        }
-        if offset + count > expected_bits {
-            return None;
-        }
-
-        let mut bits = Vec::with_capacity(count);
-        let threshold = (STEGO_SPREAD_FACTOR / 2) as u32;
-
-        for i in offset..offset + count {
-            let channel = i % 3;
-            let mut ones = 0u32;
-
-            for s in 0..STEGO_SPREAD_FACTOR {
-                let logical = i * STEGO_SPREAD_FACTOR + s;
-                let idx = Self::stego_permutation(logical, total_pixels, seed);
-
-                let x = idx as u32 % width;
-                let y = idx as u32 / width;
-                let pixel = img.get_pixel(x, y);
-
-                let bit = match channel {
-                    0 => pixel[0] & 1,
-                    1 => pixel[1] & 1,
-                    _ => pixel[2] & 1,
-                };
-                ones += bit as u32;
-            }
-
-            bits.push(if ones > threshold { 1 } else { 0 });
-        }
-
-        Some(Self::bits_to_bytes(&bits))
+        carrier_lsb::extract_lsb_range(img, expected_bits, offset, count, seed)
     }
 
     /// Embed payload using the corrected V2 carrier scheme.
@@ -3181,48 +2843,7 @@ impl SteganographyProtector {
         seed: u64,
         redundancy: usize,
     ) -> crate::types::EmbedOutcome<RgbaImage> {
-        use crate::types::EmbedOutcome;
-
-        let (width, height) = img.dimensions();
-        let mut output = img.clone();
-
-        let payload_bits = Self::bytes_to_bits(payload);
-        let bit_len = payload_bits.len();
-
-        let available = Self::lsb_available_slots(width, height);
-        let required = Self::lsb_required_capacity_v2(bit_len, redundancy);
-
-        if required > available {
-            return EmbedOutcome::SkippedCapacity {
-                output,
-                payload_bytes: payload.len(),
-                required_capacity: required,
-                available_capacity: available,
-                path: crate::types::EmbedPath::Lsb,
-            };
-        }
-
-        let replicas_per_bit = STEGO_SPREAD_FACTOR * redundancy;
-        for (i, &bit) in payload_bits.iter().enumerate() {
-            for s in 0..replicas_per_bit {
-                let logical = i * replicas_per_bit + s;
-                let slot = Self::stego_permutation_v2(logical, available, seed);
-                let (pixel_index, slot_channel) =
-                    Self::carrier_v2_slot_to_pixel_channel(slot, width, height);
-                let x = pixel_index as u32 % width;
-                let y = pixel_index as u32 / width;
-
-                Self::embed_bit_in_pixel(&mut output, x, y, slot_channel, bit);
-            }
-        }
-
-        EmbedOutcome::Embedded {
-            output,
-            payload_bytes: payload.len(),
-            required_capacity: required,
-            available_capacity: available,
-            path: crate::types::EmbedPath::Lsb,
-        }
+        carrier_lsb::embed_lsb_v2(img, payload, seed, redundancy)
     }
 
     /// Extract payload using the corrected V2 carrier scheme.
@@ -3238,40 +2859,22 @@ impl SteganographyProtector {
         base_slot: usize,
         redundancy: usize,
     ) -> Option<Vec<u8>> {
-        let (width, height) = img.dimensions();
-        let available = Self::lsb_available_slots(width, height);
-        let replicas_per_bit = STEGO_SPREAD_FACTOR * redundancy;
-
-        if (base_slot + expected_bits * replicas_per_bit) > available {
-            return None;
-        }
-
-        let mut bits = Vec::with_capacity(expected_bits);
-        let threshold = (replicas_per_bit / 2) as u32;
-
-        for i in 0..expected_bits {
-            let mut ones = 0u32;
-
-            for s in 0..replicas_per_bit {
-                let logical = base_slot + i * replicas_per_bit + s;
-                let slot = Self::stego_permutation_v2(logical, available, seed);
-                let (pixel_index, slot_channel) =
-                    Self::carrier_v2_slot_to_pixel_channel(slot, width, height);
-                let x = pixel_index as u32 % width;
-                let y = pixel_index as u32 / width;
-                let pixel = img.get_pixel(x, y);
-
-                let bit = pixel[slot_channel] & 1;
-                ones += bit as u32;
-            }
-
-            bits.push(if ones > threshold { 1 } else { 0 });
-        }
-
-        Some(Self::bits_to_bytes(&bits))
+        carrier_lsb::extract_lsb_v2(img, expected_bits, seed, base_slot, redundancy)
     }
 
-    /// Classify the first6 bytes of a potential v3 payload.
+    fn bits_to_bytes(bits: &[u8]) -> Vec<u8> {
+        carrier_lsb::bits_to_bytes(bits)
+    }
+
+    fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
+        carrier_lsb::embed_seed_lsb_fallback(img, seed);
+    }
+
+    fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
+        carrier_lsb::extract_seed_lsb_fallback(img)
+    }
+
+    /// Classify the first 6 bytes of a potential v3 payload.
     ///
     /// Reads only magic (2), version (1), header_length (1), total_length (2).
     /// Returns `Detected` with declared sizes when the prefix is valid.
@@ -3510,67 +3113,7 @@ impl SteganographyProtector {
         master_seed: u64,
         tile_size: u32,
     ) -> crate::types::EmbedOutcome<RgbaImage> {
-        use crate::types::{EmbedOutcome, EmbedPath};
-
-        let (width, height) = img.dimensions();
-        if tile_size == 0 || width < tile_size || height < tile_size {
-            return EmbedOutcome::SkippedCapacity {
-                output: img.clone(),
-                payload_bytes: payload.len(),
-                required_capacity: 0,
-                available_capacity: 0,
-                path: EmbedPath::LsbTiled,
-            };
-        }
-
-        let mut output = img.clone();
-        let mut any_embedded = false;
-        let mut total_required = 0usize;
-        let mut total_available = 0usize;
-
-        let mut tile_y: u32 = 0;
-        while tile_y * tile_size < height {
-            let y0 = tile_y * tile_size;
-            let y1 = (y0 + tile_size).min(height);
-
-            let mut tile_x: u32 = 0;
-            while tile_x * tile_size < width {
-                let x0 = tile_x * tile_size;
-                let x1 = (x0 + tile_size).min(width);
-
-                let local_seed = tile_seed(master_seed, tile_x, tile_y);
-
-                let sub = Self::crop_rgba(&output, x0, y0, x1 - x0, y1 - y0);
-                let tile_outcome = self.embed_lsb(&sub, payload, local_seed, 1);
-                if tile_outcome.is_embedded() {
-                    any_embedded = true;
-                }
-                total_required += tile_outcome.required_capacity();
-                total_available += tile_outcome.available_capacity();
-                Self::blit_rgba(&mut output, x0, y0, tile_outcome.output());
-
-                tile_x += 1;
-            }
-            tile_y += 1;
-        }
-
-        if any_embedded {
-            EmbedOutcome::Embedded {
-                output,
-                payload_bytes: payload.len(),
-                required_capacity: total_required,
-                available_capacity: total_available,
-                path: EmbedPath::LsbTiled,
-            }
-        } else {
-            EmbedOutcome::SkippedCapacity {
-                output,
-                payload_bytes: payload.len(),
-                required_capacity: total_required,
-                available_capacity: total_available,
-                path: EmbedPath::LsbTiled,
-            }
-        }
+        carrier_lsb::embed_lsb_tiled(img, payload, master_seed, tile_size)
     }
 
     /// Extract payload from a sub-image trying V2 then legacy scheme.
@@ -4023,155 +3566,8 @@ impl SteganographyProtector {
         }
     }
 
-    /// Crop a sub-rectangle out of an `RgbaImage` without depending on the
-    /// `image` crate's `crop` method (which only works on `DynamicImage`).
     fn crop_rgba(src: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> RgbaImage {
-        let mut out = RgbaImage::new(w, h);
-        for dy in 0..h {
-            for dx in 0..w {
-                let p = src.get_pixel(x + dx, y + dy);
-                out.put_pixel(dx, dy, *p);
-            }
-        }
-        out
-    }
-
-    /// Blit a sub-image back into a destination at the given offset.
-    fn blit_rgba(dst: &mut RgbaImage, x: u32, y: u32, src: &RgbaImage) {
-        let (w, h) = src.dimensions();
-        for dy in 0..h {
-            for dx in 0..w {
-                let p = src.get_pixel(dx, dy);
-                dst.put_pixel(x + dx, y + dy, *p);
-            }
-        }
-    }
-
-    fn bytes_to_bits(bytes: &[u8]) -> Vec<u8> {
-        let mut bits = Vec::with_capacity(bytes.len() * 8);
-        for byte in bytes {
-            for i in 0..8 {
-                bits.push((byte >> i) & 1);
-            }
-        }
-        bits
-    }
-
-    fn bits_to_bytes(bits: &[u8]) -> Vec<u8> {
-        if !bits.len().is_multiple_of(8) {
-            return Vec::new();
-        }
-        let mut bytes = Vec::with_capacity(bits.len() / 8);
-        for chunk in bits.chunks_exact(8) {
-            let mut byte = 0u8;
-            for (i, &bit) in chunk.iter().enumerate() {
-                byte |= bit << i;
-            }
-            bytes.push(byte);
-        }
-        bytes
-    }
-
-    /// Embed a single bit using LSB matching (randomized increment/decrement).
-    ///
-    /// Unlike LSB replacement (which always clears or sets the LSB), LSB matching
-    /// randomly increments or decrements the pixel value to achieve the target LSB.
-    /// This eliminates the PoV (Pairs of Values) asymmetry artifact that is the
-    /// primary detector for LSB replacement steganalysis.
-    ///
-    /// The direction is deterministic (derived from coordinates and seed) so
-    /// extraction is unaffected — extraction reads LSBs, which are the same
-    /// regardless of how they were set.
-    fn embed_bit_in_pixel(output: &mut RgbaImage, x: u32, y: u32, channel: usize, bit: u8) {
-        let pixel = output.get_pixel(x, y);
-        let old_val = pixel[channel];
-
-        // If LSB already matches, no modification needed
-        if (old_val & 1) == bit {
-            return;
-        }
-
-        // Deterministic direction from coordinates (avoids needing a PRNG)
-        // Use a simple hash to decide increment vs decrement
-        let direction_hash = x.wrapping_mul(31).wrapping_add(y.wrapping_mul(17));
-        let new_val = if direction_hash & 1 == 0 {
-            old_val.wrapping_add(1)
-        } else {
-            old_val.wrapping_sub(1)
-        };
-
-        let new_pixel = Rgba([
-            if channel == 0 { new_val } else { pixel[0] },
-            if channel == 1 { new_val } else { pixel[1] },
-            if channel == 2 { new_val } else { pixel[2] },
-            pixel[3],
-        ]);
-        output.put_pixel(x, y, new_pixel);
-    }
-
-    fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
-        let (width, height) = img.dimensions();
-        let total_channels = (width * height * 3) as usize;
-        if total_channels < 64 {
-            return;
-        }
-        let seed_bytes = seed.to_le_bytes();
-        let mut channel_idx = 0;
-        for &byte in &seed_bytes {
-            for bit in 0..8 {
-                let pixel_offset = channel_idx / 3;
-                let channel = channel_idx % 3;
-                let x = pixel_offset as u32 % width;
-                let y = pixel_offset as u32 / width;
-                let bit_val = (byte >> bit) & 1;
-                let pixel = img.get_pixel(x, y);
-                let old_val = pixel[channel];
-                // Use LSB matching: if LSB already matches, skip
-                if (old_val & 1) != bit_val {
-                    let direction_hash = x.wrapping_mul(31).wrapping_add(y.wrapping_mul(17));
-                    let new_val = if direction_hash & 1 == 0 {
-                        old_val.wrapping_add(1)
-                    } else {
-                        old_val.wrapping_sub(1)
-                    };
-                    let new_pixel = Rgba([
-                        if channel == 0 { new_val } else { pixel[0] },
-                        if channel == 1 { new_val } else { pixel[1] },
-                        if channel == 2 { new_val } else { pixel[2] },
-                        pixel[3],
-                    ]);
-                    img.put_pixel(x, y, new_pixel);
-                }
-                channel_idx += 1;
-            }
-        }
-    }
-
-    fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
-        let (width, height) = img.dimensions();
-        let total_channels = (width * height * 3) as usize;
-        if total_channels < 64 {
-            return None;
-        }
-        let mut bytes = [0u8; 8];
-        let mut channel_idx = 0;
-        for byte in bytes.iter_mut() {
-            for bit in 0..8 {
-                let pixel_offset = channel_idx / 3;
-                let channel = channel_idx % 3;
-                let x = pixel_offset as u32 % width;
-                let y = pixel_offset as u32 / width;
-                let pixel = img.get_pixel(x, y);
-                *byte |= (pixel[channel] & 1) << bit;
-                channel_idx += 1;
-            }
-        }
-        let seed = u64::from_le_bytes(bytes);
-        if seed == 0 {
-            None
-        } else {
-            Some(seed)
-        }
+        carrier_lsb::crop_rgba(src, x, y, w, h)
     }
 
     fn apply_to_image_owned(
@@ -4380,8 +3776,10 @@ impl StegoPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protected::constants::STEGO_SPREAD_FACTOR;
     use crate::types::ProtectionConfig;
     use image::ImageEncoder;
+    use image::Rgba;
     use image::{ImageBuffer, RgbaImage};
     use std::sync::Arc;
 
@@ -4432,22 +3830,22 @@ mod tests {
     #[test]
     fn bytes_to_bits_length() {
         let data = [0xAA, 0x55, 0xFF, 0x00];
-        let bits = SteganographyProtector::bytes_to_bits(&data);
+        let bits = carrier_lsb::bytes_to_bits(&data);
         assert_eq!(bits.len(), 32);
     }
 
     #[test]
     fn bits_to_bytes_roundtrip() {
         let original: Vec<u8> = vec![0x00, 0xFF, 0xA5, 0x5A, 0x01, 0x80, 0xFE, 0x7F];
-        let bits = SteganographyProtector::bytes_to_bits(&original);
-        let recovered = SteganographyProtector::bits_to_bytes(&bits);
+        let bits = carrier_lsb::bytes_to_bits(&original);
+        let recovered = carrier_lsb::bits_to_bytes(&bits);
         assert_eq!(original, recovered);
     }
 
     #[test]
     fn bytes_to_bits_lsb_order() {
         let data = [0b0000_0001];
-        let bits = SteganographyProtector::bytes_to_bits(&data);
+        let bits = carrier_lsb::bytes_to_bits(&data);
         assert_eq!(bits[0], 1);
         assert_eq!(bits[1], 0);
         assert_eq!(bits[7], 0);
@@ -4456,7 +3854,7 @@ mod tests {
     #[test]
     fn bytes_to_bits_high_bit() {
         let data = [0b1000_0000];
-        let bits = SteganographyProtector::bytes_to_bits(&data);
+        let bits = carrier_lsb::bytes_to_bits(&data);
         assert_eq!(bits[7], 1);
         assert_eq!(bits[0], 0);
     }
@@ -4465,7 +3863,7 @@ mod tests {
     fn bits_to_bytes_trailing_dropped() {
         // Multiple of 8 — works correctly
         let bits = vec![1, 0, 0, 0, 0, 0, 0, 0];
-        let bytes = SteganographyProtector::bits_to_bytes(&bits);
+        let bytes = carrier_lsb::bits_to_bytes(&bits);
         assert_eq!(bytes.len(), 1);
         assert_eq!(bytes[0], 1);
     }
@@ -4473,7 +3871,7 @@ mod tests {
     #[test]
     fn bits_to_bytes_non_multiple_of_8_returns_empty() {
         let bits = vec![1, 0, 1]; // 3 bits — not a multiple of 8
-        let bytes = SteganographyProtector::bits_to_bytes(&bits);
+        let bytes = carrier_lsb::bits_to_bytes(&bits);
         assert!(
             bytes.is_empty(),
             "Non-multiple-of-8 input should return empty Vec"
@@ -4483,14 +3881,14 @@ mod tests {
     #[test]
     fn bits_to_bytes_empty_input() {
         let bits: Vec<u8> = vec![];
-        let bytes = SteganographyProtector::bits_to_bytes(&bits);
+        let bytes = carrier_lsb::bits_to_bytes(&bits);
         assert!(bytes.is_empty());
     }
 
     #[test]
     fn bits_to_bytes_16_bits() {
         let bits = vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0];
-        let bytes = SteganographyProtector::bits_to_bytes(&bits);
+        let bytes = carrier_lsb::bits_to_bytes(&bits);
         assert_eq!(bytes.len(), 2);
         assert_eq!(bytes[0], 1);
         assert_eq!(bytes[1], 2);
@@ -4755,15 +4153,15 @@ mod tests {
 
     #[test]
     fn stego_permutation_deterministic() {
-        let a = SteganographyProtector::stego_permutation(0, 1024, 42);
-        let b = SteganographyProtector::stego_permutation(0, 1024, 42);
+        let a = carrier_lsb::stego_permutation(0, 1024, 42);
+        let b = carrier_lsb::stego_permutation(0, 1024, 42);
         assert_eq!(a, b);
     }
 
     #[test]
     fn stego_permutation_different_seeds_differ() {
-        let a = SteganographyProtector::stego_permutation(0, 1024, 42);
-        let b = SteganographyProtector::stego_permutation(0, 1024, 99);
+        let a = carrier_lsb::stego_permutation(0, 1024, 42);
+        let b = carrier_lsb::stego_permutation(0, 1024, 99);
         assert_ne!(a, b);
     }
 
@@ -4773,7 +4171,7 @@ mod tests {
         let seed = 42u64;
         let mut seen = vec![false; total];
         for i in 0..total {
-            let pos = SteganographyProtector::stego_permutation(i, total, seed);
+            let pos = carrier_lsb::stego_permutation(i, total, seed);
             assert!(
                 pos < total,
                 "permutation out of range: {} >= {}",
@@ -4787,8 +4185,8 @@ mod tests {
 
     #[test]
     fn stego_permutation_index0_consistent() {
-        let a = SteganographyProtector::stego_permutation(0, 4096, 100);
-        let b = SteganographyProtector::stego_permutation(0, 4096, 100);
+        let a = carrier_lsb::stego_permutation(0, 4096, 100);
+        let b = carrier_lsb::stego_permutation(0, 4096, 100);
         assert_eq!(a, b);
     }
 
@@ -4802,7 +4200,7 @@ mod tests {
         let orig_a = img.get_pixel(0, 0)[3];
 
         // Embed bit 1 in channel 0
-        SteganographyProtector::embed_bit_in_pixel(&mut img, 0, 0, 0, 1);
+        carrier_lsb::embed_bit_in_pixel(&mut img, 0, 0, 0, 1);
         let modified = img.get_pixel(0, 0);
         assert_eq!(modified[0] & 1, 1);
         assert_eq!(modified[1], orig_g);
@@ -4814,7 +4212,7 @@ mod tests {
     fn embed_bit_in_pixel_clears_lsb() {
         let mut img = ImageBuffer::from_pixel(1, 1, Rgba([0xFF, 0xFF, 0xFF, 255]));
 
-        SteganographyProtector::embed_bit_in_pixel(&mut img, 0, 0, 1, 0);
+        carrier_lsb::embed_bit_in_pixel(&mut img, 0, 0, 1, 0);
         let pixel = img.get_pixel(0, 0);
         assert_eq!(pixel[1] & 1, 0);
         // Channel 0 and 2 unchanged
@@ -4939,7 +4337,7 @@ mod tests {
         let ctx = ctx_no_mac(42);
         let payload = protector.generate_payload_from_ctx(&ctx);
 
-        let result = protector.embed_lsb(&tiny, &payload, 42, 1);
+        let result = carrier_lsb::embed_lsb(&tiny, &payload, 42, 1);
         assert!(result.is_skipped());
         assert_eq!(*result.output(), tiny);
     }
@@ -5038,7 +4436,7 @@ mod tests {
         match JpegTranscoder::decode_coefficients(&embedded_jpeg) {
             Ok((_, rt)) => {
                 let rt_bits = DctStegoF5::with_redundancy(3).extract_f5(&rt, payload_bits, 42);
-                let rt_payload = SteganographyProtector::bits_to_bytes(&rt_bits);
+                let rt_payload = carrier_lsb::bits_to_bytes(&rt_bits);
                 assert_eq!(
                     rt_payload, payload,
                     "F5 roundtrip through assemble_jpeg failed"
@@ -5888,7 +5286,7 @@ mod tests {
         let seed = 42u64;
         let mut seen = vec![false; slot_count];
         for i in 0..slot_count {
-            let pos = SteganographyProtector::stego_permutation_v2(i, slot_count, seed);
+            let pos = carrier_lsb::stego_permutation_v2(i, slot_count, seed);
             assert!(pos < slot_count, "out of range: {} >= {}", pos, slot_count);
             assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
             seen[pos] = true;
@@ -5901,7 +5299,7 @@ mod tests {
         let seed = 42u64;
         let mut seen = vec![false; slot_count];
         for i in 0..slot_count {
-            let pos = SteganographyProtector::stego_permutation_v2(i, slot_count, seed);
+            let pos = carrier_lsb::stego_permutation_v2(i, slot_count, seed);
             assert!(pos < slot_count, "out of range: {} >= {}", pos, slot_count);
             assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
             seen[pos] = true;
@@ -5914,7 +5312,7 @@ mod tests {
         let seed = 42u64;
         let mut seen = vec![false; slot_count];
         for i in 0..slot_count {
-            let pos = SteganographyProtector::stego_permutation_v2(i, slot_count, seed);
+            let pos = carrier_lsb::stego_permutation_v2(i, slot_count, seed);
             assert!(pos < slot_count, "out of range: {} >= {}", pos, slot_count);
             assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
             seen[pos] = true;
@@ -5929,7 +5327,7 @@ mod tests {
         let seed = 42u64;
         let mut seen = vec![false; slot_count];
         for i in 0..slot_count {
-            let pos = SteganographyProtector::stego_permutation_v2(i, slot_count, seed);
+            let pos = carrier_lsb::stego_permutation_v2(i, slot_count, seed);
             assert!(pos < slot_count, "out of range: {} >= {}", pos, slot_count);
             assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
             seen[pos] = true;
@@ -5939,34 +5337,34 @@ mod tests {
     #[test]
     fn carrier_v2_permutation_different_seed_changes_order() {
         let slot_count = 1024usize;
-        let a = SteganographyProtector::stego_permutation_v2(0, slot_count, 42);
-        let b = SteganographyProtector::stego_permutation_v2(0, slot_count, 99);
+        let a = carrier_lsb::stego_permutation_v2(0, slot_count, 42);
+        let b = carrier_lsb::stego_permutation_v2(0, slot_count, 99);
         assert_ne!(a, b);
     }
 
     #[test]
     fn carrier_v2_permutation_same_seed_is_deterministic() {
         let slot_count = 1024usize;
-        let a = SteganographyProtector::stego_permutation_v2(0, slot_count, 42);
-        let b = SteganographyProtector::stego_permutation_v2(0, slot_count, 42);
+        let a = carrier_lsb::stego_permutation_v2(0, slot_count, 42);
+        let b = carrier_lsb::stego_permutation_v2(0, slot_count, 42);
         assert_eq!(a, b);
     }
 
     #[test]
     fn carrier_v2_permutation_slot_count_zero() {
-        assert_eq!(SteganographyProtector::stego_permutation_v2(0, 0, 42), 0);
+        assert_eq!(carrier_lsb::stego_permutation_v2(0, 0, 42), 0);
     }
 
     #[test]
     fn carrier_v2_permutation_slot_count_one() {
-        assert_eq!(SteganographyProtector::stego_permutation_v2(0, 1, 42), 0);
+        assert_eq!(carrier_lsb::stego_permutation_v2(0, 1, 42), 0);
     }
 
     #[test]
     fn carrier_v2_required_capacity_matches_exact_slots_touched() {
         let payload_bits = 288usize;
         let redundancy = 3usize;
-        let required = SteganographyProtector::lsb_required_capacity_v2(payload_bits, redundancy);
+        let required = carrier_lsb::lsb_required_capacity_v2(payload_bits, redundancy);
         assert_eq!(required, payload_bits * STEGO_SPREAD_FACTOR * redundancy);
     }
 
@@ -5976,8 +5374,8 @@ mod tests {
         let img = make_test_image(4, 4);
         let payload = vec![0xAA; 3];
         let payload_bits = payload.len() * 8;
-        let available = SteganographyProtector::lsb_available_slots(4, 4);
-        let required = SteganographyProtector::lsb_required_capacity_v2(payload_bits, 1);
+        let available = carrier_lsb::lsb_available_slots(4, 4);
+        let required = carrier_lsb::lsb_required_capacity_v2(payload_bits, 1);
         assert!(
             required > available,
             "setup: need more slots than available for this test"
@@ -6006,8 +5404,8 @@ mod tests {
     #[test]
     fn carrier_v2_redundancy_increases_required_capacity() {
         let payload_bits = 100usize;
-        let r1 = SteganographyProtector::lsb_required_capacity_v2(payload_bits, 1);
-        let r3 = SteganographyProtector::lsb_required_capacity_v2(payload_bits, 3);
+        let r1 = carrier_lsb::lsb_required_capacity_v2(payload_bits, 1);
+        let r3 = carrier_lsb::lsb_required_capacity_v2(payload_bits, 3);
         assert_eq!(r3, r1 * 3);
     }
 
@@ -6032,14 +5430,14 @@ mod tests {
     fn carrier_v2_no_duplicate_slot_within_embedding() {
         let width = 16u32;
         let height = 16u32;
-        let available = SteganographyProtector::lsb_available_slots(width, height);
+        let available = carrier_lsb::lsb_available_slots(width, height);
         let payload_bits = 8usize;
         let mut all_slots = Vec::new();
         let seed = 42u64;
         for i in 0..payload_bits {
             for s in 0..STEGO_SPREAD_FACTOR {
                 let logical = i * STEGO_SPREAD_FACTOR + s;
-                let slot = SteganographyProtector::stego_permutation_v2(logical, available, seed);
+                let slot = carrier_lsb::stego_permutation_v2(logical, available, seed);
                 all_slots.push(slot);
             }
         }
@@ -6084,7 +5482,7 @@ mod tests {
         let ctx = ctx_no_mac(seed);
         let payload = protector.generate_payload_from_ctx(&ctx);
 
-        let legacy_result = protector.embed_lsb(&img, &payload, seed, 1);
+        let legacy_result = carrier_lsb::embed_lsb(&img, &payload, seed, 1);
         assert!(legacy_result.is_embedded());
         let legacy_img = legacy_result.into_inner();
 
@@ -6103,7 +5501,7 @@ mod tests {
         let ctx = ctx_with_mac(seed, key);
         let payload = protector.generate_payload_from_ctx(&ctx);
 
-        let legacy_result = protector.embed_lsb(&img, &payload, seed, 1);
+        let legacy_result = carrier_lsb::embed_lsb(&img, &payload, seed, 1);
         assert!(legacy_result.is_embedded());
         let legacy_img = legacy_result.into_inner();
 
@@ -6125,7 +5523,7 @@ mod tests {
         let ctx = ctx_with_mac(seed, b"correct-key");
         let payload = protector.generate_payload_from_ctx(&ctx);
 
-        let legacy_result = protector.embed_lsb(&img, &payload, seed, 1);
+        let legacy_result = carrier_lsb::embed_lsb(&img, &payload, seed, 1);
         let legacy_img = legacy_result.into_inner();
 
         let extracted = protector.extract_with_redundancy(&legacy_img, seed, b"wrong-key");
@@ -6206,15 +5604,12 @@ mod tests {
         let redundancy = 3usize;
 
         let (required, available) =
-            SteganographyProtector::lsb_capacity_for_image(width, height, payload_bits, redundancy);
+            carrier_lsb::lsb_capacity_for_image(width, height, payload_bits, redundancy);
         assert_eq!(
             required,
-            SteganographyProtector::lsb_required_capacity_v2(payload_bits, redundancy)
+            carrier_lsb::lsb_required_capacity_v2(payload_bits, redundancy)
         );
-        assert_eq!(
-            available,
-            SteganographyProtector::lsb_available_slots(width, height)
-        );
+        assert_eq!(available, carrier_lsb::lsb_available_slots(width, height));
         assert!(available >= required);
     }
 }

@@ -40,3 +40,4 @@ pub trait Protector: Send + Sync {
 
 - **lib.rs**: Calls `Protector::apply()` and `Protector::apply_bytes()` for each protection level
 - **protected/*.rs**: Each protector implements the `Protector` trait
+- **src/stego/**: `SteganographyProtector` delegates carrier mechanics to `stego::lsb` and `stego::jpeg`

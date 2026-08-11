@@ -1215,6 +1215,9 @@ stegoeggo
 |   +-- PassthroughProtector      # No-op (Disabled level)
 |   +-- MetadataTrapProtector     # Metadata injection (always)
 |   +-- SteganographyProtector    # LSB/DCT embedding (Light: minimal, Standard: full)
++-- src/stego/                # Generic carrier core (application-neutral)
+|   +-- lsb.rs                    # LSB carrier: permutations, embed/extract
+|   +-- jpeg.rs                   # JPEG carrier: DCT capacity, Q-table reassembly
 +-- ProtectionLevel          # disabled -> light -> standard
 +-- LegalMetadata            # Configurable legal metadata
 +-- ProtectionContext        # Configuration for protection

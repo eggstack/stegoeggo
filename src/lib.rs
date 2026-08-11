@@ -195,6 +195,7 @@ pub mod verification;
 
 pub(crate) mod jpeg_transcoder;
 pub(crate) mod protected;
+pub(crate) mod stego;
 pub(crate) mod util;
 pub(crate) mod webp_container;
 
