@@ -181,7 +181,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 - **Three seed storage locations** — (1) Q-table LSBs in JPEG, (2) metadata markers (strippable), (3) fixed-position LSB in first 64 pixel channels. Extraction chain: metadata → LSB fallback → `FALLBACK_SEEDS`
 - **ECC on stego payload** — Non-MAC payloads use 3× repetition with majority voting before CRC32. MAC payloads use 8-byte HMAC instead
-- **Spread spectrum LSB** — Each payload bit embedded across `STEGO_SPREAD_FACTOR` (=5) adjacent pixels via majority voting
+- **Spread spectrum LSB** — Each payload bit embedded across `STEGO_SPREAD_FACTOR * redundancy` (=5×r) RGB carrier slots via majority voting. The corrected V2 carrier uses a single bijective permutation over `width * height * 3` slots; all replicas of one bit use consecutive logical indices through the same permutation, guaranteeing no inter-replica collisions. Legacy extraction (pixel-index/channel-derived carrier) is preserved for backward compatibility
 - **`stego_redundancy` is `Option<usize>`** — Default `None` derives from intensity via `effective_redundancy()` (<0.3→1, 0.3-0.7→2, >=0.7→3). Valid range 1-10
 - **F5 redundancy cap** — Max redundancy is 10. Extraction tries all 10 values
 - **Payload version 3 is current** — V1/V2 still supported for extraction only, never written. V3 adds TLV extensions with domain-separated authentication. V3 extraction paths (magic bytes `[0x53, 0x45]`) tried first before V2/V1 fallback. V3 core: 32 bytes. V3 CRC: 36 bytes. V3 HMAC: 48 bytes

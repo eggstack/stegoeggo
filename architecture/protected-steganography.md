@@ -75,14 +75,31 @@ Getter methods: `protection_level()`, `seed()`, `intensity()`, `version()`.
 ### LSB Embedding (PNG/WebP)
 
 ```rust
-fn embed_lsb(img: &mut RgbaImage, payload: &[u8], seed: u64, redundancy: u8)
-fn extract_lsb(img: &RgbaImage, seed: u64, redundancy: u8) -> Vec<u8>
+fn embed_lsb_v2(img: &mut RgbaImage, payload: &[u8], seed: u64, redundancy: usize)
+fn extract_lsb_v2(img: &RgbaImage, seed: u64, redundancy: usize) -> Vec<u8>
 ```
 
-- Uses collision-free LCG permutation (`stego_permutation`) for pixel selection
-- Seed derivation: `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)` per pass
-- Embeds payload bits into LSBs of selected pixels
-- Redundancy 1–10: multiple passes for reliability
+**Corrected V2 carrier model (current default):**
+
+- Carrier domain: `width * height * 3` RGB slots (alpha never a carrier)
+- Permutation: cycle-walking bijective LCG (`stego_permutation_v2`) over `[0, slot_count)`
+- Each payload bit occupies `STEGO_SPREAD_FACTOR * redundancy` consecutive logical
+  indices through one permutation — no inter-replica collisions
+- Capacity formula: `payload_bits * STEGO_SPREAD_FACTOR * redundancy` slots exact
+- Embed uses raw seed directly (no `STEGO_OFFSET_SEED_1` offset)
+
+**Legacy carrier (backward-compatible extraction only):**
+
+- Pixel-index carrier: `total_pixels` = `width * height`
+- Channel derived from `bit_index % 3`
+- Redundancy via multiple passes with offset seeds
+- `extract_lsb` preserves the historical mapping exactly
+
+**Extraction probing order:**
+
+1. V2 corrected: raw seed, redundancy 1..=10
+2. V2 legacy: offset seeds (`seed * (STEGO_OFFSET_SEED_1 + pass)`), redundancy 1..=10
+3. Legacy carrier: offset seeds, legacy extraction
 
 **WebP caveat:** LSB embedding survives **lossless** WebP round-trips (which is what `stegoeggo` produces via the `image` crate's `WebPEncoder::new_lossless`). Lossy WebP re-encoding (the common web delivery path) destroys the LSB payload. If WebP is the chosen delivery format, configure the CDN to deliver lossless WebP, or accept metadata-only protection.
 

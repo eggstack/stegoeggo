@@ -9,7 +9,7 @@ Tuning constants used across the protection modules.
 | Constant | Value | Source File | Purpose |
 |----------|-------|-------------|---------|
 | `STEGO_OFFSET_SEED_1` | `0x517cc1b727220a95` | `protected/constants.rs` | Multiplicative offset for stego pixel selection |
-| `STEGO_SPREAD_FACTOR` | `5` | `protected/constants.rs` | Number of adjacent pixels each LSB bit is spread across |
+| `STEGO_SPREAD_FACTOR` | `5` | `protected/constants.rs` | Replicas per payload bit per redundancy level in the V2 carrier (total replicas = `STEGO_SPREAD_FACTOR * redundancy`) |
 | `XORSHIFT_SEED_OFFSET` | `0x123456789ABCDEF0` | `protected/constants.rs` | XOR offset for XorShiftRng initialization |
 | `SPLITMIX64_SEED` | `0x9e3779b97f4a7c15` | `protected/constants.rs`, `util/seed.rs` | Splitmix64 mixing constant |
 | `DEFAULT_TILE_SIZE` | `64` | `protected/steganography.rs` | Default crop-resistant tile size |
@@ -19,7 +19,8 @@ Tuning constants used across the protection modules.
 
 ## Design Notes
 
-- `STEGO_OFFSET_SEED_1` is a large prime-like constant used in the seed derivation formula: `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)`
+- `STEGO_OFFSET_SEED_1` is a large prime-like constant used in the seed derivation formula for legacy offset seeds: `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)`. The corrected V2 carrier uses the raw seed directly without this offset
+- `STEGO_SPREAD_FACTOR` is the base replication factor per payload bit; the corrected V2 carrier multiplies this by the redundancy parameter to get total replicas per bit
 - `XORSHIFT_SEED_OFFSET` ensures non-zero initial state for the PRNG
 - Tile size is clamped to `32..=1024` (0 disables tiling)
 

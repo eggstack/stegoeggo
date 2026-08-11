@@ -376,7 +376,7 @@ impl SteganographyProtector {
     }
 
     fn lsb_pixels_needed_for_bits(payload_bits: usize) -> usize {
-        payload_bits.div_ceil(3) * STEGO_SPREAD_FACTOR
+        Self::lsb_required_pixels_legacy(payload_bits)
     }
 
     /// Embed only the seed in JPEG quantization tables (no DCT coefficient modification).
@@ -892,7 +892,7 @@ impl SteganographyProtector {
 
         match format {
             crate::types::ImageOutputFormat::Png | crate::types::ImageOutputFormat::WebP => {
-                let outcome = self.embed_lsb(&rgba, &payload, ctx.seed(), 1);
+                let outcome = self.embed_lsb_v2(&rgba, &payload, ctx.seed(), 1);
                 DynamicImage::ImageRgba8(outcome.into_inner())
             }
             crate::types::ImageOutputFormat::Jpeg => {
@@ -1013,31 +1013,105 @@ impl SteganographyProtector {
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
         let prefix_bits = 6 * 8;
+        for redundancy in 1..=10 {
+            if let Some(result) =
+                self.extract_payload_at_seed_v2(img, prefix_bits, seed, mac_key, 0, redundancy)
+            {
+                return Some(result);
+            }
+        }
         for pass in 0..5 {
             let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
-            if let Some(prefix) = self.extract_lsb(img, prefix_bits, offset_seed) {
-                match Self::classify_v3_probe(&prefix, Some(&self.limits)) {
-                    V3ProbeResult::V3Detected { total_bits, .. } => {
-                        if let Some(full) = self.extract_lsb(img, total_bits, offset_seed) {
-                            if Self::verify_payload_integrity(&full, mac_key) {
-                                return Some(Self::truncate_to_actual_payload(&full));
-                            }
-                        }
-                    }
-                    V3ProbeResult::NotV3 => {
-                        for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                            if let Some(payload) = self.extract_lsb(img, ecc_bits, offset_seed) {
-                                if Self::try_ecc_decode(&payload).is_some() {
-                                    return Some(payload);
-                                }
-                                if Self::verify_payload_integrity(&payload, mac_key) {
-                                    return Some(Self::truncate_to_actual_payload(&payload));
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
+            for redundancy in 1..=10 {
+                if let Some(result) = self.extract_payload_at_seed_v2(
+                    img,
+                    prefix_bits,
+                    offset_seed,
+                    mac_key,
+                    0,
+                    redundancy,
+                ) {
+                    return Some(result);
                 }
+            }
+            if let Some(result) =
+                self.extract_payload_at_seed_legacy(img, prefix_bits, offset_seed, mac_key)
+            {
+                return Some(result);
+            }
+        }
+        None
+    }
+
+    fn extract_payload_at_seed_v2(
+        &self,
+        img: &RgbaImage,
+        prefix_bits: usize,
+        seed: u64,
+        mac_key: &[u8],
+        base_slot: usize,
+        redundancy: usize,
+    ) -> Option<Vec<u8>> {
+        if let Some(prefix) = self.extract_lsb_v2(img, prefix_bits, seed, base_slot, redundancy) {
+            match Self::classify_v3_probe(&prefix, Some(&self.limits)) {
+                V3ProbeResult::V3Detected { total_bits, .. } => {
+                    if let Some(full) =
+                        self.extract_lsb_v2(img, total_bits, seed, base_slot, redundancy)
+                    {
+                        if Self::verify_payload_integrity(&full, mac_key) {
+                            return Some(Self::truncate_to_actual_payload(&full));
+                        }
+                    }
+                }
+                V3ProbeResult::NotV3 => {
+                    for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                        if let Some(payload) =
+                            self.extract_lsb_v2(img, ecc_bits, seed, base_slot, redundancy)
+                        {
+                            if Self::try_ecc_decode(&payload).is_some() {
+                                return Some(payload);
+                            }
+                            if Self::verify_payload_integrity(&payload, mac_key) {
+                                return Some(Self::truncate_to_actual_payload(&payload));
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn extract_payload_at_seed_legacy(
+        &self,
+        img: &RgbaImage,
+        prefix_bits: usize,
+        seed: u64,
+        mac_key: &[u8],
+    ) -> Option<Vec<u8>> {
+        if let Some(prefix) = self.extract_lsb(img, prefix_bits, seed) {
+            match Self::classify_v3_probe(&prefix, Some(&self.limits)) {
+                V3ProbeResult::V3Detected { total_bits, .. } => {
+                    if let Some(full) = self.extract_lsb(img, total_bits, seed) {
+                        if Self::verify_payload_integrity(&full, mac_key) {
+                            return Some(Self::truncate_to_actual_payload(&full));
+                        }
+                    }
+                }
+                V3ProbeResult::NotV3 => {
+                    for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                        if let Some(payload) = self.extract_lsb(img, ecc_bits, seed) {
+                            if Self::try_ecc_decode(&payload).is_some() {
+                                return Some(payload);
+                            }
+                            if Self::verify_payload_integrity(&payload, mac_key) {
+                                return Some(Self::truncate_to_actual_payload(&payload));
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
         None
@@ -1064,51 +1138,188 @@ impl SteganographyProtector {
     ) -> CandidateOutcome {
         let mut last_outcome: Option<CandidateOutcome> = None;
         let prefix_bits = 6 * 8;
+        for redundancy in 1..=10 {
+            let v2_corrected =
+                self.verify_extract_at_seed_v2(img, prefix_bits, seed, mac_key, 0, redundancy);
+            match &v2_corrected {
+                CandidateOutcome::Valid(_)
+                | CandidateOutcome::Invalid(_)
+                | CandidateOutcome::AuthenticationKeyMissing(_)
+                | CandidateOutcome::AuthenticationFailed(_) => {
+                    if Self::candidate_seed_matches(&v2_corrected, seed) {
+                        return v2_corrected;
+                    }
+                    if last_outcome.is_none() {
+                        last_outcome = Some(v2_corrected);
+                    }
+                }
+                _ => {}
+            }
+        }
         for pass in 0..5 {
             let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
-            if let Some(prefix) = self.extract_lsb(img, prefix_bits, offset_seed) {
-                match Self::classify_v3_probe(&prefix, Some(&self.limits)) {
-                    V3ProbeResult::V3Detected { total_bits, .. } => {
-                        if let Some(full) = self.extract_lsb(img, total_bits, offset_seed) {
-                            if Self::verify_payload_integrity(&full, mac_key) {
-                                return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
-                                    &full,
-                                ));
-                            }
-                            if last_outcome.is_none() {
-                                last_outcome = Some(Self::classify_auth_failure(&full, mac_key));
-                            }
+            for redundancy in 1..=10 {
+                let v2_outcome = self.verify_extract_at_seed_v2(
+                    img,
+                    prefix_bits,
+                    offset_seed,
+                    mac_key,
+                    0,
+                    redundancy,
+                );
+                match &v2_outcome {
+                    CandidateOutcome::Valid(_)
+                    | CandidateOutcome::Invalid(_)
+                    | CandidateOutcome::AuthenticationKeyMissing(_)
+                    | CandidateOutcome::AuthenticationFailed(_) => {
+                        if Self::candidate_seed_matches(&v2_outcome, seed) {
+                            return v2_outcome;
                         }
-                    }
-                    V3ProbeResult::NotV3 => {
-                        for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                            if let Some(payload) = self.extract_lsb(img, ecc_bits, offset_seed) {
-                                if Self::try_ecc_decode(&payload).is_some() {
-                                    return CandidateOutcome::Valid(payload);
-                                }
-                                if Self::verify_payload_integrity(&payload, mac_key) {
-                                    return CandidateOutcome::Valid(
-                                        Self::truncate_to_actual_payload(&payload),
-                                    );
-                                }
-                                if last_outcome.is_none() {
-                                    last_outcome =
-                                        Some(Self::classify_auth_failure(&payload, mac_key));
-                                }
-                            }
+                        if last_outcome.is_none() {
+                            last_outcome = Some(v2_outcome);
                         }
-                    }
-                    V3ProbeResult::MalformedV3 if last_outcome.is_none() => {
-                        last_outcome = Some(CandidateOutcome::MalformedV3);
-                    }
-                    V3ProbeResult::UnsupportedVersion(v) if last_outcome.is_none() => {
-                        last_outcome = Some(CandidateOutcome::UnsupportedVersion(v));
-                    }
-                    V3ProbeResult::ResourceLimitExceeded if last_outcome.is_none() => {
-                        last_outcome = Some(CandidateOutcome::MalformedV3);
                     }
                     _ => {}
                 }
+            }
+
+            let legacy_outcome =
+                self.verify_extract_at_seed_legacy(img, prefix_bits, offset_seed, mac_key);
+            match &legacy_outcome {
+                CandidateOutcome::Valid(_)
+                | CandidateOutcome::Invalid(_)
+                | CandidateOutcome::AuthenticationKeyMissing(_)
+                | CandidateOutcome::AuthenticationFailed(_)
+                | CandidateOutcome::MalformedV3
+                | CandidateOutcome::UnsupportedVersion(_) => {
+                    if Self::candidate_seed_matches(&legacy_outcome, seed) {
+                        return legacy_outcome;
+                    }
+                    if last_outcome.is_none() {
+                        last_outcome = Some(legacy_outcome);
+                    }
+                }
+                _ => {}
+            }
+        }
+        match last_outcome {
+            Some(outcome) => outcome,
+            None => CandidateOutcome::NotFound,
+        }
+    }
+
+    fn verify_extract_at_seed_v2(
+        &self,
+        img: &RgbaImage,
+        prefix_bits: usize,
+        seed: u64,
+        mac_key: &[u8],
+        base_slot: usize,
+        redundancy: usize,
+    ) -> CandidateOutcome {
+        let mut last_outcome: Option<CandidateOutcome> = None;
+        if let Some(prefix) = self.extract_lsb_v2(img, prefix_bits, seed, base_slot, redundancy) {
+            match Self::classify_v3_probe(&prefix, Some(&self.limits)) {
+                V3ProbeResult::V3Detected { total_bits, .. } => {
+                    if let Some(full) =
+                        self.extract_lsb_v2(img, total_bits, seed, base_slot, redundancy)
+                    {
+                        if Self::verify_payload_integrity(&full, mac_key) {
+                            return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
+                                &full,
+                            ));
+                        }
+                        if last_outcome.is_none() {
+                            last_outcome = Some(Self::classify_auth_failure(&full, mac_key));
+                        }
+                    }
+                }
+                V3ProbeResult::NotV3 => {
+                    for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                        if let Some(payload) =
+                            self.extract_lsb_v2(img, ecc_bits, seed, base_slot, redundancy)
+                        {
+                            if Self::try_ecc_decode(&payload).is_some() {
+                                return CandidateOutcome::Valid(payload);
+                            }
+                            if Self::verify_payload_integrity(&payload, mac_key) {
+                                return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
+                                    &payload,
+                                ));
+                            }
+                            if last_outcome.is_none() {
+                                last_outcome = Some(Self::classify_auth_failure(&payload, mac_key));
+                            }
+                        }
+                    }
+                }
+                V3ProbeResult::MalformedV3 if last_outcome.is_none() => {
+                    last_outcome = Some(CandidateOutcome::MalformedV3);
+                }
+                V3ProbeResult::UnsupportedVersion(v) if last_outcome.is_none() => {
+                    last_outcome = Some(CandidateOutcome::UnsupportedVersion(v));
+                }
+                V3ProbeResult::ResourceLimitExceeded if last_outcome.is_none() => {
+                    last_outcome = Some(CandidateOutcome::MalformedV3);
+                }
+                _ => {}
+            }
+        }
+        match last_outcome {
+            Some(outcome) => outcome,
+            None => CandidateOutcome::NotFound,
+        }
+    }
+
+    fn verify_extract_at_seed_legacy(
+        &self,
+        img: &RgbaImage,
+        prefix_bits: usize,
+        seed: u64,
+        mac_key: &[u8],
+    ) -> CandidateOutcome {
+        let mut last_outcome: Option<CandidateOutcome> = None;
+        if let Some(prefix) = self.extract_lsb(img, prefix_bits, seed) {
+            match Self::classify_v3_probe(&prefix, Some(&self.limits)) {
+                V3ProbeResult::V3Detected { total_bits, .. } => {
+                    if let Some(full) = self.extract_lsb(img, total_bits, seed) {
+                        if Self::verify_payload_integrity(&full, mac_key) {
+                            return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
+                                &full,
+                            ));
+                        }
+                        if last_outcome.is_none() {
+                            last_outcome = Some(Self::classify_auth_failure(&full, mac_key));
+                        }
+                    }
+                }
+                V3ProbeResult::NotV3 => {
+                    for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                        if let Some(payload) = self.extract_lsb(img, ecc_bits, seed) {
+                            if Self::try_ecc_decode(&payload).is_some() {
+                                return CandidateOutcome::Valid(payload);
+                            }
+                            if Self::verify_payload_integrity(&payload, mac_key) {
+                                return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
+                                    &payload,
+                                ));
+                            }
+                            if last_outcome.is_none() {
+                                last_outcome = Some(Self::classify_auth_failure(&payload, mac_key));
+                            }
+                        }
+                    }
+                }
+                V3ProbeResult::MalformedV3 if last_outcome.is_none() => {
+                    last_outcome = Some(CandidateOutcome::MalformedV3);
+                }
+                V3ProbeResult::UnsupportedVersion(v) if last_outcome.is_none() => {
+                    last_outcome = Some(CandidateOutcome::UnsupportedVersion(v));
+                }
+                V3ProbeResult::ResourceLimitExceeded if last_outcome.is_none() => {
+                    last_outcome = Some(CandidateOutcome::MalformedV3);
+                }
+                _ => {}
             }
         }
         match last_outcome {
@@ -1670,6 +1881,18 @@ impl SteganographyProtector {
         ]);
         embedded_seed == expected_seed
     }
+
+    fn candidate_seed_matches(outcome: &CandidateOutcome, expected_seed: u64) -> bool {
+        let payload = match outcome {
+            CandidateOutcome::Valid(p)
+            | CandidateOutcome::Invalid(p)
+            | CandidateOutcome::AuthenticationKeyMissing(p)
+            | CandidateOutcome::AuthenticationFailed(p) => p,
+            _ => return false,
+        };
+        Self::verify_embedded_seed_matches(payload, expected_seed)
+    }
+
     /// Extract the steganographic payload from a protected image.
     ///
     /// Tries metadata-extracted seed first, then falls back to common test seeds.
@@ -2693,15 +2916,104 @@ impl SteganographyProtector {
         self.generate_payload_for_context(ctx)
     }
 
-    /// Collision-free LCG permutation for stego pixel selection.
+    /// Collision-free LCG permutation for stego pixel selection (legacy scheme).
     /// Maps `index` to a unique pixel position in `[0, total)`.
     /// Uses a bijective LCG (a odd) which is a permutation when m is a power of 2.
     /// For non-power-of-2 totals, the slight bias is negligible for steganography.
+    ///
+    /// This is the legacy carrier mapping. It maps logical bit positions to pixel
+    /// indices, with the RGB channel derived from `bit_index % 3`. Retained for
+    /// backward-compatible extraction of images embedded with the legacy scheme.
     #[inline(always)]
     fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize {
         let a = splitmix64(seed).wrapping_mul(2) | 1;
         let b = splitmix64(seed.wrapping_add(0x9e3779b97f4a7c15));
         a.wrapping_mul(index as u64).wrapping_add(b) as usize % total_pixels
+    }
+
+    /// Corrected permutation over RGB carrier slots.
+    ///
+    /// Returns a true bijection over `[0, slot_count)` for any nonzero `slot_count`,
+    /// including non-power-of-two composite counts.
+    ///
+    /// Uses a bijective LCG over the next power-of-two modulus, with cycle-walking
+    /// to map outputs into `[0, slot_count)`. Expected ~2 iterations per lookup.
+    ///
+    /// The carrier domain is `width * height * 3` (one slot per RGB channel per pixel).
+    /// Alpha is never a carrier.
+    #[inline(always)]
+    fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> usize {
+        if slot_count <= 1 {
+            return index.min(slot_count);
+        }
+
+        let m = slot_count.next_power_of_two();
+
+        let a = splitmix64(seed).wrapping_mul(2) | 1;
+        let b = splitmix64(seed.wrapping_add(SPLITMIX64_SEED));
+
+        let mut x = (a.wrapping_mul(index as u64).wrapping_add(b)) % (m as u64);
+        while (x as usize) >= slot_count {
+            x = (a.wrapping_mul(x).wrapping_add(b)) % (m as u64);
+        }
+        x as usize
+    }
+
+    /// Map a carrier slot index to `(pixel_index, channel)` in an RGB image.
+    ///
+    /// `slot / 3` gives the pixel index (row-major), `slot % 3` gives the
+    /// channel (0=R, 1=G, 2=B). Alpha is never a carrier.
+    #[inline(always)]
+    fn carrier_v2_slot_to_pixel_channel(slot: usize, width: u32, height: u32) -> (usize, usize) {
+        let total_pixels = (width as usize).checked_mul(height as usize).unwrap_or(0);
+        let pixel_index = slot / 3;
+        let channel = slot % 3;
+        if pixel_index >= total_pixels {
+            return (0, 0);
+        }
+        (pixel_index, channel)
+    }
+
+    /// Total RGB carrier slots in an image (width * height * 3).
+    #[inline(always)]
+    fn lsb_available_slots(width: u32, height: u32) -> usize {
+        (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|p| p.checked_mul(3))
+            .unwrap_or(0)
+    }
+
+    /// Required capacity in RGB carrier slots for a payload of `payload_bits`
+    /// bits with the given redundancy level.
+    #[inline(always)]
+    fn lsb_required_capacity_v2(payload_bits: usize, redundancy: usize) -> usize {
+        payload_bits
+            .checked_mul(STEGO_SPREAD_FACTOR)
+            .and_then(|r| r.checked_mul(redundancy))
+            .unwrap_or(usize::MAX)
+    }
+
+    /// Required capacity in pixels for the legacy carrier scheme.
+    ///
+    /// Legacy capacity model: `pixels_needed = ceil(payload_bits / 3) * STEGO_SPREAD_FACTOR`.
+    /// The division by 3 accounts for R/G/B channels cycled per bit.
+    #[inline(always)]
+    fn lsb_required_pixels_legacy(payload_bits: usize) -> usize {
+        payload_bits.div_ceil(3) * STEGO_SPREAD_FACTOR
+    }
+
+    /// Capacity helper that returns `(required, available)` for the V2 carrier.
+    #[cfg(test)]
+    pub(crate) fn lsb_capacity_for_image(
+        width: u32,
+        height: u32,
+        payload_bits: usize,
+        redundancy: usize,
+    ) -> (usize, usize) {
+        (
+            Self::lsb_required_capacity_v2(payload_bits, redundancy),
+            Self::lsb_available_slots(width, height),
+        )
     }
 
     fn embed_lsb(
@@ -2719,7 +3031,7 @@ impl SteganographyProtector {
         let payload_bits = Self::bytes_to_bits(payload);
 
         let total_pixels = (width * height) as usize;
-        let total_pixels_needed = Self::lsb_pixels_needed_for_bits(payload_bits.len());
+        let total_pixels_needed = Self::lsb_required_pixels_legacy(payload_bits.len());
 
         if total_pixels_needed > total_pixels {
             return EmbedOutcome::SkippedCapacity {
@@ -2839,6 +3151,113 @@ impl SteganographyProtector {
                     1 => pixel[1] & 1,
                     _ => pixel[2] & 1,
                 };
+                ones += bit as u32;
+            }
+
+            bits.push(if ones > threshold { 1 } else { 0 });
+        }
+
+        Some(Self::bits_to_bytes(&bits))
+    }
+
+    /// Embed payload using the corrected V2 carrier scheme.
+    ///
+    /// The V2 scheme operates over `width * height * 3` RGB carrier slots.
+    /// Each payload bit is spread across `STEGO_SPREAD_FACTOR * redundancy`
+    /// distinct slots selected by a single true bijection permutation.
+    /// All replicas of the same bit use consecutive logical indices through
+    /// one permutation, guaranteeing no inter-replica collisions:
+    /// - Exact capacity model: `required = payload_bits * STEGO_SPREAD_FACTOR * redundancy`
+    /// - No slot collisions within one embedding
+    /// - True bijection for arbitrary (including non-power-of-two) slot counts
+    fn embed_lsb_v2(
+        &self,
+        img: &RgbaImage,
+        payload: &[u8],
+        seed: u64,
+        redundancy: usize,
+    ) -> crate::types::EmbedOutcome<RgbaImage> {
+        use crate::types::EmbedOutcome;
+
+        let (width, height) = img.dimensions();
+        let mut output = img.clone();
+
+        let payload_bits = Self::bytes_to_bits(payload);
+        let bit_len = payload_bits.len();
+
+        let available = Self::lsb_available_slots(width, height);
+        let required = Self::lsb_required_capacity_v2(bit_len, redundancy);
+
+        if required > available {
+            return EmbedOutcome::SkippedCapacity {
+                output,
+                payload_bytes: payload.len(),
+                required_capacity: required,
+                available_capacity: available,
+                path: crate::types::EmbedPath::Lsb,
+            };
+        }
+
+        let replicas_per_bit = STEGO_SPREAD_FACTOR * redundancy;
+        for (i, &bit) in payload_bits.iter().enumerate() {
+            for s in 0..replicas_per_bit {
+                let logical = i * replicas_per_bit + s;
+                let slot = Self::stego_permutation_v2(logical, available, seed);
+                let (pixel_index, slot_channel) =
+                    Self::carrier_v2_slot_to_pixel_channel(slot, width, height);
+                let x = pixel_index as u32 % width;
+                let y = pixel_index as u32 / width;
+
+                Self::embed_bit_in_pixel(&mut output, x, y, slot_channel, bit);
+            }
+        }
+
+        EmbedOutcome::Embedded {
+            output,
+            payload_bytes: payload.len(),
+            required_capacity: required,
+            available_capacity: available,
+            path: crate::types::EmbedPath::Lsb,
+        }
+    }
+
+    /// Extract payload using the corrected V2 carrier scheme.
+    ///
+    /// Mirrors [`embed_lsb_v2`] — uses the same permutation, slot mapping,
+    /// and majority-vote logic over `width * height * 3` RGB carrier slots.
+    /// Each bit reads `STEGO_SPREAD_FACTOR * redundancy` slots via majority vote.
+    fn extract_lsb_v2(
+        &self,
+        img: &RgbaImage,
+        expected_bits: usize,
+        seed: u64,
+        base_slot: usize,
+        redundancy: usize,
+    ) -> Option<Vec<u8>> {
+        let (width, height) = img.dimensions();
+        let available = Self::lsb_available_slots(width, height);
+        let replicas_per_bit = STEGO_SPREAD_FACTOR * redundancy;
+
+        if (base_slot + expected_bits * replicas_per_bit) > available {
+            return None;
+        }
+
+        let mut bits = Vec::with_capacity(expected_bits);
+        let threshold = (replicas_per_bit / 2) as u32;
+
+        for i in 0..expected_bits {
+            let mut ones = 0u32;
+
+            for s in 0..replicas_per_bit {
+                let logical = base_slot + i * replicas_per_bit + s;
+                let slot = Self::stego_permutation_v2(logical, available, seed);
+                let (pixel_index, slot_channel) =
+                    Self::carrier_v2_slot_to_pixel_channel(slot, width, height);
+                let x = pixel_index as u32 % width;
+                let y = pixel_index as u32 / width;
+                let pixel = img.get_pixel(x, y);
+
+                let bit = pixel[slot_channel] & 1;
                 ones += bit as u32;
             }
 
@@ -3150,20 +3569,210 @@ impl SteganographyProtector {
         }
     }
 
-    /// Extract a payload from a possibly-cropped image by trying each
-    /// candidate tile origin and plausible grid coordinate.
+    /// Extract payload from a sub-image trying V2 then legacy scheme.
     ///
-    /// The extractor doesn't know the original image dimensions, so it
-    /// assumes the tile grid in the cropped image is aligned to multiples of
-    /// `tile_size` from some unknown origin. For each candidate origin
-    /// `(x0, y0)` in the cropped image, it tries every plausible tile-grid
-    /// coordinate that could map onto that origin in the original image:
-    /// `(tile_x, tile_y) ∈ {0..max_grid}²` where the residual of the
-    /// candidate offset relative to the tile boundary must match.
-    ///
-    /// Returns the first valid (CRC/HMAC-verified) payload, or `None` if
-    /// every candidate fails. The `max_origins` argument bounds the number
-    /// of origins tried to keep extraction time predictable.
+    /// Used by tiled extraction where each tile is an independent sub-image.
+    /// Tries V2 (corrected carrier) first, then falls back to legacy.
+    fn extract_from_sub_image(
+        &self,
+        sub: &RgbaImage,
+        _expected_bits: usize,
+        seed: u64,
+        mac_key: &[u8],
+    ) -> Option<Vec<u8>> {
+        let prefix_bits = 6 * 8;
+
+        if let Some(prefix) = self.extract_lsb_v2(sub, prefix_bits, seed, 0, 1) {
+            if let Some(result) =
+                self.probe_payload_from_prefix_v2(sub, &prefix, prefix_bits, seed, mac_key)
+            {
+                return Some(result);
+            }
+        }
+
+        if let Some(prefix) = self.extract_lsb(sub, prefix_bits, seed) {
+            if let Some(result) =
+                self.probe_payload_from_prefix_legacy(sub, &prefix, prefix_bits, seed, mac_key)
+            {
+                return Some(result);
+            }
+        }
+
+        None
+    }
+
+    fn probe_payload_from_prefix_v2(
+        &self,
+        img: &RgbaImage,
+        prefix: &[u8],
+        prefix_bits: usize,
+        seed: u64,
+        mac_key: &[u8],
+    ) -> Option<Vec<u8>> {
+        match Self::classify_v3_prefix(prefix, Some(&self.limits)) {
+            V3PrefixResult::Detected {
+                header_length,
+                total_length,
+            } => {
+                let header_bits = header_length * 8;
+                let header_bytes = if header_bits <= prefix_bits {
+                    prefix[..header_length].to_vec()
+                } else {
+                    self.extract_lsb_v2(img, header_bits, seed, 0, 1)?
+                };
+                if Self::validate_v3_header(&header_bytes, Some(&self.limits)).is_err() {
+                    return None;
+                }
+                let total_bits = total_length * 8;
+                let full = if total_bits <= prefix_bits {
+                    prefix[..total_length].to_vec()
+                } else {
+                    self.extract_lsb_v2(img, total_bits, seed, 0, 1)?
+                };
+                if Self::verify_payload_integrity(&full, mac_key) {
+                    return Some(Self::truncate_to_actual_payload(&full));
+                }
+            }
+            V3PrefixResult::NotV3 => {
+                for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                    let payload = if ecc_bits <= prefix_bits {
+                        prefix.to_vec()
+                    } else {
+                        match self.extract_lsb_v2(img, ecc_bits, seed, 0, 1) {
+                            Some(p) => p,
+                            None => continue,
+                        }
+                    };
+                    if Self::try_ecc_decode(&payload).is_some() {
+                        return Some(payload);
+                    }
+                }
+            }
+            V3PrefixResult::Malformed(_)
+            | V3PrefixResult::UnsupportedVersion(_)
+            | V3PrefixResult::ResourceLimitExceeded => {}
+        }
+        None
+    }
+
+    fn probe_payload_from_prefix_legacy(
+        &self,
+        img: &RgbaImage,
+        prefix: &[u8],
+        prefix_bits: usize,
+        seed: u64,
+        mac_key: &[u8],
+    ) -> Option<Vec<u8>> {
+        match Self::classify_v3_prefix(prefix, Some(&self.limits)) {
+            V3PrefixResult::Detected {
+                header_length,
+                total_length,
+            } => {
+                let header_bits = header_length * 8;
+                let header_bytes = if header_bits <= prefix_bits {
+                    prefix[..header_length].to_vec()
+                } else {
+                    self.extract_lsb(img, header_bits, seed)?
+                };
+                if Self::validate_v3_header(&header_bytes, Some(&self.limits)).is_err() {
+                    return None;
+                }
+                let total_bits = total_length * 8;
+                let full = if total_bits <= prefix_bits {
+                    prefix[..total_length].to_vec()
+                } else {
+                    self.extract_lsb(img, total_bits, seed)?
+                };
+                if Self::verify_payload_integrity(&full, mac_key) {
+                    return Some(Self::truncate_to_actual_payload(&full));
+                }
+            }
+            V3PrefixResult::NotV3 => {
+                for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                    let payload = if ecc_bits <= prefix_bits {
+                        prefix.to_vec()
+                    } else {
+                        match self.extract_lsb(img, ecc_bits, seed) {
+                            Some(p) => p,
+                            None => continue,
+                        }
+                    };
+                    if Self::try_ecc_decode(&payload).is_some() {
+                        return Some(payload);
+                    }
+                }
+            }
+            V3PrefixResult::Malformed(_)
+            | V3PrefixResult::UnsupportedVersion(_)
+            | V3PrefixResult::ResourceLimitExceeded => {}
+        }
+        None
+    }
+
+    /// Verification-path variant of probe_payload_from_prefix that returns a tri-state.
+    fn verify_probe_payload_from_prefix(
+        &self,
+        img: &RgbaImage,
+        prefix: &[u8],
+        prefix_bits: usize,
+        seed: u64,
+        mac_key: &[u8],
+    ) -> CandidateOutcome {
+        match Self::classify_v3_prefix(prefix, Some(&self.limits)) {
+            V3PrefixResult::Detected {
+                header_length,
+                total_length,
+            } => {
+                let header_bits = header_length * 8;
+                let header_bytes = if header_bits <= prefix_bits {
+                    prefix[..header_length].to_vec()
+                } else if let Some(h) = self.extract_lsb_v2(img, header_bits, seed, 0, 1) {
+                    h
+                } else {
+                    return CandidateOutcome::NotFound;
+                };
+                if Self::validate_v3_header(&header_bytes, Some(&self.limits)).is_err() {
+                    return CandidateOutcome::NotFound;
+                }
+                let total_bits = total_length * 8;
+                let full = if total_bits <= prefix_bits {
+                    prefix[..total_length].to_vec()
+                } else if let Some(f) = self.extract_lsb_v2(img, total_bits, seed, 0, 1) {
+                    f
+                } else {
+                    return CandidateOutcome::NotFound;
+                };
+                if Self::verify_payload_integrity(&full, mac_key) {
+                    return CandidateOutcome::Valid(Self::truncate_to_actual_payload(&full));
+                }
+                Self::classify_auth_failure(&full, mac_key)
+            }
+            V3PrefixResult::NotV3 => {
+                for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                    let payload = if ecc_bits <= prefix_bits {
+                        prefix.to_vec()
+                    } else if let Some(p) = self.extract_lsb_v2(img, ecc_bits, seed, 0, 1) {
+                        p
+                    } else {
+                        continue;
+                    };
+                    if Self::try_ecc_decode(&payload).is_some() {
+                        return CandidateOutcome::Valid(payload);
+                    }
+                    if Self::verify_payload_integrity(&payload, mac_key) {
+                        return CandidateOutcome::Valid(Self::truncate_to_actual_payload(&payload));
+                    }
+                    return Self::classify_auth_failure(&payload, mac_key);
+                }
+                CandidateOutcome::NotFound
+            }
+            V3PrefixResult::Malformed(_) => CandidateOutcome::MalformedV3,
+            V3PrefixResult::UnsupportedVersion(v) => CandidateOutcome::UnsupportedVersion(v),
+            V3PrefixResult::ResourceLimitExceeded => CandidateOutcome::MalformedV3,
+        }
+    }
+
+    /// Extract payload from tiled candidates, trying V2 then legacy per tile.
     fn extract_lsb_tiled_candidates(
         &self,
         img: &RgbaImage,
@@ -3214,68 +3823,17 @@ impl SteganographyProtector {
                     }
                     let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
 
-                    // Three-stage v3 extraction: prefix → header → payload.
                     for pass in 0..5 {
                         let offset_seed =
                             local_seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
-                        let prefix_bits = V3_PREFIX_BYTES * 8;
-                        if let Some(prefix_bytes) = self.extract_lsb(&sub, prefix_bits, offset_seed)
-                        {
-                            match Self::classify_v3_prefix(&prefix_bytes, Some(&self.limits)) {
-                                V3PrefixResult::Detected {
-                                    header_length,
-                                    total_length,
-                                } => {
-                                    let header_bits = header_length * 8;
-                                    let header_bytes = if header_bits <= prefix_bits {
-                                        prefix_bytes[..header_length].to_vec()
-                                    } else if let Some(h) =
-                                        self.extract_lsb(&sub, header_bits, offset_seed)
-                                    {
-                                        h
-                                    } else {
-                                        continue;
-                                    };
-                                    if Self::validate_v3_header(&header_bytes, Some(&self.limits))
-                                        .is_err()
-                                    {
-                                        continue;
-                                    }
-                                    let total_bits = total_length * 8;
-                                    let full = if total_bits <= prefix_bits {
-                                        prefix_bytes[..total_length].to_vec()
-                                    } else if let Some(f) =
-                                        self.extract_lsb(&sub, total_bits, offset_seed)
-                                    {
-                                        f
-                                    } else {
-                                        continue;
-                                    };
-                                    if Self::verify_payload_integrity(&full, mac_key) {
-                                        return Some(Self::truncate_to_actual_payload(&full));
-                                    }
-                                }
-                                V3PrefixResult::Malformed(_)
-                                | V3PrefixResult::UnsupportedVersion(_)
-                                | V3PrefixResult::ResourceLimitExceeded => {
-                                    return None;
-                                }
-                                V3PrefixResult::NotV3 => {
-                                    for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                                        let payload = if ecc_bits <= prefix_bits {
-                                            prefix_bytes.clone()
-                                        } else {
-                                            match self.extract_lsb(&sub, ecc_bits, offset_seed) {
-                                                Some(p) => p,
-                                                None => continue,
-                                            }
-                                        };
-                                        if Self::try_ecc_decode(&payload).is_some() {
-                                            return Some(payload);
-                                        }
-                                    }
-                                }
-                            }
+
+                        if let Some(payload) = self.extract_from_sub_image(
+                            &sub,
+                            V3_PREFIX_BYTES * 8,
+                            offset_seed,
+                            mac_key,
+                        ) {
+                            return Some(payload);
                         }
                     }
                 }
@@ -3336,21 +3894,51 @@ impl SteganographyProtector {
                     }
                     let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
 
-                    // Three-stage v3 extraction: prefix → header → payload.
                     for pass in 0..5 {
                         let offset_seed =
                             local_seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
                         let prefix_bits = V3_PREFIX_BYTES * 8;
-                        if let Some(prefix_bytes) = self.extract_lsb(&sub, prefix_bits, offset_seed)
+
+                        if let Some(prefix) =
+                            self.extract_lsb_v2(&sub, prefix_bits, offset_seed, 0, 1)
                         {
-                            match Self::classify_v3_prefix(&prefix_bytes, Some(&self.limits)) {
+                            let outcome = self.verify_probe_payload_from_prefix(
+                                &sub,
+                                &prefix,
+                                prefix_bits,
+                                offset_seed,
+                                mac_key,
+                            );
+                            match &outcome {
+                                CandidateOutcome::Valid(_) => return outcome,
+                                CandidateOutcome::Invalid(_)
+                                | CandidateOutcome::AuthenticationKeyMissing(_)
+                                | CandidateOutcome::AuthenticationFailed(_) => {
+                                    if last_outcome.is_none() {
+                                        last_outcome = Some(outcome);
+                                    }
+                                }
+                                CandidateOutcome::MalformedV3 if last_outcome.is_none() => {
+                                    last_outcome = Some(outcome);
+                                }
+                                CandidateOutcome::UnsupportedVersion(_)
+                                    if last_outcome.is_none() =>
+                                {
+                                    last_outcome = Some(outcome);
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        if let Some(prefix) = self.extract_lsb(&sub, prefix_bits, offset_seed) {
+                            match Self::classify_v3_prefix(&prefix, Some(&self.limits)) {
                                 V3PrefixResult::Detected {
                                     header_length,
                                     total_length,
                                 } => {
                                     let header_bits = header_length * 8;
                                     let header_bytes = if header_bits <= prefix_bits {
-                                        prefix_bytes[..header_length].to_vec()
+                                        prefix[..header_length].to_vec()
                                     } else if let Some(h) =
                                         self.extract_lsb(&sub, header_bits, offset_seed)
                                     {
@@ -3365,7 +3953,7 @@ impl SteganographyProtector {
                                     }
                                     let total_bits = total_length * 8;
                                     let full = if total_bits <= prefix_bits {
-                                        prefix_bytes[..total_length].to_vec()
+                                        prefix[..total_length].to_vec()
                                     } else if let Some(f) =
                                         self.extract_lsb(&sub, total_bits, offset_seed)
                                     {
@@ -3402,7 +3990,7 @@ impl SteganographyProtector {
                                 V3PrefixResult::NotV3 => {
                                     for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
                                         let payload = if ecc_bits <= prefix_bits {
-                                            prefix_bytes.clone()
+                                            prefix.clone()
                                         } else {
                                             match self.extract_lsb(&sub, ecc_bits, offset_seed) {
                                                 Some(p) => p,
@@ -3633,7 +4221,7 @@ impl SteganographyProtector {
                 let outcome = if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
                     self.embed_lsb_tiled(&rgba, &payload, ctx.seed(), tile_size)
                 } else {
-                    self.embed_lsb(&rgba, &payload, ctx.seed(), redundancy)
+                    self.embed_lsb_v2(&rgba, &payload, ctx.seed(), redundancy)
                 };
                 let (mut result, summary) = outcome.into_parts();
                 Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
@@ -3654,7 +4242,7 @@ impl SteganographyProtector {
                 let outcome = if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
                     self.embed_lsb_tiled(&rgba, &payload, ctx.seed(), tile_size)
                 } else {
-                    self.embed_lsb(&rgba, &payload, ctx.seed(), redundancy)
+                    self.embed_lsb_v2(&rgba, &payload, ctx.seed(), redundancy)
                 };
                 let (mut result, summary) = outcome.into_parts();
                 Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
@@ -5286,5 +5874,343 @@ mod tests {
             !channels.rights_metadata,
             "rights_metadata should be false when level is Disabled"
         );
+    }
+
+    // ── V2 carrier scheme tests ────────────────────────────────────────
+
+    #[test]
+    fn carrier_v2_permutation_is_bijective_power_of_two() {
+        let slot_count = 1024usize;
+        let seed = 42u64;
+        let mut seen = vec![false; slot_count];
+        for i in 0..slot_count {
+            let pos = SteganographyProtector::stego_permutation_v2(i, slot_count, seed);
+            assert!(pos < slot_count, "out of range: {} >= {}", pos, slot_count);
+            assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
+            seen[pos] = true;
+        }
+    }
+
+    #[test]
+    fn carrier_v2_permutation_is_bijective_prime_slot_count() {
+        let slot_count = 997usize;
+        let seed = 42u64;
+        let mut seen = vec![false; slot_count];
+        for i in 0..slot_count {
+            let pos = SteganographyProtector::stego_permutation_v2(i, slot_count, seed);
+            assert!(pos < slot_count, "out of range: {} >= {}", pos, slot_count);
+            assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
+            seen[pos] = true;
+        }
+    }
+
+    #[test]
+    fn carrier_v2_permutation_is_bijective_composite_non_power_of_two() {
+        let slot_count = 1000usize;
+        let seed = 42u64;
+        let mut seen = vec![false; slot_count];
+        for i in 0..slot_count {
+            let pos = SteganographyProtector::stego_permutation_v2(i, slot_count, seed);
+            assert!(pos < slot_count, "out of range: {} >= {}", pos, slot_count);
+            assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
+            seen[pos] = true;
+        }
+    }
+
+    #[test]
+    fn carrier_v2_permutation_is_bijective_odd_image_dimensions() {
+        let width = 7u32;
+        let height = 13u32;
+        let slot_count = (width * height * 3) as usize;
+        let seed = 42u64;
+        let mut seen = vec![false; slot_count];
+        for i in 0..slot_count {
+            let pos = SteganographyProtector::stego_permutation_v2(i, slot_count, seed);
+            assert!(pos < slot_count, "out of range: {} >= {}", pos, slot_count);
+            assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
+            seen[pos] = true;
+        }
+    }
+
+    #[test]
+    fn carrier_v2_permutation_different_seed_changes_order() {
+        let slot_count = 1024usize;
+        let a = SteganographyProtector::stego_permutation_v2(0, slot_count, 42);
+        let b = SteganographyProtector::stego_permutation_v2(0, slot_count, 99);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn carrier_v2_permutation_same_seed_is_deterministic() {
+        let slot_count = 1024usize;
+        let a = SteganographyProtector::stego_permutation_v2(0, slot_count, 42);
+        let b = SteganographyProtector::stego_permutation_v2(0, slot_count, 42);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn carrier_v2_permutation_slot_count_zero() {
+        assert_eq!(SteganographyProtector::stego_permutation_v2(0, 0, 42), 0);
+    }
+
+    #[test]
+    fn carrier_v2_permutation_slot_count_one() {
+        assert_eq!(SteganographyProtector::stego_permutation_v2(0, 1, 42), 0);
+    }
+
+    #[test]
+    fn carrier_v2_required_capacity_matches_exact_slots_touched() {
+        let payload_bits = 288usize;
+        let redundancy = 3usize;
+        let required = SteganographyProtector::lsb_required_capacity_v2(payload_bits, redundancy);
+        assert_eq!(required, payload_bits * STEGO_SPREAD_FACTOR * redundancy);
+    }
+
+    #[test]
+    fn carrier_v2_one_slot_below_capacity_skips_without_modification() {
+        let protector = SteganographyProtector::new();
+        let img = make_test_image(4, 4);
+        let payload = vec![0xAA; 3];
+        let payload_bits = payload.len() * 8;
+        let available = SteganographyProtector::lsb_available_slots(4, 4);
+        let required = SteganographyProtector::lsb_required_capacity_v2(payload_bits, 1);
+        assert!(
+            required > available,
+            "setup: need more slots than available for this test"
+        );
+        let result = protector.embed_lsb_v2(&img, &payload, 42, 1);
+        assert!(result.is_skipped());
+        assert_eq!(*result.output(), img);
+    }
+
+    #[test]
+    fn carrier_v2_exact_capacity_embeds_and_extracts() {
+        let protector = SteganographyProtector::new();
+        let img = make_test_image(32, 32);
+        let payload = vec![0xAB, 0xCD, 0xEF, 0x12];
+
+        let result = protector.embed_lsb_v2(&img, &payload, 42, 1);
+        assert!(result.is_embedded());
+        let out_img = result.into_inner();
+
+        let payload_bits = payload.len() * 8;
+        let extracted = protector.extract_lsb_v2(&out_img, payload_bits, 42, 0, 1);
+        assert!(extracted.is_some(), "direct V2 extract must succeed");
+        assert_eq!(extracted.unwrap(), payload);
+    }
+
+    #[test]
+    fn carrier_v2_redundancy_increases_required_capacity() {
+        let payload_bits = 100usize;
+        let r1 = SteganographyProtector::lsb_required_capacity_v2(payload_bits, 1);
+        let r3 = SteganographyProtector::lsb_required_capacity_v2(payload_bits, 3);
+        assert_eq!(r3, r1 * 3);
+    }
+
+    #[test]
+    fn carrier_v2_redundancy_roundtrips() {
+        let protector = SteganographyProtector::new();
+        let img = make_high_entropy_test_image(64, 64);
+        let payload = vec![0x42; 20];
+        let redundancy = 3usize;
+        let result = protector.embed_lsb_v2(&img, &payload, 42, redundancy);
+        assert!(result.is_embedded());
+        let out_img = result.into_inner();
+
+        let payload_bits = payload.len() * 8;
+        let extracted = protector
+            .extract_lsb_v2(&out_img, payload_bits, 42, 0, redundancy)
+            .expect("V2 extraction with matching redundancy must succeed");
+        assert_eq!(extracted, payload);
+    }
+
+    #[test]
+    fn carrier_v2_no_duplicate_slot_within_embedding() {
+        let width = 16u32;
+        let height = 16u32;
+        let available = SteganographyProtector::lsb_available_slots(width, height);
+        let payload_bits = 8usize;
+        let mut all_slots = Vec::new();
+        let seed = 42u64;
+        for i in 0..payload_bits {
+            for s in 0..STEGO_SPREAD_FACTOR {
+                let logical = i * STEGO_SPREAD_FACTOR + s;
+                let slot = SteganographyProtector::stego_permutation_v2(logical, available, seed);
+                all_slots.push(slot);
+            }
+        }
+        let mut sorted = all_slots.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            all_slots.len(),
+            "duplicate slots within one embedding pass"
+        );
+    }
+
+    #[test]
+    fn carrier_v2_alpha_channel_unchanged() {
+        let protector = SteganographyProtector::new();
+        let img = make_test_image(32, 32);
+        let payload = vec![0x42; 10];
+        let result = protector.embed_lsb_v2(&img, &payload, 42, 1);
+        assert!(result.is_embedded());
+        let output = result.output();
+        for y in 0..img.height() {
+            for x in 0..img.width() {
+                assert_eq!(
+                    img.get_pixel(x, y)[3],
+                    output.get_pixel(x, y)[3],
+                    "alpha changed at ({}, {})",
+                    x,
+                    y
+                );
+            }
+        }
+    }
+
+    // ── Legacy compatibility tests ─────────────────────────────────────
+
+    #[test]
+    fn legacy_v1_fixture_extracts_after_v2_default() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let seed = 42u64;
+        let ctx = ctx_no_mac(seed);
+        let payload = protector.generate_payload_from_ctx(&ctx);
+
+        let legacy_result = protector.embed_lsb(&img, &payload, seed, 1);
+        assert!(legacy_result.is_embedded());
+        let legacy_img = legacy_result.into_inner();
+
+        let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1);
+        let extracted = protector.extract_lsb(&legacy_img, payload.len() * 8, offset_seed);
+        assert!(extracted.is_some(), "legacy extract_lsb must succeed");
+        assert_eq!(extracted.unwrap(), payload, "legacy roundtrip must match");
+    }
+
+    #[test]
+    fn legacy_v1_hmac_fixture_extracts_after_v2_default() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let seed = 42u64;
+        let key = b"test-mac-key";
+        let ctx = ctx_with_mac(seed, key);
+        let payload = protector.generate_payload_from_ctx(&ctx);
+
+        let legacy_result = protector.embed_lsb(&img, &payload, seed, 1);
+        assert!(legacy_result.is_embedded());
+        let legacy_img = legacy_result.into_inner();
+
+        let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1);
+        let prefix_bits = 6 * 8;
+        let prefix = protector.extract_lsb(&legacy_img, prefix_bits, offset_seed);
+        assert!(prefix.is_some(), "legacy prefix extraction must work");
+
+        let extracted = protector.extract_with_redundancy(&legacy_img, seed, key);
+        assert!(extracted.is_some(), "legacy HMAC extraction must work");
+        assert_eq!(extracted.unwrap(), payload);
+    }
+
+    #[test]
+    fn legacy_v1_wrong_key_still_fails() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let seed = 42u64;
+        let ctx = ctx_with_mac(seed, b"correct-key");
+        let payload = protector.generate_payload_from_ctx(&ctx);
+
+        let legacy_result = protector.embed_lsb(&img, &payload, seed, 1);
+        let legacy_img = legacy_result.into_inner();
+
+        let extracted = protector.extract_with_redundancy(&legacy_img, seed, b"wrong-key");
+        assert!(extracted.is_none(), "wrong key must fail");
+    }
+
+    #[test]
+    fn new_v2_payload_extracts_before_legacy_probe() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let seed = 42u64;
+        let ctx = ctx_no_mac(seed);
+        let payload = protector.generate_payload_from_ctx(&ctx);
+
+        let v2_result = protector.embed_lsb_v2(&img, &payload, seed, 1);
+        assert!(v2_result.is_embedded());
+        let v2_img = v2_result.into_inner();
+
+        let extracted = protector.extract_lsb_v2(&v2_img, payload.len() * 8, seed, 0, 1);
+        assert!(
+            extracted.is_some(),
+            "V2 extraction must find V2-embedded payload"
+        );
+        assert_eq!(extracted.unwrap(), payload);
+    }
+
+    #[test]
+    fn new_v2_wrong_seed_does_not_false_positive() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+        let payload = protector.generate_payload_from_ctx(&ctx);
+
+        let result = protector.embed_lsb_v2(&img, &payload, 42, 1);
+        let img = result.into_inner();
+
+        let extracted = protector.extract_with_redundancy(&img, 99, &[]);
+        assert!(
+            extracted.is_none(),
+            "wrong seed must not produce false positive"
+        );
+    }
+
+    #[test]
+    fn v2_embed_extract_full_roundtrip_via_public_api() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+
+        assert!(protector.verify_payload(&result));
+        let payload = protector.extract_payload(&result).unwrap();
+        assert_eq!(payload.seed(), 42);
+    }
+
+    #[test]
+    fn v2_embed_extract_mac_roundtrip() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let key = b"test-mac";
+        let ctx = ctx_with_mac(42, key);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+
+        let payload = protector.extract_payload_with_key(&result, key);
+        assert!(payload.is_some());
+        assert_eq!(payload.unwrap().seed(), 42);
+    }
+
+    #[test]
+    fn v2_capacity_helpers_consistent() {
+        let width = 100u32;
+        let height = 100u32;
+        let payload_bits = 288usize;
+        let redundancy = 3usize;
+
+        let (required, available) =
+            SteganographyProtector::lsb_capacity_for_image(width, height, payload_bits, redundancy);
+        assert_eq!(
+            required,
+            SteganographyProtector::lsb_required_capacity_v2(payload_bits, redundancy)
+        );
+        assert_eq!(
+            available,
+            SteganographyProtector::lsb_available_slots(width, height)
+        );
+        assert!(available >= required);
     }
 }
