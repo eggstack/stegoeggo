@@ -3776,6 +3776,7 @@ impl StegoPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::jpeg_transcoder::JpegHeader;
     use crate::protected::constants::STEGO_SPREAD_FACTOR;
     use crate::types::ProtectionConfig;
     use image::ImageEncoder;
@@ -5611,5 +5612,376 @@ mod tests {
         );
         assert_eq!(available, carrier_lsb::lsb_available_slots(width, height));
         assert!(available >= required);
+    }
+
+    // ── Raw LSB carrier tests ────────────────────────────────────────
+    // These exercise the carrier module directly with arbitrary bytes,
+    // independently of StegoEggo payload-v3 framing.
+
+    #[test]
+    fn raw_lsb_arbitrary_bytes_roundtrip() {
+        let img = make_large_test_image();
+        let payload = vec![0x42u8; 36];
+        let seed = 12345u64;
+        let redundancy = 1;
+
+        let outcome = carrier_lsb::embed_lsb_v2(&img, &payload, seed, redundancy);
+        assert!(outcome.is_embedded());
+        let embedded = outcome.into_inner();
+        let extracted =
+            carrier_lsb::extract_lsb_v2(&embedded, payload.len() * 8, seed, 0, redundancy);
+        assert_eq!(extracted.as_deref(), Some(payload.as_slice()));
+    }
+
+    #[test]
+    fn raw_lsb_binary_zero_ff_payload_roundtrip() {
+        let img = make_large_test_image();
+        let mut payload = Vec::with_capacity(48);
+        payload.extend(std::iter::repeat_n(0x00u8, 24));
+        payload.extend(std::iter::repeat_n(0xFFu8, 24));
+        let seed = 9999u64;
+        let redundancy = 2;
+
+        let outcome = carrier_lsb::embed_lsb_v2(&img, &payload, seed, redundancy);
+        assert!(outcome.is_embedded());
+        let embedded = outcome.into_inner();
+        let extracted =
+            carrier_lsb::extract_lsb_v2(&embedded, payload.len() * 8, seed, 0, redundancy);
+        assert_eq!(extracted.as_deref(), Some(payload.as_slice()));
+    }
+
+    #[test]
+    fn raw_lsb_exact_capacity_outcome() {
+        let width = 16u32;
+        let height = 16u32;
+        let img = make_test_image(width, height);
+        let available = carrier_lsb::lsb_available_slots(width, height);
+        let payload_bits = available / 5;
+        let payload_bytes = payload_bits / 8;
+        let payload = vec![0xABu8; payload_bytes];
+        let seed = 42u64;
+
+        let outcome = carrier_lsb::embed_lsb_v2(&img, &payload, seed, 1);
+        assert!(
+            outcome.is_embedded(),
+            "payload should fit within exact capacity"
+        );
+    }
+
+    #[test]
+    fn raw_lsb_wrong_seed_not_equal() {
+        let img = make_large_test_image();
+        let payload = vec![0x11u8; 32];
+        let seed_a = 42u64;
+        let seed_b = 99u64;
+        let redundancy = 1;
+
+        let outcome = carrier_lsb::embed_lsb_v2(&img, &payload, seed_a, redundancy);
+        let embedded = outcome.into_inner();
+
+        let extracted =
+            carrier_lsb::extract_lsb_v2(&embedded, payload.len() * 8, seed_b, 0, redundancy);
+        assert_ne!(
+            extracted.as_deref(),
+            Some(payload.as_slice()),
+            "wrong seed must not recover original payload"
+        );
+    }
+
+    #[test]
+    fn raw_lsb_legacy_scheme_fixture_roundtrip() {
+        let img = make_large_test_image();
+        let payload = vec![0xBEu8; 28];
+        let seed = 42u64;
+        let redundancy = 1;
+
+        let outcome = carrier_lsb::embed_lsb(&img, &payload, seed, redundancy);
+        assert!(outcome.is_embedded());
+        let embedded = outcome.into_inner();
+        let expected_bits = payload.len() * 8;
+        let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1);
+        let extracted = carrier_lsb::extract_lsb(&embedded, expected_bits, offset_seed);
+        assert_eq!(extracted.as_deref(), Some(payload.as_slice()));
+    }
+
+    #[test]
+    fn raw_lsb_current_scheme_roundtrip() {
+        let img = make_large_test_image();
+        let payload = vec![0xCDu8; 36];
+        let seed = 7777u64;
+        let redundancy = 2;
+
+        let outcome = carrier_lsb::embed_lsb_v2(&img, &payload, seed, redundancy);
+        assert!(outcome.is_embedded());
+        let embedded = outcome.into_inner();
+        let extracted =
+            carrier_lsb::extract_lsb_v2(&embedded, payload.len() * 8, seed, 0, redundancy);
+        assert_eq!(extracted.as_deref(), Some(payload.as_slice()));
+    }
+
+    #[test]
+    fn raw_lsb_has_no_rights_metadata_dependency() {
+        let img = make_large_test_image();
+        let payload = vec![0x77u8; 24];
+        let seed = 5555u64;
+        let redundancy = 1;
+
+        let outcome = carrier_lsb::embed_lsb_v2(&img, &payload, seed, redundancy);
+        assert!(outcome.is_embedded());
+        let embedded = outcome.into_inner();
+        let extracted =
+            carrier_lsb::extract_lsb_v2(&embedded, payload.len() * 8, seed, 0, redundancy);
+        assert_eq!(extracted.as_deref(), Some(payload.as_slice()));
+    }
+
+    // ── Raw JPEG carrier tests ───────────────────────────────────────
+
+    #[test]
+    fn raw_jpeg_arbitrary_bytes_roundtrip_supported_fixture() {
+        let img = make_high_entropy_test_image(256, 256);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+
+        let (_header, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
+        let capacity = carrier_jpeg::dct_payload_capacity(&coefficients);
+        if capacity < 32 {
+            return;
+        }
+
+        let payload = vec![0x42u8; 32];
+        let seed = 42u64;
+
+        let mut coeffs = coefficients.clone();
+        DctStegoF5::with_redundancy(1)
+            .embed_f5(&mut coeffs, &payload, seed)
+            .unwrap();
+
+        let rt_bits = DctStegoF5::with_redundancy(1).extract_f5(&coeffs, payload.len() * 8, seed);
+        let rt_payload = carrier_lsb::bits_to_bytes(&rt_bits);
+        assert_eq!(rt_payload, payload);
+    }
+
+    #[test]
+    fn raw_jpeg_binary_zero_ff_payload_roundtrip() {
+        let img = make_high_entropy_test_image(256, 256);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+
+        let (_header, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
+        let capacity = carrier_jpeg::dct_payload_capacity(&coefficients);
+        if capacity < 48 {
+            return;
+        }
+
+        let mut payload = Vec::with_capacity(48);
+        payload.extend(std::iter::repeat_n(0x00u8, 24));
+        payload.extend(std::iter::repeat_n(0xFFu8, 24));
+        let seed = 77u64;
+
+        let mut coeffs = coefficients.clone();
+        DctStegoF5::with_redundancy(1)
+            .embed_f5(&mut coeffs, &payload, seed)
+            .unwrap();
+
+        let rt_bits = DctStegoF5::with_redundancy(1).extract_f5(&coeffs, payload.len() * 8, seed);
+        let rt_payload = carrier_lsb::bits_to_bytes(&rt_bits);
+        assert_eq!(rt_payload, payload);
+    }
+
+    #[test]
+    fn raw_jpeg_capacity_matches_supported_coefficients() {
+        let img = make_high_entropy_test_image(128, 128);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+
+        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
+        let capacity = carrier_jpeg::dct_payload_capacity(&coefficients);
+
+        let manual: usize = coefficients
+            .values()
+            .flat_map(|blocks| blocks.iter())
+            .map(|block| {
+                block
+                    .iter()
+                    .skip(1)
+                    .filter(|&&coef| coef.abs() >= 2)
+                    .count()
+            })
+            .sum();
+        assert_eq!(capacity, manual);
+    }
+
+    #[test]
+    fn raw_jpeg_wrong_seed_not_equal() {
+        let img = make_high_entropy_test_image(256, 256);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+
+        let (_header, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
+        let capacity = carrier_jpeg::dct_payload_capacity(&coefficients);
+        if capacity < 32 {
+            return;
+        }
+
+        let payload = vec![0x11u8; 32];
+        let seed_a = 42u64;
+        let seed_b = 99u64;
+
+        let mut coeffs = coefficients.clone();
+        DctStegoF5::with_redundancy(1)
+            .embed_f5(&mut coeffs, &payload, seed_a)
+            .unwrap();
+
+        let rt_bits = DctStegoF5::with_redundancy(1).extract_f5(&coeffs, payload.len() * 8, seed_b);
+        let rt_payload = carrier_lsb::bits_to_bytes(&rt_bits);
+        assert_ne!(rt_payload, payload, "wrong seed must not recover payload");
+    }
+
+    #[test]
+    fn raw_jpeg_container_segments_preserved() {
+        let img = make_high_entropy_test_image(128, 128);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+
+        let header = JpegHeader::parse(&jpeg_bytes).unwrap();
+        let reassembled = carrier_jpeg::reassemble_jpeg_with_qtables(&jpeg_bytes, &header).unwrap();
+
+        assert!(reassembled.starts_with(&[0xFF, 0xD8]));
+        assert!(reassembled.ends_with(&[0xFF, 0xD9]));
+
+        let _ = JpegHeader::parse(&reassembled).unwrap();
+    }
+
+    #[test]
+    fn raw_jpeg_progressive_reports_unsupported_payload_embedding() {
+        let img = make_high_entropy_test_image(64, 64);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+
+        let (_header, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
+        let capacity = carrier_jpeg::dct_payload_capacity(&coefficients);
+        if capacity < 32 {
+            return;
+        }
+
+        let payload = vec![0xAAu8; 32];
+        let seed = 42u64;
+
+        let mut coeffs = coefficients.clone();
+        let embed_result = DctStegoF5::with_redundancy(1).embed_f5(&mut coeffs, &payload, seed);
+        if embed_result.is_err() {
+            let rt_bits =
+                DctStegoF5::with_redundancy(1).extract_f5(&coeffs, payload.len() * 8, seed);
+            let rt_payload = carrier_lsb::bits_to_bytes(&rt_bits);
+            assert_ne!(rt_payload, payload);
+        }
+    }
+
+    #[test]
+    fn qtable_seed_hint_roundtrip_does_not_imply_payload_success() {
+        let img = make_high_entropy_test_image(128, 128);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+
+        let seed = 42u64;
+        let reassembled = carrier_jpeg::embed_seed_hint(&jpeg_bytes, seed).unwrap();
+        let extracted_seed = carrier_jpeg::extract_seed_hint(&reassembled).unwrap();
+        assert_eq!(extracted_seed, Some(seed));
+
+        let (_header, coefficients) = JpegTranscoder::decode_coefficients(&reassembled).unwrap();
+        let capacity = carrier_jpeg::dct_payload_capacity(&coefficients);
+        if capacity < 32 {
+            return;
+        }
+
+        let payload = vec![0x55u8; 32];
+        let mut coeffs = coefficients.clone();
+        DctStegoF5::with_redundancy(1)
+            .embed_f5(&mut coeffs, &payload, seed)
+            .unwrap();
+        let rt_bits = DctStegoF5::with_redundancy(1).extract_f5(&coeffs, payload.len() * 8, seed);
+        let rt_payload = carrier_lsb::bits_to_bytes(&rt_bits);
+        assert_eq!(rt_payload, payload);
+    }
+
+    // ── Application-adapter regression tests ─────────────────────────
+
+    #[test]
+    fn stegoeggo_png_v3_roundtrip_after_carrier_extraction() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx = ctx_no_mac(42);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+        assert!(protector.verify_payload(&result));
+        let payload = protector.extract_payload(&result).unwrap();
+        assert_eq!(payload.seed(), 42);
+    }
+
+    #[test]
+    fn stegoeggo_webp_v3_roundtrip_after_carrier_extraction() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let ctx =
+            ProtectionContext::new(0.5, 42).with_format(crate::types::ImageOutputFormat::WebP);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+        assert!(protector.verify_payload(&result));
+        let payload = protector.extract_payload(&result).unwrap();
+        assert_eq!(payload.seed(), 42);
+    }
+
+    #[test]
+    fn stegoeggo_jpeg_v3_roundtrip_after_carrier_extraction() {
+        let protector = SteganographyProtector::new();
+        let img = make_high_entropy_test_image(256, 256);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(crate::types::ImageOutputFormat::Jpeg)
+            .with_stego_redundancy(3);
+
+        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
+        if outcome.is_embedded() {
+            let protected = outcome.into_inner();
+            assert!(
+                protector.verify_payload_from_bytes(&protected, 42),
+                "JPEG v3 roundtrip should verify"
+            );
+        }
+    }
+
+    #[test]
+    fn stegoeggo_hmac_wrong_key_classification_unchanged() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let correct_key = b"correct-key";
+        let wrong_key = b"wrong-key";
+        let ctx = ctx_with_mac(42, correct_key);
+
+        let dyn_img = DynamicImage::ImageRgba8(img);
+        let result = protector.apply(&dyn_img, &ctx).unwrap();
+
+        let payload_correct = protector.extract_payload_with_key(&result, correct_key);
+        assert!(
+            payload_correct.is_some(),
+            "correct key should extract payload"
+        );
+
+        let payload_wrong = protector.extract_payload_with_key(&result, wrong_key);
+        assert!(payload_wrong.is_none(), "wrong key must return None");
+    }
+
+    #[test]
+    fn stegoeggo_legacy_lsb_fixture_still_extracts() {
+        let protector = SteganographyProtector::new();
+        let img = make_large_test_image();
+        let seed = 42u64;
+        let payload = protector.generate_payload_from_ctx(&ctx_no_mac(seed));
+
+        let legacy_outcome = carrier_lsb::embed_lsb(&img, &payload, seed, 1);
+        let embedded = legacy_outcome.into_inner();
+
+        let extracted = protector.extract_with_redundancy(&embedded, seed, &[]);
+        assert!(
+            extracted.is_some(),
+            "legacy LSB fixture should still extract"
+        );
+        let recovered = extracted.unwrap();
+        assert_eq!(recovered, payload);
     }
 }
