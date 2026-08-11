@@ -86,7 +86,8 @@ fn extract_lsb_v2(img: &RgbaImage, seed: u64, redundancy: usize) -> Vec<u8>
 - Each payload bit occupies `STEGO_SPREAD_FACTOR * redundancy` consecutive logical
   indices through one permutation — no inter-replica collisions
 - Capacity formula: `payload_bits * STEGO_SPREAD_FACTOR * redundancy` slots exact
-- Embed uses raw seed directly (no `STEGO_OFFSET_SEED_1` offset)
+- Embed uses raw seed directly (no `STEGO_OFFSET_SEED_1` offset) for non-tiled V2.
+  Tiled V2 embed uses `local_seed * STEGO_OFFSET_SEED_1` to match extraction probing.
 
 **Legacy carrier (backward-compatible extraction only):**
 
@@ -119,6 +120,7 @@ pub fn apply_dct_stego_bytes(jpeg_bytes: &[u8], ctx: &ProtectionContext) -> Resu
 - Uses `JpegTranscoder` to decode/encode DCT coefficients
 - Uses `DctStegoF5` for coefficient manipulation
 - `probe_dct_support()` gates DCT entry: rejects progressive, restart-bearing, non-8-bit, multi-scan, and sampling >4 inputs; unsupported inputs fall back to metadata-only processing
+- **One-pass embed**: Computes `max_feasible_redundancy = available / payload_bits`, selects `min(requested, max_feasible)`, embeds+encodes once. No retry loop, no roundtrip decode/extract self-test.
 
 ## Extraction & Verification
 
@@ -147,7 +149,8 @@ Extraction always runs 5 passes. Each pass uses different seed derivation. Resul
 ## Redundancy
 
 - Configurable 1–10 via `ProtectionContext::stego_redundancy` (clamped via `.with_stego_redundancy(n)`)
-- Embedding loops with `break` to exit inner loops after each pass
+- Non-tiled DCT: capacity-selected redundancy = `min(requested, available / payload_bits)`, single embed+encode
+- Tiled LSB: redundancy=1 per tile (tile grid provides the redundancy)
 - Extraction always runs 5 passes regardless of redundancy setting
 
 ## Fallback Seeds
@@ -190,11 +193,13 @@ in any cropped image produces the same seed, so extraction is self-coordinating.
 
 ### LSB Tiled Path
 
-- `embed_lsb_tiled`: clones the image, iterates tiles, embeds payload in each
-  tile's pixel sub-region using `embed_lsb` with per-tile seed and redundancy 1.
+- `embed_lsb_tiled`: embeds payload directly into image regions using V2 carrier
+  with sub-image slot coordinates, avoiding per-tile RgbaImage allocations. Each
+  tile computes carrier slots using the tile's dimensions and maps them to full-image
+  coordinates via `(x0 + lx, y0 + ly)`.
 - `extract_lsb_tiled_candidates`: scans candidate tile origins in the cropped
-  image (stride = `tile_size / 2`, up to `max_origins`), tries grid coordinates
-  around each origin, extracts and verifies integrity.
+  image (stride = `tile_size / 2`, up to `max_origins`), crops sub-images, tries
+  grid coordinates around each origin, extracts and verifies integrity.
 
 ### F5 Tiled Path
 

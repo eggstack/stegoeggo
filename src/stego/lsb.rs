@@ -145,6 +145,7 @@ pub(crate) fn embed_bit_in_pixel(output: &mut RgbaImage, x: u32, y: u32, channel
     output.put_pixel(x, y, new_pixel);
 }
 
+#[allow(dead_code)]
 pub(crate) fn embed_lsb(
     img: &RgbaImage,
     payload: &[u8],
@@ -389,27 +390,49 @@ pub(crate) fn embed_lsb_tiled(
     let mut total_required = 0usize;
     let mut total_available = 0usize;
 
+    let payload_bits = bytes_to_bits(payload);
+    let bit_len = payload_bits.len();
+
     let mut tile_y: u32 = 0;
     while tile_y * tile_size < height {
         let y0 = tile_y * tile_size;
-        let y1 = (y0 + tile_size).min(height);
 
         let mut tile_x: u32 = 0;
         while tile_x * tile_size < width {
             let x0 = tile_x * tile_size;
             let x1 = (x0 + tile_size).min(width);
+            let y1 = (y0 + tile_size).min(height);
+            let sub_w = x1 - x0;
+            let sub_h = y1 - y0;
 
             let local_seed = tile_seed(master_seed, tile_x, tile_y);
+            let tile_available = lsb_available_slots(sub_w, sub_h);
+            let tile_required = lsb_required_capacity_v2(bit_len, 1);
 
-            let sub = crop_rgba(&output, x0, y0, x1 - x0, y1 - y0);
-            let tile_outcome = embed_lsb(&sub, payload, local_seed, 1);
-            if tile_outcome.is_embedded() {
+            if tile_available >= tile_required && bit_len > 0 {
                 any_embedded = true;
+                let seed_for_embed =
+                    local_seed.wrapping_mul(crate::protected::constants::STEGO_OFFSET_SEED_1);
+                let replicas_per_bit = STEGO_SPREAD_FACTOR;
+                for (i, &bit) in payload_bits.iter().enumerate() {
+                    for s in 0..replicas_per_bit {
+                        let logical = i * replicas_per_bit + s;
+                        let slot = stego_permutation_v2(logical, tile_available, seed_for_embed);
+                        let (pixel_index, slot_channel) =
+                            carrier_v2_slot_to_pixel_channel(slot, sub_w, sub_h);
+                        let lx = pixel_index as u32 % sub_w;
+                        let ly = pixel_index as u32 / sub_w;
+                        let fx = x0 + lx;
+                        let fy = y0 + ly;
+                        if fx < width && fy < height {
+                            embed_bit_in_pixel(&mut output, fx, fy, slot_channel, bit);
+                        }
+                    }
+                }
             }
-            total_required += tile_outcome.required_capacity();
-            total_available += tile_outcome.available_capacity();
-            blit_rgba(&mut output, x0, y0, tile_outcome.output());
 
+            total_required += tile_required;
+            total_available += tile_available;
             tile_x += 1;
         }
         tile_y += 1;
@@ -445,6 +468,7 @@ pub(crate) fn crop_rgba(src: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> Rgba
     out
 }
 
+#[allow(dead_code)]
 pub(crate) fn blit_rgba(dst: &mut RgbaImage, x: u32, y: u32, src: &RgbaImage) {
     let (w, h) = src.dimensions();
     for dy in 0..h {

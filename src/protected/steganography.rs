@@ -260,7 +260,7 @@ impl SteganographyProtector {
                     ),
                     ctx,
                 );
-                let redundancy = ctx.effective_redundancy();
+                let requested_redundancy = ctx.effective_redundancy();
                 let payload_bits = payload.len().saturating_mul(8);
 
                 let available_coeffs = Self::dct_payload_capacity(&coefficients);
@@ -268,49 +268,27 @@ impl SteganographyProtector {
                 let mut header = header;
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
 
-                if available_coeffs >= payload_bits {
-                    for r in (1..=redundancy).rev() {
-                        if payload_bits.saturating_mul(r) > available_coeffs {
-                            continue;
-                        }
+                let max_feasible = available_coeffs.checked_div(payload_bits).unwrap_or(0);
+                let selected_redundancy = requested_redundancy.min(max_feasible).max(1);
 
-                        let mut working_coefficients = coefficients.clone();
-                        for _ in 0..4 {
-                            let mut attempt_coefficients = working_coefficients.clone();
-                            if DctStegoF5::with_redundancy(r)
-                                .embed_f5(&mut attempt_coefficients, &payload, seed)
-                                .is_err()
-                            {
-                                break;
-                            }
-
-                            let attempt_bytes = JpegTranscoder::encode_coefficients(
-                                &header,
-                                &attempt_coefficients,
-                                Some(jpeg_bytes),
-                            )?;
-                            if let Ok((_, roundtrip_coefficients)) =
-                                JpegTranscoder::decode_coefficients(&attempt_bytes)
-                            {
-                                let roundtrip_bits = DctStegoF5::with_redundancy(r).extract_f5(
-                                    &roundtrip_coefficients,
-                                    payload_bits,
-                                    seed,
-                                );
-                                if Self::bits_to_bytes(&roundtrip_bits) == payload {
-                                    return Ok(EmbedOutcome::Embedded {
-                                        output: attempt_bytes,
-                                        payload_bytes: payload.len(),
-                                        required_capacity: payload_bits,
-                                        available_capacity: available_coeffs,
-                                        path: EmbedPath::DctF5,
-                                    });
-                                }
-                                working_coefficients = roundtrip_coefficients;
-                            } else {
-                                break;
-                            }
-                        }
+                if max_feasible >= 1 {
+                    let mut embedded_coefficients = coefficients.clone();
+                    if DctStegoF5::with_redundancy(selected_redundancy)
+                        .embed_f5(&mut embedded_coefficients, &payload, seed)
+                        .is_ok()
+                    {
+                        let output = JpegTranscoder::encode_coefficients(
+                            &header,
+                            &embedded_coefficients,
+                            Some(jpeg_bytes),
+                        )?;
+                        return Ok(EmbedOutcome::Embedded {
+                            output,
+                            payload_bytes: payload.len(),
+                            required_capacity: payload_bits,
+                            available_capacity: available_coeffs,
+                            path: EmbedPath::DctF5,
+                        });
                     }
                 }
 
@@ -4457,6 +4435,111 @@ mod tests {
         assert!(
             protector.verify_payload_from_bytes(&protected, 42),
             "DCT payload should verify with redundancy=3 when capacity permits"
+        );
+    }
+
+    #[test]
+    fn jpeg_selected_redundancy_is_highest_feasible() {
+        let protector = SteganographyProtector::new();
+        let img = make_high_entropy_test_image(512, 512);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(crate::types::ImageOutputFormat::Jpeg)
+            .with_stego_redundancy(5);
+        let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
+
+        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
+        let available = SteganographyProtector::dct_payload_capacity(&coefficients);
+        let max_feasible = available / payload_bits;
+        let expected = 5.min(max_feasible).max(1);
+
+        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
+        assert!(outcome.is_embedded());
+        assert_eq!(outcome.available_capacity(), available);
+        assert_eq!(outcome.required_capacity(), payload_bits);
+
+        let protected = outcome.into_inner();
+        assert!(
+            protector.verify_payload_from_bytes(&protected, 42),
+            "payload must verify at selected redundancy {} (max_feasible={})",
+            expected,
+            max_feasible
+        );
+    }
+
+    #[test]
+    fn jpeg_capacity_zero_skips_without_payload_embedding() {
+        let protector = SteganographyProtector::new();
+        let img = make_test_image(8, 8);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 95);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(crate::types::ImageOutputFormat::Jpeg)
+            .with_stego_redundancy(3);
+
+        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
+        let available = SteganographyProtector::dct_payload_capacity(&coefficients);
+        let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
+        assert!(
+            available < payload_bits,
+            "tiny image should have insufficient capacity"
+        );
+
+        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
+        assert!(outcome.is_skipped());
+    }
+
+    #[test]
+    fn jpeg_capacity_exact_for_selected_redundancy_roundtrips() {
+        let protector = SteganographyProtector::new();
+        let img = make_high_entropy_test_image(256, 256);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(crate::types::ImageOutputFormat::Jpeg)
+            .with_stego_redundancy(1);
+        let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
+
+        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
+        let available = SteganographyProtector::dct_payload_capacity(&coefficients);
+        assert!(
+            available >= payload_bits,
+            "need at least payload_bits capacity"
+        );
+
+        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
+        assert!(outcome.is_embedded());
+        let protected = outcome.into_inner();
+        assert!(
+            protector.verify_payload_from_bytes(&protected, 42),
+            "redundancy=1 roundtrip must verify"
+        );
+    }
+
+    #[test]
+    fn jpeg_requested_redundancy_is_not_exceeded() {
+        let protector = SteganographyProtector::new();
+        let img = make_high_entropy_test_image(512, 512);
+        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(crate::types::ImageOutputFormat::Jpeg)
+            .with_stego_redundancy(10);
+        let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
+
+        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
+        let available = SteganographyProtector::dct_payload_capacity(&coefficients);
+        let max_feasible = available / payload_bits;
+        let selected = 10.min(max_feasible).max(1);
+
+        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
+        assert!(outcome.is_embedded());
+        assert_eq!(outcome.required_capacity(), payload_bits);
+        assert_eq!(outcome.available_capacity(), available);
+
+        let protected = outcome.into_inner();
+        assert!(
+            protector.verify_payload_from_bytes(&protected, 42),
+            "selected redundancy {} must verify (max_feasible={})",
+            selected,
+            max_feasible
         );
     }
 
