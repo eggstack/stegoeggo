@@ -513,58 +513,6 @@ impl ProtectionPipeline {
         }
     }
 
-    pub(crate) fn process_bytes_pipeline(
-        &self,
-        img_bytes: &[u8],
-        level: ProtectionLevel,
-        ctx: &ProtectionContext,
-    ) -> Result<PipelineResult> {
-        if level == ProtectionLevel::Disabled {
-            return Ok(PipelineResult {
-                bytes: img_bytes.to_vec(),
-                embed_summary: None,
-            });
-        }
-
-        ctx.resource_limits().check_input_size(img_bytes.len())?;
-
-        let limits = ctx.resource_limits();
-        if img_bytes.starts_with(&[0xFF, 0xD8]) {
-            let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
-            limits.check_dimensions(header.width as u32, header.height as u32)?;
-        } else if let Ok(img) = load_image_from_bytes(img_bytes) {
-            let (width, height) = img.dimensions();
-            limits.check_dimensions(width, height)?;
-        }
-
-        let (ctx_with_level, input_format, output_format) =
-            Self::context_for_bytes(img_bytes, level, ctx)?;
-
-        match level {
-            ProtectionLevel::Disabled => unreachable!("disabled level returned above"),
-            ProtectionLevel::Light => {
-                self.validate_input_dimensions_for_bytes(
-                    img_bytes,
-                    input_format,
-                    ctx_with_level.max_dimension(),
-                    &ctx.resource_limits(),
-                )?;
-                self.apply_light_bytes_pipeline(
-                    img_bytes,
-                    input_format,
-                    output_format,
-                    &ctx_with_level,
-                )
-            }
-            ProtectionLevel::Standard => self.apply_bytes_pipeline_resolved(
-                img_bytes,
-                input_format,
-                output_format,
-                &ctx_with_level,
-            ),
-        }
-    }
-
     fn input_format_from_bytes(
         img_bytes: &[u8],
         ctx: &ProtectionContext,
@@ -714,135 +662,6 @@ impl ProtectionPipeline {
         let img = load_image_from_bytes(img_bytes)?;
         Self::validate_dimensions(&img, ctx.max_dimension())?;
         self.apply_pipeline_bytes(&img, ctx, output_format)
-    }
-
-    /// Process image bytes with metadata-only injection.
-    ///
-    /// For same-format metadata-only processing, this avoids pixel decode entirely:
-    /// - PNG: inject tEXt/iTXt chunks without pixel processing
-    /// - JPEG: inject APP/COM segments without DCT decode
-    /// - WebP: inject RIFF metadata chunks without pixel processing
-    fn process_metadata_only(
-        &self,
-        img_bytes: &[u8],
-        plan: &ResolvedProtectionPlan,
-        budget: &mut crate::resource_limits::OperationBudget<'_>,
-    ) -> Result<Vec<u8>> {
-        let input_format = plan.input_format();
-        let output_format = plan.output_format();
-
-        if input_format != output_format {
-            let img = load_image_from_bytes(img_bytes)?;
-            let ctx = plan_to_context(plan);
-            let result = self.metadata_trap.inject_bytes(
-                &crate::util::image::encode_image_with_options(
-                    &img,
-                    Some(output_format),
-                    plan.processing().progressive_jpeg,
-                    plan.processing().jpeg_quality,
-                )?,
-                &ctx,
-            )?;
-            Self::observe_metadata_work(&result, output_format, budget);
-            return Ok(result);
-        }
-
-        let ctx = plan_to_context(plan);
-        let result = self.metadata_trap.inject_bytes(img_bytes, &ctx)?;
-        Self::observe_metadata_work(&result, output_format, budget);
-        Ok(result)
-    }
-
-    fn observe_metadata_work(
-        img_bytes: &[u8],
-        format: crate::types::ImageOutputFormat,
-        budget: &mut crate::resource_limits::OperationBudget<'_>,
-    ) {
-        match format {
-            crate::types::ImageOutputFormat::Png => {
-                if img_bytes.len() < 8 || &img_bytes[0..8] != b"\x89PNG\r\n\x1a\n" {
-                    return;
-                }
-                let mut pos = 8;
-                while pos + 12 <= img_bytes.len() {
-                    let chunk_len = u32::from_be_bytes([
-                        img_bytes[pos],
-                        img_bytes[pos + 1],
-                        img_bytes[pos + 2],
-                        img_bytes[pos + 3],
-                    ]) as usize;
-                    let chunk_type = &img_bytes[pos + 4..pos + 8];
-                    if chunk_type == b"IEND" {
-                        break;
-                    }
-                    let chunk_total = 12 + chunk_len;
-                    budget.observe_png_chunk(chunk_total);
-                    let data_start = pos + 8;
-                    let data_end = (data_start + chunk_len).min(img_bytes.len());
-                    if (chunk_type == b"tEXt" || chunk_type == b"iTXt") && data_end > data_start {
-                        budget.observe_metadata_field(data_end - data_start);
-                    }
-                    pos += chunk_total;
-                    if pos > img_bytes.len() {
-                        break;
-                    }
-                }
-            }
-            crate::types::ImageOutputFormat::Jpeg => {
-                if img_bytes.len() < 2 || img_bytes[0] != 0xFF || img_bytes[1] != 0xD8 {
-                    return;
-                }
-                let mut pos = 2;
-                while pos + 2 <= img_bytes.len() {
-                    if img_bytes[pos] != 0xFF {
-                        pos += 1;
-                        continue;
-                    }
-                    let marker = img_bytes[pos + 1];
-                    if marker == 0xD9 || marker == 0xDA {
-                        break;
-                    }
-                    if marker == 0x00 {
-                        pos += 1;
-                        continue;
-                    }
-                    if pos + 4 > img_bytes.len() {
-                        break;
-                    }
-                    let seg_len =
-                        u16::from_be_bytes([img_bytes[pos + 2], img_bytes[pos + 3]]) as usize;
-                    let seg_end = pos + 2 + seg_len;
-                    if seg_end > img_bytes.len() {
-                        break;
-                    }
-                    budget.observe_jpeg_segment(seg_end - pos);
-                    if marker == 0xFE {
-                        budget.observe_metadata_field(seg_len.saturating_sub(2));
-                    }
-                    pos = seg_end;
-                }
-            }
-            crate::types::ImageOutputFormat::WebP => {
-                if img_bytes.len() < 12
-                    || &img_bytes[0..4] != b"RIFF"
-                    || &img_bytes[8..12] != b"WEBP"
-                {
-                    return;
-                }
-                let mut pos = 12;
-                while pos + 8 <= img_bytes.len() {
-                    let chunk_size = u32::from_le_bytes([
-                        img_bytes[pos + 4],
-                        img_bytes[pos + 5],
-                        img_bytes[pos + 6],
-                        img_bytes[pos + 7],
-                    ]) as usize;
-                    let padded = chunk_size + (chunk_size & 1);
-                    budget.observe_webp_chunk(8 + padded);
-                    pos += 8 + padded;
-                }
-            }
-        }
     }
 }
 
@@ -1320,8 +1139,6 @@ fn process_plan_bytes(
     plan: &ResolvedProtectionPlan,
     budget: &mut crate::resource_limits::OperationBudget<'_>,
 ) -> Result<PipelineResult> {
-    let pipeline = DEFAULT_PIPELINE.clone();
-
     let limits = plan.resource_limits();
     limits.check_input_size(img_bytes.len())?;
 
@@ -1342,33 +1159,295 @@ fn process_plan_bytes(
         ));
     }
 
-    if plan.is_metadata_only() {
-        let bytes = pipeline.process_metadata_only(img_bytes, plan, budget)?;
+    if plan.is_metadata_only()
+        || matches!(plan.channels().hidden_marker, HiddenMarkerMode::Disabled)
+    {
+        let bytes = execute_metadata_only(img_bytes, plan, budget)?;
         return Ok(PipelineResult {
             bytes,
             embed_summary: None,
         });
     }
 
+    let input_format = plan.input_format();
+    let output_format = plan.output_format();
+    let steganography = SteganographyProtector::new();
+    let metadata_trap = RightsMetadataProtector::new();
+
     match plan.channels().hidden_marker {
-        HiddenMarkerMode::Disabled => {
-            let bytes = pipeline.process_metadata_only(img_bytes, plan, budget)?;
-            Ok(PipelineResult {
-                bytes,
-                embed_summary: None,
-            })
+        HiddenMarkerMode::Disabled => unreachable!("handled above"),
+        HiddenMarkerMode::BestEffort => execute_stego_and_metadata(
+            img_bytes,
+            plan,
+            input_format,
+            output_format,
+            &steganography,
+            &metadata_trap,
+            budget,
+        ),
+        HiddenMarkerMode::Tiled { tile_size } => execute_stego_and_metadata_tiled(
+            img_bytes,
+            plan,
+            input_format,
+            output_format,
+            tile_size,
+            &steganography,
+            &metadata_trap,
+            budget,
+        ),
+    }
+}
+
+fn execute_metadata_only(
+    img_bytes: &[u8],
+    plan: &ResolvedProtectionPlan,
+    budget: &mut crate::resource_limits::OperationBudget<'_>,
+) -> Result<Vec<u8>> {
+    let input_format = plan.input_format();
+    let output_format = plan.output_format();
+    let metadata_trap = RightsMetadataProtector::new();
+
+    if input_format != output_format {
+        let img = load_image_from_bytes(img_bytes)?;
+        let encoded = crate::util::image::encode_image_with_options(
+            &img,
+            Some(output_format),
+            plan.processing().progressive_jpeg,
+            plan.processing().jpeg_quality,
+        )?;
+        let result = metadata_trap.inject_bytes_from_plan(&encoded, plan)?;
+        observe_metadata_work(&result, output_format, budget);
+        return Ok(result);
+    }
+
+    let result = metadata_trap.inject_bytes_from_plan(img_bytes, plan)?;
+    observe_metadata_work(&result, output_format, budget);
+    Ok(result)
+}
+
+fn observe_metadata_work(
+    img_bytes: &[u8],
+    format: crate::types::ImageOutputFormat,
+    budget: &mut crate::resource_limits::OperationBudget<'_>,
+) {
+    match format {
+        crate::types::ImageOutputFormat::Png => {
+            if img_bytes.len() < 8 || &img_bytes[0..8] != b"\x89PNG\r\n\x1a\n" {
+                return;
+            }
+            let mut pos = 8;
+            while pos + 12 <= img_bytes.len() {
+                let chunk_len = u32::from_be_bytes([
+                    img_bytes[pos],
+                    img_bytes[pos + 1],
+                    img_bytes[pos + 2],
+                    img_bytes[pos + 3],
+                ]) as usize;
+                let chunk_type = &img_bytes[pos + 4..pos + 8];
+                if chunk_type == b"IEND" {
+                    break;
+                }
+                let chunk_total = 12 + chunk_len;
+                budget.observe_png_chunk(chunk_total);
+                let data_start = pos + 8;
+                let data_end = (data_start + chunk_len).min(img_bytes.len());
+                if (chunk_type == b"tEXt" || chunk_type == b"iTXt") && data_end > data_start {
+                    budget.observe_metadata_field(data_end - data_start);
+                }
+                pos += chunk_total;
+                if pos > img_bytes.len() {
+                    break;
+                }
+            }
         }
-        HiddenMarkerMode::BestEffort => {
-            let level = ProtectionLevel::Standard;
-            let ctx = plan_to_context(plan);
-            pipeline.process_bytes_pipeline(img_bytes, level, &ctx)
+        crate::types::ImageOutputFormat::Jpeg => {
+            if img_bytes.len() < 2 || img_bytes[0] != 0xFF || img_bytes[1] != 0xD8 {
+                return;
+            }
+            let mut pos = 2;
+            while pos + 2 <= img_bytes.len() {
+                if img_bytes[pos] != 0xFF {
+                    pos += 1;
+                    continue;
+                }
+                let marker = img_bytes[pos + 1];
+                if marker == 0xD9 || marker == 0xDA {
+                    break;
+                }
+                if marker == 0x00 {
+                    pos += 1;
+                    continue;
+                }
+                if pos + 4 > img_bytes.len() {
+                    break;
+                }
+                let seg_len = u16::from_be_bytes([img_bytes[pos + 2], img_bytes[pos + 3]]) as usize;
+                let seg_end = pos + 2 + seg_len;
+                if seg_end > img_bytes.len() {
+                    break;
+                }
+                budget.observe_jpeg_segment(seg_end - pos);
+                if marker == 0xFE {
+                    budget.observe_metadata_field(seg_len.saturating_sub(2));
+                }
+                pos = seg_end;
+            }
         }
-        HiddenMarkerMode::Tiled { tile_size } => {
-            let mut ctx = plan_to_context(plan);
-            ctx.set_tile_size(tile_size);
-            pipeline.process_bytes_pipeline(img_bytes, ProtectionLevel::Standard, &ctx)
+        crate::types::ImageOutputFormat::WebP => {
+            if img_bytes.len() < 12 || &img_bytes[0..4] != b"RIFF" || &img_bytes[8..12] != b"WEBP" {
+                return;
+            }
+            let mut pos = 12;
+            while pos + 8 <= img_bytes.len() {
+                let chunk_size = u32::from_le_bytes([
+                    img_bytes[pos + 4],
+                    img_bytes[pos + 5],
+                    img_bytes[pos + 6],
+                    img_bytes[pos + 7],
+                ]) as usize;
+                let padded = chunk_size + (chunk_size & 1);
+                budget.observe_webp_chunk(8 + padded);
+                pos += 8 + padded;
+            }
         }
     }
+}
+
+fn execute_stego_and_metadata(
+    img_bytes: &[u8],
+    plan: &ResolvedProtectionPlan,
+    input_format: ImageOutputFormat,
+    output_format: ImageOutputFormat,
+    steganography: &SteganographyProtector,
+    metadata_trap: &RightsMetadataProtector,
+    budget: &mut crate::resource_limits::OperationBudget<'_>,
+) -> Result<PipelineResult> {
+    // JPEG-in, JPEG-out: byte-only path (DCT stego + metadata, no pixel decode).
+    if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
+        let limits = plan.resource_limits();
+        let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+        limits.check_dimensions(header.width as u32, header.height as u32)?;
+
+        // Build a minimal context for steganography methods that still require it.
+        let ctx = plan_to_context(plan);
+        let with_stego = steganography.apply_dct_stego_bytes(img_bytes, &ctx)?;
+        let (output, embed_summary) = with_stego.into_parts();
+        let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
+        observe_metadata_work(&bytes, output_format, budget);
+        return Ok(PipelineResult {
+            bytes,
+            embed_summary: Some(embed_summary),
+        });
+    }
+
+    // Non-JPEG-in: decode then apply pixel stego + encode + metadata.
+    let img = load_image_from_bytes(img_bytes)?;
+    let (width, height) = img.dimensions();
+    plan.resource_limits().check_dimensions(width, height)?;
+
+    let ctx = plan_to_context(plan);
+
+    // JPEG output: encode first, then apply DCT stego to the JPEG bytes.
+    if output_format == ImageOutputFormat::Jpeg {
+        let jpeg_bytes = crate::util::image::encode_image_with_options(
+            &img,
+            Some(output_format),
+            ctx.progressive_jpeg(),
+            ctx.jpeg_quality(),
+        )?;
+        let with_stego = steganography.apply_dct_stego_bytes(&jpeg_bytes, &ctx)?;
+        let (output, embed_summary) = with_stego.into_parts();
+        let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
+        observe_metadata_work(&bytes, output_format, budget);
+        return Ok(PipelineResult {
+            bytes,
+            embed_summary: Some(embed_summary),
+        });
+    }
+
+    // Non-JPEG output: pixel stego then encode.
+    let (stego_img, embed_summary) = steganography.apply_to_image_with_summary(&img, &ctx)?;
+    let encoded = crate::util::image::encode_image_with_options(
+        &stego_img,
+        Some(output_format),
+        ctx.progressive_jpeg(),
+        ctx.jpeg_quality(),
+    )?;
+    let bytes = metadata_trap.inject_bytes_from_plan(&encoded, plan)?;
+    observe_metadata_work(&bytes, output_format, budget);
+    Ok(PipelineResult {
+        bytes,
+        embed_summary,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_stego_and_metadata_tiled(
+    img_bytes: &[u8],
+    plan: &ResolvedProtectionPlan,
+    input_format: ImageOutputFormat,
+    output_format: ImageOutputFormat,
+    tile_size: u32,
+    steganography: &SteganographyProtector,
+    metadata_trap: &RightsMetadataProtector,
+    budget: &mut crate::resource_limits::OperationBudget<'_>,
+) -> Result<PipelineResult> {
+    // JPEG-in, JPEG-out: byte-only tiled DCT path.
+    if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
+        let limits = plan.resource_limits();
+        let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+        limits.check_dimensions(header.width as u32, header.height as u32)?;
+
+        let mut ctx = plan_to_context(plan);
+        ctx.set_tile_size(tile_size);
+        let with_stego = steganography.apply_dct_stego_bytes(img_bytes, &ctx)?;
+        let (output, embed_summary) = with_stego.into_parts();
+        let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
+        observe_metadata_work(&bytes, output_format, budget);
+        return Ok(PipelineResult {
+            bytes,
+            embed_summary: Some(embed_summary),
+        });
+    }
+
+    // Non-JPEG-in: decode then apply pixel tiled stego + encode + metadata.
+    let img = load_image_from_bytes(img_bytes)?;
+    let (width, height) = img.dimensions();
+    plan.resource_limits().check_dimensions(width, height)?;
+
+    let mut ctx = plan_to_context(plan);
+    ctx.set_tile_size(tile_size);
+
+    if output_format == ImageOutputFormat::Jpeg {
+        let jpeg_bytes = crate::util::image::encode_image_with_options(
+            &img,
+            Some(output_format),
+            ctx.progressive_jpeg(),
+            ctx.jpeg_quality(),
+        )?;
+        let with_stego = steganography.apply_dct_stego_bytes(&jpeg_bytes, &ctx)?;
+        let (output, embed_summary) = with_stego.into_parts();
+        let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
+        observe_metadata_work(&bytes, output_format, budget);
+        return Ok(PipelineResult {
+            bytes,
+            embed_summary: Some(embed_summary),
+        });
+    }
+
+    let (stego_img, embed_summary) = steganography.apply_to_image_with_summary(&img, &ctx)?;
+    let encoded = crate::util::image::encode_image_with_options(
+        &stego_img,
+        Some(output_format),
+        ctx.progressive_jpeg(),
+        ctx.jpeg_quality(),
+    )?;
+    let bytes = metadata_trap.inject_bytes_from_plan(&encoded, plan)?;
+    observe_metadata_work(&bytes, output_format, budget);
+    Ok(PipelineResult {
+        bytes,
+        embed_summary,
+    })
 }
 
 #[allow(deprecated)]

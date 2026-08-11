@@ -209,7 +209,8 @@ These still work but will be removed in the next major version. See `DEPRECATION
 ## Architecture
 
 - **Strategy pattern** via `Protector` trait (`src/traits.rs`) with three levels: Disabled, Light, Standard — see `architecture/traits.md`
-- **Pipeline** (`src/lib.rs`): `ProtectionPipeline` orchestrates protectors — see `architecture/pipeline.md`
+- **Pipeline** (`src/lib.rs`): `ProtectionPipeline` orchestrates protectors for legacy APIs — see `architecture/pipeline.md`
+- **Direct plan executor** (`src/lib.rs`): `execute_metadata_only()`, `execute_stego_and_metadata()`, `execute_stego_and_metadata_tiled()` — canonical execution from `ResolvedProtectionPlan` without `ProtectionContext` reconstruction for metadata
 - **Generic carrier core** (`src/stego/`): Application-neutral LSB and JPEG DCT carrier mechanics — see `architecture/protected-steganography.md`
 - **JPEG fast path**: When input/output are both JPEG, operates directly on DCT coefficients via `src/jpeg_transcoder/`, bypassing pixel decode/encode — see `architecture/jpeg-transcoder.md`
 - **Policy-first API**: `ProtectionRequest` + `RightsPolicy` are the canonical API — see `architecture/types.md`

@@ -807,6 +807,60 @@ impl RightsNotice {
         self.seed = Some(seed);
         self
     }
+
+    /// Merge fields from [`LegalMetadata`] into this notice.
+    ///
+    /// Only sets fields that are `Some` in the legal metadata; existing
+    /// notice fields are preserved when the legal metadata field is `None`.
+    #[must_use]
+    pub fn with_legal_metadata_fields(mut self, legal: &LegalMetadata) -> Self {
+        if let Some(v) = legal.copyright_holder() {
+            self.copyright_holder = Some(v.to_string());
+        }
+        if let Some(v) = legal.contact_email() {
+            self.contact_email = Some(v.to_string());
+        }
+        if let Some(v) = legal.license_url() {
+            self.license_url = Some(v.to_string());
+        }
+        if let Some(v) = legal.usage_terms() {
+            self.usage_terms = Some(v.to_string());
+        }
+        if let Some(v) = legal.usage_terms_lang() {
+            self.usage_terms_lang = Some(v.to_string());
+        }
+        if let Some(v) = legal.creation_date() {
+            self.creation_date = Some(v.to_string());
+        }
+        if let Some(v) = legal.ai_constraints() {
+            self.ai_constraints = Some(v.to_string());
+        }
+        if let Some(v) = legal.web_statement_of_rights() {
+            self.web_statement_of_rights = Some(v.to_string());
+        }
+        if let Some(v) = legal.creator() {
+            self.creator = Some(v.to_string());
+        }
+        if let Some(v) = legal.credit_line() {
+            self.credit_line = Some(v.to_string());
+        }
+        if let Some(v) = legal.copyright_owner() {
+            self.copyright_owner = Some(v.to_string());
+        }
+        if let Some(v) = legal.licensor_name() {
+            self.licensor_name = Some(v.to_string());
+        }
+        if let Some(v) = legal.licensor_email() {
+            self.licensor_email = Some(v.to_string());
+        }
+        if let Some(v) = legal.licensor_url() {
+            self.licensor_url = Some(v.to_string());
+        }
+        if let Some(v) = legal.metadata_date() {
+            self.metadata_date = Some(v.to_string());
+        }
+        self
+    }
 }
 
 /// Legal metadata for copyright and AI training restrictions.

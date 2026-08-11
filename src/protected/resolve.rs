@@ -40,7 +40,14 @@ pub fn resolve_request(
 
     let output_format = request.processing().output_format.unwrap_or(input_format);
 
-    let effective_notice = request.notice().clone();
+    let effective_notice = {
+        let base = request.notice().clone().with_seed(seed);
+        if let Some(legal) = request.legal_metadata() {
+            base.with_legal_metadata_fields(legal)
+        } else {
+            base
+        }
+    };
 
     if request.channels().authentication == AuthenticationMode::Hmac && request.mac_key().is_none()
     {

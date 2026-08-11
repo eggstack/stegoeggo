@@ -1,12 +1,28 @@
 # Pipeline & Public API
 
-**Source:** `src/lib.rs` (~2203 lines)
+**Source:** `src/lib.rs` (~2282 lines)
 
-The pipeline is the central orchestration layer. It selects and composes protectors based on the requested `ProtectionLevel`, handles format routing (JPEG fast path vs pixel path), and provides both sync and parallel entry points. Parallel batch processing functions require the `parallel` feature.
+The pipeline is the central orchestration layer. It provides two execution paths: the canonical request-based path (via direct plan executor) and the legacy level-based path (via `ProtectionPipeline`). Both paths share the same carrier modules and metadata injection. Parallel batch processing functions require the `parallel` feature.
 
-## ProtectionPipeline
+## Direct Plan Executor (canonical path)
 
-The main struct. Holds `Arc`-wrapped protectors for all levels.
+The canonical execution path for `process_request_bytes*` functions:
+
+```
+ProtectionRequest → resolve_request() → ResolvedProtectionPlan → execute_plan_bytes()
+```
+
+Three crate-private functions perform the actual work:
+
+- `execute_metadata_only()` — Same-format and cross-format metadata injection using plan fields directly (no `ProtectionContext` reconstruction)
+- `execute_stego_and_metadata()` — Standard hidden marker: DCT/LSB stego + metadata injection
+- `execute_stego_and_metadata_tiled()` — Tiled variant for crop-resistant mode
+
+These functions use `RightsMetadataProtector::inject_bytes_from_plan()` for metadata injection, which accepts `&ResolvedProtectionPlan` directly. The steganography methods still accept `&ProtectionContext` for backward compatibility; `plan_to_context()` is used only for steganography, not metadata.
+
+## ProtectionPipeline (legacy path)
+
+The legacy struct for level-based APIs. Holds `Arc`-wrapped protectors for all levels.
 
 ```rust
 pub struct ProtectionPipeline {

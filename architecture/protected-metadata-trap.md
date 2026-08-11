@@ -1,14 +1,16 @@
 # Metadata Trap Protector
 
-**Source:** `src/protected/metadata_trap.rs` (~2043 lines)
+**Source:** `src/protected/metadata_trap.rs` (~3895 lines)
 
-The largest module. Injects metadata into image files for the `Light` protection level. Operates at the byte level — the `DynamicImage` API cannot preserve injected text chunks through encode/decode cycles. Estimated latency: 2ms.
+The largest module. Injects metadata into image files. Operates at the byte level — the `DynamicImage` API cannot preserve injected text chunks through encode/decode cycles. Estimated latency: 2ms.
 
 ## Key Behavior
 
 - **`apply()` returns `Cow::Borrowed(img)` unchanged** — metadata injection cannot survive through the `DynamicImage` API
-- **`apply_bytes()` / `inject_bytes()`** — The actual metadata injection happens here
+- **`inject_bytes()`** — Legacy metadata injection using `&ProtectionContext`
+- **`inject_bytes_from_plan()`** — Canonical metadata injection using `&ResolvedProtectionPlan` directly (no `ProtectionContext` reconstruction)
 - **Pipeline routes `Light` level through `apply_light_bytes()`** which encodes, injects metadata, then decodes
+- **Canonical path uses `inject_bytes_from_plan()`** from `execute_metadata_only()` and `execute_stego_and_metadata*()`
 
 ## Metadata Types
 

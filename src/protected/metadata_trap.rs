@@ -2457,6 +2457,114 @@ impl RightsMetadataProtector {
 
         Ok(with_metadata)
     }
+
+    /// Inject metadata bytes using a resolved plan directly.
+    ///
+    /// This is the canonical plan-aware entry point that avoids reconstructing
+    /// a full `ProtectionContext`. It uses `plan.effective_notice()` directly
+    /// (already normalized during resolution) and reads format/policy/limits
+    /// from the plan fields.
+    pub fn inject_bytes_from_plan(
+        &self,
+        img_bytes: &[u8],
+        plan: &crate::types::ResolvedProtectionPlan,
+    ) -> Result<Vec<u8>> {
+        let should_inject = plan.channels().rights_metadata;
+        let notice = plan.effective_notice();
+        let effective_dmi = plan.effective_dmi();
+
+        let metadata = self.generate_rights_metadata_from_notice(notice, should_inject, None);
+
+        if metadata.is_empty() && effective_dmi.is_none() {
+            return Ok(img_bytes.to_vec());
+        }
+
+        let format = plan.output_format();
+        let policy = plan.processing().metadata_update_policy;
+
+        // Build a minimal context with resource limits for internal format methods.
+        let limits_ctx = {
+            let mut ctx = ProtectionContext::new(plan.intensity(), plan.seed());
+            ctx = ctx.with_resource_limits(plan.resource_limits().clone());
+            ctx
+        };
+
+        match policy {
+            MetadataUpdatePolicy::FailOnConflict => {
+                if self.has_stego_owned_metadata(img_bytes, format) {
+                    return Err(Error::Metadata(
+                        "MetadataUpdatePolicy::FailOnConflict: \
+                         image already contains StegoEggo metadata"
+                            .to_string(),
+                    ));
+                }
+            }
+            MetadataUpdatePolicy::PreserveExisting => {
+                if self.has_stego_owned_metadata(img_bytes, format) {
+                    let existing_keys = match format {
+                        ImageOutputFormat::Png => Self::collect_stego_owned_png_keys(img_bytes),
+                        ImageOutputFormat::Jpeg => Self::collect_stego_owned_jpeg_keys(img_bytes),
+                        ImageOutputFormat::WebP => Self::collect_stego_owned_webp_keys(img_bytes),
+                    };
+                    let metadata: Vec<_> = metadata
+                        .into_iter()
+                        .filter(|(k, _)| !existing_keys.contains(k))
+                        .collect();
+                    if metadata.is_empty() && effective_dmi.is_none() {
+                        return Ok(img_bytes.to_vec());
+                    }
+                    return match format {
+                        ImageOutputFormat::Png => self.inject_text_chunks_png(
+                            img_bytes,
+                            &metadata,
+                            effective_dmi,
+                            notice.seed(),
+                            Some(plan.resource_limits()),
+                        ),
+                        ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg(
+                            img_bytes,
+                            &metadata,
+                            effective_dmi,
+                            notice.seed(),
+                            Some(&limits_ctx),
+                        ),
+                        ImageOutputFormat::WebP => {
+                            self.inject_text_chunks_webp_from_notice(img_bytes, notice)
+                        }
+                    };
+                }
+            }
+            MetadataUpdatePolicy::ReplaceStegoOwned => {}
+        }
+
+        let stripped = match format {
+            ImageOutputFormat::Png => Self::strip_stego_owned_png(img_bytes)?,
+            ImageOutputFormat::Jpeg => Self::strip_stego_owned_jpeg(img_bytes)?,
+            ImageOutputFormat::WebP => Self::strip_stego_owned_webp(img_bytes)?,
+        };
+
+        let with_metadata = match format {
+            ImageOutputFormat::Png => self.inject_text_chunks_png(
+                &stripped,
+                &metadata,
+                effective_dmi,
+                notice.seed(),
+                Some(plan.resource_limits()),
+            )?,
+            ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg(
+                &stripped,
+                &metadata,
+                effective_dmi,
+                notice.seed(),
+                Some(&limits_ctx),
+            )?,
+            ImageOutputFormat::WebP => {
+                self.inject_text_chunks_webp_from_notice(&stripped, notice)?
+            }
+        };
+
+        Ok(with_metadata)
+    }
 }
 
 #[deprecated(note = "Use RightsMetadataProtector")]
