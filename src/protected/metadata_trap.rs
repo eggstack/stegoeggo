@@ -2479,6 +2479,10 @@ impl RightsMetadataProtector {
             return Ok(img_bytes.to_vec());
         }
 
+        if !should_inject {
+            return Ok(img_bytes.to_vec());
+        }
+
         let format = plan.output_format();
         let policy = plan.processing().metadata_update_policy;
 

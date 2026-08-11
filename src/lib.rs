@@ -779,6 +779,101 @@ pub fn resolve_request(
     protected::resolve::resolve_request(request, input_format)
 }
 
+fn request_from_legacy(level: ProtectionLevel, ctx: &ProtectionContext) -> ProtectionRequest {
+    let channels = match level {
+        ProtectionLevel::Disabled => ProtectionChannels {
+            rights_metadata: false,
+            hidden_marker: HiddenMarkerMode::Disabled,
+            authentication: AuthenticationMode::None,
+        },
+        ProtectionLevel::Light | ProtectionLevel::Standard => {
+            let rights_metadata = ctx.effective_metadata_injection();
+            let authentication = if ctx.mac_key().is_some() {
+                AuthenticationMode::Hmac
+            } else {
+                AuthenticationMode::None
+            };
+            let hidden_marker = match ctx.tile_size().filter(|&s| s > 0) {
+                Some(ts) => HiddenMarkerMode::Tiled { tile_size: ts },
+                None => HiddenMarkerMode::BestEffort,
+            };
+            ProtectionChannels {
+                rights_metadata,
+                hidden_marker,
+                authentication,
+            }
+        }
+    };
+
+    let rights_metadata = ctx.effective_metadata_injection();
+
+    let policy = if !rights_metadata {
+        RightsPolicy::Unspecified
+    } else {
+        ctx.dmi_value()
+            .map(RightsPolicy::from)
+            .unwrap_or_else(|| match level {
+                ProtectionLevel::Disabled => RightsPolicy::Unspecified,
+                ProtectionLevel::Light => RightsPolicy::ProhibitedAllDataMining,
+                ProtectionLevel::Standard => RightsPolicy::ProhibitedAiMlTraining,
+            })
+    };
+
+    let mut notice = RightsNotice::default();
+    let effective_dmi = ctx.dmi_value().unwrap_or_else(|| DmiValue::from(policy));
+    notice = notice.with_dmi(effective_dmi);
+    notice = notice.with_seed(ctx.seed());
+    let inject_claims = ctx.inject_legal_claims().unwrap_or(true);
+    if inject_claims {
+        if let Some(meta) = ctx.legal_metadata() {
+            notice = notice.with_legal_metadata_fields(meta);
+        }
+    }
+    if let Some(meta) = ctx.legal_metadata() {
+        let ts = meta
+            .notice_applied_at()
+            .map(String::from)
+            .unwrap_or_else(|| {
+                ctx.timestamp_override()
+                    .map(String::from)
+                    .unwrap_or_else(crate::protected::metadata_trap::current_timestamp_iso8601)
+            });
+        notice = notice.with_notice_applied_at(ts);
+    }
+
+    let output_format = ctx.output_format();
+    let mut request = ProtectionRequest::new(notice, policy, channels)
+        .with_seed(ctx.seed())
+        .with_intensity(ctx.intensity())
+        .with_jpeg_quality(ctx.jpeg_quality());
+
+    if let Some(fmt) = output_format {
+        request = request.with_output_format(fmt);
+    }
+    if ctx.progressive_jpeg() {
+        request = request.with_progressive_jpeg();
+    }
+    if let Some(meta) = ctx.legal_metadata() {
+        let inject_claims = ctx.inject_legal_claims().unwrap_or(true);
+        if inject_claims {
+            request = request.with_legal_metadata(meta.clone());
+        }
+    }
+    if let Some(key) = ctx.mac_key() {
+        request = request.with_mac_key(key.to_vec());
+    }
+    request = request.with_resource_limits(ctx.resource_limits());
+
+    let mut processing = request.processing().clone();
+    if let Some(max_dim) = ctx.max_dimension() {
+        processing.max_dimension = Some(max_dim);
+    }
+    processing.metadata_update_policy = ctx.metadata_update_policy();
+    request = request.with_processing(processing);
+
+    request
+}
+
 /// Process image bytes with the specified protection level.
 ///
 /// Automatically detects the input format from magic bytes and preserves
@@ -811,12 +906,14 @@ pub fn process_image_bytes(
     level: ProtectionLevel,
     ctx: &ProtectionContext,
 ) -> Result<Vec<u8>> {
-    if level != ProtectionLevel::Disabled {
-        if let Some(meta) = ctx.legal_metadata() {
-            meta.validate()?;
-        }
+    if level == ProtectionLevel::Disabled {
+        return Ok(img_bytes.to_vec());
     }
-    DEFAULT_PIPELINE.process_bytes(img_bytes, level, ctx)
+    if let Some(meta) = ctx.legal_metadata() {
+        meta.validate()?;
+    }
+    let request = request_from_legacy(level, ctx);
+    process_request_bytes(img_bytes, &request)
 }
 
 /// Process image bytes with protection level and return warnings about
@@ -884,55 +981,43 @@ pub fn process_image_bytes_with_warnings(
     ctx: &ProtectionContext,
 ) -> Result<(Vec<u8>, Vec<ProtectionWarning>)> {
     if level == ProtectionLevel::Disabled {
-        let result = DEFAULT_PIPELINE.process_bytes(img_bytes, level, ctx)?;
-        return Ok((result, Vec::new()));
+        return Ok((img_bytes.to_vec(), Vec::new()));
     }
 
     if let Some(meta) = ctx.legal_metadata() {
         meta.validate()?;
     }
 
-    let (ctx_with_format, format) = context_with_detected_format(img_bytes, ctx)?;
+    let request = request_from_legacy(level, ctx);
+    let input_format = ImageOutputFormat::from_magic_bytes(img_bytes)
+        .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
+    let plan = resolve_request(&request, input_format)?;
 
     let mut warnings = Vec::new();
+
     if level != ProtectionLevel::Disabled
-        && ctx_with_format.mac_key().is_none()
+        && ctx.mac_key().is_none()
         && matches!(
-            ctx_with_format.evidence_profile(),
+            ctx.evidence_profile(),
             EvidenceProfile::AuthenticatedProvenance | EvidenceProfile::Maximal
         )
     {
         warnings.push(ProtectionWarning::MissingMacKey);
     }
-    if matches!(ctx_with_format.inject_metadata(), Some(false)) {
+    if matches!(ctx.inject_metadata(), Some(false)) {
         warnings.push(ProtectionWarning::MetadataInjectionDisabled);
     }
-    if matches!(ctx_with_format.inject_legal_claims(), Some(false))
-        && ctx_with_format
-            .legal_metadata()
-            .is_some_and(|m| m.has_content())
+    if matches!(ctx.inject_legal_claims(), Some(false))
+        && ctx.legal_metadata().is_some_and(|m| m.has_content())
     {
         warnings.push(ProtectionWarning::ContradictoryLegalClaims);
     }
 
-    let output_format = resolved_output_format(&ctx_with_format);
+    let output_format = plan.output_format();
 
-    // Detect progressive JPEG fallback before processing — the pipeline silently
-    // falls back to Q-table seed only for progressive JPEGs. If the caller
-    // requested progressive JPEG output, the encoded output will be progressive
-    // and the DCT transcoder will reject it.
     if level == ProtectionLevel::Standard
-        && ctx_with_format.progressive_jpeg()
+        && ctx.progressive_jpeg()
         && output_format == ImageOutputFormat::Jpeg
-    {
-        warnings.push(ProtectionWarning::ProgressiveJpegFallback);
-    }
-
-    // Also detect progressive JPEG input: the DCT transcoder cannot decode
-    // progressive JPEGs, so Standard level falls back to Q-table seed only.
-    if level == ProtectionLevel::Standard
-        && format == ImageOutputFormat::Jpeg
-        && is_progressive_jpeg(img_bytes)
     {
         warnings.push(ProtectionWarning::ProgressiveJpegFallback);
     }
@@ -941,8 +1026,6 @@ pub fn process_image_bytes_with_warnings(
         warnings.push(ProtectionWarning::JpegReencodeFragile);
     }
 
-    // Pre-check LSB capacity for PNG/WebP Standard level — the pipeline silently
-    // skips embedding when the image has too few RGB carrier slots.
     if level == ProtectionLevel::Standard
         && matches!(
             output_format,
@@ -952,31 +1035,40 @@ pub fn process_image_bytes_with_warnings(
         if let Ok(img) = image::load_from_memory(img_bytes) {
             let (w, h) = img.dimensions();
             let total_slots = (w as usize) * (h as usize) * 3;
-            let slots_needed = SteganographyProtector::lsb_pixels_needed(&ctx_with_format);
+            let slots_needed = SteganographyProtector::lsb_pixels_needed(ctx);
             if total_slots < slots_needed {
                 warnings.push(ProtectionWarning::LsbCapacitySkipped);
             }
         }
     }
 
-    let result = DEFAULT_PIPELINE.process_bytes(img_bytes, level, &ctx_with_format)?;
+    warnings.dedup();
 
-    // Post-check DCT capacity: check the encoded JPEG output directly for
-    // sufficient non-zero AC coefficients to host the stego payload. Applies
-    // whether the input was JPEG (DCT path) or non-JPEG (transcoded to JPEG
-    // before DCT embedding) — the encoded JPEG is what F5 embeds into either
-    // way, so its AC coefficient count is the right capacity signal.
-    if level == ProtectionLevel::Standard
-        && output_format == ImageOutputFormat::Jpeg
-        && !is_progressive_jpeg(img_bytes)
-    {
-        let required_bits = dct_required_bits_for_context(&ctx_with_format);
-        if dct_capacity_bits_from_jpeg(&result) < required_bits {
-            warnings.push(ProtectionWarning::DctCapacityInsufficient);
+    let mut all_warnings = warnings;
+
+    let mut budget =
+        crate::resource_limits::OperationBudget::new(plan.resource_limits(), img_bytes.len());
+    let pipeline_result = process_plan_bytes(img_bytes, &plan, &mut budget)?;
+
+    for w in plan.warnings() {
+        if !all_warnings.contains(w) {
+            all_warnings.push(w.clone());
         }
     }
 
-    Ok((result, warnings))
+    if let Some(ref summary) = pipeline_result.embed_summary {
+        let runtime = warnings_from_embed_outcome(summary);
+        for w in runtime {
+            if w == ProtectionWarning::LsbCapacitySkipped {
+                continue;
+            }
+            if !all_warnings.contains(&w) {
+                all_warnings.push(w);
+            }
+        }
+    }
+
+    Ok((pipeline_result.bytes, all_warnings))
 }
 
 /// Process image bytes using a [`ProtectionRequest`].
@@ -1142,15 +1234,27 @@ fn process_plan_bytes(
     let limits = plan.resource_limits();
     limits.check_input_size(img_bytes.len())?;
 
-    // Always enforce ResourceLimits default dimensions, even when the caller
-    // did not set an explicit max_dimension. This prevents processing images
-    // that exceed the library's safety bounds.
     if plan.input_format() == ImageOutputFormat::Jpeg {
         let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
         limits.check_dimensions(header.width as u32, header.height as u32)?;
+        if let Some(max_dim) = plan.processing().max_dimension {
+            if header.width as u32 > max_dim || header.height as u32 > max_dim {
+                return Err(Error::ImageDecode(format!(
+                    "Image dimensions {}x{} exceed max_dimension {}",
+                    header.width, header.height, max_dim
+                )));
+            }
+        }
     } else if let Ok(img) = load_image_from_bytes(img_bytes) {
         let (width, height) = img.dimensions();
         limits.check_dimensions(width, height)?;
+        if let Some(max_dim) = plan.processing().max_dimension {
+            if width > max_dim || height > max_dim {
+                return Err(Error::ImageDecode(format!(
+                    "Image dimensions {width}x{height} exceed max_dimension {max_dim}"
+                )));
+            }
+        }
     } else if plan.is_metadata_only() || plan.channels().hidden_marker == HiddenMarkerMode::Disabled
     {
         return Err(Error::ImageDecode(
@@ -1322,15 +1426,12 @@ fn execute_stego_and_metadata(
     metadata_trap: &RightsMetadataProtector,
     budget: &mut crate::resource_limits::OperationBudget<'_>,
 ) -> Result<PipelineResult> {
-    // JPEG-in, JPEG-out: byte-only path (DCT stego + metadata, no pixel decode).
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
         let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
         limits.check_dimensions(header.width as u32, header.height as u32)?;
 
-        // Build a minimal context for steganography methods that still require it.
-        let ctx = plan_to_context(plan);
-        let with_stego = steganography.apply_dct_stego_bytes(img_bytes, &ctx)?;
+        let with_stego = steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, None)?;
         let (output, embed_summary) = with_stego.into_parts();
         let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
         observe_metadata_work(&bytes, output_format, budget);
@@ -1340,22 +1441,18 @@ fn execute_stego_and_metadata(
         });
     }
 
-    // Non-JPEG-in: decode then apply pixel stego + encode + metadata.
     let img = load_image_from_bytes(img_bytes)?;
     let (width, height) = img.dimensions();
     plan.resource_limits().check_dimensions(width, height)?;
 
-    let ctx = plan_to_context(plan);
-
-    // JPEG output: encode first, then apply DCT stego to the JPEG bytes.
     if output_format == ImageOutputFormat::Jpeg {
         let jpeg_bytes = crate::util::image::encode_image_with_options(
             &img,
             Some(output_format),
-            ctx.progressive_jpeg(),
-            ctx.jpeg_quality(),
+            plan.processing().progressive_jpeg,
+            plan.processing().jpeg_quality,
         )?;
-        let with_stego = steganography.apply_dct_stego_bytes(&jpeg_bytes, &ctx)?;
+        let with_stego = steganography.apply_dct_stego_bytes_from_plan(&jpeg_bytes, plan, None)?;
         let (output, embed_summary) = with_stego.into_parts();
         let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
         observe_metadata_work(&bytes, output_format, budget);
@@ -1365,13 +1462,13 @@ fn execute_stego_and_metadata(
         });
     }
 
-    // Non-JPEG output: pixel stego then encode.
-    let (stego_img, embed_summary) = steganography.apply_to_image_with_summary(&img, &ctx)?;
+    let (stego_img, embed_summary) =
+        steganography.apply_to_image_with_summary_from_plan(&img, plan, None)?;
     let encoded = crate::util::image::encode_image_with_options(
         &stego_img,
         Some(output_format),
-        ctx.progressive_jpeg(),
-        ctx.jpeg_quality(),
+        plan.processing().progressive_jpeg,
+        plan.processing().jpeg_quality,
     )?;
     let bytes = metadata_trap.inject_bytes_from_plan(&encoded, plan)?;
     observe_metadata_work(&bytes, output_format, budget);
@@ -1392,15 +1489,13 @@ fn execute_stego_and_metadata_tiled(
     metadata_trap: &RightsMetadataProtector,
     budget: &mut crate::resource_limits::OperationBudget<'_>,
 ) -> Result<PipelineResult> {
-    // JPEG-in, JPEG-out: byte-only tiled DCT path.
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
         let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
         limits.check_dimensions(header.width as u32, header.height as u32)?;
 
-        let mut ctx = plan_to_context(plan);
-        ctx.set_tile_size(tile_size);
-        let with_stego = steganography.apply_dct_stego_bytes(img_bytes, &ctx)?;
+        let with_stego =
+            steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, Some(tile_size))?;
         let (output, embed_summary) = with_stego.into_parts();
         let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
         observe_metadata_work(&bytes, output_format, budget);
@@ -1410,22 +1505,19 @@ fn execute_stego_and_metadata_tiled(
         });
     }
 
-    // Non-JPEG-in: decode then apply pixel tiled stego + encode + metadata.
     let img = load_image_from_bytes(img_bytes)?;
     let (width, height) = img.dimensions();
     plan.resource_limits().check_dimensions(width, height)?;
-
-    let mut ctx = plan_to_context(plan);
-    ctx.set_tile_size(tile_size);
 
     if output_format == ImageOutputFormat::Jpeg {
         let jpeg_bytes = crate::util::image::encode_image_with_options(
             &img,
             Some(output_format),
-            ctx.progressive_jpeg(),
-            ctx.jpeg_quality(),
+            plan.processing().progressive_jpeg,
+            plan.processing().jpeg_quality,
         )?;
-        let with_stego = steganography.apply_dct_stego_bytes(&jpeg_bytes, &ctx)?;
+        let with_stego =
+            steganography.apply_dct_stego_bytes_from_plan(&jpeg_bytes, plan, Some(tile_size))?;
         let (output, embed_summary) = with_stego.into_parts();
         let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
         observe_metadata_work(&bytes, output_format, budget);
@@ -1435,12 +1527,13 @@ fn execute_stego_and_metadata_tiled(
         });
     }
 
-    let (stego_img, embed_summary) = steganography.apply_to_image_with_summary(&img, &ctx)?;
+    let (stego_img, embed_summary) =
+        steganography.apply_to_image_with_summary_from_plan(&img, plan, Some(tile_size))?;
     let encoded = crate::util::image::encode_image_with_options(
         &stego_img,
         Some(output_format),
-        ctx.progressive_jpeg(),
-        ctx.jpeg_quality(),
+        plan.processing().progressive_jpeg,
+        plan.processing().jpeg_quality,
     )?;
     let bytes = metadata_trap.inject_bytes_from_plan(&encoded, plan)?;
     observe_metadata_work(&bytes, output_format, budget);
@@ -1450,97 +1543,10 @@ fn execute_stego_and_metadata_tiled(
     })
 }
 
-#[allow(deprecated)]
-fn plan_to_context(plan: &ResolvedProtectionPlan) -> ProtectionContext {
-    let mut ctx =
-        ProtectionContext::new(plan.intensity(), plan.seed()).with_format(plan.output_format());
-    ctx.set_input_format(plan.input_format());
-
-    if let Some(dmi) = plan.effective_dmi() {
-        ctx = ctx.with_dmi(dmi);
-    }
-
-    if let Some(key) = plan.mac_key() {
-        ctx = ctx.with_mac_key(key.to_vec());
-    }
-
-    ctx = ctx
-        .with_jpeg_quality(plan.processing().jpeg_quality)
-        .with_metadata_update_policy(plan.processing().metadata_update_policy);
-
-    if plan.processing().progressive_jpeg {
-        ctx = ctx.with_progressive_jpeg(true);
-    }
-
-    if let Some(max_dim) = plan.processing().max_dimension {
-        ctx = ctx.with_max_dimension(max_dim);
-    }
-
-    if let Some(meta) = plan.legal_metadata() {
-        ctx = ctx.with_legal_metadata(meta.clone());
-    }
-
-    if plan.channels().rights_metadata {
-        ctx = ctx.with_metadata_injection(true);
-    } else {
-        ctx = ctx.with_metadata_injection(false);
-    }
-
-    if let Some(dmi) = plan.effective_dmi() {
-        ctx = ctx.with_dmi(dmi);
-    } else if plan.effective_policy() == RightsPolicy::Unspecified {
-        ctx = ctx.with_dmi(DmiValue::Unspecified);
-    }
-
-    ctx = ctx.with_resource_limits(plan.resource_limits().clone());
-
-    ctx
-}
-
-fn context_with_detected_format(
-    img_bytes: &[u8],
-    ctx: &ProtectionContext,
-) -> Result<(ProtectionContext, ImageOutputFormat)> {
-    let format = ImageOutputFormat::from_magic_bytes(img_bytes)
-        .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
-
-    let mut ctx_with_format = ctx.clone();
-    if ctx_with_format.input_format().is_none() {
-        ctx_with_format.set_input_format(format);
-    }
-
-    Ok((ctx_with_format, format))
-}
-
 fn resolved_output_format(ctx: &ProtectionContext) -> ImageOutputFormat {
     ctx.output_format()
         .or(ctx.input_format())
         .unwrap_or(DEFAULT_OUTPUT_FORMAT)
-}
-
-/// Number of payload bits the DCT path needs to embed, including redundancy.
-///
-/// Uses the actual V3 payload sizes (CRC or HMAC) instead of legacy v2
-/// constants, so capacity warnings reflect the payload that `generate_payload`
-/// will actually emit.
-fn dct_required_bits_for_context(ctx: &ProtectionContext) -> usize {
-    let payload_bits = if ctx.mac_key().is_some() {
-        protected::steganography::V3_HMAC_PAYLOAD_BITS
-    } else {
-        protected::steganography::V3_CRC_PAYLOAD_BITS
-    };
-    payload_bits * ctx.effective_redundancy()
-}
-
-/// Count usable DCT AC coefficients (|coef| >= 2) in a JPEG byte stream.
-/// Returns 0 if the JPEG cannot be decoded.
-fn dct_capacity_bits_from_jpeg(jpeg_bytes: &[u8]) -> usize {
-    match jpeg_transcoder::JpegTranscoder::decode_coefficients(jpeg_bytes) {
-        Ok((_, coefficients)) => {
-            protected::steganography::SteganographyProtector::dct_payload_capacity(&coefficients)
-        }
-        Err(_) => 0,
-    }
 }
 
 /// Verify that image bytes contain a protection payload whose integrity can be proved.

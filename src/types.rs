@@ -1927,6 +1927,12 @@ impl ProtectionContext {
         self
     }
 
+    /// Returns the timestamp override, if set.
+    #[must_use]
+    pub(crate) fn timestamp_override(&self) -> Option<&str> {
+        self.timestamp_override.as_deref()
+    }
+
     /// Set resource limits for parser hardening.
     ///
     /// Limits are applied to externally reachable parsers (PNG chunk walker,
@@ -2100,15 +2106,6 @@ impl ProtectionContext {
     /// Set the input format hint (non-consuming).
     pub fn set_input_format(&mut self, format: ImageOutputFormat) {
         self.input_format = Some(format);
-    }
-
-    /// Set the tile size (non-consuming, crate-internal).
-    pub(crate) fn set_tile_size(&mut self, size: u32) {
-        if size == 0 {
-            self.tile_size = Some(0);
-        } else {
-            self.tile_size = Some(size.clamp(32, 1024));
-        }
     }
 
     /// Set the protection level (non-consuming, crate-internal).

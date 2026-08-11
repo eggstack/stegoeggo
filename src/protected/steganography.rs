@@ -2751,6 +2751,411 @@ impl SteganographyProtector {
         buf
     }
 
+    pub(crate) fn generate_payload_for_plan(
+        &self,
+        emission: &PayloadEmissionContext,
+        plan: &crate::types::ResolvedProtectionPlan,
+    ) -> Vec<u8> {
+        use crate::payload_v3::types::{AuthAlgorithm, V3_CORE_SIZE, V3_MAGIC, V3_PAYLOAD_VERSION};
+
+        let intensity_val = (plan.intensity() * 100.0) as u16;
+
+        let dmi_byte = plan
+            .effective_dmi()
+            .map(|d| match d {
+                crate::types::DmiValue::Unspecified => 0u8,
+                crate::types::DmiValue::Allowed => 1,
+                crate::types::DmiValue::ProhibitedAiMlTraining => 2,
+                crate::types::DmiValue::ProhibitedGenAiMlTraining => 3,
+                crate::types::DmiValue::ProhibitedExceptSearchEngineIndexing => 4,
+                crate::types::DmiValue::Prohibited => 5,
+                crate::types::DmiValue::ProhibitedSeeConstraints => 6,
+            })
+            .unwrap_or(0);
+
+        let content_hash_8 = [0u8; 8];
+
+        let has_mac = emission.has_mac();
+
+        let flags = crate::payload_v3::types::PayloadFlags {
+            has_extensions: !emission.extensions.is_empty(),
+            has_key_id: emission.key_id.is_some(),
+            tiled: emission.tiled,
+            progressive_jpeg: emission.progressive_output,
+            critical_extension: false,
+            signed: false,
+            reserved: 0,
+        };
+
+        let channels = crate::payload_v3::types::ProtectionChannels {
+            rights_metadata: emission.rights_metadata_planned,
+            hidden_marker: true,
+            authentication: has_mac,
+        };
+
+        let (auth_algo, auth_tag_len) = if has_mac {
+            (AuthAlgorithm::HmacSha256Truncated, 16u8)
+        } else {
+            (AuthAlgorithm::Crc32, 4u8)
+        };
+
+        let mut buf = Vec::with_capacity(V3_CORE_SIZE + auth_tag_len as usize);
+
+        buf.extend_from_slice(&V3_MAGIC);
+        buf.push(V3_PAYLOAD_VERSION);
+        buf.push(V3_CORE_SIZE as u8);
+        let total_length = V3_CORE_SIZE + auth_tag_len as usize;
+        buf.extend_from_slice(&(total_length as u16).to_le_bytes());
+        buf.extend_from_slice(&flags.to_bits().to_le_bytes());
+        buf.extend_from_slice(&channels.to_bits().to_le_bytes());
+        buf.push(dmi_byte);
+        buf.extend_from_slice(&plan.seed().to_le_bytes());
+        buf.extend_from_slice(&intensity_val.to_le_bytes());
+        buf.extend_from_slice(&content_hash_8);
+        buf.push(auth_algo as u8);
+        buf.push(auth_tag_len);
+        buf.push(0);
+
+        debug_assert_eq!(buf.len(), V3_CORE_SIZE);
+
+        let auth_tag = if let Some(key) = plan.mac_key() {
+            Self::compute_payload_mac_v3(&buf, key).to_vec()
+        } else {
+            Self::compute_checksum(&buf).to_vec()
+        };
+        buf.extend_from_slice(&auth_tag);
+
+        buf
+    }
+
+    pub(crate) fn effective_redundancy_for_plan(
+        plan: &crate::types::ResolvedProtectionPlan,
+    ) -> usize {
+        let i = plan.intensity();
+        if i < 0.3 {
+            1
+        } else if i < 0.7 {
+            2
+        } else {
+            3
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn lsb_pixels_needed_from_plan(
+        plan: &crate::types::ResolvedProtectionPlan,
+    ) -> usize {
+        let payload_bits = if plan.mac_key().is_some() {
+            V3_HMAC_PAYLOAD_BITS
+        } else {
+            V3_CRC_PAYLOAD_BITS
+        };
+        carrier_lsb::lsb_required_slots_legacy(payload_bits)
+    }
+
+    pub(crate) fn apply_dct_stego_bytes_from_plan(
+        &self,
+        jpeg_bytes: &[u8],
+        plan: &crate::types::ResolvedProtectionPlan,
+        tile_size: Option<u32>,
+    ) -> Result<crate::types::EmbedOutcome<Vec<u8>>> {
+        use crate::types::{EmbedOutcome, EmbedPath};
+
+        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
+            return Err(Error::Steganography("Not a valid JPEG".to_string()));
+        }
+
+        if let Some(ts) = tile_size.filter(|&s| s > 0) {
+            return self.apply_dct_stego_bytes_tiled_from_plan(jpeg_bytes, plan, ts);
+        }
+
+        let seed = plan.seed();
+
+        match JpegTranscoder::decode_coefficients(jpeg_bytes) {
+            Ok((header, coefficients)) => {
+                let emission = PayloadEmissionContext::from_plan(plan, EmbedPath::DctF5);
+                let payload = self.generate_payload_for_plan(&emission, plan);
+                let requested_redundancy = Self::effective_redundancy_for_plan(plan);
+                let payload_bits = payload.len().saturating_mul(8);
+
+                let available_coeffs = Self::dct_payload_capacity(&coefficients);
+
+                let mut header = header;
+                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
+
+                let max_feasible = available_coeffs.checked_div(payload_bits).unwrap_or(0);
+                let selected_redundancy = requested_redundancy.min(max_feasible).max(1);
+
+                if max_feasible >= 1 {
+                    let mut embedded_coefficients = coefficients.clone();
+                    if DctStegoF5::with_redundancy(selected_redundancy)
+                        .embed_f5(&mut embedded_coefficients, &payload, seed)
+                        .is_ok()
+                    {
+                        let output = JpegTranscoder::encode_coefficients(
+                            &header,
+                            &embedded_coefficients,
+                            Some(jpeg_bytes),
+                        )?;
+                        return Ok(EmbedOutcome::Embedded {
+                            output,
+                            payload_bytes: payload.len(),
+                            required_capacity: payload_bits,
+                            available_capacity: available_coeffs,
+                            path: EmbedPath::DctF5,
+                        });
+                    }
+                }
+
+                let output =
+                    JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))?;
+                Ok(EmbedOutcome::SkippedCapacity {
+                    output,
+                    payload_bytes: payload.len(),
+                    required_capacity: payload_bits,
+                    available_capacity: available_coeffs,
+                    path: EmbedPath::DctF5,
+                })
+            }
+            Err(_) => {
+                let mut header = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
+                let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
+                Ok(EmbedOutcome::UnsupportedProgressive { output })
+            }
+        }
+    }
+
+    fn apply_dct_stego_bytes_tiled_from_plan(
+        &self,
+        jpeg_bytes: &[u8],
+        plan: &crate::types::ResolvedProtectionPlan,
+        tile_size: u32,
+    ) -> Result<crate::types::EmbedOutcome<Vec<u8>>> {
+        use crate::types::{EmbedOutcome, EmbedPath};
+
+        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
+            return Err(Error::Steganography("Not a valid JPEG".to_string()));
+        }
+
+        let seed = plan.seed();
+
+        match JpegTranscoder::decode_coefficients(jpeg_bytes) {
+            Ok((header, coefficients)) => {
+                let mut header = header;
+                let mut coefficients = coefficients;
+
+                let emission = PayloadEmissionContext::from_plan(plan, EmbedPath::DctF5Tiled);
+                let payload = self.generate_payload_for_plan(&emission, plan);
+                let payload_bits = payload.len() * 8;
+
+                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
+
+                let max_h = header
+                    .components
+                    .iter()
+                    .map(|c| c.h_sampling as u32)
+                    .max()
+                    .unwrap_or(1);
+                let max_v = header
+                    .components
+                    .iter()
+                    .map(|c| c.v_sampling as u32)
+                    .max()
+                    .unwrap_or(1);
+                let luma_blocks_x = (header.width as u32 + max_h * 7) / (max_h * 8);
+                let luma_blocks_y = (header.height as u32 + max_v * 7) / (max_v * 8);
+                let blocks_per_tile = tile_size / 8;
+                let tiles_x = luma_blocks_x / blocks_per_tile;
+                let tiles_y = luma_blocks_y / blocks_per_tile;
+
+                let mut embedded_any = false;
+                for ty in 0..tiles_y {
+                    for tx in 0..tiles_x {
+                        let tile_blocks =
+                            DctStegoF5::tile_block_set(&header, &coefficients, tx, ty, tile_size);
+                        if tile_blocks.is_empty() {
+                            continue;
+                        }
+                        let local_seed = tile_seed(seed, tx, ty);
+                        if DctStegoF5::with_redundancy(1)
+                            .embed_f5_in_blocks(
+                                &mut coefficients,
+                                &payload,
+                                local_seed,
+                                &tile_blocks,
+                            )
+                            .is_ok()
+                        {
+                            embedded_any = true;
+                        }
+                    }
+                }
+
+                if embedded_any {
+                    let attempt_bytes = JpegTranscoder::encode_coefficients(
+                        &header,
+                        &coefficients,
+                        Some(jpeg_bytes),
+                    )?;
+                    if let Ok((_, roundtrip_coefficients)) =
+                        JpegTranscoder::decode_coefficients(&attempt_bytes)
+                    {
+                        let tile_blocks = DctStegoF5::tile_block_set(
+                            &header,
+                            &roundtrip_coefficients,
+                            0,
+                            0,
+                            tile_size,
+                        );
+                        let roundtrip_bits = DctStegoF5::with_redundancy(1).extract_f5_from_blocks(
+                            &roundtrip_coefficients,
+                            payload_bits,
+                            tile_seed(seed, 0, 0),
+                            &tile_blocks,
+                        );
+                        if Self::bits_to_bytes(&roundtrip_bits) == payload {
+                            return Ok(EmbedOutcome::Embedded {
+                                output: attempt_bytes,
+                                payload_bytes: payload.len(),
+                                required_capacity: payload_bits,
+                                available_capacity: payload_bits,
+                                path: EmbedPath::DctF5Tiled,
+                            });
+                        }
+                    }
+                }
+
+                let output =
+                    JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))?;
+                Ok(EmbedOutcome::SkippedCapacity {
+                    output,
+                    payload_bytes: payload.len(),
+                    required_capacity: payload_bits,
+                    available_capacity: 0,
+                    path: EmbedPath::DctF5Tiled,
+                })
+            }
+            Err(_) => {
+                let mut header = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
+                let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
+                Ok(EmbedOutcome::UnsupportedProgressive { output })
+            }
+        }
+    }
+
+    pub(crate) fn apply_to_image_with_summary_from_plan(
+        &self,
+        img: &DynamicImage,
+        plan: &crate::types::ResolvedProtectionPlan,
+        tile_size: Option<u32>,
+    ) -> Result<(DynamicImage, Option<crate::types::EmbedOutcomeSummary>)> {
+        let format = plan.input_format();
+        let is_tiled = tile_size.filter(|&s| s > 0).is_some();
+        let embed_path = match format {
+            crate::types::ImageOutputFormat::Jpeg => {
+                if is_tiled {
+                    crate::types::EmbedPath::DctF5Tiled
+                } else {
+                    crate::types::EmbedPath::DctF5
+                }
+            }
+            _ => {
+                if is_tiled {
+                    crate::types::EmbedPath::LsbTiled
+                } else {
+                    crate::types::EmbedPath::Lsb
+                }
+            }
+        };
+
+        let emission = PayloadEmissionContext::from_plan(plan, embed_path);
+        let payload = self.generate_payload_for_plan(&emission, plan);
+        let rgba = img.to_rgba8();
+        let seed = plan.seed();
+        let redundancy = Self::effective_redundancy_for_plan(plan);
+
+        match format {
+            crate::types::ImageOutputFormat::Png => {
+                let outcome = if let Some(ts) = tile_size.filter(|&s| s > 0) {
+                    self.embed_lsb_tiled(&rgba, &payload, seed, ts)
+                } else {
+                    self.embed_lsb_v2(&rgba, &payload, seed, redundancy)
+                };
+                let (mut result, summary) = outcome.into_parts();
+                if summary.is_embedded() {
+                    Self::embed_seed_lsb_fallback(&mut result, seed);
+                }
+                Ok((DynamicImage::ImageRgba8(result), Some(summary)))
+            }
+            crate::types::ImageOutputFormat::Jpeg => {
+                let jpeg_bytes = crate::util::image::encode_image_with_options(
+                    img,
+                    Some(crate::types::ImageOutputFormat::Jpeg),
+                    plan.processing().progressive_jpeg,
+                    plan.processing().jpeg_quality,
+                )?;
+                let with_stego =
+                    self.apply_dct_stego_bytes_from_plan(&jpeg_bytes, plan, tile_size)?;
+                let (output, summary) = with_stego.into_parts();
+                Ok((image::load_from_memory(&output)?, Some(summary)))
+            }
+            crate::types::ImageOutputFormat::WebP => {
+                let outcome = if let Some(ts) = tile_size.filter(|&s| s > 0) {
+                    self.embed_lsb_tiled(&rgba, &payload, seed, ts)
+                } else {
+                    self.embed_lsb_v2(&rgba, &payload, seed, redundancy)
+                };
+                let (mut result, summary) = outcome.into_parts();
+                if summary.is_embedded() {
+                    Self::embed_seed_lsb_fallback(&mut result, seed);
+                }
+                Ok((DynamicImage::ImageRgba8(result), Some(summary)))
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn embed_lsb_minimal_from_plan(
+        &self,
+        img: &DynamicImage,
+        plan: &crate::types::ResolvedProtectionPlan,
+    ) -> DynamicImage {
+        let format = plan.input_format();
+        let embed_path = match format {
+            crate::types::ImageOutputFormat::Jpeg => crate::types::EmbedPath::DctF5,
+            _ => crate::types::EmbedPath::Lsb,
+        };
+        let emission = PayloadEmissionContext::from_plan(plan, embed_path);
+        let payload = self.generate_payload_for_plan(&emission, plan);
+        let rgba = img.to_rgba8();
+        let seed = plan.seed();
+
+        match format {
+            crate::types::ImageOutputFormat::Png | crate::types::ImageOutputFormat::WebP => {
+                let outcome = self.embed_lsb_v2(&rgba, &payload, seed, 1);
+                DynamicImage::ImageRgba8(outcome.into_inner())
+            }
+            crate::types::ImageOutputFormat::Jpeg => {
+                if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Jpeg)
+                {
+                    if let Ok(with_seed) = self.apply_qtable_seed_bytes(&encoded, seed) {
+                        if let Ok(stego_img) = image::load_from_memory(&with_seed) {
+                            stego_img
+                        } else {
+                            img.clone()
+                        }
+                    } else {
+                        img.clone()
+                    }
+                } else {
+                    img.clone()
+                }
+            }
+        }
+    }
+
     /// Generate the V3 stego payload for a given context.
     ///
     /// Exposed for testing channel flags and payload structure without
