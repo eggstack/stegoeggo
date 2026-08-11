@@ -107,6 +107,8 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **`ProtectionContext::default()` uses CSPRNG seed** — For reproducible results, use `ProtectionContext::new(intensity, seed)` with an explicit seed
 - **Pipeline flow order** — JPEG output: encode → DCT stego → metadata. Non-JPEG: pixel stego → encode → metadata. JPEG→JPEG fast path bypasses pixel decode entirely
 - **`MetadataTrapProtector::apply()` returns `Cow::Borrowed(img)` unchanged** — Metadata injection is byte-level. The pipeline routes `Light` through `apply_light_bytes()` which encodes → injects → decodes
+- **Generic stego API uses `StegoError`** — The public `stego` module uses its own `StegoError` type, not the crate root `Error`. Convert via `From<StegoError> for Error`
+- **JPEG `extract` requires `actual_redundancy`** — The JPEG embed auto-downgrades redundancy when capacity is insufficient. Pass `report.actual_redundancy` to `extract` to match what was embedded
 - **`#[serde(skip)]` on `config` field** — MAC keys and legal metadata are lost in serde roundtrips
 - **CLI unified path** — The CLI always routes through `ProtectionRequest`. There is no dual legacy/request code path. `ProtectionLevel::default_policy()` computes level defaults: `Standard`→`ProhibitedAiMlTraining`, `Light`/`Disabled`→`Unspecified`. `--dmi auto` and omitted `--dmi` are equivalent. Mixed conflicting policy options (e.g., `--rights-policy` contradicting `--no-ai-training`) are configuration errors (exit code 2)
 - **CLI exit codes** — `0`=ok, `1`=error, `2`=config, `3`=integrity, `5`=internal. `--verify` always exits 0; use output text to determine protection state, not exit code
@@ -212,6 +214,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Pipeline** (`src/lib.rs`): `ProtectionPipeline` orchestrates protectors for legacy APIs — see `architecture/pipeline.md`
 - **Direct plan executor** (`src/lib.rs`): `execute_metadata_only()`, `execute_stego_and_metadata()`, `execute_stego_and_metadata_tiled()` — canonical execution from `ResolvedProtectionPlan` without `ProtectionContext` reconstruction for metadata
 - **Generic carrier core** (`src/stego/`): Application-neutral LSB and JPEG DCT carrier mechanics — see `architecture/protected-steganography.md`
+- **Public generic stego API** (`stegoeggo::stego`): Carrier-level embedding/extraction for arbitrary payload bytes, independent of the rights-protection pipeline. Includes `stego::lsb` (pixel-domain), `stego::jpeg` (DCT-domain), and `stego::frame` (self-describing frame with CRC32). See `architecture/protected-steganography.md`
 - **JPEG fast path**: When input/output are both JPEG, operates directly on DCT coefficients via `src/jpeg_transcoder/`, bypassing pixel decode/encode — see `architecture/jpeg-transcoder.md`
 - **Policy-first API**: `ProtectionRequest` + `RightsPolicy` are the canonical API — see `architecture/types.md`
 - **`#![forbid(unsafe_code)]`** throughout the library crate

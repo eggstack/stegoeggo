@@ -227,3 +227,55 @@ Both tiled paths are wired as fallbacks in the existing verification chain:
 - **Extraction cost is O(K²).** For a 1024×1024 cropped image with
   `tile_min = 32`, up to ~1024 origins × 9 grid coords × 10 redundancies =
   ~92,160 extraction attempts. Early exit on first success keeps this practical.
+
+## Public Generic Carrier API
+
+The `stegoeggo::stego` module exposes application-neutral carrier operations
+for arbitrary payload bytes, independent of the rights-protection pipeline.
+
+### Module Structure
+
+```
+stegoeggo::stego
+├── error       — StegoError, JpegUnsupportedReason
+├── lsb         — LsbConfig, capacity, embed, extract
+├── jpeg        — JpegConfig, JpegSupport, probe_support, capacity, embed, extract, embed_seed_hint, extract_seed_hint
+└── frame       — FrameHeader, encode, decode, decode_prefix
+```
+
+### Types
+
+- `StegoError` — Structured error for generic carrier ops (InsufficientCapacity, UnsupportedJpeg, FrameNotFound, MalformedFrame, FrameChecksumMismatch, etc.)
+- `CapacityReport` — `{ required, available }` in carrier units (RGB slots for LSB, non-zero AC coefficients for DCT)
+- `EmbedReport` — `{ embedded, output, payload_bytes, required_capacity, available_capacity, actual_redundancy }`
+- `LsbConfig` — seed + redundancy (1–10, default 2)
+- `JpegConfig` — seed + redundancy (1–10, default 3)
+- `JpegSupport` — Supported or Unsupported(JpegUnsupportedReason)
+- `FrameHeader` — version + payload_len (for frame decode)
+
+### Design Decisions
+
+1. **Legacy scheme not exposed** — Only V2 corrected carrier exposed publicly
+2. **JPEG seed hint is public** — `embed_seed_hint`/`extract_seed_hint` with fragility warnings
+3. **`intensity` not exposed** — Redundancy is the explicit capacity/cost control
+4. **Error model** — `StegoError` converts to crate `Error` via `From`
+5. **Frame is optional** — Raw APIs don't require framing
+6. **JPEG extract requires `actual_redundancy`** — Embed auto-downgrades when capacity insufficient; extract must match
+
+### Frame Wire Format
+
+```
+Offset  Size  Field
+0       2     Magic [0x53, 0x47]
+2       1     Version (=1)
+3       4     Payload length (u32 LE, max 16 MiB)
+7       4     CRC32 of payload bytes
+11..    N     Payload bytes
+```
+
+Overhead: 11 bytes. Max payload: 16 MiB. CRC32 covers payload bytes only.
+
+### Tests
+
+`tests/public_stego_api.rs` — 28 tests covering LSB/JPEG/frame raw and framed
+roundtrips, capacity preflight, error conditions, and rights-metadata absence.

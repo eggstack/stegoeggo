@@ -195,7 +195,25 @@ pub mod verification;
 
 pub(crate) mod jpeg_transcoder;
 pub(crate) mod protected;
-pub(crate) mod stego;
+/// Generic steganographic carrier operations for arbitrary payload bytes.
+///
+/// This module provides a low-level API for embedding and extracting
+/// arbitrary byte payloads into images using steganographic carrier
+/// techniques. It is independent of the rights-protection pipeline.
+///
+/// # Carrier Types
+///
+/// - [`stego::lsb`] — Pixel-domain LSB embedding for PNG/WebP (`RgbaImage`)
+/// - [`stego::jpeg`] — DCT-domain F5 embedding for JPEG (encoded bytes)
+/// - [`stego::frame`] — Optional self-describing frame with length + CRC32
+///
+/// # Security Considerations
+///
+/// This is best-effort steganography, not encryption. Seed knowledge
+/// is not equivalent to cryptographic secrecy. LSB payloads are fragile
+/// under lossy re-encoding. JPEG DCT payloads are not guaranteed across
+/// arbitrary recompression.
+pub mod stego;
 pub(crate) mod util;
 pub(crate) mod webp_container;
 

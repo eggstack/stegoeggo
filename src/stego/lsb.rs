@@ -2,11 +2,17 @@ use crate::protected::constants::{SPLITMIX64_SEED, STEGO_OFFSET_SEED_1, STEGO_SP
 use crate::types::EmbedOutcome;
 use image::{Rgba, RgbaImage};
 
+/// Default tile size for tiled steganographic embedding (64×64 pixels).
 pub const DEFAULT_TILE_SIZE: u32 = 64;
 
+/// Minimum tile size for tiled steganographic embedding (reserved).
 #[allow(dead_code)]
 pub const MIN_TILE_SIZE: u32 = 32;
 
+/// Derive a per-tile seed from a master seed and tile grid coordinates.
+///
+/// Uses splitmix64 mixing to produce a deterministic, independent seed
+/// for each tile position.
 pub fn tile_seed(master_seed: u64, tile_x: u32, tile_y: u32) -> u64 {
     let mut z = master_seed;
     z ^= (tile_x as u64).wrapping_mul(0x9E3779B97F4A7C15);
@@ -541,4 +547,227 @@ pub(crate) fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
     } else {
         Some(seed)
     }
+}
+
+/// Configuration for LSB carrier operations.
+///
+/// Controls the seed, redundancy, and optional tile size for pixel-domain
+/// steganographic embedding and extraction.
+///
+/// # Examples
+///
+/// ```rust
+/// use stegoeggo::stego::lsb::LsbConfig;
+///
+/// let config = LsbConfig::new(42);
+/// assert_eq!(config.seed(), 42);
+/// assert_eq!(config.redundancy(), 2);
+/// ```
+#[derive(Debug, Clone)]
+pub struct LsbConfig {
+    seed: u64,
+    redundancy: usize,
+}
+
+impl LsbConfig {
+    /// Create a new configuration with the given seed and default redundancy (2).
+    #[must_use]
+    pub fn new(seed: u64) -> Self {
+        Self {
+            seed,
+            redundancy: 2,
+        }
+    }
+
+    /// Set the redundancy level (1–10). Higher redundancy increases
+    /// robustness at the cost of reduced capacity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `redundancy` is 0 or greater than 10.
+    #[must_use]
+    pub fn with_redundancy(mut self, redundancy: usize) -> Self {
+        assert!(
+            (1..=10).contains(&redundancy),
+            "redundancy must be 1..=10, got {redundancy}"
+        );
+        self.redundancy = redundancy;
+        self
+    }
+
+    /// The seed used for the carrier permutation.
+    #[must_use]
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    /// The redundancy level.
+    #[must_use]
+    pub fn redundancy(&self) -> usize {
+        self.redundancy
+    }
+}
+
+/// Query the available LSB capacity for an RGBA image.
+///
+/// Returns a [`CapacityReport`](super::CapacityReport) indicating how many
+/// payload bytes can be embedded with the given configuration.
+///
+/// # Arguments
+///
+/// * `img` — The RGBA image to query.
+/// * `payload_len` — Desired payload length in bytes.
+/// * `config` — LSB carrier configuration.
+///
+/// # Examples
+///
+/// ```rust
+/// use image::RgbaImage;
+/// use stegoeggo::stego::lsb::{self, LsbConfig};
+///
+/// let img = RgbaImage::new(100, 100);
+/// let config = LsbConfig::new(42);
+/// let report = lsb::capacity(&img, 100, &config);
+/// assert!(report.is_sufficient());
+/// ```
+#[must_use]
+pub fn capacity(img: &RgbaImage, payload_len: usize, config: &LsbConfig) -> super::CapacityReport {
+    let (w, h) = img.dimensions();
+    let available = lsb_available_slots(w, h);
+    let payload_bits = payload_len * 8;
+    let required = lsb_required_capacity_v2(payload_bits, config.redundancy());
+    super::CapacityReport {
+        required,
+        available,
+    }
+}
+
+/// Embed arbitrary bytes into an RGBA image using V2 corrected carrier LSB.
+///
+/// Returns an [`EmbedReport`](super::EmbedReport) with the output image
+/// bytes (encoded as PNG) and capacity information.
+///
+/// # Arguments
+///
+/// * `img` — The RGBA image to embed into.
+/// * `payload` — Arbitrary bytes to embed.
+/// * `config` — LSB carrier configuration.
+///
+/// # Errors
+///
+/// Returns [`StegoError::EmptyCarrier`] if the image has zero pixels.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use image::RgbaImage;
+/// use stegoeggo::stego::lsb::{self, LsbConfig};
+///
+/// let img = RgbaImage::new(100, 100);
+/// let config = LsbConfig::new(42);
+/// let report = lsb::embed(&img, b"secret message", &config).unwrap();
+/// assert!(report.embedded);
+/// ```
+pub fn embed(
+    img: &RgbaImage,
+    payload: &[u8],
+    config: &LsbConfig,
+) -> Result<super::EmbedReport, super::StegoError> {
+    if img.dimensions() == (0, 0) {
+        return Err(super::StegoError::EmptyCarrier);
+    }
+
+    let outcome = embed_lsb_v2(img, payload, config.seed(), config.redundancy());
+
+    match outcome {
+        crate::types::EmbedOutcome::Embedded {
+            output,
+            payload_bytes,
+            required_capacity,
+            available_capacity,
+            ..
+        } => {
+            let encoded = encode_png(&output)?;
+            Ok(super::EmbedReport {
+                embedded: true,
+                output: encoded,
+                payload_bytes,
+                required_capacity,
+                available_capacity,
+                actual_redundancy: config.redundancy(),
+            })
+        }
+        crate::types::EmbedOutcome::SkippedCapacity {
+            output,
+            payload_bytes,
+            required_capacity,
+            available_capacity,
+            ..
+        } => {
+            let encoded = encode_png(&output)?;
+            Ok(super::EmbedReport {
+                embedded: false,
+                output: encoded,
+                payload_bytes,
+                required_capacity,
+                available_capacity,
+                actual_redundancy: config.redundancy(),
+            })
+        }
+        crate::types::EmbedOutcome::UnsupportedProgressive { output } => {
+            let encoded = encode_png(&output)?;
+            Ok(super::EmbedReport {
+                embedded: false,
+                output: encoded,
+                payload_bytes: payload.len(),
+                required_capacity: 0,
+                available_capacity: 0,
+                actual_redundancy: config.redundancy(),
+            })
+        }
+    }
+}
+
+/// Extract arbitrary bytes from an RGBA image using V2 corrected carrier LSB.
+///
+/// # Arguments
+///
+/// * `img` — The RGBA image to extract from.
+/// * `payload_len` — Expected payload length in bytes.
+/// * `config` — LSB carrier configuration (must match the embedding config).
+///
+/// # Errors
+///
+/// Returns [`StegoError::MalformedInput`] if extraction produces invalid data.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use image::RgbaImage;
+/// use stegoeggo::stego::lsb::{self, LsbConfig};
+///
+/// # let img = RgbaImage::new(100, 100);
+/// # let config = LsbConfig::new(42);
+/// # let embedded = lsb::embed(&img, b"secret", &config).unwrap();
+/// let decoded_img = image::load_from_memory(&embedded.output).unwrap().to_rgba8();
+/// let recovered = lsb::extract(&decoded_img, 6, &config).unwrap();
+/// assert_eq!(&recovered, b"secret");
+/// ```
+pub fn extract(
+    img: &RgbaImage,
+    payload_len: usize,
+    config: &LsbConfig,
+) -> Result<Vec<u8>, super::StegoError> {
+    let bits = payload_len * 8;
+    extract_lsb_v2(img, bits, config.seed(), 0, config.redundancy())
+        .ok_or_else(|| super::StegoError::MalformedInput("extraction returned no data".into()))
+}
+
+fn encode_png(img: &RgbaImage) -> Result<Vec<u8>, super::StegoError> {
+    let mut buf = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new(&mut buf);
+    image::DynamicImage::ImageRgba8(img.clone())
+        .write_with_encoder(encoder)
+        .map_err(|e| super::StegoError::MalformedInput(format!("PNG encode failed: {e}")))?;
+    Ok(buf)
 }
