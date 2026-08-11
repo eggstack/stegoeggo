@@ -282,9 +282,6 @@ use image::DynamicImage;
 use image::GenericImageView;
 use std::borrow::Cow;
 use std::sync::Arc;
-use std::sync::LazyLock;
-
-static DEFAULT_PIPELINE: LazyLock<ProtectionPipeline> = LazyLock::new(ProtectionPipeline::new);
 
 /// Internal pipeline output that carries both the processed bytes and the
 /// structured embedding outcome. Public functions extract just the bytes;
@@ -686,9 +683,21 @@ pub fn process_image(
     level: ProtectionLevel,
     ctx: &ProtectionContext,
 ) -> Result<DynamicImage> {
-    DEFAULT_PIPELINE
-        .process(&img, level, ctx)
-        .map(|c| c.into_owned())
+    if level == ProtectionLevel::Disabled {
+        return Ok(img);
+    }
+    let format = ctx
+        .output_format()
+        .or_else(|| ctx.input_format())
+        .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
+    let img_bytes = crate::util::image::encode_image_with_options(
+        &img,
+        Some(format),
+        ctx.progressive_jpeg(),
+        ctx.jpeg_quality(),
+    )?;
+    let protected_bytes = process_image_bytes(&img_bytes, level, ctx)?;
+    image::load_from_memory(&protected_bytes).map_err(|e| Error::ImageDecode(e.to_string()))
 }
 
 /// Process multiple images in parallel.
@@ -724,11 +733,7 @@ pub fn process_images_parallel(
     use rayon::prelude::*;
     images
         .par_iter()
-        .map(|img| {
-            DEFAULT_PIPELINE
-                .process(img, level, ctx)
-                .map(|c| c.into_owned())
-        })
+        .map(|img| process_image(img.clone(), level, ctx))
         .collect()
 }
 
@@ -763,7 +768,7 @@ pub fn process_images_bytes_parallel(
     use rayon::prelude::*;
     images
         .par_iter()
-        .map(|img_bytes| DEFAULT_PIPELINE.process_bytes(img_bytes, level, ctx))
+        .map(|img_bytes| process_image_bytes(img_bytes, level, ctx))
         .collect()
 }
 

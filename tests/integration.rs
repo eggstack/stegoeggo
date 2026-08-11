@@ -589,7 +589,7 @@ mod edge_cases {
 
     #[test]
     fn test_max_intensity_modifies_image() {
-        let img = create_test_image(32, 32);
+        let img = create_test_image(64, 64);
 
         let ctx = ProtectionContext::new(1.0, 22222);
 
