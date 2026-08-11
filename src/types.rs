@@ -3246,9 +3246,10 @@ pub struct EmbedOutcomeSummary {
     pub path: EmbedPath,
     /// Payload size in bytes.
     pub payload_bytes: usize,
-    /// Required capacity (in units appropriate to the embedding path).
+    /// Required capacity for the carrier (RGB slots for LSB paths, non-zero AC
+    /// coefficients for DCT paths).
     pub required_capacity: usize,
-    /// Available capacity in the carrier.
+    /// Available capacity in the carrier (same units as `required_capacity`).
     pub available_capacity: usize,
 }
 

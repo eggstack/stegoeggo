@@ -364,7 +364,7 @@ impl SteganographyProtector {
 
     pub(crate) fn lsb_pixels_needed(ctx: &ProtectionContext) -> usize {
         let payload_bits = Self::payload_bits_for_context(ctx);
-        Self::lsb_pixels_needed_for_bits(payload_bits)
+        Self::lsb_slots_needed_for_bits(payload_bits)
     }
 
     fn payload_bits_for_context(ctx: &ProtectionContext) -> usize {
@@ -375,8 +375,8 @@ impl SteganographyProtector {
         }
     }
 
-    fn lsb_pixels_needed_for_bits(payload_bits: usize) -> usize {
-        Self::lsb_required_pixels_legacy(payload_bits)
+    fn lsb_slots_needed_for_bits(payload_bits: usize) -> usize {
+        Self::lsb_required_slots_legacy(payload_bits)
     }
 
     /// Embed only the seed in JPEG quantization tables (no DCT coefficient modification).
@@ -2993,13 +2993,15 @@ impl SteganographyProtector {
             .unwrap_or(usize::MAX)
     }
 
-    /// Required capacity in pixels for the legacy carrier scheme.
+    /// Required capacity in RGB carrier slots for the legacy carrier scheme.
     ///
-    /// Legacy capacity model: `pixels_needed = ceil(payload_bits / 3) * STEGO_SPREAD_FACTOR`.
-    /// The division by 3 accounts for R/G/B channels cycled per bit.
+    /// Legacy capacity model: `slots_needed = ceil(payload_bits / 3) * STEGO_SPREAD_FACTOR * 3`.
+    /// The division by 3 accounts for R/G/B channels cycled per bit; the final
+    /// multiplication by 3 converts from pixels to RGB slots for consistent
+    /// reporting in `EmbedOutcomeSummary`.
     #[inline(always)]
-    fn lsb_required_pixels_legacy(payload_bits: usize) -> usize {
-        payload_bits.div_ceil(3) * STEGO_SPREAD_FACTOR
+    fn lsb_required_slots_legacy(payload_bits: usize) -> usize {
+        payload_bits.div_ceil(3) * STEGO_SPREAD_FACTOR * 3
     }
 
     /// Capacity helper that returns `(required, available)` for the V2 carrier.
@@ -3031,14 +3033,16 @@ impl SteganographyProtector {
         let payload_bits = Self::bytes_to_bits(payload);
 
         let total_pixels = (width * height) as usize;
-        let total_pixels_needed = Self::lsb_required_pixels_legacy(payload_bits.len());
+        let total_pixels_needed = payload_bits.len().div_ceil(3) * STEGO_SPREAD_FACTOR;
+        let available_slots = Self::lsb_available_slots(width, height);
+        let required_slots = Self::lsb_required_slots_legacy(payload_bits.len());
 
         if total_pixels_needed > total_pixels {
             return EmbedOutcome::SkippedCapacity {
                 output,
                 payload_bytes: payload.len(),
-                required_capacity: total_pixels_needed,
-                available_capacity: total_pixels,
+                required_capacity: required_slots,
+                available_capacity: available_slots,
                 path: crate::types::EmbedPath::Lsb,
             };
         }
@@ -3063,8 +3067,8 @@ impl SteganographyProtector {
         EmbedOutcome::Embedded {
             output,
             payload_bytes: payload.len(),
-            required_capacity: total_pixels_needed,
-            available_capacity: total_pixels,
+            required_capacity: required_slots,
+            available_capacity: available_slots,
             path: crate::types::EmbedPath::Lsb,
         }
     }

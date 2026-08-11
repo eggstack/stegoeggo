@@ -1122,7 +1122,7 @@ pub fn process_image_bytes_with_warnings(
     }
 
     // Pre-check LSB capacity for PNG/WebP Standard level — the pipeline silently
-    // skips embedding when the image has too few pixels.
+    // skips embedding when the image has too few RGB carrier slots.
     if level == ProtectionLevel::Standard
         && matches!(
             output_format,
@@ -1131,9 +1131,9 @@ pub fn process_image_bytes_with_warnings(
     {
         if let Ok(img) = image::load_from_memory(img_bytes) {
             let (w, h) = img.dimensions();
-            let total_pixels = (w as usize) * (h as usize);
-            let pixels_needed = SteganographyProtector::lsb_pixels_needed(&ctx_with_format);
-            if total_pixels < pixels_needed {
+            let total_slots = (w as usize) * (h as usize) * 3;
+            let slots_needed = SteganographyProtector::lsb_pixels_needed(&ctx_with_format);
+            if total_slots < slots_needed {
                 warnings.push(ProtectionWarning::LsbCapacitySkipped);
             }
         }
