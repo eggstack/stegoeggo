@@ -78,6 +78,9 @@ Trailing bytes after complete frame are rejected as malformed.
 - [x] Phase 6: Framed convenience APIs (LSB and JPEG framed roundtrip tests)
 - [x] Phase 7: Error model (StegoError, JpegUnsupportedReason)
 - [x] Phase 8: Documentation (rustdoc, AGENTS.md, architecture/protected-steganography.md)
-- [x] Phase 9: Required tests (28 public API tests in tests/public_stego_api.rs)
+- [x] Phase 9: Required tests (29 public API tests in tests/public_stego_api.rs)
 - [x] ./scripts/check.sh passes
 - [x] plans/062-status.md records final public API inventory, frame wire spec, and semver review
+- [x] frame::decode rejects trailing bytes after complete frame
+- [x] README "Generic carrier API" section added
+- [x] examples/generic_stego.rs created

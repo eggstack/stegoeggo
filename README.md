@@ -573,6 +573,46 @@ evidence channels. It extracts legal notice fields (copyright, creator, contact,
 checks steganographic payload integrity, and returns an `EvidenceStrength` rating.
 Use `verify_image_bytes_detailed()` for lower-level payload-only verification.
 
+## Generic Carrier API
+
+`stegoeggo::stego` exposes application-neutral carrier operations for embedding
+arbitrary bytes into images, independent of the rights-protection pipeline. Use
+this when you need raw steganographic carrier mechanics without rights metadata,
+legal notices, or evidence profiles.
+
+| Module | Domain | Input/Output |
+|--------|--------|--------------|
+| `stego::lsb` | Pixel-domain LSB | `RgbaImage` |
+| `stego::jpeg` | DCT-domain F5 | Encoded JPEG bytes |
+| `stego::frame` | Self-describing frame | `Vec<u8>` (any carrier) |
+
+**Raw round-trip:**
+
+```rust
+use stegoeggo::stego::lsb::{self, LsbConfig};
+
+let config = LsbConfig::new(seed);
+let report = lsb::embed(&mut image, payload, &config)?;
+let recovered = lsb::extract(&image, payload.len(), &config)?;
+```
+
+**Framed round-trip** (no caller-known payload length needed):
+
+```rust
+use stegoeggo::stego::{frame, lsb::{self, LsbConfig}};
+
+let framed = frame::encode(payload)?;
+let report = lsb::embed(&mut image, &framed, &LsbConfig::new(seed))?;
+let (header, raw) = lsb::extract(&image, framed.len(), &LsbConfig::new(seed))?;
+let (header, payload) = frame::decode(&raw)?;
+```
+
+This API is best-effort steganography, not encryption. Seed knowledge is not
+equivalent to cryptographic secrecy. LSB payloads are fragile under lossy
+re-encoding. JPEG DCT payloads are not guaranteed across arbitrary
+recompression. See the [stego module rustdoc](docs.rs/stegoeggo/latest/stegoeggo/stego/)
+for details and security considerations.
+
 ## CLI Usage
 
 ### Full Options Reference

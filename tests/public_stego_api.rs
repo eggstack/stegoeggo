@@ -272,6 +272,18 @@ fn public_frame_malformed_length_fails_before_large_allocation() {
 }
 
 #[test]
+fn public_frame_trailing_bytes_rejected() {
+    let payload = b"trailing test";
+    let mut framed = frame::encode(payload).unwrap();
+    framed.extend_from_slice(&[0xFF, 0xFE, 0xFD]);
+
+    let result = frame::decode(&framed);
+    assert!(
+        matches!(result, Err(StegoError::MalformedFrame(ref msg)) if msg.contains("trailing bytes"))
+    );
+}
+
+#[test]
 fn public_frame_prefix_determines_total_length() {
     let payload = vec![42u8; 500];
     let framed = frame::encode(&payload).unwrap();

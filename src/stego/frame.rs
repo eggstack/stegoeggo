@@ -61,7 +61,8 @@ pub fn encode(payload: &[u8]) -> Result<Vec<u8>, super::StegoError> {
 ///
 /// Returns [`StegoError::FrameNotFound`] if the data is too short for a header.
 /// Returns [`StegoError::MalformedFrame`] if the magic bytes don't match, the
-/// version is unknown, or the declared payload length exceeds bounds.
+/// version is unknown, the declared payload length exceeds bounds, or there
+/// are trailing bytes after the complete frame.
 /// Returns [`StegoError::FrameChecksumMismatch`] if the CRC32 doesn't match.
 /// Returns [`StegoError::MalformedFrame`] if the data is shorter than header +
 /// declared payload length.
@@ -93,15 +94,25 @@ pub fn decode(data: &[u8]) -> Result<(FrameHeader, Vec<u8>), super::StegoError> 
         )));
     }
 
-    if data.len() < FRAME_HEADER_SIZE + payload_len {
+    let expected_len = FRAME_HEADER_SIZE + payload_len;
+    if data.len() < expected_len {
         return Err(super::StegoError::MalformedFrame(format!(
             "data length {} is shorter than header ({FRAME_HEADER_SIZE}) + declared payload ({payload_len})",
             data.len()
         )));
     }
 
+    if data.len() > expected_len {
+        return Err(super::StegoError::MalformedFrame(format!(
+            "data length {} exceeds expected frame size {} ({} trailing bytes)",
+            data.len(),
+            expected_len,
+            data.len() - expected_len
+        )));
+    }
+
     let expected_crc = u32::from_le_bytes([data[7], data[8], data[9], data[10]]);
-    let payload = &data[FRAME_HEADER_SIZE..FRAME_HEADER_SIZE + payload_len];
+    let payload = &data[FRAME_HEADER_SIZE..expected_len];
     let actual_crc = crc32fast::hash(payload);
 
     if expected_crc != actual_crc {
