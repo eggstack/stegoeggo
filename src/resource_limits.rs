@@ -75,6 +75,15 @@ impl ResourceLimits {
         ResourceLimitsBuilder(ResourceLimits::default())
     }
 
+    /// Convert to the carrier crate's [`ParseLimits`](crate::stego::jpeg_transcoder::header::ParseLimits).
+    #[must_use]
+    pub fn to_parse_limits(&self) -> crate::stego::jpeg_transcoder::header::ParseLimits {
+        crate::stego::jpeg_transcoder::header::ParseLimits {
+            max_jpeg_segments: self.max_jpeg_segments,
+            max_jpeg_segment_bytes: self.max_jpeg_segment_bytes,
+        }
+    }
+
     /// Maximum input size in bytes.
     pub fn max_input_bytes(&self) -> usize {
         self.max_input_bytes
@@ -745,7 +754,10 @@ mod tests {
             data.extend_from_slice(&[i, 0, 0, 0]); // payload
         }
         data.extend_from_slice(&[0xFF, 0xD9]); // EOI
-        let result = crate::jpeg_transcoder::header::JpegHeader::parse_with_limits(&data, &limits);
+        let result = crate::stego::jpeg_transcoder::header::JpegHeader::parse_with_limits(
+            &data,
+            &limits.to_parse_limits(),
+        );
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
@@ -762,7 +774,10 @@ mod tests {
         data.extend_from_slice(&[0x00, 0x20]); // length = 32 (exceeds 10)
         data.extend_from_slice(&[0; 30]); // payload
         data.extend_from_slice(&[0xFF, 0xD9]); // EOI
-        let result = crate::jpeg_transcoder::header::JpegHeader::parse_with_limits(&data, &limits);
+        let result = crate::stego::jpeg_transcoder::header::JpegHeader::parse_with_limits(
+            &data,
+            &limits.to_parse_limits(),
+        );
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(

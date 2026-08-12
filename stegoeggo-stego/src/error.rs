@@ -4,8 +4,8 @@ use std::fmt;
 ///
 /// These errors are specific to the `stego` public API and cover
 /// configuration, capacity, input validation, and framing failures.
-/// They convert into the crate's root [`Error`](crate::Error) via
-/// [`From`] for callers that use the unified error type.
+/// They convert into the application crate's root error type via
+/// [`From`] for callers that use a unified error type.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum StegoError {
@@ -111,22 +111,6 @@ impl fmt::Display for JpegUnsupportedReason {
             Self::MissingTables => write!(f, "missing Huffman tables"),
             Self::MalformedHeader => write!(f, "malformed header"),
             Self::TrailingSegmentsAfterScan => write!(f, "trailing segments after scan"),
-        }
-    }
-}
-
-impl From<StegoError> for crate::Error {
-    fn from(e: StegoError) -> Self {
-        match &e {
-            StegoError::InvalidConfig(msg) => crate::Error::Config(msg.clone()),
-            StegoError::InsufficientCapacity { .. } => crate::Error::Steganography(e.to_string()),
-            StegoError::MalformedInput(msg) => crate::Error::InvalidFormat(msg.clone()),
-            StegoError::UnsupportedJpeg(_) => crate::Error::InvalidFormat(e.to_string()),
-            StegoError::FrameNotFound => crate::Error::Steganography(e.to_string()),
-            StegoError::MalformedFrame(_) => crate::Error::Steganography(e.to_string()),
-            StegoError::FrameChecksumMismatch => crate::Error::PayloadVerification(e.to_string()),
-            StegoError::ResourceLimitExceeded(msg) => crate::Error::Config(msg.clone()),
-            StegoError::EmptyCarrier => crate::Error::Steganography(e.to_string()),
         }
     }
 }

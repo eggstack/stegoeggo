@@ -193,27 +193,8 @@ pub mod types;
 /// Structured verification report and builder for legal-notice and stego verification.
 pub mod verification;
 
-pub(crate) mod jpeg_transcoder;
 pub(crate) mod protected;
-/// Generic steganographic carrier operations for arbitrary payload bytes.
-///
-/// This module provides a low-level API for embedding and extracting
-/// arbitrary byte payloads into images using steganographic carrier
-/// techniques. It is independent of the rights-protection pipeline.
-///
-/// # Carrier Types
-///
-/// - [`stego::lsb`] — Pixel-domain LSB embedding for PNG/WebP (`RgbaImage`)
-/// - [`stego::jpeg`] — DCT-domain F5 embedding for JPEG (encoded bytes)
-/// - [`stego::frame`] — Optional self-describing frame with length + CRC32
-///
-/// # Security Considerations
-///
-/// This is best-effort steganography, not encryption. Seed knowledge
-/// is not equivalent to cryptographic secrecy. LSB payloads are fragile
-/// under lossy re-encoding. JPEG DCT payloads are not guaranteed across
-/// arbitrary recompression.
-pub mod stego;
+pub use stegoeggo_stego as stego;
 pub(crate) mod util;
 pub(crate) mod webp_container;
 
@@ -232,16 +213,17 @@ pub mod detached;
 
 pub use error::{Error, Result};
 pub use resource_limits::{ResourceLimits, ResourceUsage};
+pub use stego::{EmbedOutcomeSummary, EmbedPath, EmbedStatus};
 pub use types::{AuthenticationMode, HiddenMarkerMode, ProcessingOptions};
 #[allow(deprecated)]
 pub use types::{
-    DmiValue, EmbedOutcomeSummary, EmbedPath, EmbedStatus, EvidenceChannel, EvidenceProfile,
-    EvidenceStrength, ExecutionReport, ImageOutputFormat, LegalMetadata, LocalizedText,
-    MetadataUpdatePolicy, NoticeVerification, NoticeVerificationBuilder, ProtectionChannels,
-    ProtectionConfig, ProtectionContext, ProtectionLevel, ProtectionPreset, ProtectionRequest,
-    ProtectionWarning, ResolvedProtectionPlan, RightsNotice, RightsPolicy, RightsSignalKind,
-    VerificationResult, VerificationStatus, WarningCategory, WarningSeverity,
-    DEFAULT_OUTPUT_FORMAT, PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
+    DmiValue, EvidenceChannel, EvidenceProfile, EvidenceStrength, ExecutionReport,
+    ImageOutputFormat, LegalMetadata, LocalizedText, MetadataUpdatePolicy, NoticeVerification,
+    NoticeVerificationBuilder, ProtectionChannels, ProtectionConfig, ProtectionContext,
+    ProtectionLevel, ProtectionPreset, ProtectionRequest, ProtectionWarning,
+    ResolvedProtectionPlan, RightsNotice, RightsPolicy, RightsSignalKind, VerificationResult,
+    VerificationStatus, WarningCategory, WarningSeverity, DEFAULT_OUTPUT_FORMAT,
+    PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
 };
 
 pub use traits::Protector;
@@ -252,7 +234,7 @@ pub use protected::metadata_trap::RightsMetadataProtector;
 pub use protected::passthrough::PassthroughProtector;
 pub use protected::steganography::{SteganographyProtector, StegoPayload};
 
-pub use jpeg_transcoder::is_progressive_jpeg;
+pub use stego::is_progressive_jpeg;
 
 /// Parse JPEG header and decode DCT coefficients from raw bytes.
 ///
@@ -265,10 +247,13 @@ pub use jpeg_transcoder::is_progressive_jpeg;
 pub fn parse_jpeg_for_fuzz(
     data: &[u8],
 ) -> std::result::Result<
-    (jpeg_transcoder::JpegHeader, jpeg_transcoder::Coefficients),
-    jpeg_transcoder::TranscoderError,
+    (
+        stego::jpeg_transcoder::JpegHeader,
+        stego::jpeg_transcoder::Coefficients,
+    ),
+    stego::jpeg_transcoder::TranscoderError,
 > {
-    jpeg_transcoder::JpegTranscoder::decode_coefficients(data)
+    stego::jpeg_transcoder::JpegTranscoder::decode_coefficients(data)
 }
 
 pub use util::image::{
@@ -490,7 +475,7 @@ impl ProtectionPipeline {
         // when the caller did not set an explicit max_dimension.
         let limits = ctx.resource_limits();
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
-            let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+            let header = stego::jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
             limits.check_dimensions(header.width as u32, header.height as u32)?;
         } else if let Ok(img) = load_image_from_bytes(img_bytes) {
             let (width, height) = img.dimensions();
@@ -571,7 +556,10 @@ impl ProtectionPipeline {
         limits: &ResourceLimits,
     ) -> Result<()> {
         if let Some(max) = max_dim {
-            let header = jpeg_transcoder::header::JpegHeader::parse_with_limits(img_bytes, limits)?;
+            let header = stego::jpeg_transcoder::header::JpegHeader::parse_with_limits(
+                img_bytes,
+                &limits.to_parse_limits(),
+            )?;
             if header.width as u32 > max || header.height as u32 > max {
                 return Err(Error::ImageDecode(format!(
                     "Image dimensions {}x{} exceed maximum allowed {}",
@@ -1120,23 +1108,23 @@ pub fn process_request_bytes(img_bytes: &[u8], request: &ProtectionRequest) -> R
 }
 
 fn warnings_from_embed_outcome(
-    summary: &crate::types::EmbedOutcomeSummary,
+    summary: &crate::stego::EmbedOutcomeSummary,
 ) -> Vec<ProtectionWarning> {
     let mut warnings = Vec::new();
     match summary.status {
-        crate::types::EmbedStatus::SkippedCapacity => match summary.path {
-            crate::types::EmbedPath::Lsb | crate::types::EmbedPath::LsbTiled => {
+        crate::stego::EmbedStatus::SkippedCapacity => match summary.path {
+            crate::stego::EmbedPath::Lsb | crate::stego::EmbedPath::LsbTiled => {
                 warnings.push(ProtectionWarning::LsbCapacitySkipped);
             }
-            crate::types::EmbedPath::DctF5 | crate::types::EmbedPath::DctF5Tiled => {
+            crate::stego::EmbedPath::DctF5 | crate::stego::EmbedPath::DctF5Tiled => {
                 warnings.push(ProtectionWarning::DctCapacityInsufficient);
             }
-            crate::types::EmbedPath::QTableSeedOnly => {}
+            crate::stego::EmbedPath::QTableSeedOnly => {}
         },
-        crate::types::EmbedStatus::UnsupportedProgressive => {
+        crate::stego::EmbedStatus::UnsupportedProgressive => {
             warnings.push(ProtectionWarning::ProgressiveJpegFallback);
         }
-        crate::types::EmbedStatus::Embedded => {}
+        crate::stego::EmbedStatus::Embedded => {}
     }
     warnings
 }
@@ -1258,7 +1246,7 @@ fn process_plan_bytes(
     limits.check_input_size(img_bytes.len())?;
 
     if plan.input_format() == ImageOutputFormat::Jpeg {
-        let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+        let header = stego::jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
         limits.check_dimensions(header.width as u32, header.height as u32)?;
         if let Some(max_dim) = plan.processing().max_dimension {
             if header.width as u32 > max_dim || header.height as u32 > max_dim {
@@ -1451,7 +1439,7 @@ fn execute_stego_and_metadata(
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
-        let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+        let header = stego::jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
         limits.check_dimensions(header.width as u32, header.height as u32)?;
 
         let with_stego = steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, None)?;
@@ -1514,7 +1502,7 @@ fn execute_stego_and_metadata_tiled(
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
-        let header = jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+        let header = stego::jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
         limits.check_dimensions(header.width as u32, header.height as u32)?;
 
         let with_stego =

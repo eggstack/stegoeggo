@@ -1,11 +1,11 @@
 use crate::error::{Error, Result};
-use crate::jpeg_transcoder::{DctStegoF5, JpegTranscoder};
 use crate::payload_v3::types::{AuthAlgorithm, ProtectionChannels, V3_MAGIC, V3_PAYLOAD_VERSION};
 use crate::protected::constants::STEGO_OFFSET_SEED_1;
 use crate::protected::ecc;
 use crate::protected::metadata_trap::RightsMetadataProtector;
 use crate::resource_limits::ResourceLimits;
 use crate::stego::jpeg as carrier_jpeg;
+use crate::stego::jpeg_transcoder::{DctStegoF5, JpegTranscoder};
 use crate::stego::lsb as carrier_lsb;
 use crate::traits::Protector;
 use crate::types::{
@@ -238,8 +238,8 @@ impl SteganographyProtector {
         &self,
         jpeg_bytes: &[u8],
         ctx: &ProtectionContext,
-    ) -> Result<crate::types::EmbedOutcome<Vec<u8>>> {
-        use crate::types::{EmbedOutcome, EmbedPath};
+    ) -> Result<crate::stego::EmbedOutcome<Vec<u8>>> {
+        use crate::stego::{EmbedOutcome, EmbedPath};
 
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
@@ -303,7 +303,7 @@ impl SteganographyProtector {
                 })
             }
             Err(_) => {
-                let mut header = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+                let mut header = crate::stego::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
                 let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
                 Ok(EmbedOutcome::UnsupportedProgressive { output })
@@ -332,7 +332,7 @@ impl SteganographyProtector {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
         }
 
-        let mut header = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+        let mut header = crate::stego::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
         DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
         Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)
     }
@@ -350,8 +350,8 @@ impl SteganographyProtector {
         jpeg_bytes: &[u8],
         ctx: &ProtectionContext,
         tile_size: u32,
-    ) -> Result<crate::types::EmbedOutcome<Vec<u8>>> {
-        use crate::types::{EmbedOutcome, EmbedPath};
+    ) -> Result<crate::stego::EmbedOutcome<Vec<u8>>> {
+        use crate::stego::{EmbedOutcome, EmbedPath};
 
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
@@ -461,7 +461,7 @@ impl SteganographyProtector {
                 })
             }
             Err(_) => {
-                let mut header = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+                let mut header = crate::stego::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
                 let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
                 Ok(EmbedOutcome::UnsupportedProgressive { output })
@@ -822,10 +822,10 @@ impl SteganographyProtector {
         let embed_path = ctx
             .input_format()
             .map(|f| match f {
-                crate::types::ImageOutputFormat::Jpeg => crate::types::EmbedPath::DctF5,
-                _ => crate::types::EmbedPath::Lsb,
+                crate::types::ImageOutputFormat::Jpeg => crate::stego::EmbedPath::DctF5,
+                _ => crate::stego::EmbedPath::Lsb,
             })
-            .unwrap_or(crate::types::EmbedPath::Lsb);
+            .unwrap_or(crate::stego::EmbedPath::Lsb);
         let payload = self.generate_payload(
             &crate::types::PayloadEmissionContext::from_plan_for_context(ctx, embed_path),
             ctx,
@@ -861,13 +861,13 @@ impl SteganographyProtector {
 
     fn reassemble_jpeg_with_qtables(
         jpeg_bytes: &[u8],
-        header: &crate::jpeg_transcoder::JpegHeader,
+        header: &crate::stego::jpeg_transcoder::JpegHeader,
     ) -> Result<Vec<u8>> {
-        carrier_jpeg::reassemble_jpeg_with_qtables(jpeg_bytes, header)
+        carrier_jpeg::reassemble_jpeg_with_qtables(jpeg_bytes, header).map_err(Into::into)
     }
 
     pub(crate) fn dct_payload_capacity(
-        coefficients: &crate::jpeg_transcoder::Coefficients,
+        coefficients: &crate::stego::jpeg_transcoder::Coefficients,
     ) -> usize {
         carrier_jpeg::dct_payload_capacity(coefficients)
     }
@@ -2343,7 +2343,7 @@ impl SteganographyProtector {
 
     fn extract_verified_dct_payload_from_coefficients(
         &self,
-        coefficients: &crate::jpeg_transcoder::Coefficients,
+        coefficients: &crate::stego::jpeg_transcoder::Coefficients,
         seed: u64,
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
@@ -2389,7 +2389,7 @@ impl SteganographyProtector {
     /// Verification-path variant of `extract_verified_dct_payload_from_coefficients`.
     fn verify_extract_dct_from_coefficients(
         &self,
-        coefficients: &crate::jpeg_transcoder::Coefficients,
+        coefficients: &crate::stego::jpeg_transcoder::Coefficients,
         seed: u64,
         mac_key: &[u8],
     ) -> CandidateOutcome {
@@ -2858,8 +2858,8 @@ impl SteganographyProtector {
         jpeg_bytes: &[u8],
         plan: &crate::types::ResolvedProtectionPlan,
         tile_size: Option<u32>,
-    ) -> Result<crate::types::EmbedOutcome<Vec<u8>>> {
-        use crate::types::{EmbedOutcome, EmbedPath};
+    ) -> Result<crate::stego::EmbedOutcome<Vec<u8>>> {
+        use crate::stego::{EmbedOutcome, EmbedPath};
 
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
@@ -2918,7 +2918,7 @@ impl SteganographyProtector {
                 })
             }
             Err(_) => {
-                let mut header = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+                let mut header = crate::stego::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
                 let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
                 Ok(EmbedOutcome::UnsupportedProgressive { output })
@@ -2931,8 +2931,8 @@ impl SteganographyProtector {
         jpeg_bytes: &[u8],
         plan: &crate::types::ResolvedProtectionPlan,
         tile_size: u32,
-    ) -> Result<crate::types::EmbedOutcome<Vec<u8>>> {
-        use crate::types::{EmbedOutcome, EmbedPath};
+    ) -> Result<crate::stego::EmbedOutcome<Vec<u8>>> {
+        use crate::stego::{EmbedOutcome, EmbedPath};
 
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
@@ -3037,7 +3037,7 @@ impl SteganographyProtector {
                 })
             }
             Err(_) => {
-                let mut header = crate::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+                let mut header = crate::stego::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
                 let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
                 Ok(EmbedOutcome::UnsupportedProgressive { output })
@@ -3050,22 +3050,22 @@ impl SteganographyProtector {
         img: &DynamicImage,
         plan: &crate::types::ResolvedProtectionPlan,
         tile_size: Option<u32>,
-    ) -> Result<(DynamicImage, Option<crate::types::EmbedOutcomeSummary>)> {
+    ) -> Result<(DynamicImage, Option<crate::stego::EmbedOutcomeSummary>)> {
         let format = plan.input_format();
         let is_tiled = tile_size.filter(|&s| s > 0).is_some();
         let embed_path = match format {
             crate::types::ImageOutputFormat::Jpeg => {
                 if is_tiled {
-                    crate::types::EmbedPath::DctF5Tiled
+                    crate::stego::EmbedPath::DctF5Tiled
                 } else {
-                    crate::types::EmbedPath::DctF5
+                    crate::stego::EmbedPath::DctF5
                 }
             }
             _ => {
                 if is_tiled {
-                    crate::types::EmbedPath::LsbTiled
+                    crate::stego::EmbedPath::LsbTiled
                 } else {
-                    crate::types::EmbedPath::Lsb
+                    crate::stego::EmbedPath::Lsb
                 }
             }
         };
@@ -3124,8 +3124,8 @@ impl SteganographyProtector {
     ) -> DynamicImage {
         let format = plan.input_format();
         let embed_path = match format {
-            crate::types::ImageOutputFormat::Jpeg => crate::types::EmbedPath::DctF5,
-            _ => crate::types::EmbedPath::Lsb,
+            crate::types::ImageOutputFormat::Jpeg => crate::stego::EmbedPath::DctF5,
+            _ => crate::stego::EmbedPath::Lsb,
         };
         let emission = PayloadEmissionContext::from_plan(plan, embed_path);
         let payload = self.generate_payload_for_plan(&emission, plan);
@@ -3164,14 +3164,14 @@ impl SteganographyProtector {
     pub fn generate_payload_for_context(&self, ctx: &ProtectionContext) -> Vec<u8> {
         let embed_path = if ctx.is_tile_mode_enabled() {
             if ctx.input_format() == Some(crate::types::ImageOutputFormat::Jpeg) {
-                crate::types::EmbedPath::DctF5Tiled
+                crate::stego::EmbedPath::DctF5Tiled
             } else {
-                crate::types::EmbedPath::LsbTiled
+                crate::stego::EmbedPath::LsbTiled
             }
         } else if ctx.input_format() == Some(crate::types::ImageOutputFormat::Jpeg) {
-            crate::types::EmbedPath::DctF5
+            crate::stego::EmbedPath::DctF5
         } else {
-            crate::types::EmbedPath::Lsb
+            crate::stego::EmbedPath::Lsb
         };
         let emission = PayloadEmissionContext::from_plan_for_context(ctx, embed_path);
         self.generate_payload(&emission, ctx)
@@ -3225,7 +3225,7 @@ impl SteganographyProtector {
         payload: &[u8],
         seed: u64,
         redundancy: usize,
-    ) -> crate::types::EmbedOutcome<RgbaImage> {
+    ) -> crate::stego::EmbedOutcome<RgbaImage> {
         carrier_lsb::embed_lsb_v2(img, payload, seed, redundancy)
     }
 
@@ -3495,7 +3495,7 @@ impl SteganographyProtector {
         payload: &[u8],
         master_seed: u64,
         tile_size: u32,
-    ) -> crate::types::EmbedOutcome<RgbaImage> {
+    ) -> crate::stego::EmbedOutcome<RgbaImage> {
         carrier_lsb::embed_lsb_tiled(img, payload, master_seed, tile_size)
     }
 
@@ -3966,7 +3966,7 @@ impl SteganographyProtector {
         &self,
         img: &DynamicImage,
         ctx: &ProtectionContext,
-    ) -> Result<(DynamicImage, Option<crate::types::EmbedOutcomeSummary>)> {
+    ) -> Result<(DynamicImage, Option<crate::stego::EmbedOutcomeSummary>)> {
         let format = ctx
             .input_format()
             .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
@@ -3975,16 +3975,16 @@ impl SteganographyProtector {
         let embed_path = match format {
             crate::types::ImageOutputFormat::Jpeg => {
                 if is_tiled {
-                    crate::types::EmbedPath::DctF5Tiled
+                    crate::stego::EmbedPath::DctF5Tiled
                 } else {
-                    crate::types::EmbedPath::DctF5
+                    crate::stego::EmbedPath::DctF5
                 }
             }
             _ => {
                 if is_tiled {
-                    crate::types::EmbedPath::LsbTiled
+                    crate::stego::EmbedPath::LsbTiled
                 } else {
-                    crate::types::EmbedPath::Lsb
+                    crate::stego::EmbedPath::Lsb
                 }
             }
         };
@@ -4159,8 +4159,8 @@ impl StegoPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::jpeg_transcoder::JpegHeader;
     use crate::protected::constants::STEGO_SPREAD_FACTOR;
+    use crate::stego::jpeg_transcoder::JpegHeader;
     use crate::types::ProtectionConfig;
     use image::ImageEncoder;
     use image::Rgba;

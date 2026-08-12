@@ -1,0 +1,26 @@
+[package]
+name = "stegoeggo-stego"
+version = "0.3.2"
+edition = "2021"
+rust-version = "1.87"
+description = "Generic image steganography carriers for arbitrary payloads — LSB pixel-domain and JPEG DCT-domain embedding"
+authors = ["David Bowman <dbowman91@proton.me>"]
+license = "MIT"
+repository = "https://github.com/eggstack/stegoeggo"
+homepage = "https://github.com/eggstack/stegoeggo"
+documentation = "https://docs.rs/stegoeggo-stego"
+readme = "README.md"
+keywords = ["steganography", "image", "lsb", "jpeg", "dct"]
+categories = ["graphics", "multimedia::images"]
+include = [
+    "src/**/*.rs",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+]
+
+[dependencies]
+image = { version = "=0.25.6", default-features = false, features = ["png", "jpeg"] }
+jpeg-encoder = "0.7"
+crc32fast = "1.4"
+thiserror = "1.0"

@@ -182,29 +182,18 @@ src/
 ├── xmp.rs                     XMP parsing, namespace-aware filtering, packet merging (pub(crate))
 ├── webp_container.rs          WebP RIFF parsing, VP8X/VP8/VP8L/ANMF handling (pub(crate))
 │
-├── stego/                      Generic carrier mechanics (application-neutral)
-│   ├── mod.rs                 Module declarations
-│   ├── lsb.rs                 LSB carrier: permutations, embed/extract, crop, seed fallback
-│   └── jpeg.rs                JPEG carrier: DCT capacity, Q-table reassembly, seed hint
-│
 ├── protected/                 Protection strategies (all implement Protector trait)
 │   ├── constants.rs           Tuning constants (STEGO_*, XORSHIFT_*, SPLITMIX64_*)
 │   ├── passthrough.rs         No-op for Disabled level
 │   ├── metadata_trap.rs       Metadata injection (tEXt/COM/XMP markers, seed,
 │   │                          canonical plus:DataMining DMI, DmiValue mapping)
 │   ├── steganography.rs       StegoEggo application adapter: payload v1/v2/v3,
-│   │                          seed discovery, verification, delegates carrier to src/stego/
+│   │                          seed discovery, verification, delegates carrier to stegoeggo-stego
 │   ├── ecc.rs                 3× repetition ECC with majority voting
 │   ├── notice_verification.rs Legal notice extraction from image bytes,
 │   │                          evidence strength rating, DMI/seed resolution
 │   ├── resolve.rs             ProtectionRequest → ResolvedProtectionPlan resolution
 │   └── stego_cost.rs          Pixel embedding cost computation (Laplacian, fuzz feature)
-│
-├── jpeg_transcoder/           JPEG-specific DCT coefficient processing
-│   ├── mod.rs                 JpegTranscoder (decode/encode_coefficients, assemble_jpeg)
-│   ├── header.rs              JpegHeader, HuffmanTable parsing (DQT/SOF/DHT/SOS)
-│   ├── entropy.rs             CoefficientDecoder, CoefficientEncoder (Huffman codec)
-│   └── stego_f5.rs            DctStegoF5, F5XorShiftRng (F5 DCT coefficient embedding)
 │
 ├── payload_v3/                Payload v3 wire format
 │   ├── mod.rs                 Re-exports
@@ -246,6 +235,20 @@ src/
     ├── image.rs               PixelSelectionRng (XorShift64), encoding, format detection
     ├── iscc.rs                ContentIdentifiers (ISCC-like perceptual hashing, feature: iscc)
     └── seed.rs                generate_random_seed() via getrandom (OS CSPRNG)
+```
+
+The generic carrier core lives in the separate `stegoeggo-stego` crate:
+
+```
+stegoeggo-stego/src/
+├── lib.rs                     Re-exports, StegoError, carrier API facade
+├── lsb.rs                     LSB carrier: permutations, embed/extract, crop, seed fallback
+├── jpeg.rs                    JPEG carrier: DCT capacity, Q-table reassembly, seed hint
+└── jpeg_transcoder/           JPEG-specific DCT coefficient processing
+    ├── mod.rs                 JpegTranscoder (decode/encode_coefficients, assemble_jpeg)
+    ├── header.rs              JpegHeader, HuffmanTable parsing (DQT/SOF/DHT/SOS)
+    ├── entropy.rs             CoefficientDecoder, CoefficientEncoder (Huffman codec)
+    └── stego_f5.rs            DctStegoF5, F5XorShiftRng (F5 DCT coefficient embedding)
 ```
 
 ## Component Index — Deep Dives
@@ -343,7 +346,7 @@ When **both** input and output are JPEG, the pipeline operates directly on DCT c
 ### Two XorShiftRng Implementations
 
 - **`PixelSelectionRng`** in `util/image.rs` — general-purpose pixel selection for steganography
-- **`DctCoefficientRng`** in `jpeg_transcoder/stego_f5.rs` — DCT coefficient shuffling
+- **`DctCoefficientRng`** in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs` — DCT coefficient shuffling
 
 They use different algorithms and produce different sequences for the same seed. **Do NOT interchange them.**
 
@@ -387,6 +390,7 @@ Three-state control (`Option<bool>`) for metadata injection:
 
 | Crate | Version | Role | Feature |
 |-------|---------|------|---------|
+| `stegoeggo-stego` | 0.1 | Generic carrier core (LSB, JPEG DCT, transcoder) | — |
 | `image` | 0.25 | Image loading, decoding, encoding (PNG, JPEG, WebP) | — |
 | `jpeg-encoder` | 0.7 | Direct JPEG encoding with quality/progressive control | — |
 | `rayon` | 1.10 | Parallel image processing | `parallel` |

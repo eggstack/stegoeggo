@@ -7,7 +7,8 @@
 use image::ImageError;
 use thiserror::Error;
 
-use crate::jpeg_transcoder::TranscoderError;
+use crate::stego::error::StegoError;
+use crate::stego::jpeg_transcoder::TranscoderError;
 
 impl From<TranscoderError> for Error {
     fn from(e: TranscoderError) -> Self {
@@ -18,6 +19,23 @@ impl From<TranscoderError> for Error {
             TranscoderError::HuffmanEncode(s) => Error::ImageEncode(s),
             TranscoderError::Io(e) => Error::Io(e),
             TranscoderError::EmbeddingFailed(s) => Error::Steganography(s),
+        }
+    }
+}
+
+impl From<StegoError> for Error {
+    fn from(e: StegoError) -> Self {
+        match &e {
+            StegoError::InvalidConfig(msg) => Error::Config(msg.clone()),
+            StegoError::InsufficientCapacity { .. } => Error::Steganography(e.to_string()),
+            StegoError::MalformedInput(msg) => Error::InvalidFormat(msg.clone()),
+            StegoError::UnsupportedJpeg(_) => Error::InvalidFormat(e.to_string()),
+            StegoError::FrameNotFound => Error::Steganography(e.to_string()),
+            StegoError::MalformedFrame(_) => Error::Steganography(e.to_string()),
+            StegoError::FrameChecksumMismatch => Error::PayloadVerification(e.to_string()),
+            StegoError::ResourceLimitExceeded(msg) => Error::Config(msg.clone()),
+            StegoError::EmptyCarrier => Error::Steganography(e.to_string()),
+            _ => Error::Steganography(e.to_string()),
         }
     }
 }

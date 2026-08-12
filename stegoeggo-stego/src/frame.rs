@@ -181,7 +181,7 @@ pub fn decode_prefix(data: &[u8]) -> Result<(FrameHeader, usize), super::StegoEr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stego::StegoError;
+    use crate::StegoError;
 
     #[test]
     fn encode_decode_roundtrip() {

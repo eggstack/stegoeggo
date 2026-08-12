@@ -1,6 +1,6 @@
 # JPEG Transcoder
 
-**Source:** `src/jpeg_transcoder/mod.rs`
+**Source:** `stegoeggo-stego/src/jpeg_transcoder/mod.rs`
 
 JPEG-specific processing pipeline that operates directly on DCT coefficients, bypassing pixel decode/encode cycles. This is the core of the JPEG fast path.
 
@@ -163,8 +163,8 @@ Malformed entropy never produces partial successful coefficient maps.
 
 ## Module Interactions
 
-- **header.rs**: `JpegHeader::parse` for header parsing; `JpegHeader::analyze_structure_checked` for scan structure detection; `parse_sos` returns `Result<()>` and rejects malformed table IDs
-- **entropy.rs**: `CoefficientDecoder` / `CoefficientEncoder` for Huffman codec; decoder fails closed on truncated/malformed entropy data; canonical code construction advances through zero-count lengths
-- **stego_f5.rs**: `DctStegoF5` for coefficient manipulation
-- **protected/steganography.rs**: `apply_dct_stego_bytes` calls transcoder for JPEG fast path; uses preserving encoding for all DCT output
-- **lib.rs**: Used in `apply_bytes_pipeline` when input/output are both JPEG
+- **stegoeggo-stego/src/jpeg_transcoder/header.rs**: `JpegHeader::parse` for header parsing; `JpegHeader::analyze_structure_checked` for scan structure detection; `parse_sos` returns `Result<()>` and rejects malformed table IDs
+- **stegoeggo-stego/src/jpeg_transcoder/entropy.rs**: `CoefficientDecoder` / `CoefficientEncoder` for Huffman codec; decoder fails closed on truncated/malformed entropy data; canonical code construction advances through zero-count lengths
+- **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: `DctStegoF5` for coefficient manipulation
+- **stegoeggo/src/protected/steganography.rs**: `apply_dct_stego_bytes` calls transcoder for JPEG fast path; uses preserving encoding for all DCT output
+- **stegoeggo/src/lib.rs**: Used in `apply_bytes_pipeline` when input/output are both JPEG

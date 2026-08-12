@@ -1,8 +1,8 @@
 # Steganography Protector
 
-**Source:** `src/protected/steganography.rs` (application adapter) + `src/stego/lsb.rs` + `src/stego/jpeg.rs` (generic carrier core)
+**Source:** `src/protected/steganography.rs` (application adapter) + `stegoeggo-stego/src/lsb.rs` + `stegoeggo-stego/src/jpeg.rs` (generic carrier core)
 
-The most complex module. Handles LSB and DCT-based steganographic embedding for payload storage and verification. `SteganographyProtector` generates StegoEggo payloads (v1/v2/v3) and manages seed discovery/verification; generic carrier mechanics (permutations, bit embedding/extraction, capacity calculation) are delegated to `src/stego/`.
+The most complex module. Handles LSB and DCT-based steganographic embedding for payload storage and verification. `SteganographyProtector` generates StegoEggo payloads (v1/v2/v3) and manages seed discovery/verification; generic carrier mechanics (permutations, bit embedding/extraction, capacity calculation) are delegated to `stegoeggo-stego`.
 
 ## Payload Format
 
@@ -160,10 +160,10 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 ## Module Interactions
 
 - **lib.rs**: Applied in Standard pipeline
-- **src/stego/lsb.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). No application-type imports
-- **src/stego/jpeg.rs**: Generic JPEG carrier facade (DCT capacity, Q-table reassembly, seed hint). No application-type imports
-- **jpeg_transcoder/**: Used for JPEG fast path (`apply_dct_stego_bytes`)
-- **stego_f5.rs**: `DctStegoF5` for F5-style DCT manipulation
+- **stegoeggo-stego/src/lsb.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). No application-type imports
+- **stegoeggo-stego/src/jpeg.rs**: Generic JPEG carrier facade (DCT capacity, Q-table reassembly, seed hint). No application-type imports
+- **stegoeggo-stego/src/jpeg_transcoder/**: Used for JPEG fast path (`apply_dct_stego_bytes`)
+- **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: `DctStegoF5` for F5-style DCT manipulation
 - **util/image.rs**: `XorShiftRng` for LSB pixel selection
 - **protected/constants.rs**: `STEGO_OFFSET_SEED_1`, `STEGO_SPREAD_FACTOR`, etc.
 - **types.rs**: Uses `ProtectionLevel`, `StegoPayload`

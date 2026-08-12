@@ -6,8 +6,9 @@
 
 ## Workspace Structure
 
-Three workspace members:
+Four workspace members:
 - `.` — Main library crate (`stegoeggo`) + conformance harness binary (`stegoeggo-conformance`)
+- `stegoeggo-stego/` — Generic carrier crate (`stegoeggo-stego`) with application-neutral LSB and JPEG DCT mechanics
 - `stegoeggo-cli/` — CLI binary (`stegoeggo` binary name), entry point at `stegoeggo-cli/src/main.rs`
 - `fuzz/` — Fuzz harnesses (12 targets, requires `cargo-fuzz` + nightly)
 
@@ -65,10 +66,10 @@ Specialist verification (external tools, conformance, fuzzing, MSRV, docs.rs, pa
 ## Code Conventions
 
 - Rustfmt: 4-space indentation, max width 100 (`rustfmt.toml`)
-- `#![forbid(unsafe_code)]` throughout — no unsafe blocks in the library crate
+- `#![forbid(unsafe_code)]` throughout both crates — no unsafe blocks in the library or carrier crate
 - No comments in code unless explicitly asked
 - `#[must_use]` on builder methods
-- `pub(crate)` for internal modules (e.g., `jpeg_transcoder`)
+- `pub(crate)` for internal modules (e.g., `jpeg_transcoder` in `stegoeggo-stego`)
 - Private fields with getter methods on `ProtectionContext`, `StegoPayload`, `LegalMetadata`
 
 ## Features
@@ -103,7 +104,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 **Gotchas that will bite you:**
 
 - **`MIN_PAYLOAD_SIZE` is 28, not the output size** — Non-MAC payloads are 76 bytes (ECC-encoded), MAC payloads are 32 bytes. The constant is a parsing threshold
-- **Two separate XorShiftRng implementations** — `PixelSelectionRng` in `src/util/image.rs` and `DctCoefficientRng` in `src/jpeg_transcoder/stego_f5.rs`. Different algorithms, different sequences for same seed. Do NOT interchange them
+- **Two separate XorShiftRng implementations** — `PixelSelectionRng` in `src/util/image.rs` and `DctCoefficientRng` in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs`. Different algorithms, different sequences for same seed. Do NOT interchange them
 - **`ProtectionContext::default()` uses CSPRNG seed** — For reproducible results, use `ProtectionContext::new(intensity, seed)` with an explicit seed
 - **Pipeline flow order** — JPEG output: encode → DCT stego → metadata. Non-JPEG: pixel stego → encode → metadata. JPEG→JPEG fast path bypasses pixel decode entirely
 - **`MetadataTrapProtector::apply()` returns `Cow::Borrowed(img)` unchanged** — Metadata injection is byte-level. The pipeline routes `Light` through `apply_light_bytes()` which encodes → injects → decodes
@@ -184,7 +185,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Three seed storage locations** — (1) Q-table LSBs in JPEG, (2) metadata markers (strippable), (3) fixed-position LSB in first 64 pixel channels. Extraction chain: metadata → LSB fallback → `FALLBACK_SEEDS`
 - **ECC on stego payload** — Non-MAC payloads use 3× repetition with majority voting before CRC32. MAC payloads use 8-byte HMAC instead
 - **Spread spectrum LSB** — Each payload bit embedded across `STEGO_SPREAD_FACTOR * redundancy` (=5×r) RGB carrier slots via majority voting. The corrected V2 carrier uses a single bijective permutation over `width * height * 3` slots; all replicas of one bit use consecutive logical indices through the same permutation, guaranteeing no inter-replica collisions. Legacy extraction (pixel-index/channel-derived carrier) is preserved for backward compatibility
-- **Generic carrier core** — `src/stego/lsb.rs` and `src/stego/jpeg.rs` contain application-neutral carrier mechanics (permutations, embed/extract, capacity). `SteganographyProtector` delegates to these modules and adds StegoEggo-specific payload generation, parsing, and verification
+- **Generic carrier core** — `stegoeggo-stego/src/lsb.rs` and `stegoeggo-stego/src/jpeg.rs` contain application-neutral carrier mechanics (permutations, embed/extract, capacity). `SteganographyProtector` delegates to these modules and adds StegoEggo-specific payload generation, parsing, and verification
 - **`stego_redundancy` is `Option<usize>`** — Default `None` derives from intensity via `effective_redundancy()` (<0.3→1, 0.3-0.7→2, >=0.7→3). Valid range 1-10
 - **F5 redundancy cap** — Max redundancy is 10. Extraction tries all 10 values
 - **Payload version 3 is current** — V1/V2 still supported for extraction only, never written. V3 adds TLV extensions with domain-separated authentication. V3 extraction paths (magic bytes `[0x53, 0x45]`) tried first before V2/V1 fallback. V3 core: 32 bytes. V3 CRC: 36 bytes. V3 HMAC: 48 bytes
@@ -213,11 +214,11 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Strategy pattern** via `Protector` trait (`src/traits.rs`) with three levels: Disabled, Light, Standard — see `architecture/traits.md`
 - **Pipeline** (`src/lib.rs`): `ProtectionPipeline` orchestrates protectors for legacy APIs — see `architecture/pipeline.md`
 - **Direct plan executor** (`src/lib.rs`): `execute_metadata_only()`, `execute_stego_and_metadata()`, `execute_stego_and_metadata_tiled()` — canonical execution from `ResolvedProtectionPlan` without `ProtectionContext` reconstruction for metadata
-- **Generic carrier core** (`src/stego/`): Application-neutral LSB and JPEG DCT carrier mechanics — see `architecture/protected-steganography.md`
+- **Generic carrier core** (`stegoeggo-stego/src/`): Application-neutral LSB and JPEG DCT carrier mechanics — see `architecture/protected-steganography.md`
 - **Public generic stego API** (`stegoeggo::stego`): Carrier-level embedding/extraction for arbitrary payload bytes, independent of the rights-protection pipeline. Includes `stego::lsb` (pixel-domain), `stego::jpeg` (DCT-domain), and `stego::frame` (self-describing frame with CRC32). See `architecture/protected-steganography.md`
-- **JPEG fast path**: When input/output are both JPEG, operates directly on DCT coefficients via `src/jpeg_transcoder/`, bypassing pixel decode/encode — see `architecture/jpeg-transcoder.md`
+- **JPEG fast path**: When input/output are both JPEG, operates directly on DCT coefficients via `stegoeggo-stego/src/jpeg_transcoder/`, bypassing pixel decode/encode — see `architecture/jpeg-transcoder.md`
 - **Policy-first API**: `ProtectionRequest` + `RightsPolicy` are the canonical API — see `architecture/types.md`
-- **`#![forbid(unsafe_code)]`** throughout the library crate
+- **`#![forbid(unsafe_code)]`** throughout the library crate and `stegoeggo-stego`
 
 ## Validation Scripts
 

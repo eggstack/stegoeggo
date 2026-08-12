@@ -6,6 +6,38 @@
 
 use super::{Result, TranscoderError};
 
+/// Limits for JPEG header parsing to prevent resource exhaustion.
+#[derive(Debug, Clone)]
+pub struct ParseLimits {
+    /// Maximum number of JPEG segments to parse.
+    pub max_jpeg_segments: usize,
+    /// Maximum size in bytes for a single JPEG segment.
+    pub max_jpeg_segment_bytes: usize,
+}
+
+impl Default for ParseLimits {
+    fn default() -> Self {
+        Self {
+            max_jpeg_segments: 256,
+            max_jpeg_segment_bytes: 65535,
+        }
+    }
+}
+
+impl ParseLimits {
+    /// Maximum number of JPEG segments to parse.
+    #[must_use]
+    pub fn max_jpeg_segments(&self) -> usize {
+        self.max_jpeg_segments
+    }
+
+    /// Maximum size in bytes for a single JPEG segment.
+    #[must_use]
+    pub fn max_jpeg_segment_bytes(&self) -> usize {
+        self.max_jpeg_segment_bytes
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JpegCodingProcess {
     SequentialDCT,
@@ -148,10 +180,10 @@ impl Default for JpegHeader {
 
 impl JpegHeader {
     pub fn parse(data: &[u8]) -> Result<Self> {
-        Self::parse_with_limits(data, &crate::ResourceLimits::default())
+        Self::parse_with_limits(data, &ParseLimits::default())
     }
 
-    pub fn parse_with_limits(data: &[u8], limits: &crate::ResourceLimits) -> Result<Self> {
+    pub fn parse_with_limits(data: &[u8], limits: &ParseLimits) -> Result<Self> {
         if data.len() < 2 {
             return Err(TranscoderError::InvalidFormat("Input too short".into()));
         }
@@ -871,24 +903,35 @@ mod tests {
 
     #[test]
     fn parse_ignores_marker_like_bytes_inside_metadata_payloads() {
-        use crate::protected::metadata_trap::RightsMetadataProtector;
-        use crate::types::{ImageOutputFormat, ProtectionContext};
-        use image::DynamicImage;
+        let mut data = vec![0xFF, 0xD8];
 
-        let img = DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(32, 32, |x, y| {
-            image::Rgb([(x * 3) as u8, (y * 5) as u8, ((x + y) * 7) as u8])
-        }));
+        let com_payload: Vec<u8> = vec![
+            0x41, 0x42, 0x43, 0x44, 0xFF, 0x00, 0xFF, 0xDB, 0x41, 0x42, 0x43, 0x44,
+        ];
+        let com_len = (com_payload.len() + 2) as u16;
+        data.extend_from_slice(&[0xFF, 0xFE]);
+        data.extend_from_slice(&com_len.to_be_bytes());
+        data.extend_from_slice(&com_payload);
 
-        let jpeg = crate::util::image::encode_image(&img, image::ImageFormat::Jpeg).unwrap();
-        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
-        let injected = RightsMetadataProtector::new()
-            .inject_bytes(&jpeg, &ctx)
-            .unwrap();
+        data.extend_from_slice(&[
+            0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x10, 0x00, 0x10, 0x01, 0x01, 0x11, 0x00,
+        ]);
 
-        let header = JpegHeader::parse(&injected).unwrap();
+        data.extend_from_slice(&[
+            0xFF, 0xC4, 0x00, 0x1F, 0x00, 0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+            0x07, 0x08, 0x09, 0x0A, 0x0B,
+        ]);
+
+        data.extend_from_slice(&[
+            0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0x7B, 0x40,
+        ]);
+
+        data.extend_from_slice(&[0xFF, 0xD9]);
+
+        let header = JpegHeader::parse(&data).unwrap();
         assert!(header.width > 0);
         assert!(header.height > 0);
-        assert!(!header.quantization_tables.iter().all(|t| t.is_none()));
     }
 
     /// Regression test for a divide-by-zero panic discovered by the fuzz harness

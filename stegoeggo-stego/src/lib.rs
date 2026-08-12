@@ -1,30 +1,16 @@
-/// Generic steganographic carrier operations for arbitrary payload bytes.
-///
-/// This module provides a low-level API for embedding and extracting
-/// arbitrary byte payloads into images using steganographic carrier
-/// techniques. It is independent of the rights-protection pipeline.
-///
-/// # Carrier Types
-///
-/// - [`lsb`] — Pixel-domain LSB embedding for PNG/WebP (`RgbaImage`)
-/// - [`jpeg`] — DCT-domain F5 embedding for JPEG (encoded bytes)
-/// - [`frame`] — Optional self-describing frame with length + CRC32
-///
-/// # Security Considerations
-///
-/// This is best-effort steganography, not encryption. Seed knowledge
-/// is not equivalent to cryptographic secrecy. LSB payloads are fragile
-/// under lossy re-encoding. JPEG DCT payloads are not guaranteed across
-/// arbitrary recompression.
+#![forbid(unsafe_code)]
+
+pub mod constants;
 pub mod error;
-/// Generic self-describing payload frame with version, length, and CRC32.
 pub mod frame;
-/// JPEG DCT carrier operations for encoded byte data.
 pub mod jpeg;
-/// Pixel-domain LSB carrier operations for RGBA images.
+pub mod jpeg_transcoder;
 pub mod lsb;
+pub mod types;
 
 pub use error::{JpegUnsupportedReason, StegoError, StegoResult};
+pub use jpeg_transcoder::is_progressive_jpeg;
+pub use types::{EmbedOutcome, EmbedOutcomeSummary, EmbedPath, EmbedStatus};
 
 /// Capacity report for a carrier query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

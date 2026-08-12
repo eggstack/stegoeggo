@@ -1255,9 +1255,10 @@ stegoeggo
 |   +-- PassthroughProtector      # No-op (Disabled level)
 |   +-- MetadataTrapProtector     # Metadata injection (always)
 |   +-- SteganographyProtector    # LSB/DCT embedding (Light: minimal, Standard: full)
-+-- src/stego/                # Generic carrier core (application-neutral)
++-- stegoeggo-stego           # Generic carrier core (application-neutral)
 |   +-- lsb.rs                    # LSB carrier: permutations, embed/extract
 |   +-- jpeg.rs                   # JPEG carrier: DCT capacity, Q-table reassembly
+|   +-- jpeg_transcoder/          # JPEG DCT decode/encode, Huffman codec, F5 stego
 +-- ProtectionLevel          # disabled -> light -> standard
 +-- LegalMetadata            # Configurable legal metadata
 +-- ProtectionContext        # Configuration for protection
@@ -1271,7 +1272,7 @@ stegoeggo
 
 ## Safety & Ethics
 
-This library uses `#![forbid(unsafe_code)]` throughout — no `unsafe` blocks exist in the library crate. All image processing is built on safe Rust with the `image` crate.
+This library uses `#![forbid(unsafe_code)]` throughout — no `unsafe` blocks exist in the library crate or the carrier crate (`stegoeggo-stego`). All image processing is built on safe Rust with the `image` crate.
 
 This library is designed to protect intellectual property from unauthorized AI training. It is intended for:
 

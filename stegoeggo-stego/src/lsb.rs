@@ -1,4 +1,4 @@
-use crate::protected::constants::{SPLITMIX64_SEED, STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR};
+use crate::constants::{SPLITMIX64_SEED, STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR};
 use crate::types::EmbedOutcome;
 use image::{Rgba, RgbaImage};
 
@@ -21,7 +21,7 @@ pub fn tile_seed(master_seed: u64, tile_x: u32, tile_y: u32) -> u64 {
 }
 
 #[inline(always)]
-pub(crate) fn splitmix64(x: u64) -> u64 {
+pub fn splitmix64(x: u64) -> u64 {
     let mut z = x.wrapping_add(SPLITMIX64_SEED);
     z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
@@ -29,14 +29,14 @@ pub(crate) fn splitmix64(x: u64) -> u64 {
 }
 
 #[inline(always)]
-pub(crate) fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize {
+pub fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize {
     let a = splitmix64(seed).wrapping_mul(2) | 1;
     let b = splitmix64(seed.wrapping_add(0x9e3779b97f4a7c15));
     a.wrapping_mul(index as u64).wrapping_add(b) as usize % total_pixels
 }
 
 #[inline(always)]
-pub(crate) fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> usize {
+pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> usize {
     if slot_count <= 1 {
         return index.min(slot_count);
     }
@@ -54,11 +54,7 @@ pub(crate) fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -
 }
 
 #[inline(always)]
-pub(crate) fn carrier_v2_slot_to_pixel_channel(
-    slot: usize,
-    width: u32,
-    height: u32,
-) -> (usize, usize) {
+pub fn carrier_v2_slot_to_pixel_channel(slot: usize, width: u32, height: u32) -> (usize, usize) {
     let total_pixels = (width as usize).checked_mul(height as usize).unwrap_or(0);
     let pixel_index = slot / 3;
     let channel = slot % 3;
@@ -69,7 +65,7 @@ pub(crate) fn carrier_v2_slot_to_pixel_channel(
 }
 
 #[inline(always)]
-pub(crate) fn lsb_available_slots(width: u32, height: u32) -> usize {
+pub fn lsb_available_slots(width: u32, height: u32) -> usize {
     (width as usize)
         .checked_mul(height as usize)
         .and_then(|p| p.checked_mul(3))
@@ -77,7 +73,7 @@ pub(crate) fn lsb_available_slots(width: u32, height: u32) -> usize {
 }
 
 #[inline(always)]
-pub(crate) fn lsb_required_capacity_v2(payload_bits: usize, redundancy: usize) -> usize {
+pub fn lsb_required_capacity_v2(payload_bits: usize, redundancy: usize) -> usize {
     payload_bits
         .checked_mul(STEGO_SPREAD_FACTOR)
         .and_then(|r| r.checked_mul(redundancy))
@@ -85,12 +81,11 @@ pub(crate) fn lsb_required_capacity_v2(payload_bits: usize, redundancy: usize) -
 }
 
 #[inline(always)]
-pub(crate) fn lsb_required_slots_legacy(payload_bits: usize) -> usize {
+pub fn lsb_required_slots_legacy(payload_bits: usize) -> usize {
     payload_bits.div_ceil(3) * STEGO_SPREAD_FACTOR * 3
 }
 
-#[cfg(test)]
-pub(crate) fn lsb_capacity_for_image(
+pub fn lsb_capacity_for_image(
     width: u32,
     height: u32,
     payload_bits: usize,
@@ -102,7 +97,7 @@ pub(crate) fn lsb_capacity_for_image(
     )
 }
 
-pub(crate) fn bytes_to_bits(bytes: &[u8]) -> Vec<u8> {
+pub fn bytes_to_bits(bytes: &[u8]) -> Vec<u8> {
     let mut bits = Vec::with_capacity(bytes.len() * 8);
     for byte in bytes {
         for i in 0..8 {
@@ -112,7 +107,7 @@ pub(crate) fn bytes_to_bits(bytes: &[u8]) -> Vec<u8> {
     bits
 }
 
-pub(crate) fn bits_to_bytes(bits: &[u8]) -> Vec<u8> {
+pub fn bits_to_bytes(bits: &[u8]) -> Vec<u8> {
     if !bits.len().is_multiple_of(8) {
         return Vec::new();
     }
@@ -127,7 +122,7 @@ pub(crate) fn bits_to_bytes(bits: &[u8]) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn embed_bit_in_pixel(output: &mut RgbaImage, x: u32, y: u32, channel: usize, bit: u8) {
+pub fn embed_bit_in_pixel(output: &mut RgbaImage, x: u32, y: u32, channel: usize, bit: u8) {
     let pixel = output.get_pixel(x, y);
     let old_val = pixel[channel];
 
@@ -152,7 +147,7 @@ pub(crate) fn embed_bit_in_pixel(output: &mut RgbaImage, x: u32, y: u32, channel
 }
 
 #[allow(dead_code)]
-pub(crate) fn embed_lsb(
+pub fn embed_lsb(
     img: &RgbaImage,
     payload: &[u8],
     seed: u64,
@@ -204,7 +199,7 @@ pub(crate) fn embed_lsb(
     }
 }
 
-pub(crate) fn extract_lsb(img: &RgbaImage, expected_bits: usize, seed: u64) -> Option<Vec<u8>> {
+pub fn extract_lsb(img: &RgbaImage, expected_bits: usize, seed: u64) -> Option<Vec<u8>> {
     let (width, height) = img.dimensions();
     let total_pixels = (width * height) as usize;
 
@@ -242,7 +237,7 @@ pub(crate) fn extract_lsb(img: &RgbaImage, expected_bits: usize, seed: u64) -> O
 }
 
 #[allow(dead_code)]
-pub(crate) fn extract_lsb_range(
+pub fn extract_lsb_range(
     img: &RgbaImage,
     expected_bits: usize,
     offset: usize,
@@ -288,7 +283,7 @@ pub(crate) fn extract_lsb_range(
     Some(bits_to_bytes(&bits))
 }
 
-pub(crate) fn embed_lsb_v2(
+pub fn embed_lsb_v2(
     img: &RgbaImage,
     payload: &[u8],
     seed: u64,
@@ -335,7 +330,7 @@ pub(crate) fn embed_lsb_v2(
     }
 }
 
-pub(crate) fn extract_lsb_v2(
+pub fn extract_lsb_v2(
     img: &RgbaImage,
     expected_bits: usize,
     seed: u64,
@@ -374,7 +369,7 @@ pub(crate) fn extract_lsb_v2(
     Some(bits_to_bytes(&bits))
 }
 
-pub(crate) fn embed_lsb_tiled(
+pub fn embed_lsb_tiled(
     img: &RgbaImage,
     payload: &[u8],
     master_seed: u64,
@@ -417,8 +412,7 @@ pub(crate) fn embed_lsb_tiled(
 
             if tile_available >= tile_required && bit_len > 0 {
                 any_embedded = true;
-                let seed_for_embed =
-                    local_seed.wrapping_mul(crate::protected::constants::STEGO_OFFSET_SEED_1);
+                let seed_for_embed = local_seed.wrapping_mul(crate::constants::STEGO_OFFSET_SEED_1);
                 let replicas_per_bit = STEGO_SPREAD_FACTOR;
                 for (i, &bit) in payload_bits.iter().enumerate() {
                     for s in 0..replicas_per_bit {
@@ -463,7 +457,7 @@ pub(crate) fn embed_lsb_tiled(
     }
 }
 
-pub(crate) fn crop_rgba(src: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> RgbaImage {
+pub fn crop_rgba(src: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> RgbaImage {
     let mut out = RgbaImage::new(w, h);
     for dy in 0..h {
         for dx in 0..w {
@@ -475,7 +469,7 @@ pub(crate) fn crop_rgba(src: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> Rgba
 }
 
 #[allow(dead_code)]
-pub(crate) fn blit_rgba(dst: &mut RgbaImage, x: u32, y: u32, src: &RgbaImage) {
+pub fn blit_rgba(dst: &mut RgbaImage, x: u32, y: u32, src: &RgbaImage) {
     let (w, h) = src.dimensions();
     for dy in 0..h {
         for dx in 0..w {
@@ -485,7 +479,7 @@ pub(crate) fn blit_rgba(dst: &mut RgbaImage, x: u32, y: u32, src: &RgbaImage) {
     }
 }
 
-pub(crate) fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
+pub fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
     let (width, height) = img.dimensions();
     let total_channels = (width * height * 3) as usize;
     if total_channels < 64 {
@@ -522,7 +516,7 @@ pub(crate) fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
     }
 }
 
-pub(crate) fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
+pub fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
     let (width, height) = img.dimensions();
     let total_channels = (width * height * 3) as usize;
     if total_channels < 64 {
@@ -557,7 +551,7 @@ pub(crate) fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
 /// # Examples
 ///
 /// ```rust
-/// use stegoeggo::stego::lsb::LsbConfig;
+/// use stegoeggo_stego::lsb::LsbConfig;
 ///
 /// let config = LsbConfig::new(42);
 /// assert_eq!(config.seed(), 42);
@@ -623,7 +617,7 @@ impl LsbConfig {
 ///
 /// ```rust
 /// use image::RgbaImage;
-/// use stegoeggo::stego::lsb::{self, LsbConfig};
+/// use stegoeggo_stego::lsb::{self, LsbConfig};
 ///
 /// let img = RgbaImage::new(100, 100);
 /// let config = LsbConfig::new(42);
@@ -661,7 +655,7 @@ pub fn capacity(img: &RgbaImage, payload_len: usize, config: &LsbConfig) -> supe
 ///
 /// ```rust,no_run
 /// use image::RgbaImage;
-/// use stegoeggo::stego::lsb::{self, LsbConfig};
+/// use stegoeggo_stego::lsb::{self, LsbConfig};
 ///
 /// let img = RgbaImage::new(100, 100);
 /// let config = LsbConfig::new(42);
@@ -744,7 +738,7 @@ pub fn embed(
 ///
 /// ```rust,no_run
 /// use image::RgbaImage;
-/// use stegoeggo::stego::lsb::{self, LsbConfig};
+/// use stegoeggo_stego::lsb::{self, LsbConfig};
 ///
 /// # let img = RgbaImage::new(100, 100);
 /// # let config = LsbConfig::new(42);

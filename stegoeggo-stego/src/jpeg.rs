@@ -1,10 +1,7 @@
-use crate::error::Error;
+use crate::error::{JpegUnsupportedReason, StegoError};
 use crate::jpeg_transcoder::{DctStegoF5, JpegHeader, JpegTranscoder};
-use crate::stego::error::{JpegUnsupportedReason, StegoError};
 
-type CrateResult<T> = std::result::Result<T, Error>;
-
-pub(crate) fn dct_payload_capacity(coefficients: &crate::jpeg_transcoder::Coefficients) -> usize {
+pub fn dct_payload_capacity(coefficients: &crate::jpeg_transcoder::Coefficients) -> usize {
     coefficients
         .values()
         .flat_map(|blocks| blocks.iter())
@@ -18,27 +15,36 @@ pub(crate) fn dct_payload_capacity(coefficients: &crate::jpeg_transcoder::Coeffi
         .sum()
 }
 
-pub(crate) fn embed_seed_hint_internal(jpeg_bytes: &[u8], seed: u64) -> CrateResult<Vec<u8>> {
+pub fn embed_seed_hint_internal(
+    jpeg_bytes: &[u8],
+    seed: u64,
+) -> std::result::Result<Vec<u8>, StegoError> {
     if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
-        return Err(Error::Steganography("Not a valid JPEG".to_string()));
+        return Err(StegoError::MalformedInput("Not a valid JPEG".to_string()));
     }
-    let mut header = JpegHeader::parse(jpeg_bytes)?;
-    DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
+    let mut header =
+        JpegHeader::parse(jpeg_bytes).map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+    DctStegoF5::new()
+        .embed_seed_in_quantization_tables(&mut header, seed)
+        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
     reassemble_jpeg_with_qtables(jpeg_bytes, &header)
 }
 
-pub(crate) fn extract_seed_hint_internal(jpeg_bytes: &[u8]) -> CrateResult<Option<u64>> {
+pub fn extract_seed_hint_internal(
+    jpeg_bytes: &[u8],
+) -> std::result::Result<Option<u64>, StegoError> {
     if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
-        return Err(Error::Steganography("Not a valid JPEG".to_string()));
+        return Err(StegoError::MalformedInput("Not a valid JPEG".to_string()));
     }
-    let header = JpegHeader::parse(jpeg_bytes)?;
+    let header =
+        JpegHeader::parse(jpeg_bytes).map_err(|e| StegoError::MalformedInput(e.to_string()))?;
     Ok(DctStegoF5::new().extract_seed_from_quantization_tables(&header))
 }
 
-pub(crate) fn reassemble_jpeg_with_qtables(
+pub fn reassemble_jpeg_with_qtables(
     jpeg_bytes: &[u8],
     header: &JpegHeader,
-) -> CrateResult<Vec<u8>> {
+) -> std::result::Result<Vec<u8>, StegoError> {
     let mut output = Vec::with_capacity(jpeg_bytes.len() + 256);
     output.extend_from_slice(&jpeg_bytes[0..2]);
 
@@ -94,7 +100,7 @@ pub(crate) fn reassemble_jpeg_with_qtables(
 
         let segment_len = u16::from_be_bytes([jpeg_bytes[pos + 2], jpeg_bytes[pos + 3]]) as usize;
         if pos + 2 + segment_len > jpeg_bytes.len() {
-            return Err(Error::Steganography(
+            return Err(StegoError::MalformedInput(
                 "Malformed JPEG segment length exceeds buffer".into(),
             ));
         }
@@ -113,7 +119,7 @@ pub(crate) fn reassemble_jpeg_with_qtables(
 /// # Examples
 ///
 /// ```rust
-/// use stegoeggo::stego::jpeg::JpegConfig;
+/// use stegoeggo_stego::jpeg::JpegConfig;
 ///
 /// let config = JpegConfig::new(42);
 /// assert_eq!(config.seed(), 42);
@@ -186,10 +192,10 @@ pub enum JpegSupport {
 ///
 /// ```rust,no_run
 /// let jpeg_bytes = std::fs::read("photo.jpg").unwrap();
-/// let support = stegoeggo::stego::jpeg::probe_support(&jpeg_bytes).unwrap();
+/// let support = stegoeggo_stego::jpeg::probe_support(&jpeg_bytes).unwrap();
 /// match support {
-///     stegoeggo::stego::jpeg::JpegSupport::Supported => println!("DCT embedding available"),
-///     stegoeggo::stego::jpeg::JpegSupport::Unsupported(reason) => {
+///     stegoeggo_stego::jpeg::JpegSupport::Supported => println!("DCT embedding available"),
+///     stegoeggo_stego::jpeg::JpegSupport::Unsupported(reason) => {
 ///         println!("DCT not supported: {reason}")
 ///     }
 /// }
@@ -271,8 +277,8 @@ fn map_unsupported_reason(
 ///
 /// ```rust,no_run
 /// let jpeg_bytes = std::fs::read("photo.jpg").unwrap();
-/// let config = stegoeggo::stego::jpeg::JpegConfig::new(42);
-/// let report = stegoeggo::stego::jpeg::capacity(&jpeg_bytes, 100, &config).unwrap();
+/// let config = stegoeggo_stego::jpeg::JpegConfig::new(42);
+/// let report = stegoeggo_stego::jpeg::capacity(&jpeg_bytes, 100, &config).unwrap();
 /// assert!(report.is_sufficient());
 /// ```
 pub fn capacity(
@@ -321,8 +327,8 @@ pub fn capacity(
 ///
 /// ```rust,no_run
 /// let jpeg_bytes = std::fs::read("photo.jpg").unwrap();
-/// let config = stegoeggo::stego::jpeg::JpegConfig::new(42);
-/// let report = stegoeggo::stego::jpeg::embed(&jpeg_bytes, b"secret", &config).unwrap();
+/// let config = stegoeggo_stego::jpeg::JpegConfig::new(42);
+/// let report = stegoeggo_stego::jpeg::embed(&jpeg_bytes, b"secret", &config).unwrap();
 /// assert!(report.embedded);
 /// std::fs::write("output.jpg", &report.output).unwrap();
 /// ```
@@ -420,8 +426,8 @@ pub fn embed(
 ///
 /// ```rust,no_run
 /// let jpeg_bytes = std::fs::read("output.jpg").unwrap();
-/// let config = stegoeggo::stego::jpeg::JpegConfig::new(42);
-/// let recovered = stegoeggo::stego::jpeg::extract(&jpeg_bytes, 6, &config, config.redundancy()).unwrap();
+/// let config = stegoeggo_stego::jpeg::JpegConfig::new(42);
+/// let recovered = stegoeggo_stego::jpeg::extract(&jpeg_bytes, 6, &config, config.redundancy()).unwrap();
 /// assert_eq!(&recovered, b"secret");
 /// ```
 pub fn extract(
@@ -481,11 +487,10 @@ pub fn extract(
 ///
 /// ```rust,no_run
 /// let jpeg_bytes = std::fs::read("photo.jpg").unwrap();
-/// let output = stegoeggo::stego::jpeg::embed_seed_hint(&jpeg_bytes, 42).unwrap();
+/// let output = stegoeggo_stego::jpeg::embed_seed_hint(&jpeg_bytes, 42).unwrap();
 /// ```
 pub fn embed_seed_hint(jpeg_bytes: &[u8], seed: u64) -> std::result::Result<Vec<u8>, StegoError> {
     embed_seed_hint_internal(jpeg_bytes, seed)
-        .map_err(|e| StegoError::MalformedInput(e.to_string()))
 }
 
 /// Extract a seed hint from JPEG quantization tables.
@@ -501,10 +506,10 @@ pub fn embed_seed_hint(jpeg_bytes: &[u8], seed: u64) -> std::result::Result<Vec<
 ///
 /// ```rust,no_run
 /// let jpeg_bytes = std::fs::read("photo.jpg").unwrap();
-/// let seed = stegoeggo::stego::jpeg::extract_seed_hint(&jpeg_bytes).unwrap();
+/// let seed = stegoeggo_stego::jpeg::extract_seed_hint(&jpeg_bytes).unwrap();
 /// ```
 pub fn extract_seed_hint(jpeg_bytes: &[u8]) -> std::result::Result<Option<u64>, StegoError> {
-    extract_seed_hint_internal(jpeg_bytes).map_err(|e| StegoError::MalformedInput(e.to_string()))
+    extract_seed_hint_internal(jpeg_bytes)
 }
 
 #[cfg(test)]

@@ -1185,6 +1185,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "stegoeggo-stego",
  "subtle",
  "tempfile",
  "thiserror 1.0.69",
@@ -1216,6 +1217,16 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "stegoeggo",
+]
+
+[[package]]
+name = "stegoeggo-stego"
+version = "0.3.2"
+dependencies = [
+ "crc32fast",
+ "image",
+ "jpeg-encoder",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
