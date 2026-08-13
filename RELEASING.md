@@ -50,12 +50,13 @@ cargo build --release --bin stegoeggo-conformance --features conformance
 
 1. Confirm a clean working tree (`git status` shows no uncommitted changes).
 2. Select an unused version greater than every published version on crates.io.
-3. Update the library version in the workspace root `Cargo.toml`.
-4. Update the CLI version in `stegoeggo-cli/Cargo.toml`.
-5. Update the CLI exact library dependency in `stegoeggo-cli/Cargo.toml` (`stegoeggo = { path = "..", version = "=X.Y.Z" }`).
-6. Update `CHANGELOG.md` with the new version and release date.
-7. Update `SECURITY.md` supported versions table if the release line changes.
-8. Run `./scripts/release-check.sh`.
+3. Update the carrier crate version in `stegoeggo-stego/Cargo.toml`.
+4. Update the library version in the workspace root `Cargo.toml`.
+5. Update the CLI version in `stegoeggo-cli/Cargo.toml`.
+6. Update the CLI exact library dependency in `stegoeggo-cli/Cargo.toml` (`stegoeggo = { path = "..", version = "=X.Y.Z" }`).
+7. Update `CHANGELOG.md` with the new version and release date.
+8. Update `SECURITY.md` supported versions table if the release line changes.
+9. Run `./scripts/release-check.sh`.
 9. Run targeted specialist checks appropriate to the changes (see table below).
 10. Inspect package contents with `cargo package -p stegoeggo --list` and `cargo package -p stegoeggo-cli --list`.
 11. Verify no publication command is being run by automation.
@@ -76,27 +77,31 @@ Run checks applicable to the release contents. This is not a universal checklist
 
 ## Publication Sequence
 
-Publication must follow library-first order. The CLI's exact dependency must resolve from crates.io before the CLI is published.
+Publication must follow dependency order: carrier first, then library, then CLI. Each crate's exact dependency must resolve from crates.io before the next crate is published.
 
 ```bash
-# 1. Final dry-run
-cargo publish -p stegoeggo --dry-run
+# 1. Publish the carrier crate
+cargo publish -p stegoeggo-stego --dry-run
+cargo publish -p stegoeggo-stego
 
-# 2. Publish the library
+# 2. Confirm the carrier version is available on crates.io
+cargo search stegoeggo-stego
+
+# 3. Publish the library
+cargo publish -p stegoeggo --dry-run
 cargo publish -p stegoeggo
 
-# 3. Confirm the version is available on crates.io
+# 4. Confirm the library version is available on crates.io
 cargo search stegoeggo
-# Or check https://crates.io/crates/stegoeggo directly.
 
-# 4. Publish the CLI
+# 5. Publish the CLI
 cargo publish -p stegoeggo-cli --dry-run
 cargo publish -p stegoeggo-cli
 ```
 
-Do not prescribe a fixed sleep between library and CLI publication. Registry propagation should be confirmed, not guessed with a timed delay.
+Do not prescribe a fixed sleep between publications. Registry propagation should be confirmed, not guessed with a timed delay.
 
-**Note:** `cargo package -p stegoeggo-cli` cannot succeed locally before the library is published on crates.io, because the CLI depends on stegoeggo via exact version (`=X.Y.Z`). The `release-check.sh` script validates the library package dry-run and version lockstep, and reports the CLI dry-run failure as expected. The CLI dry-run will succeed after library publication.
+**Note:** `cargo package -p stegoeggo` cannot succeed locally before `stegoeggo-stego` is published on crates.io, because the library depends on it via exact version (`=X.Y.Z`). Similarly, `cargo package -p stegoeggo-cli` cannot succeed before the library is published. The `release-check.sh` script validates dry-runs and version lockstep, and reports dependent-package dry-run failures as expected. Dry-runs will succeed after each dependency is published.
 
 ## Optional Tag and GitHub Release
 
@@ -116,6 +121,13 @@ git push origin vX.Y.Z
 
 ## Partial Failure Handling
 
+### Carrier publishes, library fails before acceptance
+
+- The carrier version is consumed on crates.io.
+- Determine whether the library can be corrected and published under the intended version without changing the already published carrier contract.
+- If source changes require a different exact dependency or synchronized version policy, increment both versions appropriately.
+- Never attempt to overwrite the carrier.
+
 ### Library publishes, CLI fails before acceptance
 
 - The library version is consumed on crates.io.
@@ -123,11 +135,11 @@ git push origin vX.Y.Z
 - If source changes require a different exact dependency or synchronized version policy, increment both versions appropriately.
 - Never attempt to overwrite the library.
 
-### Both publish, docs.rs fails
+### All publish, docs.rs fails
 
 - Fix the source or docs configuration.
 - Select a new unused patch version.
-- Republish in library-first order.
+- Republish in dependency order (carrier → library → CLI).
 - Optionally yank the defective version, understanding that it remains consumed.
 
 ### Dry-run fails

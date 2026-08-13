@@ -49,11 +49,27 @@ metadata = json.loads(subprocess.check_output([
     "cargo", "metadata", "--no-deps", "--format-version", "1"
 ]))
 packages = {pkg["name"]: pkg for pkg in metadata["packages"]}
+carrier = packages["stegoeggo-stego"]
 lib = packages["stegoeggo"]
 cli = packages["stegoeggo-cli"]
 
 if lib["version"] != cli["version"]:
     print(f"ERROR: version mismatch: stegoeggo={lib['version']} stegoeggo-cli={cli['version']}", file=sys.stderr)
+    sys.exit(1)
+
+lib_carrier_dep = None
+for dep in lib["dependencies"]:
+    if dep["name"] == "stegoeggo-stego":
+        lib_carrier_dep = dep["req"]
+        break
+
+if lib_carrier_dep is None:
+    print("ERROR: stegoeggo does not depend on stegoeggo-stego", file=sys.stderr)
+    sys.exit(1)
+
+expected_carrier_req = f"={carrier['version']}"
+if lib_carrier_dep != expected_carrier_req:
+    print(f"ERROR: library carrier dependency requirement is '{lib_carrier_dep}', expected '{expected_carrier_req}'", file=sys.stderr)
     sys.exit(1)
 
 cli_stegoeggo_dep = None
@@ -71,16 +87,23 @@ if cli_stegoeggo_dep != expected_req:
     print(f"ERROR: CLI dependency requirement is '{cli_stegoeggo_dep}', expected '{expected_req}'", file=sys.stderr)
     sys.exit(1)
 
-print(f"Versions match: {lib['version']}")
-print(f"CLI dependency: {cli_stegoeggo_dep}")
+print(f"Carrier version: {carrier['version']}")
+print(f"Library version: {lib['version']}")
+print(f"CLI version: {cli['version']}")
+print(f"Library carrier dependency: {lib_carrier_dep}")
+print(f"CLI library dependency: {cli_stegoeggo_dep}")
 PY
 
 echo ""
-echo "=== Package dry-run: stegoeggo ==="
+echo "=== Package dry-run: stegoeggo-stego ==="
 ALLOW_DIRTY_FLAG=""
 if [ "$ALLOW_DIRTY" = true ]; then
     ALLOW_DIRTY_FLAG="--allow-dirty"
 fi
+cargo package -p stegoeggo-stego $ALLOW_DIRTY_FLAG 2>&1 | tail -3
+
+echo ""
+echo "=== Package dry-run: stegoeggo ==="
 cargo package -p stegoeggo $ALLOW_DIRTY_FLAG 2>&1 | tail -3
 
 echo ""
@@ -93,6 +116,10 @@ else
     echo "The CLI depends on stegoeggo via exact version (=), which must exist on crates.io first."
     echo "Library dry-run succeeded above. CLI dry-run will succeed after library publication."
 fi
+
+echo ""
+echo "=== Package contents: stegoeggo-stego ==="
+cargo package -p stegoeggo-stego --list 2>/dev/null
 
 echo ""
 echo "=== Package contents: stegoeggo ==="
