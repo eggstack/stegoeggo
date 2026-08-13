@@ -112,15 +112,23 @@ quantization-table seed storage; there is no exposed pixel-domain JPEG fallback.
 ### DCT Stego (JPEG Fast Path)
 
 ```rust
-pub fn apply_dct_stego_bytes(jpeg_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>>
+pub(crate) fn apply_dct_stego_bytes_from_plan(
+    jpeg_bytes: &[u8],
+    plan: &ResolvedProtectionPlan,
+    tile_size: Option<u32>,
+) -> Result<EmbedOutcome<Vec<u8>>>
 ```
+
+The plan-driven entry point is canonical. The legacy `apply_dct_stego_bytes(jpeg_bytes, ctx)`
+helper still exists for `ProtectionPipeline` (legacy API) and internally constructs the
+emission/payload through the same code path.
 
 - For baseline JPEG: F5 coefficient embedding + seed in quantization tables when those tables are preserved
 - For progressive JPEG: Seed-in-Q-tables only (F5 not supported for progressive)
 - Uses `JpegTranscoder` to decode/encode DCT coefficients
 - Uses `DctStegoF5` for coefficient manipulation
-- `probe_dct_support()` gates DCT entry: rejects progressive, restart-bearing, non-8-bit, multi-scan, and sampling >4 inputs; unsupported inputs fall back to metadata-only processing
-- **One-pass embed**: Computes `max_feasible_redundancy = available / payload_bits`, selects `min(requested, max_feasible)`, embeds+encodes once. No retry loop, no roundtrip decode/extract self-test.
+- `probe_dct_support_full()` gates DCT entry: rejects progressive, restart-bearing, non-8-bit, multi-scan, and sampling >4 inputs; unsupported inputs fall back to metadata-only processing
+- **One-pass embed**: Computes `max_feasible = available / payload_bits`, selects `min(requested, max_feasible)`, embeds+encodes once. No retry loop, no roundtrip decode/extract self-test. The DCT success path always uses `encode_coefficients_preserving` (the original-JPEG preserving path), so APP/COM/unknown segments survive byte-for-byte.
 
 ## Extraction & Verification
 
@@ -162,7 +170,7 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 - **lib.rs**: Applied in Standard pipeline
 - **stegoeggo-stego/src/lsb.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). No application-type imports
 - **stegoeggo-stego/src/jpeg.rs**: Generic JPEG carrier facade (DCT capacity, Q-table reassembly, seed hint). No application-type imports
-- **stegoeggo-stego/src/jpeg_transcoder/**: Used for JPEG fast path (`apply_dct_stego_bytes`)
+- **stegoeggo-stego/src/jpeg_transcoder/**: Used for JPEG fast path (`apply_dct_stego_bytes_from_plan`, legacy `apply_dct_stego_bytes`)
 - **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: `DctStegoF5` for F5-style DCT manipulation
 - **util/image.rs**: `XorShiftRng` for LSB pixel selection
 - **protected/constants.rs**: `STEGO_OFFSET_SEED_1`, `STEGO_SPREAD_FACTOR`, etc.
@@ -277,5 +285,28 @@ Overhead: 11 bytes. Max payload: 16 MiB. CRC32 covers payload bytes only.
 
 ### Tests
 
-`tests/public_stego_api.rs` — 28 tests covering LSB/JPEG/frame raw and framed
+`tests/public_stego_api.rs` — 29 tests covering LSB/JPEG/frame raw and framed
 roundtrips, capacity preflight, error conditions, and rights-metadata absence.
+
+## Carrier Crate Layout (Plan 063)
+
+The `stegoeggo-stego` workspace member is the standalone generic carrier crate.
+It contains:
+
+```
+stegoeggo-stego/src/
+├── lib.rs                 Re-exports + carrier-level CapacityReport/EmbedReport
+├── constants.rs           STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR, SPLITMIX64_SEED
+├── error.rs               StegoError, JpegUnsupportedReason, StegoResult
+├── frame.rs               Generic framed payload (magic, version, length, CRC32)
+├── lsb.rs                 V2 LSB carrier + legacy fallback helpers
+├── jpeg.rs                Encoded-JPEG facade (capacity, embed, extract, seed hint)
+├── jpeg_transcoder/       JPEG DCT decode/encode/Huffman/F5 primitives
+└── types.rs               EmbedOutcome, EmbedPath, EmbedStatus, EmbedOutcomeSummary
+```
+
+The crate has no rights-policy/legal/provenance type dependencies. The root
+crate re-exports it under `stegoeggo::stego`, so the Plan 062 public API
+(`stegoeggo::stego::lsb`, `stegoeggo::stego::jpeg`, `stegoeggo::stego::frame`)
+is preserved unchanged. Plan 063's split decision rationale and dependency
+measurements are recorded in `plans/063-status.md`.

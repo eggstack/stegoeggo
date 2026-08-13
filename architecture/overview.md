@@ -104,55 +104,50 @@ ResolvedProtectionPlan (immutable)
 
 ## Data Flow
 
-### Image → Image (pixel path)
+### Request-based canonical path (Plan 061)
 
-```
-Input DynamicImage
-       │
-       ▼
-ProtectionPipeline::process()
-       │
-       ├── [Disabled] → PassthroughProtector::apply() → return Cow::Borrowed
-       │
-       ├── [Light]   → minimal stego → encode → MetadataTrapProtector::inject_bytes() → decode → return Cow::Owned
-       │
-       └── [Standard]
-              │
-              ▼ (output_format == Jpeg?)
-              │
-              ├── YES → encode → steganography.apply_dct_stego_bytes() → metadata_trap.inject_bytes()
-              │
-              └── NO  → steganography.apply() → encode → metadata_trap.inject_bytes()
-              │
-              ▼
-         return Cow::Owned
-```
+The canonical request path resolves `ProtectionRequest` to a `ResolvedProtectionPlan`
+and runs three direct plan executors in `src/lib.rs` (`execute_metadata_only`,
+`execute_stego_and_metadata`, `execute_stego_and_metadata_tiled`). They invoke:
 
-### Image Bytes → Image Bytes (byte path)
+- `RightsMetadataProtector::inject_bytes_from_plan(&output, plan)` for metadata
+- `SteganographyProtector::apply_dct_stego_bytes_from_plan` / `apply_to_image_with_summary_from_plan`
+  for steganography (also `_from_plan` and consume the plan directly)
+
+The plan executor never reconstructs a `ProtectionContext` for execution. Legacy
+`ProtectionContext`/level-based APIs are adapters into the canonical path (Plan 061).
+
+### Image → Image (legacy pixel path)
+
+`process_image()` and `ProtectionPipeline::process()` remain the legacy
+`DynamicImage` entry point. They route through the `ProtectionPipeline` and
+delegate to `SteganographyProtector::apply()` and `RightsMetadataProtector::apply()`.
+
+### Image Bytes → Image Bytes (canonical byte path)
 
 ```
 Input bytes
        │
        ▼
-process_image_bytes() ──► detect format via magic bytes
+process_request_bytes() ──► resolve_request() → ResolvedProtectionPlan
        │
        ▼
-ProtectionPipeline::process_bytes()
+process_plan_bytes() ──► execute_metadata_only() | execute_stego_and_metadata() | execute_stego_and_metadata_tiled()
        │
-       ├── [Disabled] → return bytes.clone()
+       ├── [metadata-only] → metadata_trap.inject_bytes_from_plan()
        │
-       ├── [Light]    → preserve/convert format → minimal stego → MetadataTrapProtector::apply_bytes() → return Vec<u8>
+       ├── [HiddenMarkerMode::BestEffort] (input == JPEG && output == JPEG?)
+       │        ├── YES → JPEG fast path
+       │        │        apply_dct_stego_bytes_from_plan() → metadata_trap.inject_bytes_from_plan()
+       │        └── NO  → full pixel pipeline
+       │                 apply_to_image_with_summary_from_plan() → encode → metadata_trap.inject_bytes_from_plan()
        │
-       └── [Standard]
-              │
-              ▼ (input == JPEG && output == JPEG?)
-              │
-              ├── YES → JPEG fast path
-              │        steganography.apply_dct_stego_bytes() → metadata_trap.inject_bytes()
-              │
-              └── NO  → Full pixel pipeline
-                       decode → apply_protector_pipeline() → encode → metadata.inject_bytes()
+       └── [HiddenMarkerMode::Tiled] → tiled variant of either path
 ```
+
+The legacy `process_image_bytes()` / `process_image_bytes_with_warnings()` adapters
+translate `ProtectionLevel` + `ProtectionContext` to a `ProtectionRequest` via
+`request_from_legacy()` and re-enter the canonical path.
 
 ### JPEG Fast Path (input=JPEG, output=JPEG)
 
@@ -161,7 +156,9 @@ Skips pixel decode/encode entirely. Operates directly on DCT coefficients:
 1. `JpegTranscoder::decode_coefficients()` — parse header, decode Huffman
 2. `DctStegoF5::embed_f5()` — modify DCT coefficients with F5 steganography
 3. `DctStegoF5::embed_seed_in_quantization_tables()` — store seed in Q-tables
-4. `JpegTranscoder::encode_coefficients()` — re-encode Huffman, assemble JPEG
+4. `JpegTranscoder::encode_coefficients_preserving()` — re-encode Huffman, walk the
+   original byte stream replacing only DQT and SOS scan data; APP/COM/unknown
+   segments survive verbatim
 
 Progressive JPEGs are handled via seed-in-Q-tables only (coefficient manipulation unsupported).
 
@@ -241,14 +238,18 @@ The generic carrier core lives in the separate `stegoeggo-stego` crate:
 
 ```
 stegoeggo-stego/src/
-├── lib.rs                     Re-exports, StegoError, carrier API facade
+├── lib.rs                     Re-exports, CapacityReport, EmbedReport, carrier facade
+├── constants.rs               STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR, SPLITMIX64_SEED
+├── error.rs                   StegoError, JpegUnsupportedReason, StegoResult
+├── frame.rs                   Generic framed payload (magic, version, length, CRC32)
 ├── lsb.rs                     LSB carrier: permutations, embed/extract, crop, seed fallback
 ├── jpeg.rs                    JPEG carrier: DCT capacity, Q-table reassembly, seed hint
-└── jpeg_transcoder/           JPEG-specific DCT coefficient processing
-    ├── mod.rs                 JpegTranscoder (decode/encode_coefficients, assemble_jpeg)
-    ├── header.rs              JpegHeader, HuffmanTable parsing (DQT/SOF/DHT/SOS)
-    ├── entropy.rs             CoefficientDecoder, CoefficientEncoder (Huffman codec)
-    └── stego_f5.rs            DctStegoF5, F5XorShiftRng (F5 DCT coefficient embedding)
+├── jpeg_transcoder/           JPEG-specific DCT coefficient processing
+│   ├── mod.rs                 JpegTranscoder (decode/encode_coefficients, assemble_jpeg)
+│   ├── header.rs              JpegHeader, HuffmanTable parsing (DQT/SOF/DHT/SOS)
+│   ├── entropy.rs             CoefficientDecoder, CoefficientEncoder (Huffman codec)
+│   └── stego_f5.rs            DctStegoF5, F5XorShiftRng (F5 DCT coefficient embedding)
+└── types.rs                   EmbedOutcome, EmbedPath, EmbedStatus, EmbedOutcomeSummary
 ```
 
 ## Component Index — Deep Dives

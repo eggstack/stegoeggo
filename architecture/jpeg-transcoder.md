@@ -166,5 +166,5 @@ Malformed entropy never produces partial successful coefficient maps.
 - **stegoeggo-stego/src/jpeg_transcoder/header.rs**: `JpegHeader::parse` for header parsing; `JpegHeader::analyze_structure_checked` for scan structure detection; `parse_sos` returns `Result<()>` and rejects malformed table IDs
 - **stegoeggo-stego/src/jpeg_transcoder/entropy.rs**: `CoefficientDecoder` / `CoefficientEncoder` for Huffman codec; decoder fails closed on truncated/malformed entropy data; canonical code construction advances through zero-count lengths
 - **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: `DctStegoF5` for coefficient manipulation
-- **stegoeggo/src/protected/steganography.rs**: `apply_dct_stego_bytes` calls transcoder for JPEG fast path; uses preserving encoding for all DCT output
+- **stegoeggo/src/protected/steganography.rs**: `apply_dct_stego_bytes_from_plan` (canonical) and the legacy `apply_dct_stego_bytes` (legacy context path) call the transcoder for JPEG fast path; both use preserving encoding for all DCT output
 - **stegoeggo/src/lib.rs**: Used in `apply_bytes_pipeline` when input/output are both JPEG

@@ -48,13 +48,25 @@ pub fn resolve_request(
 
 `ResolvedProtectionPlan` containing:
 - Effective policy and DMI value
-- Normalized rights notice
+- Normalized rights notice (merged with `legal_metadata` fields so metadata injection
+  can read notice fields directly from the plan)
 - Protection channels and processing options
 - Seed and intensity
 - Input/output formats
 - Legal metadata and MAC key (if provided)
 - Pre-computed warnings
 - Resource limits
+
+## Plan as the Canonical Execution State
+
+After Plan 061, the resolved plan is the direct execution state. The canonical
+request execution path (`process_request_bytes*` → `process_plan_bytes` →
+`execute_metadata_only` / `execute_stego_and_metadata` /
+`execute_stego_and_metadata_tiled`) consumes the plan directly via the
+`*_from_plan` entry points on `SteganographyProtector` and
+`RightsMetadataProtector`. There is no `plan_to_context()` adapter left; legacy
+`ProtectionContext`/`ProtectionLevel` entry points are routed through
+`request_from_legacy()` and re-enter the canonical path.
 
 ## Why Resolution Runs Once
 

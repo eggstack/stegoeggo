@@ -268,21 +268,32 @@ See `RELEASING.md` for the complete procedure.
 - `STABILITY.md` — Stability tiers
 - `architecture/` — Architecture documentation (30 files, verified against source)
   - `architecture/overview.md` — Module map, protection levels, pipeline flow
-  - `architecture/pipeline.md` — Pipeline orchestration and public API
+  - `architecture/pipeline.md` — Pipeline orchestration and public API (legacy + canonical paths)
   - `architecture/traits.md` — Protector trait definition
   - `architecture/types.md` — Core type definitions (ProtectionRequest, RightsPolicy, etc.)
-  - `architecture/constants.md` — Tuning constants and their values
+  - `architecture/constants.md` — Tuning constants and their values (carrier + application copies)
   - `architecture/error.md` — Error variants (17 total: 16 always-available + 1 async-only)
   - `architecture/verification.md` — VerificationReport and sub-verification types
   - `architecture/cli.md` — CLI flags, subcommands, and exit codes
   - `architecture/jpeg-transcoder.md` — JPEG DCT coefficient processing
   - `architecture/jpeg-header.md` — JPEG header parsing and scan analysis
-  - `analysis/jpeg-stego-f5.md` — F5-style DCT steganography
-  - `architecture/protected-steganography.md` — LSB and DCT embedding methods
+  - `architecture/jpeg-entropy.md` — Huffman codec (decoder/encoder)
+  - `architecture/jpeg-stego-f5.md` — F5-style DCT steganography
+  - `architecture/protected-steganography.md` — LSB and DCT embedding methods, including generic carrier API and crate layout
   - `architecture/protected-metadata-trap.md` — Metadata injection (RightsMetadataProtector)
+  - `architecture/protected-passthrough.md` — Disabled-level no-op
   - `architecture/payload-v3.md` — V3 payload wire format and TLV extensions
   - `architecture/provenance.md` — Provenance claims and digest binding
+  - `architecture/provenance-claim.md` — Provenance claim specification
   - `architecture/signing.md` — Ed25519 signing module
   - `architecture/detached.md` — Detached manifest sidecar
+  - `architecture/detached-manifest.md` — Detached manifest JSON schema
   - `architecture/conformance.md` — Conformance harness and reporting
   - `architecture/resource-limits.md` — Input validation and resource bounds
+  - `architecture/resolve.md` — ProtectionRequest → ResolvedProtectionPlan resolver
+  - `architecture/legal-metadata-field-mapping.md` — Field mapping across PNG/JPEG/WebP
+  - `architecture/util-image.md` — Image utilities (encoding, format detection)
+  - `architecture/util-iscc.md` — ISCC content identifier computation
+  - `architecture/util-seed.md` — CSPRNG seed generation
+  - `architecture/async-api.md` — Tokio-based async API
+  - `architecture/adr-c2pa.md` — C2PA integration deferred ADR

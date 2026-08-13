@@ -18,7 +18,7 @@ Three crate-private functions perform the actual work:
 - `execute_stego_and_metadata()` — Standard hidden marker: DCT/LSB stego + metadata injection
 - `execute_stego_and_metadata_tiled()` — Tiled variant for crop-resistant mode
 
-These functions use `RightsMetadataProtector::inject_bytes_from_plan()` for metadata injection, which accepts `&ResolvedProtectionPlan` directly. The steganography methods still accept `&ProtectionContext` for backward compatibility; `plan_to_context()` is used only for steganography, not metadata.
+These functions use `RightsMetadataProtector::inject_bytes_from_plan()` for metadata injection, which accepts `&ResolvedProtectionPlan` directly. The steganography side exposes `*_from_plan` methods (`SteganographyProtector::apply_dct_stego_bytes_from_plan`, `apply_to_image_with_summary_from_plan`, `embed_lsb_tiled_*`) that consume the plan directly. There is no `plan_to_context()` adapter: the resolved plan is the only execution state for the canonical path.
 
 ## ProtectionPipeline (legacy path)
 
@@ -96,8 +96,9 @@ The library intentionally does not own proxy-level cache policy, concurrency lim
 
 ## Module Interactions
 
-- **types.rs**: Uses `ProtectionLevel`, `ProtectionContext`, `ImageOutputFormat`
+- **types.rs**: Uses `ProtectionLevel`, `ProtectionContext`, `ImageOutputFormat`, `ProtectionRequest`, `ResolvedProtectionPlan`
 - **traits.rs**: Calls `Protector::apply()` and `Protector::apply_bytes()`
 - **protected/*.rs**: Delegates to specific protector implementations
-- **jpeg_transcoder/**: Used for JPEG fast path in `apply_bytes_pipeline`
+- **stegoeggo-stego/src/jpeg_transcoder/**: Used for JPEG fast path in `apply_dct_stego_bytes_from_plan` and the legacy `apply_bytes_pipeline`
+- **stegoeggo-stego/src/lsb.rs**: Used by `SteganographyProtector` for LSB carrier mechanics
 - **util/image.rs**: Used for encoding, format detection, image loading

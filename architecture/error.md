@@ -36,15 +36,15 @@ pub enum Error {
 
 | Variant | Source | Description |
 |---------|--------|-------------|
-| `ImageDecode` | `image` crate / `jpeg_transcoder` | Failed to decode image bytes or Huffman data |
-| `ImageEncode` | `image`/`jpeg_transcoder` | Failed to encode image |
+| `ImageDecode` | `image` crate / `stegoeggo-stego::jpeg_transcoder` | Failed to decode image bytes or Huffman data |
+| `ImageEncode` | `image`/`stegoeggo-stego::jpeg_transcoder` | Failed to encode image |
 | `Io` | `std::io` | File I/O errors |
 | `Serialization` | `serde_json` | JSON serialization/deserialization failures |
 | `Metadata` | `MetadataTrapProtector` | Metadata injection/extraction failures |
 | `Config` | `ProtectionContext` | Invalid configuration values |
-| `Image` | General / `jpeg_transcoder` | Image processing errors (unsupported features, etc.) |
-| `Steganography` | `SteganographyProtector` | Stego embed/extract failures |
-| `InvalidFormat` | Pipeline / `jpeg_transcoder` | Input format cannot be determined |
+| `Image` | General / `stegoeggo-stego::jpeg_transcoder` | Image processing errors (unsupported features, etc.) |
+| `Steganography` | `SteganographyProtector` (and `stegoeggo-stego::StegoError` via `From`) | Stego embed/extract failures |
+| `InvalidFormat` | Pipeline / `stegoeggo-stego::jpeg_transcoder` | Input format cannot be determined |
 | `ImageTruncated` | Pipeline | Image data was truncated |
 | `PayloadVerification` | `SteganographyProtector` | HMAC/checksum verification failed |
 | `Crypto` | `SteganographyProtector` | Cryptographic operation failures |
@@ -69,3 +69,19 @@ pub type Result<T> = std::result::Result<T, Error>;
 - The `#[cfg(feature = "async")]` on `Task` avoids requiring tokio for non-async builds
 - Structured variants (`InputTooLarge`, `DimensionsExceeded`, etc.) carry typed fields for programmatic error handling
 - Error messages are descriptive enough for debugging but don't leak internal details
+
+## Generic Carrier Error Conversion
+
+The public `stego` module exposes [`stegoeggo_stego::StegoError`] for generic carrier
+operations. It has its own `From` conversions into the root `Error` enum so that
+callers using a unified error type can treat generic carrier failures the same as
+application-level failures:
+
+```rust
+impl From<StegoError> for Error {
+    fn from(e: StegoError) -> Self { /* ... */ }
+}
+```
+
+Similarly, `TranscoderError` from the carrier crate converts into `Error` via
+`From` (see `src/error.rs`).

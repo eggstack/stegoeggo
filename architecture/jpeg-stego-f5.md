@@ -1,6 +1,6 @@
 # F5 DCT Steganography
 
-**Source:** `src/jpeg_transcoder/stego_f5.rs` (~1020 lines)
+**Source:** `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs` (~1020 lines)
 
 F5-style steganographic embedding in JPEG DCT coefficients. The most sophisticated protection layer.
 
@@ -73,7 +73,7 @@ F5-specific PRNG for DCT coefficient shuffling. **Different algorithm from `XorS
 
 ## Module Interactions
 
-- **steganography.rs**: `apply_dct_stego_bytes` calls `DctStegoF5` methods
+- **steganography.rs**: `apply_dct_stego_bytes_from_plan` (canonical) and the legacy `apply_dct_stego_bytes` (legacy context path) call `DctStegoF5` methods
 - **jpeg-transcoder.md**: Uses `JpegTranscoder` for coefficient decode/encode
 - **jpeg-header.md**: Modifies quantization tables for seed embedding
 - **jpeg-entropy.md**: Works with decoded `Coefficients` type

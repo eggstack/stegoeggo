@@ -580,6 +580,11 @@ arbitrary bytes into images, independent of the rights-protection pipeline. Use
 this when you need raw steganographic carrier mechanics without rights metadata,
 legal notices, or evidence profiles.
 
+The carrier is also available as a standalone crate, `stegoeggo-stego`, for
+applications that want image steganography without the rights-protection
+dependency tree. It depends only on `image`, `jpeg-encoder`, `crc32fast`, and
+`thiserror`.
+
 | Module | Domain | Input/Output |
 |--------|--------|--------------|
 | `stego::lsb` | Pixel-domain LSB | `RgbaImage` |
@@ -592,8 +597,8 @@ legal notices, or evidence profiles.
 use stegoeggo::stego::lsb::{self, LsbConfig};
 
 let config = LsbConfig::new(seed);
-let report = lsb::embed(&mut image, payload, &config)?;
-let recovered = lsb::extract(&image, payload.len(), &config)?;
+let report = lsb::embed(&img, payload, &config)?;
+let recovered = lsb::extract(&report.output_image, payload.len(), &config)?;
 ```
 
 **Framed round-trip** (no caller-known payload length needed):
@@ -602,15 +607,18 @@ let recovered = lsb::extract(&image, payload.len(), &config)?;
 use stegoeggo::stego::{frame, lsb::{self, LsbConfig}};
 
 let framed = frame::encode(payload)?;
-let report = lsb::embed(&mut image, &framed, &LsbConfig::new(seed))?;
-let (header, raw) = lsb::extract(&image, framed.len(), &LsbConfig::new(seed))?;
-let (header, payload) = frame::decode(&raw)?;
+let report = lsb::embed(&img, &framed, &LsbConfig::new(seed))?;
+let prefix_data = lsb::extract(&report.output_image, frame::FRAME_HEADER_SIZE, &config)?;
+let (_, total_len) = frame::decode_prefix(&prefix_data)?;
+let full_data = lsb::extract(&report.output_image, total_len, &config)?;
+let (header, payload) = frame::decode(&full_data)?;
 ```
 
 This API is best-effort steganography, not encryption. Seed knowledge is not
 equivalent to cryptographic secrecy. LSB payloads are fragile under lossy
 re-encoding. JPEG DCT payloads are not guaranteed across arbitrary
-recompression. See the [stego module rustdoc](docs.rs/stegoeggo/latest/stegoeggo/stego/)
+recompression. The generic frame CRC is corruption detection only — it is
+not authentication. See the [stego module rustdoc](docs.rs/stegoeggo/latest/stegoeggo/stego/)
 for details and security considerations.
 
 ## CLI Usage
@@ -1248,21 +1256,37 @@ Before submitting a change that affects metadata output:
 
 ## Architecture
 
+The `stegoeggo` crate owns the rights-protection policy and payload
+construction. The carrier mechanics (LSB, JPEG DCT, Huffman, F5) live in the
+`stegoeggo-stego` workspace crate, which is re-exported under
+`stegoeggo::stego` for backward compatibility.
+
 ```
-stegoeggo
-+-- ProtectionPipeline        # Main orchestration
-+-- Protector trait           # Strategy pattern for protectors
-|   +-- PassthroughProtector      # No-op (Disabled level)
-|   +-- MetadataTrapProtector     # Metadata injection (always)
-|   +-- SteganographyProtector    # LSB/DCT embedding (Light: minimal, Standard: full)
-+-- stegoeggo-stego           # Generic carrier core (application-neutral)
-|   +-- lsb.rs                    # LSB carrier: permutations, embed/extract
-|   +-- jpeg.rs                   # JPEG carrier: DCT capacity, Q-table reassembly
-|   +-- jpeg_transcoder/          # JPEG DCT decode/encode, Huffman codec, F5 stego
-+-- ProtectionLevel          # disabled -> light -> standard
+stegoeggo (root crate)
++-- ProtectionRequest        # Canonical policy-first input
++-- ResolvedProtectionPlan   # Immutable execution state
++-- execute_*_from_plan()    # Direct plan executors (lib.rs)
++-- RightsMetadataProtector  # Metadata injection (plan-aware)
++-- SteganographyProtector   # Application adapter; payload v1/v2/v3,
+|                            # seed discovery, verification; delegates
+|                            # carrier mechanics to stegoeggo-stego
++-- ProtectionPipeline       # Legacy level-based path (compat adapter)
++-- Protector trait          # apply/apply_bytes
+|   +-- PassthroughProtector     # No-op (Disabled)
+|   +-- MetadataTrapProtector    # Metadata injection
+|   +-- SteganographyProtector   # LSB/DCT embedding
++-- ProtectionLevel          # Disabled -> Light -> Standard (compat)
 +-- LegalMetadata            # Configurable legal metadata
-+-- ProtectionContext        # Configuration for protection
++-- ProtectionContext        # Legacy configuration (compat adapter)
 +-- StegoPayload             # Extracted stego data
+
+stegoeggo-stego (workspace member)
++-- lsb                      # Pixel-domain LSB carrier
++-- jpeg                     # Encoded-JPEG DCT carrier
++-- frame                    # Generic self-describing frame
++-- jpeg_transcoder/         # Huffman, F5, header/entropy primitives
++-- error                    # StegoError, JpegUnsupportedReason
++-- types                    # EmbedOutcome, EmbedPath, EmbedStatus
 ```
 
 **Steganography intensity by level:**

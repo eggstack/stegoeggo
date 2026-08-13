@@ -1,6 +1,6 @@
 # JPEG Header Parser
 
-**Source:** `src/jpeg_transcoder/header.rs`
+**Source:** `stegoeggo-stego/src/jpeg_transcoder/header.rs`
 
 Parses JPEG file headers to extract quantization tables, Huffman tables, component definitions, and structural metadata.
 
