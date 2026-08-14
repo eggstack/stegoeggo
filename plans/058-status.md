@@ -1,5 +1,9 @@
 # Plan 058 Status
 
+Retrospective ledger. The carrier-space and legacy-extraction decisions remain
+current; later plans moved the carrier into `stegoeggo-stego` and corrected its
+public boundary.
+
 Baseline SHA: `80cb93fe53e56080a8e7c0e07a83e26d5d680aca`
 
 ## Status Rows

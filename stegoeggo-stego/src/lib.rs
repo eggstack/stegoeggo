@@ -1,5 +1,23 @@
 #![forbid(unsafe_code)]
 
+//! Generic image steganography carriers.
+//!
+//! The default API is intentionally small: callers can use the public LSB,
+//! JPEG, and framed-payload modules without depending on codec implementation
+//! details.
+//!
+//! ```compile_fail
+//! use stegoeggo_stego::__internal_jpeg_facade::JpegHeader;
+//! ```
+//!
+//! ```compile_fail
+//! use stegoeggo_stego::jpeg_transcoder::JpegTranscoder;
+//! ```
+//!
+//! ```compile_fail
+//! use stegoeggo_stego::__internal_lsb_facade::stego_permutation_v2;
+//! ```
+
 pub mod constants;
 pub mod error;
 pub mod frame;
@@ -9,36 +27,14 @@ pub mod lsb;
 pub(crate) mod lsb_internal;
 pub mod types;
 
+#[cfg(feature = "application-support")]
+#[doc(hidden)]
+pub mod application_support;
+
 pub use error::{JpegUnsupportedReason, StegoError, StegoResult};
-pub use jpeg_transcoder::is_progressive_jpeg;
+pub use jpeg::is_progressive_jpeg;
 pub use lsb::DEFAULT_TILE_SIZE;
 pub use types::{EmbedOutcome, EmbedOutcomeSummary, EmbedPath, EmbedStatus};
-
-/// Re-exports of JPEG transcoder internals for the consuming crate
-/// (`stegoeggo`). These are not part of the stable carrier API; downstream
-/// users should rely on `stegoeggo_stego::jpeg::{embed, extract, ...}`.
-#[doc(hidden)]
-pub mod __internal_jpeg_facade {
-    pub use crate::jpeg_transcoder::header::ParseLimits;
-    pub use crate::jpeg_transcoder::{
-        probe_dct_support, probe_dct_support_full, Coefficients, DctStegoF5, DctSupport,
-        DctUnsupportedReason, JpegHeader, JpegTranscoder, TranscoderError,
-    };
-}
-
-/// Re-exports of LSB internals for the consuming crate (`stegoeggo`).
-/// These are not part of the stable carrier API; downstream users should
-/// rely on `stegoeggo_stego::lsb::{embed, extract, capacity, LsbConfig, ...}`.
-#[doc(hidden)]
-pub mod __internal_lsb_facade {
-    pub use crate::lsb_internal::{
-        bits_to_bytes, blit_rgba, bytes_to_bits, carrier_v2_slot_to_pixel_channel, crop_rgba,
-        embed_bit_in_pixel, embed_lsb, embed_lsb_tiled, embed_lsb_v2, embed_seed_lsb_fallback,
-        extract_lsb, extract_lsb_range, extract_lsb_v2, extract_seed_lsb_fallback,
-        lsb_available_slots, lsb_capacity_for_image, lsb_required_capacity_v2,
-        lsb_required_slots_legacy, splitmix64, stego_permutation, stego_permutation_v2, tile_seed,
-    };
-}
 
 /// Capacity report for a carrier query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

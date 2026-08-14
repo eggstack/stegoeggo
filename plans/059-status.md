@@ -1,5 +1,9 @@
 # Plan 059 Status Ledger
 
+Retrospective ledger. The delegation and generic-carrier decisions remain
+current; later plans made the carrier internals private and added the narrow
+parent-crate support layer.
+
 ## Baseline SHA
 
 `55e0383d3495d10b5bdc435ab5295a3d3a13902f`

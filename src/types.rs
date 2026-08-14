@@ -1446,9 +1446,10 @@ pub struct ProtectionContext {
     inject_metadata: Option<bool>,
     /// Three-state control for legal claim injection (copyright, artist).
     ///
-    /// - `None` (default): never inject legal claims (level default is off).
+    /// - `None` (default): automatically inject explicitly supplied legal
+    ///   fields when [`LegalMetadata`] is present; otherwise inject none.
     /// - `Some(true)`: force-enable legal claim injection.
-    /// - `Some(false)`: force-disable legal claim injection (same as `None`).
+    /// - `Some(false)`: force-disable legal claim injection.
     ///
     /// Legal claims require `LegalMetadata` to be set via
     /// [`with_legal_metadata`](ProtectionContext::with_legal_metadata).

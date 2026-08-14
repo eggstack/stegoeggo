@@ -56,10 +56,10 @@ cargo build --release --bin stegoeggo-conformance --features conformance
 6. Update the CLI exact library dependency in `stegoeggo-cli/Cargo.toml` (`stegoeggo = { path = "..", version = "=X.Y.Z" }`).
 7. Update `CHANGELOG.md` with the new version and release date.
 8. Update `SECURITY.md` supported versions table if the release line changes.
-9. Run `./scripts/release-check.sh`.
-9. Run targeted specialist checks appropriate to the changes (see table below).
-10. Inspect package contents with `cargo package -p stegoeggo --list` and `cargo package -p stegoeggo-cli --list`.
-11. Verify no publication command is being run by automation.
+9. Run `./scripts/release-check.sh --stage=pre --allow-dirty` before publishing.
+10. Run targeted specialist checks appropriate to the changes (see table below).
+11. Inspect package contents with `cargo package -p stegoeggo --list` and `cargo package -p stegoeggo-cli --list`.
+12. Verify no publication command is being run by automation.
 
 ## Targeted Specialist Checks
 
@@ -80,6 +80,9 @@ Run checks applicable to the release contents. This is not a universal checklist
 Publication must follow dependency order: carrier first, then library, then CLI. Each crate's exact dependency must resolve from crates.io before the next crate is published.
 
 ```bash
+# Before publication, the release check runs:
+./scripts/release-check.sh --stage=pre
+
 # 1. Publish the carrier crate
 cargo publish -p stegoeggo-stego --dry-run
 cargo publish -p stegoeggo-stego
@@ -87,21 +90,23 @@ cargo publish -p stegoeggo-stego
 # 2. Confirm the carrier version is available on crates.io
 cargo search stegoeggo-stego
 
-# 3. Publish the library
+# 3. Verify the library against the now-published carrier, then publish it
+./scripts/release-check.sh --stage=root
 cargo publish -p stegoeggo --dry-run
 cargo publish -p stegoeggo
 
 # 4. Confirm the library version is available on crates.io
 cargo search stegoeggo
 
-# 5. Publish the CLI
+# 5. Verify the CLI against the now-published library, then publish it
+./scripts/release-check.sh --stage=cli
 cargo publish -p stegoeggo-cli --dry-run
 cargo publish -p stegoeggo-cli
 ```
 
 Do not prescribe a fixed sleep between publications. Registry propagation should be confirmed, not guessed with a timed delay.
 
-**Note:** `cargo package -p stegoeggo` cannot succeed locally before `stegoeggo-stego` is published on crates.io, because the library depends on it via exact version (`=X.Y.Z`). Similarly, `cargo package -p stegoeggo-cli` cannot succeed before the library is published. The `release-check.sh` script validates dry-runs and version lockstep, and reports dependent-package dry-run failures as expected. Dry-runs will succeed after each dependency is published.
+**Package verification stages:** `./scripts/release-check.sh --stage=pre` requires full carrier verification and structurally lists the unpublished root and CLI packages (their exact crates.io dependencies cannot be resolved locally before publication). After the carrier is published, `--stage=root` performs full root verification. After the root is published, `--stage=cli` performs full CLI verification. The script never publishes crates.
 
 ## Optional Tag and GitHub Release
 

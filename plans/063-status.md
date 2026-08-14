@@ -1,5 +1,10 @@
 # Plan 063 Status Ledger
 
+Retrospective ledger. The split remains the current architecture: the default
+carrier API is an explicit public allowlist, codec/coefficient internals are
+private, and the root adapter uses the optional operation-level
+`application-support` feature.
+
 Baseline SHA: `268f0a7` (main)
 
 ## Public API under `stegoeggo::stego` (from Plan 062)

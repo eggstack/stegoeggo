@@ -8,7 +8,7 @@
 |--------|---------|-------------------|
 | `pipeline_bytes` | `process_image_bytes`, `verify_image_bytes` | Full public bytes-in / bytes-out path. Catches format-detection errors, encoder failures, and verification panics. |
 | `tiled_round_trip` | Tiled stego embed/extract | Crop-resistant tiled steganography end-to-end. Verifies tiled payloads survive round-trips. |
-| `jpeg_parser` | `JpegHeader::parse`, `JpegTranscoder::decode_coefficients`, `DctStegoF5` | Hand-rolled JPEG parser and DCT coefficient decoder. Largest untrusted-byte consumer. |
+| `jpeg_parser` | bounded JPEG dimension inspection used by `parse_jpeg_for_fuzz` | Exercises the public bounded JPEG validation path without exposing parser or coefficient types. |
 | `payload_v3_parser` | `parse_payload`, v1/v2/v3 dispatch, TLV extensions | Payload version detection, header parsing, extension deserialization across all wire formats. |
 | `png_metadata` | `MetadataTrapProtector::extract_seed_from_image`, `process_image_bytes` (Light) | PNG chunk parsing and metadata injection/update. |
 | `webp_riff_parser` | `MetadataTrapProtector::extract_seed_from_image`, `verify_image_bytes` | WebP RIFF chunk parsing and container validation. |

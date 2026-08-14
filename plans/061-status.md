@@ -1,4 +1,9 @@
-# Plan 061 Status — COMPLETE
+# Plan 061 Status — COMPLETE (historical ledger)
+
+Current disposition after Plan 066: the canonical request/plan executor remains
+direct, while legacy APIs adapt into it through a stateless `ProtectionPipeline`.
+Legacy `Light` resolves to `SeedOnly`; a tile size does not promote it into
+full-payload tiled mode.
 
 Baseline SHA: current HEAD
 

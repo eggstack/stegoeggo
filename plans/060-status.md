@@ -1,5 +1,8 @@
 # Plan 060: Status Ledger
 
+Retrospective ledger. The optimization results remain current, with the final
+carrier boundary documented by Plan 066.
+
 ## Baseline
 
 - **SHA**: `118d59d` (HEAD at plan start)

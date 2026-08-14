@@ -29,8 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         report.embedded, report.payload_bytes
     );
 
-    let decoded = report.output.clone();
-    let recovered = lsb::extract(&decoded, secret.len(), &config)?;
+    let recovered = lsb::extract(&report.output, secret.len(), &config)?;
     println!("LSB extracted: {:?}", String::from_utf8_lossy(&recovered));
 
     // --- JPEG (DCT-domain) raw round-trip ---
@@ -64,8 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let lsb_config = LsbConfig::new(seed);
     let report = lsb::embed(&img2, &framed, &lsb_config)?;
 
-    let decoded2 = report.output.clone();
-    let raw = lsb::extract(&decoded2, framed.len(), &lsb_config)?;
+    let raw = lsb::extract(&report.output, framed.len(), &lsb_config)?;
     let (_, payload) = frame::decode(&raw)?;
     println!("Framed extracted: {:?}", String::from_utf8_lossy(&payload));
 

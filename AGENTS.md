@@ -34,6 +34,10 @@ cargo test --workspace --exclude stegoeggo-fuzz --all-features
 **Pre-release check (local only, never publishes):**
 ```bash
 ./scripts/release-check.sh
+# staged package checks when the carrier/root/CLI release order matters:
+./scripts/release-check.sh --allow-dirty --stage=pre
+./scripts/release-check.sh --allow-dirty --stage=root
+./scripts/release-check.sh --allow-dirty --stage=cli
 ```
 
 **Specialist verification (manual, targeted, not run on every push):**
@@ -185,11 +189,12 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Three seed storage locations** — (1) Q-table LSBs in JPEG, (2) metadata markers (strippable), (3) fixed-position LSB in first 64 pixel channels. Extraction chain: metadata → LSB fallback → `FALLBACK_SEEDS`
 - **ECC on stego payload** — Non-MAC payloads use 3× repetition with majority voting before CRC32. MAC payloads use 8-byte HMAC instead
 - **Spread spectrum LSB** — Each payload bit embedded across `STEGO_SPREAD_FACTOR * redundancy` (=5×r) RGB carrier slots via majority voting. The corrected V2 carrier uses a single bijective permutation over `width * height * 3` slots; all replicas of one bit use consecutive logical indices through the same permutation, guaranteeing no inter-replica collisions. Legacy extraction (pixel-index/channel-derived carrier) is preserved for backward compatibility
-- **Generic carrier core** — `stegoeggo-stego/src/lsb.rs` (public API surface only: `embed`, `extract`, `capacity`, `LsbConfig`) and `stegoeggo-stego/src/lsb_internal.rs` (low-level carrier mechanics: permutations, embed/extract helpers, capacity, crop/blit) and `stegoeggo-stego/src/jpeg.rs` contain application-neutral carrier mechanics. `SteganographyProtector` delegates to these modules and adds StegoEggo-specific payload generation, parsing, and verification. The `jpeg_transcoder` module and `lsb_internal` module are `pub(crate)`; downstream consumers access internals only through `#[doc(hidden)] __internal_*_facade` re-exports. The carrier `EmbedReport` is generic over the output type (`RgbaImage` for LSB, `Vec<u8>` for JPEG) — pixel-domain no longer performs an implicit PNG encode
+- **Generic carrier core** — `stegoeggo-stego/src/lsb.rs`, `stegoeggo-stego/src/jpeg.rs`, and `stegoeggo-stego/src/frame.rs` are the stable generic carrier API. Low-level mechanics in `lsb_internal` and `jpeg_transcoder` are private implementation details. The parent rights-protection crate uses the carrier's narrow, unstable `application-support` operation layer; it does not expose parser, coefficient, permutation, or application-payload types. The carrier `EmbedReport` is generic over the output type (`RgbaImage` for LSB, `Vec<u8>` for JPEG) — pixel-domain no longer performs an implicit PNG encode
 - **`stego_redundancy` is `Option<usize>`** — Default `None` derives from intensity via `effective_redundancy()` (<0.3→1, 0.3-0.7→2, >=0.7→3). Valid range 1-10
 - **F5 redundancy cap** — Max redundancy is 10. Extraction tries all 10 values
 - **Payload version 3 is current** — V1/V2 still supported for extraction only, never written. V3 adds TLV extensions with domain-separated authentication. V3 extraction paths (magic bytes `[0x53, 0x45]`) tried first before V2/V1 fallback. V3 core: 32 bytes. V3 CRC: 36 bytes. V3 HMAC: 48 bytes
 - **Tiled steganography** (`with_tile_size(n)`) — Crop-resistant mode, full payload per tile. `tile_seed(master_seed, tile_x, tile_y)` uses splitmix64. Tiled LSB embeds directly into image regions using V2 carrier with sub-image slot coordinates, avoiding per-tile RgbaImage allocations
+- **Light plus tile size** — Legacy `Light` always resolves to `HiddenMarkerMode::SeedOnly`; a tile size does not promote it to full-payload tiled steganography. Tiling is a Standard/canonical hidden-marker mode.
 - **F5 tiled block set** — MCU-interleaved: `block_idx = (mcu_y * mcus_per_row + mcu_x) * h * v + sub_y * h + sub_x`. Do NOT assume row-major ordering
 - **JPEG DCT one-pass embed** — Supported DCT embedding computes max feasible redundancy from capacity, then embeds+encodes once. No retry loop, no roundtrip decode/extract self-test. Capacity-selected redundancy = min(requested, available / payload_bits)
 - **Tiled LSB direct region** — Tiled embed computes V2 carrier slots using sub-image dimensions and maps coordinates to full image, eliminating crop/blit allocations. Extraction crops sub-images and uses V2 carrier which matches the sub-image slot mapping
@@ -212,18 +217,18 @@ These still work but will be removed in the next major version. See `DEPRECATION
 ## Architecture
 
 - **Strategy pattern** via `Protector` trait (`src/traits.rs`) with three levels: Disabled, Light, Standard — see `architecture/traits.md`
-- **Pipeline** (`src/lib.rs`): `ProtectionPipeline` orchestrates protectors for legacy APIs — see `architecture/pipeline.md`
+- **Pipeline** (`src/lib.rs`): canonical `ProtectionRequest` execution is plan-driven; stateless `ProtectionPipeline` methods are compatibility adapters for legacy APIs — see `architecture/pipeline.md`
 - **Direct plan executor** (`src/lib.rs`): `execute_metadata_only()`, `execute_stego_and_metadata()`, `execute_stego_and_metadata_tiled()` — canonical execution from `ResolvedProtectionPlan` without `ProtectionContext` reconstruction for metadata
 - **Generic carrier core** (`stegoeggo-stego/src/`): Application-neutral LSB and JPEG DCT carrier mechanics — see `architecture/protected-steganography.md`
 - **Public generic stego API** (`stegoeggo::stego`): Carrier-level embedding/extraction for arbitrary payload bytes, independent of the rights-protection pipeline. Includes `stego::lsb` (pixel-domain), `stego::jpeg` (DCT-domain), and `stego::frame` (self-describing frame with CRC32). See `architecture/protected-steganography.md`
-- **JPEG fast path**: When input/output are both JPEG, operates directly on DCT coefficients via `stegoeggo-stego/src/jpeg_transcoder/`, bypassing pixel decode/encode — see `architecture/jpeg-transcoder.md`
+- **JPEG fast path**: When input/output are both JPEG, the application adapter calls the carrier's public encoded-byte operations, which privately operate on DCT coefficients and bypass pixel decode/encode — see `architecture/jpeg-transcoder.md`
 - **Policy-first API**: `ProtectionRequest` + `RightsPolicy` are the canonical API — see `architecture/types.md`
 - **`#![forbid(unsafe_code)]`** throughout the library crate and `stegoeggo-stego`
 
 ## Validation Scripts
 
 - `scripts/check.sh` — Fast deterministic checks used by local development and required CI (fmt, clippy, no-default-features, tests)
-- `scripts/release-check.sh` — Bounded local pre-release readiness (runs check.sh + package dry-runs + version lockstep verification). Never publishes
+- `scripts/release-check.sh` — Bounded local pre-release readiness (runs check.sh + staged carrier/root/CLI package dry-runs + version lockstep verification). Use `--stage=pre|root|cli`; it never publishes
 - `scripts/validate-docs-rs.sh` — Docs.rs-equivalent rustdoc validation (nightly, DOCS_RS=1, cfg(docsrs), workspace + packaged crate)
 - `scripts/validate-msrv-package.sh` — Fresh MSRV consumer resolution (packages crate, creates clean consumers, tests minimal and all-feature combos on declared MSRV)
 - `scripts/verify_metadata_conformance.sh` — Shell wrapper for conformance checks (delegates to Rust conformance harness)

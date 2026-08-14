@@ -4,8 +4,6 @@ use crate::protected::constants::STEGO_OFFSET_SEED_1;
 use crate::protected::ecc;
 use crate::protected::metadata_trap::RightsMetadataProtector;
 use crate::resource_limits::ResourceLimits;
-use crate::stego::__internal_jpeg_facade::{DctStegoF5, JpegTranscoder};
-use crate::stego::__internal_lsb_facade as carrier_lsb;
 use crate::stego::jpeg as carrier_jpeg;
 use crate::traits::Protector;
 use crate::types::{
@@ -16,6 +14,7 @@ use hmac::{Hmac, Mac};
 use image::{DynamicImage, RgbaImage};
 use sha2::Sha256;
 use std::borrow::Cow;
+use stegoeggo_stego::application_support as carrier_support;
 use subtle::ConstantTimeEq;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -166,8 +165,8 @@ pub(crate) struct ExtractionTrace {
     pub legacy_decoder_entries: usize,
 }
 
-pub use crate::stego::__internal_lsb_facade::tile_seed;
 pub use crate::stego::DEFAULT_TILE_SIZE;
+pub use stegoeggo_stego::application_support::tile_seed;
 
 /// Steganographic protection: embeds hidden payloads in image pixels or DCT coefficients.
 ///
@@ -238,8 +237,6 @@ impl SteganographyProtector {
         jpeg_bytes: &[u8],
         ctx: &ProtectionContext,
     ) -> Result<crate::stego::EmbedOutcome<Vec<u8>>> {
-        use crate::stego::{EmbedOutcome, EmbedPath};
-
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
         }
@@ -248,72 +245,32 @@ impl SteganographyProtector {
             return self.apply_dct_stego_bytes_tiled(jpeg_bytes, ctx, tile_size);
         }
 
-        let seed = ctx.seed();
-
-        match JpegTranscoder::decode_coefficients(jpeg_bytes) {
-            Ok((header, coefficients)) => {
-                let payload = self.generate_payload(
-                    &crate::types::PayloadEmissionContext::from_plan_for_context(
-                        ctx,
-                        EmbedPath::DctF5,
-                    ),
-                    ctx,
-                );
-                let requested_redundancy = ctx.effective_redundancy();
-                let payload_bits = payload.len().saturating_mul(8);
-
-                let available_coeffs = Self::dct_payload_capacity(&coefficients);
-
-                let mut header = header;
-                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
-
-                let max_feasible = available_coeffs.checked_div(payload_bits).unwrap_or(0);
-                let selected_redundancy = requested_redundancy.min(max_feasible).max(1);
-
-                if max_feasible >= 1 {
-                    let mut embedded_coefficients = coefficients.clone();
-                    if DctStegoF5::with_redundancy(selected_redundancy)
-                        .embed_f5(&mut embedded_coefficients, &payload, seed)
-                        .is_ok()
-                    {
-                        let output = JpegTranscoder::encode_coefficients(
-                            &header,
-                            &embedded_coefficients,
-                            Some(jpeg_bytes),
-                        )?;
-                        return Ok(EmbedOutcome::Embedded {
-                            output,
-                            payload_bytes: payload.len(),
-                            required_capacity: payload_bits,
-                            available_capacity: available_coeffs,
-                            path: EmbedPath::DctF5,
-                        });
-                    }
-                }
-
-                let output =
-                    JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))?;
-                Ok(EmbedOutcome::SkippedCapacity {
-                    output,
-                    payload_bytes: payload.len(),
-                    required_capacity: payload_bits,
-                    available_capacity: available_coeffs,
-                    path: EmbedPath::DctF5,
+        let payload = self.generate_payload(
+            &crate::types::PayloadEmissionContext::from_plan_for_context(
+                ctx,
+                crate::stego::EmbedPath::DctF5,
+            ),
+            ctx,
+        );
+        match carrier_support::jpeg_embed(
+            jpeg_bytes,
+            &payload,
+            ctx.seed(),
+            ctx.effective_redundancy(),
+        ) {
+            Ok(outcome) => Ok(outcome),
+            Err(crate::stego::StegoError::UnsupportedJpeg(_)) => {
+                Ok(crate::stego::EmbedOutcome::UnsupportedProgressive {
+                    output: carrier_jpeg::embed_seed_hint(jpeg_bytes, ctx.seed())?,
                 })
             }
-            Err(_) => {
-                let mut header =
-                    crate::stego::__internal_jpeg_facade::JpegHeader::parse(jpeg_bytes)?;
-                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
-                let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
-                Ok(EmbedOutcome::UnsupportedProgressive { output })
-            }
+            Err(error) => Err(error.into()),
         }
     }
 
     pub(crate) fn lsb_pixels_needed(ctx: &ProtectionContext) -> usize {
         let payload_bits = Self::payload_bits_for_context(ctx);
-        carrier_lsb::lsb_required_slots_legacy(payload_bits)
+        carrier_support::legacy_lsb_required_slots(payload_bits)
     }
 
     fn payload_bits_for_context(ctx: &ProtectionContext) -> usize {
@@ -332,9 +289,7 @@ impl SteganographyProtector {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
         }
 
-        let mut header = crate::stego::__internal_jpeg_facade::JpegHeader::parse(jpeg_bytes)?;
-        DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
-        Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)
+        carrier_jpeg::embed_seed_hint(jpeg_bytes, seed).map_err(Into::into)
     }
 
     /// Embed the full payload per tile using F5-style DCT coefficient
@@ -351,129 +306,28 @@ impl SteganographyProtector {
         ctx: &ProtectionContext,
         tile_size: u32,
     ) -> Result<crate::stego::EmbedOutcome<Vec<u8>>> {
-        use crate::stego::{EmbedOutcome, EmbedPath};
-
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
         }
-
-        let seed = ctx.seed();
-
-        match JpegTranscoder::decode_coefficients(jpeg_bytes) {
-            Ok((header, coefficients)) => {
-                let mut header = header;
-                let mut coefficients = coefficients;
-
-                let payload = self.generate_payload(
-                    &crate::types::PayloadEmissionContext::from_plan_for_context(
-                        ctx,
-                        EmbedPath::DctF5Tiled,
-                    ),
-                    ctx,
-                );
-                let payload_bits = payload.len() * 8;
-
-                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
-
-                let max_h = header
-                    .components
-                    .iter()
-                    .map(|c| c.h_sampling as u32)
-                    .max()
-                    .unwrap_or(1);
-                let max_v = header
-                    .components
-                    .iter()
-                    .map(|c| c.v_sampling as u32)
-                    .max()
-                    .unwrap_or(1);
-                let luma_blocks_x = (header.width as u32 + max_h * 7) / (max_h * 8);
-                let luma_blocks_y = (header.height as u32 + max_v * 7) / (max_v * 8);
-                let blocks_per_tile = tile_size / 8;
-                let tiles_x = luma_blocks_x / blocks_per_tile;
-                let tiles_y = luma_blocks_y / blocks_per_tile;
-
-                let mut embedded_any = false;
-                for ty in 0..tiles_y {
-                    for tx in 0..tiles_x {
-                        let tile_blocks =
-                            DctStegoF5::tile_block_set(&header, &coefficients, tx, ty, tile_size);
-                        if tile_blocks.is_empty() {
-                            continue;
-                        }
-                        let local_seed = tile_seed(seed, tx, ty);
-                        if DctStegoF5::with_redundancy(1)
-                            .embed_f5_in_blocks(
-                                &mut coefficients,
-                                &payload,
-                                local_seed,
-                                &tile_blocks,
-                            )
-                            .is_ok()
-                        {
-                            embedded_any = true;
-                        }
-                    }
-                }
-
-                if embedded_any {
-                    let attempt_bytes = JpegTranscoder::encode_coefficients(
-                        &header,
-                        &coefficients,
-                        Some(jpeg_bytes),
-                    )?;
-                    if let Ok((_, roundtrip_coefficients)) =
-                        JpegTranscoder::decode_coefficients(&attempt_bytes)
-                    {
-                        let tile_blocks = DctStegoF5::tile_block_set(
-                            &header,
-                            &roundtrip_coefficients,
-                            0,
-                            0,
-                            tile_size,
-                        );
-                        let roundtrip_bits = DctStegoF5::with_redundancy(1).extract_f5_from_blocks(
-                            &roundtrip_coefficients,
-                            payload_bits,
-                            tile_seed(seed, 0, 0),
-                            &tile_blocks,
-                        );
-                        if Self::bits_to_bytes(&roundtrip_bits) == payload {
-                            return Ok(EmbedOutcome::Embedded {
-                                output: attempt_bytes,
-                                payload_bytes: payload.len(),
-                                required_capacity: payload_bits,
-                                available_capacity: payload_bits,
-                                path: EmbedPath::DctF5Tiled,
-                            });
-                        }
-                    }
-                }
-
-                let output =
-                    JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))?;
-                Ok(EmbedOutcome::SkippedCapacity {
-                    output,
-                    payload_bytes: payload.len(),
-                    required_capacity: payload_bits,
-                    available_capacity: 0,
-                    path: EmbedPath::DctF5Tiled,
+        let payload = self.generate_payload(
+            &crate::types::PayloadEmissionContext::from_plan_for_context(
+                ctx,
+                crate::stego::EmbedPath::DctF5Tiled,
+            ),
+            ctx,
+        );
+        match carrier_support::jpeg_embed_tiled(jpeg_bytes, &payload, ctx.seed(), tile_size) {
+            Ok(outcome) => Ok(outcome),
+            Err(crate::stego::StegoError::UnsupportedJpeg(_)) => {
+                Ok(crate::stego::EmbedOutcome::UnsupportedProgressive {
+                    output: carrier_jpeg::embed_seed_hint(jpeg_bytes, ctx.seed())?,
                 })
             }
-            Err(_) => {
-                let mut header =
-                    crate::stego::__internal_jpeg_facade::JpegHeader::parse(jpeg_bytes)?;
-                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
-                let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
-                Ok(EmbedOutcome::UnsupportedProgressive { output })
-            }
+            Err(error) => Err(error.into()),
         }
     }
 
-    /// Extract payload from tiled F5 DCT stego in a possibly-cropped JPEG.
-    ///
-    /// Tries different grid coordinates for each tile origin to find one
-    /// that produces a valid payload.
+    /// Extract and validate payload candidates from tiled F5 DCT stego.
     #[doc(hidden)]
     pub fn extract_f5_tiled_candidates(
         &self,
@@ -483,153 +337,76 @@ impl SteganographyProtector {
         max_origins: u32,
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
-        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
-            return None;
-        }
-
-        let (header, coefficients) = JpegTranscoder::decode_coefficients(jpeg_bytes).ok()?;
-
-        let max_h = header
-            .components
-            .iter()
-            .map(|c| c.h_sampling as u32)
-            .max()
-            .unwrap_or(1);
-        let max_v = header
-            .components
-            .iter()
-            .map(|c| c.v_sampling as u32)
-            .max()
-            .unwrap_or(1);
-        let luma_blocks_x = (header.width as u32 + max_h * 7) / (max_h * 8);
-        let luma_blocks_y = (header.height as u32 + max_v * 7) / (max_v * 8);
-        let blocks_per_tile = tile_size / 8;
-        let tiles_x = luma_blocks_x / blocks_per_tile;
-        let tiles_y = luma_blocks_y / blocks_per_tile;
-
-        let max_grid = 16u32;
-        let mut origins_tried = 0u32;
-
-        for ty in 0..tiles_y {
-            for tx in 0..tiles_x {
-                if origins_tried >= max_origins {
+        let prefix_bits = V3_PREFIX_BYTES * 8;
+        let prefixes = stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
+            jpeg_bytes,
+            master_seed,
+            tile_size,
+            max_origins,
+            prefix_bits,
+        )?;
+        for prefix in prefixes {
+            match Self::classify_v3_prefix(&prefix, Some(&self.limits)) {
+                V3PrefixResult::Detected {
+                    header_length,
+                    total_length,
+                } => {
+                    let header_bits = header_length * 8;
+                    if Self::validate_v3_header(
+                        &stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
+                            jpeg_bytes,
+                            master_seed,
+                            tile_size,
+                            max_origins,
+                            header_bits,
+                        )?
+                        .into_iter()
+                        .next()?,
+                        Some(&self.limits),
+                    )
+                    .is_err()
+                    {
+                        continue;
+                    }
+                    let full_bits = total_length * 8;
+                    for full in stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
+                        jpeg_bytes,
+                        master_seed,
+                        tile_size,
+                        max_origins,
+                        full_bits,
+                    )? {
+                        if Self::verify_payload_integrity(&full, mac_key) {
+                            return Some(Self::truncate_to_actual_payload(&full));
+                        }
+                    }
+                }
+                V3PrefixResult::NotV3 => {
+                    for bits in [ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                        for payload in
+                            stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
+                                jpeg_bytes,
+                                master_seed,
+                                tile_size,
+                                max_origins,
+                                bits,
+                            )?
+                        {
+                            if Self::try_ecc_decode(&payload).is_some() {
+                                return Some(payload);
+                            }
+                        }
+                    }
                     return None;
                 }
-                origins_tried += 1;
-
-                let tile_blocks =
-                    DctStegoF5::tile_block_set(&header, &coefficients, tx, ty, tile_size);
-                if tile_blocks.is_empty() {
-                    continue;
-                }
-
-                let base_x = tx;
-                let base_y = ty;
-                for dy in 0..=2u32 {
-                    if base_y + dy >= max_grid {
-                        break;
-                    }
-                    for dx in 0..=2u32 {
-                        if base_x + dx >= max_grid {
-                            break;
-                        }
-                        let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
-
-                        // Three-stage v3 extraction: prefix → header → payload.
-                        for redundancy in 1..=10 {
-                            let stego = DctStegoF5::with_redundancy(redundancy);
-                            let prefix_bits = V3_PREFIX_BYTES * 8;
-                            let prefix_raw = stego.extract_f5_from_blocks(
-                                &coefficients,
-                                prefix_bits,
-                                local_seed,
-                                &tile_blocks,
-                            );
-                            if prefix_raw.len() < prefix_bits {
-                                continue;
-                            }
-                            let prefix_bytes = Self::bits_to_bytes(&prefix_raw);
-
-                            match Self::classify_v3_prefix(&prefix_bytes, Some(&self.limits)) {
-                                V3PrefixResult::Detected {
-                                    header_length,
-                                    total_length,
-                                } => {
-                                    let header_bits = header_length * 8;
-                                    let header_raw = if header_bits <= prefix_bits {
-                                        prefix_raw[..header_bits].to_vec()
-                                    } else {
-                                        let h = stego.extract_f5_from_blocks(
-                                            &coefficients,
-                                            header_bits,
-                                            local_seed,
-                                            &tile_blocks,
-                                        );
-                                        if h.len() < header_bits {
-                                            continue;
-                                        }
-                                        h
-                                    };
-                                    let header_bytes = Self::bits_to_bytes(&header_raw);
-                                    if Self::validate_v3_header(&header_bytes, Some(&self.limits))
-                                        .is_err()
-                                    {
-                                        continue;
-                                    }
-                                    let total_bits = total_length * 8;
-                                    let full_raw = if total_bits <= prefix_bits {
-                                        prefix_raw[..total_bits].to_vec()
-                                    } else {
-                                        let f = stego.extract_f5_from_blocks(
-                                            &coefficients,
-                                            total_bits,
-                                            local_seed,
-                                            &tile_blocks,
-                                        );
-                                        if f.len() < total_bits {
-                                            continue;
-                                        }
-                                        f
-                                    };
-                                    let full_bytes = Self::bits_to_bytes(&full_raw);
-                                    if Self::verify_payload_integrity(&full_bytes, mac_key) {
-                                        return Some(Self::truncate_to_actual_payload(&full_bytes));
-                                    }
-                                }
-                                V3PrefixResult::Malformed(_)
-                                | V3PrefixResult::UnsupportedVersion(_)
-                                | V3PrefixResult::ResourceLimitExceeded => {
-                                    return None;
-                                }
-                                V3PrefixResult::NotV3 => {
-                                    for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                                        let extracted = stego.extract_f5_from_blocks(
-                                            &coefficients,
-                                            ecc_bits,
-                                            local_seed,
-                                            &tile_blocks,
-                                        );
-                                        if extracted.len() < ecc_bits {
-                                            continue;
-                                        }
-                                        let payload_bytes = Self::bits_to_bytes(&extracted);
-                                        if Self::try_ecc_decode(&payload_bytes).is_some() {
-                                            return Some(payload_bytes);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                V3PrefixResult::Malformed(_)
+                | V3PrefixResult::UnsupportedVersion(_)
+                | V3PrefixResult::ResourceLimitExceeded => return None,
             }
         }
-
         None
     }
 
-    /// Verification-path variant of `extract_f5_tiled_candidates` that
-    /// returns a tri-state. See [`Self::verify_extract_with_redundancy`].
     fn verify_extract_f5_tiled(
         &self,
         jpeg_bytes: &[u8],
@@ -638,191 +415,103 @@ impl SteganographyProtector {
         max_origins: u32,
         mac_key: &[u8],
     ) -> CandidateOutcome {
-        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
-            return CandidateOutcome::NotFound;
-        }
-
-        let Ok((header, coefficients)) = JpegTranscoder::decode_coefficients(jpeg_bytes) else {
+        let prefix_bits = V3_PREFIX_BYTES * 8;
+        let Some(prefixes) = stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
+            jpeg_bytes,
+            master_seed,
+            tile_size,
+            max_origins,
+            prefix_bits,
+        ) else {
             return CandidateOutcome::NotFound;
         };
-
-        let max_h = header
-            .components
-            .iter()
-            .map(|c| c.h_sampling as u32)
-            .max()
-            .unwrap_or(1);
-        let max_v = header
-            .components
-            .iter()
-            .map(|c| c.v_sampling as u32)
-            .max()
-            .unwrap_or(1);
-        let luma_blocks_x = (header.width as u32 + max_h * 7) / (max_h * 8);
-        let luma_blocks_y = (header.height as u32 + max_v * 7) / (max_v * 8);
-        let blocks_per_tile = tile_size / 8;
-        let tiles_x = luma_blocks_x / blocks_per_tile;
-        let tiles_y = luma_blocks_y / blocks_per_tile;
-
-        let max_grid = 16u32;
-        let mut origins_tried = 0u32;
-        let mut last_outcome: Option<CandidateOutcome> = None;
-
-        'outer: for ty in 0..tiles_y {
-            for tx in 0..tiles_x {
-                if origins_tried >= max_origins {
-                    break 'outer;
-                }
-                origins_tried += 1;
-
-                let tile_blocks =
-                    DctStegoF5::tile_block_set(&header, &coefficients, tx, ty, tile_size);
-                if tile_blocks.is_empty() {
-                    continue;
-                }
-
-                let base_x = tx;
-                let base_y = ty;
-                for dy in 0..=2u32 {
-                    if base_y + dy >= max_grid {
-                        break;
+        let mut last_outcome = None;
+        for prefix in prefixes {
+            match Self::classify_v3_prefix(&prefix, Some(&self.limits)) {
+                V3PrefixResult::Detected {
+                    header_length,
+                    total_length,
+                } => {
+                    let header_bits = header_length * 8;
+                    let Some(header) =
+                        stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
+                            jpeg_bytes,
+                            master_seed,
+                            tile_size,
+                            max_origins,
+                            header_bits,
+                        )
+                        .and_then(|mut values| values.drain(..).next())
+                    else {
+                        continue;
+                    };
+                    if Self::validate_v3_header(&header, Some(&self.limits)).is_err() {
+                        continue;
                     }
-                    for dx in 0..=2u32 {
-                        if base_x + dx >= max_grid {
-                            break;
+                    let full_bits = total_length * 8;
+                    let Some(fulls) =
+                        stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
+                            jpeg_bytes,
+                            master_seed,
+                            tile_size,
+                            max_origins,
+                            full_bits,
+                        )
+                    else {
+                        continue;
+                    };
+                    for full in fulls {
+                        if Self::verify_payload_integrity(&full, mac_key) {
+                            return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
+                                &full,
+                            ));
                         }
-                        let local_seed = tile_seed(master_seed, base_x + dx, base_y + dy);
-
-                        // Three-stage v3 extraction: prefix → header → payload.
-                        for redundancy in 1..=10 {
-                            let stego = DctStegoF5::with_redundancy(redundancy);
-                            let prefix_bits = V3_PREFIX_BYTES * 8;
-                            let prefix_raw = stego.extract_f5_from_blocks(
-                                &coefficients,
-                                prefix_bits,
-                                local_seed,
-                                &tile_blocks,
-                            );
-                            if prefix_raw.len() < prefix_bits {
-                                continue;
+                        if last_outcome.is_none() {
+                            last_outcome = Some(Self::classify_auth_failure(&full, mac_key));
+                        }
+                    }
+                }
+                V3PrefixResult::NotV3 => {
+                    for bits in [ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                        let Some(payloads) =
+                            stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
+                                jpeg_bytes,
+                                master_seed,
+                                tile_size,
+                                max_origins,
+                                bits,
+                            )
+                        else {
+                            continue;
+                        };
+                        for payload in payloads {
+                            if Self::try_ecc_decode(&payload).is_some() {
+                                return CandidateOutcome::Valid(payload);
                             }
-                            let prefix_bytes = Self::bits_to_bytes(&prefix_raw);
-
-                            match Self::classify_v3_prefix(&prefix_bytes, Some(&self.limits)) {
-                                V3PrefixResult::Detected {
-                                    header_length,
-                                    total_length,
-                                } => {
-                                    let header_bits = header_length * 8;
-                                    let header_raw = if header_bits <= prefix_bits {
-                                        prefix_raw[..header_bits].to_vec()
-                                    } else {
-                                        let h = stego.extract_f5_from_blocks(
-                                            &coefficients,
-                                            header_bits,
-                                            local_seed,
-                                            &tile_blocks,
-                                        );
-                                        if h.len() < header_bits {
-                                            continue;
-                                        }
-                                        h
-                                    };
-                                    let header_bytes = Self::bits_to_bytes(&header_raw);
-                                    if Self::validate_v3_header(&header_bytes, Some(&self.limits))
-                                        .is_err()
-                                    {
-                                        continue;
-                                    }
-                                    let total_bits = total_length * 8;
-                                    let full_raw = if total_bits <= prefix_bits {
-                                        prefix_raw[..total_bits].to_vec()
-                                    } else {
-                                        let f = stego.extract_f5_from_blocks(
-                                            &coefficients,
-                                            total_bits,
-                                            local_seed,
-                                            &tile_blocks,
-                                        );
-                                        if f.len() < total_bits {
-                                            continue;
-                                        }
-                                        f
-                                    };
-                                    let full_bytes = Self::bits_to_bytes(&full_raw);
-                                    if Self::verify_payload_integrity(&full_bytes, mac_key) {
-                                        return CandidateOutcome::Valid(
-                                            Self::truncate_to_actual_payload(&full_bytes),
-                                        );
-                                    }
-                                    if last_outcome.is_none() {
-                                        last_outcome =
-                                            Some(Self::classify_auth_failure(&full_bytes, mac_key));
-                                    }
-                                }
-                                V3PrefixResult::Malformed(_) => {
-                                    if last_outcome.is_none() {
-                                        last_outcome = Some(CandidateOutcome::MalformedV3);
-                                    }
-                                }
-                                V3PrefixResult::UnsupportedVersion(v) => {
-                                    if last_outcome.is_none() {
-                                        last_outcome =
-                                            Some(CandidateOutcome::UnsupportedVersion(v));
-                                    }
-                                }
-                                V3PrefixResult::ResourceLimitExceeded => {
-                                    if last_outcome.is_none() {
-                                        last_outcome = Some(CandidateOutcome::MalformedV3);
-                                    }
-                                }
-                                V3PrefixResult::NotV3 => {
-                                    for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                                        let extracted = stego.extract_f5_from_blocks(
-                                            &coefficients,
-                                            ecc_bits,
-                                            local_seed,
-                                            &tile_blocks,
-                                        );
-                                        if extracted.len() < ecc_bits {
-                                            continue;
-                                        }
-                                        let payload_bytes = Self::bits_to_bytes(&extracted);
-                                        if Self::try_ecc_decode(&payload_bytes).is_some() {
-                                            return CandidateOutcome::Valid(payload_bytes);
-                                        }
-                                        if last_outcome.is_none() {
-                                            last_outcome = Some(Self::classify_auth_failure(
-                                                &payload_bytes,
-                                                mac_key,
-                                            ));
-                                        }
-                                    }
-                                }
+                            if last_outcome.is_none() {
+                                last_outcome = Some(Self::classify_auth_failure(&payload, mac_key));
                             }
                         }
+                    }
+                }
+                V3PrefixResult::Malformed(_) => {
+                    if last_outcome.is_none() {
+                        last_outcome = Some(CandidateOutcome::MalformedV3);
+                    }
+                }
+                V3PrefixResult::UnsupportedVersion(version) => {
+                    if last_outcome.is_none() {
+                        last_outcome = Some(CandidateOutcome::UnsupportedVersion(version));
+                    }
+                }
+                V3PrefixResult::ResourceLimitExceeded => {
+                    if last_outcome.is_none() {
+                        last_outcome = Some(CandidateOutcome::MalformedV3);
                     }
                 }
             }
         }
-
-        match last_outcome {
-            Some(outcome) => outcome,
-            None => CandidateOutcome::NotFound,
-        }
-    }
-
-    fn reassemble_jpeg_with_qtables(
-        jpeg_bytes: &[u8],
-        header: &crate::stego::__internal_jpeg_facade::JpegHeader,
-    ) -> Result<Vec<u8>> {
-        carrier_jpeg::reassemble_jpeg_with_qtables(jpeg_bytes, header).map_err(Into::into)
-    }
-
-    pub(crate) fn dct_payload_capacity(
-        coefficients: &crate::stego::__internal_jpeg_facade::Coefficients,
-    ) -> usize {
-        carrier_jpeg::dct_payload_capacity(coefficients)
+        last_outcome.unwrap_or(CandidateOutcome::NotFound)
     }
 
     fn extract_with_redundancy(
@@ -1616,9 +1305,77 @@ impl SteganographyProtector {
         }
     }
 
-    /// Tri-state variant of `verify_dct_stego_with_seed`. Encapsulates the
-    /// same coefficient + tiled F5 fallback chain but distinguishes
-    /// `Invalid` from `NotFound`.
+    fn dct_candidates(&self, jpeg_bytes: &[u8], seed: u64, payload_bits: usize) -> Vec<Vec<u8>> {
+        let payload_len = payload_bits.div_ceil(8);
+        (1..=10)
+            .filter_map(|redundancy| {
+                carrier_support::jpeg_extract(jpeg_bytes, payload_len, seed, redundancy).ok()
+            })
+            .filter(|payload| payload.len() >= payload_len)
+            .collect()
+    }
+
+    fn dct_outcome_with_seed(
+        &self,
+        jpeg_bytes: &[u8],
+        seed: u64,
+        mac_key: &[u8],
+    ) -> CandidateOutcome {
+        let prefix_bits = V3_PREFIX_BYTES * 8;
+        let mut last_outcome = None;
+        for prefix in self.dct_candidates(jpeg_bytes, seed, prefix_bits) {
+            match Self::classify_v3_probe(&prefix, Some(&self.limits)) {
+                V3ProbeResult::V3Detected { total_bits, .. } => {
+                    for full in self.dct_candidates(jpeg_bytes, seed, total_bits) {
+                        if Self::verify_payload_integrity(&full, mac_key) {
+                            return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
+                                &full,
+                            ));
+                        }
+                        if last_outcome.is_none() {
+                            last_outcome = Some(Self::classify_auth_failure(&full, mac_key));
+                        }
+                    }
+                }
+                V3ProbeResult::NotV3 => {
+                    for bits in [ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
+                        for payload in self.dct_candidates(jpeg_bytes, seed, bits) {
+                            if Self::try_ecc_decode(&payload).is_some() {
+                                return CandidateOutcome::Valid(payload);
+                            }
+                            if Self::verify_payload_integrity(&payload, mac_key) {
+                                return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
+                                    &payload,
+                                ));
+                            }
+                            if last_outcome.is_none() {
+                                last_outcome = Some(Self::classify_auth_failure(&payload, mac_key));
+                            }
+                        }
+                    }
+                }
+                V3ProbeResult::MalformedV3 if last_outcome.is_none() => {
+                    last_outcome = Some(CandidateOutcome::MalformedV3);
+                }
+                V3ProbeResult::UnsupportedVersion(version) if last_outcome.is_none() => {
+                    last_outcome = Some(CandidateOutcome::UnsupportedVersion(version));
+                }
+                V3ProbeResult::ResourceLimitExceeded if last_outcome.is_none() => {
+                    last_outcome = Some(CandidateOutcome::MalformedV3);
+                }
+                V3ProbeResult::InsufficientCapacity => {}
+                V3ProbeResult::MalformedV3
+                | V3ProbeResult::UnsupportedVersion(_)
+                | V3ProbeResult::ResourceLimitExceeded => {
+                    if last_outcome.is_none() {
+                        last_outcome = Some(CandidateOutcome::MalformedV3);
+                    }
+                }
+            }
+        }
+        last_outcome.unwrap_or(CandidateOutcome::NotFound)
+    }
+
     fn verify_extract_dct_with_seed(
         &self,
         jpeg_bytes: &[u8],
@@ -1628,46 +1385,43 @@ impl SteganographyProtector {
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return CandidateOutcome::NotFound;
         }
-
-        if let Ok((_, coefficients)) = JpegTranscoder::decode_coefficients(jpeg_bytes) {
-            let coeffs_outcome =
-                self.verify_extract_dct_from_coefficients(&coefficients, seed, mac_key);
-            if let CandidateOutcome::Valid(payload) = &coeffs_outcome {
-                return CandidateOutcome::Valid(payload.clone());
-            }
-
-            let tiled_outcome = self.verify_extract_f5_tiled(
-                jpeg_bytes,
-                seed,
-                DEFAULT_TILE_SIZE,
-                self.limits.max_tile_extraction_origins() as u32,
-                mac_key,
-            );
-            if let CandidateOutcome::Valid(payload) = &tiled_outcome {
-                return CandidateOutcome::Valid(payload.clone());
-            }
-
-            match (&coeffs_outcome, &tiled_outcome) {
-                (CandidateOutcome::Invalid(p), _) | (_, CandidateOutcome::Invalid(p)) => {
-                    return CandidateOutcome::Invalid(p.clone());
-                }
-                (CandidateOutcome::AuthenticationKeyMissing(p), _)
-                | (_, CandidateOutcome::AuthenticationKeyMissing(p)) => {
-                    return CandidateOutcome::AuthenticationKeyMissing(p.clone());
-                }
-                (CandidateOutcome::AuthenticationFailed(p), _)
-                | (_, CandidateOutcome::AuthenticationFailed(p)) => {
-                    return CandidateOutcome::AuthenticationFailed(p.clone());
-                }
-                _ => {}
-            }
+        let dct_outcome = self.dct_outcome_with_seed(jpeg_bytes, seed, mac_key);
+        if matches!(dct_outcome, CandidateOutcome::Valid(_)) {
+            return dct_outcome;
         }
-
-        CandidateOutcome::NotFound
+        let tiled_outcome = self.verify_extract_f5_tiled(
+            jpeg_bytes,
+            seed,
+            DEFAULT_TILE_SIZE,
+            self.limits.max_tile_extraction_origins() as u32,
+            mac_key,
+        );
+        if matches!(tiled_outcome, CandidateOutcome::Valid(_)) {
+            return tiled_outcome;
+        }
+        match (dct_outcome, tiled_outcome) {
+            (CandidateOutcome::Invalid(payload), _) | (_, CandidateOutcome::Invalid(payload)) => {
+                CandidateOutcome::Invalid(payload)
+            }
+            (CandidateOutcome::AuthenticationKeyMissing(payload), _)
+            | (_, CandidateOutcome::AuthenticationKeyMissing(payload)) => {
+                CandidateOutcome::AuthenticationKeyMissing(payload)
+            }
+            (CandidateOutcome::AuthenticationFailed(payload), _)
+            | (_, CandidateOutcome::AuthenticationFailed(payload)) => {
+                CandidateOutcome::AuthenticationFailed(payload)
+            }
+            (CandidateOutcome::MalformedV3, _) | (_, CandidateOutcome::MalformedV3) => {
+                CandidateOutcome::MalformedV3
+            }
+            (CandidateOutcome::UnsupportedVersion(version), _)
+            | (_, CandidateOutcome::UnsupportedVersion(version)) => {
+                CandidateOutcome::UnsupportedVersion(version)
+            }
+            _ => CandidateOutcome::NotFound,
+        }
     }
 
-    /// Verify that an integrity-checked payload's embedded seed field matches
-    /// the expected seed. Returns `true` on match, `false` otherwise.
     fn verify_embedded_seed_matches(payload: &[u8], expected_seed: u64) -> bool {
         let header = if let Some(decoded) = Self::try_ecc_decode(payload) {
             decoded
@@ -1678,7 +1432,6 @@ impl SteganographyProtector {
             return false;
         }
 
-        // V3: check magic bytes and read seed from v3 offset
         if header.len() >= 3
             && header[0] == V3_MAGIC[0]
             && header[1] == V3_MAGIC[1]
@@ -1694,71 +1447,45 @@ impl SteganographyProtector {
             return embedded_seed == expected_seed;
         }
 
-        // V1/V2: seed at bytes 2-9
         let embedded_seed = u64::from_le_bytes([
             header[2], header[3], header[4], header[5], header[6], header[7], header[8], header[9],
         ]);
         embedded_seed == expected_seed
     }
 
-    fn candidate_seed_matches(outcome: &CandidateOutcome, expected_seed: u64) -> bool {
-        if let CandidateOutcome::UnsupportedVersion(version) = outcome {
-            let _ = version;
+    fn extract_verified_dct_payload(&self, jpeg_bytes: &[u8], mac_key: &[u8]) -> Option<Vec<u8>> {
+        let seed = carrier_jpeg::extract_seed_hint(jpeg_bytes).ok().flatten()?;
+        match self.dct_outcome_with_seed(jpeg_bytes, seed, mac_key) {
+            CandidateOutcome::Valid(payload) => Some(payload),
+            _ => self.extract_f5_tiled_candidates(
+                jpeg_bytes,
+                seed,
+                DEFAULT_TILE_SIZE,
+                self.limits.max_tile_extraction_origins() as u32,
+                mac_key,
+            ),
         }
-        let payload = match outcome {
-            CandidateOutcome::Valid(p)
-            | CandidateOutcome::Invalid(p)
-            | CandidateOutcome::AuthenticationKeyMissing(p)
-            | CandidateOutcome::AuthenticationFailed(p) => p,
-            _ => return false,
+    }
+
+    fn verify_extract_verified_dct(&self, jpeg_bytes: &[u8], mac_key: &[u8]) -> CandidateOutcome {
+        let Some(seed) = carrier_jpeg::extract_seed_hint(jpeg_bytes).ok().flatten() else {
+            return CandidateOutcome::NotFound;
         };
-        Self::verify_embedded_seed_matches(payload, expected_seed)
+        self.verify_extract_dct_with_seed(jpeg_bytes, seed, mac_key)
     }
 
-    /// Extract the steganographic payload from a protected image.
-    ///
-    /// Tries metadata-extracted seed first, then falls back to common test seeds.
-    /// Returns `None` if no valid payload is found.
-    pub fn extract_payload(&self, img: &DynamicImage) -> Option<StegoPayload> {
-        self.extract_payload_with_key(img, &[])
-    }
-
-    /// Extract the steganographic payload with HMAC verification.
-    ///
-    /// Like [`extract_payload`](Self::extract_payload), but verifies the payload's
-    /// HMAC-SHA256 against the provided MAC key. Returns `None` if no valid payload
-    /// is found or the MAC doesn't match.
-    pub fn extract_payload_with_key(
-        &self,
-        img: &DynamicImage,
-        mac_key: &[u8],
-    ) -> Option<StegoPayload> {
-        // Try LSB fallback seed (fixed-position LSB pattern)
-        let rgba = img.to_rgba8();
-        if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
-            if let Some(payload) =
-                self.extract_payload_with_seed_and_key(img, fallback_seed, mac_key)
-            {
-                return Some(payload);
+    fn candidate_seed_matches(outcome: &CandidateOutcome, expected_seed: u64) -> bool {
+        match outcome {
+            CandidateOutcome::Valid(payload)
+            | CandidateOutcome::Invalid(payload)
+            | CandidateOutcome::AuthenticationKeyMissing(payload)
+            | CandidateOutcome::AuthenticationFailed(payload) => {
+                Self::verify_embedded_seed_matches(payload, expected_seed)
             }
+            _ => false,
         }
-
-        // Fallback: try common seeds when metadata is unavailable.
-        #[cfg(feature = "test-seeds")]
-        for &seed in FALLBACK_SEEDS
-            .iter()
-            .take(self.limits.max_verification_seeds())
-        {
-            if let Some(payload) = self.extract_payload_with_seed_and_key(img, seed, mac_key) {
-                return Some(payload);
-            }
-        }
-
-        None
     }
 
-    /// Truncate an extracted payload to its actual size based on the header.
-    /// For v3 payloads, extracts `total_length` bytes. For v1/v2, returns as-is.
     fn truncate_to_actual_payload(payload: &[u8]) -> Vec<u8> {
         if payload.len() >= 3
             && payload[0] == V3_MAGIC[0]
@@ -1774,8 +1501,6 @@ impl SteganographyProtector {
         payload.to_vec()
     }
 
-    /// Extract the embedded seed from a decoded payload header.
-    /// Handles both v2 (seed at bytes 2-9) and v3 (seed at bytes 11-18) layouts.
     fn extract_embedded_seed(header: &[u8]) -> Option<u64> {
         if header.len() < 10 {
             return None;
@@ -1797,11 +1522,7 @@ impl SteganographyProtector {
         ]))
     }
 
-    /// Extract the steganographic payload from raw image bytes.
-    ///
-    /// Like [`extract_payload_with_key`](Self::extract_payload_with_key), but operates
-    /// directly on image bytes to avoid unnecessary decode/encode cycles. This is the
-    /// byte-level equivalent used by [`verify_image_bytes_detailed`](crate::verify_image_bytes_detailed).
+    /// Extract and parse a protected payload directly from encoded image bytes.
     pub fn extract_payload_from_bytes_with_key(
         &self,
         img_bytes: &[u8],
@@ -1939,25 +1660,6 @@ impl SteganographyProtector {
         None
     }
 
-    /// Parse a version-1 stego payload header.
-    ///
-    /// Header layout (24 bytes):
-    /// ```text
-    /// Offset  Size  Field
-    /// 0       1     Version (=1)
-    /// 1       1     ProtectionLevel byte
-    /// 2       8     Seed (u64, little-endian)
-    /// 10      2     Intensity (u16, scaled f32 / 100.0)
-    /// 12      8     Timestamp (u64, seconds since Unix epoch)
-    /// 20      4     Reserved / CRC32 (in non-MAC, non-ECC mode) or HMAC bytes
-    /// ```
-    /// After the 24-byte header the payload is either:
-    /// - 4 CRC32 bytes (minimum non-MAC payload = 28 bytes), or
-    /// - 8 truncated HMAC-SHA256 bytes (MAC payload = 32 bytes), or
-    /// - 72 bytes of 3×-repetition ECC + 4 CRC32 bytes (ECC payload = 76 bytes).
-    ///
-    /// This function only parses the 24-byte header; integrity check (CRC/HMAC/ECC)
-    /// is the caller's responsibility via `verify_payload_integrity`/`try_ecc_decode`.
     fn parse_stego_payload_v1(payload: &[u8]) -> Option<StegoPayload> {
         let protection_level = payload[1];
 
@@ -1980,21 +1682,6 @@ impl SteganographyProtector {
         })
     }
 
-    /// Parse a version-2 stego payload header.
-    ///
-    /// Header layout (32 bytes):
-    /// ```text
-    /// Offset  Size  Field
-    /// 0       1     Version (=2)
-    /// 1       1     ProtectionLevel byte
-    /// 2       8     Seed (u64, little-endian)
-    /// 10      2     Intensity (u16, scaled f32 / 100.0)
-    /// 12      8     Timestamp (u64, seconds since Unix epoch)
-    /// 20      4     Content hash (truncated ISCC or SHA-256)
-    /// 24      1     DMI value byte
-    /// 25      1     Flags byte (reserved)
-    /// 26      6     Reserved (zeroed)
-    /// ```
     fn parse_stego_payload_v2(payload: &[u8]) -> Option<StegoPayload> {
         if payload.len() < V2_HEADER_SIZE {
             return None;
@@ -2042,25 +1729,6 @@ impl SteganographyProtector {
         })
     }
 
-    /// Parse a version-3 stego payload header.
-    ///
-    /// V3 header layout (32 bytes core):
-    /// ```text
-    /// Offset  Size  Field
-    /// 0       2     Magic ([0x53, 0x45] = "SE")
-    /// 2       1     Version (=3)
-    /// 3       1     Header length (core + key_id + extensions)
-    /// 4       2     Total length (u16 LE)
-    /// 6       2     Flags (u16 LE)
-    /// 8       2     Channels (u16 LE)
-    /// 10      1     DMI policy byte
-    /// 11      8     Seed (u64 LE)
-    /// 19      2     Intensity (u16 LE, scaled ×100)
-    /// 21      8     Content hash (truncated)
-    /// 29      1     Auth algorithm byte
-    /// 30      1     Auth tag length
-    /// 31      1     Key ID length
-    /// ```
     fn parse_stego_payload_v3(payload: &[u8]) -> Option<StegoPayload> {
         if payload.len() < crate::payload_v3::types::V3_CORE_SIZE {
             return None;
@@ -2112,7 +1780,7 @@ impl SteganographyProtector {
         })
     }
 
-    /// Extract the steganographic payload using a known seed and MAC key.
+    /// Extract a protected payload using a known seed and MAC key.
     pub fn extract_payload_with_seed_and_key(
         &self,
         img: &DynamicImage,
@@ -2162,7 +1830,7 @@ impl SteganographyProtector {
         None
     }
 
-    /// Extract the steganographic payload using a known seed (checksum mode).
+    /// Extract a protected payload using a known seed in checksum mode.
     pub fn extract_payload_with_seed(&self, img: &DynamicImage, seed: u64) -> Option<StegoPayload> {
         let rgba = img.to_rgba8();
         if let Some(payload) = self.extract_with_redundancy(&rgba, seed, &[]) {
@@ -2197,203 +1865,39 @@ impl SteganographyProtector {
         None
     }
 
-    fn extract_verified_dct_payload(&self, jpeg_bytes: &[u8], mac_key: &[u8]) -> Option<Vec<u8>> {
-        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
-            return None;
+    /// Extract the steganographic payload from an image.
+    pub fn extract_payload(&self, img: &DynamicImage) -> Option<StegoPayload> {
+        self.extract_payload_with_key(img, &[])
+    }
+
+    /// Extract the steganographic payload and verify it with a MAC key.
+    pub fn extract_payload_with_key(
+        &self,
+        img: &DynamicImage,
+        mac_key: &[u8],
+    ) -> Option<StegoPayload> {
+        // Try LSB fallback seed (fixed-position LSB pattern)
+        let rgba = img.to_rgba8();
+        if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
+            if let Some(payload) =
+                self.extract_payload_with_seed_and_key(img, fallback_seed, mac_key)
+            {
+                return Some(payload);
+            }
         }
 
-        // Try baseline JPEG DCT extraction
-        if let Ok((header, coefficients)) = JpegTranscoder::decode_coefficients(jpeg_bytes) {
-            if let Some(extracted_seed) =
-                DctStegoF5::new().extract_seed_from_quantization_tables(&header)
-            {
-                if let Some(result) = self.extract_verified_dct_payload_from_coefficients(
-                    &coefficients,
-                    extracted_seed,
-                    mac_key,
-                ) {
-                    return Some(result);
-                }
-
-                // Tiled F5 fallback: try tiled extraction with the same seed
-                if let Some(result) = self.extract_f5_tiled_candidates(
-                    jpeg_bytes,
-                    extracted_seed,
-                    DEFAULT_TILE_SIZE,
-                    self.limits.max_tile_extraction_origins() as u32,
-                    mac_key,
-                ) {
-                    return Some(result);
-                }
+        // Fallback: try common seeds when metadata is unavailable.
+        #[cfg(feature = "test-seeds")]
+        for &seed in FALLBACK_SEEDS
+            .iter()
+            .take(self.limits.max_verification_seeds())
+        {
+            if let Some(payload) = self.extract_payload_with_seed_and_key(img, seed, mac_key) {
+                return Some(payload);
             }
         }
 
         None
-    }
-
-    /// Verification-path tri-state variant of `extract_verified_dct_payload`.
-    fn verify_extract_verified_dct(&self, jpeg_bytes: &[u8], mac_key: &[u8]) -> CandidateOutcome {
-        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
-            return CandidateOutcome::NotFound;
-        }
-
-        if let Ok((header, coefficients)) = JpegTranscoder::decode_coefficients(jpeg_bytes) {
-            if let Some(extracted_seed) =
-                DctStegoF5::new().extract_seed_from_quantization_tables(&header)
-            {
-                let coeffs_outcome = self.verify_extract_dct_from_coefficients(
-                    &coefficients,
-                    extracted_seed,
-                    mac_key,
-                );
-                if let CandidateOutcome::Valid(payload) = &coeffs_outcome {
-                    return CandidateOutcome::Valid(payload.clone());
-                }
-
-                let tiled_outcome = self.verify_extract_f5_tiled(
-                    jpeg_bytes,
-                    extracted_seed,
-                    DEFAULT_TILE_SIZE,
-                    self.limits.max_tile_extraction_origins() as u32,
-                    mac_key,
-                );
-                if let CandidateOutcome::Valid(payload) = &tiled_outcome {
-                    return CandidateOutcome::Valid(payload.clone());
-                }
-
-                match (&coeffs_outcome, &tiled_outcome) {
-                    (CandidateOutcome::Invalid(p), _) | (_, CandidateOutcome::Invalid(p)) => {
-                        return CandidateOutcome::Invalid(p.clone());
-                    }
-                    (CandidateOutcome::AuthenticationKeyMissing(p), _)
-                    | (_, CandidateOutcome::AuthenticationKeyMissing(p)) => {
-                        return CandidateOutcome::AuthenticationKeyMissing(p.clone());
-                    }
-                    (CandidateOutcome::AuthenticationFailed(p), _)
-                    | (_, CandidateOutcome::AuthenticationFailed(p)) => {
-                        return CandidateOutcome::AuthenticationFailed(p.clone());
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        CandidateOutcome::NotFound
-    }
-
-    fn extract_verified_dct_payload_from_coefficients(
-        &self,
-        coefficients: &crate::stego::__internal_jpeg_facade::Coefficients,
-        seed: u64,
-        mac_key: &[u8],
-    ) -> Option<Vec<u8>> {
-        let prefix_bits = 6 * 8;
-        for redundancy in 1..=10 {
-            let stego_f5 = DctStegoF5::with_redundancy(redundancy);
-            let prefix_extracted = stego_f5.extract_f5(coefficients, prefix_bits, seed);
-            if prefix_extracted.len() < prefix_bits {
-                continue;
-            }
-            let prefix_bytes = Self::bits_to_bytes(&prefix_extracted);
-            match Self::classify_v3_probe(&prefix_bytes, Some(&self.limits)) {
-                V3ProbeResult::V3Detected { total_bits, .. } => {
-                    let full_extracted = stego_f5.extract_f5(coefficients, total_bits, seed);
-                    if full_extracted.len() >= total_bits {
-                        let full_bytes = Self::bits_to_bytes(&full_extracted);
-                        if Self::verify_payload_integrity(&full_bytes, mac_key) {
-                            return Some(Self::truncate_to_actual_payload(&full_bytes));
-                        }
-                    }
-                }
-                V3ProbeResult::NotV3 => {
-                    for &bits_needed in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                        let extracted = stego_f5.extract_f5(coefficients, bits_needed, seed);
-                        if extracted.len() < bits_needed {
-                            continue;
-                        }
-                        let payload_bytes = Self::bits_to_bytes(&extracted);
-                        if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                            return Some(Self::truncate_to_actual_payload(&payload_bytes));
-                        }
-                        if Self::try_ecc_decode(&payload_bytes).is_some() {
-                            return Some(payload_bytes);
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        None
-    }
-
-    /// Verification-path variant of `extract_verified_dct_payload_from_coefficients`.
-    fn verify_extract_dct_from_coefficients(
-        &self,
-        coefficients: &crate::stego::__internal_jpeg_facade::Coefficients,
-        seed: u64,
-        mac_key: &[u8],
-    ) -> CandidateOutcome {
-        let mut last_outcome: Option<CandidateOutcome> = None;
-        let prefix_bits = 6 * 8;
-        for redundancy in 1..=10 {
-            let stego_f5 = DctStegoF5::with_redundancy(redundancy);
-            let prefix_extracted = stego_f5.extract_f5(coefficients, prefix_bits, seed);
-            if prefix_extracted.len() < prefix_bits {
-                continue;
-            }
-            let prefix_bytes = Self::bits_to_bytes(&prefix_extracted);
-            match Self::classify_v3_probe(&prefix_bytes, Some(&self.limits)) {
-                V3ProbeResult::V3Detected { total_bits, .. } => {
-                    let full_extracted = stego_f5.extract_f5(coefficients, total_bits, seed);
-                    if full_extracted.len() >= total_bits {
-                        let full_bytes = Self::bits_to_bytes(&full_extracted);
-                        if Self::verify_payload_integrity(&full_bytes, mac_key) {
-                            return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
-                                &full_bytes,
-                            ));
-                        }
-                        if last_outcome.is_none() {
-                            last_outcome = Some(Self::classify_auth_failure(&full_bytes, mac_key));
-                        }
-                    }
-                }
-                V3ProbeResult::NotV3 => {
-                    for &bits_needed in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                        let extracted = stego_f5.extract_f5(coefficients, bits_needed, seed);
-                        if extracted.len() < bits_needed {
-                            continue;
-                        }
-                        let payload_bytes = Self::bits_to_bytes(&extracted);
-                        if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                            return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
-                                &payload_bytes,
-                            ));
-                        }
-                        if Self::try_ecc_decode(&payload_bytes).is_some() {
-                            return CandidateOutcome::Valid(payload_bytes);
-                        }
-                        if last_outcome.is_none() {
-                            last_outcome =
-                                Some(Self::classify_auth_failure(&payload_bytes, mac_key));
-                        }
-                    }
-                }
-                V3ProbeResult::MalformedV3 if last_outcome.is_none() => {
-                    last_outcome = Some(CandidateOutcome::MalformedV3);
-                }
-                V3ProbeResult::UnsupportedVersion(v) if last_outcome.is_none() => {
-                    last_outcome = Some(CandidateOutcome::UnsupportedVersion(v));
-                }
-                V3ProbeResult::ResourceLimitExceeded if last_outcome.is_none() => {
-                    last_outcome = Some(CandidateOutcome::MalformedV3);
-                }
-                _ => {}
-            }
-        }
-        match last_outcome {
-            Some(outcome) => outcome,
-            None => CandidateOutcome::NotFound,
-        }
     }
 
     fn compute_payload_mac(payload_without_mac: &[u8], mac_key: &[u8]) -> [u8; 8] {
@@ -2790,7 +2294,7 @@ impl SteganographyProtector {
         } else {
             V3_CRC_PAYLOAD_BITS
         };
-        carrier_lsb::lsb_required_slots_legacy(payload_bits)
+        carrier_support::legacy_lsb_required_slots(payload_bits)
     }
 
     pub(crate) fn apply_dct_stego_bytes_from_plan(
@@ -2799,191 +2303,35 @@ impl SteganographyProtector {
         plan: &crate::types::ResolvedProtectionPlan,
         tile_size: Option<u32>,
     ) -> Result<crate::stego::EmbedOutcome<Vec<u8>>> {
-        use crate::stego::{EmbedOutcome, EmbedPath};
-
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
         }
-
-        if let Some(ts) = tile_size.filter(|&s| s > 0) {
-            return self.apply_dct_stego_bytes_tiled_from_plan(jpeg_bytes, plan, ts);
-        }
-
-        let seed = plan.seed();
-
-        match JpegTranscoder::decode_coefficients(jpeg_bytes) {
-            Ok((header, coefficients)) => {
-                let emission = PayloadEmissionContext::from_plan(plan, EmbedPath::DctF5);
-                let payload = self.generate_payload_for_plan(&emission, plan);
-                let requested_redundancy = Self::effective_redundancy_for_plan(plan);
-                let payload_bits = payload.len().saturating_mul(8);
-
-                let available_coeffs = Self::dct_payload_capacity(&coefficients);
-
-                let mut header = header;
-                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
-
-                let max_feasible = available_coeffs.checked_div(payload_bits).unwrap_or(0);
-                let selected_redundancy = requested_redundancy.min(max_feasible).max(1);
-
-                if max_feasible >= 1 {
-                    let mut embedded_coefficients = coefficients.clone();
-                    if DctStegoF5::with_redundancy(selected_redundancy)
-                        .embed_f5(&mut embedded_coefficients, &payload, seed)
-                        .is_ok()
-                    {
-                        let output = JpegTranscoder::encode_coefficients(
-                            &header,
-                            &embedded_coefficients,
-                            Some(jpeg_bytes),
-                        )?;
-                        return Ok(EmbedOutcome::Embedded {
-                            output,
-                            payload_bytes: payload.len(),
-                            required_capacity: payload_bits,
-                            available_capacity: available_coeffs,
-                            path: EmbedPath::DctF5,
-                        });
-                    }
-                }
-
-                let output =
-                    JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))?;
-                Ok(EmbedOutcome::SkippedCapacity {
-                    output,
-                    payload_bytes: payload.len(),
-                    required_capacity: payload_bits,
-                    available_capacity: available_coeffs,
-                    path: EmbedPath::DctF5,
+        let path = if tile_size.filter(|&size| size > 0).is_some() {
+            crate::stego::EmbedPath::DctF5Tiled
+        } else {
+            crate::stego::EmbedPath::DctF5
+        };
+        let emission = PayloadEmissionContext::from_plan(plan, path);
+        let payload = self.generate_payload_for_plan(&emission, plan);
+        let outcome = match tile_size.filter(|&size| size > 0) {
+            Some(size) => {
+                carrier_support::jpeg_embed_tiled(jpeg_bytes, &payload, plan.seed(), size)
+            }
+            None => carrier_support::jpeg_embed(
+                jpeg_bytes,
+                &payload,
+                plan.seed(),
+                Self::effective_redundancy_for_plan(plan),
+            ),
+        };
+        match outcome {
+            Ok(outcome) => Ok(outcome),
+            Err(crate::stego::StegoError::UnsupportedJpeg(_)) => {
+                Ok(crate::stego::EmbedOutcome::UnsupportedProgressive {
+                    output: carrier_jpeg::embed_seed_hint(jpeg_bytes, plan.seed())?,
                 })
             }
-            Err(_) => {
-                let mut header =
-                    crate::stego::__internal_jpeg_facade::JpegHeader::parse(jpeg_bytes)?;
-                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
-                let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
-                Ok(EmbedOutcome::UnsupportedProgressive { output })
-            }
-        }
-    }
-
-    fn apply_dct_stego_bytes_tiled_from_plan(
-        &self,
-        jpeg_bytes: &[u8],
-        plan: &crate::types::ResolvedProtectionPlan,
-        tile_size: u32,
-    ) -> Result<crate::stego::EmbedOutcome<Vec<u8>>> {
-        use crate::stego::{EmbedOutcome, EmbedPath};
-
-        if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
-            return Err(Error::Steganography("Not a valid JPEG".to_string()));
-        }
-
-        let seed = plan.seed();
-
-        match JpegTranscoder::decode_coefficients(jpeg_bytes) {
-            Ok((header, coefficients)) => {
-                let mut header = header;
-                let mut coefficients = coefficients;
-
-                let emission = PayloadEmissionContext::from_plan(plan, EmbedPath::DctF5Tiled);
-                let payload = self.generate_payload_for_plan(&emission, plan);
-                let payload_bits = payload.len() * 8;
-
-                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
-
-                let max_h = header
-                    .components
-                    .iter()
-                    .map(|c| c.h_sampling as u32)
-                    .max()
-                    .unwrap_or(1);
-                let max_v = header
-                    .components
-                    .iter()
-                    .map(|c| c.v_sampling as u32)
-                    .max()
-                    .unwrap_or(1);
-                let luma_blocks_x = (header.width as u32 + max_h * 7) / (max_h * 8);
-                let luma_blocks_y = (header.height as u32 + max_v * 7) / (max_v * 8);
-                let blocks_per_tile = tile_size / 8;
-                let tiles_x = luma_blocks_x / blocks_per_tile;
-                let tiles_y = luma_blocks_y / blocks_per_tile;
-
-                let mut embedded_any = false;
-                for ty in 0..tiles_y {
-                    for tx in 0..tiles_x {
-                        let tile_blocks =
-                            DctStegoF5::tile_block_set(&header, &coefficients, tx, ty, tile_size);
-                        if tile_blocks.is_empty() {
-                            continue;
-                        }
-                        let local_seed = tile_seed(seed, tx, ty);
-                        if DctStegoF5::with_redundancy(1)
-                            .embed_f5_in_blocks(
-                                &mut coefficients,
-                                &payload,
-                                local_seed,
-                                &tile_blocks,
-                            )
-                            .is_ok()
-                        {
-                            embedded_any = true;
-                        }
-                    }
-                }
-
-                if embedded_any {
-                    let attempt_bytes = JpegTranscoder::encode_coefficients(
-                        &header,
-                        &coefficients,
-                        Some(jpeg_bytes),
-                    )?;
-                    if let Ok((_, roundtrip_coefficients)) =
-                        JpegTranscoder::decode_coefficients(&attempt_bytes)
-                    {
-                        let tile_blocks = DctStegoF5::tile_block_set(
-                            &header,
-                            &roundtrip_coefficients,
-                            0,
-                            0,
-                            tile_size,
-                        );
-                        let roundtrip_bits = DctStegoF5::with_redundancy(1).extract_f5_from_blocks(
-                            &roundtrip_coefficients,
-                            payload_bits,
-                            tile_seed(seed, 0, 0),
-                            &tile_blocks,
-                        );
-                        if Self::bits_to_bytes(&roundtrip_bits) == payload {
-                            return Ok(EmbedOutcome::Embedded {
-                                output: attempt_bytes,
-                                payload_bytes: payload.len(),
-                                required_capacity: payload_bits,
-                                available_capacity: payload_bits,
-                                path: EmbedPath::DctF5Tiled,
-                            });
-                        }
-                    }
-                }
-
-                let output =
-                    JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))?;
-                Ok(EmbedOutcome::SkippedCapacity {
-                    output,
-                    payload_bytes: payload.len(),
-                    required_capacity: payload_bits,
-                    available_capacity: 0,
-                    path: EmbedPath::DctF5Tiled,
-                })
-            }
-            Err(_) => {
-                let mut header =
-                    crate::stego::__internal_jpeg_facade::JpegHeader::parse(jpeg_bytes)?;
-                DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
-                let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
-                Ok(EmbedOutcome::UnsupportedProgressive { output })
-            }
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -3130,7 +2478,7 @@ impl SteganographyProtector {
     }
 
     fn extract_lsb(&self, img: &RgbaImage, expected_bits: usize, seed: u64) -> Option<Vec<u8>> {
-        carrier_lsb::extract_lsb(img, expected_bits, seed)
+        carrier_support::legacy_lsb_extract(img, expected_bits, seed)
     }
 
     /// Extract LSBs from a specific bit range `[offset, offset + count)`.
@@ -3148,7 +2496,7 @@ impl SteganographyProtector {
         count: usize,
         seed: u64,
     ) -> Option<Vec<u8>> {
-        carrier_lsb::extract_lsb_range(img, expected_bits, offset, count, seed)
+        carrier_support::legacy_lsb_extract_range(img, expected_bits, offset, count, seed)
     }
 
     /// Embed payload using the corrected V2 carrier scheme.
@@ -3168,7 +2516,7 @@ impl SteganographyProtector {
         seed: u64,
         redundancy: usize,
     ) -> crate::stego::EmbedOutcome<RgbaImage> {
-        carrier_lsb::embed_lsb_v2(img, payload, seed, redundancy)
+        carrier_support::corrected_lsb_embed(img, payload, seed, redundancy)
     }
 
     /// Extract payload using the corrected V2 carrier scheme.
@@ -3184,23 +2532,19 @@ impl SteganographyProtector {
         base_slot: usize,
         redundancy: usize,
     ) -> Option<Vec<u8>> {
-        carrier_lsb::extract_lsb_v2(img, expected_bits, seed, base_slot, redundancy)
-    }
-
-    fn bits_to_bytes(bits: &[u8]) -> Vec<u8> {
-        carrier_lsb::bits_to_bytes(bits)
+        carrier_support::corrected_lsb_extract(img, expected_bits, seed, base_slot, redundancy)
     }
 
     fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
-        carrier_lsb::embed_seed_lsb_fallback(img, seed);
+        carrier_support::seed_fallback_embed(img, seed);
     }
 
     pub(crate) fn embed_seed_lsb_fallback_pub(img: &mut RgbaImage, seed: u64) {
-        carrier_lsb::embed_seed_lsb_fallback(img, seed);
+        carrier_support::seed_fallback_embed(img, seed);
     }
 
     fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
-        carrier_lsb::extract_seed_lsb_fallback(img)
+        carrier_support::seed_fallback_extract(img)
     }
 
     /// Classify the first 6 bytes of a potential v3 payload.
@@ -3442,7 +2786,7 @@ impl SteganographyProtector {
         master_seed: u64,
         tile_size: u32,
     ) -> crate::stego::EmbedOutcome<RgbaImage> {
-        carrier_lsb::embed_lsb_tiled(img, payload, master_seed, tile_size)
+        carrier_support::tiled_lsb_embed(img, payload, master_seed, tile_size)
     }
 
     /// Extract payload from a sub-image trying V2 then legacy scheme.
@@ -3896,7 +3240,7 @@ impl SteganographyProtector {
     }
 
     fn crop_rgba(src: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> RgbaImage {
-        carrier_lsb::crop_rgba(src, x, y, w, h)
+        carrier_support::crop_image_region(src, x, y, w, h)
     }
 
     fn apply_to_image_owned(
@@ -4105,7 +3449,6 @@ impl StegoPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stego::__internal_jpeg_facade::JpegHeader;
     use crate::types::ProtectionConfig;
     use image::ImageEncoder;
     use image::Rgba;
@@ -4155,73 +3498,6 @@ mod tests {
     }
 
     // ── Bit conversion ────────────────────────────────────────────────
-
-    #[test]
-    fn bytes_to_bits_length() {
-        let data = [0xAA, 0x55, 0xFF, 0x00];
-        let bits = carrier_lsb::bytes_to_bits(&data);
-        assert_eq!(bits.len(), 32);
-    }
-
-    #[test]
-    fn bits_to_bytes_roundtrip() {
-        let original: Vec<u8> = vec![0x00, 0xFF, 0xA5, 0x5A, 0x01, 0x80, 0xFE, 0x7F];
-        let bits = carrier_lsb::bytes_to_bits(&original);
-        let recovered = carrier_lsb::bits_to_bytes(&bits);
-        assert_eq!(original, recovered);
-    }
-
-    #[test]
-    fn bytes_to_bits_lsb_order() {
-        let data = [0b0000_0001];
-        let bits = carrier_lsb::bytes_to_bits(&data);
-        assert_eq!(bits[0], 1);
-        assert_eq!(bits[1], 0);
-        assert_eq!(bits[7], 0);
-    }
-
-    #[test]
-    fn bytes_to_bits_high_bit() {
-        let data = [0b1000_0000];
-        let bits = carrier_lsb::bytes_to_bits(&data);
-        assert_eq!(bits[7], 1);
-        assert_eq!(bits[0], 0);
-    }
-
-    #[test]
-    fn bits_to_bytes_trailing_dropped() {
-        // Multiple of 8 — works correctly
-        let bits = vec![1, 0, 0, 0, 0, 0, 0, 0];
-        let bytes = carrier_lsb::bits_to_bytes(&bits);
-        assert_eq!(bytes.len(), 1);
-        assert_eq!(bytes[0], 1);
-    }
-
-    #[test]
-    fn bits_to_bytes_non_multiple_of_8_returns_empty() {
-        let bits = vec![1, 0, 1]; // 3 bits — not a multiple of 8
-        let bytes = carrier_lsb::bits_to_bytes(&bits);
-        assert!(
-            bytes.is_empty(),
-            "Non-multiple-of-8 input should return empty Vec"
-        );
-    }
-
-    #[test]
-    fn bits_to_bytes_empty_input() {
-        let bits: Vec<u8> = vec![];
-        let bytes = carrier_lsb::bits_to_bytes(&bits);
-        assert!(bytes.is_empty());
-    }
-
-    #[test]
-    fn bits_to_bytes_16_bits() {
-        let bits = vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0];
-        let bytes = carrier_lsb::bits_to_bytes(&bits);
-        assert_eq!(bytes.len(), 2);
-        assert_eq!(bytes[0], 1);
-        assert_eq!(bytes[1], 2);
-    }
 
     // ── Checksum ──────────────────────────────────────────────────────
 
@@ -4480,74 +3756,7 @@ mod tests {
 
     // ── Permutation ───────────────────────────────────────────────────
 
-    #[test]
-    fn stego_permutation_deterministic() {
-        let a = carrier_lsb::stego_permutation(0, 1024, 42);
-        let b = carrier_lsb::stego_permutation(0, 1024, 42);
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn stego_permutation_different_seeds_differ() {
-        let a = carrier_lsb::stego_permutation(0, 1024, 42);
-        let b = carrier_lsb::stego_permutation(0, 1024, 99);
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn stego_permutation_power_of_2_injective() {
-        let total = 1024usize;
-        let seed = 42u64;
-        let mut seen = vec![false; total];
-        for i in 0..total {
-            let pos = carrier_lsb::stego_permutation(i, total, seed);
-            assert!(
-                pos < total,
-                "permutation out of range: {} >= {}",
-                pos,
-                total
-            );
-            assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
-            seen[pos] = true;
-        }
-    }
-
-    #[test]
-    fn stego_permutation_index0_consistent() {
-        let a = carrier_lsb::stego_permutation(0, 4096, 100);
-        let b = carrier_lsb::stego_permutation(0, 4096, 100);
-        assert_eq!(a, b);
-    }
-
     // ── Pixel manipulation ────────────────────────────────────────────
-
-    #[test]
-    fn embed_bit_in_pixel_modifies_correct_channel() {
-        let mut img = make_test_image(4, 4);
-        let orig_g = img.get_pixel(0, 0)[1];
-        let orig_b = img.get_pixel(0, 0)[2];
-        let orig_a = img.get_pixel(0, 0)[3];
-
-        // Embed bit 1 in channel 0
-        carrier_lsb::embed_bit_in_pixel(&mut img, 0, 0, 0, 1);
-        let modified = img.get_pixel(0, 0);
-        assert_eq!(modified[0] & 1, 1);
-        assert_eq!(modified[1], orig_g);
-        assert_eq!(modified[2], orig_b);
-        assert_eq!(modified[3], orig_a);
-    }
-
-    #[test]
-    fn embed_bit_in_pixel_clears_lsb() {
-        let mut img = ImageBuffer::from_pixel(1, 1, Rgba([0xFF, 0xFF, 0xFF, 255]));
-
-        carrier_lsb::embed_bit_in_pixel(&mut img, 0, 0, 1, 0);
-        let pixel = img.get_pixel(0, 0);
-        assert_eq!(pixel[1] & 1, 0);
-        // Channel 0 and 2 unchanged
-        assert_eq!(pixel[0], 0xFF);
-        assert_eq!(pixel[2], 0xFF);
-    }
 
     // ── Embed/extract via public API ───────────────────────────────────
     // Internal embed_lsb/extract_lsb use different seed derivation,
@@ -4660,18 +3869,6 @@ mod tests {
     }
 
     #[test]
-    fn lsb_payload_too_large_returns_unchanged() {
-        let protector = SteganographyProtector::new();
-        let tiny = make_test_image(2, 2);
-        let ctx = ctx_no_mac(42);
-        let payload = protector.generate_payload_from_ctx(&ctx);
-
-        let result = carrier_lsb::embed_lsb(&tiny, &payload, 42, 1);
-        assert!(result.is_skipped());
-        assert_eq!(*result.output(), tiny);
-    }
-
-    #[test]
     fn lsb_extract_oversized_expected_bits_returns_none() {
         let protector = SteganographyProtector::new();
         let img = make_test_image(4, 4); // 16 pixels = 48 channels
@@ -4679,219 +3876,6 @@ mod tests {
     }
 
     // ── DCT capacity / verification ───────────────────────────────────
-
-    #[test]
-    fn dct_stego_low_capacity_keeps_qtable_seed_only() {
-        let protector = SteganographyProtector::new();
-        let img = make_test_image(16, 16);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
-        let ctx = ProtectionContext::new(0.5, 42)
-            .with_format(crate::types::ImageOutputFormat::Jpeg)
-            .with_stego_redundancy(3);
-        let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
-        let required_bits = payload_bits * ctx.effective_redundancy();
-
-        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
-        assert!(SteganographyProtector::dct_payload_capacity(&coefficients) < required_bits);
-
-        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
-        assert!(outcome.is_skipped());
-        let protected = outcome.into_inner();
-        let (header, _) = JpegTranscoder::decode_coefficients(&protected).unwrap();
-
-        assert_eq!(
-            DctStegoF5::new().extract_seed_from_quantization_tables(&header),
-            Some(42),
-            "JPEG output should still carry the Q-table seed"
-        );
-        assert!(
-            !protector.verify_payload_from_bytes(&protected, 42),
-            "Q-table seed alone must not count as full verification"
-        );
-    }
-
-    #[test]
-    fn dct_stego_high_capacity_verifies_with_redundancy_3() {
-        let protector = SteganographyProtector::new();
-        let img = make_high_entropy_test_image(1024, 1024);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
-        let ctx = ProtectionContext::new(0.5, 42)
-            .with_format(crate::types::ImageOutputFormat::Jpeg)
-            .with_stego_redundancy(3);
-        let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
-
-        let (header, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
-        let available = SteganographyProtector::dct_payload_capacity(&coefficients);
-        assert!(
-            available >= payload_bits * 3,
-            "capacity {} should be >= {} (payload_bits * 3)",
-            available,
-            payload_bits * 3
-        );
-
-        // Test that assemble_jpeg roundtrip preserves coefficients
-        let canonical = JpegTranscoder::encode_coefficients(&header, &coefficients, None).unwrap();
-        let (_header2, coefficients2) = JpegTranscoder::decode_coefficients(&canonical).unwrap();
-        for (id, blocks) in &coefficients {
-            let c2 = coefficients2.get(id).unwrap();
-            assert_eq!(
-                blocks.len(),
-                c2.len(),
-                "comp {} block count mismatch: {} vs {}",
-                id,
-                blocks.len(),
-                c2.len()
-            );
-            for (i, (b1, b2)) in blocks.iter().zip(c2.iter()).enumerate() {
-                assert_eq!(
-                    b1, b2,
-                    "comp {} block {} mismatch after assemble_jpeg roundtrip",
-                    id, i
-                );
-            }
-        }
-
-        let mut header_mod = header.clone();
-        DctStegoF5::new()
-            .embed_seed_in_quantization_tables(&mut header_mod, 42)
-            .unwrap();
-        let mut coeffs_mod = coefficients.clone();
-        let payload = protector.generate_payload_from_ctx(&ctx);
-        DctStegoF5::with_redundancy(3)
-            .embed_f5(&mut coeffs_mod, &payload, 42)
-            .unwrap();
-        let embedded_jpeg =
-            JpegTranscoder::encode_coefficients(&header_mod, &coeffs_mod, None).unwrap();
-        match JpegTranscoder::decode_coefficients(&embedded_jpeg) {
-            Ok((_, rt)) => {
-                let rt_bits = DctStegoF5::with_redundancy(3).extract_f5(&rt, payload_bits, 42);
-                let rt_payload = carrier_lsb::bits_to_bytes(&rt_bits);
-                assert_eq!(
-                    rt_payload, payload,
-                    "F5 roundtrip through assemble_jpeg failed"
-                );
-            }
-            Err(e) => panic!("decode after assemble_jpeg embed failed: {}", e),
-        }
-
-        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
-        assert!(outcome.is_embedded());
-        let protected = outcome.into_inner();
-        let (header, _) = JpegTranscoder::decode_coefficients(&protected).unwrap();
-        assert_eq!(
-            DctStegoF5::new().extract_seed_from_quantization_tables(&header),
-            Some(42)
-        );
-        assert!(
-            protector.verify_payload_from_bytes(&protected, 42),
-            "DCT payload should verify with redundancy=3 when capacity permits"
-        );
-    }
-
-    #[test]
-    fn jpeg_selected_redundancy_is_highest_feasible() {
-        let protector = SteganographyProtector::new();
-        let img = make_high_entropy_test_image(512, 512);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
-        let ctx = ProtectionContext::new(0.5, 42)
-            .with_format(crate::types::ImageOutputFormat::Jpeg)
-            .with_stego_redundancy(5);
-        let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
-
-        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
-        let available = SteganographyProtector::dct_payload_capacity(&coefficients);
-        let max_feasible = available / payload_bits;
-        let expected = 5.min(max_feasible).max(1);
-
-        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
-        assert!(outcome.is_embedded());
-        assert_eq!(outcome.available_capacity(), available);
-        assert_eq!(outcome.required_capacity(), payload_bits);
-
-        let protected = outcome.into_inner();
-        assert!(
-            protector.verify_payload_from_bytes(&protected, 42),
-            "payload must verify at selected redundancy {} (max_feasible={})",
-            expected,
-            max_feasible
-        );
-    }
-
-    #[test]
-    fn jpeg_capacity_zero_skips_without_payload_embedding() {
-        let protector = SteganographyProtector::new();
-        let img = make_test_image(8, 8);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 95);
-        let ctx = ProtectionContext::new(0.5, 42)
-            .with_format(crate::types::ImageOutputFormat::Jpeg)
-            .with_stego_redundancy(3);
-
-        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
-        let available = SteganographyProtector::dct_payload_capacity(&coefficients);
-        let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
-        assert!(
-            available < payload_bits,
-            "tiny image should have insufficient capacity"
-        );
-
-        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
-        assert!(outcome.is_skipped());
-    }
-
-    #[test]
-    fn jpeg_capacity_exact_for_selected_redundancy_roundtrips() {
-        let protector = SteganographyProtector::new();
-        let img = make_high_entropy_test_image(256, 256);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
-        let ctx = ProtectionContext::new(0.5, 42)
-            .with_format(crate::types::ImageOutputFormat::Jpeg)
-            .with_stego_redundancy(1);
-        let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
-
-        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
-        let available = SteganographyProtector::dct_payload_capacity(&coefficients);
-        assert!(
-            available >= payload_bits,
-            "need at least payload_bits capacity"
-        );
-
-        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
-        assert!(outcome.is_embedded());
-        let protected = outcome.into_inner();
-        assert!(
-            protector.verify_payload_from_bytes(&protected, 42),
-            "redundancy=1 roundtrip must verify"
-        );
-    }
-
-    #[test]
-    fn jpeg_requested_redundancy_is_not_exceeded() {
-        let protector = SteganographyProtector::new();
-        let img = make_high_entropy_test_image(512, 512);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
-        let ctx = ProtectionContext::new(0.5, 42)
-            .with_format(crate::types::ImageOutputFormat::Jpeg)
-            .with_stego_redundancy(10);
-        let payload_bits = protector.generate_payload_from_ctx(&ctx).len() * 8;
-
-        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
-        let available = SteganographyProtector::dct_payload_capacity(&coefficients);
-        let max_feasible = available / payload_bits;
-        let selected = 10.min(max_feasible).max(1);
-
-        let outcome = protector.apply_dct_stego_bytes(&jpeg_bytes, &ctx).unwrap();
-        assert!(outcome.is_embedded());
-        assert_eq!(outcome.required_capacity(), payload_bits);
-        assert_eq!(outcome.available_capacity(), available);
-
-        let protected = outcome.into_inner();
-        assert!(
-            protector.verify_payload_from_bytes(&protected, 42),
-            "selected redundancy {} must verify (max_feasible={})",
-            selected,
-            max_feasible
-        );
-    }
 
     // ── StegoPayload parsing ──────────────────────────────────────────
 
@@ -5715,111 +4699,6 @@ mod tests {
     // ── V2 carrier scheme tests ────────────────────────────────────────
 
     #[test]
-    fn carrier_v2_permutation_is_bijective_power_of_two() {
-        let slot_count = 1024usize;
-        let seed = 42u64;
-        let mut seen = vec![false; slot_count];
-        for i in 0..slot_count {
-            let pos = carrier_lsb::stego_permutation_v2(i, slot_count, seed);
-            assert!(pos < slot_count, "out of range: {} >= {}", pos, slot_count);
-            assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
-            seen[pos] = true;
-        }
-    }
-
-    #[test]
-    fn carrier_v2_permutation_is_bijective_prime_slot_count() {
-        let slot_count = 997usize;
-        let seed = 42u64;
-        let mut seen = vec![false; slot_count];
-        for i in 0..slot_count {
-            let pos = carrier_lsb::stego_permutation_v2(i, slot_count, seed);
-            assert!(pos < slot_count, "out of range: {} >= {}", pos, slot_count);
-            assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
-            seen[pos] = true;
-        }
-    }
-
-    #[test]
-    fn carrier_v2_permutation_is_bijective_composite_non_power_of_two() {
-        let slot_count = 1000usize;
-        let seed = 42u64;
-        let mut seen = vec![false; slot_count];
-        for i in 0..slot_count {
-            let pos = carrier_lsb::stego_permutation_v2(i, slot_count, seed);
-            assert!(pos < slot_count, "out of range: {} >= {}", pos, slot_count);
-            assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
-            seen[pos] = true;
-        }
-    }
-
-    #[test]
-    fn carrier_v2_permutation_is_bijective_odd_image_dimensions() {
-        let width = 7u32;
-        let height = 13u32;
-        let slot_count = (width * height * 3) as usize;
-        let seed = 42u64;
-        let mut seen = vec![false; slot_count];
-        for i in 0..slot_count {
-            let pos = carrier_lsb::stego_permutation_v2(i, slot_count, seed);
-            assert!(pos < slot_count, "out of range: {} >= {}", pos, slot_count);
-            assert!(!seen[pos], "collision at index {} -> pos {}", i, pos);
-            seen[pos] = true;
-        }
-    }
-
-    #[test]
-    fn carrier_v2_permutation_different_seed_changes_order() {
-        let slot_count = 1024usize;
-        let a = carrier_lsb::stego_permutation_v2(0, slot_count, 42);
-        let b = carrier_lsb::stego_permutation_v2(0, slot_count, 99);
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn carrier_v2_permutation_same_seed_is_deterministic() {
-        let slot_count = 1024usize;
-        let a = carrier_lsb::stego_permutation_v2(0, slot_count, 42);
-        let b = carrier_lsb::stego_permutation_v2(0, slot_count, 42);
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn carrier_v2_permutation_slot_count_zero() {
-        assert_eq!(carrier_lsb::stego_permutation_v2(0, 0, 42), 0);
-    }
-
-    #[test]
-    fn carrier_v2_permutation_slot_count_one() {
-        assert_eq!(carrier_lsb::stego_permutation_v2(0, 1, 42), 0);
-    }
-
-    #[test]
-    fn carrier_v2_required_capacity_matches_exact_slots_touched() {
-        let payload_bits = 288usize;
-        let redundancy = 3usize;
-        let required = carrier_lsb::lsb_required_capacity_v2(payload_bits, redundancy);
-        assert_eq!(required, payload_bits * 5 * redundancy);
-    }
-
-    #[test]
-    fn carrier_v2_one_slot_below_capacity_skips_without_modification() {
-        let protector = SteganographyProtector::new();
-        let img = make_test_image(4, 4);
-        let payload = vec![0xAA; 3];
-        let payload_bits = payload.len() * 8;
-        let available = carrier_lsb::lsb_available_slots(4, 4);
-        let required = carrier_lsb::lsb_required_capacity_v2(payload_bits, 1);
-        assert!(
-            required > available,
-            "setup: need more slots than available for this test"
-        );
-        let result = protector.embed_lsb_v2(&img, &payload, 42, 1);
-        assert!(result.is_skipped());
-        assert_eq!(*result.output(), img);
-    }
-
-    #[test]
     fn carrier_v2_exact_capacity_embeds_and_extracts() {
         let protector = SteganographyProtector::new();
         let img = make_test_image(32, 32);
@@ -5833,14 +4712,6 @@ mod tests {
         let extracted = protector.extract_lsb_v2(&out_img, payload_bits, 42, 0, 1);
         assert!(extracted.is_some(), "direct V2 extract must succeed");
         assert_eq!(extracted.unwrap(), payload);
-    }
-
-    #[test]
-    fn carrier_v2_redundancy_increases_required_capacity() {
-        let payload_bits = 100usize;
-        let r1 = carrier_lsb::lsb_required_capacity_v2(payload_bits, 1);
-        let r3 = carrier_lsb::lsb_required_capacity_v2(payload_bits, 3);
-        assert_eq!(r3, r1 * 3);
     }
 
     #[test]
@@ -5858,31 +4729,6 @@ mod tests {
             .extract_lsb_v2(&out_img, payload_bits, 42, 0, redundancy)
             .expect("V2 extraction with matching redundancy must succeed");
         assert_eq!(extracted, payload);
-    }
-
-    #[test]
-    fn carrier_v2_no_duplicate_slot_within_embedding() {
-        let width = 16u32;
-        let height = 16u32;
-        let available = carrier_lsb::lsb_available_slots(width, height);
-        let payload_bits = 8usize;
-        let mut all_slots = Vec::new();
-        let seed = 42u64;
-        for i in 0..payload_bits {
-            for s in 0..5 {
-                let logical = i * 5 + s;
-                let slot = carrier_lsb::stego_permutation_v2(logical, available, seed);
-                all_slots.push(slot);
-            }
-        }
-        let mut sorted = all_slots.clone();
-        sorted.sort();
-        sorted.dedup();
-        assert_eq!(
-            sorted.len(),
-            all_slots.len(),
-            "duplicate slots within one embedding pass"
-        );
     }
 
     #[test]
@@ -5907,62 +4753,6 @@ mod tests {
     }
 
     // ── Legacy compatibility tests ─────────────────────────────────────
-
-    #[test]
-    fn legacy_v1_fixture_extracts_after_v2_default() {
-        let protector = SteganographyProtector::new();
-        let img = make_large_test_image();
-        let seed = 42u64;
-        let ctx = ctx_no_mac(seed);
-        let payload = protector.generate_payload_from_ctx(&ctx);
-
-        let legacy_result = carrier_lsb::embed_lsb(&img, &payload, seed, 1);
-        assert!(legacy_result.is_embedded());
-        let legacy_img = legacy_result.into_inner();
-
-        let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1);
-        let extracted = protector.extract_lsb(&legacy_img, payload.len() * 8, offset_seed);
-        assert!(extracted.is_some(), "legacy extract_lsb must succeed");
-        assert_eq!(extracted.unwrap(), payload, "legacy roundtrip must match");
-    }
-
-    #[test]
-    fn legacy_v1_hmac_fixture_extracts_after_v2_default() {
-        let protector = SteganographyProtector::new();
-        let img = make_large_test_image();
-        let seed = 42u64;
-        let key = b"test-mac-key";
-        let ctx = ctx_with_mac(seed, key);
-        let payload = protector.generate_payload_from_ctx(&ctx);
-
-        let legacy_result = carrier_lsb::embed_lsb(&img, &payload, seed, 1);
-        assert!(legacy_result.is_embedded());
-        let legacy_img = legacy_result.into_inner();
-
-        let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1);
-        let prefix_bits = 6 * 8;
-        let prefix = protector.extract_lsb(&legacy_img, prefix_bits, offset_seed);
-        assert!(prefix.is_some(), "legacy prefix extraction must work");
-
-        let extracted = protector.extract_with_redundancy(&legacy_img, seed, key);
-        assert!(extracted.is_some(), "legacy HMAC extraction must work");
-        assert_eq!(extracted.unwrap(), payload);
-    }
-
-    #[test]
-    fn legacy_v1_wrong_key_still_fails() {
-        let protector = SteganographyProtector::new();
-        let img = make_large_test_image();
-        let seed = 42u64;
-        let ctx = ctx_with_mac(seed, b"correct-key");
-        let payload = protector.generate_payload_from_ctx(&ctx);
-
-        let legacy_result = carrier_lsb::embed_lsb(&img, &payload, seed, 1);
-        let legacy_img = legacy_result.into_inner();
-
-        let extracted = protector.extract_with_redundancy(&legacy_img, seed, b"wrong-key");
-        assert!(extracted.is_none(), "wrong key must fail");
-    }
 
     #[test]
     fn new_v2_payload_extracts_before_legacy_probe() {
@@ -6030,305 +4820,11 @@ mod tests {
         assert_eq!(payload.unwrap().seed(), 42);
     }
 
-    #[test]
-    fn v2_capacity_helpers_consistent() {
-        let width = 100u32;
-        let height = 100u32;
-        let payload_bits = 288usize;
-        let redundancy = 3usize;
-
-        let (required, available) =
-            carrier_lsb::lsb_capacity_for_image(width, height, payload_bits, redundancy);
-        assert_eq!(
-            required,
-            carrier_lsb::lsb_required_capacity_v2(payload_bits, redundancy)
-        );
-        assert_eq!(available, carrier_lsb::lsb_available_slots(width, height));
-        assert!(available >= required);
-    }
-
     // ── Raw LSB carrier tests ────────────────────────────────────────
     // These exercise the carrier module directly with arbitrary bytes,
     // independently of StegoEggo payload-v3 framing.
 
-    #[test]
-    fn raw_lsb_arbitrary_bytes_roundtrip() {
-        let img = make_large_test_image();
-        let payload = vec![0x42u8; 36];
-        let seed = 12345u64;
-        let redundancy = 1;
-
-        let outcome = carrier_lsb::embed_lsb_v2(&img, &payload, seed, redundancy);
-        assert!(outcome.is_embedded());
-        let embedded = outcome.into_inner();
-        let extracted =
-            carrier_lsb::extract_lsb_v2(&embedded, payload.len() * 8, seed, 0, redundancy);
-        assert_eq!(extracted.as_deref(), Some(payload.as_slice()));
-    }
-
-    #[test]
-    fn raw_lsb_binary_zero_ff_payload_roundtrip() {
-        let img = make_large_test_image();
-        let mut payload = Vec::with_capacity(48);
-        payload.extend(std::iter::repeat_n(0x00u8, 24));
-        payload.extend(std::iter::repeat_n(0xFFu8, 24));
-        let seed = 9999u64;
-        let redundancy = 2;
-
-        let outcome = carrier_lsb::embed_lsb_v2(&img, &payload, seed, redundancy);
-        assert!(outcome.is_embedded());
-        let embedded = outcome.into_inner();
-        let extracted =
-            carrier_lsb::extract_lsb_v2(&embedded, payload.len() * 8, seed, 0, redundancy);
-        assert_eq!(extracted.as_deref(), Some(payload.as_slice()));
-    }
-
-    #[test]
-    fn raw_lsb_exact_capacity_outcome() {
-        let width = 16u32;
-        let height = 16u32;
-        let img = make_test_image(width, height);
-        let available = carrier_lsb::lsb_available_slots(width, height);
-        let payload_bits = available / 5;
-        let payload_bytes = payload_bits / 8;
-        let payload = vec![0xABu8; payload_bytes];
-        let seed = 42u64;
-
-        let outcome = carrier_lsb::embed_lsb_v2(&img, &payload, seed, 1);
-        assert!(
-            outcome.is_embedded(),
-            "payload should fit within exact capacity"
-        );
-    }
-
-    #[test]
-    fn raw_lsb_wrong_seed_not_equal() {
-        let img = make_large_test_image();
-        let payload = vec![0x11u8; 32];
-        let seed_a = 42u64;
-        let seed_b = 99u64;
-        let redundancy = 1;
-
-        let outcome = carrier_lsb::embed_lsb_v2(&img, &payload, seed_a, redundancy);
-        let embedded = outcome.into_inner();
-
-        let extracted =
-            carrier_lsb::extract_lsb_v2(&embedded, payload.len() * 8, seed_b, 0, redundancy);
-        assert_ne!(
-            extracted.as_deref(),
-            Some(payload.as_slice()),
-            "wrong seed must not recover original payload"
-        );
-    }
-
-    #[test]
-    fn raw_lsb_legacy_scheme_fixture_roundtrip() {
-        let img = make_large_test_image();
-        let payload = vec![0xBEu8; 28];
-        let seed = 42u64;
-        let redundancy = 1;
-
-        let outcome = carrier_lsb::embed_lsb(&img, &payload, seed, redundancy);
-        assert!(outcome.is_embedded());
-        let embedded = outcome.into_inner();
-        let expected_bits = payload.len() * 8;
-        let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1);
-        let extracted = carrier_lsb::extract_lsb(&embedded, expected_bits, offset_seed);
-        assert_eq!(extracted.as_deref(), Some(payload.as_slice()));
-    }
-
-    #[test]
-    fn raw_lsb_current_scheme_roundtrip() {
-        let img = make_large_test_image();
-        let payload = vec![0xCDu8; 36];
-        let seed = 7777u64;
-        let redundancy = 2;
-
-        let outcome = carrier_lsb::embed_lsb_v2(&img, &payload, seed, redundancy);
-        assert!(outcome.is_embedded());
-        let embedded = outcome.into_inner();
-        let extracted =
-            carrier_lsb::extract_lsb_v2(&embedded, payload.len() * 8, seed, 0, redundancy);
-        assert_eq!(extracted.as_deref(), Some(payload.as_slice()));
-    }
-
-    #[test]
-    fn raw_lsb_has_no_rights_metadata_dependency() {
-        let img = make_large_test_image();
-        let payload = vec![0x77u8; 24];
-        let seed = 5555u64;
-        let redundancy = 1;
-
-        let outcome = carrier_lsb::embed_lsb_v2(&img, &payload, seed, redundancy);
-        assert!(outcome.is_embedded());
-        let embedded = outcome.into_inner();
-        let extracted =
-            carrier_lsb::extract_lsb_v2(&embedded, payload.len() * 8, seed, 0, redundancy);
-        assert_eq!(extracted.as_deref(), Some(payload.as_slice()));
-    }
-
     // ── Raw JPEG carrier tests ───────────────────────────────────────
-
-    #[test]
-    fn raw_jpeg_arbitrary_bytes_roundtrip_supported_fixture() {
-        let img = make_high_entropy_test_image(256, 256);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
-
-        let (_header, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
-        let capacity = carrier_jpeg::dct_payload_capacity(&coefficients);
-        if capacity < 32 {
-            return;
-        }
-
-        let payload = vec![0x42u8; 32];
-        let seed = 42u64;
-
-        let mut coeffs = coefficients.clone();
-        DctStegoF5::with_redundancy(1)
-            .embed_f5(&mut coeffs, &payload, seed)
-            .unwrap();
-
-        let rt_bits = DctStegoF5::with_redundancy(1).extract_f5(&coeffs, payload.len() * 8, seed);
-        let rt_payload = carrier_lsb::bits_to_bytes(&rt_bits);
-        assert_eq!(rt_payload, payload);
-    }
-
-    #[test]
-    fn raw_jpeg_binary_zero_ff_payload_roundtrip() {
-        let img = make_high_entropy_test_image(256, 256);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
-
-        let (_header, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
-        let capacity = carrier_jpeg::dct_payload_capacity(&coefficients);
-        if capacity < 48 {
-            return;
-        }
-
-        let mut payload = Vec::with_capacity(48);
-        payload.extend(std::iter::repeat_n(0x00u8, 24));
-        payload.extend(std::iter::repeat_n(0xFFu8, 24));
-        let seed = 77u64;
-
-        let mut coeffs = coefficients.clone();
-        DctStegoF5::with_redundancy(1)
-            .embed_f5(&mut coeffs, &payload, seed)
-            .unwrap();
-
-        let rt_bits = DctStegoF5::with_redundancy(1).extract_f5(&coeffs, payload.len() * 8, seed);
-        let rt_payload = carrier_lsb::bits_to_bytes(&rt_bits);
-        assert_eq!(rt_payload, payload);
-    }
-
-    #[test]
-    fn raw_jpeg_capacity_matches_supported_coefficients() {
-        let img = make_high_entropy_test_image(128, 128);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
-
-        let (_, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
-        let capacity = carrier_jpeg::dct_payload_capacity(&coefficients);
-
-        let manual: usize = coefficients
-            .values()
-            .flat_map(|blocks| blocks.iter())
-            .map(|block| {
-                block
-                    .iter()
-                    .skip(1)
-                    .filter(|&&coef| coef.abs() >= 2)
-                    .count()
-            })
-            .sum();
-        assert_eq!(capacity, manual);
-    }
-
-    #[test]
-    fn raw_jpeg_wrong_seed_not_equal() {
-        let img = make_high_entropy_test_image(256, 256);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
-
-        let (_header, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
-        let capacity = carrier_jpeg::dct_payload_capacity(&coefficients);
-        if capacity < 32 {
-            return;
-        }
-
-        let payload = vec![0x11u8; 32];
-        let seed_a = 42u64;
-        let seed_b = 99u64;
-
-        let mut coeffs = coefficients.clone();
-        DctStegoF5::with_redundancy(1)
-            .embed_f5(&mut coeffs, &payload, seed_a)
-            .unwrap();
-
-        let rt_bits = DctStegoF5::with_redundancy(1).extract_f5(&coeffs, payload.len() * 8, seed_b);
-        let rt_payload = carrier_lsb::bits_to_bytes(&rt_bits);
-        assert_ne!(rt_payload, payload, "wrong seed must not recover payload");
-    }
-
-    #[test]
-    fn raw_jpeg_container_segments_preserved() {
-        let img = make_high_entropy_test_image(128, 128);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
-
-        let header = JpegHeader::parse(&jpeg_bytes).unwrap();
-        let reassembled = carrier_jpeg::reassemble_jpeg_with_qtables(&jpeg_bytes, &header).unwrap();
-
-        assert!(reassembled.starts_with(&[0xFF, 0xD8]));
-        assert!(reassembled.ends_with(&[0xFF, 0xD9]));
-
-        let _ = JpegHeader::parse(&reassembled).unwrap();
-    }
-
-    #[test]
-    fn raw_jpeg_progressive_reports_unsupported_payload_embedding() {
-        let img = make_high_entropy_test_image(64, 64);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
-
-        let (_header, coefficients) = JpegTranscoder::decode_coefficients(&jpeg_bytes).unwrap();
-        let capacity = carrier_jpeg::dct_payload_capacity(&coefficients);
-        if capacity < 32 {
-            return;
-        }
-
-        let payload = vec![0xAAu8; 32];
-        let seed = 42u64;
-
-        let mut coeffs = coefficients.clone();
-        let embed_result = DctStegoF5::with_redundancy(1).embed_f5(&mut coeffs, &payload, seed);
-        if embed_result.is_err() {
-            let rt_bits =
-                DctStegoF5::with_redundancy(1).extract_f5(&coeffs, payload.len() * 8, seed);
-            let rt_payload = carrier_lsb::bits_to_bytes(&rt_bits);
-            assert_ne!(rt_payload, payload);
-        }
-    }
-
-    #[test]
-    fn qtable_seed_hint_roundtrip_does_not_imply_payload_success() {
-        let img = make_high_entropy_test_image(128, 128);
-        let jpeg_bytes = image_to_jpeg_bytes(&DynamicImage::ImageRgba8(img), 90);
-
-        let seed = 42u64;
-        let reassembled = carrier_jpeg::embed_seed_hint(&jpeg_bytes, seed).unwrap();
-        let extracted_seed = carrier_jpeg::extract_seed_hint(&reassembled).unwrap();
-        assert_eq!(extracted_seed, Some(seed));
-
-        let (_header, coefficients) = JpegTranscoder::decode_coefficients(&reassembled).unwrap();
-        let capacity = carrier_jpeg::dct_payload_capacity(&coefficients);
-        if capacity < 32 {
-            return;
-        }
-
-        let payload = vec![0x55u8; 32];
-        let mut coeffs = coefficients.clone();
-        DctStegoF5::with_redundancy(1)
-            .embed_f5(&mut coeffs, &payload, seed)
-            .unwrap();
-        let rt_bits = DctStegoF5::with_redundancy(1).extract_f5(&coeffs, payload.len() * 8, seed);
-        let rt_payload = carrier_lsb::bits_to_bytes(&rt_bits);
-        assert_eq!(rt_payload, payload);
-    }
 
     // ── Application-adapter regression tests ─────────────────────────
 
@@ -6397,24 +4893,5 @@ mod tests {
 
         let payload_wrong = protector.extract_payload_with_key(&result, wrong_key);
         assert!(payload_wrong.is_none(), "wrong key must return None");
-    }
-
-    #[test]
-    fn stegoeggo_legacy_lsb_fixture_still_extracts() {
-        let protector = SteganographyProtector::new();
-        let img = make_large_test_image();
-        let seed = 42u64;
-        let payload = protector.generate_payload_from_ctx(&ctx_no_mac(seed));
-
-        let legacy_outcome = carrier_lsb::embed_lsb(&img, &payload, seed, 1);
-        let embedded = legacy_outcome.into_inner();
-
-        let extracted = protector.extract_with_redundancy(&embedded, seed, &[]);
-        assert!(
-            extracted.is_some(),
-            "legacy LSB fixture should still extract"
-        );
-        let recovered = extracted.unwrap();
-        assert_eq!(recovered, payload);
     }
 }

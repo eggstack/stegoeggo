@@ -88,6 +88,7 @@ pub fn lsb_required_slots_legacy(payload_bits: usize) -> usize {
     payload_bits.div_ceil(3) * STEGO_SPREAD_FACTOR * 3
 }
 
+#[allow(dead_code)]
 pub fn lsb_capacity_for_image(
     width: u32,
     height: u32,
@@ -477,6 +478,7 @@ pub fn crop_rgba(src: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> RgbaImage {
     out
 }
 
+#[allow(dead_code)]
 pub fn blit_rgba(dst: &mut RgbaImage, x: u32, y: u32, src: &RgbaImage) {
     if x >= dst.width() || y >= dst.height() {
         return;
@@ -658,8 +660,8 @@ pub fn capacity(img: &RgbaImage, payload_len: usize, config: &LsbConfig) -> supe
 
 /// Embed arbitrary bytes into an RGBA image using V2 corrected carrier LSB.
 ///
-/// Returns an [`EmbedReport`](super::EmbedReport) with the output image
-/// bytes (encoded as PNG) and capacity information.
+/// Returns an [`EmbedReport`](super::EmbedReport) with the output
+/// [`RgbaImage`] and capacity information. No image encoding is performed.
 ///
 /// # Arguments
 ///
@@ -754,8 +756,7 @@ pub fn embed(
 /// # let img = RgbaImage::new(100, 100);
 /// # let config = LsbConfig::new(42);
 /// # let embedded = lsb::embed(&img, b"secret", &config).unwrap();
-/// let decoded_img = image::load_from_memory(&embedded.output).unwrap().to_rgba8();
-/// let recovered = lsb::extract(&decoded_img, 6, &config).unwrap();
+/// let recovered = lsb::extract(&embedded.output, 6, &config).unwrap();
 /// assert_eq!(&recovered, b"secret");
 /// ```
 pub fn extract(

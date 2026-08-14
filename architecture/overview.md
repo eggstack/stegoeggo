@@ -41,18 +41,18 @@ Start with the component you're investigating. This document is the index — ea
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ProtectionPipeline                                   │
+│              ProtectionRequest / ResolvedProtectionPlan                     │
 │                    (src/lib.rs - orchestration)                             │
 │                                                                              │
-│  Orchestrates protector selection, format routing, and pipeline composition │
-│  Holds Arc-wrapped protectors for all levels                               │
+│  Canonical plan resolution and direct execution; legacy pipeline methods     │
+│  are stateless adapters into this path                                      │
 └─────────────────────────────────┬───────────────────────────────────────────┘
                                   │
           ┌───────────────────────┼───────────────────────┐
           │                       │                       │
           ▼                       ▼                       ▼
 ┌─────────────────┐   ┌─────────────────────┐   ┌─────────────────────────┐
-│ Passthrough     │   │ MetadataTrapProtector│   │ JpegTranscoder         │
+│ Passthrough     │   │ MetadataTrapProtector│   │ Carrier JPEG API       │
 │ (Disabled)      │   │ (Light)              │   │ (jpeg_transcoder/)     │
 │                 │   │                     │   │                         │
 │ No-op           │   │ Metadata injection  │   │ Operates on DCT         │
@@ -63,7 +63,7 @@ Start with the component you're investigating. This document is the index — ea
            │                       │             │
            ▼                       ▼             ▼
 ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌─────────────────┐
-│Steganography│ │Metadata  │ │ Precomputed│ │ JpegTranscoder │
+│Steganography│ │Metadata  │ │ Plan state │ │ private DCT core │
 │(LSB/DCT)   │ │  Trap    │ │             │ │                 │
 └───────────┘ └───────────┘ └───────────┘ └─────────────────┘
                               │
@@ -153,10 +153,10 @@ translate `ProtectionLevel` + `ProtectionContext` to a `ProtectionRequest` via
 
 Skips pixel decode/encode entirely. Operates directly on DCT coefficients:
 
-1. `JpegTranscoder::decode_coefficients()` — parse header, decode Huffman
-2. `DctStegoF5::embed_f5()` — modify DCT coefficients with F5 steganography
-3. `DctStegoF5::embed_seed_in_quantization_tables()` — store seed in Q-tables
-4. `JpegTranscoder::encode_coefficients_preserving()` — re-encode Huffman, walk the
+1. Carrier JPEG operation parses the supported header and decodes Huffman data privately
+2. The private F5 implementation modifies DCT coefficients
+3. The carrier stores the seed in quantization tables
+4. The carrier re-encodes Huffman data while walking the
    original byte stream replacing only DQT and SOS scan data; APP/COM/unknown
    segments survive verbatim
 
@@ -238,19 +238,25 @@ The generic carrier core lives in the separate `stegoeggo-stego` crate:
 
 ```
 stegoeggo-stego/src/
-├── lib.rs                     Re-exports, CapacityReport, EmbedReport, carrier facade
+├── lib.rs                     Small public allowlist, CapacityReport, EmbedReport
 ├── constants.rs               STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR, SPLITMIX64_SEED
 ├── error.rs                   StegoError, JpegUnsupportedReason, StegoResult
 ├── frame.rs                   Generic framed payload (magic, version, length, CRC32)
 ├── lsb.rs                     LSB carrier: permutations, embed/extract, crop, seed fallback
 ├── jpeg.rs                    JPEG carrier: DCT capacity, Q-table reassembly, seed hint
+├── application_support.rs     Narrow parent-crate operations; hidden unstable feature
 ├── jpeg_transcoder/           JPEG-specific DCT coefficient processing
-│   ├── mod.rs                 JpegTranscoder (decode/encode_coefficients, assemble_jpeg)
+│   ├── mod.rs                 Private JPEG transcoder implementation
 │   ├── header.rs              JpegHeader, HuffmanTable parsing (DQT/SOF/DHT/SOS)
 │   ├── entropy.rs             CoefficientDecoder, CoefficientEncoder (Huffman codec)
 │   └── stego_f5.rs            DctStegoF5, F5XorShiftRng (F5 DCT coefficient embedding)
 └── types.rs                   EmbedOutcome, EmbedPath, EmbedStatus, EmbedOutcomeSummary
 ```
+
+`jpeg_transcoder/` and `lsb_internal.rs` are private implementation modules. The
+root crate uses the operation-level `application-support` feature internally;
+neither that layer nor the private codec types are part of the default carrier
+API.
 
 ## Component Index — Deep Dives
 
@@ -334,7 +340,7 @@ pub trait Protector: Send + Sync {
 }
 ```
 
-The pipeline holds `Arc<Protector>` instances and dispatches based on `ProtectionLevel`. This allows composable protection and easy testing.
+The canonical executor resolves a `ProtectionRequest` into a plan and runs the selected operations directly. The legacy `ProtectionPipeline` is a stateless compatibility adapter that preserves the older level-based entry points while delegating to that same request path.
 
 ### Cow Returns
 
@@ -342,7 +348,7 @@ The pipeline holds `Arc<Protector>` instances and dispatches based on `Protectio
 
 ### JPEG Fast Path
 
-When **both** input and output are JPEG, the pipeline operates directly on DCT coefficients via `JpegTranscoder`. This avoids pixel decode/encode cycles that would introduce additional lossy compression artifacts. Format conversion (JPEG → PNG) always takes the full pixel pipeline.
+When **both** input and output are JPEG, the application adapter calls the carrier's encoded-byte JPEG operation. The carrier privately operates directly on DCT coefficients, avoiding pixel decode/encode cycles that would introduce additional lossy compression artifacts. Format conversion (JPEG → PNG) always takes the full pixel pipeline.
 
 ### Two XorShiftRng Implementations
 

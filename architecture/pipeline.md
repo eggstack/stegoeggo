@@ -2,7 +2,7 @@
 
 **Source:** `src/lib.rs` (~2282 lines)
 
-The pipeline is the central orchestration layer. It provides two execution paths: the canonical request-based path (via direct plan executor) and the legacy level-based path (via `ProtectionPipeline`). Both paths share the same carrier modules and metadata injection. Parallel batch processing functions require the `parallel` feature.
+The pipeline is the central orchestration layer. It provides two execution paths: the canonical request-based path (via direct plan executor) and the legacy level-based compatibility path (via a stateless `ProtectionPipeline`). Both paths share the same carrier operations and metadata injection. Parallel batch processing functions require the `parallel` feature.
 
 ## Direct Plan Executor (canonical path)
 
@@ -22,13 +22,10 @@ These functions use `RightsMetadataProtector::inject_bytes_from_plan()` for meta
 
 ## ProtectionPipeline (legacy path)
 
-The legacy struct for level-based APIs. Holds `Arc`-wrapped protectors for all levels.
+The legacy struct for level-based APIs. It is stateless; its methods adapt the legacy level/context inputs into a `ProtectionRequest` and then use the canonical resolver and plan executor.
 
 ```rust
 pub struct ProtectionPipeline {
-    passthrough: Arc<PassthroughProtector>,
-    metadata_trap: Arc<RightsMetadataProtector>,
-    steganography: Arc<SteganographyProtector>,
 }
 ```
 
@@ -50,7 +47,7 @@ pub struct ProtectionPipeline {
    c. Inject metadata to bytes
 ```
 
-The JPEG fast path (`apply_bytes_pipeline`) operates directly on DCT coefficients via `JpegTranscoder`, bypassing pixel decode/encode cycles. It only triggers when **both** input and output are JPEG — format conversion always takes the full pipeline. This is critical for the sub-10ms latency target.
+The JPEG fast path (`apply_bytes_pipeline`) calls the carrier crate's encoded-byte JPEG operations. Those operations privately decode and re-encode DCT coefficients, bypassing pixel decode/encode cycles. It only triggers when **both** input and output are JPEG — format conversion always takes the full pipeline. This is critical for the sub-10ms latency target.
 
 ### Light Level Flow
 
@@ -99,6 +96,6 @@ The library intentionally does not own proxy-level cache policy, concurrency lim
 - **types.rs**: Uses `ProtectionLevel`, `ProtectionContext`, `ImageOutputFormat`, `ProtectionRequest`, `ResolvedProtectionPlan`
 - **traits.rs**: Calls `Protector::apply()` and `Protector::apply_bytes()`
 - **protected/*.rs**: Delegates to specific protector implementations
-- **stegoeggo-stego/src/jpeg_transcoder/**: Used for JPEG fast path in `apply_dct_stego_bytes_from_plan` and the legacy `apply_bytes_pipeline`. `pub(crate)`; consumer accesses via `__internal_jpeg_facade`.
-- **stegoeggo-stego/src/lsb.rs** + **stegoeggo-stego/src/lsb_internal.rs**: Used by `SteganographyProtector` for LSB carrier mechanics. LSB facade exposes only the public API; carrier internals are `pub(crate)`.
+- **stegoeggo-stego/src/jpeg.rs**: Public encoded-byte JPEG carrier operations used by the application adapter; `jpeg_transcoder/` remains private.
+- **stegoeggo-stego/src/lsb.rs** + **stegoeggo-stego/src/application_support.rs**: Public generic LSB operations and the narrow parent-crate support layer. `lsb_internal.rs` remains private.
 - **util/image.rs**: Used for encoding, format detection, image loading

@@ -548,7 +548,8 @@ mod scan_utils {
 ///
 /// Parses the JPEG header to detect progressive mode. Returns `false`
 /// for invalid or non-JPEG input.
-pub fn is_progressive_jpeg(jpeg_data: &[u8]) -> bool {
+#[allow(dead_code)]
+fn is_progressive_jpeg(jpeg_data: &[u8]) -> bool {
     JpegHeader::parse(jpeg_data)
         .map(|h| h.is_progressive)
         .unwrap_or(false)

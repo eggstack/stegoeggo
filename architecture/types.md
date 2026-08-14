@@ -241,7 +241,7 @@ ProtectionContext::new(intensity, seed)  // intensity clamped to [0.0, 1.0]
 | `dmi_value` | `Option<DmiValue>` | None | DMI override (full URI emitted in `plus:DataMining`) |
 | `max_dimension` | `Option<u32>` | None | Resize constraint |
 | `inject_metadata` | `Option<bool>` | None | Enable metadata injection |
-| `inject_legal_claims` | `Option<bool>` | None | Enable legal metadata |
+| `inject_legal_claims` | `Option<bool>` | None | Auto-enable explicitly supplied legal fields when `LegalMetadata` is present; `Some(false)` suppresses them |
 | `stego_redundancy` | `Option<usize>` | None | Stego passes (1–10). Default derived from intensity: <0.3→1, 0.3-0.7→2, >=0.7→3 |
 | `jpeg_quality` | `u8` | 90 | JPEG encoding quality |
 | `progressive_jpeg` | `bool` | false | Progressive JPEG encoding |
@@ -251,7 +251,7 @@ ProtectionContext::new(intensity, seed)  // intensity clamped to [0.0, 1.0]
 | `evidence_profile` | `Option<EvidenceProfile>` | None | Warning interpretation and evidence posture (defaults to `LegalNotice` when not set) |
 | `config` | `Option<Arc<ProtectionConfig>>` | None | `#[serde(skip)]` — MAC key + legal metadata |
 
-**Note:** `None` for `inject_metadata`/`inject_legal_claims` means "use level default" (enabled for Standard). Explicit `false` disables injection.
+**Note:** `None` for `inject_metadata` uses the level default. For legacy legal claims, `None` auto-enables explicitly supplied fields when `LegalMetadata` is present; `Some(false)` suppresses them. Explicit `false` always disables injection.
 
 ### Builder Methods
 

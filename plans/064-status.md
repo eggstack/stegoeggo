@@ -20,6 +20,11 @@ The historical Plan 064 evidence below remains accurate as of the Plan 064 closu
 
 **Disposition after Plan 065:** The original closure evidence is preserved but Plan 065 found residuals and closes them. Roadmap 057 remains `PARTIAL` until Plan 065 closes.
 
+**Final disposition after Plan 066:** Plan 065's residual audit is closed by
+the public-boundary, semantic, release-check, and documentation corrections in
+Plan 066. This file remains historical evidence; the current closure ledger is
+`plans/066-status.md`.
+
 ## Baseline SHA
 
 `2d9514552ea4332a8d5b1b9c7603cd000eea1c13` (`main` HEAD at closure start)

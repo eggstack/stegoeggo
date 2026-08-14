@@ -5,14 +5,22 @@ set -euo pipefail
 
 ALLOW_DIRTY=false
 SKIP_CHECK=false
+STAGE=pre
 
 for arg in "$@"; do
     case "$arg" in
         --allow-dirty) ALLOW_DIRTY=true ;;
         --skip-check) SKIP_CHECK=true ;;
+        --stage)
+            echo "ERROR: --stage requires pre, root, or cli" >&2
+            exit 1
+            ;;
+        --stage=pre) STAGE=pre ;;
+        --stage=root) STAGE=root ;;
+        --stage=cli) STAGE=cli ;;
         *)
             echo "Unknown argument: $arg" >&2
-            echo "Usage: $0 [--allow-dirty] [--skip-check]" >&2
+            echo "Usage: $0 [--allow-dirty] [--skip-check] [--stage=pre|root|cli]" >&2
             exit 1
             ;;
     esac
@@ -94,36 +102,43 @@ print(f"Library carrier dependency: {lib_carrier_dep}")
 print(f"CLI library dependency: {cli_stegoeggo_dep}")
 PY
 
-echo ""
-echo "=== Package dry-run: stegoeggo-stego ==="
 ALLOW_DIRTY_FLAG=""
 if [ "$ALLOW_DIRTY" = true ]; then
     ALLOW_DIRTY_FLAG="--allow-dirty"
 fi
-cargo package -p stegoeggo-stego $ALLOW_DIRTY_FLAG 2>&1 | tail -3
+if [ "$STAGE" = "pre" ]; then
+    echo ""
+    echo "=== Full package verification: stegoeggo-stego ==="
+    cargo package -p stegoeggo-stego $ALLOW_DIRTY_FLAG
 
-echo ""
-echo "=== Package dry-run: stegoeggo ==="
-cargo package -p stegoeggo $ALLOW_DIRTY_FLAG 2>&1 | tail -3
+    echo ""
+    echo "=== Structural package validation: stegoeggo ==="
+    cargo package -p stegoeggo --list $ALLOW_DIRTY_FLAG >/dev/null
 
-echo ""
-echo "=== Package dry-run: stegoeggo-cli ==="
-if cargo package -p stegoeggo-cli $ALLOW_DIRTY_FLAG 2>&1 | tail -3; then
-    echo "CLI package dry-run: OK"
+    echo ""
+    echo "=== Structural package validation: stegoeggo-cli ==="
+    cargo package -p stegoeggo-cli --list $ALLOW_DIRTY_FLAG >/dev/null
+elif [ "$STAGE" = "root" ]; then
+    echo ""
+    echo "=== Full package verification: stegoeggo ==="
+    cargo package -p stegoeggo $ALLOW_DIRTY_FLAG
 else
     echo ""
-    echo "WARNING: CLI dry-run failed. This is expected before library publication."
-    echo "The CLI depends on stegoeggo via exact version (=), which must exist on crates.io first."
-    echo "Library dry-run succeeded above. CLI dry-run will succeed after library publication."
+    echo "=== Full package verification: stegoeggo-cli ==="
+    cargo package -p stegoeggo-cli $ALLOW_DIRTY_FLAG
 fi
 
 echo ""
 echo "=== Package contents: stegoeggo-stego ==="
-cargo package -p stegoeggo-stego --list 2>/dev/null
+cargo package -p stegoeggo-stego --list $ALLOW_DIRTY_FLAG 2>/dev/null
 
 echo ""
 echo "=== Package contents: stegoeggo ==="
-cargo package -p stegoeggo --list 2>/dev/null
+cargo package -p stegoeggo --list $ALLOW_DIRTY_FLAG 2>/dev/null
+
+echo ""
+echo "=== Package contents: stegoeggo-cli ==="
+cargo package -p stegoeggo-cli --list $ALLOW_DIRTY_FLAG 2>/dev/null
 
 echo ""
 echo "=== Release check passed ==="

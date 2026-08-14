@@ -7,21 +7,7 @@
 use image::ImageError;
 use thiserror::Error;
 
-use crate::stego::__internal_jpeg_facade::TranscoderError;
 use crate::stego::error::StegoError;
-
-impl From<TranscoderError> for Error {
-    fn from(e: TranscoderError) -> Self {
-        match e {
-            TranscoderError::InvalidFormat(s) => Error::InvalidFormat(s),
-            TranscoderError::Unsupported(s) => Error::InvalidFormat(s),
-            TranscoderError::HuffmanDecode(s) => Error::ImageDecode(s),
-            TranscoderError::HuffmanEncode(s) => Error::ImageEncode(s),
-            TranscoderError::Io(e) => Error::Io(e),
-            TranscoderError::EmbeddingFailed(s) => Error::Steganography(s),
-        }
-    }
-}
 
 impl From<StegoError> for Error {
     fn from(e: StegoError) -> Self {

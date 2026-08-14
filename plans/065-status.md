@@ -1,6 +1,11 @@
 # Plan 065 Status Ledger
 
-Status: OPEN — corrective closure
+Status: CLOSED — core Plan 065 implementation and Plan 066 follow-up are complete.
+
+The historical rows below are retained as evidence of the Plan 065 work. Their
+remaining residuals are not silently relabeled as complete; Plan 066 is the
+final closure owner for the public-boundary, semantic, release-check, and
+planning-ledger corrections.
 
 Roadmap: `plans/057-stego-carrier-library-and-pipeline-simplification-roadmap.md`
 
@@ -28,31 +33,40 @@ Each row starts `OPEN`. A row is closed only when the focused tests and source c
 
 | ID | Row | Status | Evidence |
 |----|-----|--------|----------|
-| R01 | legacy Light default policy is `Unspecified` | OPEN | Phase 1 matrix + focused tests |
-| R02 | legacy Light maps to seed-only marker plan path | OPEN | Phase 2 + new `HiddenMarkerMode::SeedOnly` |
-| R03 | legacy explicit DMI override preserved | OPEN | Phase 1 + 3 |
-| R04 | legacy metadata-injection three-state preserved | OPEN | Phase 1 + 3 |
-| R05 | legacy legal-claims `None`/`Some(false)`/`Some(true)` semantics | OPEN | Phase 1 + 3 |
-| R06 | legacy explicit stego redundancy preserved into plan-driven embedding | OPEN | Phase 3 |
-| R07 | legacy content hash preserved into plan-driven v3 payload generation | OPEN | Phase 3 |
-| R08 | legacy timestamp override preserved | OPEN | Phase 3 |
-| R09 | legacy output/JPEG options + tile size + max dimension + metadata update policy + MAC key + resource limits + legal metadata preserved | OPEN | Phase 1 + 3 |
-| R10 | `ProtectionPipeline::process()` and `process_bytes()` delegate to canonical request/plan path | OPEN | Phase 4 |
-| R11 | LSB pixel mutation never wraps `0 <-> 255` | OPEN | Phase 5 |
-| R12 | Default `stegoeggo-stego` API hides `jpeg_transcoder`, `JpegHeader`, `Coefficients`, `DctStegoF5`, etc. | OPEN | Phase 6 |
-| R13 | Carrier `stegoeggo-stego` LSB helpers (permutations, bit helpers, embed_bit_in_pixel, seed-fallback) are not default public API | OPEN | Phase 6 |
-| R14 | Root `stegoeggo::stego` re-exports remain usable; root fuzzing still compiles under `fuzz` feature | OPEN | Phase 6 |
-| R15 | LSB pixel-domain public API result boundary corrected (or recorded as deferred) | OPEN | Phase 7 |
-| R16 | Root `stegoeggo` declares carrier with path + exact `=0.3.2` version | OPEN | Phase 8 |
-| R17 | `stegoeggo-stego` package README/license/include declarations truthful | OPEN | Phase 8 |
-| R18 | `cargo package -p stegoeggo-stego --allow-dirty` succeeds | OPEN | Phase 8 |
-| R19 | release-check version lockstep check agrees with manifests | OPEN | Phase 8 |
-| R20 | `plans/058-status.md`, `059-status.md`, `060-status.md`, `061-status.md`, `063-status.md` exist, are git-tracked, and are labeled retrospective | OPEN | Phase 9 |
-| R21 | `plans/064-status.md` contains a correction/supersession note rather than an unqualified current COMPLETE claim | OPEN | Phase 0.3 + 10.4 |
-| R22 | Roadmap 057 disposition corrected to `PARTIAL — reopened by Plan 065` while this plan is open | OPEN | Phase 0.3 |
-| R23 | Final `./scripts/check.sh` passes after all source corrections land | OPEN | Phase 10 |
-| R24 | Phase 10 focused test matrix passes (legacy compat, pipeline convergence, carrier correctness/API, packaging) | OPEN | Phase 10 |
-| R25 | Documentation reconciliation: README, AGENTS.md, architecture/{overview,pipeline,protected-steganography,types}.md | OPEN | Phase 10.3 |
+| R01 | legacy Light default policy is `Unspecified` | CLOSED | `ProtectionLevel::default_policy()` and legacy/request tests |
+| R02 | legacy Light maps to seed-only marker plan path | CLOSED BY 066 | `request_from_legacy()` maps Light to `HiddenMarkerMode::SeedOnly`; tile-size regression covered |
+| R03 | legacy explicit DMI override preserved | CLOSED | legacy compatibility matrix |
+| R04 | legacy metadata-injection three-state preserved | CLOSED | legacy compatibility matrix |
+| R05 | legacy legal-claims `None`/`Some(false)`/`Some(true)` semantics | CLOSED BY 066 | legal-claim toggle tests and corrected docs |
+| R06 | legacy explicit stego redundancy preserved into plan-driven embedding | CLOSED | legacy compatibility matrix |
+| R07 | legacy content hash preserved into plan-driven v3 payload generation | CLOSED | legacy compatibility matrix |
+| R08 | legacy timestamp override preserved | CLOSED | legacy compatibility matrix |
+| R09 | legacy output/JPEG options + tile size + max dimension + metadata update policy + MAC key + resource limits + legal metadata preserved | CLOSED | legacy compatibility matrix |
+| R10 | `ProtectionPipeline::process()` and `process_bytes()` delegate to canonical request/plan path | CLOSED BY 066 | stateless pipeline implementation and root suite |
+| R11 | LSB pixel mutation never wraps `0 <-> 255` | CLOSED | carrier tests and full root suite |
+| R12 | Default `stegoeggo-stego` API hides `jpeg_transcoder`, `JpegHeader`, `Coefficients`, `DctStegoF5`, etc. | CLOSED BY 066 | private modules, explicit root allowlist, compile-fail boundary doctests |
+| R13 | Carrier `stegoeggo-stego` LSB helpers (permutations, bit helpers, embed_bit_in_pixel, seed-fallback) are not default public API | CLOSED BY 066 | private internals and operation-level support layer |
+| R14 | Root `stegoeggo::stego` re-exports remain usable; root fuzzing still compiles under `fuzz` feature | CLOSED BY 066 | public API tests and bounded fuzz inspection path |
+| R15 | LSB pixel-domain public API result boundary corrected (or recorded as deferred) | CLOSED | `RgbaImage` output boundary and examples/docs updated |
+| R16 | Root `stegoeggo` declares carrier with path + exact `=0.3.2` version | CLOSED | root manifest exact path/version dependency |
+| R17 | `stegoeggo-stego` package README/license/include declarations truthful | CLOSED | carrier README and package metadata audit |
+| R18 | `cargo package -p stegoeggo-stego --allow-dirty` succeeds | CLOSED | staged release check |
+| R19 | release-check version lockstep check agrees with manifests | CLOSED BY 066 | staged carrier → root → CLI release-check flow |
+| R20 | `plans/058-status.md`, `059-status.md`, `060-status.md`, `061-status.md`, `063-status.md` exist, are git-tracked, and are labeled retrospective | CLOSED BY 066 | retrospective banners and forced staging |
+| R21 | `plans/064-status.md` contains a correction/supersession note rather than an unqualified current COMPLETE claim | CLOSED BY 066 | final Plan 066 note |
+| R22 | Roadmap 057 disposition corrected to `PARTIAL — reopened by Plan 065` while this plan is open | CLOSED BY 066 | final disposition is now `COMPLETE — final residuals closed by Plan 066` |
+| R23 | Final `./scripts/check.sh` passes after all source corrections land | CLOSED | final local CI-equivalent check |
+| R24 | Phase 10 focused test matrix passes (legacy compat, pipeline convergence, carrier correctness/API, packaging) | CLOSED | focused tests plus full workspace test |
+| R25 | Documentation reconciliation: README, AGENTS.md, architecture/{overview,pipeline,protected-steganography,types}.md | CLOSED BY 066 | docs and boundary audit |
+
+## Final closure reconciliation
+
+The Phase 1–10 prose below is retained as the Plan 065 pre-change design and
+audit record. Where it says `OPEN` or `BROKEN`, the final row table above and
+Plan 066 are authoritative. Plan 066 corrected the remaining semantic issue
+(Light plus tile size), removed the deleted public hook's production dependency,
+contained the carrier boundary, made the pipeline stateless, and completed the
+release/documentation ledger work.
 
 ## Phase 1 — Legacy compatibility matrix
 

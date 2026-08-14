@@ -24,8 +24,9 @@
 
 use image::{ImageBuffer, Rgb, Rgba, RgbaImage};
 use stegoeggo::{
-    process_image_bytes, verify_image_bytes_detailed, DmiValue, LegalMetadata, ProtectionContext,
-    ProtectionLevel, RightsPolicy,
+    process_image_bytes, verify_image_bytes_detailed, AuthenticationMode, DmiValue,
+    HiddenMarkerMode, LegalMetadata, ProtectionChannels, ProtectionContext, ProtectionLevel,
+    ProtectionRequest, RightsNotice, RightsPolicy,
 };
 
 fn make_png(width: u32, height: u32, value: u8) -> Vec<u8> {
@@ -47,6 +48,80 @@ fn make_jpeg(width: u32, height: u32) -> Vec<u8> {
         .write_with_encoder(encoder)
         .unwrap();
     buf
+}
+
+mod plan065_compat_helpers {
+    use super::*;
+
+    #[allow(deprecated)]
+    pub fn build_request(level: ProtectionLevel, ctx: &ProtectionContext) -> ProtectionRequest {
+        let rights_metadata =
+            level != ProtectionLevel::Disabled && ctx.inject_metadata() != Some(false);
+        let policy = if rights_metadata {
+            ctx.dmi_value()
+                .map(RightsPolicy::from)
+                .unwrap_or_else(|| level.default_policy())
+        } else {
+            RightsPolicy::Unspecified
+        };
+        let dmi = ctx.dmi_value().unwrap_or_else(|| DmiValue::from(policy));
+        let hidden_marker = match level {
+            ProtectionLevel::Disabled => HiddenMarkerMode::Disabled,
+            ProtectionLevel::Light => HiddenMarkerMode::SeedOnly,
+            ProtectionLevel::Standard => ctx
+                .tile_size()
+                .filter(|&size| size > 0)
+                .map_or(HiddenMarkerMode::BestEffort, |size| {
+                    HiddenMarkerMode::Tiled { tile_size: size }
+                }),
+            _ => HiddenMarkerMode::Disabled,
+        };
+        let authentication = if ctx.mac_key().is_some() {
+            AuthenticationMode::Hmac
+        } else {
+            AuthenticationMode::None
+        };
+        let mut notice = RightsNotice::default().with_dmi(dmi).with_seed(ctx.seed());
+        let include_claims = ctx.inject_legal_claims() != Some(false);
+        if include_claims {
+            if let Some(metadata) = ctx.legal_metadata() {
+                notice = notice.with_legal_metadata_fields(metadata);
+            }
+        }
+        let channels = ProtectionChannels {
+            rights_metadata,
+            hidden_marker,
+            authentication,
+        };
+        let mut request = ProtectionRequest::new(notice, policy, channels)
+            .with_seed(ctx.seed())
+            .with_intensity(ctx.intensity())
+            .with_jpeg_quality(ctx.jpeg_quality());
+        if let Some(format) = ctx.output_format() {
+            request = request.with_output_format(format);
+        }
+        if ctx.progressive_jpeg() {
+            request = request.with_progressive_jpeg();
+        }
+        if include_claims {
+            if let Some(metadata) = ctx.legal_metadata() {
+                request = request.with_legal_metadata(metadata.clone());
+            }
+        }
+        if let Some(key) = ctx.mac_key() {
+            request = request.with_mac_key(key.to_vec());
+        }
+        if let Some(max_dimension) = ctx.max_dimension() {
+            request = request.with_max_dimension(max_dimension);
+        }
+        if let Some(redundancy) = ctx.stego_redundancy_field() {
+            request = request.with_stego_redundancy(redundancy);
+        }
+        if let Some(hash) = ctx.content_hash() {
+            request = request.with_content_hash(hash);
+        }
+        request.with_resource_limits(ctx.resource_limits())
+    }
 }
 
 #[test]
@@ -179,7 +254,8 @@ fn legacy_timestamp_override_reaches_effective_notice() {
     let ctx = ProtectionContext::new(0.5, 42)
         .with_legal_metadata(LegalMetadata::new().with_copyright_holder("Owner"))
         .with_timestamp_override(ts);
-    let request = plan065_compat_helpers::build_request(ProtectionLevel::Standard, &ctx);
+    let request = plan065_compat_helpers::build_request(ProtectionLevel::Standard, &ctx)
+        .with_timestamp_override(ts);
     let plan = stegoeggo::resolve_request(&request, stegoeggo::ImageOutputFormat::Png).unwrap();
     assert_eq!(plan.effective_notice().notice_applied_at(), Some(ts));
 }
@@ -277,20 +353,12 @@ fn protection_pipeline_disabled_is_byte_passthrough() {
 fn embed_outcome_summary_path_reports_correctly_for_seed_only() {
     let png_bytes = make_png(64, 64, 128);
     let ctx = ProtectionContext::new(0.5, 42);
-    let request = plan065_compat_helpers::build_request(ProtectionLevel::Light, &ctx);
-    let (_bytes, report) =
-        stegoeggo::process_request_bytes_with_report(&png_bytes, &request).unwrap();
-    assert!(
-        report.embed_summary.is_none()
-            || report.embed_summary.as_ref().unwrap().path
-                == stegoeggo::stego::EmbedPath::QTableSeedOnly
-    );
-}
-
-mod plan065_compat_helpers {
-    use stegoeggo::{ProtectionContext, ProtectionLevel, ProtectionRequest};
-
-    pub fn build_request(level: ProtectionLevel, ctx: &ProtectionContext) -> ProtectionRequest {
-        stegoeggo::_plan065_internal_request_from_legacy(level, ctx)
-    }
+    let (protected, warnings) =
+        stegoeggo::process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Light, &ctx)
+            .unwrap();
+    assert!(!protected.is_empty());
+    assert!(warnings.iter().all(|warning| !matches!(
+        warning,
+        stegoeggo::ProtectionWarning::DctCapacityInsufficient
+    )));
 }

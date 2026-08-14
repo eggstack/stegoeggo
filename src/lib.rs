@@ -117,7 +117,7 @@
 //! | `conformance` | Enables the conformance harness binary and manifest parsing (TOML) |
 //! | `parallel` | Enables Rayon-based parallel batch processing (`process_images_parallel`, etc.) |
 //! | `test-seeds` | Enables fallback seed guessing during verification (tries common test/dev seeds). Used by the CLI; not recommended for library consumers |
-//! | `fuzz` | Exposes internal JPEG parser for fuzz harnesses. Not part of the stable API |
+//! | `fuzz` | Enables bounded JPEG dimension inspection for fuzz harnesses. It does not expose parser or coefficient types |
 //!
 //! # Tiled Steganography
 //!
@@ -211,7 +211,18 @@ pub mod types;
 pub mod verification;
 
 pub(crate) mod protected;
-pub use stegoeggo_stego as stego;
+/// Generic carrier APIs for arbitrary payloads.
+pub mod stego {
+    pub use stegoeggo_stego::error;
+    pub use stegoeggo_stego::frame;
+    pub use stegoeggo_stego::jpeg;
+    pub use stegoeggo_stego::lsb;
+    pub use stegoeggo_stego::types;
+    pub use stegoeggo_stego::{
+        CapacityReport, EmbedOutcome, EmbedOutcomeSummary, EmbedPath, EmbedReport, EmbedStatus,
+        JpegUnsupportedReason, StegoError, StegoResult, DEFAULT_TILE_SIZE,
+    };
+}
 pub(crate) mod util;
 pub(crate) mod webp_container;
 
@@ -251,26 +262,16 @@ pub use protected::metadata_trap::RightsMetadataProtector;
 pub use protected::passthrough::PassthroughProtector;
 pub use protected::steganography::{SteganographyProtector, StegoPayload};
 
-pub use stego::is_progressive_jpeg;
+pub use stego::jpeg::is_progressive_jpeg;
 
-/// Parse JPEG header and decode DCT coefficients from raw bytes.
+/// Perform bounded JPEG structural inspection for fuzzing.
 ///
-/// This function is exposed for fuzzing the internal JPEG parser. It parses
-/// the JPEG header and decodes the entropy-coded scan data into DCT coefficients.
-///
-/// Returns `Ok((header, coefficients))` on success, or `Err` if the JPEG
-/// is invalid, progressive, or otherwise unsupported.
+/// This feature-gated helper intentionally returns only image dimensions. The
+/// carrier crate keeps parsed headers and coefficient maps private.
 #[cfg(feature = "fuzz")]
-pub fn parse_jpeg_for_fuzz(
-    data: &[u8],
-) -> std::result::Result<
-    (
-        stego::__internal_jpeg_facade::JpegHeader,
-        stego::__internal_jpeg_facade::Coefficients,
-    ),
-    stego::__internal_jpeg_facade::TranscoderError,
-> {
-    stego::__internal_jpeg_facade::JpegTranscoder::decode_coefficients(data)
+pub fn parse_jpeg_for_fuzz(data: &[u8]) -> stego::StegoResult<(u32, u32)> {
+    let info = stego::jpeg::inspect(data, 256, 65535)?;
+    Ok((info.width, info.height))
 }
 
 pub use util::image::{
@@ -301,7 +302,6 @@ pub use async_api::{process_images_bytes_parallel_async, process_images_parallel
 use image::DynamicImage;
 use image::GenericImageView;
 use std::borrow::Cow;
-use std::sync::Arc;
 
 /// Internal pipeline output that carries both the processed bytes and the
 /// structured embedding outcome. Public functions extract just the bytes;
@@ -317,30 +317,18 @@ pub(crate) struct PipelineResult {
 /// selected protection level. Create one via [`ProtectionPipeline::new`]
 /// or use the convenience functions ([`process_image`], [`process_image_bytes`]).
 #[non_exhaustive]
-pub struct ProtectionPipeline {
-    passthrough: Arc<PassthroughProtector>,
-    metadata_trap: Arc<RightsMetadataProtector>,
-    steganography: Arc<SteganographyProtector>,
-}
+pub struct ProtectionPipeline {}
 
 impl Clone for ProtectionPipeline {
     fn clone(&self) -> Self {
-        Self {
-            passthrough: Arc::clone(&self.passthrough),
-            metadata_trap: Arc::clone(&self.metadata_trap),
-            steganography: Arc::clone(&self.steganography),
-        }
+        Self::new()
     }
 }
 
 impl ProtectionPipeline {
     /// Create a new ProtectionPipeline with default protectors.
     pub fn new() -> Self {
-        Self {
-            passthrough: Arc::new(PassthroughProtector::new()),
-            metadata_trap: Arc::new(RightsMetadataProtector::new()),
-            steganography: Arc::new(SteganographyProtector::new()),
-        }
+        Self {}
     }
 
     fn validate_dimensions(img: &DynamicImage, max_dim: Option<u32>) -> Result<()> {
@@ -370,7 +358,7 @@ impl ProtectionPipeline {
         Self::validate_dimensions(img, ctx.max_dimension())?;
 
         if level == ProtectionLevel::Disabled {
-            return self.passthrough.apply(img, ctx);
+            return Ok(Cow::Borrowed(img));
         }
 
         let bytes = process_image(img.clone(), level, ctx)?;
@@ -517,22 +505,6 @@ pub fn resolve_request(
     protected::resolve::resolve_request(request, input_format)
 }
 
-/// Build a [`ProtectionRequest`] from the legacy `ProtectionLevel` /
-/// `ProtectionContext` pair.
-///
-/// This is the compatibility adapter that the legacy `process_image_bytes`,
-/// `process_image_bytes_with_warnings`, and `ProtectionPipeline::process`
-/// use to route through the canonical request/plan path. Exposed
-/// publicly so focused tests can verify the field-by-field translation
-/// matrix in `plans/065-status.md`.
-#[doc(hidden)]
-pub fn _plan065_internal_request_from_legacy(
-    level: ProtectionLevel,
-    ctx: &ProtectionContext,
-) -> ProtectionRequest {
-    request_from_legacy(level, ctx)
-}
-
 fn request_from_legacy(level: ProtectionLevel, ctx: &ProtectionContext) -> ProtectionRequest {
     let rights_metadata = ctx.effective_metadata_injection();
 
@@ -548,13 +520,15 @@ fn request_from_legacy(level: ProtectionLevel, ctx: &ProtectionContext) -> Prote
             } else {
                 AuthenticationMode::None
             };
-            let hidden_marker = match ctx.tile_size().filter(|&s| s > 0) {
-                Some(ts) => HiddenMarkerMode::Tiled { tile_size: ts },
-                None => match level {
-                    ProtectionLevel::Light => HiddenMarkerMode::SeedOnly,
-                    ProtectionLevel::Standard => HiddenMarkerMode::BestEffort,
-                    ProtectionLevel::Disabled => unreachable!(),
-                },
+            let hidden_marker = match level {
+                ProtectionLevel::Light => HiddenMarkerMode::SeedOnly,
+                ProtectionLevel::Standard => ctx
+                    .tile_size()
+                    .filter(|&s| s > 0)
+                    .map_or(HiddenMarkerMode::BestEffort, |tile_size| {
+                        HiddenMarkerMode::Tiled { tile_size }
+                    }),
+                ProtectionLevel::Disabled => unreachable!(),
             };
             ProtectionChannels {
                 rights_metadata,
@@ -1002,13 +976,17 @@ fn process_plan_bytes(
     limits.check_input_size(img_bytes.len())?;
 
     if plan.input_format() == ImageOutputFormat::Jpeg {
-        let header = stego::__internal_jpeg_facade::JpegHeader::parse(img_bytes)?;
-        limits.check_dimensions(header.width as u32, header.height as u32)?;
+        let info = stego::jpeg::inspect(
+            img_bytes,
+            limits.max_jpeg_segments(),
+            limits.max_jpeg_segment_bytes(),
+        )?;
+        limits.check_dimensions(info.width, info.height)?;
         if let Some(max_dim) = plan.processing().max_dimension {
-            if header.width as u32 > max_dim || header.height as u32 > max_dim {
+            if info.width > max_dim || info.height > max_dim {
                 return Err(Error::ImageDecode(format!(
                     "Image dimensions {}x{} exceed max_dimension {}",
-                    header.width, header.height, max_dim
+                    info.width, info.height, max_dim
                 )));
             }
         }
@@ -1204,8 +1182,12 @@ fn execute_stego_and_metadata(
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
-        let header = stego::__internal_jpeg_facade::JpegHeader::parse(img_bytes)?;
-        limits.check_dimensions(header.width as u32, header.height as u32)?;
+        let info = stego::jpeg::inspect(
+            img_bytes,
+            limits.max_jpeg_segments(),
+            limits.max_jpeg_segment_bytes(),
+        )?;
+        limits.check_dimensions(info.width, info.height)?;
 
         let with_stego = steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, None)?;
         let (output, embed_summary) = with_stego.into_parts();
@@ -1267,8 +1249,12 @@ fn execute_stego_and_metadata_tiled(
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
-        let header = stego::__internal_jpeg_facade::JpegHeader::parse(img_bytes)?;
-        limits.check_dimensions(header.width as u32, header.height as u32)?;
+        let info = stego::jpeg::inspect(
+            img_bytes,
+            limits.max_jpeg_segments(),
+            limits.max_jpeg_segment_bytes(),
+        )?;
+        limits.check_dimensions(info.width, info.height)?;
 
         let with_stego =
             steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, Some(tile_size))?;
@@ -1331,8 +1317,12 @@ fn execute_seed_only_and_metadata(
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
-        let header = stego::__internal_jpeg_facade::JpegHeader::parse(img_bytes)?;
-        limits.check_dimensions(header.width as u32, header.height as u32)?;
+        let info = stego::jpeg::inspect(
+            img_bytes,
+            limits.max_jpeg_segments(),
+            limits.max_jpeg_segment_bytes(),
+        )?;
+        limits.check_dimensions(info.width, info.height)?;
 
         let with_seed = steganography.apply_qtable_seed_bytes(img_bytes, plan.seed())?;
         let bytes = metadata_trap.inject_bytes_from_plan(&with_seed, plan)?;
@@ -2107,6 +2097,17 @@ mod tests {
         let req = ProtectionLevel::Standard.to_request(notice, RightsPolicy::Allowed);
         assert!(req.channels().rights_metadata);
         assert!(req.channels().has_stego());
+    }
+
+    #[test]
+    fn legacy_timestamp_override_reaches_resolved_notice() {
+        let timestamp = "2025-06-15T10:00:00Z";
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_legal_metadata(LegalMetadata::new().with_copyright_holder("Owner"))
+            .with_timestamp_override(timestamp);
+        let request = request_from_legacy(ProtectionLevel::Standard, &ctx);
+        let plan = resolve_request(&request, ImageOutputFormat::Png).unwrap();
+        assert_eq!(plan.effective_notice().notice_applied_at(), Some(timestamp));
     }
 
     #[test]

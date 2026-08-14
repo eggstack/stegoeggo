@@ -1,7 +1,42 @@
 use crate::error::{JpegUnsupportedReason, StegoError};
 use crate::jpeg_transcoder::{DctStegoF5, JpegHeader, JpegTranscoder};
 
-pub fn dct_payload_capacity(coefficients: &crate::jpeg_transcoder::Coefficients) -> usize {
+/// Basic JPEG dimensions returned by a bounded structural inspection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JpegInfo {
+    /// Image width in pixels.
+    pub width: u32,
+    /// Image height in pixels.
+    pub height: u32,
+}
+
+/// Inspect a JPEG header with caller-provided segment limits.
+pub fn inspect(
+    jpeg_bytes: &[u8],
+    max_segments: usize,
+    max_segment_bytes: usize,
+) -> std::result::Result<JpegInfo, StegoError> {
+    let limits = crate::jpeg_transcoder::header::ParseLimits {
+        max_jpeg_segments: max_segments,
+        max_jpeg_segment_bytes: max_segment_bytes,
+    };
+    let header = JpegHeader::parse_with_limits(jpeg_bytes, &limits)
+        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+    Ok(JpegInfo {
+        width: header.width as u32,
+        height: header.height as u32,
+    })
+}
+
+/// Returns whether a JPEG header declares progressive encoding.
+#[must_use]
+pub fn is_progressive_jpeg(jpeg_bytes: &[u8]) -> bool {
+    JpegHeader::parse(jpeg_bytes)
+        .map(|header| header.is_progressive)
+        .unwrap_or(false)
+}
+
+fn dct_payload_capacity(coefficients: &crate::jpeg_transcoder::Coefficients) -> usize {
     coefficients
         .values()
         .flat_map(|blocks| blocks.iter())
@@ -15,7 +50,7 @@ pub fn dct_payload_capacity(coefficients: &crate::jpeg_transcoder::Coefficients)
         .sum()
 }
 
-pub fn embed_seed_hint_internal(
+fn embed_seed_hint_internal(
     jpeg_bytes: &[u8],
     seed: u64,
 ) -> std::result::Result<Vec<u8>, StegoError> {
@@ -30,9 +65,7 @@ pub fn embed_seed_hint_internal(
     reassemble_jpeg_with_qtables(jpeg_bytes, &header)
 }
 
-pub fn extract_seed_hint_internal(
-    jpeg_bytes: &[u8],
-) -> std::result::Result<Option<u64>, StegoError> {
+fn extract_seed_hint_internal(jpeg_bytes: &[u8]) -> std::result::Result<Option<u64>, StegoError> {
     if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
         return Err(StegoError::MalformedInput("Not a valid JPEG".to_string()));
     }
@@ -41,7 +74,7 @@ pub fn extract_seed_hint_internal(
     Ok(DctStegoF5::new().extract_seed_from_quantization_tables(&header))
 }
 
-pub fn reassemble_jpeg_with_qtables(
+fn reassemble_jpeg_with_qtables(
     jpeg_bytes: &[u8],
     header: &JpegHeader,
 ) -> std::result::Result<Vec<u8>, StegoError> {

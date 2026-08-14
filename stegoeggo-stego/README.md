@@ -14,9 +14,12 @@ pipeline but can also be used directly as a generic carrier.
 - `stegoeggo_stego::frame::{encode, decode, decode_prefix}`
 - `stegoeggo_stego::{EmbedReport, CapacityReport, StegoError, EmbedOutcome}`
 
-Low-level internals (JPEG header parsing, DCT coefficient processing,
-LSB permutations) are deliberately not part of the stable API. The
-consuming crate accesses them through a `#[doc(hidden)]` facade.
+JPEG header parsing, DCT coefficient processing, Huffman state, F5 objects,
+LSB permutations, and raw carrier helpers are private implementation details.
+The default API exposes only the operation-level modules listed above.
+An unstable `application-support` feature exists solely for the parent
+rights-protection crate's compatibility adapter; it does not expose codec or
+coefficient types.
 
 ## License
 

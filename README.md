@@ -598,7 +598,7 @@ use stegoeggo::stego::lsb::{self, LsbConfig};
 
 let config = LsbConfig::new(seed);
 let report = lsb::embed(&img, payload, &config)?;
-let recovered = lsb::extract(&report.output_image, payload.len(), &config)?;
+let recovered = lsb::extract(&report.output, payload.len(), &config)?;
 ```
 
 **Framed round-trip** (no caller-known payload length needed):
@@ -608,9 +608,9 @@ use stegoeggo::stego::{frame, lsb::{self, LsbConfig}};
 
 let framed = frame::encode(payload)?;
 let report = lsb::embed(&img, &framed, &LsbConfig::new(seed))?;
-let prefix_data = lsb::extract(&report.output_image, frame::FRAME_HEADER_SIZE, &config)?;
+let prefix_data = lsb::extract(&report.output, frame::FRAME_HEADER_SIZE, &config)?;
 let (_, total_len) = frame::decode_prefix(&prefix_data)?;
-let full_data = lsb::extract(&report.output_image, total_len, &config)?;
+let full_data = lsb::extract(&report.output, total_len, &config)?;
 let (header, payload) = frame::decode(&full_data)?;
 ```
 
@@ -905,7 +905,7 @@ Different protection layers survive different image transformations. The truth, 
 
 ### Encoder reality check
 
-The `image` crate (and most general-purpose JPEG encoders) **do not preserve** COM or APP1 markers, and **rebuild standard Q-tables from scratch** on every encode. This means the visible metadata channel and the Q-table seed channel are both single-encoding only when the image passes through a generic encoder. The `stegoeggo` custom transcoder (`JpegTranscoder`) preserves DCT coefficients and re-injects metadata, but only when the image is processed through `process_image_bytes` (not through an external re-encoder).
+The `image` crate (and most general-purpose JPEG encoders) **do not preserve** COM or APP1 markers, and **rebuild standard Q-tables from scratch** on every encode. This means the visible metadata channel and the Q-table seed channel are both single-encoding only when the image passes through a generic encoder. The internal JPEG fast path preserves DCT coefficients and re-injects metadata, but only when the image is processed through `process_image_bytes` (not through an external re-encoder).
 
 ### WebP caveat
 

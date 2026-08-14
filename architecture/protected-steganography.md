@@ -120,13 +120,12 @@ pub(crate) fn apply_dct_stego_bytes_from_plan(
 ```
 
 The plan-driven entry point is canonical. The legacy `apply_dct_stego_bytes(jpeg_bytes, ctx)`
-helper still exists for `ProtectionPipeline` (legacy API) and internally constructs the
-emission/payload through the same code path.
+helper remains as a compatibility adapter and produces the same application payload before
+calling the carrier operation.
 
 - For baseline JPEG: F5 coefficient embedding + seed in quantization tables when those tables are preserved
 - For progressive JPEG: Seed-in-Q-tables only (F5 not supported for progressive)
-- Uses `JpegTranscoder` to decode/encode DCT coefficients
-- Uses `DctStegoF5` for coefficient manipulation
+- Calls the carrier crate's encoded-byte JPEG operations; the transcoder and F5 coefficient types remain private to `stegoeggo-stego`
 - `probe_dct_support_full()` gates DCT entry: rejects progressive, restart-bearing, non-8-bit, multi-scan, and sampling >4 inputs; unsupported inputs fall back to metadata-only processing
 - **One-pass embed**: Computes `max_feasible = available / payload_bits`, selects `min(requested, max_feasible)`, embeds+encodes once. No retry loop, no roundtrip decode/extract self-test. The DCT success path always uses `encode_coefficients_preserving` (the original-JPEG preserving path), so APP/COM/unknown segments survive byte-for-byte.
 
@@ -169,10 +168,11 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 
 - **lib.rs**: Applied in Standard pipeline
 - **stegoeggo-stego/src/lsb.rs**: Public LSB API surface (`embed`, `extract`, `capacity`, `LsbConfig`, `DEFAULT_TILE_SIZE`). Items re-exported from `lsb_internal` via `pub use`.
-- **stegoeggo-stego/src/lsb_internal.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). `pub(crate)`; consumer accesses via `__internal_lsb_facade`. No application-type imports.
-- **stegoeggo-stego/src/jpeg.rs**: Generic JPEG carrier facade (DCT capacity, Q-table reassembly, seed hint). No application-type imports
-- **stegoeggo-stego/src/jpeg_transcoder/**: Used for JPEG fast path (`apply_dct_stego_bytes_from_plan`, legacy `apply_dct_stego_bytes`)
-- **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: `DctStegoF5` for F5-style DCT manipulation
+- **stegoeggo-stego/src/application_support.rs**: Narrow parent-crate operations for payload-aware LSB and JPEG calls; hidden behind the optional `application-support` feature
+- **stegoeggo-stego/src/lsb_internal.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). Private; no application-type imports.
+- **stegoeggo-stego/src/jpeg.rs**: Generic encoded-byte JPEG carrier facade (DCT capacity, Q-table reassembly, seed hint). No application-type imports
+- **stegoeggo-stego/src/jpeg_transcoder/**: Private JPEG fast-path implementation used behind `jpeg.rs` and `application_support.rs`
+- **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: Private F5-style DCT manipulation
 - **util/image.rs**: `XorShiftRng` for LSB pixel selection
 - **protected/constants.rs**: `STEGO_OFFSET_SEED_1`, `STEGO_SPREAD_FACTOR`, etc.
 - **types.rs**: Uses `ProtectionLevel`, `StegoPayload`
@@ -191,8 +191,10 @@ let ctx = ProtectionContext::new(0.5, seed)
     .with_tile_extraction_max_origins(64);  // max candidate origins for extraction
 ```
 
-When `tile_size > 0`, both LSB (PNG/WebP) and DCT (JPEG) paths use tiled
-embedding. The tile grid is fixed; no state is shared between tiles.
+When `tile_size > 0`, Standard/canonical hidden-marker paths use tiled embedding. Legacy
+`Light` remains `SeedOnly` even when a tile size is present; the tile setting never promotes
+Light into full-payload tiled steganography. The tile grid is fixed; no state is shared
+between tiles.
 
 ### Per-Tile Seed Derivation
 
@@ -302,12 +304,16 @@ stegoeggo-stego/src/
 ├── frame.rs               Generic framed payload (magic, version, length, CRC32)
 ├── lsb.rs                 V2 LSB carrier + legacy fallback helpers
 ├── jpeg.rs                Encoded-JPEG facade (capacity, embed, extract, seed hint)
-├── jpeg_transcoder/       JPEG DCT decode/encode/Huffman/F5 primitives
+├── application_support.rs Narrow parent-crate operation layer (optional feature)
+├── jpeg_transcoder/       Private JPEG DCT decode/encode/Huffman/F5 primitives
 └── types.rs               EmbedOutcome, EmbedPath, EmbedStatus, EmbedOutcomeSummary
 ```
 
 The crate has no rights-policy/legal/provenance type dependencies. The root
-crate re-exports it under `stegoeggo::stego`, so the Plan 062 public API
-(`stegoeggo::stego::lsb`, `stegoeggo::stego::jpeg`, `stegoeggo::stego::frame`)
-is preserved unchanged. Plan 063's split decision rationale and dependency
-measurements are recorded in `plans/063-status.md`.
+crate re-exports an explicit allowlist under `stegoeggo::stego`, so the Plan 062
+public API (`stegoeggo::stego::lsb`, `stegoeggo::stego::jpeg`,
+`stegoeggo::stego::frame`) remains stable while private codec types stay hidden.
+The parent crate enables the narrow, unstable `application-support` feature for
+its application adapter; that feature exposes operations, not parser/coefficient
+types. Plan 063's split decision rationale and dependency measurements are
+recorded in `plans/063-status.md`.
