@@ -1,6 +1,6 @@
 # Steganography Protector
 
-**Source:** `src/protected/steganography.rs` (application adapter) + `stegoeggo-stego/src/lsb.rs` + `stegoeggo-stego/src/jpeg.rs` (generic carrier core)
+**Source:** `src/protected/steganography.rs` (application adapter) + `stegoeggo-stego/src/lsb.rs` (public API) + `stegoeggo-stego/src/lsb_internal.rs` (carrier mechanics) + `stegoeggo-stego/src/jpeg.rs` (generic carrier core)
 
 The most complex module. Handles LSB and DCT-based steganographic embedding for payload storage and verification. `SteganographyProtector` generates StegoEggo payloads (v1/v2/v3) and manages seed discovery/verification; generic carrier mechanics (permutations, bit embedding/extraction, capacity calculation) are delegated to `stegoeggo-stego`.
 
@@ -168,7 +168,8 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 ## Module Interactions
 
 - **lib.rs**: Applied in Standard pipeline
-- **stegoeggo-stego/src/lsb.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). No application-type imports
+- **stegoeggo-stego/src/lsb.rs**: Public LSB API surface (`embed`, `extract`, `capacity`, `LsbConfig`, `DEFAULT_TILE_SIZE`). Items re-exported from `lsb_internal` via `pub use`.
+- **stegoeggo-stego/src/lsb_internal.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). `pub(crate)`; consumer accesses via `__internal_lsb_facade`. No application-type imports.
 - **stegoeggo-stego/src/jpeg.rs**: Generic JPEG carrier facade (DCT capacity, Q-table reassembly, seed hint). No application-type imports
 - **stegoeggo-stego/src/jpeg_transcoder/**: Used for JPEG fast path (`apply_dct_stego_bytes_from_plan`, legacy `apply_dct_stego_bytes`)
 - **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: `DctStegoF5` for F5-style DCT manipulation

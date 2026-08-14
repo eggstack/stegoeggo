@@ -99,6 +99,6 @@ The library intentionally does not own proxy-level cache policy, concurrency lim
 - **types.rs**: Uses `ProtectionLevel`, `ProtectionContext`, `ImageOutputFormat`, `ProtectionRequest`, `ResolvedProtectionPlan`
 - **traits.rs**: Calls `Protector::apply()` and `Protector::apply_bytes()`
 - **protected/*.rs**: Delegates to specific protector implementations
-- **stegoeggo-stego/src/jpeg_transcoder/**: Used for JPEG fast path in `apply_dct_stego_bytes_from_plan` and the legacy `apply_bytes_pipeline`
-- **stegoeggo-stego/src/lsb.rs**: Used by `SteganographyProtector` for LSB carrier mechanics
+- **stegoeggo-stego/src/jpeg_transcoder/**: Used for JPEG fast path in `apply_dct_stego_bytes_from_plan` and the legacy `apply_bytes_pipeline`. `pub(crate)`; consumer accesses via `__internal_jpeg_facade`.
+- **stegoeggo-stego/src/lsb.rs** + **stegoeggo-stego/src/lsb_internal.rs**: Used by `SteganographyProtector` for LSB carrier mechanics. LSB facade exposes only the public API; carrier internals are `pub(crate)`.
 - **util/image.rs**: Used for encoding, format detection, image loading

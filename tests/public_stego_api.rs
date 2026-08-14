@@ -46,7 +46,7 @@ fn public_lsb_raw_roundtrip_arbitrary_bytes() {
     assert!(report.embedded);
     assert_eq!(report.payload_bytes, payload.len());
 
-    let decoded = image::load_from_memory(&report.output).unwrap().to_rgba8();
+    let decoded = report.output.clone();
     let recovered = lsb::extract(&decoded, payload.len(), &config).unwrap();
     assert_eq!(&recovered, payload);
 }
@@ -60,7 +60,7 @@ fn public_lsb_raw_roundtrip_zero_seed() {
     let report = lsb::embed(&img, payload, &config).unwrap();
     assert!(report.embedded);
 
-    let decoded = image::load_from_memory(&report.output).unwrap().to_rgba8();
+    let decoded = report.output.clone();
     let recovered = lsb::extract(&decoded, payload.len(), &config).unwrap();
     assert_eq!(&recovered, payload);
 }
@@ -74,7 +74,7 @@ fn public_lsb_raw_roundtrip_max_seed() {
     let report = lsb::embed(&img, payload, &config).unwrap();
     assert!(report.embedded);
 
-    let decoded = image::load_from_memory(&report.output).unwrap().to_rgba8();
+    let decoded = report.output.clone();
     let recovered = lsb::extract(&decoded, payload.len(), &config).unwrap();
     assert_eq!(&recovered, payload);
 }
@@ -88,7 +88,7 @@ fn public_lsb_raw_roundtrip_binary_payload() {
     let report = lsb::embed(&img, &payload, &config).unwrap();
     assert!(report.embedded);
 
-    let decoded = image::load_from_memory(&report.output).unwrap().to_rgba8();
+    let decoded = report.output.clone();
     let recovered = lsb::extract(&decoded, payload.len(), &config).unwrap();
     assert_eq!(recovered, payload);
 }
@@ -131,12 +131,8 @@ fn public_lsb_different_seeds_dont_interfere() {
     let report_a = lsb::embed(&img, payload_a, &config_a).unwrap();
     let report_b = lsb::embed(&img, payload_b, &config_b).unwrap();
 
-    let decoded_a = image::load_from_memory(&report_a.output)
-        .unwrap()
-        .to_rgba8();
-    let decoded_b = image::load_from_memory(&report_b.output)
-        .unwrap()
-        .to_rgba8();
+    let decoded_a = report_a.output.clone();
+    let decoded_b = report_b.output.clone();
 
     let recovered_a = lsb::extract(&decoded_a, payload_a.len(), &config_a).unwrap();
     let recovered_b = lsb::extract(&decoded_b, payload_b.len(), &config_b).unwrap();
@@ -303,7 +299,7 @@ fn public_lsb_framed_roundtrip() {
     let report = lsb::embed(&img, &framed_payload, &config).unwrap();
     assert!(report.embedded);
 
-    let decoded = image::load_from_memory(&report.output).unwrap().to_rgba8();
+    let decoded = report.output.clone();
 
     let prefix_data = lsb::extract(&decoded, FRAME_HEADER_SIZE, &config).unwrap();
     let (_, total_len) = frame::decode_prefix(&prefix_data).unwrap();
@@ -377,7 +373,7 @@ fn public_lsb_tiled_config() {
     let report = lsb::embed(&img, payload, &config).unwrap();
     assert!(report.embedded);
 
-    let decoded = image::load_from_memory(&report.output).unwrap().to_rgba8();
+    let decoded = report.output.clone();
     let recovered = lsb::extract(&decoded, payload.len(), &config).unwrap();
     assert_eq!(&recovered, payload);
 }

@@ -7,8 +7,8 @@
 use image::ImageError;
 use thiserror::Error;
 
+use crate::stego::__internal_jpeg_facade::TranscoderError;
 use crate::stego::error::StegoError;
-use crate::stego::jpeg_transcoder::TranscoderError;
 
 impl From<TranscoderError> for Error {
     fn from(e: TranscoderError) -> Self {

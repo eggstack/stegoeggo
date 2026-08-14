@@ -248,12 +248,12 @@ pub fn parse_jpeg_for_fuzz(
     data: &[u8],
 ) -> std::result::Result<
     (
-        stego::jpeg_transcoder::JpegHeader,
-        stego::jpeg_transcoder::Coefficients,
+        stego::__internal_jpeg_facade::JpegHeader,
+        stego::__internal_jpeg_facade::Coefficients,
     ),
-    stego::jpeg_transcoder::TranscoderError,
+    stego::__internal_jpeg_facade::TranscoderError,
 > {
-    stego::jpeg_transcoder::JpegTranscoder::decode_coefficients(data)
+    stego::__internal_jpeg_facade::JpegTranscoder::decode_coefficients(data)
 }
 
 pub use util::image::{
@@ -985,7 +985,7 @@ fn process_plan_bytes(
     limits.check_input_size(img_bytes.len())?;
 
     if plan.input_format() == ImageOutputFormat::Jpeg {
-        let header = stego::jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+        let header = stego::__internal_jpeg_facade::JpegHeader::parse(img_bytes)?;
         limits.check_dimensions(header.width as u32, header.height as u32)?;
         if let Some(max_dim) = plan.processing().max_dimension {
             if header.width as u32 > max_dim || header.height as u32 > max_dim {
@@ -1187,7 +1187,7 @@ fn execute_stego_and_metadata(
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
-        let header = stego::jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+        let header = stego::__internal_jpeg_facade::JpegHeader::parse(img_bytes)?;
         limits.check_dimensions(header.width as u32, header.height as u32)?;
 
         let with_stego = steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, None)?;
@@ -1250,7 +1250,7 @@ fn execute_stego_and_metadata_tiled(
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
-        let header = stego::jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+        let header = stego::__internal_jpeg_facade::JpegHeader::parse(img_bytes)?;
         limits.check_dimensions(header.width as u32, header.height as u32)?;
 
         let with_stego =
@@ -1314,7 +1314,7 @@ fn execute_seed_only_and_metadata(
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
-        let header = stego::jpeg_transcoder::header::JpegHeader::parse(img_bytes)?;
+        let header = stego::__internal_jpeg_facade::JpegHeader::parse(img_bytes)?;
         limits.check_dimensions(header.width as u32, header.height as u32)?;
 
         let with_seed = steganography.apply_qtable_seed_bytes(img_bytes, plan.seed())?;

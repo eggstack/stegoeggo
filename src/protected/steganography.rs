@@ -4,9 +4,9 @@ use crate::protected::constants::STEGO_OFFSET_SEED_1;
 use crate::protected::ecc;
 use crate::protected::metadata_trap::RightsMetadataProtector;
 use crate::resource_limits::ResourceLimits;
+use crate::stego::__internal_jpeg_facade::{DctStegoF5, JpegTranscoder};
+use crate::stego::__internal_lsb_facade as carrier_lsb;
 use crate::stego::jpeg as carrier_jpeg;
-use crate::stego::jpeg_transcoder::{DctStegoF5, JpegTranscoder};
-use crate::stego::lsb as carrier_lsb;
 use crate::traits::Protector;
 use crate::types::{
     PayloadEmissionContext, ProtectionContext, ProtectionLevel, VerificationStatus,
@@ -167,8 +167,8 @@ pub(crate) struct ExtractionTrace {
     pub legacy_decoder_entries: usize,
 }
 
-pub use crate::stego::lsb::tile_seed;
-pub use crate::stego::lsb::DEFAULT_TILE_SIZE;
+pub use crate::stego::__internal_lsb_facade::tile_seed;
+pub use crate::stego::DEFAULT_TILE_SIZE;
 
 /// Steganographic protection: embeds hidden payloads in image pixels or DCT coefficients.
 ///
@@ -303,7 +303,8 @@ impl SteganographyProtector {
                 })
             }
             Err(_) => {
-                let mut header = crate::stego::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+                let mut header =
+                    crate::stego::__internal_jpeg_facade::JpegHeader::parse(jpeg_bytes)?;
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
                 let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
                 Ok(EmbedOutcome::UnsupportedProgressive { output })
@@ -332,7 +333,7 @@ impl SteganographyProtector {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
         }
 
-        let mut header = crate::stego::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+        let mut header = crate::stego::__internal_jpeg_facade::JpegHeader::parse(jpeg_bytes)?;
         DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
         Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)
     }
@@ -461,7 +462,8 @@ impl SteganographyProtector {
                 })
             }
             Err(_) => {
-                let mut header = crate::stego::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+                let mut header =
+                    crate::stego::__internal_jpeg_facade::JpegHeader::parse(jpeg_bytes)?;
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
                 let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
                 Ok(EmbedOutcome::UnsupportedProgressive { output })
@@ -813,13 +815,13 @@ impl SteganographyProtector {
 
     fn reassemble_jpeg_with_qtables(
         jpeg_bytes: &[u8],
-        header: &crate::stego::jpeg_transcoder::JpegHeader,
+        header: &crate::stego::__internal_jpeg_facade::JpegHeader,
     ) -> Result<Vec<u8>> {
         carrier_jpeg::reassemble_jpeg_with_qtables(jpeg_bytes, header).map_err(Into::into)
     }
 
     pub(crate) fn dct_payload_capacity(
-        coefficients: &crate::stego::jpeg_transcoder::Coefficients,
+        coefficients: &crate::stego::__internal_jpeg_facade::Coefficients,
     ) -> usize {
         carrier_jpeg::dct_payload_capacity(coefficients)
     }
@@ -2295,7 +2297,7 @@ impl SteganographyProtector {
 
     fn extract_verified_dct_payload_from_coefficients(
         &self,
-        coefficients: &crate::stego::jpeg_transcoder::Coefficients,
+        coefficients: &crate::stego::__internal_jpeg_facade::Coefficients,
         seed: u64,
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
@@ -2341,7 +2343,7 @@ impl SteganographyProtector {
     /// Verification-path variant of `extract_verified_dct_payload_from_coefficients`.
     fn verify_extract_dct_from_coefficients(
         &self,
-        coefficients: &crate::stego::jpeg_transcoder::Coefficients,
+        coefficients: &crate::stego::__internal_jpeg_facade::Coefficients,
         seed: u64,
         mac_key: &[u8],
     ) -> CandidateOutcome {
@@ -2870,7 +2872,8 @@ impl SteganographyProtector {
                 })
             }
             Err(_) => {
-                let mut header = crate::stego::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+                let mut header =
+                    crate::stego::__internal_jpeg_facade::JpegHeader::parse(jpeg_bytes)?;
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
                 let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
                 Ok(EmbedOutcome::UnsupportedProgressive { output })
@@ -2989,7 +2992,8 @@ impl SteganographyProtector {
                 })
             }
             Err(_) => {
-                let mut header = crate::stego::jpeg_transcoder::JpegHeader::parse(jpeg_bytes)?;
+                let mut header =
+                    crate::stego::__internal_jpeg_facade::JpegHeader::parse(jpeg_bytes)?;
                 DctStegoF5::new().embed_seed_in_quantization_tables(&mut header, seed)?;
                 let output = Self::reassemble_jpeg_with_qtables(jpeg_bytes, &header)?;
                 Ok(EmbedOutcome::UnsupportedProgressive { output })
@@ -4116,7 +4120,7 @@ impl StegoPayload {
 mod tests {
     use super::*;
     use crate::protected::constants::STEGO_SPREAD_FACTOR;
-    use crate::stego::jpeg_transcoder::JpegHeader;
+    use crate::stego::__internal_jpeg_facade::JpegHeader;
     use crate::types::ProtectionConfig;
     use image::ImageEncoder;
     use image::Rgba;
