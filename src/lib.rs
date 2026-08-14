@@ -57,7 +57,7 @@
 //! authenticated provenance evidence. Use this when you need cryptographic
 //! integrity for the steganographic channel:
 //!
-//! ```ignore
+//! ```no_run
 //! use stegoeggo::{ProtectionContext, ProtectionLevel};
 //!
 //! let ctx = ProtectionContext::default()
@@ -71,9 +71,10 @@
 //!
 //! # WAF-Optimized Usage
 //!
-//! ```ignore
+//! ```no_run
 //! use stegoeggo::{process_image_bytes, ProtectionContext, ProtectionLevel, ImageOutputFormat};
 //!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let ctx = ProtectionContext::new(0.5, 42)
 //!     .with_format(ImageOutputFormat::Png)
 //!     .with_mac_key(b"shared-verification-key".to_vec())
@@ -85,6 +86,8 @@
 //! let (protected, warnings) =
 //!     stegoeggo::process_image_bytes_with_warnings(&input_bytes, ProtectionLevel::Standard, &ctx)?;
 //! // Reverse proxies should log or enforce warnings before serving.
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! Legal Metadata
@@ -122,36 +125,46 @@
 //! in each `tile_size × tile_size` tile independently, so any crop containing at
 //! least one intact tile is recoverable:
 //!
-//! ```ignore
+//! ```no_run
 //! use stegoeggo::{ProtectionContext, ProtectionLevel};
 //!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let ctx = ProtectionContext::new(0.5, 42)
 //!     .with_tile_size(64);          // 64×64 tiles
-//!
+//! # let img_bytes = std::fs::read("image.png")?;
 //! let protected = stegoeggo::process_image_bytes(&img_bytes, ProtectionLevel::Standard, &ctx)?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Async API
 //!
 //! For Tokio-based services (WAFs, CDN edge workers), use the async variants:
 //!
-//! ```ignore
+//! ```no_run
 //! use stegoeggo::{process_image_bytes_async, ProtectionContext, ProtectionLevel};
 //!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # let img_bytes = std::fs::read("image.png")?;
 //! let ctx = ProtectionContext::new(0.5, 42);
-//! let protected = process_image_bytes_async(&img_bytes, ProtectionLevel::Standard, &ctx).await?;
+//! let protected = process_image_bytes_async(img_bytes, ProtectionLevel::Standard, ctx).await?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Parallel Batch Processing
 //!
 //! Process multiple images concurrently using Rayon:
 //!
-//! ```ignore
+//! ```no_run
 //! use stegoeggo::{process_images_parallel, ProtectionContext, ProtectionLevel};
 //!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let images: Vec<image::DynamicImage> = vec![ /* ... */ ];
 //! let ctx = ProtectionContext::default();
 //! let results = process_images_parallel(&images, ProtectionLevel::Standard, &ctx)?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Warnings API
@@ -160,9 +173,11 @@
 //! any warnings about the protection process (e.g., progressive JPEG fallback,
 //! insufficient DCT capacity):
 //!
-//! ```ignore
+//! ```no_run
 //! use stegoeggo::{process_image_bytes_with_warnings, ProtectionContext, ProtectionLevel};
 //!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # let img_bytes = std::fs::read("image.png")?;
 //! let ctx = ProtectionContext::new(0.5, 42);
 //! let (protected, warnings) =
 //!     process_image_bytes_with_warnings(&img_bytes, ProtectionLevel::Standard, &ctx)?;
@@ -170,6 +185,8 @@
 //! for w in &warnings {
 //!     eprintln!("Warning: {w}");
 //! }
+//! # Ok(())
+//! # }
 //! ```
 
 #![forbid(unsafe_code)]
@@ -979,7 +996,7 @@ pub fn process_request_bytes_with_report(
 fn process_plan_bytes(
     img_bytes: &[u8],
     plan: &ResolvedProtectionPlan,
-    budget: &mut crate::resource_limits::OperationBudget<'_>,
+    budget: &mut crate::resource_limits::OperationBudget,
 ) -> Result<PipelineResult> {
     let limits = plan.resource_limits();
     limits.check_input_size(img_bytes.len())?;
@@ -1064,7 +1081,7 @@ fn process_plan_bytes(
 fn execute_metadata_only(
     img_bytes: &[u8],
     plan: &ResolvedProtectionPlan,
-    budget: &mut crate::resource_limits::OperationBudget<'_>,
+    budget: &mut crate::resource_limits::OperationBudget,
 ) -> Result<Vec<u8>> {
     let input_format = plan.input_format();
     let output_format = plan.output_format();
@@ -1091,7 +1108,7 @@ fn execute_metadata_only(
 fn observe_metadata_work(
     img_bytes: &[u8],
     format: crate::types::ImageOutputFormat,
-    budget: &mut crate::resource_limits::OperationBudget<'_>,
+    budget: &mut crate::resource_limits::OperationBudget,
 ) {
     match format {
         crate::types::ImageOutputFormat::Png => {
@@ -1183,7 +1200,7 @@ fn execute_stego_and_metadata(
     output_format: ImageOutputFormat,
     steganography: &SteganographyProtector,
     metadata_trap: &RightsMetadataProtector,
-    budget: &mut crate::resource_limits::OperationBudget<'_>,
+    budget: &mut crate::resource_limits::OperationBudget,
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
@@ -1246,7 +1263,7 @@ fn execute_stego_and_metadata_tiled(
     tile_size: u32,
     steganography: &SteganographyProtector,
     metadata_trap: &RightsMetadataProtector,
-    budget: &mut crate::resource_limits::OperationBudget<'_>,
+    budget: &mut crate::resource_limits::OperationBudget,
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
@@ -1310,7 +1327,7 @@ fn execute_seed_only_and_metadata(
     output_format: ImageOutputFormat,
     steganography: &SteganographyProtector,
     metadata_trap: &RightsMetadataProtector,
-    budget: &mut crate::resource_limits::OperationBudget<'_>,
+    budget: &mut crate::resource_limits::OperationBudget,
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
@@ -1549,7 +1566,7 @@ mod tests {
         let result = pipeline.process(
             &img,
             ProtectionLevel::Disabled,
-            &ProtectionContext::default(),
+            &ProtectionContext::default().with_seed(42),
         );
         assert!(result.is_ok());
     }
@@ -1564,7 +1581,8 @@ mod tests {
             ProtectionLevel::Light,
             ProtectionLevel::Standard,
         ] {
-            let result = pipeline.process(&img, *level, &ProtectionContext::default());
+            let result =
+                pipeline.process(&img, *level, &ProtectionContext::default().with_seed(42));
             assert!(result.is_ok(), "Failed for level: {:?}", level);
         }
     }
@@ -1586,7 +1604,7 @@ mod tests {
         let result = process_image_bytes(
             &buffer,
             ProtectionLevel::Standard,
-            &ProtectionContext::default(),
+            &ProtectionContext::default().with_seed(42),
         );
         assert!(result.is_ok());
     }
@@ -1594,7 +1612,7 @@ mod tests {
     #[test]
     fn disabled_process_image_bytes_is_byte_for_byte_noop() {
         let input = b"not an image";
-        let ctx = ProtectionContext::default();
+        let ctx = ProtectionContext::default().with_seed(42);
 
         let result = process_image_bytes(input, ProtectionLevel::Disabled, &ctx).unwrap();
 
@@ -1604,7 +1622,9 @@ mod tests {
     #[test]
     fn disabled_process_image_bytes_with_warnings_is_byte_for_byte_noop() {
         let input = b"not an image";
-        let ctx = ProtectionContext::default().with_metadata_injection(false);
+        let ctx = ProtectionContext::default()
+            .with_seed(42)
+            .with_metadata_injection(false);
 
         let (result, warnings) =
             process_image_bytes_with_warnings(input, ProtectionLevel::Disabled, &ctx).unwrap();
@@ -1746,7 +1766,9 @@ mod tests {
         let pipeline = ProtectionPipeline::new();
         let img = DynamicImage::new_rgb8(1000, 1000);
 
-        let ctx = ProtectionContext::default().with_max_dimension(512);
+        let ctx = ProtectionContext::default()
+            .with_seed(42)
+            .with_max_dimension(512);
 
         let result = pipeline.process(&img, ProtectionLevel::Standard, &ctx);
 
@@ -1770,7 +1792,9 @@ mod tests {
                 .unwrap();
         }
 
-        let ctx = ProtectionContext::default().with_max_dimension(512);
+        let ctx = ProtectionContext::default()
+            .with_seed(42)
+            .with_max_dimension(512);
 
         let result = process_image_bytes(&buffer, ProtectionLevel::Standard, &ctx);
 
@@ -1811,7 +1835,9 @@ mod tests {
                 .unwrap();
         }
 
-        let ctx = ProtectionContext::default().with_max_dimension(512);
+        let ctx = ProtectionContext::default()
+            .with_seed(42)
+            .with_max_dimension(512);
         let result = process_image_bytes(&buffer, ProtectionLevel::Light, &ctx);
 
         assert!(

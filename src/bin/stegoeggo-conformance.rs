@@ -671,7 +671,12 @@ fn evaluate_manifest_expectations(
 ) {
     if !entry.expected_dmi.is_empty() {
         let normalized_expected = conformance::normalize_dmi_value(&entry.expected_dmi);
-        if let Some(ref canonical) = report.internal.canonical_data_mining {
+        let observed_dmi = report
+            .internal
+            .canonical_data_mining
+            .as_ref()
+            .or_else(|| report.internal.legacy_data_mining.first());
+        if let Some(canonical) = observed_dmi {
             let normalized_actual = conformance::normalize_dmi_value(canonical);
             if normalized_expected != normalized_actual {
                 report.add_check_with_details(

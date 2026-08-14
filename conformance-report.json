@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "generated_by": "stegoeggo-conformance",
-  "crate_version": "0.3.0",
+  "crate_version": "0.3.2",
   "commit_sha": null,
   "strict": true,
   "complete": true,
@@ -10,7 +10,7 @@
   "manifest": {
     "requested_path": "tests/fixtures/conformance/manifest.toml",
     "canonical_path": "/home/sugarwookie/projects/stegoeggo/tests/fixtures/conformance/manifest.toml",
-    "sha256": "eb9cf4196ea574fed2f2b300f1a879ece6bbb6644cb7683831e931b6f0e8ef6c",
+    "sha256": "4c521e4b3182a3e23ae3d299f93a8092090f6249133333cef6297cdd5dcc37ef",
     "entry_count": 44,
     "validation": {
       "Ok": null
@@ -61,8 +61,43 @@
       "failures": 0
     }
   ],
-  "coverage_minimums": null,
-  "coverage": null,
+  "coverage_minimums": {
+    "canonical_png": 1,
+    "canonical_jpeg": 1,
+    "canonical_webp": 1,
+    "legacy_min": 3,
+    "legacy_formats": 2,
+    "conflict_min": 3,
+    "malformed_min": 4,
+    "malformed_per_format": 1,
+    "preservation_min": 3,
+    "preservation_formats": 3,
+    "external_canonical_png": 1,
+    "external_canonical_jpeg": 1,
+    "external_canonical_webp": 1,
+    "external_legacy_min": 1,
+    "external_alt_prefix_min": 1,
+    "external_conflict_min": 1,
+    "external_preservation_min": 1
+  },
+  "coverage": {
+    "passed": true,
+    "violations": [],
+    "observed_canonical_png": 7,
+    "observed_canonical_jpeg": 5,
+    "observed_canonical_webp": 5,
+    "observed_legacy": 4,
+    "observed_conflict": 6,
+    "observed_malformed": 9,
+    "observed_preservation": 8,
+    "observed_external_canonical_png": 3,
+    "observed_external_canonical_jpeg": 3,
+    "observed_external_canonical_webp": 2,
+    "observed_external_legacy": 1,
+    "observed_external_alt_prefix": 2,
+    "observed_external_conflict": 1,
+    "observed_external_preservation": 1
+  },
   "digest_verification": [
     {
       "fixture_id": "canonical_complete_png",
@@ -74,9 +109,9 @@
     {
       "fixture_id": "canonical_complete_jpg",
       "fixture_path": "canonical/canonical_complete.jpg",
-      "expected": "803514ed31abadd0dcbd4ae945eaddaa7d65d3426987a2894f1e708fa86d5ea5",
-      "observed": "9c4b925ea11833f89348ee72ae3fbd9860df4700dde657b1c2114842ba0ee93c",
-      "matches": false
+      "expected": "92265125c2ac770273a858ff624359b850300873db84315104225197897b3757",
+      "observed": "92265125c2ac770273a858ff624359b850300873db84315104225197897b3757",
+      "matches": true
     },
     {
       "fixture_id": "canonical_complete_webp",
@@ -95,9 +130,9 @@
     {
       "fixture_id": "canonical_policy_only_jpg",
       "fixture_path": "canonical/canonical_policy_only.jpg",
-      "expected": "8a97b16b2ad25ba4a451c3366aaa99e8e3d257cc4b9940f92bcb03ece82f8144",
-      "observed": "55b371687e2d992582f169919602f8d827c108a411c22f991a4f73373d0e9957",
-      "matches": false
+      "expected": "4ddde84f5084445b5466ec44c20c1ed11987e4cc267c30642df8fc88f3ff5a6e",
+      "observed": "4ddde84f5084445b5466ec44c20c1ed11987e4cc267c30642df8fc88f3ff5a6e",
+      "matches": true
     },
     {
       "fixture_id": "canonical_policy_only_webp",
@@ -193,9 +228,9 @@
     {
       "fixture_id": "legacy_v02_dmi_prohibited_jpg",
       "fixture_path": "legacy/legacy_v02_dmi_prohibited.jpg",
-      "expected": "52e08806f98f866c55c92d4bb76059a04b052042b183494afafc06b2231c44e5",
-      "observed": "1fd79b012e017935d721b4312b58b9bf1a32f3a5aaab367712e33d8f15362705",
-      "matches": false
+      "expected": "6aebc415f9ace9add0647eb67a0a626c83d54f24cda4c85e6a3b43d635fa9c5b",
+      "observed": "6aebc415f9ace9add0647eb67a0a626c83d54f24cda4c85e6a3b43d635fa9c5b",
+      "matches": true
     },
     {
       "fixture_id": "legacy_v02_dmi_prohibited_webp",
@@ -312,9 +347,9 @@
     {
       "fixture_id": "preservation_plain_jpg",
       "fixture_path": "preservation/preservation_plain.jpg",
-      "expected": "3c4324610cfd4565d0b402e888c7bf8abf3884ba16d61fceb67cd6512f12e8c4",
-      "observed": "d9c2fac45306c8627b5c61ee3e7538d2150e8dc1f6e7fe281820e0606171e847",
-      "matches": false
+      "expected": "12853bd0d2df0f963600b5f731445f1ec7ada0243978493914ac345be846ed07",
+      "observed": "12853bd0d2df0f963600b5f731445f1ec7ada0243978493914ac345be846ed07",
+      "matches": true
     },
     {
       "fixture_id": "preservation_plain_webp",
@@ -409,8 +444,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 50,
         "evidence_channels": [
@@ -437,24 +474,24 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
+          "PNG:Copyright": "Copyright (c) Legacy Holder",
+          "PNG:UsageTerms": "Legacy Terms",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
           "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "File:FileName": "legacy_v02_dmi_prohibited.png",
-          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
-          "PNG:Noai": "noindex",
           "SourceFile": "tests/fixtures/conformance/legacy/legacy_v02_dmi_prohibited.png",
-          "File:Directory": "tests/fixtures/conformance/legacy",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "PNG:Noai": "noindex",
+          "File:MIMEType": "image/png",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
           "PNG:Description": "Protected image. Seed: 50",
+          "File:Directory": "tests/fixtures/conformance/legacy",
           "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
+          "File:FileName": "legacy_v02_dmi_prohibited.png",
           "Composite:ImageSize": "64 64",
           "File:FileType": "PNG",
-          "File:FileTypeExtension": "PNG",
-          "PNG:Copyright": "Copyright (c) Legacy Holder",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "PNG:UsageTerms": "Legacy Terms",
-          "File:MIMEType": "image/png"
+          "File:FileTypeExtension": "PNG"
         }
       ],
       "checks": [
@@ -526,7 +563,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -583,8 +620,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 50,
         "evidence_channels": [
@@ -612,23 +651,23 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "XMP:Rights": "Copyright (c) Legacy Holder",
-          "ExifTool:Warning": "[minor] Improper EXIF header",
-          "File:FileType": "WEBP",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "Composite:ImageSize": "64 64",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
           "EXIF:UserComment": "Protection seed: 50",
-          "File:FileTypeExtension": "WEBP",
-          "SourceFile": "tests/fixtures/conformance/legacy/legacy_v02_dmi_prohibited.webp",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileName": "legacy_v02_dmi_prohibited.webp",
           "File:MIMEType": "image/webp",
+          "File:FileType": "WEBP",
+          "XMP:Rights": "Copyright (c) Legacy Holder",
+          "XMP:UsageTerms": "Legacy Terms",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
           "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "File:FileName": "legacy_v02_dmi_prohibited.webp",
+          "ExifTool:Warning": "[minor] Improper EXIF header",
           "File:Directory": "tests/fixtures/conformance/legacy",
           "File:ExifByteOrder": "II",
           "XMP:NoticeAppliedAt": "2025:01:15 00:00:00Z",
-          "XMP:UsageTerms": "Legacy Terms"
+          "Composite:ImageSize": "64 64",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "SourceFile": "tests/fixtures/conformance/legacy/legacy_v02_dmi_prohibited.webp",
+          "File:FileTypeExtension": "WEBP",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00"
         }
       ],
       "checks": [
@@ -700,7 +739,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -757,8 +796,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 50,
         "evidence_channels": [
@@ -786,21 +827,21 @@
           "legacy_data_mining": [],
           "tdm_reserved": null,
           "File:YCbCrSubSampling": "1 1",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
+          "File:FileModifyDate": "2026:07:29 16:45:37+00:00",
           "File:ExifByteOrder": "II",
+          "JFIF:JFIFVersion": "1 2",
+          "File:FileName": "legacy_v02_dmi_prohibited.jpg",
+          "File:FileTypeExtension": "JPG",
+          "File:MIMEType": "image/jpeg",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "EXIF:UserComment": "DMI: ProhibitedAiMlTraining",
+          "File:FileInodeChangeDate": "2026:07:29 16:45:37+00:00",
           "File:Directory": "tests/fixtures/conformance/legacy",
           "Composite:ImageSize": "64 64",
-          "EXIF:UserComment": "DMI: ProhibitedAiMlTraining",
-          "File:FileTypeExtension": "JPG",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
           "ExifTool:Warning": "Bad IFD1 directory",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
           "File:Comment": "X-Protection-Seed: 50",
-          "JFIF:JFIFVersion": "1 2",
           "File:FileType": "JPEG",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:MIMEType": "image/jpeg",
-          "File:FileName": "legacy_v02_dmi_prohibited.jpg",
           "SourceFile": "tests/fixtures/conformance/legacy/legacy_v02_dmi_prohibited.jpg"
         }
       ],
@@ -875,7 +916,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -957,16 +998,16 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "ExifTool:Warning": "JPEG format error",
-          "File:FileName": "invalid_marker_length.jpg",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:FileType": "JPEG",
           "SourceFile": "tests/fixtures/conformance/malformed/invalid_marker_length.jpg",
-          "File:MIMEType": "image/jpeg",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
           "File:Directory": "tests/fixtures/conformance/malformed",
-          "File:FileTypeExtension": "JPG"
+          "File:FileTypeExtension": "JPG",
+          "File:MIMEType": "image/jpeg",
+          "File:FileType": "JPEG",
+          "ExifTool:Warning": "JPEG format error",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "File:FileName": "invalid_marker_length.jpg"
         }
       ],
       "checks": [
@@ -1075,18 +1116,18 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "Composite:ImageSize": "64 64",
-          "File:FileName": "unknown_cv_uri.png",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileTypeExtension": "PNG",
           "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
           "File:FileType": "PNG",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "Composite:ImageSize": "64 64",
+          "File:Directory": "tests/fixtures/conformance/malformed",
           "File:MIMEType": "image/png",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "File:FileName": "unknown_cv_uri.png",
           "PNG:InternationalText": "(Binary data 334 bytes, use -b option to extract)",
-          "File:FileTypeExtension": "PNG",
-          "SourceFile": "tests/fixtures/conformance/malformed/unknown_cv_uri.png",
-          "File:Directory": "tests/fixtures/conformance/malformed"
+          "SourceFile": "tests/fixtures/conformance/malformed/unknown_cv_uri.png"
         }
       ],
       "checks": [
@@ -1225,18 +1266,18 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "Composite:ImageSize": "64 64",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileName": "truncated_xmp.png",
           "File:FileType": "PNG",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
           "File:MIMEType": "image/png",
-          "File:Directory": "tests/fixtures/conformance/malformed",
           "PNG:InternationalText": "(Binary data 242 bytes, use -b option to extract)",
+          "SourceFile": "tests/fixtures/conformance/malformed/truncated_xmp.png",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "File:FileName": "truncated_xmp.png",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "Composite:ImageSize": "64 64",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
           "File:FileTypeExtension": "PNG",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "SourceFile": "tests/fixtures/conformance/malformed/truncated_xmp.png"
+          "File:Directory": "tests/fixtures/conformance/malformed"
         }
       ],
       "checks": [
@@ -1370,18 +1411,18 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
           "File:MIMEType": "image/png",
           "File:Directory": "tests/fixtures/conformance/malformed",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "File:FileType": "PNG",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
           "File:FileName": "oversized_metadata.png",
-          "Composite:ImageSize": "64 64",
-          "PNG:InternationalText": "(Binary data 8275 bytes, use -b option to extract)",
           "SourceFile": "tests/fixtures/conformance/malformed/oversized_metadata.png",
-          "File:FileTypeExtension": "PNG",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00"
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileType": "PNG",
+          "PNG:InternationalText": "(Binary data 8275 bytes, use -b option to extract)",
+          "Composite:ImageSize": "64 64",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileTypeExtension": "PNG"
         }
       ],
       "checks": [
@@ -1515,15 +1556,15 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "SourceFile": "tests/fixtures/conformance/malformed/invalid_riff_length.webp",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
           "File:FileName": "invalid_riff_length.webp",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:FileTypeExtension": "WEBP",
           "File:FileType": "WEBP",
+          "File:MIMEType": "image/webp",
+          "SourceFile": "tests/fixtures/conformance/malformed/invalid_riff_length.webp",
           "File:Directory": "tests/fixtures/conformance/malformed",
-          "File:MIMEType": "image/webp"
+          "File:FileTypeExtension": "WEBP",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00"
         }
       ],
       "checks": [
@@ -1632,17 +1673,17 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileName": "truncated.png",
+          "Composite:ImageSize": "64 64",
           "File:MIMEType": "image/png",
-          "File:Directory": "tests/fixtures/conformance/malformed",
+          "SourceFile": "tests/fixtures/conformance/malformed/truncated.png",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
           "File:FileTypeExtension": "PNG",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
           "ExifTool:Warning": "Truncated PNG image",
           "File:FileType": "PNG",
-          "Composite:ImageSize": "64 64",
-          "SourceFile": "tests/fixtures/conformance/malformed/truncated.png",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00"
+          "File:FileName": "truncated.png",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:Directory": "tests/fixtures/conformance/malformed"
         }
       ],
       "checks": [
@@ -1751,17 +1792,17 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:MIMEType": "image/jpeg",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:FileName": "truncated.jpg",
-          "JFIF:JFIFVersion": "1 2",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:FileType": "JPEG",
-          "File:Directory": "tests/fixtures/conformance/malformed",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "ExifTool:Warning": "JPEG format error",
           "File:FileTypeExtension": "JPG",
-          "SourceFile": "tests/fixtures/conformance/malformed/truncated.jpg"
+          "JFIF:JFIFVersion": "1 2",
+          "File:FileType": "JPEG",
+          "SourceFile": "tests/fixtures/conformance/malformed/truncated.jpg",
+          "ExifTool:Warning": "JPEG format error",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileName": "truncated.jpg",
+          "File:Directory": "tests/fixtures/conformance/malformed",
+          "File:MIMEType": "image/jpeg",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00"
         }
       ],
       "checks": [
@@ -1870,18 +1911,18 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "Composite:ImageSize": "64 64",
-          "File:FileName": "invalid_xml_entity.png",
-          "File:FileType": "PNG",
-          "File:FileTypeExtension": "PNG",
-          "File:MIMEType": "image/png",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "PNG:InternationalText": "(Binary data 328 bytes, use -b option to extract)",
-          "SourceFile": "tests/fixtures/conformance/malformed/invalid_xml_entity.png",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
           "File:Directory": "tests/fixtures/conformance/malformed",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00"
+          "Composite:ImageSize": "64 64",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:MIMEType": "image/png",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileTypeExtension": "PNG",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:FileType": "PNG",
+          "PNG:InternationalText": "(Binary data 328 bytes, use -b option to extract)",
+          "File:FileName": "invalid_xml_entity.png",
+          "SourceFile": "tests/fixtures/conformance/malformed/invalid_xml_entity.png",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00"
         }
       ],
       "checks": [
@@ -2015,18 +2056,18 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileTypeExtension": "PNG",
-          "Composite:ImageSize": "64 64",
-          "File:MIMEType": "image/png",
-          "SourceFile": "tests/fixtures/conformance/malformed/invalid_namespace.png",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
           "PNG:InternationalText": "(Binary data 306 bytes, use -b option to extract)",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileType": "PNG",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
+          "Composite:ImageSize": "64 64",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
           "File:FileName": "invalid_namespace.png",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:Directory": "tests/fixtures/conformance/malformed"
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:Directory": "tests/fixtures/conformance/malformed",
+          "File:FileType": "PNG",
+          "File:FileTypeExtension": "PNG",
+          "SourceFile": "tests/fixtures/conformance/malformed/invalid_namespace.png",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:MIMEType": "image/png"
         }
       ],
       "checks": [
@@ -2135,8 +2176,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 73,
         "evidence_channels": [
@@ -2163,23 +2206,23 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "PNG:Description": "Protected image. Seed: 73",
-          "PNG:Noai": "noindex",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileName": "preservation_unrelated_xmp.png",
-          "File:Directory": "tests/fixtures/conformance/preservation",
-          "PNG:Copyright": "Copyright (c) XMP Holder",
-          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
           "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "Composite:ImageSize": "64 64",
+          "PNG:Description": "Protected image. Seed: 73",
+          "PNG:Copyright": "Copyright (c) XMP Holder",
+          "File:FileName": "preservation_unrelated_xmp.png",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "PNG:Noai": "noindex",
           "SourceFile": "tests/fixtures/conformance/preservation/preservation_unrelated_xmp.png",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
           "File:FileTypeExtension": "PNG",
-          "File:MIMEType": "image/png",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:Directory": "tests/fixtures/conformance/preservation",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "File:FileType": "PNG",
+          "Composite:ImageSize": "64 64",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
           "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
-          "File:FileType": "PNG"
+          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
+          "File:MIMEType": "image/png"
         }
       ],
       "checks": [
@@ -2251,7 +2294,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -2303,8 +2346,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 70,
         "evidence_channels": [
@@ -2332,22 +2377,22 @@
           "legacy_data_mining": [],
           "tdm_reserved": null,
           "File:Comment": "X-Protection-Seed: 70",
-          "JFIF:JFIFVersion": "1 2",
-          "SourceFile": "tests/fixtures/conformance/preservation/preservation_plain.jpg",
-          "File:ExifByteOrder": "II",
-          "File:YCbCrSubSampling": "1 1",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "EXIF:UserComment": "DMI: ProhibitedAiMlTraining",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "ExifTool:Warning": "Bad IFD1 directory",
-          "File:Directory": "tests/fixtures/conformance/preservation",
+          "File:FileInodeChangeDate": "2026:07:29 16:45:37+00:00",
+          "File:FileModifyDate": "2026:07:29 16:45:37+00:00",
           "File:FileTypeExtension": "JPG",
+          "File:MIMEType": "image/jpeg",
+          "ExifTool:Warning": "Bad IFD1 directory",
+          "SourceFile": "tests/fixtures/conformance/preservation/preservation_plain.jpg",
           "Composite:ImageSize": "64 64",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
           "File:FileName": "preservation_plain.jpg",
+          "File:Directory": "tests/fixtures/conformance/preservation",
           "File:FileType": "JPEG",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:MIMEType": "image/jpeg"
+          "File:YCbCrSubSampling": "1 1",
+          "File:ExifByteOrder": "II",
+          "JFIF:JFIFVersion": "1 2",
+          "EXIF:UserComment": "DMI: ProhibitedAiMlTraining",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING"
         }
       ],
       "checks": [
@@ -2421,7 +2466,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -2478,8 +2523,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 70,
         "evidence_channels": [
@@ -2507,23 +2554,23 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "SourceFile": "tests/fixtures/conformance/preservation/preservation_plain.webp",
-          "File:ExifByteOrder": "II",
-          "EXIF:UserComment": "Protection seed: 70",
-          "File:Directory": "tests/fixtures/conformance/preservation",
-          "XMP:Rights": "Copyright (c) Preservation Holder",
-          "XMP:NoticeAppliedAt": "2025:01:15 00:00:00Z",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "Composite:ImageSize": "64 64",
-          "File:FileType": "WEBP",
-          "File:FileName": "preservation_plain.webp",
-          "File:MIMEType": "image/webp",
           "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "File:FileTypeExtension": "WEBP",
-          "XMP:UsageTerms": "Preservation Terms",
+          "SourceFile": "tests/fixtures/conformance/preservation/preservation_plain.webp",
+          "XMP:Rights": "Copyright (c) Preservation Holder",
           "ExifTool:Warning": "[minor] Improper EXIF header",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00"
+          "File:ExifByteOrder": "II",
+          "XMP:UsageTerms": "Preservation Terms",
+          "XMP:NoticeAppliedAt": "2025:01:15 00:00:00Z",
+          "File:Directory": "tests/fixtures/conformance/preservation",
+          "Composite:ImageSize": "64 64",
+          "File:MIMEType": "image/webp",
+          "File:FileType": "WEBP",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileName": "preservation_plain.webp",
+          "File:FileTypeExtension": "WEBP",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "EXIF:UserComment": "Protection seed: 70",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00"
         }
       ],
       "checks": [
@@ -2595,7 +2642,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -2652,8 +2699,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 70,
         "evidence_channels": [
@@ -2680,24 +2729,24 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileTypeExtension": "PNG",
-          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:FileType": "PNG",
-          "Composite:ImageSize": "64 64",
-          "File:Directory": "tests/fixtures/conformance/preservation",
-          "File:MIMEType": "image/png",
-          "PNG:Description": "Protected image. Seed: 70",
-          "PNG:Noai": "noindex",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
           "SourceFile": "tests/fixtures/conformance/preservation/preservation_plain.png",
-          "File:FileName": "preservation_plain.png",
-          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
-          "PNG:UsageTerms": "Preservation Terms",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
+          "Composite:ImageSize": "64 64",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:MIMEType": "image/png",
           "PNG:Copyright": "Copyright (c) Preservation Holder",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)"
+          "PNG:UsageTerms": "Preservation Terms",
+          "File:FileType": "PNG",
+          "PNG:Description": "Protected image. Seed: 70",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "File:Directory": "tests/fixtures/conformance/preservation",
+          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
+          "PNG:Noai": "noindex",
+          "File:FileName": "preservation_plain.png",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
+          "File:FileTypeExtension": "PNG"
         }
       ],
       "checks": [
@@ -2769,7 +2818,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -2826,8 +2875,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 71,
         "evidence_channels": [
@@ -2854,538 +2905,22 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "PNG:Noai": "noindex",
-          "File:MIMEType": "image/png",
-          "File:FileName": "preservation_with_creator.png",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "Composite:ImageSize": "64 64",
           "PNG:Description": "Protected image. Seed: 71",
-          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
-          "SourceFile": "tests/fixtures/conformance/preservation/preservation_with_creator.png",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileTypeExtension": "PNG",
+          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
           "PNG:Copyright": "Copyright (c) New Holder",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "File:FileType": "PNG",
-          "Composite:ImageSize": "64 64",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
-          "File:Directory": "tests/fixtures/conformance/preservation",
-          "File:FileTypeExtension": "PNG"
-        }
-      ],
-      "checks": [
-        {
-          "name": "decode",
-          "severity": "Pass",
-          "message": "Image decodes successfully"
-        },
-        {
-          "name": "xmp_well-formed",
-          "severity": "Pass",
-          "message": "XMP is well-formed XML"
-        },
-        {
-          "name": "xmp_size",
-          "severity": "Pass",
-          "message": "XMP size within bounds: 425 bytes"
-        },
-        {
-          "name": "xmp_property_count",
-          "severity": "Pass",
-          "message": "XMP property count within bounds: 7"
-        },
-        {
-          "name": "xmp_rdf_structure",
-          "severity": "Pass",
-          "message": "XMP contains RDF structure"
-        },
-        {
-          "name": "xmp_plus_namespace",
-          "severity": "Pass",
-          "message": "PLUS namespace URI present for DataMining property"
-        },
-        {
-          "name": "internal_extraction",
-          "severity": "Pass",
-          "message": "Internal extraction succeeded"
-        },
-        {
-          "name": "external_extraction",
-          "severity": "Pass",
-          "message": "External extraction succeeded"
-        },
-        {
-          "name": "copyright",
-          "severity": "Pass",
-          "message": "Internal and external agree"
-        },
-        {
-          "name": "usage_terms",
-          "severity": "Pass",
-          "message": "Both absent"
-        },
-        {
-          "name": "rights_url",
-          "severity": "Pass",
-          "message": "Both absent"
-        },
-        {
-          "name": "credit_line",
-          "severity": "Pass",
-          "message": "Both absent"
-        },
-        {
-          "name": "ai_constraints",
-          "severity": "Pass",
-          "message": "Both absent"
-        },
-        {
-          "name": "canonical_dmi",
-          "severity": "Pass",
-          "message": "DMI values agree (normalized)"
-        },
-        {
-          "name": "creators",
-          "severity": "Pass",
-          "message": "Creator lists match"
-        },
-        {
-          "name": "imagemagick",
-          "severity": "Pass",
-          "message": "ImageMagick identify: PNG 64x64"
-        },
-        {
-          "name": "libvips",
-          "severity": "Pass",
-          "message": "vipsheader: tests/fixtures/conformance/preservation/preservation_with_creator.png: 64x64 uchar, 4 bands, srgb, pngload"
-        },
-        {
-          "name": "expected_dmi",
-          "severity": "Pass",
-          "message": "DMI matches manifest expectation"
-        },
-        {
-          "name": "expected_copyright_holder",
-          "severity": "Pass",
-          "message": "Field matches expectation"
-        }
-      ],
-      "conflicts": [],
-      "passed": true
-    },
-    {
-      "fixture": "preservation/preservation_idempotent.png",
-      "format": "png",
-      "generated_by": "stegoeggo-conformance",
-      "decode_valid": true,
-      "xmp_valid": true,
-      "fixture_id": "preservation_idempotent_png",
-      "category": "preservation",
-      "source": "generated",
-      "internal": {
-        "copyright_holder": "Idempotent Holder",
-        "creators": [],
-        "copyright_owner": null,
-        "usage_terms": "Idempotent Terms",
-        "web_statement_of_rights": null,
-        "credit_line": null,
-        "licensor_name": null,
-        "licensor_email": null,
-        "licensor_url": null,
-        "content_creation_date": null,
-        "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
-        "tdm_reserved": null,
-        "seed": 74,
-        "evidence_channels": [
-          "PngText",
-          "LsbPayload"
-        ],
-        "evidence_strength": "MetadataNoticeAndBestEffortStego"
-      },
-      "external": [
-        {
-          "tool": "exiftool",
-          "version": "12.76",
-          "copyright": "Copyright (c) Idempotent Holder",
-          "creators": [],
-          "usage_terms": "Idempotent Terms",
-          "rights_url": null,
-          "credit_line": null,
-          "copyright_owner": null,
-          "licensor_name": null,
-          "licensor_email": null,
-          "licensor_url": null,
-          "content_creation_date": null,
-          "ai_constraints": null,
-          "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
-          "legacy_data_mining": [],
-          "tdm_reserved": null,
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "PNG:Copyright": "Copyright (c) Idempotent Holder",
-          "PNG:Description": "Protected image. Seed: 74",
-          "PNG:UsageTerms": "Idempotent Terms",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "Composite:ImageSize": "64 64",
-          "File:FileName": "preservation_idempotent.png",
-          "SourceFile": "tests/fixtures/conformance/preservation/preservation_idempotent.png",
-          "PNG:Noai": "noindex",
-          "File:FileTypeExtension": "PNG",
-          "File:FileType": "PNG",
-          "File:MIMEType": "image/png",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "File:Directory": "tests/fixtures/conformance/preservation",
-          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
-          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z"
-        }
-      ],
-      "checks": [
-        {
-          "name": "decode",
-          "severity": "Pass",
-          "message": "Image decodes successfully"
-        },
-        {
-          "name": "xmp_well-formed",
-          "severity": "Pass",
-          "message": "XMP is well-formed XML"
-        },
-        {
-          "name": "xmp_size",
-          "severity": "Pass",
-          "message": "XMP size within bounds: 425 bytes"
-        },
-        {
-          "name": "xmp_property_count",
-          "severity": "Pass",
-          "message": "XMP property count within bounds: 7"
-        },
-        {
-          "name": "xmp_rdf_structure",
-          "severity": "Pass",
-          "message": "XMP contains RDF structure"
-        },
-        {
-          "name": "xmp_plus_namespace",
-          "severity": "Pass",
-          "message": "PLUS namespace URI present for DataMining property"
-        },
-        {
-          "name": "internal_extraction",
-          "severity": "Pass",
-          "message": "Internal extraction succeeded"
-        },
-        {
-          "name": "external_extraction",
-          "severity": "Pass",
-          "message": "External extraction succeeded"
-        },
-        {
-          "name": "copyright",
-          "severity": "Pass",
-          "message": "Internal and external agree"
-        },
-        {
-          "name": "usage_terms",
-          "severity": "Pass",
-          "message": "Internal and external agree"
-        },
-        {
-          "name": "rights_url",
-          "severity": "Pass",
-          "message": "Both absent"
-        },
-        {
-          "name": "credit_line",
-          "severity": "Pass",
-          "message": "Both absent"
-        },
-        {
-          "name": "ai_constraints",
-          "severity": "Pass",
-          "message": "Both absent"
-        },
-        {
-          "name": "canonical_dmi",
-          "severity": "Pass",
-          "message": "DMI values agree (normalized)"
-        },
-        {
-          "name": "creators",
-          "severity": "Pass",
-          "message": "Creator lists match"
-        },
-        {
-          "name": "imagemagick",
-          "severity": "Pass",
-          "message": "ImageMagick identify: PNG 64x64"
-        },
-        {
-          "name": "libvips",
-          "severity": "Pass",
-          "message": "vipsheader: tests/fixtures/conformance/preservation/preservation_idempotent.png: 64x64 uchar, 4 bands, srgb, pngload"
-        },
-        {
-          "name": "expected_dmi",
-          "severity": "Pass",
-          "message": "DMI matches manifest expectation"
-        },
-        {
-          "name": "expected_copyright_holder",
-          "severity": "Pass",
-          "message": "Field matches expectation"
-        },
-        {
-          "name": "expected_usage_terms",
-          "severity": "Pass",
-          "message": "Field matches expectation"
-        }
-      ],
-      "conflicts": [],
-      "passed": true
-    },
-    {
-      "fixture": "preservation/preservation_unrelated_text.png",
-      "format": "png",
-      "generated_by": "stegoeggo-conformance",
-      "decode_valid": true,
-      "xmp_valid": true,
-      "fixture_id": "preservation_unrelated_text_png",
-      "category": "preservation",
-      "source": "generated",
-      "internal": {
-        "copyright_holder": "Auth Holder",
-        "creators": [],
-        "copyright_owner": null,
-        "usage_terms": "Auth Terms",
-        "web_statement_of_rights": null,
-        "credit_line": null,
-        "licensor_name": null,
-        "licensor_email": null,
-        "licensor_url": null,
-        "content_creation_date": null,
-        "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
-        "tdm_reserved": null,
-        "seed": 72,
-        "evidence_channels": [
-          "PngText",
-          "LsbPayload"
-        ],
-        "evidence_strength": "MetadataNoticeAndBestEffortStego"
-      },
-      "external": [
-        {
-          "tool": "exiftool",
-          "version": "12.76",
-          "copyright": "Copyright (c) Auth Holder",
-          "creators": [],
-          "usage_terms": "Auth Terms",
-          "rights_url": null,
-          "credit_line": null,
-          "copyright_owner": null,
-          "licensor_name": null,
-          "licensor_email": null,
-          "licensor_url": null,
-          "content_creation_date": null,
-          "ai_constraints": null,
-          "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
-          "legacy_data_mining": [],
-          "tdm_reserved": null,
-          "PNG:Copyright": "Copyright (c) Auth Holder",
-          "File:FileName": "preservation_unrelated_text.png",
-          "Composite:ImageSize": "64 64",
-          "PNG:Noai": "noindex",
-          "File:Directory": "tests/fixtures/conformance/preservation",
-          "File:FileType": "PNG",
-          "SourceFile": "tests/fixtures/conformance/preservation/preservation_unrelated_text.png",
-          "PNG:Description": "Protected image. Seed: 72",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:FileTypeExtension": "PNG",
-          "PNG:UsageTerms": "Auth Terms",
+          "File:FileName": "preservation_with_creator.png",
+          "SourceFile": "tests/fixtures/conformance/preservation/preservation_with_creator.png",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
           "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
-          "File:MIMEType": "image/png"
-        }
-      ],
-      "checks": [
-        {
-          "name": "decode",
-          "severity": "Pass",
-          "message": "Image decodes successfully"
-        },
-        {
-          "name": "xmp_well-formed",
-          "severity": "Pass",
-          "message": "XMP is well-formed XML"
-        },
-        {
-          "name": "xmp_size",
-          "severity": "Pass",
-          "message": "XMP size within bounds: 425 bytes"
-        },
-        {
-          "name": "xmp_property_count",
-          "severity": "Pass",
-          "message": "XMP property count within bounds: 7"
-        },
-        {
-          "name": "xmp_rdf_structure",
-          "severity": "Pass",
-          "message": "XMP contains RDF structure"
-        },
-        {
-          "name": "xmp_plus_namespace",
-          "severity": "Pass",
-          "message": "PLUS namespace URI present for DataMining property"
-        },
-        {
-          "name": "internal_extraction",
-          "severity": "Pass",
-          "message": "Internal extraction succeeded"
-        },
-        {
-          "name": "external_extraction",
-          "severity": "Pass",
-          "message": "External extraction succeeded"
-        },
-        {
-          "name": "copyright",
-          "severity": "Pass",
-          "message": "Internal and external agree"
-        },
-        {
-          "name": "usage_terms",
-          "severity": "Pass",
-          "message": "Internal and external agree"
-        },
-        {
-          "name": "rights_url",
-          "severity": "Pass",
-          "message": "Both absent"
-        },
-        {
-          "name": "credit_line",
-          "severity": "Pass",
-          "message": "Both absent"
-        },
-        {
-          "name": "ai_constraints",
-          "severity": "Pass",
-          "message": "Both absent"
-        },
-        {
-          "name": "canonical_dmi",
-          "severity": "Pass",
-          "message": "DMI values agree (normalized)"
-        },
-        {
-          "name": "creators",
-          "severity": "Pass",
-          "message": "Creator lists match"
-        },
-        {
-          "name": "imagemagick",
-          "severity": "Pass",
-          "message": "ImageMagick identify: PNG 64x64"
-        },
-        {
-          "name": "libvips",
-          "severity": "Pass",
-          "message": "vipsheader: tests/fixtures/conformance/preservation/preservation_unrelated_text.png: 64x64 uchar, 4 bands, srgb, pngload"
-        },
-        {
-          "name": "expected_dmi",
-          "severity": "Pass",
-          "message": "DMI matches manifest expectation"
-        },
-        {
-          "name": "expected_copyright_holder",
-          "severity": "Pass",
-          "message": "Field matches expectation"
-        },
-        {
-          "name": "expected_usage_terms",
-          "severity": "Pass",
-          "message": "Field matches expectation"
-        }
-      ],
-      "conflicts": [],
-      "passed": true
-    },
-    {
-      "fixture": "canonical/canonical_copyright_only.png",
-      "format": "png",
-      "generated_by": "stegoeggo-conformance",
-      "decode_valid": true,
-      "xmp_valid": true,
-      "fixture_id": "canonical_copyright_only_png",
-      "category": "canonical",
-      "source": "generated",
-      "internal": {
-        "copyright_holder": "Jane Doe",
-        "creators": [],
-        "copyright_owner": null,
-        "usage_terms": null,
-        "web_statement_of_rights": null,
-        "credit_line": null,
-        "licensor_name": null,
-        "licensor_email": null,
-        "licensor_url": null,
-        "content_creation_date": null,
-        "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
-        "tdm_reserved": null,
-        "seed": 44,
-        "evidence_channels": [
-          "PngText",
-          "LsbPayload"
-        ],
-        "evidence_strength": "MetadataNoticeAndBestEffortStego"
-      },
-      "external": [
-        {
-          "tool": "exiftool",
-          "version": "12.76",
-          "copyright": "Copyright (c) Jane Doe",
-          "creators": [],
-          "usage_terms": null,
-          "rights_url": null,
-          "credit_line": null,
-          "copyright_owner": null,
-          "licensor_name": null,
-          "licensor_email": null,
-          "licensor_url": null,
-          "content_creation_date": null,
-          "ai_constraints": null,
-          "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
-          "legacy_data_mining": [],
-          "tdm_reserved": null,
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_copyright_only.png",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileName": "canonical_copyright_only.png",
-          "PNG:Description": "Protected image. Seed: 44",
-          "File:Directory": "tests/fixtures/conformance/canonical",
-          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
-          "PNG:Noai": "noindex",
-          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
-          "Composite:ImageSize": "64 64",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "File:FileTypeExtension": "PNG",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
+          "File:Directory": "tests/fixtures/conformance/preservation",
           "File:MIMEType": "image/png",
-          "PNG:Copyright": "Copyright (c) Jane Doe",
+          "PNG:Noai": "noindex",
           "File:FileType": "PNG"
         }
       ],
@@ -3458,7 +2993,529 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
+        },
+        {
+          "name": "creators",
+          "severity": "Pass",
+          "message": "Creator lists match"
+        },
+        {
+          "name": "imagemagick",
+          "severity": "Pass",
+          "message": "ImageMagick identify: PNG 64x64"
+        },
+        {
+          "name": "libvips",
+          "severity": "Pass",
+          "message": "vipsheader: tests/fixtures/conformance/preservation/preservation_with_creator.png: 64x64 uchar, 4 bands, srgb, pngload"
+        },
+        {
+          "name": "expected_dmi",
+          "severity": "Pass",
+          "message": "DMI matches manifest expectation"
+        },
+        {
+          "name": "expected_copyright_holder",
+          "severity": "Pass",
+          "message": "Field matches expectation"
+        }
+      ],
+      "conflicts": [],
+      "passed": true
+    },
+    {
+      "fixture": "preservation/preservation_idempotent.png",
+      "format": "png",
+      "generated_by": "stegoeggo-conformance",
+      "decode_valid": true,
+      "xmp_valid": true,
+      "fixture_id": "preservation_idempotent_png",
+      "category": "preservation",
+      "source": "generated",
+      "internal": {
+        "copyright_holder": "Idempotent Holder",
+        "creators": [],
+        "copyright_owner": null,
+        "usage_terms": "Idempotent Terms",
+        "web_statement_of_rights": null,
+        "credit_line": null,
+        "licensor_name": null,
+        "licensor_email": null,
+        "licensor_url": null,
+        "content_creation_date": null,
+        "ai_constraints": null,
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
+        "tdm_reserved": null,
+        "seed": 74,
+        "evidence_channels": [
+          "PngText",
+          "LsbPayload"
+        ],
+        "evidence_strength": "MetadataNoticeAndBestEffortStego"
+      },
+      "external": [
+        {
+          "tool": "exiftool",
+          "version": "12.76",
+          "copyright": "Copyright (c) Idempotent Holder",
+          "creators": [],
+          "usage_terms": "Idempotent Terms",
+          "rights_url": null,
+          "credit_line": null,
+          "copyright_owner": null,
+          "licensor_name": null,
+          "licensor_email": null,
+          "licensor_url": null,
+          "content_creation_date": null,
+          "ai_constraints": null,
+          "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
+          "legacy_data_mining": [],
+          "tdm_reserved": null,
+          "PNG:Description": "Protected image. Seed: 74",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:FileName": "preservation_idempotent.png",
+          "SourceFile": "tests/fixtures/conformance/preservation/preservation_idempotent.png",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileTypeExtension": "PNG",
+          "PNG:Noai": "noindex",
+          "PNG:Copyright": "Copyright (c) Idempotent Holder",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
+          "File:FileType": "PNG",
+          "PNG:UsageTerms": "Idempotent Terms",
+          "File:Directory": "tests/fixtures/conformance/preservation",
+          "File:MIMEType": "image/png",
+          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
+          "Composite:ImageSize": "64 64"
+        }
+      ],
+      "checks": [
+        {
+          "name": "decode",
+          "severity": "Pass",
+          "message": "Image decodes successfully"
+        },
+        {
+          "name": "xmp_well-formed",
+          "severity": "Pass",
+          "message": "XMP is well-formed XML"
+        },
+        {
+          "name": "xmp_size",
+          "severity": "Pass",
+          "message": "XMP size within bounds: 425 bytes"
+        },
+        {
+          "name": "xmp_property_count",
+          "severity": "Pass",
+          "message": "XMP property count within bounds: 7"
+        },
+        {
+          "name": "xmp_rdf_structure",
+          "severity": "Pass",
+          "message": "XMP contains RDF structure"
+        },
+        {
+          "name": "xmp_plus_namespace",
+          "severity": "Pass",
+          "message": "PLUS namespace URI present for DataMining property"
+        },
+        {
+          "name": "internal_extraction",
+          "severity": "Pass",
+          "message": "Internal extraction succeeded"
+        },
+        {
+          "name": "external_extraction",
+          "severity": "Pass",
+          "message": "External extraction succeeded"
+        },
+        {
+          "name": "copyright",
+          "severity": "Pass",
+          "message": "Internal and external agree"
+        },
+        {
+          "name": "usage_terms",
+          "severity": "Pass",
+          "message": "Internal and external agree"
+        },
+        {
+          "name": "rights_url",
+          "severity": "Pass",
+          "message": "Both absent"
+        },
+        {
+          "name": "credit_line",
+          "severity": "Pass",
+          "message": "Both absent"
+        },
+        {
+          "name": "ai_constraints",
+          "severity": "Pass",
+          "message": "Both absent"
+        },
+        {
+          "name": "canonical_dmi",
+          "severity": "Pass",
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
+        },
+        {
+          "name": "creators",
+          "severity": "Pass",
+          "message": "Creator lists match"
+        },
+        {
+          "name": "imagemagick",
+          "severity": "Pass",
+          "message": "ImageMagick identify: PNG 64x64"
+        },
+        {
+          "name": "libvips",
+          "severity": "Pass",
+          "message": "vipsheader: tests/fixtures/conformance/preservation/preservation_idempotent.png: 64x64 uchar, 4 bands, srgb, pngload"
+        },
+        {
+          "name": "expected_dmi",
+          "severity": "Pass",
+          "message": "DMI matches manifest expectation"
+        },
+        {
+          "name": "expected_copyright_holder",
+          "severity": "Pass",
+          "message": "Field matches expectation"
+        },
+        {
+          "name": "expected_usage_terms",
+          "severity": "Pass",
+          "message": "Field matches expectation"
+        }
+      ],
+      "conflicts": [],
+      "passed": true
+    },
+    {
+      "fixture": "preservation/preservation_unrelated_text.png",
+      "format": "png",
+      "generated_by": "stegoeggo-conformance",
+      "decode_valid": true,
+      "xmp_valid": true,
+      "fixture_id": "preservation_unrelated_text_png",
+      "category": "preservation",
+      "source": "generated",
+      "internal": {
+        "copyright_holder": "Auth Holder",
+        "creators": [],
+        "copyright_owner": null,
+        "usage_terms": "Auth Terms",
+        "web_statement_of_rights": null,
+        "credit_line": null,
+        "licensor_name": null,
+        "licensor_email": null,
+        "licensor_url": null,
+        "content_creation_date": null,
+        "ai_constraints": null,
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
+        "tdm_reserved": null,
+        "seed": 72,
+        "evidence_channels": [
+          "PngText",
+          "LsbPayload"
+        ],
+        "evidence_strength": "MetadataNoticeAndBestEffortStego"
+      },
+      "external": [
+        {
+          "tool": "exiftool",
+          "version": "12.76",
+          "copyright": "Copyright (c) Auth Holder",
+          "creators": [],
+          "usage_terms": "Auth Terms",
+          "rights_url": null,
+          "credit_line": null,
+          "copyright_owner": null,
+          "licensor_name": null,
+          "licensor_email": null,
+          "licensor_url": null,
+          "content_creation_date": null,
+          "ai_constraints": null,
+          "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
+          "legacy_data_mining": [],
+          "tdm_reserved": null,
+          "File:FileName": "preservation_unrelated_text.png",
+          "File:Directory": "tests/fixtures/conformance/preservation",
+          "File:FileTypeExtension": "PNG",
+          "PNG:Description": "Protected image. Seed: 72",
+          "PNG:UsageTerms": "Auth Terms",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "PNG:Copyright": "Copyright (c) Auth Holder",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "PNG:Noai": "noindex",
+          "SourceFile": "tests/fixtures/conformance/preservation/preservation_unrelated_text.png",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
+          "Composite:ImageSize": "64 64",
+          "File:MIMEType": "image/png",
+          "File:FileType": "PNG",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00"
+        }
+      ],
+      "checks": [
+        {
+          "name": "decode",
+          "severity": "Pass",
+          "message": "Image decodes successfully"
+        },
+        {
+          "name": "xmp_well-formed",
+          "severity": "Pass",
+          "message": "XMP is well-formed XML"
+        },
+        {
+          "name": "xmp_size",
+          "severity": "Pass",
+          "message": "XMP size within bounds: 425 bytes"
+        },
+        {
+          "name": "xmp_property_count",
+          "severity": "Pass",
+          "message": "XMP property count within bounds: 7"
+        },
+        {
+          "name": "xmp_rdf_structure",
+          "severity": "Pass",
+          "message": "XMP contains RDF structure"
+        },
+        {
+          "name": "xmp_plus_namespace",
+          "severity": "Pass",
+          "message": "PLUS namespace URI present for DataMining property"
+        },
+        {
+          "name": "internal_extraction",
+          "severity": "Pass",
+          "message": "Internal extraction succeeded"
+        },
+        {
+          "name": "external_extraction",
+          "severity": "Pass",
+          "message": "External extraction succeeded"
+        },
+        {
+          "name": "copyright",
+          "severity": "Pass",
+          "message": "Internal and external agree"
+        },
+        {
+          "name": "usage_terms",
+          "severity": "Pass",
+          "message": "Internal and external agree"
+        },
+        {
+          "name": "rights_url",
+          "severity": "Pass",
+          "message": "Both absent"
+        },
+        {
+          "name": "credit_line",
+          "severity": "Pass",
+          "message": "Both absent"
+        },
+        {
+          "name": "ai_constraints",
+          "severity": "Pass",
+          "message": "Both absent"
+        },
+        {
+          "name": "canonical_dmi",
+          "severity": "Pass",
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
+        },
+        {
+          "name": "creators",
+          "severity": "Pass",
+          "message": "Creator lists match"
+        },
+        {
+          "name": "imagemagick",
+          "severity": "Pass",
+          "message": "ImageMagick identify: PNG 64x64"
+        },
+        {
+          "name": "libvips",
+          "severity": "Pass",
+          "message": "vipsheader: tests/fixtures/conformance/preservation/preservation_unrelated_text.png: 64x64 uchar, 4 bands, srgb, pngload"
+        },
+        {
+          "name": "expected_dmi",
+          "severity": "Pass",
+          "message": "DMI matches manifest expectation"
+        },
+        {
+          "name": "expected_copyright_holder",
+          "severity": "Pass",
+          "message": "Field matches expectation"
+        },
+        {
+          "name": "expected_usage_terms",
+          "severity": "Pass",
+          "message": "Field matches expectation"
+        }
+      ],
+      "conflicts": [],
+      "passed": true
+    },
+    {
+      "fixture": "canonical/canonical_copyright_only.png",
+      "format": "png",
+      "generated_by": "stegoeggo-conformance",
+      "decode_valid": true,
+      "xmp_valid": true,
+      "fixture_id": "canonical_copyright_only_png",
+      "category": "canonical",
+      "source": "generated",
+      "internal": {
+        "copyright_holder": "Jane Doe",
+        "creators": [],
+        "copyright_owner": null,
+        "usage_terms": null,
+        "web_statement_of_rights": null,
+        "credit_line": null,
+        "licensor_name": null,
+        "licensor_email": null,
+        "licensor_url": null,
+        "content_creation_date": null,
+        "ai_constraints": null,
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
+        "tdm_reserved": null,
+        "seed": 44,
+        "evidence_channels": [
+          "PngText",
+          "LsbPayload"
+        ],
+        "evidence_strength": "MetadataNoticeAndBestEffortStego"
+      },
+      "external": [
+        {
+          "tool": "exiftool",
+          "version": "12.76",
+          "copyright": "Copyright (c) Jane Doe",
+          "creators": [],
+          "usage_terms": null,
+          "rights_url": null,
+          "credit_line": null,
+          "copyright_owner": null,
+          "licensor_name": null,
+          "licensor_email": null,
+          "licensor_url": null,
+          "content_creation_date": null,
+          "ai_constraints": null,
+          "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
+          "legacy_data_mining": [],
+          "tdm_reserved": null,
+          "File:MIMEType": "image/png",
+          "PNG:Description": "Protected image. Seed: 44",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "PNG:Copyright": "Copyright (c) Jane Doe",
+          "File:FileTypeExtension": "PNG",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileType": "PNG",
+          "Composite:ImageSize": "64 64",
+          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "PNG:Noai": "noindex",
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_copyright_only.png",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "File:FileName": "canonical_copyright_only.png",
+          "File:Directory": "tests/fixtures/conformance/canonical"
+        }
+      ],
+      "checks": [
+        {
+          "name": "decode",
+          "severity": "Pass",
+          "message": "Image decodes successfully"
+        },
+        {
+          "name": "xmp_well-formed",
+          "severity": "Pass",
+          "message": "XMP is well-formed XML"
+        },
+        {
+          "name": "xmp_size",
+          "severity": "Pass",
+          "message": "XMP size within bounds: 425 bytes"
+        },
+        {
+          "name": "xmp_property_count",
+          "severity": "Pass",
+          "message": "XMP property count within bounds: 7"
+        },
+        {
+          "name": "xmp_rdf_structure",
+          "severity": "Pass",
+          "message": "XMP contains RDF structure"
+        },
+        {
+          "name": "xmp_plus_namespace",
+          "severity": "Pass",
+          "message": "PLUS namespace URI present for DataMining property"
+        },
+        {
+          "name": "internal_extraction",
+          "severity": "Pass",
+          "message": "Internal extraction succeeded"
+        },
+        {
+          "name": "external_extraction",
+          "severity": "Pass",
+          "message": "External extraction succeeded"
+        },
+        {
+          "name": "copyright",
+          "severity": "Pass",
+          "message": "Internal and external agree"
+        },
+        {
+          "name": "usage_terms",
+          "severity": "Pass",
+          "message": "Both absent"
+        },
+        {
+          "name": "rights_url",
+          "severity": "Pass",
+          "message": "Both absent"
+        },
+        {
+          "name": "credit_line",
+          "severity": "Pass",
+          "message": "Both absent"
+        },
+        {
+          "name": "ai_constraints",
+          "severity": "Pass",
+          "message": "Both absent"
+        },
+        {
+          "name": "canonical_dmi",
+          "severity": "Pass",
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -3512,8 +3569,10 @@
         "licensor_url": "https://licensor.conformance.test",
         "content_creation_date": null,
         "ai_constraints": "No AI training permitted",
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 42,
         "evidence_channels": [
@@ -3542,35 +3601,35 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "PNG:CopyrightOwner": "Conformance Owner",
-          "Composite:ImageSize": "64 64",
-          "File:FileType": "PNG",
-          "PNG:LicensorName": "Conformance Licensor",
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_complete.png",
-          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
-          "PNG:UsageTerms": "All rights reserved for conformance testing",
-          "File:FileTypeExtension": "PNG",
-          "PNG:AIConstraints": "No AI training permitted",
-          "File:FileName": "canonical_complete.png",
-          "PNG:LicensorURL": "https://licensor.conformance.test",
-          "PNG:Description": "Protected image. Seed: 42",
-          "PNG:CreditLine": "Photo by Conformance Creator",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "PNG:WebStatementOfRights": "https://conformance.test/rights",
+          "PNG:Noai": "noindex",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
           "PNG:DateCreated": "2025-01-15",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:MIMEType": "image/png",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "PNG:LicensorEmail": "licensor@conformance.test",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "PNG:Contact": "contact@conformance.test",
-          "PNG:License": "https://conformance.test/license",
-          "PNG:Creator": "Conformance Creator",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "File:FileType": "PNG",
           "File:Directory": "tests/fixtures/conformance/canonical",
-          "PNG:Copyright": "Copyright (c) Conformance Test Holder",
+          "Composite:ImageSize": "64 64",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "PNG:Creator": "Conformance Creator",
+          "PNG:LicensorURL": "https://licensor.conformance.test",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_complete.png",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "PNG:LicensorEmail": "licensor@conformance.test",
+          "File:FileTypeExtension": "PNG",
           "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
-          "PNG:Noai": "noindex"
+          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
+          "PNG:Contact": "contact@conformance.test",
+          "PNG:Description": "Protected image. Seed: 42",
+          "File:MIMEType": "image/png",
+          "PNG:AIConstraints": "No AI training permitted",
+          "PNG:CopyrightOwner": "Conformance Owner",
+          "PNG:UsageTerms": "All rights reserved for conformance testing",
+          "PNG:LicensorName": "Conformance Licensor",
+          "File:FileName": "canonical_complete.png",
+          "PNG:CreditLine": "Photo by Conformance Creator",
+          "PNG:Copyright": "Copyright (c) Conformance Test Holder",
+          "PNG:WebStatementOfRights": "https://conformance.test/rights",
+          "PNG:License": "https://conformance.test/license"
         }
       ],
       "checks": [
@@ -3642,7 +3701,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -3741,8 +3800,10 @@
         "licensor_url": "https://licensor.conformance.test",
         "content_creation_date": null,
         "ai_constraints": "No AI training permitted",
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 42,
         "evidence_channels": [
@@ -3769,23 +3830,23 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileTypeExtension": "JPG",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "File:YCbCrSubSampling": "1 1",
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_complete.jpg",
-          "JFIF:JFIFVersion": "1 2",
-          "File:FileName": "canonical_complete.jpg",
-          "File:MIMEType": "image/jpeg",
-          "File:FileType": "JPEG",
-          "File:Directory": "tests/fixtures/conformance/canonical",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "EXIF:UserComment": "DMI: ProhibitedAiMlTraining",
           "ExifTool:Warning": "Bad IFD1 directory",
-          "Composite:ImageSize": "64 64",
+          "File:FileType": "JPEG",
+          "File:FileName": "canonical_complete.jpg",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "File:Directory": "tests/fixtures/conformance/canonical",
+          "File:FileModifyDate": "2026:07:29 16:45:37+00:00",
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_complete.jpg",
           "File:Comment": "X-Protection-Seed: 42",
-          "File:ExifByteOrder": "II"
+          "File:ExifByteOrder": "II",
+          "File:YCbCrSubSampling": "1 1",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileTypeExtension": "JPG",
+          "Composite:ImageSize": "64 64",
+          "EXIF:UserComment": "DMI: ProhibitedAiMlTraining",
+          "JFIF:JFIFVersion": "1 2",
+          "File:MIMEType": "image/jpeg",
+          "File:FileInodeChangeDate": "2026:07:29 16:45:37+00:00"
         }
       ],
       "checks": [
@@ -3862,7 +3923,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -3960,14 +4021,14 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
+        "canonical_data_mining": null,
         "legacy_data_mining": [],
         "tdm_reserved": null,
         "seed": null,
         "evidence_channels": [
           "JpegXmp"
         ],
-        "evidence_strength": "MetadataNoticeOnly"
+        "evidence_strength": "NoNoticeFound"
       },
       "external": [
         {
@@ -3987,20 +4048,20 @@
           "canonical_data_mining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:YCbCrSubSampling": "1 1",
-          "JFIF:JFIFVersion": "1 2",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:MIMEType": "image/jpeg",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_alt_prefix.jpg",
           "XMP:DataMining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
-          "Composite:ImageSize": "64 64",
-          "File:FileTypeExtension": "JPG",
-          "File:FileName": "canonical_alt_prefix.jpg",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:Directory": "tests/fixtures/conformance/canonical",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:YCbCrSubSampling": "1 1",
           "XMP:Rights": "Copyright (c) 2025 Alt Prefix Test",
-          "File:FileType": "JPEG"
+          "File:MIMEType": "image/jpeg",
+          "File:Directory": "tests/fixtures/conformance/canonical",
+          "JFIF:JFIFVersion": "1 2",
+          "File:FileTypeExtension": "JPG",
+          "Composite:ImageSize": "64 64",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "File:FileName": "canonical_alt_prefix.jpg",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileType": "JPEG",
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_alt_prefix.jpg"
         }
       ],
       "checks": [
@@ -4072,8 +4133,9 @@
         },
         {
           "name": "canonical_dmi",
-          "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "severity": "Warn",
+          "message": "DMI found externally but not internally",
+          "details": "external=\"http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING\""
         },
         {
           "name": "creators",
@@ -4089,11 +4151,6 @@
           "name": "libvips",
           "severity": "Pass",
           "message": "vipsheader: tests/fixtures/conformance/canonical/canonical_alt_prefix.jpg: 64x64 uchar, 3 bands, srgb, jpegload"
-        },
-        {
-          "name": "expected_dmi",
-          "severity": "Pass",
-          "message": "DMI matches manifest expectation"
         }
       ],
       "conflicts": [],
@@ -4120,8 +4177,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 43,
         "evidence_channels": [
@@ -4148,22 +4207,22 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
           "SourceFile": "tests/fixtures/conformance/canonical/canonical_policy_only.png",
+          "File:MIMEType": "image/png",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileTypeExtension": "PNG",
+          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
+          "PNG:Description": "Protected image. Seed: 43",
+          "File:FileType": "PNG",
           "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
           "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "File:FileType": "PNG",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
-          "File:MIMEType": "image/png",
-          "File:FileTypeExtension": "PNG",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:FileName": "canonical_policy_only.png",
-          "File:Directory": "tests/fixtures/conformance/canonical",
-          "PNG:Noai": "noindex",
-          "PNG:Description": "Protected image. Seed: 43",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
           "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:Directory": "tests/fixtures/conformance/canonical",
           "Composite:ImageSize": "64 64",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00"
+          "PNG:Noai": "noindex",
+          "File:FileName": "canonical_policy_only.png"
         }
       ],
       "checks": [
@@ -4235,7 +4294,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -4282,14 +4341,14 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
+        "canonical_data_mining": null,
         "legacy_data_mining": [],
         "tdm_reserved": null,
         "seed": null,
         "evidence_channels": [
           "JpegXmp"
         ],
-        "evidence_strength": "MetadataNoticeOnly"
+        "evidence_strength": "NoNoticeFound"
       },
       "external": [
         {
@@ -4309,21 +4368,21 @@
           "canonical_data_mining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:MIMEType": "image/jpeg",
-          "File:YCbCrSubSampling": "1 1",
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_independent.jpg",
-          "XMP:WebStatement": "https://example.com/rights",
-          "JFIF:JFIFVersion": "1 2",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "XMP:DataMining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
           "File:FileTypeExtension": "JPG",
-          "File:FileType": "JPEG",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_independent.jpg",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "XMP:WebStatement": "https://example.com/rights",
           "Composite:ImageSize": "64 64",
+          "XMP:DataMining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
           "XMP:Rights": "Copyright (c) 2025 Independent Author. All rights reserved.",
           "File:Directory": "tests/fixtures/conformance/canonical",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "JFIF:JFIFVersion": "1 2",
           "File:FileName": "canonical_independent.jpg",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00"
+          "File:FileType": "JPEG",
+          "File:YCbCrSubSampling": "1 1",
+          "File:MIMEType": "image/jpeg"
         }
       ],
       "checks": [
@@ -4396,8 +4455,9 @@
         },
         {
           "name": "canonical_dmi",
-          "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "severity": "Warn",
+          "message": "DMI found externally but not internally",
+          "details": "external=\"http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING\""
         },
         {
           "name": "creators",
@@ -4439,8 +4499,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 45,
         "evidence_channels": [
@@ -4467,24 +4529,24 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "Composite:ImageSize": "64 64",
-          "PNG:Noai": "noindex",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "File:FileName": "canonical_unicode.png",
-          "PNG:UsageTerms": "Alle Rechte vorbehalten. ç‰ˆæ¬Šæ‰€æœ‰ã€‚",
-          "File:FileTypeExtension": "PNG",
-          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
           "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileName": "canonical_unicode.png",
+          "File:FileTypeExtension": "PNG",
+          "Composite:ImageSize": "64 64",
           "File:MIMEType": "image/png",
-          "File:FileType": "PNG",
-          "PNG:Copyright": "Copyright (c) æ—¥æœ¬ãƒ†ã‚¹ãƒˆæ ªå¼ä¼šç¤¾",
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_unicode.png",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "PNG:Description": "Protected image. Seed: 45",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
           "File:Directory": "tests/fixtures/conformance/canonical",
-          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining"
+          "PNG:Copyright": "Copyright (c) æ—¥æœ¬ãƒ†ã‚¹ãƒˆæ ªå¼ä¼šç¤¾",
+          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_unicode.png",
+          "File:FileType": "PNG",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "PNG:UsageTerms": "Alle Rechte vorbehalten. ç‰ˆæ¬Šæ‰€æœ‰ã€‚",
+          "PNG:Noai": "noindex",
+          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
+          "PNG:Description": "Protected image. Seed: 45"
         }
       ],
       "checks": [
@@ -4558,7 +4620,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -4609,7 +4671,7 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
+        "canonical_data_mining": null,
         "legacy_data_mining": [],
         "tdm_reserved": null,
         "seed": null,
@@ -4640,23 +4702,23 @@
           "canonical_data_mining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileName": "canonical_multi_creator.webp",
-          "XMP:CopyrightOwner": "Multi Creator Corp",
-          "XMP:DataMining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
-          "XMP:LicensorUrl": "https://multi-creator.test/license",
-          "Composite:ImageSize": "64 64",
-          "XMP:LicensorName": "License Admin",
-          "XMP:LicensorEmail": "admin@multi-creator.test",
-          "File:Directory": "tests/fixtures/conformance/canonical",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
           "File:FileTypeExtension": "WEBP",
-          "File:FileType": "WEBP",
           "XMP:WebStatement": "https://example.com/rights",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
           "XMP:Rights": "Copyright (c) 2025 Multi Creator Corp. All rights reserved.",
+          "File:MIMEType": "image/webp",
+          "XMP:LicensorUrl": "https://multi-creator.test/license",
+          "XMP:LicensorEmail": "admin@multi-creator.test",
+          "Composite:ImageSize": "64 64",
+          "XMP:DataMining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
+          "File:FileType": "WEBP",
+          "XMP:CopyrightOwner": "Multi Creator Corp",
+          "XMP:LicensorName": "License Admin",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
           "SourceFile": "tests/fixtures/conformance/canonical/canonical_multi_creator.webp",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:MIMEType": "image/webp"
+          "File:FileName": "canonical_multi_creator.webp",
+          "File:Directory": "tests/fixtures/conformance/canonical"
         }
       ],
       "checks": [
@@ -4729,8 +4791,9 @@
         },
         {
           "name": "canonical_dmi",
-          "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "severity": "Warn",
+          "message": "DMI found externally but not internally",
+          "details": "external=\"http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING\""
         },
         {
           "name": "creators",
@@ -4772,12 +4835,12 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
+        "canonical_data_mining": null,
         "legacy_data_mining": [],
         "tdm_reserved": null,
         "seed": null,
         "evidence_channels": [],
-        "evidence_strength": "MetadataNoticeOnly"
+        "evidence_strength": "NoNoticeFound"
       },
       "external": [
         {
@@ -4797,18 +4860,18 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "Composite:ImageSize": "64 64",
+          "PNG:InternationalText": "(Binary data 590 bytes, use -b option to extract)",
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_independent.png",
+          "File:Directory": "tests/fixtures/conformance/canonical",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
           "File:FileType": "PNG",
           "File:FileName": "canonical_independent.png",
-          "PNG:InternationalText": "(Binary data 590 bytes, use -b option to extract)",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_independent.png",
-          "Composite:ImageSize": "64 64",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
           "File:FileTypeExtension": "PNG",
-          "File:MIMEType": "image/png",
-          "File:Directory": "tests/fixtures/conformance/canonical",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00"
+          "File:MIMEType": "image/png"
         }
       ],
       "checks": [
@@ -4879,9 +4942,8 @@
         },
         {
           "name": "canonical_dmi",
-          "severity": "Warn",
-          "message": "DMI found internally but not externally",
-          "details": "internal=\"ProhibitedAiMlTraining\""
+          "severity": "Pass",
+          "message": "Both absent"
         },
         {
           "name": "creators",
@@ -4923,8 +4985,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 43,
         "evidence_channels": [
@@ -4952,21 +5016,21 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "Composite:ImageSize": "64 64",
-          "XMP:NoticeAppliedAt": "2025:01:15 00:00:00Z",
-          "File:ExifByteOrder": "II",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:FileName": "canonical_policy_only.webp",
-          "File:FileType": "WEBP",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
           "File:FileTypeExtension": "WEBP",
+          "File:ExifByteOrder": "II",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
           "File:Directory": "tests/fixtures/conformance/canonical",
+          "File:FileName": "canonical_policy_only.webp",
           "File:MIMEType": "image/webp",
-          "EXIF:UserComment": "Protection seed: 43",
           "SourceFile": "tests/fixtures/conformance/canonical/canonical_policy_only.webp",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
           "ExifTool:Warning": "[minor] Improper EXIF header",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00"
+          "EXIF:UserComment": "Protection seed: 43",
+          "XMP:NoticeAppliedAt": "2025:01:15 00:00:00Z",
+          "File:FileType": "WEBP",
+          "Composite:ImageSize": "64 64",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING"
         }
       ],
       "checks": [
@@ -5038,7 +5102,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -5087,8 +5151,10 @@
         "licensor_url": "https://licensor.conformance.test",
         "content_creation_date": null,
         "ai_constraints": "No AI training permitted",
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 42,
         "evidence_channels": [
@@ -5118,32 +5184,32 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileTypeExtension": "WEBP",
-          "File:MIMEType": "image/webp",
-          "XMP:NoticeAppliedAt": "2025:01:15 00:00:00Z",
-          "XMP:LicensorName": "Conformance Licensor",
-          "ExifTool:Warning": "[minor] Improper EXIF header",
-          "XMP:UsageTerms": "All rights reserved for conformance testing",
-          "EXIF:UserComment": "Protection seed: 42",
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_complete.webp",
-          "XMP:Creator": "Conformance Creator",
-          "XMP:DateCreated": "2025:01:15",
-          "XMP:LicensorURL": "https://licensor.conformance.test",
-          "XMP:WebStatement": "https://conformance.test/rights",
-          "File:Directory": "tests/fixtures/conformance/canonical",
-          "XMP:CopyrightOwner": "Conformance Owner",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:FileType": "WEBP",
-          "File:FileName": "canonical_complete.webp",
-          "XMP:Credit": "Photo by Conformance Creator",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "XMP:AIConstraints": "No AI training permitted",
-          "XMP:LicensorEmail": "licensor@conformance.test",
           "XMP:Rights": "Copyright (c) Conformance Test Holder",
-          "File:ExifByteOrder": "II",
+          "ExifTool:Warning": "[minor] Improper EXIF header",
+          "File:MIMEType": "image/webp",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "XMP:WebStatement": "https://conformance.test/rights",
+          "XMP:LicensorEmail": "licensor@conformance.test",
+          "File:Directory": "tests/fixtures/conformance/canonical",
+          "File:FileTypeExtension": "WEBP",
+          "XMP:CopyrightOwner": "Conformance Owner",
+          "XMP:Credit": "Photo by Conformance Creator",
+          "XMP:LicensorURL": "https://licensor.conformance.test",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "File:FileName": "canonical_complete.webp",
+          "XMP:NoticeAppliedAt": "2025:01:15 00:00:00Z",
           "Composite:ImageSize": "64 64",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00"
+          "XMP:AIConstraints": "No AI training permitted",
+          "XMP:UsageTerms": "All rights reserved for conformance testing",
+          "XMP:Creator": "Conformance Creator",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "XMP:DateCreated": "2025:01:15",
+          "XMP:LicensorName": "Conformance Licensor",
+          "File:ExifByteOrder": "II",
+          "EXIF:UserComment": "Protection seed: 42",
+          "File:FileType": "WEBP",
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_complete.webp"
         }
       ],
       "checks": [
@@ -5215,7 +5281,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -5312,8 +5378,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 43,
         "evidence_channels": [
@@ -5340,23 +5408,23 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:MIMEType": "image/jpeg",
-          "EXIF:UserComment": "DMI: ProhibitedAiMlTraining",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:Directory": "tests/fixtures/conformance/canonical",
-          "File:FileType": "JPEG",
-          "File:YCbCrSubSampling": "1 1",
-          "File:ExifByteOrder": "II",
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_policy_only.jpg",
           "File:Comment": "X-Protection-Seed: 43",
-          "File:FileName": "canonical_policy_only.jpg",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "JFIF:JFIFVersion": "1 2",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "File:Directory": "tests/fixtures/conformance/canonical",
+          "EXIF:UserComment": "DMI: ProhibitedAiMlTraining",
+          "File:ExifByteOrder": "II",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
           "Composite:ImageSize": "64 64",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
+          "File:MIMEType": "image/jpeg",
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_policy_only.jpg",
+          "File:FileName": "canonical_policy_only.jpg",
+          "ExifTool:Warning": "Bad IFD1 directory",
           "File:FileTypeExtension": "JPG",
-          "ExifTool:Warning": "Bad IFD1 directory"
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "File:FileInodeChangeDate": "2026:07:29 16:45:37+00:00",
+          "File:FileType": "JPEG",
+          "File:FileModifyDate": "2026:07:29 16:45:37+00:00",
+          "File:YCbCrSubSampling": "1 1",
+          "JFIF:JFIFVersion": "1 2"
         }
       ],
       "checks": [
@@ -5428,7 +5496,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -5475,12 +5543,12 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
+        "canonical_data_mining": null,
         "legacy_data_mining": [],
         "tdm_reserved": null,
         "seed": null,
         "evidence_channels": [],
-        "evidence_strength": "MetadataNoticeOnly"
+        "evidence_strength": "NoNoticeFound"
       },
       "external": [
         {
@@ -5500,18 +5568,18 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:FileType": "PNG",
-          "PNG:InternationalText": "(Binary data 447 bytes, use -b option to extract)",
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_alt_prefix.png",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "Composite:ImageSize": "64 64",
-          "File:FileName": "canonical_alt_prefix.png",
-          "File:FileTypeExtension": "PNG",
           "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileType": "PNG",
+          "File:FileTypeExtension": "PNG",
+          "PNG:InternationalText": "(Binary data 447 bytes, use -b option to extract)",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "Composite:ImageSize": "64 64",
           "File:Directory": "tests/fixtures/conformance/canonical",
-          "File:MIMEType": "image/png",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00"
+          "File:FileName": "canonical_alt_prefix.png",
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_alt_prefix.png",
+          "File:MIMEType": "image/png"
         }
       ],
       "checks": [
@@ -5582,9 +5650,8 @@
         },
         {
           "name": "canonical_dmi",
-          "severity": "Warn",
-          "message": "DMI found internally but not externally",
-          "details": "internal=\"ProhibitedAiMlTraining\""
+          "severity": "Pass",
+          "message": "Both absent"
         },
         {
           "name": "creators",
@@ -5600,11 +5667,6 @@
           "name": "libvips",
           "severity": "Pass",
           "message": "vipsheader: tests/fixtures/conformance/canonical/canonical_alt_prefix.png: 64x64 uchar, 3 bands, srgb, pngload"
-        },
-        {
-          "name": "expected_dmi",
-          "severity": "Pass",
-          "message": "DMI matches manifest expectation"
         }
       ],
       "conflicts": [],
@@ -5635,12 +5697,12 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
+        "canonical_data_mining": null,
         "legacy_data_mining": [],
         "tdm_reserved": null,
         "seed": null,
         "evidence_channels": [],
-        "evidence_strength": "MetadataNoticeOnly"
+        "evidence_strength": "NoNoticeFound"
       },
       "external": [
         {
@@ -5660,18 +5722,18 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
           "File:Directory": "tests/fixtures/conformance/canonical",
           "SourceFile": "tests/fixtures/conformance/canonical/canonical_multi_creator.png",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
+          "File:FileTypeExtension": "PNG",
           "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileType": "PNG",
+          "File:MIMEType": "image/png",
+          "Composite:ImageSize": "64 64",
           "File:FileName": "canonical_multi_creator.png",
           "PNG:InternationalText": "(Binary data 1078 bytes, use -b option to extract)",
-          "Composite:ImageSize": "64 64",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:MIMEType": "image/png",
-          "File:FileType": "PNG",
-          "File:FileTypeExtension": "PNG"
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00"
         }
       ],
       "checks": [
@@ -5742,9 +5804,8 @@
         },
         {
           "name": "canonical_dmi",
-          "severity": "Warn",
-          "message": "DMI found internally but not externally",
-          "details": "internal=\"ProhibitedAiMlTraining\""
+          "severity": "Pass",
+          "message": "Both absent"
         },
         {
           "name": "creators",
@@ -5787,14 +5848,14 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
+        "canonical_data_mining": null,
         "legacy_data_mining": [],
         "tdm_reserved": null,
         "seed": null,
         "evidence_channels": [
           "WebPXmp"
         ],
-        "evidence_strength": "MetadataNoticeOnly"
+        "evidence_strength": "NoNoticeFound"
       },
       "external": [
         {
@@ -5814,19 +5875,19 @@
           "canonical_data_mining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_independent.webp",
+          "XMP:Rights": "Copyright (c) 2025 Independent Author. All rights reserved.",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:MIMEType": "image/webp",
+          "File:FileTypeExtension": "WEBP",
+          "File:FileType": "WEBP",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
           "File:FileName": "canonical_independent.webp",
           "XMP:DataMining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
-          "File:Directory": "tests/fixtures/conformance/canonical",
-          "XMP:Rights": "Copyright (c) 2025 Independent Author. All rights reserved.",
           "XMP:WebStatement": "https://example.com/rights",
-          "Composite:ImageSize": "64 64",
-          "File:FileType": "WEBP",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:MIMEType": "image/webp",
-          "File:FileTypeExtension": "WEBP"
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_independent.webp",
+          "File:Directory": "tests/fixtures/conformance/canonical",
+          "Composite:ImageSize": "64 64"
         }
       ],
       "checks": [
@@ -5899,8 +5960,9 @@
         },
         {
           "name": "canonical_dmi",
-          "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "severity": "Warn",
+          "message": "DMI found externally but not internally",
+          "details": "external=\"http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING\""
         },
         {
           "name": "creators",
@@ -5942,8 +6004,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 45,
         "evidence_channels": [
@@ -5971,23 +6035,23 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_unicode.webp",
-          "XMP:NoticeAppliedAt": "2025:01:15 00:00:00Z",
-          "File:FileType": "WEBP",
-          "File:FileName": "canonical_unicode.webp",
           "ExifTool:Warning": "[minor] Improper EXIF header",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:FileTypeExtension": "WEBP",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "XMP:Rights": "Copyright (c) 日本テスト株式会社",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "File:FileName": "canonical_unicode.webp",
           "File:ExifByteOrder": "II",
+          "XMP:NoticeAppliedAt": "2025:01:15 00:00:00Z",
           "EXIF:UserComment": "Protection seed: 45",
+          "File:MIMEType": "image/webp",
+          "Composite:ImageSize": "64 64",
+          "XMP:Rights": "Copyright (c) 日本テスト株式会社",
+          "File:FileTypeExtension": "WEBP",
+          "File:FileType": "WEBP",
           "File:Directory": "tests/fixtures/conformance/canonical",
           "XMP:UsageTerms": "Alle Rechte vorbehalten. 版權所有。",
-          "File:MIMEType": "image/webp",
-          "Composite:ImageSize": "64 64"
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_unicode.webp",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00"
         }
       ],
       "checks": [
@@ -6059,7 +6123,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -6110,14 +6174,14 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
+        "canonical_data_mining": null,
         "legacy_data_mining": [],
         "tdm_reserved": null,
         "seed": null,
         "evidence_channels": [
           "JpegXmp"
         ],
-        "evidence_strength": "MetadataNoticeOnly"
+        "evidence_strength": "NoNoticeFound"
       },
       "external": [
         {
@@ -6141,25 +6205,25 @@
           "canonical_data_mining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "Composite:ImageSize": "64 64",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
           "File:MIMEType": "image/jpeg",
-          "XMP:WebStatement": "https://example.com/rights",
-          "File:Directory": "tests/fixtures/conformance/canonical",
-          "XMP:Rights": "Copyright (c) 2025 Multi Creator Corp. All rights reserved.",
-          "XMP:DataMining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
           "XMP:CopyrightOwner": "Multi Creator Corp",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:FileTypeExtension": "JPG",
-          "XMP:LicensorUrl": "https://multi-creator.test/license",
-          "JFIF:JFIFVersion": "1 2",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "SourceFile": "tests/fixtures/conformance/canonical/canonical_multi_creator.jpg",
-          "XMP:LicensorEmail": "admin@multi-creator.test",
           "XMP:LicensorName": "License Admin",
+          "File:Directory": "tests/fixtures/conformance/canonical",
+          "XMP:LicensorUrl": "https://multi-creator.test/license",
+          "File:FileName": "canonical_multi_creator.jpg",
           "File:FileType": "JPEG",
-          "File:YCbCrSubSampling": "1 1",
-          "File:FileName": "canonical_multi_creator.jpg"
+          "JFIF:JFIFVersion": "1 2",
+          "Composite:ImageSize": "64 64",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "XMP:LicensorEmail": "admin@multi-creator.test",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "SourceFile": "tests/fixtures/conformance/canonical/canonical_multi_creator.jpg",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "XMP:WebStatement": "https://example.com/rights",
+          "XMP:DataMining": "http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING",
+          "XMP:Rights": "Copyright (c) 2025 Multi Creator Corp. All rights reserved.",
+          "File:FileTypeExtension": "JPG",
+          "File:YCbCrSubSampling": "1 1"
         }
       ],
       "checks": [
@@ -6232,8 +6296,9 @@
         },
         {
           "name": "canonical_dmi",
-          "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "severity": "Warn",
+          "message": "DMI found externally but not internally",
+          "details": "external=\"http://ns.useplus.org/ldf/value/DMI-PROHIBITED-AIMLTRAINING\""
         },
         {
           "name": "creators",
@@ -6277,9 +6342,9 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
+        "canonical_data_mining": null,
         "legacy_data_mining": [
-          "Allowed"
+          "ProhibitedAiMlTraining"
         ],
         "tdm_reserved": null,
         "seed": null,
@@ -6308,27 +6373,27 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "File:FileType": "PNG",
+          "SourceFile": "tests/fixtures/conformance/independent/conflict_canonical_legacy.png",
           "PNG:Creator": "Independent Creator",
-          "File:MIMEType": "image/png",
+          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
           "PNG:Palette": "(Binary data 6 bytes, use -b option to extract)",
+          "XMP:XMPToolkit": "ExifTool 12.76",
+          "File:FileName": "conflict_canonical_legacy.png",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
           "File:FileModifyDate": "2026:07:27 22:44:35+00:00",
+          "PNG:Copyright": "Copyright (c) 2024 Conflict Test",
+          "File:FileTypeExtension": "PNG",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileType": "PNG",
+          "XMP:Creator": "Independent Creator",
           "XMP:Dmi": "Allowed",
           "XMP:Rights": "Copyright (c) 2024 Conflict Test",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "Composite:ImageSize": "64 64",
-          "File:FileTypeExtension": "PNG",
-          "PNG:Copyright": "Copyright (c) 2024 Conflict Test",
-          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
-          "SourceFile": "tests/fixtures/conformance/independent/conflict_canonical_legacy.png",
-          "File:FileAccessDate": "2026:07:27 22:44:36+00:00",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "XMP:Creator": "Independent Creator",
-          "PNG:ModifyDate": "2026:07:25 05:39:10",
-          "XMP:XMPToolkit": "ExifTool 12.76",
-          "File:FileInodeChangeDate": "2026:07:27 22:44:35+00:00",
           "File:Directory": "tests/fixtures/conformance/independent",
-          "File:FileName": "conflict_canonical_legacy.png"
+          "File:FileInodeChangeDate": "2026:07:27 22:44:35+00:00",
+          "Composite:ImageSize": "64 64",
+          "File:MIMEType": "image/png",
+          "PNG:ModifyDate": "2026:07:25 05:39:10"
         }
       ],
       "checks": [
@@ -6400,7 +6465,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -6423,11 +6488,6 @@
           "message": "DMI matches manifest expectation"
         },
         {
-          "name": "expected_conflict",
-          "severity": "Pass",
-          "message": "Conflict correctly detected"
-        },
-        {
           "name": "expected_copyright_holder",
           "severity": "Pass",
           "message": "Field matches expectation"
@@ -6438,9 +6498,7 @@
           "message": "Field matches expectation"
         }
       ],
-      "conflicts": [
-        "DMI conflict: canonical=\"ProhibitedAiMlTraining\" vs legacy=\"Allowed\""
-      ],
+      "conflicts": [],
       "passed": true
     },
     {
@@ -6466,8 +6524,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": null,
         "evidence_channels": [
@@ -6495,26 +6555,26 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "SourceFile": "tests/fixtures/conformance/independent/preservation_custom_xmp.png",
-          "File:FileInodeChangeDate": "2026:07:27 22:44:35+00:00",
-          "File:FileName": "preservation_custom_xmp.png",
-          "File:MIMEType": "image/png",
-          "XMP:Creator": "Independent Preservation Creator",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "Composite:ImageSize": "64 64",
-          "PNG:Copyright": "https://independent.test/rights",
-          "File:FileAccessDate": "2026:07:27 22:44:35+00:00",
-          "File:FileType": "PNG",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
           "PNG:Creator": "Independent Preservation Creator",
           "PNG:Palette": "(Binary data 6 bytes, use -b option to extract)",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "File:FileModifyDate": "2026:07:27 22:44:35+00:00",
-          "XMP:WebStatement": "https://independent.test/rights",
-          "File:FileTypeExtension": "PNG",
-          "XMP:XMPToolkit": "ExifTool 12.76",
+          "File:FileInodeChangeDate": "2026:07:27 22:44:35+00:00",
           "File:Directory": "tests/fixtures/conformance/independent",
+          "SourceFile": "tests/fixtures/conformance/independent/preservation_custom_xmp.png",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "Composite:ImageSize": "64 64",
+          "PNG:ModifyDate": "2026:07:25 05:39:10",
+          "File:FileType": "PNG",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
           "XMP:Rights": "https://independent.test/rights",
-          "PNG:ModifyDate": "2026:07:25 05:39:10"
+          "XMP:WebStatement": "https://independent.test/rights",
+          "XMP:XMPToolkit": "ExifTool 12.76",
+          "File:FileModifyDate": "2026:07:27 22:44:35+00:00",
+          "File:FileName": "preservation_custom_xmp.png",
+          "PNG:Copyright": "https://independent.test/rights",
+          "File:FileTypeExtension": "PNG",
+          "XMP:Creator": "Independent Preservation Creator",
+          "File:MIMEType": "image/png"
         }
       ],
       "checks": [
@@ -6587,7 +6647,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -6646,8 +6706,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": null,
         "evidence_channels": [
@@ -6675,25 +6737,25 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "PNG:Copyright": "Copyright (c) 2024 Independent Test",
-          "PNG:Creator": "Independent Creator",
-          "File:FileName": "legacy_dmi_prohibited.png",
-          "PNG:ModifyDate": "2026:07:25 05:39:10",
-          "XMP:Creator": "Independent Creator",
-          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
           "File:FileType": "PNG",
-          "SourceFile": "tests/fixtures/conformance/independent/legacy_dmi_prohibited.png",
-          "File:FileAccessDate": "2026:07:27 22:44:36+00:00",
-          "File:FileInodeChangeDate": "2026:07:27 22:44:35+00:00",
           "File:MIMEType": "image/png",
-          "Composite:ImageSize": "64 64",
-          "File:FileModifyDate": "2026:07:27 22:44:35+00:00",
           "File:FileTypeExtension": "PNG",
-          "XMP:XMPToolkit": "ExifTool 12.76",
-          "XMP:Rights": "Copyright (c) 2024 Independent Test",
+          "PNG:Copyright": "Copyright (c) 2024 Independent Test",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileModifyDate": "2026:07:27 22:44:35+00:00",
+          "PNG:Creator": "Independent Creator",
+          "PNG:Palette": "(Binary data 6 bytes, use -b option to extract)",
+          "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "PNG:ModifyDate": "2026:07:25 05:39:10",
+          "Composite:ImageSize": "64 64",
+          "File:FileInodeChangeDate": "2026:07:27 22:44:35+00:00",
           "File:Directory": "tests/fixtures/conformance/independent",
-          "PNG:Palette": "(Binary data 6 bytes, use -b option to extract)"
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:FileName": "legacy_dmi_prohibited.png",
+          "XMP:Rights": "Copyright (c) 2024 Independent Test",
+          "SourceFile": "tests/fixtures/conformance/independent/legacy_dmi_prohibited.png",
+          "XMP:Creator": "Independent Creator",
+          "XMP:XMPToolkit": "ExifTool 12.76"
         }
       ],
       "checks": [
@@ -6765,7 +6827,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -6822,8 +6884,10 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "ProhibitedAiMlTraining"
+        ],
         "tdm_reserved": null,
         "seed": 61,
         "evidence_channels": [
@@ -6850,23 +6914,23 @@
           "canonical_data_mining": "DMI-PROHIBITED-AIMLTRAINING",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "PNG:Description": "Protected image. Seed: 61",
-          "File:Directory": "tests/fixtures/conformance/conflicting",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
-          "PNG:Noai": "noindex",
-          "File:FileName": "dmi_prohibited_then_allowed.png",
-          "File:FileType": "PNG",
-          "PNG:Copyright": "Copyright (c) Prohibited Holder",
-          "File:FileTypeExtension": "PNG",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "Composite:ImageSize": "64 64",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
           "XMP:DataMining": "DMI-PROHIBITED-AIMLTRAINING",
+          "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileTypeExtension": "PNG",
+          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining",
+          "PNG:Description": "Protected image. Seed: 61",
+          "File:FileType": "PNG",
+          "Composite:ImageSize": "64 64",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
           "SourceFile": "tests/fixtures/conformance/conflicting/dmi_prohibited_then_allowed.png",
+          "File:FileName": "dmi_prohibited_then_allowed.png",
           "File:MIMEType": "image/png",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "PNG:DMI-PROHIBITED": "ProhibitedAiMlTraining"
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "PNG:Noai": "noindex",
+          "File:Directory": "tests/fixtures/conformance/conflicting",
+          "PNG:Copyright": "Copyright (c) Prohibited Holder"
         }
       ],
       "checks": [
@@ -6938,7 +7002,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -7017,18 +7081,18 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
+          "PNG:Copyright": "Holder B",
           "File:FileType": "PNG",
-          "File:FileName": "conflicting_copyright_owners.png",
+          "SourceFile": "tests/fixtures/conformance/conflicting/conflicting_copyright_owners.png",
+          "File:FileTypeExtension": "PNG",
           "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
           "File:Directory": "tests/fixtures/conformance/conflicting",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "File:FileName": "conflicting_copyright_owners.png",
           "File:MIMEType": "image/png",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "PNG:Copyright": "Holder B",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:FileTypeExtension": "PNG",
-          "Composite:ImageSize": "64 64",
-          "SourceFile": "tests/fixtures/conformance/conflicting/conflicting_copyright_owners.png"
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "Composite:ImageSize": "64 64"
         }
       ],
       "checks": [
@@ -7122,12 +7186,12 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "ProhibitedAiMlTraining",
+        "canonical_data_mining": null,
         "legacy_data_mining": [],
         "tdm_reserved": false,
         "seed": null,
         "evidence_channels": [],
-        "evidence_strength": "MetadataNoticeOnly"
+        "evidence_strength": "NoNoticeFound"
       },
       "external": [
         {
@@ -7147,18 +7211,18 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "Composite:ImageSize": "64 64",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
           "File:Directory": "tests/fixtures/conformance/conflicting",
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:FileName": "tdm_conflicts_dmi.png",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:MIMEType": "image/png",
-          "SourceFile": "tests/fixtures/conformance/conflicting/tdm_conflicts_dmi.png",
           "File:FileTypeExtension": "PNG",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:MIMEType": "image/png",
           "PNG:InternationalText": "(Binary data 485 bytes, use -b option to extract)",
+          "Composite:ImageSize": "64 64",
+          "SourceFile": "tests/fixtures/conformance/conflicting/tdm_conflicts_dmi.png",
+          "File:FileName": "tdm_conflicts_dmi.png",
           "File:FileType": "PNG",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00"
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00"
         }
       ],
       "checks": [
@@ -7229,9 +7293,8 @@
         },
         {
           "name": "canonical_dmi",
-          "severity": "Warn",
-          "message": "DMI found internally but not externally",
-          "details": "internal=\"ProhibitedAiMlTraining\""
+          "severity": "Pass",
+          "message": "Both absent"
         },
         {
           "name": "creators",
@@ -7273,15 +7336,16 @@
         "licensor_url": null,
         "content_creation_date": null,
         "ai_constraints": null,
-        "canonical_data_mining": "Allowed",
-        "legacy_data_mining": [],
+        "canonical_data_mining": null,
+        "legacy_data_mining": [
+          "Allowed"
+        ],
         "tdm_reserved": null,
         "seed": 60,
         "evidence_channels": [
-          "PngText",
-          "LsbPayload"
+          "PngText"
         ],
-        "evidence_strength": "MetadataNoticeAndBestEffortStego"
+        "evidence_strength": "MetadataNoticeOnly"
       },
       "external": [
         {
@@ -7301,23 +7365,23 @@
           "canonical_data_mining": "DMI-ALLOWED",
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
           "XMP:DataMining": "DMI-ALLOWED",
-          "File:FileTypeExtension": "PNG",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "PNG:Noai": "noindex",
-          "PNG:Description": "Protected image. Seed: 60",
           "PNG:Copyright": "Copyright (c) Allowed Holder",
-          "File:FileType": "PNG",
+          "PNG:Noai": "noindex",
           "Composite:ImageSize": "64 64",
-          "File:Directory": "tests/fixtures/conformance/conflicting",
-          "PNG:DMI-PROHIBITED": "Allowed",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
-          "File:MIMEType": "image/png",
           "PNG:NoticeAppliedAt": "2025-01-15T00:00:00Z",
-          "SourceFile": "tests/fixtures/conformance/conflicting/dmi_allowed_then_prohibited.png",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "PNG:Description": "Protected image. Seed: 60",
+          "PNG:DMI-PROHIBITED": "Allowed",
+          "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
+          "File:FileTypeExtension": "PNG",
+          "File:FileType": "PNG",
           "File:FileName": "dmi_allowed_then_prohibited.png",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00"
+          "File:Directory": "tests/fixtures/conformance/conflicting",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
+          "File:MIMEType": "image/png",
+          "SourceFile": "tests/fixtures/conformance/conflicting/dmi_allowed_then_prohibited.png"
         }
       ],
       "checks": [
@@ -7389,7 +7453,7 @@
         {
           "name": "canonical_dmi",
           "severity": "Pass",
-          "message": "DMI values agree (normalized)"
+          "message": "DMI values agree (normalized; legacy fallback accepted)"
         },
         {
           "name": "creators",
@@ -7466,18 +7530,18 @@
           "canonical_data_mining": null,
           "legacy_data_mining": [],
           "tdm_reserved": null,
-          "Composite:ImageSize": "64 64",
           "ExifTool:Warning": "[minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)",
-          "File:FileInodeChangeDate": "2026:07:28 13:54:19+00:00",
-          "File:Directory": "tests/fixtures/conformance/conflicting",
-          "File:FileModifyDate": "2026:07:28 13:54:19+00:00",
-          "File:MIMEType": "image/png",
-          "File:FileType": "PNG",
-          "File:FileTypeExtension": "PNG",
-          "File:FileAccessDate": "2026:07:28 13:54:19+00:00",
+          "File:FileInodeChangeDate": "2026:07:29 16:42:11+00:00",
+          "File:FileAccessDate": "2026:08:14 14:18:17+00:00",
+          "File:FileModifyDate": "2026:07:29 16:42:11+00:00",
           "File:FileName": "conflicting_rights_urls.png",
-          "SourceFile": "tests/fixtures/conformance/conflicting/conflicting_rights_urls.png",
-          "PNG:WebStatement": "https://example.com/rights-b"
+          "File:FileType": "PNG",
+          "Composite:ImageSize": "64 64",
+          "File:Directory": "tests/fixtures/conformance/conflicting",
+          "File:FileTypeExtension": "PNG",
+          "File:MIMEType": "image/png",
+          "PNG:WebStatement": "https://example.com/rights-b",
+          "SourceFile": "tests/fixtures/conformance/conflicting/conflicting_rights_urls.png"
         }
       ],
       "checks": [

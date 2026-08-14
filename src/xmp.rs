@@ -197,40 +197,6 @@ fn start_element_is_owned(start: &[u8], ns_stack: &NsStack) -> bool {
     }
 }
 
-#[allow(dead_code)]
-fn collect_xmlns_declarations(
-    start_bytes: &[u8],
-    attrs: &mut std::collections::HashMap<Vec<u8>, Vec<u8>>,
-) -> Result<()> {
-    let mut reader = NsReader::from_reader(start_bytes);
-    reader.config_mut().trim_text(true);
-    let mut buf = Vec::new();
-    let event = reader.read_event_into(&mut buf).map_err(xmp_xml_error)?;
-    if let Event::Start(start) = event {
-        for attr_res in start.attributes() {
-            let attr = attr_res.map_err(xmp_attr_error)?;
-            let key = attr.key.as_ref();
-            if !is_xmlns_attr(key) {
-                continue;
-            }
-            let value = attr
-                .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, reader.decoder())
-                .map_err(xmp_xml_error)?
-                .into_owned()
-                .into_bytes();
-            let prefix = if key == b"xmlns" {
-                Vec::new()
-            } else if key.starts_with(b"xmlns:") {
-                key[6..].to_vec()
-            } else {
-                continue;
-            };
-            attrs.insert(prefix, value);
-        }
-    }
-    Ok(())
-}
-
 fn attr_raw_value(attr: &Attribute, reader: &NsReader<&[u8]>) -> Result<Vec<u8>> {
     let v = attr
         .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, reader.decoder())
@@ -843,27 +809,9 @@ pub(crate) fn deduplicate_descriptions(
     out
 }
 
-#[allow(dead_code)]
-fn namespace_uri_eq(a: quick_xml::name::Namespace<'_>, b: &str) -> bool {
-    if let Ok(s) = std::str::from_utf8(a.as_ref()) {
-        s == b
-    } else {
-        false
-    }
-}
-
 fn local_name_eq(a: &[u8], b: &str) -> bool {
     if let Ok(s) = std::str::from_utf8(a) {
         s == b
-    } else {
-        false
-    }
-}
-
-#[allow(dead_code)]
-fn resolved_uri_eq(resolved: ResolveResult<'_>, target: &str) -> bool {
-    if let ResolveResult::Bound(ns) = resolved {
-        namespace_uri_eq(ns, target)
     } else {
         false
     }
@@ -1048,7 +996,6 @@ fn append_empty(
     Ok(())
 }
 
-#[cfg(test)]
 #[cfg(test)]
 mod tests {
     use super::*;

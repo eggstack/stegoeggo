@@ -20,7 +20,7 @@ use subtle::ConstantTimeEq;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Minimum stego payload size: 24 bytes header + 4 bytes CRC32 checksum (or 8 bytes MAC).
+/// Legacy V1 payload parsing threshold: 24-byte header + 4-byte CRC32 checksum.
 const MIN_PAYLOAD_SIZE: usize = 28;
 /// V1 ECC-encoded payload size: 72 bytes (24 data × 3 replication) + 4 bytes CRC32.
 const ECC_PAYLOAD_SIZE_V1: usize = ecc::TOTAL_ECC_LEN + 4;
@@ -74,7 +74,6 @@ const FALLBACK_SEEDS: &[u64] = &[42, 0, 1, 12345, 99999, 123456789];
 /// corruption, enabling structured reporting for missing authentication keys,
 /// failed authentication, malformed headers, and unsupported versions.
 #[derive(Debug)]
-#[allow(dead_code)]
 pub(crate) enum CandidateOutcome {
     Valid(Vec<u8>),
     Invalid(Vec<u8>),
@@ -1703,6 +1702,9 @@ impl SteganographyProtector {
     }
 
     fn candidate_seed_matches(outcome: &CandidateOutcome, expected_seed: u64) -> bool {
+        if let CandidateOutcome::UnsupportedVersion(version) = outcome {
+            let _ = version;
+        }
         let payload = match outcome {
             CandidateOutcome::Valid(p)
             | CandidateOutcome::Invalid(p)
@@ -1731,22 +1733,6 @@ impl SteganographyProtector {
         img: &DynamicImage,
         mac_key: &[u8],
     ) -> Option<StegoPayload> {
-        // Try extracting seed from metadata first
-        if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
-            if let Some(metadata_seed) =
-                RightsMetadataProtector::extract_seed_from_image_with_limits(
-                    &encoded,
-                    Some(&self.limits),
-                )
-            {
-                if let Some(payload) =
-                    self.extract_payload_with_seed_and_key(img, metadata_seed, mac_key)
-                {
-                    return Some(payload);
-                }
-            }
-        }
-
         // Try LSB fallback seed (fixed-position LSB pattern)
         let rgba = img.to_rgba8();
         if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
@@ -1757,7 +1743,7 @@ impl SteganographyProtector {
             }
         }
 
-        // Fallback: try common seeds (metadata stripped during DynamicImage re-encoding)
+        // Fallback: try common seeds when metadata is unavailable.
         #[cfg(feature = "test-seeds")]
         for &seed in FALLBACK_SEEDS
             .iter()
@@ -4119,7 +4105,6 @@ impl StegoPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protected::constants::STEGO_SPREAD_FACTOR;
     use crate::stego::__internal_jpeg_facade::JpegHeader;
     use crate::types::ProtectionConfig;
     use image::ImageEncoder;
@@ -5814,7 +5799,7 @@ mod tests {
         let payload_bits = 288usize;
         let redundancy = 3usize;
         let required = carrier_lsb::lsb_required_capacity_v2(payload_bits, redundancy);
-        assert_eq!(required, payload_bits * STEGO_SPREAD_FACTOR * redundancy);
+        assert_eq!(required, payload_bits * 5 * redundancy);
     }
 
     #[test]
@@ -5884,8 +5869,8 @@ mod tests {
         let mut all_slots = Vec::new();
         let seed = 42u64;
         for i in 0..payload_bits {
-            for s in 0..STEGO_SPREAD_FACTOR {
-                let logical = i * STEGO_SPREAD_FACTOR + s;
+            for s in 0..5 {
+                let logical = i * 5 + s;
                 let slot = carrier_lsb::stego_permutation_v2(logical, available, seed);
                 all_slots.push(slot);
             }

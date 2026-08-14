@@ -461,7 +461,7 @@ impl ImageOutputFormat {
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```no_run
 /// use stegoeggo::LocalizedText;
 ///
 /// let terms = LocalizedText::new("All rights reserved.");

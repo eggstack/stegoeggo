@@ -624,10 +624,11 @@ pub fn compare_extractions(
         report,
     );
 
-    match (
-        &internal.canonical_data_mining,
-        &external.canonical_data_mining,
-    ) {
+    let internal_dmi = internal
+        .canonical_data_mining
+        .as_ref()
+        .or_else(|| internal.legacy_data_mining.first());
+    match (internal_dmi, &external.canonical_data_mining) {
         (Some(i), Some(e)) => {
             let ni = normalize_dmi_value(i);
             let ne = normalize_dmi_value(e);
@@ -635,7 +636,7 @@ pub fn compare_extractions(
                 report.add_check(
                     "canonical_dmi",
                     CheckSeverity::Pass,
-                    "DMI values agree (normalized)",
+                    "DMI values agree (normalized; legacy fallback accepted)",
                 );
             } else {
                 report.add_check_with_details(

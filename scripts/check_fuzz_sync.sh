@@ -24,8 +24,12 @@ fi
 # Skip the first match (package name) and extract only bin targets
 cargo_targets=$(awk -F'"' '/^\[\[bin\]\]/{found=1; next} found && /^name = /{print $2; found=0}' "$CARGO_TOML" | sort)
 
-# Extract target names from fuzz.yml (list items under target: matrix)
-workflow_targets=$(awk '/^        target:/{found=1; next} found && /^          - /{gsub(/^          - /, ""); print; next} found && !/^          /{found=0}' "$FUZZ_YML" | sort -u)
+# Extract target names from the workflow_dispatch target options.
+workflow_targets=$(awk '
+    /^      target:$/ { in_target = 1; next }
+    in_target && /^      seconds:/ { in_target = 0 }
+    in_target && /^          - [a-z0-9_]+$/ { print $2 }
+' "$FUZZ_YML" | sort -u)
 
 if [ "$cargo_targets" = "$workflow_targets" ]; then
     echo "Fuzz targets synchronized: $(echo "$cargo_targets" | wc -l) targets"

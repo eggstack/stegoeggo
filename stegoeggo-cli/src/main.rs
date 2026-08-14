@@ -1775,7 +1775,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         .unwrap_or(DEFAULT_OUTPUT_FORMAT);
                     let effective_format = output_format.unwrap_or(detected);
 
-                    let mut seen = seen_paths.lock().unwrap();
+                    let mut seen = seen_paths.lock().unwrap_or_else(|e| e.into_inner());
                     let override_output =
                         compute_output_path(input_path, &args.output, effective_format, &mut seen);
                     drop(seen);
@@ -1798,10 +1798,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             input_files
                 .iter()
                 .map(|input_path| {
-                    let detected = ImageOutputFormat::from_magic_bytes(
-                        &fs::read(input_path).unwrap_or_default(),
-                    )
-                    .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+                    let input_bytes_preview =
+                        fs::read(input_path).map_err(|e| (input_path.clone(), e.to_string()))?;
+                    let detected = ImageOutputFormat::from_magic_bytes(&input_bytes_preview)
+                        .unwrap_or(DEFAULT_OUTPUT_FORMAT);
                     let effective_format = output_format.unwrap_or(detected);
 
                     let override_output =

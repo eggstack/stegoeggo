@@ -30,6 +30,9 @@ pub fn splitmix64(x: u64) -> u64 {
 
 #[inline(always)]
 pub fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize {
+    if total_pixels == 0 {
+        return 0;
+    }
     let a = splitmix64(seed).wrapping_mul(2) | 1;
     let b = splitmix64(seed.wrapping_add(0x9e3779b97f4a7c15));
     a.wrapping_mul(index as u64).wrapping_add(b) as usize % total_pixels
@@ -474,11 +477,14 @@ pub fn crop_rgba(src: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> RgbaImage {
     out
 }
 
-#[allow(dead_code)]
 pub fn blit_rgba(dst: &mut RgbaImage, x: u32, y: u32, src: &RgbaImage) {
-    let (w, h) = src.dimensions();
-    for dy in 0..h {
-        for dx in 0..w {
+    if x >= dst.width() || y >= dst.height() {
+        return;
+    }
+    let width = src.width().min(dst.width() - x);
+    let height = src.height().min(dst.height() - y);
+    for dy in 0..height {
+        for dx in 0..width {
             let p = src.get_pixel(dx, dy);
             dst.put_pixel(x + dx, y + dy, *p);
         }
@@ -816,6 +822,12 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn stego_permutation_empty_carrier_is_safe() {
+        assert_eq!(stego_permutation(0, 0, 42), 0);
+        assert_eq!(stego_permutation(17, 0, 42), 0);
     }
 
     #[test]

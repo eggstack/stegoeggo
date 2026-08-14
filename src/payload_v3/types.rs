@@ -152,10 +152,17 @@ impl PayloadFlags {
     /// Bitmask for the `signed` flag.
     pub const SIGNED: u16 = 0x0200;
 
+    const DEFINED_FLAGS: u16 = Self::HAS_EXTENSIONS
+        | Self::HAS_KEY_ID
+        | Self::TILED
+        | Self::PROGRESSIVE_JPEG
+        | Self::CRITICAL_EXTENSION
+        | Self::SIGNED;
+
     /// Encode flags as a 16-bit bitfield.
     #[must_use]
     pub fn to_bits(self) -> u16 {
-        let mut bits = self.reserved & 0xF0F0;
+        let mut bits = self.reserved & !Self::DEFINED_FLAGS;
         if self.has_extensions {
             bits |= Self::HAS_EXTENSIONS;
         }
@@ -187,7 +194,7 @@ impl PayloadFlags {
             progressive_jpeg: bits & Self::PROGRESSIVE_JPEG != 0,
             critical_extension: bits & Self::CRITICAL_EXTENSION != 0,
             signed: bits & Self::SIGNED != 0,
-            reserved: bits & 0xF0F0,
+            reserved: bits & !Self::DEFINED_FLAGS,
         }
     }
 }
@@ -285,6 +292,22 @@ mod tests {
         let bits = flags.to_bits();
         let decoded = PayloadFlags::from_bits(bits);
         assert_eq!(flags, decoded);
+    }
+
+    #[test]
+    fn test_payload_flags_preserve_reserved_bits() {
+        let flags = PayloadFlags {
+            has_extensions: false,
+            has_key_id: false,
+            tiled: false,
+            progressive_jpeg: false,
+            critical_extension: false,
+            signed: false,
+            reserved: 0x0420,
+        };
+        let bits = flags.to_bits();
+        assert_eq!(bits & 0x0420, 0x0420);
+        assert_eq!(PayloadFlags::from_bits(bits), flags);
     }
 
     #[test]

@@ -23,19 +23,22 @@ impl RiffChunk {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) struct ParsedWebP {
     pub data: Vec<u8>,
     pub image_kind: WebPImageKind,
     pub chunks: Vec<RiffChunk>,
     pub vp8x_index: Option<usize>,
     pub xmp_indices: Vec<usize>,
+    #[allow(dead_code)]
     pub exif_indices: Vec<usize>,
+    #[allow(dead_code)]
     pub icc_indices: Vec<usize>,
     pub vp8_indices: Vec<usize>,
     pub vp8l_indices: Vec<usize>,
+    #[allow(dead_code)]
     pub anim_indices: Vec<usize>,
     pub anmf_indices: Vec<usize>,
+    #[allow(dead_code)]
     pub alph_indices: Vec<usize>,
     pub has_xmp: bool,
     pub has_exif: bool,
