@@ -1156,7 +1156,7 @@ fn v3_resource_limit_rejects_before_full_extract() {
 }
 
 #[test]
-fn legacy_v1_still_extracts() {
+fn legacy_light_is_seed_only_no_full_v1_payload() {
     let img = textured_image(64, 64);
     let ctx = ProtectionContext::new(0.5, 42);
     let protected = process_image_bytes(
@@ -1166,7 +1166,7 @@ fn legacy_v1_still_extracts() {
     )
     .unwrap();
     let status = verify_image_bytes(&protected, &[]);
-    assert_eq!(status, VerificationStatus::Verified);
+    assert_eq!(status, VerificationStatus::NotFound);
 }
 
 #[test]

@@ -811,54 +811,6 @@ impl SteganographyProtector {
         }
     }
 
-    /// Embed a minimal LSB stego payload with redundancy=1.
-    /// Used for Light level PNG/WebP protection — embeds the seed and protection
-    /// metadata with minimal visual impact.
-    pub(crate) fn embed_lsb_minimal(
-        &self,
-        img: &DynamicImage,
-        ctx: &ProtectionContext,
-    ) -> DynamicImage {
-        let embed_path = ctx
-            .input_format()
-            .map(|f| match f {
-                crate::types::ImageOutputFormat::Jpeg => crate::stego::EmbedPath::DctF5,
-                _ => crate::stego::EmbedPath::Lsb,
-            })
-            .unwrap_or(crate::stego::EmbedPath::Lsb);
-        let payload = self.generate_payload(
-            &crate::types::PayloadEmissionContext::from_plan_for_context(ctx, embed_path),
-            ctx,
-        );
-        let rgba = img.to_rgba8();
-        let format = ctx
-            .input_format()
-            .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
-
-        match format {
-            crate::types::ImageOutputFormat::Png | crate::types::ImageOutputFormat::WebP => {
-                let outcome = self.embed_lsb_v2(&rgba, &payload, ctx.seed(), 1);
-                DynamicImage::ImageRgba8(outcome.into_inner())
-            }
-            crate::types::ImageOutputFormat::Jpeg => {
-                if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Jpeg)
-                {
-                    if let Ok(with_seed) = self.apply_qtable_seed_bytes(&encoded, ctx.seed()) {
-                        if let Ok(stego_img) = image::load_from_memory(&with_seed) {
-                            stego_img
-                        } else {
-                            img.clone()
-                        }
-                    } else {
-                        img.clone()
-                    }
-                } else {
-                    img.clone()
-                }
-            }
-        }
-    }
-
     fn reassemble_jpeg_with_qtables(
         jpeg_bytes: &[u8],
         header: &crate::stego::jpeg_transcoder::JpegHeader,
@@ -2773,7 +2725,14 @@ impl SteganographyProtector {
             })
             .unwrap_or(0);
 
-        let content_hash_8 = [0u8; 8];
+        let content_hash_8 = plan
+            .content_hash()
+            .map(|h| {
+                let mut buf = [0u8; 8];
+                buf[..4].copy_from_slice(&h);
+                buf
+            })
+            .unwrap_or([0u8; 8]);
 
         let has_mac = emission.has_mac();
 
@@ -2831,14 +2790,7 @@ impl SteganographyProtector {
     pub(crate) fn effective_redundancy_for_plan(
         plan: &crate::types::ResolvedProtectionPlan,
     ) -> usize {
-        let i = plan.intensity();
-        if i < 0.3 {
-            1
-        } else if i < 0.7 {
-            2
-        } else {
-            3
-        }
+        plan.effective_redundancy()
     }
 
     #[allow(dead_code)]
@@ -3250,6 +3202,10 @@ impl SteganographyProtector {
     }
 
     fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
+        carrier_lsb::embed_seed_lsb_fallback(img, seed);
+    }
+
+    pub(crate) fn embed_seed_lsb_fallback_pub(img: &mut RgbaImage, seed: u64) {
         carrier_lsb::embed_seed_lsb_fallback(img, seed);
     }
 

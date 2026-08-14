@@ -277,8 +277,8 @@ mod integration {
         let has_dmi = result.windows(14).any(|w| w == b"DMI-PROHIBITED");
 
         assert!(
-            has_dmi,
-            "PNG should auto-inject DMI based on protection level"
+            !has_dmi,
+            "Light default policy is Unspecified (no auto DMI); explicit DMI requires caller override"
         );
     }
 }

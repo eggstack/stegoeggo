@@ -1,6 +1,6 @@
 # Roadmap 057: Stego Carrier Library and Pipeline Simplification
 
-Status: Ready for implementation
+Status: PARTIAL — reopened by Plan 065 (post-closure audit found residuals in legacy adapter, LSB bounded mutation, carrier package wiring, and missing tracked ledgers)
 
 Audited planning baseline: `main` at `e60b801fda493ddd5e744f5de2a12d7b9489c078`
 

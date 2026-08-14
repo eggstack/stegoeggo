@@ -42,11 +42,21 @@ pub fn resolve_request(
 
     let effective_notice = {
         let base = request.notice().clone().with_seed(seed);
-        if let Some(legal) = request.legal_metadata() {
+        let with_legal = if let Some(legal) = request.legal_metadata() {
             base.with_legal_metadata_fields(legal)
         } else {
             base
-        }
+        };
+        let override_ts = request.timestamp_override();
+        let legal_has_explicit_ts = request
+            .legal_metadata()
+            .and_then(|m| m.notice_applied_at())
+            .is_some();
+        apply_timestamp_override(
+            with_legal,
+            override_ts,
+            request.legal_metadata().is_some() && !legal_has_explicit_ts,
+        )
     };
 
     if request.channels().authentication == AuthenticationMode::Hmac && request.mac_key().is_none()
@@ -73,6 +83,24 @@ pub fn resolve_request(
         warnings,
         request.resource_limits().cloned().unwrap_or_default(),
     ))
+}
+
+fn apply_timestamp_override(
+    notice: RightsNotice,
+    override_ts: Option<&str>,
+    auto_compute: bool,
+) -> RightsNotice {
+    if notice.notice_applied_at().is_some() {
+        return notice;
+    }
+    if let Some(ts) = override_ts {
+        return notice.with_notice_applied_at(ts.to_string());
+    }
+    if auto_compute {
+        return notice
+            .with_notice_applied_at(crate::protected::metadata_trap::current_timestamp_iso8601());
+    }
+    notice
 }
 
 fn validate_channels(channels: &ProtectionChannels, mac_key: Option<&[u8]>) -> Result<()> {

@@ -347,9 +347,16 @@ impl ProtectionLevel {
                 )
             }
             ProtectionLevel::Light => {
-                // Light: metadata + minimal seed stego (Q-table for JPEG, LSB redundancy=1)
-                // Map to BestEffort hidden marker
-                ProtectionRequest::new(notice, policy, ProtectionChannels::with_hidden_marker())
+                // Light: metadata + minimal seed stego (Q-table for JPEG, fixed-position LSB for PNG/WebP)
+                ProtectionRequest::new(
+                    notice,
+                    policy,
+                    ProtectionChannels {
+                        rights_metadata: true,
+                        hidden_marker: HiddenMarkerMode::SeedOnly,
+                        authentication: AuthenticationMode::None,
+                    },
+                )
             }
             ProtectionLevel::Standard => {
                 // Standard: full stego + metadata
@@ -2044,6 +2051,17 @@ impl ProtectionContext {
         self.effective_redundancy()
     }
 
+    /// Returns the explicitly-set stego redundancy field, if any.
+    ///
+    /// Distinct from [`Self::stego_redundancy`] which always returns the
+    /// effective value. Returns `None` when the caller did not call
+    /// `with_stego_redundancy`, allowing the canonical path to fall back
+    /// to the intensity-derived redundancy.
+    #[must_use]
+    pub fn stego_redundancy_field(&self) -> Option<usize> {
+        self.stego_redundancy
+    }
+
     pub(crate) fn effective_redundancy(&self) -> usize {
         if let Some(r) = self.stego_redundancy {
             return r;
@@ -2108,7 +2126,7 @@ impl ProtectionContext {
         self.input_format = Some(format);
     }
 
-    /// Set the protection level (non-consuming, crate-internal).
+    #[cfg(test)]
     pub(crate) fn set_protection_level(&mut self, level: ProtectionLevel) {
         self.protection_level = Some(level);
     }
@@ -3474,6 +3492,15 @@ impl RightsPolicy {
 pub enum HiddenMarkerMode {
     /// No LSB, DCT, Q-table, or tiled hidden marker work.
     Disabled,
+    /// Minimal seed-only marker:
+    /// - PNG / lossless WebP: fixed-position LSB seed in the first 64 RGB
+    ///   channels (no full v3 payload)
+    /// - JPEG: seed stored in quantization-table LSBs (no full DCT payload)
+    ///
+    /// This gives a canonical name to the existing legacy `Light` behavior
+    /// so the canonical plan path can represent seed-only intent without a
+    /// legacy side channel.
+    SeedOnly,
     /// Existing non-tiled LSB/DCT behavior.
     BestEffort,
     /// Crop-resistant tiled mode with validated tile size.
@@ -3558,6 +3585,27 @@ pub struct ProcessingOptions {
     pub max_dimension: Option<u32>,
     /// Metadata update policy for re-processing.
     pub metadata_update_policy: MetadataUpdatePolicy,
+    /// Caller-supplied steganographic redundancy override (1..=10).
+    ///
+    /// When `None`, the executor derives redundancy from intensity via
+    /// [`ResolvedProtectionPlan::effective_redundancy`] (the same derivation
+    /// the legacy [`ProtectionContext::effective_redundancy`] used).
+    pub stego_redundancy: Option<usize>,
+    /// Caller-supplied 4-byte truncated content hash for provenance linkage.
+    ///
+    /// Embedded in v3 payload generation so the same payload that survives
+    /// lossy recompression also carries the provenance link. When `None`,
+    /// the v3 payload zeroes the content-hash slot (matching legacy
+    /// non-content-hash fixtures).
+    pub content_hash: Option<[u8; 4]>,
+    /// Caller-supplied override for the auto-computed `notice_applied_at`
+    /// timestamp.
+    ///
+    /// `None` means "use wall-clock at execution time". Carried through
+    /// [`ResolvedProtectionPlan`] so deterministic test fixtures and the
+    /// legacy `ProtectionContext::with_timestamp_override` path produce
+    /// identical notice timestamps.
+    pub timestamp_override: Option<String>,
 }
 
 impl Default for ProcessingOptions {
@@ -3568,6 +3616,9 @@ impl Default for ProcessingOptions {
             progressive_jpeg: false,
             max_dimension: None,
             metadata_update_policy: MetadataUpdatePolicy::default(),
+            stego_redundancy: None,
+            content_hash: None,
+            timestamp_override: None,
         }
     }
 }
@@ -3694,6 +3745,34 @@ impl ProtectionRequest {
         self
     }
 
+    /// Sets the caller-supplied stego redundancy override.
+    ///
+    /// When set, this value reaches the canonical executor unchanged instead
+    /// of being derived from intensity. Range 1..=10.
+    #[must_use]
+    pub fn with_stego_redundancy(mut self, redundancy: usize) -> Self {
+        self.processing.stego_redundancy = Some(redundancy.clamp(1, 10));
+        self
+    }
+
+    /// Sets the caller-supplied 4-byte content hash for provenance linkage.
+    ///
+    /// Reaches the v3 payload generator unchanged. When not set, the v3
+    /// payload uses zero in the content-hash slot.
+    #[must_use]
+    pub fn with_content_hash(mut self, hash: [u8; 4]) -> Self {
+        self.processing.content_hash = Some(hash);
+        self
+    }
+
+    /// Sets the caller-supplied timestamp override for the notice-applied-at
+    /// timestamp. Replaces the auto-computed wall-clock timestamp.
+    #[must_use]
+    pub fn with_timestamp_override(mut self, ts: impl Into<String>) -> Self {
+        self.processing.timestamp_override = Some(ts.into());
+        self
+    }
+
     /// Returns the rights notice.
     #[must_use]
     pub fn notice(&self) -> &RightsNotice {
@@ -3746,6 +3825,12 @@ impl ProtectionRequest {
     #[must_use]
     pub fn resource_limits(&self) -> Option<&crate::resource_limits::ResourceLimits> {
         self.resource_limits.as_ref()
+    }
+
+    /// Returns the timestamp override, if set.
+    #[must_use]
+    pub fn timestamp_override(&self) -> Option<&str> {
+        self.processing.timestamp_override.as_deref()
     }
 
     /// Creates a protection request from a preset, notice, and policy.
@@ -3872,6 +3957,44 @@ impl ResolvedProtectionPlan {
     #[must_use]
     pub fn is_metadata_only(&self) -> bool {
         !self.channels.has_stego() && self.channels.rights_metadata
+    }
+
+    /// Returns the effective stego redundancy used by this plan.
+    ///
+    /// When the caller supplied an explicit `stego_redundancy` via
+    /// [`ProtectionRequest::with_stego_redundancy`] / the
+    /// [`ProcessingOptions::stego_redundancy`] field, that value is used.
+    /// Otherwise redundancy is derived from [`Self::intensity`] using the
+    /// same thresholds as the legacy
+    /// [`ProtectionContext::effective_redundancy`]:
+    /// - `intensity < 0.3` → 1
+    /// - `intensity < 0.7` → 2
+    /// - `intensity >= 0.7` → 3
+    #[must_use]
+    pub fn effective_redundancy(&self) -> usize {
+        if let Some(r) = self.processing.stego_redundancy {
+            return r;
+        }
+        let i = self.intensity;
+        if i < 0.3 {
+            1
+        } else if i < 0.7 {
+            2
+        } else {
+            3
+        }
+    }
+
+    /// Returns the resolved 4-byte content hash, if any.
+    #[must_use]
+    pub fn content_hash(&self) -> Option<[u8; 4]> {
+        self.processing.content_hash
+    }
+
+    /// Returns the resolved timestamp override, if any.
+    #[must_use]
+    pub fn timestamp_override(&self) -> Option<&str> {
+        self.processing.timestamp_override.as_deref()
     }
 
     /// Build a [`PayloadEmissionContext`] for the given embed path.

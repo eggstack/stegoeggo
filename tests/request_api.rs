@@ -619,28 +619,31 @@ mod compatibility_parity_tests {
     use super::*;
 
     #[test]
-    fn metadata_only_matches_light_level_output() {
-        // Use a tiny image where v3 payload can't fit, so Light-level stego
-        // is also skipped, matching the metadata-only output.
+    fn light_embeds_seed_marker_observable_in_pixels() {
+        // Plan 065: Light is now SeedOnly. The fixed-position LSB seed marker
+        // is observable in the first 64 RGB channels of the encoded image.
         let img = create_test_image(16, 16);
         let png_bytes = image_to_png_bytes(&img);
 
         let notice = simple_notice();
         let ctx = ProtectionContext::new(0.5, 42);
 
-        let old_output = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
+        let light_output = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
+        let light_img = image::load_from_memory(&light_output).unwrap().to_rgb8();
+        let light_raw = light_img.as_raw();
 
-        let request = ProtectionRequest::metadata_only(notice.clone(), RightsPolicy::Allowed);
-        let new_output = process_request_bytes(&png_bytes, &request).unwrap();
+        let metadata_only = ProtectionRequest::metadata_only(notice.clone(), RightsPolicy::Allowed);
+        let mo_output = process_request_bytes(&png_bytes, &metadata_only).unwrap();
+        let mo_img = image::load_from_memory(&mo_output).unwrap().to_rgb8();
+        let mo_raw = mo_img.as_raw();
 
-        let old_img = image::load_from_memory(&old_output).unwrap();
-        let new_img = image::load_from_memory(&new_output).unwrap();
-
-        assert_eq!(
-            old_img.to_rgb8().as_raw(),
-            new_img.to_rgb8().as_raw(),
-            "Metadata-only output should match Light-level pixel data on small images"
-        );
+        let mut diff = 0usize;
+        for i in 0..light_raw.len().min(192) {
+            if light_raw[i] != mo_raw[i] {
+                diff += 1;
+            }
+        }
+        assert!(diff > 0, "Light must write seed LSB marker; metadata-only must not (diffs in first 192 bytes = {diff})");
     }
 
     #[test]

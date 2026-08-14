@@ -130,11 +130,17 @@ pub fn embed_bit_in_pixel(output: &mut RgbaImage, x: u32, y: u32, channel: usize
         return;
     }
 
-    let direction_hash = x.wrapping_mul(31).wrapping_add(y.wrapping_mul(17));
-    let new_val = if direction_hash & 1 == 0 {
-        old_val.wrapping_add(1)
+    let new_val = if old_val == 0 {
+        1
+    } else if old_val == 255 {
+        254
     } else {
-        old_val.wrapping_sub(1)
+        let direction_hash = x.wrapping_mul(31).wrapping_add(y.wrapping_mul(17));
+        if direction_hash & 1 == 0 {
+            old_val + 1
+        } else {
+            old_val - 1
+        }
     };
 
     let new_pixel = Rgba([
@@ -496,21 +502,29 @@ pub fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
             let bit_val = (byte >> bit) & 1;
             let pixel = img.get_pixel(x, y);
             let old_val = pixel[channel];
-            if (old_val & 1) != bit_val {
-                let direction_hash = x.wrapping_mul(31).wrapping_add(y.wrapping_mul(17));
-                let new_val = if direction_hash & 1 == 0 {
-                    old_val.wrapping_add(1)
-                } else {
-                    old_val.wrapping_sub(1)
-                };
-                let new_pixel = Rgba([
-                    if channel == 0 { new_val } else { pixel[0] },
-                    if channel == 1 { new_val } else { pixel[1] },
-                    if channel == 2 { new_val } else { pixel[2] },
-                    pixel[3],
-                ]);
-                img.put_pixel(x, y, new_pixel);
+            if (old_val & 1) == bit_val {
+                channel_idx += 1;
+                continue;
             }
+            let new_val = if old_val == 0 {
+                1
+            } else if old_val == 255 {
+                254
+            } else {
+                let direction_hash = x.wrapping_mul(31).wrapping_add(y.wrapping_mul(17));
+                if direction_hash & 1 == 0 {
+                    old_val + 1
+                } else {
+                    old_val - 1
+                }
+            };
+            let new_pixel = Rgba([
+                if channel == 0 { new_val } else { pixel[0] },
+                if channel == 1 { new_val } else { pixel[1] },
+                if channel == 2 { new_val } else { pixel[2] },
+                pixel[3],
+            ]);
+            img.put_pixel(x, y, new_pixel);
             channel_idx += 1;
         }
     }
@@ -764,4 +778,207 @@ fn encode_png(img: &RgbaImage) -> Result<Vec<u8>, super::StegoError> {
         .write_with_encoder(encoder)
         .map_err(|e| super::StegoError::MalformedInput(format!("PNG encode failed: {e}")))?;
     Ok(buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn uniform_image(width: u32, height: u32, value: u8) -> RgbaImage {
+        RgbaImage::from_fn(width, height, |_x, _y| Rgba([value, value, value, 255]))
+    }
+
+    fn channel_value(img: &RgbaImage, x: u32, y: u32, channel: usize) -> u8 {
+        let p = img.get_pixel(x, y);
+        p[channel]
+    }
+
+    fn assert_bit_set(img: &RgbaImage, x: u32, y: u32, channel: usize, bit: u8) {
+        let v = channel_value(img, x, y, channel);
+        assert_eq!(
+            v & 1,
+            bit,
+            "channel value {v} has wrong LSB (wanted {bit}) at ({x},{y},c{channel})"
+        );
+    }
+
+    fn assert_bounded_mutation(old: u8, new: u8) {
+        assert_ne!(old, new, "mutation must change the channel");
+        assert_eq!(
+            (old as i16 - new as i16).abs(),
+            1,
+            "mutation must differ by exactly ±1 (old={old}, new={new})"
+        );
+        assert!(
+            new != 0 || old != 255,
+            "mutation must not wrap 255 -> 0 (old={old}, new={new})"
+        );
+        assert!(
+            new != 255 || old != 0,
+            "mutation must not wrap 0 -> 255 (old={old}, new={new})"
+        );
+    }
+
+    #[test]
+    fn embed_bit_in_pixel_leaves_matching_lsb_unchanged() {
+        for &initial in &[0u8, 1, 2, 127, 128, 253, 254, 255] {
+            for &bit in &[0u8, 1] {
+                let mut img = uniform_image(4, 4, initial);
+                embed_bit_in_pixel(&mut img, 1, 2, 1, bit);
+                if (initial & 1) == bit {
+                    assert_eq!(channel_value(&img, 1, 2, 1), initial);
+                } else {
+                    let new = channel_value(&img, 1, 2, 1);
+                    assert_bounded_mutation(initial, new);
+                    assert_eq!(new & 1, bit);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn embed_bit_in_pixel_bounded_at_zero() {
+        for &bit in &[0u8, 1] {
+            let mut img = uniform_image(2, 2, 0);
+            embed_bit_in_pixel(&mut img, 0, 0, 0, bit);
+            let new = channel_value(&img, 0, 0, 0);
+            if bit == 0 {
+                assert_eq!(new, 0);
+            } else {
+                assert_eq!(new, 1, "0 must mutate to 1, not 255");
+            }
+        }
+    }
+
+    #[test]
+    fn embed_bit_in_pixel_bounded_at_255() {
+        for &bit in &[0u8, 1] {
+            let mut img = uniform_image(2, 2, 255);
+            embed_bit_in_pixel(&mut img, 0, 0, 0, bit);
+            let new = channel_value(&img, 0, 0, 0);
+            if bit == 1 {
+                assert_eq!(new, 255);
+            } else {
+                assert_eq!(new, 254, "255 must mutate to 254, not 0");
+            }
+        }
+    }
+
+    #[test]
+    fn embed_bit_in_pixel_exhaustive_boundary_table() {
+        for &initial in &[0u8, 1, 2, 127, 128, 253, 254, 255] {
+            for &bit in &[0u8, 1] {
+                for channel in 0..3usize {
+                    let mut img = uniform_image(2, 2, initial);
+                    embed_bit_in_pixel(&mut img, 1, 0, channel, bit);
+                    let new = channel_value(&img, 1, 0, channel);
+                    if (initial & 1) == bit {
+                        assert_eq!(new, initial);
+                    } else {
+                        assert_bounded_mutation(initial, new);
+                    }
+                    assert_bit_set(&img, 1, 0, channel, bit);
+                    let p = img.get_pixel(1, 0);
+                    assert_eq!(p[3], 255, "alpha must remain unchanged");
+                    for other in 0..3usize {
+                        if other != channel {
+                            assert_eq!(p[other], initial, "other RGB channels unchanged");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn embed_bit_in_pixel_black_image_no_salt_and_pepper() {
+        let mut img = uniform_image(16, 16, 0);
+        embed_bit_in_pixel(&mut img, 0, 0, 0, 1);
+        embed_bit_in_pixel(&mut img, 1, 0, 1, 1);
+        embed_bit_in_pixel(&mut img, 2, 0, 2, 1);
+        embed_bit_in_pixel(&mut img, 0, 1, 0, 0);
+
+        let p0 = img.get_pixel(0, 0);
+        assert_eq!(*p0, Rgba([1, 0, 0, 255]));
+        let p1 = img.get_pixel(1, 0);
+        assert_eq!(*p1, Rgba([0, 1, 0, 255]));
+        let p2 = img.get_pixel(2, 0);
+        assert_eq!(*p2, Rgba([0, 0, 1, 255]));
+        let p3 = img.get_pixel(0, 1);
+        assert_eq!(*p3, Rgba([0, 0, 0, 255]), "matching LSB must not change");
+    }
+
+    #[test]
+    fn embed_bit_in_pixel_white_image_no_salt_and_pepper() {
+        let mut img = uniform_image(16, 16, 255);
+        embed_bit_in_pixel(&mut img, 0, 0, 0, 0);
+        embed_bit_in_pixel(&mut img, 1, 0, 1, 0);
+        embed_bit_in_pixel(&mut img, 2, 0, 2, 0);
+
+        let p0 = img.get_pixel(0, 0);
+        assert_eq!(*p0, Rgba([254, 255, 255, 255]));
+        let p1 = img.get_pixel(1, 0);
+        assert_eq!(*p1, Rgba([255, 254, 255, 255]));
+        let p2 = img.get_pixel(2, 0);
+        assert_eq!(*p2, Rgba([255, 255, 254, 255]));
+    }
+
+    #[test]
+    fn embed_seed_lsb_fallback_bounded_at_extrema() {
+        let mut img = uniform_image(16, 16, 0);
+        embed_seed_lsb_fallback(&mut img, 42);
+        for y in 0..16 {
+            for x in 0..16 {
+                let p = img.get_pixel(x, y);
+                for c in 0..3 {
+                    assert!(
+                        p[c] <= 1,
+                        "0-image seed embed must only produce 0/1 channels (got {} at c{c})",
+                        p[c]
+                    );
+                }
+            }
+        }
+
+        let mut img = uniform_image(16, 16, 255);
+        embed_seed_lsb_fallback(&mut img, 42);
+        for y in 0..16 {
+            for x in 0..16 {
+                let p = img.get_pixel(x, y);
+                for c in 0..3 {
+                    assert!(
+                        p[c] == 254 || p[c] == 255,
+                        "255-image seed embed must only produce 254/255 channels (got {} at c{c})",
+                        p[c]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn embed_extract_roundtrip_on_extreme_images() {
+        for &seed_byte in &[0u8, 1, 127, 128, 254, 255] {
+            let mut img = uniform_image(64, 64, seed_byte);
+            let payload = b"plan065 bounded mutation round-trip";
+            embed_seed_lsb_fallback(&mut img, 7);
+
+            for y in 0..64u32 {
+                for x in 0..64u32 {
+                    let p = img.get_pixel(x, y);
+                    for c in 0..3 {
+                        let v = p[c];
+                        assert!(
+                            v == seed_byte || v.abs_diff(seed_byte) <= 1,
+                            "seed-fallback must not wrap (got {v} from {seed_byte} at ({x},{y},c{c}))"
+                        );
+                    }
+                }
+            }
+
+            let seed = extract_seed_lsb_fallback(&img);
+            assert_eq!(seed, Some(7));
+            let _ = payload;
+        }
+    }
 }

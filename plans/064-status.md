@@ -1,5 +1,25 @@
 # Plan 064 Status Ledger
 
+## Correction Note (added by Plan 065)
+
+The original `COMPLETE` disposition below was based on the closure evidence at SHA `2d9514552ea4332a8d5b1b9c7603cd000eea1c13` but did not catch a set of residuals the post-closure Plan 065 audit discovered. Plan 065 reopens and corrects these residuals without erasing the historical evidence recorded below. The historical evidence remains accurate as of the Plan 064 closure commit; the residuals it did not catch are listed and closed in `plans/065-status.md`.
+
+Residuals discovered after Plan 064 closure:
+
+1. `request_from_legacy()` collapsed legacy `Light` into the same full-payload hidden-marker mode as `Standard` and did not use `ProtectionLevel::default_policy()` for the Light default policy mapping. It also did not propagate explicit `stego_redundancy`, `content_hash`, or `timestamp_override` to plan-driven v3 payload generation.
+2. `embed_bit_in_pixel()` used `wrapping_add(1)` / `wrapping_sub(1)`, producing channel-boundary mutations such as `0 -> 255` and `255 -> 0`.
+3. `stegoeggo-stego`'s `jpeg_transcoder` and many low-level LSB helpers were exposed as stable `pub` API.
+4. `lsb::embed()` returned PNG-encoded bytes even though the carrier is pixel-domain, forcing generic callers to decode before extracting.
+5. Root `Cargo.toml` did not specify `=0.3.2` for the carrier path dependency, mismatching the release-check's expectation.
+6. `stegoeggo-stego` package metadata referenced a local `LICENSE` that did not exist on disk.
+7. `plans/058-status.md`, `059-status.md`, `060-status.md`, `061-status.md`, `063-status.md` were not committed on `main` (only `064-status.md` was tracked).
+
+All residuals are addressed in `plans/065-status.md` and the Plan 065 commits.
+
+The historical Plan 064 evidence below remains accurate as of the Plan 064 closure commit. The COMPLETE disposition is replaced by:
+
+**Disposition after Plan 065:** The original closure evidence is preserved but Plan 065 found residuals and closes them. Roadmap 057 remains `PARTIAL` until Plan 065 closes.
+
 ## Baseline SHA
 
 `2d9514552ea4332a8d5b1b9c7603cd000eea1c13` (`main` HEAD at closure start)
