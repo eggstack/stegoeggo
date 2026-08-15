@@ -121,10 +121,10 @@ A policy says **what use is allowed or prohibited**. A preset says **which techn
 |---|---:|---:|---:|
 | `legal-notice` | Yes | No | No |
 | `legal-notice-with-stego` | Yes | Best effort | No |
-| `authenticated-provenance` | Yes | Best effort | HMAC |
-| `maximal` | Yes | Best effort | HMAC when configured |
+| `authenticated-provenance` | Yes | Best effort | HMAC (key required) |
+| `maximal` | Yes | Best effort | HMAC (key required) |
 
-For authenticated provenance, provide a secret key with `--key` or `STEGOEGGO_KEY`. HMAC authentication establishes that the hidden payload was produced by someone holding that secret; it does **not** prove copyright ownership or authorship.
+For `authenticated-provenance` and `maximal`, provide a secret key with `--key` or `STEGOEGGO_KEY`. HMAC authentication establishes that the hidden payload was produced by someone holding that secret; it does **not** prove copyright ownership or authorship.
 
 Without a MAC key, hidden-payload integrity uses non-cryptographic checks intended for detection and corruption checking, not adversarial authentication.
 
