@@ -202,6 +202,21 @@ pub enum EmbedStatus {
     UnsupportedProgressive,
 }
 
+/// Summary returned by an in-place LSB embedding operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InPlaceEmbedReport {
+    /// Whether the payload was embedded.
+    pub embedded: bool,
+    /// Payload size in bytes.
+    pub payload_bytes: usize,
+    /// Required capacity in RGB carrier slots.
+    pub required_capacity: usize,
+    /// Available capacity in RGB carrier slots.
+    pub available_capacity: usize,
+    /// The redundancy level used for embedding.
+    pub actual_redundancy: usize,
+}
+
 impl std::fmt::Display for EmbedStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

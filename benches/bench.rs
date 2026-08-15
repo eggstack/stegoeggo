@@ -1,7 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use image::DynamicImage;
+use image::{DynamicImage, RgbaImage};
 use std::alloc::System;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use stegoeggo::stego::lsb::{self, LsbConfig};
 use stegoeggo::{
     process_image_bytes, process_request_bytes, ImageOutputFormat, ProtectionContext,
     ProtectionLevel, ProtectionPipeline, ProtectionRequest, RightsNotice, RightsPolicy,
@@ -352,6 +353,30 @@ fn benchmark_tiled_extract(c: &mut Criterion) {
     group.finish();
 }
 
+fn benchmark_lsb_in_place(c: &mut Criterion) {
+    let mut group = c.benchmark_group("lsb_clone_vs_in_place");
+    group.sample_size(10);
+    let payload = vec![0xA5; 256];
+    let config = LsbConfig::new(42).with_redundancy(2);
+
+    for &(size, label) in &[(1024u32, "1024"), (4096u32, "4096")] {
+        let source = RgbaImage::from_pixel(size, size, image::Rgba([127, 128, 129, 37]));
+        group.bench_with_input(BenchmarkId::new("clone", label), &source, |b, source| {
+            b.iter(|| lsb::embed(black_box(source), black_box(&payload), &config))
+        });
+
+        let mut in_place = source.clone();
+        group.bench_function(BenchmarkId::new("in_place", label), |b| {
+            b.iter(|| {
+                let report = lsb::embed_in_place(&mut in_place, black_box(&payload), &config);
+                black_box(report)
+            })
+        });
+    }
+
+    group.finish();
+}
+
 fn benchmark_metadata_only(c: &mut Criterion) {
     let mut group = c.benchmark_group("metadata_only_request");
     group.sample_size(50);
@@ -462,6 +487,7 @@ criterion_group!(
     benchmark_jpeg_fast_path,
     benchmark_tiled_embed,
     benchmark_tiled_extract,
+    benchmark_lsb_in_place,
     benchmark_metadata_only,
     benchmark_request_vs_legacy,
 );

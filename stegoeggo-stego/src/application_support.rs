@@ -1,7 +1,7 @@
 use crate::error::{StegoError, StegoResult};
 use crate::jpeg;
 use crate::lsb_internal;
-use crate::types::{EmbedOutcome, EmbedPath};
+use crate::types::{EmbedOutcome, EmbedPath, InPlaceEmbedReport};
 use image::RgbaImage;
 
 #[cfg(test)]
@@ -38,6 +38,20 @@ pub fn corrected_lsb_embed(
     redundancy: usize,
 ) -> EmbedOutcome<RgbaImage> {
     lsb_internal::embed_lsb_v2(image, payload, seed, redundancy)
+}
+
+pub fn corrected_lsb_embed_in_place(
+    image: &mut RgbaImage,
+    payload: &[u8],
+    seed: u64,
+    redundancy: usize,
+) -> StegoResult<InPlaceEmbedReport> {
+    if image.dimensions() == (0, 0) {
+        return Err(StegoError::EmptyCarrier);
+    }
+    Ok(lsb_internal::embed_lsb_v2_in_place(
+        image, payload, seed, redundancy,
+    ))
 }
 
 pub fn corrected_lsb_extract(

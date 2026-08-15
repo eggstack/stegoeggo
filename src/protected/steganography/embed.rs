@@ -181,22 +181,28 @@ impl SteganographyProtector {
 
         let emission = PayloadEmissionContext::from_plan(plan, embed_path);
         let payload = self.generate_payload_for_plan(&emission, plan);
-        let rgba = img.to_rgba8();
+        let mut rgba = img.to_rgba8();
         let seed = plan.seed();
         let redundancy = Self::effective_redundancy_for_plan(plan);
 
         match format {
             crate::types::ImageOutputFormat::Png => {
-                let outcome = if let Some(ts) = tile_size.filter(|&s| s > 0) {
-                    self.embed_lsb_tiled(&rgba, &payload, seed, ts)
+                if let Some(ts) = tile_size.filter(|&s| s > 0) {
+                    let outcome = self.embed_lsb_tiled(&rgba, &payload, seed, ts);
+                    let (mut result, summary) = outcome.into_parts();
+                    if summary.is_embedded() {
+                        Self::embed_seed_lsb_fallback(&mut result, seed);
+                    }
+                    Ok((DynamicImage::ImageRgba8(result), Some(summary)))
                 } else {
-                    self.embed_lsb_v2(&rgba, &payload, seed, redundancy)
-                };
-                let (mut result, summary) = outcome.into_parts();
-                if summary.is_embedded() {
-                    Self::embed_seed_lsb_fallback(&mut result, seed);
+                    let report =
+                        self.embed_lsb_v2_in_place(&mut rgba, &payload, seed, redundancy)?;
+                    let summary = Self::lsb_in_place_summary(report);
+                    if report.embedded {
+                        Self::embed_seed_lsb_fallback(&mut rgba, seed);
+                    }
+                    Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
                 }
-                Ok((DynamicImage::ImageRgba8(result), Some(summary)))
             }
             crate::types::ImageOutputFormat::Jpeg => {
                 let jpeg_bytes = crate::util::image::encode_image_with_options(
@@ -211,16 +217,22 @@ impl SteganographyProtector {
                 Ok((image::load_from_memory(&output)?, Some(summary)))
             }
             crate::types::ImageOutputFormat::WebP => {
-                let outcome = if let Some(ts) = tile_size.filter(|&s| s > 0) {
-                    self.embed_lsb_tiled(&rgba, &payload, seed, ts)
+                if let Some(ts) = tile_size.filter(|&s| s > 0) {
+                    let outcome = self.embed_lsb_tiled(&rgba, &payload, seed, ts);
+                    let (mut result, summary) = outcome.into_parts();
+                    if summary.is_embedded() {
+                        Self::embed_seed_lsb_fallback(&mut result, seed);
+                    }
+                    Ok((DynamicImage::ImageRgba8(result), Some(summary)))
                 } else {
-                    self.embed_lsb_v2(&rgba, &payload, seed, redundancy)
-                };
-                let (mut result, summary) = outcome.into_parts();
-                if summary.is_embedded() {
-                    Self::embed_seed_lsb_fallback(&mut result, seed);
+                    let report =
+                        self.embed_lsb_v2_in_place(&mut rgba, &payload, seed, redundancy)?;
+                    let summary = Self::lsb_in_place_summary(report);
+                    if report.embedded {
+                        Self::embed_seed_lsb_fallback(&mut rgba, seed);
+                    }
+                    Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
                 }
-                Ok((DynamicImage::ImageRgba8(result), Some(summary)))
             }
         }
     }
@@ -238,13 +250,19 @@ impl SteganographyProtector {
         };
         let emission = PayloadEmissionContext::from_plan(plan, embed_path);
         let payload = self.generate_payload_for_plan(&emission, plan);
-        let rgba = img.to_rgba8();
+        let mut rgba = img.to_rgba8();
         let seed = plan.seed();
 
         match format {
             crate::types::ImageOutputFormat::Png | crate::types::ImageOutputFormat::WebP => {
-                let outcome = self.embed_lsb_v2(&rgba, &payload, seed, 1);
-                DynamicImage::ImageRgba8(outcome.into_inner())
+                if self
+                    .embed_lsb_v2_in_place(&mut rgba, &payload, seed, 1)
+                    .is_ok()
+                {
+                    DynamicImage::ImageRgba8(rgba)
+                } else {
+                    img.clone()
+                }
             }
             crate::types::ImageOutputFormat::Jpeg => {
                 if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Jpeg)
@@ -275,6 +293,7 @@ impl SteganographyProtector {
     /// - Exact capacity model: `required = payload_bits * STEGO_SPREAD_FACTOR * redundancy`
     /// - No slot collisions within one embedding
     /// - True bijection for arbitrary (including non-power-of-two) slot counts
+    #[allow(dead_code)]
     pub(crate) fn embed_lsb_v2(
         &self,
         img: &RgbaImage,
@@ -283,6 +302,33 @@ impl SteganographyProtector {
         redundancy: usize,
     ) -> crate::stego::EmbedOutcome<RgbaImage> {
         carrier_support::corrected_lsb_embed(img, payload, seed, redundancy)
+    }
+
+    pub(crate) fn embed_lsb_v2_in_place(
+        &self,
+        img: &mut RgbaImage,
+        payload: &[u8],
+        seed: u64,
+        redundancy: usize,
+    ) -> Result<crate::stego::InPlaceEmbedReport> {
+        carrier_support::corrected_lsb_embed_in_place(img, payload, seed, redundancy)
+            .map_err(Into::into)
+    }
+
+    fn lsb_in_place_summary(
+        report: crate::stego::InPlaceEmbedReport,
+    ) -> crate::stego::EmbedOutcomeSummary {
+        crate::stego::EmbedOutcomeSummary {
+            status: if report.embedded {
+                crate::stego::EmbedStatus::Embedded
+            } else {
+                crate::stego::EmbedStatus::SkippedCapacity
+            },
+            path: crate::stego::EmbedPath::Lsb,
+            payload_bytes: report.payload_bytes,
+            required_capacity: report.required_capacity,
+            available_capacity: report.available_capacity,
+        }
     }
 
     pub(crate) fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
@@ -356,7 +402,7 @@ impl SteganographyProtector {
 
         let emission = crate::types::PayloadEmissionContext::from_plan_for_context(ctx, embed_path);
         let payload = self.generate_payload(&emission, ctx);
-        let rgba = img.to_rgba8();
+        let mut rgba = img.to_rgba8();
 
         let format = ctx
             .input_format()
@@ -366,14 +412,18 @@ impl SteganographyProtector {
 
         match format {
             crate::types::ImageOutputFormat::Png => {
-                let outcome = if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
-                    self.embed_lsb_tiled(&rgba, &payload, ctx.seed(), tile_size)
+                if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
+                    let outcome = self.embed_lsb_tiled(&rgba, &payload, ctx.seed(), tile_size);
+                    let (mut result, summary) = outcome.into_parts();
+                    Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
+                    Ok((DynamicImage::ImageRgba8(result), Some(summary)))
                 } else {
-                    self.embed_lsb_v2(&rgba, &payload, ctx.seed(), redundancy)
-                };
-                let (mut result, summary) = outcome.into_parts();
-                Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
-                Ok((DynamicImage::ImageRgba8(result), Some(summary)))
+                    let report =
+                        self.embed_lsb_v2_in_place(&mut rgba, &payload, ctx.seed(), redundancy)?;
+                    let summary = Self::lsb_in_place_summary(report);
+                    Self::embed_seed_lsb_fallback(&mut rgba, ctx.seed());
+                    Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
+                }
             }
             crate::types::ImageOutputFormat::Jpeg => {
                 let jpeg_bytes = crate::util::image::encode_image_with_options(
@@ -387,14 +437,18 @@ impl SteganographyProtector {
                 Ok((image::load_from_memory(&output)?, Some(summary)))
             }
             crate::types::ImageOutputFormat::WebP => {
-                let outcome = if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
-                    self.embed_lsb_tiled(&rgba, &payload, ctx.seed(), tile_size)
+                if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
+                    let outcome = self.embed_lsb_tiled(&rgba, &payload, ctx.seed(), tile_size);
+                    let (mut result, summary) = outcome.into_parts();
+                    Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
+                    Ok((DynamicImage::ImageRgba8(result), Some(summary)))
                 } else {
-                    self.embed_lsb_v2(&rgba, &payload, ctx.seed(), redundancy)
-                };
-                let (mut result, summary) = outcome.into_parts();
-                Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
-                Ok((DynamicImage::ImageRgba8(result), Some(summary)))
+                    let report =
+                        self.embed_lsb_v2_in_place(&mut rgba, &payload, ctx.seed(), redundancy)?;
+                    let summary = Self::lsb_in_place_summary(report);
+                    Self::embed_seed_lsb_fallback(&mut rgba, ctx.seed());
+                    Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
+                }
             }
         }
     }

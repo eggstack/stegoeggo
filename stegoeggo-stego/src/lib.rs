@@ -34,7 +34,7 @@ pub mod application_support;
 pub use error::{JpegUnsupportedReason, StegoError, StegoResult};
 pub use jpeg::is_progressive_jpeg;
 pub use lsb::DEFAULT_TILE_SIZE;
-pub use types::{EmbedOutcome, EmbedOutcomeSummary, EmbedPath, EmbedStatus};
+pub use types::{EmbedOutcome, EmbedOutcomeSummary, EmbedPath, EmbedStatus, InPlaceEmbedReport};
 
 /// Capacity report for a carrier query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

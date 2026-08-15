@@ -6,6 +6,30 @@
 //! not re-exported; they are implementation details.
 
 pub use crate::lsb_internal::{capacity, embed, extract, LsbConfig, DEFAULT_TILE_SIZE};
+pub use crate::types::InPlaceEmbedReport;
+
+/// Embed arbitrary bytes into an RGBA image in place using V2 corrected LSB.
+///
+/// The caller retains ownership of the image, and the operation performs no
+/// full-image clone. If capacity is insufficient, the image is unchanged and
+/// the returned report has `embedded == false`.
+///
+/// ```rust,no_run
+/// use image::RgbaImage;
+/// use stegoeggo_stego::lsb::{self, LsbConfig};
+///
+/// let mut image = RgbaImage::new(100, 100);
+/// let config = LsbConfig::new(42);
+/// let report = lsb::embed_in_place(&mut image, b"payload", &config).unwrap();
+/// assert!(report.embedded);
+/// ```
+pub fn embed_in_place(
+    img: &mut image::RgbaImage,
+    payload: &[u8],
+    config: &LsbConfig,
+) -> Result<InPlaceEmbedReport, super::StegoError> {
+    crate::lsb_internal::embed_in_place(img, payload, config)
+}
 
 /// Embed a self-describing framed payload into an RGBA image.
 ///

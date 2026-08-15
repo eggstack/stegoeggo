@@ -83,6 +83,12 @@ Getter methods: `protection_level()`, `seed()`, `intensity()`, `version()`.
 ### LSB Embedding (PNG/WebP)
 
 ```rust
+fn embed_lsb_v2_in_place(
+    img: &mut RgbaImage,
+    payload: &[u8],
+    seed: u64,
+    redundancy: usize,
+) -> InPlaceEmbedReport
 fn embed_lsb_v2(
     img: &RgbaImage,
     payload: &[u8],
@@ -114,6 +120,11 @@ fn extract_lsb_v2(
 - Channel derived from `bit_index % 3`
 - Redundancy via multiple passes with offset seeds
 - `extract_lsb` preserves the historical mapping exactly
+- The cloning V2 API clones once and delegates to the same in-place mutation
+  core used by `embed_lsb_v2_in_place`.
+- Corrected V2 embedding reads payload bits directly and extraction writes the
+  majority-voted bits into its final byte buffer; no bit-per-byte intermediate
+  vector is used.
 
 **Extraction probing order:**
 
@@ -188,7 +199,7 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 ## Module Interactions
 
 - **lib.rs**: Applied in Standard pipeline
-- **stegoeggo-stego/src/lsb.rs**: Public LSB API surface (`embed`, `extract`, `embed_framed`, `extract_framed`, `capacity`, `LsbConfig`, `DEFAULT_TILE_SIZE`). Raw operations are re-exported from `lsb_internal`; framed operations compose the public frame module with those raw calls.
+- **stegoeggo-stego/src/lsb.rs**: Public LSB API surface (`embed`, `embed_in_place`, `extract`, `embed_framed`, `extract_framed`, `capacity`, `LsbConfig`, `InPlaceEmbedReport`, `DEFAULT_TILE_SIZE`). Raw operations are backed by `lsb_internal`; framed operations compose the public frame module with those raw calls.
 - **stegoeggo-stego/src/application_support.rs**: Narrow parent-crate operations for payload-aware LSB and JPEG calls; hidden behind the optional `application-support` feature. Its opaque tiled-JPEG search context owns decoded state for one operation and exposes no parser, coefficient, or F5 types
 - **stegoeggo-stego/src/lsb_internal.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). Private; no application-type imports.
 - **stegoeggo-stego/src/jpeg.rs**: Generic encoded-byte JPEG carrier facade (DCT capacity, raw/framed embed/extract, Q-table reassembly, seed hint). No application-type imports
@@ -277,7 +288,7 @@ for arbitrary payload bytes, independent of the rights-protection pipeline.
 ```
 stegoeggo::stego
 ├── error       — StegoError, JpegUnsupportedReason
-├── lsb         — LsbConfig, capacity, embed, extract, embed_framed, extract_framed
+├── lsb         — LsbConfig, capacity, embed, embed_in_place, extract, embed_framed, extract_framed
 ├── jpeg        — JpegConfig, JpegSupport, probe_support, capacity, embed, extract, embed_framed, extract_framed, embed_seed_hint, extract_seed_hint
 └── frame       — FrameHeader, encode, decode, decode_prefix
 ```
@@ -287,6 +298,7 @@ stegoeggo::stego
 - `StegoError` — Structured error for generic carrier ops (InsufficientCapacity, UnsupportedJpeg, FrameNotFound, MalformedFrame, FrameChecksumMismatch, etc.)
 - `CapacityReport` — `{ required, available }` in carrier units (RGB slots for LSB, non-zero AC coefficients for DCT)
 - `EmbedReport` — `{ embedded, output, payload_bytes, required_capacity, available_capacity, actual_redundancy }`
+- `InPlaceEmbedReport` — `{ embedded, payload_bytes, required_capacity, available_capacity, actual_redundancy }`; returned by `lsb::embed_in_place` without an output image
 - `LsbConfig` — seed + redundancy (1–10, default 2)
 - `JpegConfig` — seed + redundancy (1–10, default 3)
 - `JpegSupport` — Supported or Unsupported(JpegUnsupportedReason)
@@ -331,15 +343,15 @@ It contains:
 
 ```
 stegoeggo-stego/src/
-├── lib.rs                 Re-exports + carrier-level CapacityReport/EmbedReport
+├── lib.rs                 Re-exports + carrier-level reports
 ├── constants.rs           STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR, SPLITMIX64_SEED
 ├── error.rs               StegoError, JpegUnsupportedReason, StegoResult
 ├── frame.rs               Generic framed payload (magic, version, length, CRC32)
-├── lsb.rs                 V2 LSB facade (raw and framed operations)
+├── lsb.rs                 V2 LSB facade (raw, in-place, and framed operations)
 ├── jpeg.rs                Encoded-JPEG facade (raw/framed operations, seed hint)
 ├── application_support.rs Narrow parent-crate operation layer (optional feature)
 ├── jpeg_transcoder/       Private JPEG DCT decode/encode/Huffman/F5 primitives
-└── types.rs               EmbedOutcome, EmbedPath, EmbedStatus, EmbedOutcomeSummary
+└── types.rs               EmbedOutcome, EmbedPath, EmbedStatus, EmbedOutcomeSummary, InPlaceEmbedReport
 ```
 
 The crate has no rights-policy/legal/provenance type dependencies. The root

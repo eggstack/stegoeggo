@@ -37,6 +37,72 @@ fn make_jpeg_bytes(w: u32, h: u32) -> Vec<u8> {
 }
 
 #[test]
+fn public_lsb_known_answer_vector() {
+    let source = image::RgbaImage::from_fn(5, 3, |x, y| {
+        let values = [0, 255, 2, 127, 254, 1, 128, 253, 3, 252, 4, 251, 5, 250, 6];
+        let value = values[(y * 5 + x) as usize];
+        image::Rgba([value, 255 - value, value, (x * 53 + y * 29 + 7) as u8])
+    });
+    let payload = [0xA5];
+    let config = LsbConfig::new(0x0123_4567_89AB_CDEF).with_redundancy(1);
+
+    let report = lsb::embed(&source, &payload, &config).unwrap();
+    assert!(report.embedded);
+    assert_eq!(
+        report.output.as_raw(),
+        &[
+            0, 255, 1, 7, 254, 1, 254, 60, 2, 253, 2, 113, 127, 128, 127, 166, 255, 1, 255, 219, 0,
+            253, 1, 36, 129, 127, 128, 89, 253, 1, 253, 142, 3, 252, 3, 195, 252, 3, 252, 248, 4,
+            251, 4, 65, 251, 4, 250, 118, 5, 250, 6, 171, 250, 4, 250, 224, 6, 250, 6, 21,
+        ]
+    );
+}
+
+#[test]
+fn public_lsb_in_place_matches_clone_and_preserves_alpha() {
+    let source = image::RgbaImage::from_fn(17, 19, |x, y| {
+        image::Rgba([
+            (x * 17 + y * 3) as u8,
+            (x * 5 + y * 19) as u8,
+            (x * 23 + y * 7) as u8,
+            (x * 11 + y * 13 + 1) as u8,
+        ])
+    });
+    let payload = [0xA5, 0x3C, 0x00, 0xFF];
+    let config = LsbConfig::new(42).with_redundancy(3);
+
+    let cloned = lsb::embed(&source, &payload, &config).unwrap();
+    let mut in_place = source.clone();
+    let report = lsb::embed_in_place(&mut in_place, &payload, &config).unwrap();
+
+    assert!(report.embedded);
+    assert_eq!(report.payload_bytes, payload.len());
+    assert_eq!(report.required_capacity, cloned.required_capacity);
+    assert_eq!(report.available_capacity, cloned.available_capacity);
+    assert_eq!(report.actual_redundancy, config.redundancy());
+    assert_eq!(in_place, cloned.output);
+    for (before, after) in source.pixels().zip(in_place.pixels()) {
+        assert_eq!(before[3], after[3]);
+    }
+    assert_eq!(
+        lsb::extract(&in_place, payload.len(), &config).unwrap(),
+        payload
+    );
+}
+
+#[test]
+fn public_lsb_in_place_capacity_failure_is_atomic() {
+    let mut image = make_lsb_image(8, 8);
+    let original = image.clone();
+    let config = LsbConfig::new(42);
+
+    let report = lsb::embed_in_place(&mut image, &[0u8; 10_000], &config).unwrap();
+
+    assert!(!report.embedded);
+    assert_eq!(image, original);
+}
+
+#[test]
 fn public_lsb_raw_roundtrip_arbitrary_bytes() {
     let img = make_lsb_image(64, 64);
     let payload = b"hello stegoeggo generic api";

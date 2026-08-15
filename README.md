@@ -214,7 +214,10 @@ No optional feature is enabled by default. The CLI enables the application featu
 The workspace also contains [`stegoeggo-stego`](stegoeggo-stego/), a lower-level, application-neutral carrier crate for callers that want generic LSB/JPEG steganography without StegoEggo's rights-policy layer.
 
 Its raw carrier functions accept arbitrary bytes with caller-supplied lengths
-(and JPEG extraction redundancy). Its `lsb::embed_framed`/
+(and JPEG extraction redundancy). For callers that already own a mutable RGBA
+buffer, `lsb::embed_in_place` avoids the intentional full-image clone performed
+by the convenient cloning `lsb::embed` and returns an `InPlaceEmbedReport`.
+Both paths share the same corrected carrier mutation core. Its `lsb::embed_framed`/
 `lsb::extract_framed` and `jpeg::embed_framed`/`jpeg::extract_framed`
 convenience functions add the existing bounded frame format so payloads can be
 recovered later using only the resulting carrier and the same seed/config.

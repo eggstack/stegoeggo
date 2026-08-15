@@ -1,5 +1,5 @@
 use crate::constants::{SPLITMIX64_SEED, STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR};
-use crate::types::EmbedOutcome;
+use crate::types::{EmbedOutcome, InPlaceEmbedReport};
 use image::{Rgba, RgbaImage};
 
 /// Default tile size for tiled steganographic embedding (64×64 pixels).
@@ -109,6 +109,11 @@ pub fn bytes_to_bits(bytes: &[u8]) -> Vec<u8> {
         }
     }
     bits
+}
+
+#[inline]
+fn payload_bit(payload: &[u8], bit_index: usize) -> u8 {
+    (payload[bit_index / 8] >> (bit_index % 8)) & 1
 }
 
 pub fn bits_to_bytes(bits: &[u8]) -> Vec<u8> {
@@ -299,44 +304,77 @@ pub fn embed_lsb_v2(
     seed: u64,
     redundancy: usize,
 ) -> EmbedOutcome<RgbaImage> {
-    let (width, height) = img.dimensions();
     let mut output = img.clone();
+    let report = embed_lsb_v2_in_place(&mut output, payload, seed, redundancy);
+    if report.embedded {
+        EmbedOutcome::Embedded {
+            output,
+            payload_bytes: report.payload_bytes,
+            required_capacity: report.required_capacity,
+            available_capacity: report.available_capacity,
+            path: crate::types::EmbedPath::Lsb,
+        }
+    } else {
+        EmbedOutcome::SkippedCapacity {
+            output,
+            payload_bytes: report.payload_bytes,
+            required_capacity: report.required_capacity,
+            available_capacity: report.available_capacity,
+            path: crate::types::EmbedPath::Lsb,
+        }
+    }
+}
 
-    let payload_bits = bytes_to_bits(payload);
-    let bit_len = payload_bits.len();
-
+pub fn embed_lsb_v2_in_place(
+    image: &mut RgbaImage,
+    payload: &[u8],
+    seed: u64,
+    redundancy: usize,
+) -> InPlaceEmbedReport {
+    let (width, height) = image.dimensions();
     let available = lsb_available_slots(width, height);
+    let Some(bit_len) = payload.len().checked_mul(8) else {
+        return InPlaceEmbedReport {
+            embedded: false,
+            payload_bytes: payload.len(),
+            required_capacity: usize::MAX,
+            available_capacity: available,
+            actual_redundancy: redundancy,
+        };
+    };
     let required = lsb_required_capacity_v2(bit_len, redundancy);
 
     if required > available {
-        return EmbedOutcome::SkippedCapacity {
-            output,
+        return InPlaceEmbedReport {
+            embedded: false,
             payload_bytes: payload.len(),
             required_capacity: required,
             available_capacity: available,
-            path: crate::types::EmbedPath::Lsb,
+            actual_redundancy: redundancy,
         };
     }
 
-    let replicas_per_bit = STEGO_SPREAD_FACTOR * redundancy;
-    for (i, &bit) in payload_bits.iter().enumerate() {
-        for s in 0..replicas_per_bit {
-            let logical = i * replicas_per_bit + s;
+    let replicas_per_bit = STEGO_SPREAD_FACTOR.saturating_mul(redundancy);
+    for bit_index in 0..bit_len {
+        let bit = payload_bit(payload, bit_index);
+        for replica in 0..replicas_per_bit {
+            let logical = bit_index
+                .saturating_mul(replicas_per_bit)
+                .saturating_add(replica);
             let slot = stego_permutation_v2(logical, available, seed);
             let (pixel_index, slot_channel) = carrier_v2_slot_to_pixel_channel(slot, width, height);
             let x = pixel_index as u32 % width;
             let y = pixel_index as u32 / width;
-
-            embed_bit_in_pixel(&mut output, x, y, slot_channel, bit);
+            embed_bit_in_pixel(image, x, y, slot_channel, bit);
         }
     }
 
-    EmbedOutcome::Embedded {
-        output,
+    InPlaceEmbedReport {
+        embedded: true,
         payload_bytes: payload.len(),
         required_capacity: required,
         available_capacity: available,
-        path: crate::types::EmbedPath::Lsb,
+        actual_redundancy: redundancy,
     }
 }
 
@@ -349,13 +387,18 @@ pub fn extract_lsb_v2(
 ) -> Option<Vec<u8>> {
     let (width, height) = img.dimensions();
     let available = lsb_available_slots(width, height);
-    let replicas_per_bit = STEGO_SPREAD_FACTOR * redundancy;
+    let replicas_per_bit = STEGO_SPREAD_FACTOR.checked_mul(redundancy)?;
 
-    if (base_slot + expected_bits * replicas_per_bit) > available {
+    let required_slots = expected_bits.checked_mul(replicas_per_bit)?;
+    if base_slot.checked_add(required_slots)? > available {
         return None;
     }
 
-    let mut bits = Vec::with_capacity(expected_bits);
+    if !expected_bits.is_multiple_of(8) {
+        return Some(Vec::new());
+    }
+
+    let mut bytes = vec![0u8; expected_bits / 8];
     let threshold = (replicas_per_bit / 2) as u32;
 
     for i in 0..expected_bits {
@@ -373,10 +416,12 @@ pub fn extract_lsb_v2(
             ones += bit as u32;
         }
 
-        bits.push(if ones > threshold { 1 } else { 0 });
+        if ones > threshold {
+            bytes[i / 8] |= 1 << (i % 8);
+        }
     }
 
-    Some(bits_to_bytes(&bits))
+    Some(bytes)
 }
 
 pub fn embed_lsb_tiled(
@@ -401,8 +446,7 @@ pub fn embed_lsb_tiled(
     let mut total_required = 0usize;
     let mut total_available = 0usize;
 
-    let payload_bits = bytes_to_bits(payload);
-    let bit_len = payload_bits.len();
+    let bit_len = payload.len().saturating_mul(8);
 
     let mut tile_y: u32 = 0;
     while tile_y * tile_size < height {
@@ -424,9 +468,10 @@ pub fn embed_lsb_tiled(
                 any_embedded = true;
                 let seed_for_embed = local_seed.wrapping_mul(crate::constants::STEGO_OFFSET_SEED_1);
                 let replicas_per_bit = STEGO_SPREAD_FACTOR;
-                for (i, &bit) in payload_bits.iter().enumerate() {
+                for i in 0..bit_len {
+                    let bit = payload_bit(payload, i);
                     for s in 0..replicas_per_bit {
-                        let logical = i * replicas_per_bit + s;
+                        let logical = i.saturating_mul(replicas_per_bit).saturating_add(s);
                         let slot = stego_permutation_v2(logical, tile_available, seed_for_embed);
                         let (pixel_index, slot_channel) =
                             carrier_v2_slot_to_pixel_channel(slot, sub_w, sub_h);
@@ -650,7 +695,7 @@ impl LsbConfig {
 pub fn capacity(img: &RgbaImage, payload_len: usize, config: &LsbConfig) -> super::CapacityReport {
     let (w, h) = img.dimensions();
     let available = lsb_available_slots(w, h);
-    let payload_bits = payload_len * 8;
+    let payload_bits = payload_len.saturating_mul(8);
     let required = lsb_required_capacity_v2(payload_bits, config.redundancy());
     super::CapacityReport {
         required,
@@ -693,46 +738,38 @@ pub fn embed(
         return Err(super::StegoError::EmptyCarrier);
     }
 
-    let outcome = embed_lsb_v2(img, payload, config.seed(), config.redundancy());
+    let mut output = img.clone();
+    let report = embed_lsb_v2_in_place(&mut output, payload, config.seed(), config.redundancy());
+    Ok(super::EmbedReport {
+        embedded: report.embedded,
+        output,
+        payload_bytes: report.payload_bytes,
+        required_capacity: report.required_capacity,
+        available_capacity: report.available_capacity,
+        actual_redundancy: report.actual_redundancy,
+    })
+}
 
-    match outcome {
-        crate::types::EmbedOutcome::Embedded {
-            output,
-            payload_bytes,
-            required_capacity,
-            available_capacity,
-            ..
-        } => Ok(super::EmbedReport {
-            embedded: true,
-            output,
-            payload_bytes,
-            required_capacity,
-            available_capacity,
-            actual_redundancy: config.redundancy(),
-        }),
-        crate::types::EmbedOutcome::SkippedCapacity {
-            output,
-            payload_bytes,
-            required_capacity,
-            available_capacity,
-            ..
-        } => Ok(super::EmbedReport {
-            embedded: false,
-            output,
-            payload_bytes,
-            required_capacity,
-            available_capacity,
-            actual_redundancy: config.redundancy(),
-        }),
-        crate::types::EmbedOutcome::UnsupportedProgressive { output } => Ok(super::EmbedReport {
-            embedded: false,
-            output,
-            payload_bytes: payload.len(),
-            required_capacity: 0,
-            available_capacity: 0,
-            actual_redundancy: config.redundancy(),
-        }),
+/// Embed arbitrary bytes into an RGBA image in place using V2 corrected carrier LSB.
+///
+/// Unlike [`embed`], this operation mutates the caller's image and does not
+/// allocate a replacement image. Capacity is checked before the first pixel
+/// mutation, so an insufficient carrier is left unchanged.
+pub fn embed_in_place(
+    img: &mut RgbaImage,
+    payload: &[u8],
+    config: &LsbConfig,
+) -> Result<InPlaceEmbedReport, super::StegoError> {
+    if img.dimensions() == (0, 0) {
+        return Err(super::StegoError::EmptyCarrier);
     }
+
+    Ok(embed_lsb_v2_in_place(
+        img,
+        payload,
+        config.seed(),
+        config.redundancy(),
+    ))
 }
 
 /// Extract arbitrary bytes from an RGBA image using V2 corrected carrier LSB.
@@ -764,7 +801,9 @@ pub fn extract(
     payload_len: usize,
     config: &LsbConfig,
 ) -> Result<Vec<u8>, super::StegoError> {
-    let bits = payload_len * 8;
+    let bits = payload_len.checked_mul(8).ok_or_else(|| {
+        super::StegoError::ResourceLimitExceeded("payload length overflow".into())
+    })?;
     extract_lsb_v2(img, bits, config.seed(), 0, config.redundancy())
         .ok_or_else(|| super::StegoError::MalformedInput("extraction returned no data".into()))
 }

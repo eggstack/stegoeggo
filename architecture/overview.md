@@ -246,12 +246,12 @@ src/
 
 ```
 stegoeggo-stego/src/
-├── lib.rs                     Public API surface, CapacityReport, EmbedReport
+├── lib.rs                     Public API surface, carrier reports
 ├── constants.rs               Carrier-level tuning constants
 ├── error.rs                   StegoError, JpegUnsupportedReason
-├── types.rs                   EmbedOutcome, EmbedPath, EmbedStatus
+├── types.rs                   EmbedOutcome, EmbedPath, EmbedStatus, in-place report
 ├── frame.rs                   Self-describing frame (magic, version, CRC32)
-├── lsb.rs                     LSB carrier (raw and framed operations)
+├── lsb.rs                     LSB carrier (raw, in-place, and framed operations)
 ├── lsb_internal.rs            Permutations, V2 carrier, slot mapping (private)
 ├── jpeg.rs                    JPEG carrier: raw/framed DCT operations, seed hint
 ├── application_support.rs     Parent-crate operation layer (feature: application-support)
@@ -261,7 +261,11 @@ stegoeggo-stego/src/
     └── stego_f5.rs            DctStegoF5, F5XorShiftRng
 ```
 
-`jpeg_transcoder/` and `lsb_internal.rs` are private implementation modules. The root crate uses the narrow `application-support` feature internally.
+`jpeg_transcoder/` and `lsb_internal.rs` are private implementation modules. The
+corrected LSB clone and in-place APIs share one mutation core, and corrected
+payload extraction writes directly into its final byte buffer. The root crate
+uses the narrow `application-support` feature internally and adopts the
+in-place operation when it already owns a mutable decoded RGBA image.
 
 ## Component Index — Deep Dives
 

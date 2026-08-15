@@ -9,10 +9,10 @@ pipeline but can also be used directly as a generic carrier.
 
 ## API surface
 
-- `stegoeggo_stego::lsb::{embed, extract, embed_framed, extract_framed, capacity, LsbConfig}`
+- `stegoeggo_stego::lsb::{embed, embed_in_place, extract, embed_framed, extract_framed, capacity, LsbConfig}`
 - `stegoeggo_stego::jpeg::{embed, extract, embed_framed, extract_framed, capacity, JpegConfig, probe_support}`
 - `stegoeggo_stego::frame::{encode, decode, decode_prefix}`
-- `stegoeggo_stego::{EmbedReport, CapacityReport, StegoError, EmbedOutcome}`
+- `stegoeggo_stego::{EmbedReport, InPlaceEmbedReport, CapacityReport, StegoError, EmbedOutcome}`
 
 JPEG header parsing, DCT coefficient processing, Huffman state, F5 objects,
 LSB permutations, and raw carrier helpers are private implementation details.
@@ -40,6 +40,22 @@ let report = lsb::embed_framed(&image, b"payload", &config)?;
 let recovered = lsb::extract_framed(&report.output, &config)?;
 assert_eq!(recovered, b"payload");
 ```
+
+When the caller already owns a mutable RGBA buffer, `lsb::embed_in_place`
+avoids the full-image clone used by `lsb::embed`:
+
+```rust
+use stegoeggo_stego::lsb::{self, LsbConfig};
+
+let mut image = image::RgbaImage::new(100, 100);
+let report = lsb::embed_in_place(&mut image, b"payload", &LsbConfig::new(42))?;
+assert!(report.embedded);
+```
+
+The cloning and in-place APIs share the corrected V2 mutation core. Corrected
+embedding and extraction access payload bits directly, without an intermediate
+one-byte-per-bit allocation. Capacity failures leave an in-place image
+unchanged.
 
 `jpeg::extract_framed` tries the configured redundancy and lower valid values
 in a bounded search, so it also recovers outputs whose embedding was
