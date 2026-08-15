@@ -76,6 +76,10 @@ Specialist verification (external tools, conformance, fuzzing, MSRV, docs.rs, pa
 - `pub(crate)` for internal modules (e.g., `jpeg_transcoder` in `stegoeggo-stego`)
 - Private fields with getter methods on `ProtectionContext`, `StegoPayload`, `LegalMetadata`
 
+## MSRV
+
+Rust **1.87** (declared in `Cargo.toml` and `stegoeggo-stego/Cargo.toml`). Toolchain is stable (`rust-toolchain.toml`).
+
 ## Features
 
 | Feature | Description | Default |
@@ -86,6 +90,8 @@ Specialist verification (external tools, conformance, fuzzing, MSRV, docs.rs, pa
 | `iscc` | ISCC content identifier computation (`compute_content_identifiers`, etc.) | No |
 | `conformance` | Conformance harness binary and manifest parsing (TOML) | No |
 | `parallel` | Rayon-based parallel batch processing (`process_images_parallel`, etc.) | No |
+| `test-seeds` | Test infrastructure only — never in production binary | No |
+| `fuzz` | Fuzzing support — never in production binary | No |
 
 Feature-gated tests: `tests/async_integration.rs` requires `async`.
 The conformance binary (`stegoeggo-conformance`) requires the `conformance` feature.
