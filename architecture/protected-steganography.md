@@ -129,6 +129,7 @@ calling the carrier operation.
 - `probe_dct_support_full()` gates DCT entry: rejects progressive, restart-bearing, non-8-bit, multi-scan, and sampling >4 inputs; unsupported inputs fall back to metadata-only processing
 - **One-pass embed**: Computes `max_feasible = available / payload_bits`, selects `min(requested, max_feasible)`, embeds+encodes once. No retry loop, no roundtrip decode/extract self-test. The DCT success path always uses `encode_coefficients_preserving` (the original-JPEG preserving path), so APP/COM/unknown segments survive byte-for-byte.
 - **Tiled JPEG success verification**: Tiled embedding records the first successful tile and its local seed, performs the normal single encode, then decodes the encoded output and extracts that exact tile. It reports `Embedded` only when the extracted payload matches the original; a failed post-encode check is reported as a non-success outcome.
+- **Tiled JPEG extraction search**: Each extraction/verification call creates one operation-local carrier-owned search context. The coefficient container is decoded once; prefix enumeration, exact-key V3 header/full extraction, and V1/V2 fallback all reuse the retained private state. Candidate identity, origin bounds, nearby seed range (`0..=2`), and redundancy range (`1..=10`) are unchanged.
 
 ## Extraction & Verification
 
@@ -169,7 +170,7 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 
 - **lib.rs**: Applied in Standard pipeline
 - **stegoeggo-stego/src/lsb.rs**: Public LSB API surface (`embed`, `extract`, `capacity`, `LsbConfig`, `DEFAULT_TILE_SIZE`). Items re-exported from `lsb_internal` via `pub use`.
-- **stegoeggo-stego/src/application_support.rs**: Narrow parent-crate operations for payload-aware LSB and JPEG calls; hidden behind the optional `application-support` feature
+- **stegoeggo-stego/src/application_support.rs**: Narrow parent-crate operations for payload-aware LSB and JPEG calls; hidden behind the optional `application-support` feature. Its opaque tiled-JPEG search context owns decoded state for one operation and exposes no parser, coefficient, or F5 types
 - **stegoeggo-stego/src/lsb_internal.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). Private; no application-type imports.
 - **stegoeggo-stego/src/jpeg.rs**: Generic encoded-byte JPEG carrier facade (DCT capacity, Q-table reassembly, seed hint). No application-type imports
 - **stegoeggo-stego/src/jpeg_transcoder/**: Private JPEG fast-path implementation used behind `jpeg.rs` and `application_support.rs`

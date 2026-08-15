@@ -2,6 +2,12 @@
 
 Status: COMPLETE — tiled-JPEG integrity and final evidence closure verified
 
+Post-closure runtime note: Plan 067 correctly closed tiled-JPEG candidate
+identity, candidate continuation, and encoded-output success semantics. A later
+runtime audit found that exact-candidate extraction re-decoded the JPEG for
+each staged candidate request. Plan 068 owns that runtime/resource correction;
+Plan 067's historical correctness evidence remains valid.
+
 Roadmap: `plans/057-stego-carrier-library-and-pipeline-simplification-roadmap.md`
 
 Plan: `plans/067-tiled-jpeg-candidate-integrity-and-final-evidence-closure.md`

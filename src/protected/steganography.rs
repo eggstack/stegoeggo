@@ -337,22 +337,18 @@ impl SteganographyProtector {
         max_origins: u32,
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
+        if max_origins == 0 {
+            return None;
+        }
         let prefix_bits = V3_PREFIX_BYTES * 8;
-        let candidates = stegoeggo_stego::application_support::jpeg_tiled_prefix_candidates(
-            jpeg_bytes,
-            master_seed,
-            tile_size,
-            max_origins,
-            prefix_bits,
-        )?;
+        let search =
+            stegoeggo_stego::application_support::TiledJpegSearch::new(jpeg_bytes, tile_size)?;
+        let candidates = search.prefix_candidates(master_seed, max_origins, prefix_bits);
+        if candidates.is_empty() {
+            return None;
+        }
         match self.evaluate_tiled_candidates(candidates, mac_key, |candidate, bits| {
-            stegoeggo_stego::application_support::jpeg_tiled_extract_candidate(
-                jpeg_bytes,
-                master_seed,
-                tile_size,
-                candidate,
-                bits,
-            )
+            search.extract_candidate(master_seed, candidate, bits)
         }) {
             CandidateOutcome::Valid(payload) => Some(payload),
             CandidateOutcome::Invalid(_)
@@ -445,24 +441,18 @@ impl SteganographyProtector {
         max_origins: u32,
         mac_key: &[u8],
     ) -> CandidateOutcome {
+        if max_origins == 0 {
+            return CandidateOutcome::NotFound;
+        }
         let prefix_bits = V3_PREFIX_BYTES * 8;
-        let Some(candidates) = stegoeggo_stego::application_support::jpeg_tiled_prefix_candidates(
-            jpeg_bytes,
-            master_seed,
-            tile_size,
-            max_origins,
-            prefix_bits,
-        ) else {
+        let Some(search) =
+            stegoeggo_stego::application_support::TiledJpegSearch::new(jpeg_bytes, tile_size)
+        else {
             return CandidateOutcome::NotFound;
         };
+        let candidates = search.prefix_candidates(master_seed, max_origins, prefix_bits);
         self.evaluate_tiled_candidates(candidates, mac_key, |candidate, bits| {
-            stegoeggo_stego::application_support::jpeg_tiled_extract_candidate(
-                jpeg_bytes,
-                master_seed,
-                tile_size,
-                candidate,
-                bits,
-            )
+            search.extract_candidate(master_seed, candidate, bits)
         })
     }
 
@@ -4500,8 +4490,9 @@ mod tests {
         let ctx = ctx_with_mac(42, b"correct-key").with_tile_size(64);
         let payload = protector.generate_payload_from_ctx(&ctx);
         let jpeg_bytes = tileable_test_jpeg();
-        let keys = carrier_support::jpeg_tiled_prefix_candidates(&jpeg_bytes, 42, 64, 1, 0)
-            .expect("candidate keys should be available");
+        let search = carrier_support::TiledJpegSearch::new(&jpeg_bytes, 64)
+            .expect("tiled search should decode");
+        let keys = search.prefix_candidates(42, 1, 0);
         let first_key = keys[0].0;
         let later_key = keys[1].0;
         let candidates = vec![

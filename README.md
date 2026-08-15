@@ -956,6 +956,11 @@ unterminated entropy; exact scan spans exclude marker fill and EOI bytes while r
 valid `FF 00` stuffing. Restart-bearing, progressive, and multi-scan JPEGs remain
 metadata-only fallback cases.
 
+Tiled JPEG verification uses an operation-local carrier search context: the
+coefficient container is decoded once, then all bounded tile, nearby-seed, and
+redundancy candidates are extracted from that retained private state. JPEG
+parser, coefficient, and F5 types do not cross into the root application crate.
+
 | Image Size | Time |
 |------------|------|
 | 256x256 | **1.3 us** |

@@ -113,6 +113,9 @@ the tile grid itself is the redundancy.
   returns an opaque candidate identity for each tile/grid-seed/redundancy
   combination, and reuses that identity for prefix/header/full or legacy
   extraction before verifying integrity. Distinct candidates are not
-  deduplicated by equal prefix bytes.
+  deduplicated by equal prefix bytes. The carrier creates one operation-local
+  `TiledJpegSearch` context, decodes coefficients once, and evaluates all
+  bounded candidates against its retained private state; the root crate never
+  receives JPEG headers, coefficient maps, or F5 state.
 - Tiled embedding records a successful tile, encodes once, then decodes the
   encoded output and verifies that tile's payload before reporting `Embedded`.

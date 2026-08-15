@@ -21,7 +21,10 @@ An unstable `application-support` feature exists solely for the parent
 rights-protection crate's compatibility adapter; it does not expose codec or
 coefficient types. Its tiled-JPEG operations return an opaque candidate key so
 prefix, header, full-payload, and legacy extraction lengths remain bound to one
-tile/grid-seed/redundancy identity.
+tile/grid-seed/redundancy identity. Tiled-JPEG extraction creates an
+operation-local search context that decodes the coefficient container once and
+reuses the private state for every bounded candidate; it is dropped when the
+search ends and is not part of the default API.
 
 ## License
 

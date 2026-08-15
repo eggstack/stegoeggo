@@ -1,6 +1,6 @@
 # Roadmap 057: Stego Carrier Library and Pipeline Simplification
 
-Status: COMPLETE — final tiled-JPEG and evidence residuals closed by Plan 067
+Status: COMPLETE — final tiled-JPEG runtime residual closed by Plan 068
 
 Audited planning baseline: `main` at `e60b801fda493ddd5e744f5de2a12d7b9489c078`
 
@@ -8,6 +8,11 @@ Plan 067 correction note: the post-Plan-066 audit found a tiled-JPEG
 candidate-identity regression and evidence inaccuracies. Those residuals are
 closed by `plans/067-status.md` after the required focused, CI-equivalent, and
 staged pre-release checks passed.
+
+Plan 068 correction note: a later source audit found that the new exact-key
+tiled-JPEG operation re-decoded the JPEG for every staged candidate request.
+That runtime/resource residual is closed by `plans/068-status.md` after the
+operation-local single-decode search context and required verification passed.
 
 This roadmap follows the completed container-correctness work through Plan 056. It does not reopen the PLUS/XMP/WebP/JPEG-container closure except where a regression test is required to prove that stego refactoring preserves those contracts.
 
