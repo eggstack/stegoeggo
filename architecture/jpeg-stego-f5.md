@@ -110,4 +110,9 @@ the tile grid itself is the redundancy.
 - `apply_dct_stego_bytes_tiled`: iterates the tile grid, calls
   `embed_f5_in_blocks` for each tile with `tile_seed(master, tx, ty)`.
 - `extract_f5_tiled_candidates`: scans tile positions in the cropped JPEG,
-  tries grid coordinates, calls `extract_f5_from_blocks`, verifies integrity.
+  returns an opaque candidate identity for each tile/grid-seed/redundancy
+  combination, and reuses that identity for prefix/header/full or legacy
+  extraction before verifying integrity. Distinct candidates are not
+  deduplicated by equal prefix bytes.
+- Tiled embedding records a successful tile, encodes once, then decodes the
+  encoded output and verifies that tile's payload before reporting `Embedded`.

@@ -5,6 +5,9 @@ carrier API is an explicit public allowlist, codec/coefficient internals are
 private, and the root adapter uses the optional operation-level
 `application-support` feature.
 
+Current API inventory corrected by Plan 067: `MIN_TILE_SIZE` and `tile_seed()`
+are carrier-internal helpers and are not part of the default public LSB API.
+
 Baseline SHA: `268f0a7` (main)
 
 ## Public API under `stegoeggo::stego` (from Plan 062)
@@ -21,8 +24,6 @@ stego::lsb::capacity()     (lsb.rs)
 stego::lsb::embed()        (lsb.rs)
 stego::lsb::extract()      (lsb.rs)
 stego::lsb::DEFAULT_TILE_SIZE (lsb.rs)
-stego::lsb::MIN_TILE_SIZE  (lsb.rs)
-stego::lsb::tile_seed()    (lsb.rs)
 
 stego::jpeg::JpegConfig    (jpeg.rs)
 stego::jpeg::JpegSupport   (jpeg.rs)

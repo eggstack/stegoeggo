@@ -1,11 +1,21 @@
 # Plan 066 Status Ledger
 
-Status: COMPLETE — final closure and public-boundary correction verified
+Status: CLOSED WITH POST-CLOSURE RESIDUAL — superseded by Plan 067
 
 Roadmap: `plans/057-stego-carrier-library-and-pipeline-simplification-roadmap.md`
 
-This ledger was created before Plan 066 product-source edits. It records the
-actual repository baseline and the focused closure evidence for this plan.
+This ledger records the actual repository baseline and the focused closure
+evidence for this plan.
+
+Chronology correction added by Plan 067:
+The tracked 066-status ledger was committed in the Plan 066 closure commit
+after `e694209`; therefore it cannot serve as proof that a tracked ledger
+existed before those product edits. Its implementation/test evidence remains
+historical closure evidence, but the pre-edit chronology claim is withdrawn.
+
+Plan 067 found a tiled-JPEG candidate-identity and post-encode verification
+residual after this ledger was closed. Plan 067 owns the corrective
+implementation and final Roadmap 057 closure.
 
 ## Baseline
 
@@ -43,7 +53,7 @@ test, audit, or documentation evidence recorded below.
 | R15 | retrospective 058/059/060/061/063 ledgers are clearly labeled and current-disposition-correct | CLOSED | retrospective banners and forced tracking |
 | R16 | Plan 065 status is reconciled truthfully | CLOSED | Plan 065 closure banner, final rows, and Plan 066 authority note |
 | R17 | Plan 064 correction note points to final Plan 066 closure | CLOSED | final supersession note |
-| R18 | Roadmap 057 is PARTIAL while Plan 066 is open | CLOSED | Roadmap now `COMPLETE — final residuals closed by Plan 066` |
+| R18 | Roadmap 057 is PARTIAL while Plan 066 is open | CLOSED (historical) | Roadmap was reopened during Plan 066 and its later COMPLETE claim is superseded by Plan 067 |
 | R19 | focused test/API matrix passes | CLOSED | focused compatibility, carrier, robustness, and doctest suites |
 | R20 | ./scripts/check.sh passes | CLOSED | fmt, clippy, minimal check, all workspace tests, and doctests pass |
 | R21 | final Roadmap 057 closure evidence is internally consistent | CLOSED | current source, package checks, tests, and ledgers agree |
@@ -63,5 +73,5 @@ test, audit, or documentation evidence recorded below.
 - Targeted source audit found no production Plan 065 compatibility hook, no
   removed carrier facade names in product code, no root references to private
   carrier codec types, and no stale LSB PNG-output or legal-claim documentation.
-- Roadmap 057 is now complete; Plans 058–065 retain historical evidence and
-  Plan 066 is the current final closure ledger.
+- Roadmap 057 was considered complete at the historical Plan 066 closure;
+  Plan 067 reopens the roadmap for the later tiled-JPEG/evidence residuals.

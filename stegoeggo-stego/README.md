@@ -19,7 +19,9 @@ LSB permutations, and raw carrier helpers are private implementation details.
 The default API exposes only the operation-level modules listed above.
 An unstable `application-support` feature exists solely for the parent
 rights-protection crate's compatibility adapter; it does not expose codec or
-coefficient types.
+coefficient types. Its tiled-JPEG operations return an opaque candidate key so
+prefix, header, full-payload, and legacy extraction lengths remain bound to one
+tile/grid-seed/redundancy identity.
 
 ## License
 

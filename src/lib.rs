@@ -2100,14 +2100,119 @@ mod tests {
     }
 
     #[test]
-    fn legacy_timestamp_override_reaches_resolved_notice() {
+    fn request_from_legacy_light_default_policy_is_unspecified() {
+        let ctx = ProtectionContext::new(0.5, 42);
+        let request = request_from_legacy(ProtectionLevel::Light, &ctx);
+        assert_eq!(request.policy(), RightsPolicy::Unspecified);
+        assert!(matches!(
+            request.channels().hidden_marker,
+            HiddenMarkerMode::SeedOnly
+        ));
+    }
+
+    #[test]
+    fn request_from_legacy_light_with_tile_size_is_seed_only() {
+        let ctx = ProtectionContext::new(0.5, 42).with_tile_size(64);
+        let request = request_from_legacy(ProtectionLevel::Light, &ctx);
+        assert!(matches!(
+            request.channels().hidden_marker,
+            HiddenMarkerMode::SeedOnly
+        ));
+    }
+
+    #[test]
+    fn request_from_legacy_standard_with_tile_size_is_tiled() {
+        let ctx = ProtectionContext::new(0.5, 42).with_tile_size(64);
+        let request = request_from_legacy(ProtectionLevel::Standard, &ctx);
+        assert!(matches!(
+            request.channels().hidden_marker,
+            HiddenMarkerMode::Tiled { tile_size: 64 }
+        ));
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn request_from_legacy_explicit_dmi_overrides_default() {
+        let ctx = ProtectionContext::new(0.5, 42).with_dmi(DmiValue::Allowed);
+        let request = request_from_legacy(ProtectionLevel::Light, &ctx);
+        assert_eq!(request.policy(), RightsPolicy::Allowed);
+        assert_eq!(request.notice().dmi(), Some(DmiValue::Allowed));
+    }
+
+    #[test]
+    fn request_from_legacy_explicit_redundancy_preserved() {
+        let ctx = ProtectionContext::new(0.5, 42).with_stego_redundancy(7);
+        let request = request_from_legacy(ProtectionLevel::Standard, &ctx);
+        let plan = resolve_request(&request, ImageOutputFormat::Png).unwrap();
+        assert_eq!(plan.effective_redundancy(), 7);
+    }
+
+    #[test]
+    fn request_from_legacy_content_hash_preserved() {
+        let hash = [0xDE, 0xAD, 0xBE, 0xEF];
+        let ctx = ProtectionContext::new(0.5, 42).with_content_hash(hash);
+        let request = request_from_legacy(ProtectionLevel::Standard, &ctx);
+        assert_eq!(request.processing().content_hash, Some(hash));
+        let plan = resolve_request(&request, ImageOutputFormat::Png).unwrap();
+        assert_eq!(plan.processing().content_hash, Some(hash));
+    }
+
+    #[test]
+    fn request_from_legacy_timestamp_override_preserved() {
         let timestamp = "2025-06-15T10:00:00Z";
         let ctx = ProtectionContext::new(0.5, 42)
             .with_legal_metadata(LegalMetadata::new().with_copyright_holder("Owner"))
             .with_timestamp_override(timestamp);
         let request = request_from_legacy(ProtectionLevel::Standard, &ctx);
+        assert_eq!(request.timestamp_override(), Some(timestamp));
         let plan = resolve_request(&request, ImageOutputFormat::Png).unwrap();
         assert_eq!(plan.effective_notice().notice_applied_at(), Some(timestamp));
+    }
+
+    #[test]
+    fn request_from_legacy_legal_claims_none_auto_includes_supplied_metadata() {
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_legal_metadata(LegalMetadata::new().with_copyright_holder("Owner"));
+        let request = request_from_legacy(ProtectionLevel::Standard, &ctx);
+        let plan = resolve_request(&request, ImageOutputFormat::Png).unwrap();
+        assert_eq!(plan.effective_notice().copyright_holder(), Some("Owner"));
+        assert!(plan.legal_metadata().is_some());
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn request_from_legacy_legal_claims_false_excludes_claims() {
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_legal_metadata(LegalMetadata::new().with_copyright_holder("Owner"))
+            .with_legal_claims(false);
+        let request = request_from_legacy(ProtectionLevel::Standard, &ctx);
+        let plan = resolve_request(&request, ImageOutputFormat::Png).unwrap();
+        assert_eq!(plan.effective_notice().copyright_holder(), None);
+        assert!(plan.legal_metadata().is_none());
+    }
+
+    #[test]
+    fn request_from_legacy_resource_limits_preserved() {
+        let limits = ResourceLimits::builder()
+            .max_payload_bytes(111)
+            .max_tile_extraction_origins(3)
+            .build();
+        let ctx = ProtectionContext::new(0.5, 42).with_resource_limits(limits.clone());
+        let request = request_from_legacy(ProtectionLevel::Standard, &ctx);
+        let request_limits = request
+            .resource_limits()
+            .expect("legacy limits should be present");
+        assert_eq!(
+            request_limits.max_payload_bytes(),
+            limits.max_payload_bytes()
+        );
+        assert_eq!(
+            request_limits.max_tile_extraction_origins(),
+            limits.max_tile_extraction_origins()
+        );
+        let plan = resolve_request(&request, ImageOutputFormat::Png).unwrap();
+        assert_eq!(plan.resource_limits().max_payload_bytes(), 111);
+        assert_eq!(plan.resource_limits().max_tile_extraction_origins(), 3);
     }
 
     #[test]

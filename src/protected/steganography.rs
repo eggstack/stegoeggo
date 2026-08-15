@@ -338,73 +338,103 @@ impl SteganographyProtector {
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
         let prefix_bits = V3_PREFIX_BYTES * 8;
-        let prefixes = stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
+        let candidates = stegoeggo_stego::application_support::jpeg_tiled_prefix_candidates(
             jpeg_bytes,
             master_seed,
             tile_size,
             max_origins,
             prefix_bits,
         )?;
-        for prefix in prefixes {
-            match Self::classify_v3_prefix(&prefix, Some(&self.limits)) {
+        match self.evaluate_tiled_candidates(candidates, mac_key, |candidate, bits| {
+            stegoeggo_stego::application_support::jpeg_tiled_extract_candidate(
+                jpeg_bytes,
+                master_seed,
+                tile_size,
+                candidate,
+                bits,
+            )
+        }) {
+            CandidateOutcome::Valid(payload) => Some(payload),
+            CandidateOutcome::Invalid(_)
+            | CandidateOutcome::MalformedV3
+            | CandidateOutcome::UnsupportedVersion(_)
+            | CandidateOutcome::AuthenticationKeyMissing(_)
+            | CandidateOutcome::AuthenticationFailed(_)
+            | CandidateOutcome::NotFound => None,
+        }
+    }
+
+    fn evaluate_tiled_candidates<I, F>(
+        &self,
+        candidates: I,
+        mac_key: &[u8],
+        mut extract: F,
+    ) -> CandidateOutcome
+    where
+        I: IntoIterator<
+            Item = (
+                stegoeggo_stego::application_support::TiledJpegCandidateKey,
+                Vec<u8>,
+            ),
+        >,
+        F: FnMut(
+            stegoeggo_stego::application_support::TiledJpegCandidateKey,
+            usize,
+        ) -> Option<Vec<u8>>,
+    {
+        let mut last_outcome = None;
+        for (candidate, prefix) in candidates {
+            let outcome = match Self::classify_v3_prefix(&prefix, Some(&self.limits)) {
                 V3PrefixResult::Detected {
                     header_length,
                     total_length,
                 } => {
-                    let header_bits = header_length * 8;
-                    if Self::validate_v3_header(
-                        &stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
-                            jpeg_bytes,
-                            master_seed,
-                            tile_size,
-                            max_origins,
-                            header_bits,
-                        )?
-                        .into_iter()
-                        .next()?,
-                        Some(&self.limits),
-                    )
-                    .is_err()
-                    {
+                    let Some(header) = extract(candidate, header_length * 8) else {
                         continue;
-                    }
-                    let full_bits = total_length * 8;
-                    for full in stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
-                        jpeg_bytes,
-                        master_seed,
-                        tile_size,
-                        max_origins,
-                        full_bits,
-                    )? {
+                    };
+                    if Self::validate_v3_header(&header, Some(&self.limits)).is_err() {
+                        CandidateOutcome::MalformedV3
+                    } else {
+                        let Some(full) = extract(candidate, total_length * 8) else {
+                            continue;
+                        };
                         if Self::verify_payload_integrity(&full, mac_key) {
-                            return Some(Self::truncate_to_actual_payload(&full));
+                            CandidateOutcome::Valid(Self::truncate_to_actual_payload(&full))
+                        } else {
+                            Self::classify_auth_failure(&full, mac_key)
                         }
                     }
                 }
                 V3PrefixResult::NotV3 => {
+                    let mut legacy_outcome = None;
                     for bits in [ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                        for payload in
-                            stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
-                                jpeg_bytes,
-                                master_seed,
-                                tile_size,
-                                max_origins,
-                                bits,
-                            )?
-                        {
-                            if Self::try_ecc_decode(&payload).is_some() {
-                                return Some(payload);
-                            }
+                        let Some(payload) = extract(candidate, bits) else {
+                            continue;
+                        };
+                        if Self::try_ecc_decode(&payload).is_some() {
+                            return CandidateOutcome::Valid(payload);
+                        }
+                        if legacy_outcome.is_none() {
+                            legacy_outcome = Some(Self::classify_auth_failure(&payload, mac_key));
                         }
                     }
-                    return None;
+                    legacy_outcome.unwrap_or(CandidateOutcome::NotFound)
                 }
-                V3PrefixResult::Malformed(_)
-                | V3PrefixResult::UnsupportedVersion(_)
-                | V3PrefixResult::ResourceLimitExceeded => return None,
+                V3PrefixResult::Malformed(_) | V3PrefixResult::ResourceLimitExceeded => {
+                    CandidateOutcome::MalformedV3
+                }
+                V3PrefixResult::UnsupportedVersion(version) => {
+                    CandidateOutcome::UnsupportedVersion(version)
+                }
+            };
+            if matches!(outcome, CandidateOutcome::Valid(_)) {
+                return outcome;
+            }
+            if last_outcome.is_none() && !matches!(outcome, CandidateOutcome::NotFound) {
+                last_outcome = Some(outcome);
             }
         }
-        None
+        last_outcome.unwrap_or(CandidateOutcome::NotFound)
     }
 
     fn verify_extract_f5_tiled(
@@ -416,7 +446,7 @@ impl SteganographyProtector {
         mac_key: &[u8],
     ) -> CandidateOutcome {
         let prefix_bits = V3_PREFIX_BYTES * 8;
-        let Some(prefixes) = stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
+        let Some(candidates) = stegoeggo_stego::application_support::jpeg_tiled_prefix_candidates(
             jpeg_bytes,
             master_seed,
             tile_size,
@@ -425,93 +455,15 @@ impl SteganographyProtector {
         ) else {
             return CandidateOutcome::NotFound;
         };
-        let mut last_outcome = None;
-        for prefix in prefixes {
-            match Self::classify_v3_prefix(&prefix, Some(&self.limits)) {
-                V3PrefixResult::Detected {
-                    header_length,
-                    total_length,
-                } => {
-                    let header_bits = header_length * 8;
-                    let Some(header) =
-                        stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
-                            jpeg_bytes,
-                            master_seed,
-                            tile_size,
-                            max_origins,
-                            header_bits,
-                        )
-                        .and_then(|mut values| values.drain(..).next())
-                    else {
-                        continue;
-                    };
-                    if Self::validate_v3_header(&header, Some(&self.limits)).is_err() {
-                        continue;
-                    }
-                    let full_bits = total_length * 8;
-                    let Some(fulls) =
-                        stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
-                            jpeg_bytes,
-                            master_seed,
-                            tile_size,
-                            max_origins,
-                            full_bits,
-                        )
-                    else {
-                        continue;
-                    };
-                    for full in fulls {
-                        if Self::verify_payload_integrity(&full, mac_key) {
-                            return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
-                                &full,
-                            ));
-                        }
-                        if last_outcome.is_none() {
-                            last_outcome = Some(Self::classify_auth_failure(&full, mac_key));
-                        }
-                    }
-                }
-                V3PrefixResult::NotV3 => {
-                    for bits in [ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                        let Some(payloads) =
-                            stegoeggo_stego::application_support::jpeg_extract_tiled_candidates(
-                                jpeg_bytes,
-                                master_seed,
-                                tile_size,
-                                max_origins,
-                                bits,
-                            )
-                        else {
-                            continue;
-                        };
-                        for payload in payloads {
-                            if Self::try_ecc_decode(&payload).is_some() {
-                                return CandidateOutcome::Valid(payload);
-                            }
-                            if last_outcome.is_none() {
-                                last_outcome = Some(Self::classify_auth_failure(&payload, mac_key));
-                            }
-                        }
-                    }
-                }
-                V3PrefixResult::Malformed(_) => {
-                    if last_outcome.is_none() {
-                        last_outcome = Some(CandidateOutcome::MalformedV3);
-                    }
-                }
-                V3PrefixResult::UnsupportedVersion(version) => {
-                    if last_outcome.is_none() {
-                        last_outcome = Some(CandidateOutcome::UnsupportedVersion(version));
-                    }
-                }
-                V3PrefixResult::ResourceLimitExceeded => {
-                    if last_outcome.is_none() {
-                        last_outcome = Some(CandidateOutcome::MalformedV3);
-                    }
-                }
-            }
-        }
-        last_outcome.unwrap_or(CandidateOutcome::NotFound)
+        self.evaluate_tiled_candidates(candidates, mac_key, |candidate, bits| {
+            stegoeggo_stego::application_support::jpeg_tiled_extract_candidate(
+                jpeg_bytes,
+                master_seed,
+                tile_size,
+                candidate,
+                bits,
+            )
+        })
     }
 
     fn extract_with_redundancy(
@@ -4539,6 +4491,54 @@ mod tests {
         assert!(
             recovered.is_some(),
             "max_origins=1 should still find payload at first tile"
+        );
+    }
+
+    #[test]
+    fn tiled_jpeg_wrong_first_not_v3_candidate_does_not_mask_later_valid_candidate() {
+        let protector = SteganographyProtector::new();
+        let ctx = ctx_with_mac(42, b"correct-key").with_tile_size(64);
+        let payload = protector.generate_payload_from_ctx(&ctx);
+        let jpeg_bytes = tileable_test_jpeg();
+        let keys = carrier_support::jpeg_tiled_prefix_candidates(&jpeg_bytes, 42, 64, 1, 0)
+            .expect("candidate keys should be available");
+        let first_key = keys[0].0;
+        let later_key = keys[1].0;
+        let candidates = vec![
+            (first_key, vec![0; V3_PREFIX_BYTES]),
+            (later_key, payload[..V3_PREFIX_BYTES].to_vec()),
+        ];
+        let outcome =
+            protector.evaluate_tiled_candidates(candidates.clone(), b"correct-key", |key, bits| {
+                if key == first_key {
+                    (bits == V3_PREFIX_BYTES * 8).then(|| vec![0; bits.div_ceil(8)])
+                } else if bits / 8 <= payload.len() {
+                    Some(payload[..bits / 8].to_vec())
+                } else {
+                    None
+                }
+            });
+        match outcome {
+            CandidateOutcome::Valid(recovered) => assert_eq!(recovered, payload),
+            other => panic!("later valid candidate was not recovered: {other:?}"),
+        }
+
+        let wrong_key_outcome =
+            protector.evaluate_tiled_candidates(candidates, b"wrong-key", |key, bits| {
+                if key == first_key {
+                    (bits == V3_PREFIX_BYTES * 8).then(|| vec![0; bits.div_ceil(8)])
+                } else if bits / 8 <= payload.len() {
+                    Some(payload[..bits / 8].to_vec())
+                } else {
+                    None
+                }
+            });
+        assert!(
+            matches!(
+                &wrong_key_outcome,
+                CandidateOutcome::AuthenticationFailed(_)
+            ),
+            "wrong MAC outcome: {wrong_key_outcome:?}"
         );
     }
 

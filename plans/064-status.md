@@ -25,6 +25,11 @@ the public-boundary, semantic, release-check, and documentation corrections in
 Plan 066. This file remains historical evidence; the current closure ledger is
 `plans/066-status.md`.
 
+**Final supersession note added by Plan 067:** A later audit found residual
+tiled-JPEG candidate-identity and evidence issues. Plan 067 owns that correction
+and the final Roadmap 057 closure; the historical evidence below is not
+rewritten.
+
 ## Baseline SHA
 
 `2d9514552ea4332a8d5b1b9c7603cd000eea1c13` (`main` HEAD at closure start)

@@ -128,6 +128,7 @@ calling the carrier operation.
 - Calls the carrier crate's encoded-byte JPEG operations; the transcoder and F5 coefficient types remain private to `stegoeggo-stego`
 - `probe_dct_support_full()` gates DCT entry: rejects progressive, restart-bearing, non-8-bit, multi-scan, and sampling >4 inputs; unsupported inputs fall back to metadata-only processing
 - **One-pass embed**: Computes `max_feasible = available / payload_bits`, selects `min(requested, max_feasible)`, embeds+encodes once. No retry loop, no roundtrip decode/extract self-test. The DCT success path always uses `encode_coefficients_preserving` (the original-JPEG preserving path), so APP/COM/unknown segments survive byte-for-byte.
+- **Tiled JPEG success verification**: Tiled embedding records the first successful tile and its local seed, performs the normal single encode, then decodes the encoded output and extracts that exact tile. It reports `Embedded` only when the extracted payload matches the original; a failed post-encode check is reported as a non-success outcome.
 
 ## Extraction & Verification
 
@@ -218,7 +219,14 @@ in any cropped image produces the same seed, so extraction is self-coordinating.
   embeds payload in each tile's blocks using `embed_f5_in_blocks` with per-tile
   seed.
 - `extract_f5_tiled_candidates`: scans tile positions in the cropped JPEG's
-  coefficient container, tries grid coordinates, extracts and verifies.
+  coefficient container through the feature-gated carrier support layer.
+  Prefix enumeration returns an opaque candidate key containing the tile
+  origin, nearby grid-seed coordinate, and redundancy. The root reuses that
+  exact key for V3 header/full extraction and legacy lengths; a wrong,
+  malformed, unsupported, or failed-integrity candidate cannot terminate the
+  bounded search before a later candidate is tried. `max_origins` bounds tile
+  origins while the nearby seed and redundancy ranges remain bounded by the
+  carrier contract.
 
 ### Verification Chain Integration
 

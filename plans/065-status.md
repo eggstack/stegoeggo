@@ -1,11 +1,15 @@
 # Plan 065 Status Ledger
 
-Status: CLOSED — core Plan 065 implementation and Plan 066 follow-up are complete.
+Status: CLOSED — historical Plan 065 implementation; later residuals owned by Plan 067.
 
 The historical rows below are retained as evidence of the Plan 065 work. Their
 remaining residuals are not silently relabeled as complete; Plan 066 is the
 final closure owner for the public-boundary, semantic, release-check, and
 planning-ledger corrections.
+
+Plan 067 correction note: the later tiled-JPEG candidate-integrity residual and
+final evidence reconciliation supersede the historical Plan 066 closure
+wording; this file's implementation evidence remains historical.
 
 Roadmap: `plans/057-stego-carrier-library-and-pipeline-simplification-roadmap.md`
 
@@ -167,4 +171,10 @@ Plan 065 is complete when every blocking item in the plan §11 is true and all r
 
 ## Implementation commits
 
-To be filled in at closure.
+- `70845eba...` (`70845eb`) — Plan 065 phases 0–5: SeedOnly semantics,
+  pipeline delegation, bounded mutation, and legacy field propagation.
+- `1c530a7f...` (`1c530a7`) — Plan 065 phases 6–10: API boundary, packaging,
+  ledger tracking, and documentation closure.
+
+Plan 066 and Plan 067 own later residual corrections; those commits are not
+retroactively attributed to Plan 065.

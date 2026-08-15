@@ -17,7 +17,6 @@ extraction probing. The two copies are byte-identical.
 | `XORSHIFT_SEED_OFFSET` | `0x123456789ABCDEF0` | `protected/constants.rs` | XOR offset for XorShiftRng initialization (legacy `PixelSelectionRng`) |
 | `SPLITMIX64_SEED` | `0x9e3779b97f4a7c15` | `stegoeggo-stego/src/constants.rs`, `util/seed.rs` | Splitmix64 mixing constant |
 | `DEFAULT_TILE_SIZE` | `64` | `stegoeggo-stego/src/lsb_internal.rs` (re-exported via `lsb.rs`) | Default crop-resistant tile size |
-| `MIN_TILE_SIZE` | `32` | `stegoeggo-stego/src/lsb_internal.rs` (re-exported via `lsb.rs`) | Minimum tile size for crop resistance |
 | `MIN_PAYLOAD_SIZE` | `28` | `protected/steganography.rs` | Parsing threshold (not output size) |
 | `V3_PAYLOAD_VERSION` | `3` | `payload_v3/types.rs` | Current payload format version |
 
