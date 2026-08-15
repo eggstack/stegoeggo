@@ -1,6 +1,6 @@
 # Steganography Protector
 
-**Source:** `src/protected/steganography/` (application adapter) + `stegoeggo-stego/src/lsb.rs` (public API) + `stegoeggo-stego/src/lsb_internal.rs` (carrier mechanics) + `stegoeggo-stego/src/jpeg.rs` (generic carrier core)
+**Source:** `src/protected/steganography/` (application adapter) + `stegoeggo-stego/src/{frame,lsb,jpeg}.rs` (public carrier API) + `stegoeggo-stego/src/lsb_internal.rs` (carrier mechanics) + `stegoeggo-stego/src/jpeg_transcoder/` (private JPEG mechanics)
 
 The rights-aware hidden-marker adapter is split into five responsibility modules behind the `SteganographyProtector` facade:
 
@@ -83,8 +83,19 @@ Getter methods: `protection_level()`, `seed()`, `intensity()`, `version()`.
 ### LSB Embedding (PNG/WebP)
 
 ```rust
-fn embed_lsb_v2(img: &mut RgbaImage, payload: &[u8], seed: u64, redundancy: usize)
-fn extract_lsb_v2(img: &RgbaImage, seed: u64, redundancy: usize) -> Vec<u8>
+fn embed_lsb_v2(
+    img: &RgbaImage,
+    payload: &[u8],
+    seed: u64,
+    redundancy: usize,
+) -> EmbedOutcome<RgbaImage>
+fn extract_lsb_v2(
+    img: &RgbaImage,
+    expected_bits: usize,
+    seed: u64,
+    base_slot: usize,
+    redundancy: usize,
+) -> Option<Vec<u8>>
 ```
 
 **Corrected V2 carrier model (current default):**
@@ -177,10 +188,10 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 ## Module Interactions
 
 - **lib.rs**: Applied in Standard pipeline
-- **stegoeggo-stego/src/lsb.rs**: Public LSB API surface (`embed`, `extract`, `capacity`, `LsbConfig`, `DEFAULT_TILE_SIZE`). Items re-exported from `lsb_internal` via `pub use`.
+- **stegoeggo-stego/src/lsb.rs**: Public LSB API surface (`embed`, `extract`, `embed_framed`, `extract_framed`, `capacity`, `LsbConfig`, `DEFAULT_TILE_SIZE`). Raw operations are re-exported from `lsb_internal`; framed operations compose the public frame module with those raw calls.
 - **stegoeggo-stego/src/application_support.rs**: Narrow parent-crate operations for payload-aware LSB and JPEG calls; hidden behind the optional `application-support` feature. Its opaque tiled-JPEG search context owns decoded state for one operation and exposes no parser, coefficient, or F5 types
 - **stegoeggo-stego/src/lsb_internal.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). Private; no application-type imports.
-- **stegoeggo-stego/src/jpeg.rs**: Generic encoded-byte JPEG carrier facade (DCT capacity, Q-table reassembly, seed hint). No application-type imports
+- **stegoeggo-stego/src/jpeg.rs**: Generic encoded-byte JPEG carrier facade (DCT capacity, raw/framed embed/extract, Q-table reassembly, seed hint). No application-type imports
 - **stegoeggo-stego/src/jpeg_transcoder/**: Private JPEG fast-path implementation used behind `jpeg.rs` and `application_support.rs`
 - **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: Private F5-style DCT manipulation
 - **util/image.rs**: `XorShiftRng` for LSB pixel selection
@@ -266,8 +277,8 @@ for arbitrary payload bytes, independent of the rights-protection pipeline.
 ```
 stegoeggo::stego
 ├── error       — StegoError, JpegUnsupportedReason
-├── lsb         — LsbConfig, capacity, embed, extract
-├── jpeg        — JpegConfig, JpegSupport, probe_support, capacity, embed, extract, embed_seed_hint, extract_seed_hint
+├── lsb         — LsbConfig, capacity, embed, extract, embed_framed, extract_framed
+├── jpeg        — JpegConfig, JpegSupport, probe_support, capacity, embed, extract, embed_framed, extract_framed, embed_seed_hint, extract_seed_hint
 └── frame       — FrameHeader, encode, decode, decode_prefix
 ```
 
@@ -288,7 +299,9 @@ stegoeggo::stego
 3. **`intensity` not exposed** — Redundancy is the explicit capacity/cost control
 4. **Error model** — `StegoError` converts to crate `Error` via `From`
 5. **Frame is optional** — Raw APIs don't require framing
-6. **JPEG extract requires `actual_redundancy`** — Embed auto-downgrades when capacity insufficient; extract must match
+6. **Raw versus framed recovery** — Raw extraction requires caller-known length and, for JPEG, `actual_redundancy`. Framed extraction reads the fixed header first, validates the declared length against frame and carrier bounds, and for JPEG probes only the configured redundancy down to 1.
+7. **Frame composition** — Framed operations call the existing `frame::encode`, `frame::decode_prefix`, and `frame::decode`; they do not create a second carrier format or import application rights state.
+8. **CRC limitation** — The frame CRC32 detects accidental corruption but is not adversarial authentication.
 
 ### Frame Wire Format
 
@@ -301,12 +314,15 @@ Offset  Size  Field
 11..    N     Payload bytes
 ```
 
-Overhead: 11 bytes. Max payload: 16 MiB. CRC32 covers payload bytes only.
+Overhead: 11 bytes. Max payload: 16 MiB. CRC32 covers payload bytes only. The
+framed carrier helpers count this overhead in the carrier payload length.
 
 ### Tests
 
-`tests/public_stego_api.rs` — 29 tests covering LSB/JPEG/frame raw and framed
-roundtrips, capacity preflight, error conditions, and rights-metadata absence.
+`tests/public_stego_api.rs` covers LSB/JPEG/frame raw and framed roundtrips,
+frame-overhead capacity, bounded JPEG redundancy downgrade, error conditions,
+and rights-metadata absence. Framed tests intentionally recover without the
+original payload length or JPEG embed report.
 
 ## Carrier Crate Layout (Plan 063)
 
@@ -319,8 +335,8 @@ stegoeggo-stego/src/
 ├── constants.rs           STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR, SPLITMIX64_SEED
 ├── error.rs               StegoError, JpegUnsupportedReason, StegoResult
 ├── frame.rs               Generic framed payload (magic, version, length, CRC32)
-├── lsb.rs                 V2 LSB carrier + legacy fallback helpers
-├── jpeg.rs                Encoded-JPEG facade (capacity, embed, extract, seed hint)
+├── lsb.rs                 V2 LSB facade (raw and framed operations)
+├── jpeg.rs                Encoded-JPEG facade (raw/framed operations, seed hint)
 ├── application_support.rs Narrow parent-crate operation layer (optional feature)
 ├── jpeg_transcoder/       Private JPEG DCT decode/encode/Huffman/F5 primitives
 └── types.rs               EmbedOutcome, EmbedPath, EmbedStatus, EmbedOutcomeSummary

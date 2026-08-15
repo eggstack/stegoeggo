@@ -213,6 +213,15 @@ No optional feature is enabled by default. The CLI enables the application featu
 
 The workspace also contains [`stegoeggo-stego`](stegoeggo-stego/), a lower-level, application-neutral carrier crate for callers that want generic LSB/JPEG steganography without StegoEggo's rights-policy layer.
 
+Its raw carrier functions accept arbitrary bytes with caller-supplied lengths
+(and JPEG extraction redundancy). Its `lsb::embed_framed`/
+`lsb::extract_framed` and `jpeg::embed_framed`/`jpeg::extract_framed`
+convenience functions add the existing bounded frame format so payloads can be
+recovered later using only the resulting carrier and the same seed/config.
+The frame CRC32 detects accidental corruption; it is not adversarial
+authentication. See [`examples/generic_stego.rs`](examples/generic_stego.rs)
+for raw and framed usage.
+
 Internally, the rights-aware hidden-marker adapter is organized by responsibility under `src/protected/steganography/`: marker construction, carrier embedding, extraction/search, verification, and legacy compatibility are separate modules behind the existing `SteganographyProtector` facade.
 
 ## Standards and compatibility

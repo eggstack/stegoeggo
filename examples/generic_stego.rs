@@ -4,7 +4,6 @@
 /// and JPEG (DCT-domain) carriers using `stegoeggo::stego`.
 use image::{ImageBuffer, Rgb, RgbaImage};
 use stegoeggo::stego::{
-    frame,
     jpeg::{self, JpegConfig},
     lsb::{self, LsbConfig},
 };
@@ -57,15 +56,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // --- Framed round-trip (no caller-known length needed) ---
+    // --- Framed LSB round-trip (no caller-known length needed) ---
     let img2 = make_lsb_image(128, 128);
-    let framed = frame::encode(secret)?;
     let lsb_config = LsbConfig::new(seed);
-    let report = lsb::embed(&img2, &framed, &lsb_config)?;
+    let report = lsb::embed_framed(&img2, secret, &lsb_config)?;
 
-    let raw = lsb::extract(&report.output, framed.len(), &lsb_config)?;
-    let (_, payload) = frame::decode(&raw)?;
-    println!("Framed extracted: {:?}", String::from_utf8_lossy(&payload));
+    let recovered = lsb::extract_framed(&report.output, &lsb_config)?;
+    println!(
+        "Framed LSB extracted: {:?}",
+        String::from_utf8_lossy(&recovered)
+    );
+
+    // --- Framed JPEG round-trip (no caller-known length or redundancy needed) ---
+    let jpeg_framed = make_test_jpeg(128, 128);
+    let jpeg_framed_config = JpegConfig::new(seed).with_redundancy(3);
+    if jpeg::probe_support(&jpeg_framed)? == jpeg::JpegSupport::Supported {
+        let report = jpeg::embed_framed(&jpeg_framed, secret, &jpeg_framed_config)?;
+        let recovered = jpeg::extract_framed(&report.output, &jpeg_framed_config)?;
+        println!(
+            "Framed JPEG extracted: {:?}",
+            String::from_utf8_lossy(&recovered)
+        );
+    }
 
     Ok(())
 }

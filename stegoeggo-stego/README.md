@@ -9,8 +9,8 @@ pipeline but can also be used directly as a generic carrier.
 
 ## API surface
 
-- `stegoeggo_stego::lsb::{embed, extract, capacity, LsbConfig}`
-- `stegoeggo_stego::jpeg::{embed, extract, capacity, JpegConfig, probe_support}`
+- `stegoeggo_stego::lsb::{embed, extract, embed_framed, extract_framed, capacity, LsbConfig}`
+- `stegoeggo_stego::jpeg::{embed, extract, embed_framed, extract_framed, capacity, JpegConfig, probe_support}`
 - `stegoeggo_stego::frame::{encode, decode, decode_prefix}`
 - `stegoeggo_stego::{EmbedReport, CapacityReport, StegoError, EmbedOutcome}`
 
@@ -25,6 +25,27 @@ tile/grid-seed/redundancy identity. Tiled-JPEG extraction creates an
 operation-local search context that decodes the coefficient container once and
 reuses the private state for every bounded candidate; it is dropped when the
 search ends and is not part of the default API.
+
+## Raw and framed operations
+
+The raw `embed`/`extract` functions are for callers that retain the exact
+payload length and, for JPEG, the report's `actual_redundancy`. The framed
+convenience functions add the existing 11-byte frame header and CRC32:
+
+```rust
+use stegoeggo_stego::lsb::{self, LsbConfig};
+
+let config = LsbConfig::new(42);
+let report = lsb::embed_framed(&image, b"payload", &config)?;
+let recovered = lsb::extract_framed(&report.output, &config)?;
+assert_eq!(recovered, b"payload");
+```
+
+`jpeg::extract_framed` tries the configured redundancy and lower valid values
+in a bounded search, so it also recovers outputs whose embedding was
+auto-downgraded for capacity. The frame CRC detects accidental corruption; it
+does not authenticate payloads against an adversary. Framed reports count the
+encoded frame bytes, including overhead, in `payload_bytes`.
 
 ## License
 

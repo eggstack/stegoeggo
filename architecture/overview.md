@@ -251,9 +251,9 @@ stegoeggo-stego/src/
 ├── error.rs                   StegoError, JpegUnsupportedReason
 ├── types.rs                   EmbedOutcome, EmbedPath, EmbedStatus
 ├── frame.rs                   Self-describing frame (magic, version, CRC32)
-├── lsb.rs                     LSB carrier (re-exports lsb_internal)
+├── lsb.rs                     LSB carrier (raw and framed operations)
 ├── lsb_internal.rs            Permutations, V2 carrier, slot mapping (private)
-├── jpeg.rs                    JPEG carrier: DCT capacity, Q-table seed hint
+├── jpeg.rs                    JPEG carrier: raw/framed DCT operations, seed hint
 ├── application_support.rs     Parent-crate operation layer (feature: application-support)
 └── jpeg_transcoder/           JPEG DCT internals (private)
     ├── header.rs              JpegHeader, HuffmanTable parsing

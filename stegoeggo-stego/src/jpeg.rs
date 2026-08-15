@@ -436,6 +436,30 @@ pub fn embed(
     })
 }
 
+/// Embed a self-describing framed payload into a supported JPEG.
+///
+/// The frame is encoded with [`crate::frame::encode`] and then embedded using
+/// the raw JPEG DCT carrier. The returned report's `payload_bytes` includes
+/// the frame header and CRC overhead because those bytes are placed in the
+/// carrier.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// let jpeg_bytes = std::fs::read("photo.jpg").unwrap();
+/// let config = stegoeggo_stego::jpeg::JpegConfig::new(42);
+/// let report = stegoeggo_stego::jpeg::embed_framed(&jpeg_bytes, b"payload", &config).unwrap();
+/// std::fs::write("output.jpg", &report.output).unwrap();
+/// ```
+pub fn embed_framed(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &JpegConfig,
+) -> std::result::Result<super::EmbedReport, StegoError> {
+    let framed = crate::frame::encode(payload)?;
+    embed(jpeg_bytes, &framed, config)
+}
+
 /// Extract arbitrary bytes from a JPEG using F5-style DCT coefficient
 /// extraction.
 ///
@@ -504,6 +528,102 @@ pub fn extract(
         .collect();
 
     Ok(bits_to_bytes)
+}
+
+/// Extract and validate a self-describing framed payload from a supported
+/// JPEG without retaining the original payload length or embedding report.
+///
+/// The configured redundancy is tried first, followed by each lower valid
+/// redundancy. Every candidate must produce a complete frame with a valid
+/// CRC32 before it is accepted. The search is bounded by the configured
+/// redundancy range (1 through 10) and never uses JPEG seed hints or
+/// application metadata.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// let jpeg_bytes = std::fs::read("output.jpg").unwrap();
+/// let config = stegoeggo_stego::jpeg::JpegConfig::new(42);
+/// let payload = stegoeggo_stego::jpeg::extract_framed(&jpeg_bytes, &config).unwrap();
+/// println!("{} bytes", payload.len());
+/// ```
+pub fn extract_framed(
+    jpeg_bytes: &[u8],
+    config: &JpegConfig,
+) -> std::result::Result<Vec<u8>, StegoError> {
+    if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
+        return Err(StegoError::MalformedInput("not a valid JPEG".to_string()));
+    }
+
+    let support = probe_support(jpeg_bytes)?;
+    if let JpegSupport::Unsupported(reason) = support {
+        return Err(StegoError::UnsupportedJpeg(reason));
+    }
+
+    let mut last_frame_error = StegoError::FrameNotFound;
+    let mut insufficient_capacity = None;
+
+    for redundancy in (1..=config.redundancy()).rev() {
+        let candidate_config = JpegConfig::new(config.seed()).with_redundancy(redundancy);
+        let prefix_capacity = capacity(
+            jpeg_bytes,
+            crate::frame::FRAME_HEADER_SIZE,
+            &candidate_config,
+        )?;
+        if !prefix_capacity.is_sufficient() {
+            insufficient_capacity = Some(prefix_capacity);
+            continue;
+        }
+
+        let prefix = match extract(
+            jpeg_bytes,
+            crate::frame::FRAME_HEADER_SIZE,
+            &candidate_config,
+            redundancy,
+        ) {
+            Ok(prefix) => prefix,
+            Err(error) => {
+                last_frame_error = error;
+                continue;
+            }
+        };
+
+        let (_, total_len) = match crate::frame::decode_prefix(&prefix) {
+            Ok(prefix) => prefix,
+            Err(error) => {
+                last_frame_error = error;
+                continue;
+            }
+        };
+
+        let frame_capacity = capacity(jpeg_bytes, total_len, &candidate_config)?;
+        if !frame_capacity.is_sufficient() {
+            insufficient_capacity = Some(frame_capacity);
+            continue;
+        }
+
+        let framed = match extract(jpeg_bytes, total_len, &candidate_config, redundancy) {
+            Ok(framed) => framed,
+            Err(error) => {
+                last_frame_error = error;
+                continue;
+            }
+        };
+
+        match crate::frame::decode(&framed) {
+            Ok((_, payload)) => return Ok(payload),
+            Err(error) => last_frame_error = error,
+        }
+    }
+
+    if let Some(capacity) = insufficient_capacity {
+        return Err(StegoError::InsufficientCapacity {
+            required: capacity.required,
+            available: capacity.available,
+        });
+    }
+
+    Err(last_frame_error)
 }
 
 /// Embed a seed hint in JPEG quantization tables.

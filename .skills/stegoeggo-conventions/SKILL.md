@@ -129,6 +129,7 @@ fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8]) -
 8. **`verify_payload_from_bytes_with_key` returns `VerificationStatus`** — not `Option<bool>`.
 9. **Generic carrier error type** — The public `stego` module uses `StegoError`, not the root crate `Error`. Convert via `From<StegoError> for Error`.
 10. **JPEG DCT one-pass embed** — Supported DCT embedding computes max feasible redundancy from capacity, then embeds+encodes once. No retry loop.
+11. **Generic framed carrier API** — `lsb::embed_framed`/`extract_framed` and `jpeg::embed_framed`/`extract_framed` compose `frame::{encode, decode_prefix, decode}` over the raw carriers. Framed extraction keeps the seed/config explicit, validates capacity before full extraction, and treats CRC32 as corruption detection rather than authentication.
 
 ## Build & Test
 ```bash
@@ -144,3 +145,4 @@ cargo fmt --all -- --check              # Format check
 - Test with `ProtectionContext::new(intensity, seed)` for deterministic results
 - `ProtectionContext::default()` uses CSPRNG-backed seed (via `getrandom`) — safe for production; use `ProtectionContext::new(intensity, seed)` for reproducibility
 - Feature-gated tests: `tests/async_integration.rs` requires `async` feature
+- Public generic carrier tests belong in `tests/public_stego_api.rs`; framed tests must verify recovery without retaining the original payload length, and JPEG tests must cover auto-downgraded redundancy.

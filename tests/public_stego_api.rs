@@ -295,19 +295,55 @@ fn public_lsb_framed_roundtrip() {
     let payload = b"framed lsb payload";
     let config = LsbConfig::new(42);
 
-    let framed_payload = frame::encode(payload).unwrap();
-    let report = lsb::embed(&img, &framed_payload, &config).unwrap();
+    let report = lsb::embed_framed(&img, payload, &config).unwrap();
     assert!(report.embedded);
+    assert_eq!(
+        report.payload_bytes,
+        frame::FRAME_HEADER_SIZE + payload.len()
+    );
 
-    let decoded = report.output.clone();
-
-    let prefix_data = lsb::extract(&decoded, FRAME_HEADER_SIZE, &config).unwrap();
-    let (_, total_len) = frame::decode_prefix(&prefix_data).unwrap();
-
-    let full_data = lsb::extract(&decoded, total_len, &config).unwrap();
-    let (header, recovered) = frame::decode(&full_data).unwrap();
-    assert_eq!(header.payload_len, payload.len());
+    let recovered = lsb::extract_framed(&report.output, &config).unwrap();
     assert_eq!(&recovered, payload);
+}
+
+#[test]
+fn public_lsb_framed_empty_payload() {
+    let img = make_lsb_image(64, 64);
+    let config = LsbConfig::new(42);
+
+    let report = lsb::embed_framed(&img, b"", &config).unwrap();
+    assert_eq!(report.payload_bytes, FRAME_HEADER_SIZE);
+    assert!(lsb::extract_framed(&report.output, &config)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn public_lsb_framed_capacity_includes_frame_overhead() {
+    let img = make_lsb_image(40, 4);
+    let config = LsbConfig::new(42).with_redundancy(1);
+
+    let exact = lsb::embed_framed(&img, b"x", &config).unwrap();
+    assert!(exact.embedded);
+    assert_eq!(exact.required_capacity, exact.available_capacity);
+
+    let too_large = lsb::embed_framed(&img, b"xy", &config).unwrap();
+    assert!(!too_large.embedded);
+    assert!(too_large.required_capacity > too_large.available_capacity);
+}
+
+#[test]
+fn public_lsb_framed_wrong_seed_returns_frame_error() {
+    let img = make_lsb_image(64, 64);
+    let report = lsb::embed_framed(&img, b"framed payload", &LsbConfig::new(42)).unwrap();
+
+    let result = lsb::extract_framed(&report.output, &LsbConfig::new(43));
+    assert!(matches!(
+        result,
+        Err(StegoError::FrameNotFound)
+            | Err(StegoError::MalformedFrame(_))
+            | Err(StegoError::FrameChecksumMismatch)
+    ));
 }
 
 #[test]
@@ -316,23 +352,44 @@ fn public_jpeg_framed_roundtrip() {
     let payload = b"framed jpeg payload";
     let config = JpegConfig::new(42);
 
-    let framed_payload = frame::encode(payload).unwrap();
-
-    let report = jpeg::embed(&jpeg_bytes, &framed_payload, &config).unwrap();
+    let report = jpeg::embed_framed(&jpeg_bytes, payload, &config).unwrap();
     assert!(report.embedded);
+    assert_eq!(
+        report.payload_bytes,
+        frame::FRAME_HEADER_SIZE + payload.len()
+    );
 
-    let recovered = jpeg::extract(
-        &report.output,
-        framed_payload.len(),
-        &config,
-        report.actual_redundancy,
-    )
-    .unwrap();
-    assert_eq!(recovered, framed_payload);
+    let recovered = jpeg::extract_framed(&report.output, &config).unwrap();
+    assert_eq!(&recovered, payload);
+}
 
-    let (header, final_payload) = frame::decode(&recovered).unwrap();
-    assert_eq!(header.payload_len, payload.len());
-    assert_eq!(&final_payload, payload);
+#[test]
+fn public_jpeg_framed_extracts_after_capacity_downgrade() {
+    let jpeg_bytes = make_jpeg_bytes(256, 256);
+    let requested = JpegConfig::new(42).with_redundancy(3);
+    let available = jpeg::capacity(&jpeg_bytes, 1, &requested)
+        .unwrap()
+        .available;
+    let framed_len = available / 16;
+    assert!(framed_len > FRAME_HEADER_SIZE);
+    let payload = vec![0xA5; framed_len - FRAME_HEADER_SIZE];
+
+    let report = jpeg::embed_framed(&jpeg_bytes, &payload, &requested).unwrap();
+    assert!(report.embedded);
+    assert!(report.actual_redundancy < requested.redundancy());
+
+    let recovered = jpeg::extract_framed(&report.output, &requested).unwrap();
+    assert_eq!(recovered, payload);
+}
+
+#[test]
+fn public_jpeg_framed_wrong_seed_fails() {
+    let jpeg_bytes = make_jpeg_bytes(256, 256);
+    let config = JpegConfig::new(42);
+    let report = jpeg::embed_framed(&jpeg_bytes, b"framed jpeg payload", &config).unwrap();
+
+    let result = jpeg::extract_framed(&report.output, &JpegConfig::new(43));
+    assert!(result.is_err());
 }
 
 #[test]
@@ -360,8 +417,39 @@ fn public_frame_empty_payload() {
 #[test]
 fn public_frame_rejects_over_max_payload() {
     let payload = vec![0u8; stego::frame::MAX_FRAME_PAYLOAD + 1];
-    let result = frame::encode(&payload);
+    let result = lsb::embed_framed(&make_lsb_image(64, 64), &payload, &LsbConfig::new(42));
     assert!(matches!(result, Err(StegoError::InvalidConfig(_))));
+}
+
+#[test]
+fn public_lsb_framed_rejects_oversized_declared_length_before_full_extract() {
+    let img = make_lsb_image(64, 64);
+    let config = LsbConfig::new(42);
+    let mut prefix = vec![0u8; FRAME_HEADER_SIZE];
+    prefix[0..2].copy_from_slice(&FRAMED_MAGIC);
+    prefix[2] = FRAME_VERSION;
+    prefix[3..7].copy_from_slice(&(u32::MAX).to_le_bytes());
+
+    let report = lsb::embed(&img, &prefix, &config).unwrap();
+    let result = lsb::extract_framed(&report.output, &config);
+    assert!(matches!(result, Err(StegoError::MalformedFrame(_))));
+}
+
+#[test]
+fn public_lsb_framed_rejects_declared_frame_beyond_carrier_capacity() {
+    let img = make_lsb_image(40, 4);
+    let config = LsbConfig::new(42).with_redundancy(1);
+    let mut prefix = vec![0u8; FRAME_HEADER_SIZE];
+    prefix[0..2].copy_from_slice(&FRAMED_MAGIC);
+    prefix[2] = FRAME_VERSION;
+    prefix[3..7].copy_from_slice(&2u32.to_le_bytes());
+
+    let report = lsb::embed(&img, &prefix, &config).unwrap();
+    let result = lsb::extract_framed(&report.output, &config);
+    assert!(matches!(
+        result,
+        Err(StegoError::InsufficientCapacity { .. })
+    ));
 }
 
 #[test]
