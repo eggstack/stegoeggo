@@ -189,7 +189,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Contact not written to `photoshop:Credit`** — Contact remains in PNG tEXt and JPEG COM markers only
 - **`photoshop:Credit` maps to `credit_line`** — In WebP XMP, not `contact`. Previous mapping was semantically incorrect
 - **`has_notice()` includes DMI** — Returns true when any legal field OR `dmi.is_some()` is found. `DmiValue::Allowed` and `DmiValue::Unspecified` make `has_notice()` true — this means "legal metadata was found" not "restrictions were imposed"
-- **`LegalMetadata::MAX_FIELD_LEN`** — 8192 bytes. `validate()` checks all 8 fields, returns `Error::Config` on violation
+- **`LegalMetadata::MAX_FIELD_LEN`** — 8192 bytes. `validate()` checks all 16 fields (URL fields additionally validated for scheme+authority, date fields for ISO 8601), returns `Error::Config` on violation
 - **Verification returns `VerificationStatus`** — Not `Option<bool>`. Use `== VerificationStatus::Verified` in assertions
 - **Metadata overflow checks** — PNG chunk lengths use `u32::try_from()`, JPEG marker lengths use `u16::try_from()`. Overflow returns `Error::Metadata`
 
@@ -287,7 +287,7 @@ See `RELEASING.md` for the complete procedure.
   - `architecture/traits.md` — Protector trait definition
   - `architecture/types.md` — Core type definitions (ProtectionRequest, RightsPolicy, etc.)
   - `architecture/constants.md` — Tuning constants and their values (carrier + application copies)
-  - `architecture/error.md` — Error variants (17 total: 16 always-available + 1 async-only)
+  - `architecture/error.md` — Error variants (19 total: 18 always-available + 1 async-only)
   - `architecture/verification.md` — VerificationReport and sub-verification types
   - `architecture/cli.md` — CLI flags, subcommands, and exit codes
   - `architecture/jpeg-transcoder.md` — JPEG DCT coefficient processing

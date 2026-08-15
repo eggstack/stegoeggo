@@ -6,6 +6,8 @@ Uses `thiserror` for ergonomic error derivation.
 
 ## Error Enum
 
+19 total variants: 18 always-available + 1 async-only (`Task`).
+
 ```rust
 #[non_exhaustive]
 pub enum Error {

@@ -1,6 +1,6 @@
 # CLI Tool
 
-**Source:** `stegoeggo-cli/src/main.rs` (~2270 lines)
+**Source:** `stegoeggo-cli/src/main.rs` (~2269 lines)
 
 Command-line interface for `stegoeggo`. Built with `clap` 4 (derive). Routes all protection through `ProtectionRequest`.
 
@@ -28,7 +28,7 @@ stegoeggo [OPTIONS] <INPUT>...
 | `-d` | `--dmi` | DMI metadata value (legacy syntax) | auto |
 | | `--metadata` | Inject metadata (None = use level default) | None |
 | | `--legal-claims` | Inject legal claims | false |
-| | `--copyright-holder` | Copyright holder name | none |
+| | `--copyright-holder` | Copyright holder name (alias for `--copyright-notice`) | none |
 | | `--creator` | Creator/author name | none |
 | | `--contact` | Contact email or URL | none |
 | | `--rights-url` | URL to full usage terms | none |

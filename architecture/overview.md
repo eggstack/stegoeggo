@@ -185,7 +185,7 @@ src/
 ├── types.rs                   ProtectionLevel, ProtectionContext, ProtectionRequest,
 │                              RightsPolicy, LegalMetadata, ExecutionReport, etc.
 ├── traits.rs                  Protector trait (apply/apply_bytes)
-├── error.rs                   Error enum (17 variants), Result type
+├── error.rs                   Error enum (19 variants), Result type
 ├── async_api.rs               Tokio spawn_blocking wrappers (feature: async)
 ├── conformance.rs             Conformance reporting types (feature: conformance)
 ├── resource_limits.rs         ResourceLimits for parser hardening (DoS prevention)

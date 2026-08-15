@@ -1,4 +1,4 @@
-# Migration Guide: v0.2.x to v0.2.2
+# Migration Guide: v0.2.x to v0.3.0
 
 ## Overview
 

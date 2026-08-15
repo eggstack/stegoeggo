@@ -11,7 +11,7 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 
 - Architecture docs live in `architecture/` (30 files)
 - Review outputs go to `plans/`
-- Source code is in `src/`
+- Source code is in `src/` (root crate) and `stegoeggo-stego/src/` (carrier crate)
 - Use `rg` (ripgrep) for fast content search, `glob` for file patterns
 
 ## Review Workflow
@@ -19,10 +19,10 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 ### 1. Read the target architecture document completely
 
 ### 2. For every claim in the document, verify against source code:
-- **Type names and fields**: Search for struct/enum definitions in `src/`
+- **Type names and fields**: Search for struct/enum definitions in `src/` and `stegoeggo-stego/src/`
 - **Function signatures**: Search for `fn ` patterns — check parameter types, return types, visibility
 - **Constants**: Search for `const ` and `static ` — verify values and types
-- **Module structure**: Compare module tree in docs against actual `src/` layout
+- **Module structure**: Compare module tree in docs against actual layout
 - **Behavioral claims**: Read the implementation to verify described behavior
 - **Return types**: Check for `Result`, `Option`, `Cow` wrappers that docs may omit
 - **Visibility**: Check `pub`, `pub(crate)`, private — docs often get this wrong
@@ -40,8 +40,8 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 | `i64` array elements | `i16` array elements | `Coefficients` type |
 | Wrong enum variants | Actual enum variants | `DmiValue`, `TranscoderError` |
 | `String` fields | `Option<String>` fields | `Iscc.meta` |
-| V2 as current payload | V3 is the default | `steganography.rs`, `payload_v3/` |
-| 14 Error variants | 17 Error variants (16 + 1 async) | `error.rs` |
+| V2 as current payload | V3 is the default | `protected/steganography.rs`, `payload_v3/` |
+| 17 Error variants | 19 Error variants (18 always-available + 1 async) | `error.rs` |
 | 7 ProtectionWarning variants | 8 ProtectionWarning variants | `types.rs` |
 | `Option<bool>` returns | `VerificationStatus` returns | `verify_payload_from_bytes_with_key` |
 
@@ -50,10 +50,11 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 - `src/types.rs` — All core type definitions, constructors, getters
 - `src/traits.rs` — Protector trait
 - `src/lib.rs` — Pipeline orchestration, public API, module declarations
-- `src/error.rs` — Error variants (19 total)
+- `src/error.rs` — Error variants (19 total: 18 always-available + 1 async-only `Task`)
 - `src/protected/steganography.rs` — Stego payload format, extraction, verification
-- `src/jpeg_transcoder/mod.rs` — Coefficients type, TranscoderError
+- `stegoeggo-stego/src/jpeg_transcoder/` — JPEG DCT internals (private to carrier)
 - `src/payload_v3/types.rs` — V3 payload constants and types
+- `stegoeggo-stego/src/constants.rs` — Carrier-level tuning constants
 
 ### 5. Document findings in this format
 
@@ -74,9 +75,10 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 - `ProtectionContext` fields are all private with getter methods — docs often show public fields
 - `Cow<'a, DynamicImage>` returns require lifetime annotations that docs frequently omit
 - `Option<bool>` fields have ambiguous `None` vs `false` semantics — document this explicitly
-- The JPEG transcoder has two separate PRNG implementations (`XorShiftRng` vs `F5XorShiftRng`) — never interchange
+- The carrier crate has two separate PRNG implementations (`PixelSelectionRng` in `util/image.rs` and `DctCoefficientRng` in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs`) — never interchange
 - ISCC implementation is NOT standard-compliant — uses custom component codes
-- `src/constants.rs` and `src/steganography.rs` do NOT exist as top-level files — constants are in `src/protected/constants.rs`, steganography in `src/protected/steganography.rs`
+- `src/constants.rs` does NOT exist as a top-level file — constants are in `src/protected/constants.rs` and `stegoeggo-stego/src/constants.rs`
+- The JPEG transcoder lives in the carrier crate (`stegoeggo-stego/src/jpeg_transcoder/`), not the root crate
 
 ## Verified Discrepancies (do not re-report these)
 
@@ -89,7 +91,7 @@ These have been fixed in documentation — if the code hasn't changed, these are
 - **`LegalMetadata`** field is `ai_constraints` (not `ai_training_constraints`)
 - **`ProtectionContext::with_format()`** (not `with_output_format()`)
 - **DmiValue mapping** is via `ProtectionLevel::default_policy()` in `types.rs` — no `impl From<ProtectionLevel> for DmiValue`
-- **Error enum** has 17 variants (16 always-available + 1 async-only `Task`) — 5 structured variants (`InputTooLarge`, `DimensionsExceeded`, `ContainerLimitExceeded`, `MetadataLimitExceeded`, `VerificationBudgetExceeded`) were added for resource limits
+- **Error enum** has 19 variants (18 always-available + 1 async-only `Task`) — 5 structured variants (`InputTooLarge`, `DimensionsExceeded`, `ContainerLimitExceeded`, `MetadataLimitExceeded`, `VerificationBudgetExceeded`) were added for resource limits
 - **`ProtectionWarning`** has 8 variants — `ContradictoryLegalClaims` and `MissingRightsConstraints` were added
 - **`ExecutionReport`** has 9 fields — `authentication_performed` does not exist; replaced by `effective_policy`, `effective_dmi`, `stego_attempted`, `format_transcoded`, `resource_usage`, `embed_summary`
 - **`LegalMetadata`** has 16 fields — 8 additional fields: `usage_terms_lang`, `credit_line`, `copyright_owner`, `licensor_name`, `licensor_email`, `licensor_url`, `metadata_date`, `notice_applied_at`
