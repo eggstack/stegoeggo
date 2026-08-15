@@ -213,6 +213,8 @@ No optional feature is enabled by default. The CLI enables the application featu
 
 The workspace also contains [`stegoeggo-stego`](stegoeggo-stego/), a lower-level, application-neutral carrier crate for callers that want generic LSB/JPEG steganography without StegoEggo's rights-policy layer.
 
+Internally, the rights-aware hidden-marker adapter is organized by responsibility under `src/protected/steganography/`: marker construction, carrier embedding, extraction/search, verification, and legacy compatibility are separate modules behind the existing `SteganographyProtector` facade.
+
 ## Standards and compatibility
 
 Current rights-policy output uses the PLUS License Data Format `plus:DataMining` property with the canonical controlled-vocabulary URI for the selected policy. The verifier also recognizes older bare PLUS values, legacy `Iptc4xmpExt:DMI-*` data, and legacy TDM reservation metadata so existing files can still be inspected.

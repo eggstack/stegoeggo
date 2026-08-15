@@ -669,7 +669,7 @@ The payload can be expressed as a BNF-like grammar:
 
 ## 16. References
 
-- [stegoeggo source](../src/protected/steganography.rs) — current v1/v2 implementation
+- [stegoeggo source](../src/protected/steganography/) — current V3 marker and V1/V2 compatibility implementation
 - [ECC module](../src/protected/ecc.rs) — 3× repetition error correction
 - [Architecture: Steganography](protected-steganography.md) — embedding and extraction
 - [Architecture: Constants](constants.md) — tuning parameters

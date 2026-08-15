@@ -1,8 +1,16 @@
 # Steganography Protector
 
-**Source:** `src/protected/steganography.rs` (application adapter) + `stegoeggo-stego/src/lsb.rs` (public API) + `stegoeggo-stego/src/lsb_internal.rs` (carrier mechanics) + `stegoeggo-stego/src/jpeg.rs` (generic carrier core)
+**Source:** `src/protected/steganography/` (application adapter) + `stegoeggo-stego/src/lsb.rs` (public API) + `stegoeggo-stego/src/lsb_internal.rs` (carrier mechanics) + `stegoeggo-stego/src/jpeg.rs` (generic carrier core)
 
-The most complex module. Handles LSB and DCT-based steganographic embedding for payload storage and verification. `SteganographyProtector` generates StegoEggo payloads (v1/v2/v3) and manages seed discovery/verification; generic carrier mechanics (permutations, bit embedding/extraction, capacity calculation) are delegated to `stegoeggo-stego`.
+The rights-aware hidden-marker adapter is split into five responsibility modules behind the `SteganographyProtector` facade:
+
+- `marker.rs` constructs current V3 application payload bytes from the resolved plan or compatibility context.
+- `embed.rs` selects the LSB, tiled LSB, JPEG DCT/F5, or seed-only carrier operation and maps carrier outcomes.
+- `extract.rs` discovers seeds, performs bounded non-tiled/tiled searches, and reuses one carrier-owned tiled JPEG search per operation.
+- `verify.rs` parses payloads and classifies CRC/HMAC/signature, malformed, unsupported, and authentication failures.
+- `legacy.rs` contains compatibility-only V1/V2 decoding and ECC adapters.
+
+Generic carrier mechanics (permutations, bit embedding/extraction, capacity calculation) remain delegated to `stegoeggo-stego`.
 
 ## Payload Format
 
@@ -136,9 +144,9 @@ calling the carrier operation.
 ```rust
 pub fn extract_payload(&self, img: &DynamicImage) -> Option<StegoPayload>
 pub fn verify_payload(&self, img: &DynamicImage) -> bool
-pub fn verify_payload_with_key(&self, img: &DynamicImage, mac_key: &[u8]) -> Option<bool>
+pub fn verify_payload_with_key(&self, img: &DynamicImage, mac_key: &[u8]) -> VerificationStatus
 pub fn verify_payload_from_bytes(&self, img_bytes: &[u8], seed: u64) -> bool
-pub fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8]) -> Option<bool>
+pub fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus
 ```
 
 ### Verification Flow

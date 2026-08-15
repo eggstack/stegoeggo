@@ -1,6 +1,6 @@
 # Constants
 
-**Source:** `src/protected/constants.rs` (~13 lines), `stegoeggo-stego/src/constants.rs`, `src/protected/steganography.rs`
+**Source:** `src/protected/constants.rs` (~13 lines), `stegoeggo-stego/src/constants.rs`, and the application adapter under `src/protected/steganography/`
 
 Tuning constants used across the protection modules. The carrier crate
 (`stegoeggo-stego`) keeps its own copy of the carrier-only constants
@@ -17,7 +17,7 @@ extraction probing. The two copies are byte-identical.
 | `XORSHIFT_SEED_OFFSET` | `0x123456789ABCDEF0` | `protected/constants.rs` | XOR offset for XorShiftRng initialization (legacy `PixelSelectionRng`) |
 | `SPLITMIX64_SEED` | `0x9e3779b97f4a7c15` | `stegoeggo-stego/src/constants.rs`, `util/seed.rs` | Splitmix64 mixing constant |
 | `DEFAULT_TILE_SIZE` | `64` | `stegoeggo-stego/src/lsb_internal.rs` (re-exported via `lsb.rs`) | Default crop-resistant tile size |
-| `MIN_PAYLOAD_SIZE` | `28` | `protected/steganography.rs` | Parsing threshold (not output size) |
+| `MIN_PAYLOAD_SIZE` | `28` | `protected/steganography/mod.rs` | Parsing threshold (not output size) |
 | `V3_PAYLOAD_VERSION` | `3` | `payload_v3/types.rs` | Current payload format version |
 
 ## Design Notes
@@ -29,7 +29,7 @@ extraction probing. The two copies are byte-identical.
 
 ## Module Interactions
 
-- `src/protected/constants.rs` is referenced by `src/protected/steganography.rs`
+- `src/protected/constants.rs` is referenced by `src/protected/steganography/extract.rs`
   (legacy seed offset derivation) and the legacy `util::image::PixelSelectionRng`
   via `XORSHIFT_SEED_OFFSET`
 - `stegoeggo-stego/src/constants.rs` is referenced by `stegoeggo-stego/src/lsb_internal.rs`

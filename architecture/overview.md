@@ -195,7 +195,13 @@ src/
 ├── protected/                 Protection strategies (all implement Protector)
 │   ├── passthrough.rs         No-op for Disabled level
 │   ├── metadata_trap.rs       Metadata injection (tEXt/COM/XMP, plus:DataMining)
-│   ├── steganography.rs       LSB/DCT embedding, payload v1/v2/v3, verification
+│   ├── steganography/         Rights-aware hidden-marker application adapter
+│   │   ├── mod.rs             Facade, shared contracts, public entry points
+│   │   ├── marker.rs          Current V3 marker construction
+│   │   ├── embed.rs           Carrier selection and embedding dispatch
+│   │   ├── extract.rs         Seed discovery and bounded extraction search
+│   │   ├── verify.rs          Payload integrity/authentication classification
+│   │   └── legacy.rs          V1/V2 and compatibility-only decoding
 │   ├── ecc.rs                 3× repetition ECC with majority voting
 │   ├── notice_verification.rs Legal notice extraction, evidence strength rating
 │   ├── resolve.rs             ProtectionRequest → ResolvedProtectionPlan

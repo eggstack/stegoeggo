@@ -94,4 +94,4 @@ Reference constants for luminance/chrominance DC/AC Huffman tables. Used as defa
 - **mod.rs**: `CoefficientDecoder` / `CoefficientEncoder` used by `JpegTranscoder`
 - **header.rs**: Huffman tables from `JpegHeader` used to build decoders/encoders
 - **stego_f5.rs**: Modifies decoded coefficients for F5 steganography
-- **steganography.rs**: `apply_dct_stego_bytes_from_plan` and its legacy `apply_dct_stego_bytes` (legacy context path) use decoder/encoder for JPEG fast path
+- **steganography/embed.rs**: `apply_dct_stego_bytes_from_plan` and its legacy `apply_dct_stego_bytes` (legacy context path) use decoder/encoder for JPEG fast path

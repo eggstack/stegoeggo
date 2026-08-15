@@ -61,7 +61,7 @@ F5 extraction handles redundancy-based majority voting in a single pass (not mul
 - Extraction reads `expected_bits * redundancy` bits, then votes per original bit position
 - Robust against noise and perturbation
 
-Note: The 5-pass extraction logic with multiple seed derivations is in `steganography.rs` (`extract_with_redundancy`), not in F5 extraction.
+Note: The 5-pass extraction logic with multiple seed derivations is in `steganography/extract.rs` (`extract_with_redundancy`), not in F5 extraction.
 
 ## F5XorShiftRng
 
@@ -73,7 +73,7 @@ F5-specific PRNG for DCT coefficient shuffling. **Different algorithm from `XorS
 
 ## Module Interactions
 
-- **steganography.rs**: `apply_dct_stego_bytes_from_plan` (canonical) and the legacy `apply_dct_stego_bytes` (legacy context path) call `DctStegoF5` methods
+- **steganography/embed.rs**: `apply_dct_stego_bytes_from_plan` (canonical) and the legacy `apply_dct_stego_bytes` (legacy context path) call `DctStegoF5` methods
 - **jpeg-transcoder.md**: Uses `JpegTranscoder` for coefficient decode/encode
 - **jpeg-header.md**: Modifies quantization tables for seed embedding
 - **jpeg-entropy.md**: Works with decoded `Coefficients` type
