@@ -615,6 +615,11 @@ pub fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
 /// Controls the seed, redundancy, and optional tile size for pixel-domain
 /// steganographic embedding and extraction.
 ///
+/// Use [`LsbConfig::new`] for compile-time-valid values and
+/// [`LsbConfig::try_new`] / [`LsbConfig::try_with_redundancy`] when the
+/// redundancy comes from untrusted input (configuration files, CLI parsing,
+/// network requests, etc.).
+///
 /// # Examples
 ///
 /// ```rust
@@ -640,12 +645,33 @@ impl LsbConfig {
         }
     }
 
+    /// Fallible constructor that validates the redundancy up front.
+    ///
+    /// Use this when the redundancy value comes from untrusted input. Returns
+    /// [`StegoError::InvalidConfig`] if `redundancy` is outside `1..=10`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use stegoeggo_stego::lsb::LsbConfig;
+    ///
+    /// let config = LsbConfig::try_new(42, 3)?;
+    /// assert_eq!(config.redundancy(), 3);
+    /// # Ok::<_, stegoeggo_stego::StegoError>(())
+    /// ```
+    pub fn try_new(seed: u64, redundancy: usize) -> Result<Self, super::StegoError> {
+        crate::constants::validate_redundancy(redundancy)?;
+        Ok(Self { seed, redundancy })
+    }
+
     /// Set the redundancy level (1–10). Higher redundancy increases
     /// robustness at the cost of reduced capacity.
     ///
     /// # Panics
     ///
-    /// Panics if `redundancy` is 0 or greater than 10.
+    /// Panics if `redundancy` is 0 or greater than 10. Use
+    /// [`LsbConfig::try_with_redundancy`](Self::try_with_redundancy) when
+    /// the value is not statically known to be in `1..=10`.
     #[must_use]
     pub fn with_redundancy(mut self, redundancy: usize) -> Self {
         assert!(
@@ -654,6 +680,28 @@ impl LsbConfig {
         );
         self.redundancy = redundancy;
         self
+    }
+
+    /// Fallible variant of [`with_redundancy`](Self::with_redundancy).
+    ///
+    /// Returns [`StegoError::InvalidConfig`] if `redundancy` is outside
+    /// `1..=10`. Prefer this over [`with_redundancy`](Self::with_redundancy)
+    /// when the value is derived from runtime configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use stegoeggo_stego::lsb::LsbConfig;
+    ///
+    /// let user_redundancy: usize = 0;
+    /// let result = LsbConfig::new(42).try_with_redundancy(user_redundancy);
+    /// assert!(result.is_err());
+    /// # Ok::<_, stegoeggo_stego::StegoError>(())
+    /// ```
+    pub fn try_with_redundancy(mut self, redundancy: usize) -> Result<Self, super::StegoError> {
+        crate::constants::validate_redundancy(redundancy)?;
+        self.redundancy = redundancy;
+        Ok(self)
     }
 
     /// The seed used for the carrier permutation.
@@ -1013,6 +1061,66 @@ mod tests {
             let seed = extract_seed_lsb_fallback(&img);
             assert_eq!(seed, Some(7));
             let _ = payload;
+        }
+    }
+
+    #[test]
+    fn lsb_config_try_new_accepts_valid_redundancy() {
+        for r in 1..=10usize {
+            let config = LsbConfig::try_new(42, r).unwrap();
+            assert_eq!(config.redundancy(), r);
+            assert_eq!(config.seed(), 42);
+        }
+    }
+
+    #[test]
+    fn lsb_config_try_new_rejects_out_of_range_redundancy() {
+        assert!(matches!(
+            LsbConfig::try_new(42, 0),
+            Err(crate::StegoError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            LsbConfig::try_new(42, 11),
+            Err(crate::StegoError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            LsbConfig::try_new(42, usize::MAX),
+            Err(crate::StegoError::InvalidConfig(_))
+        ));
+    }
+
+    #[test]
+    fn lsb_config_try_with_redundancy_accepts_valid_values() {
+        let config = LsbConfig::new(42).try_with_redundancy(7).unwrap();
+        assert_eq!(config.redundancy(), 7);
+    }
+
+    #[test]
+    fn lsb_config_try_with_redundancy_rejects_out_of_range() {
+        assert!(LsbConfig::new(42).try_with_redundancy(0).is_err());
+        assert!(LsbConfig::new(42).try_with_redundancy(11).is_err());
+        assert!(LsbConfig::new(42).try_with_redundancy(usize::MAX).is_err());
+    }
+
+    #[test]
+    fn lsb_config_fallible_does_not_panic() {
+        for r in [0usize, 11, usize::MAX, 100, 1_000_000] {
+            let result = std::panic::catch_unwind(|| LsbConfig::try_new(42, r));
+            assert!(result.is_ok(), "try_new panicked for redundancy {r}");
+            assert!(
+                result.unwrap().is_err(),
+                "expected error for redundancy {r}"
+            );
+
+            let result = std::panic::catch_unwind(|| LsbConfig::new(42).try_with_redundancy(r));
+            assert!(
+                result.is_ok(),
+                "try_with_redundancy panicked for redundancy {r}"
+            );
+            assert!(
+                result.unwrap().is_err(),
+                "expected error for redundancy {r}"
+            );
         }
     }
 }

@@ -4,6 +4,26 @@
 //! crate-internal mechanics in [`crate::lsb_internal`]. Low-level helpers
 //! (permutations, slot mappings, byte/bit conversions) are intentionally
 //! not re-exported; they are implementation details.
+//!
+//! # Capacity units
+//!
+//! Capacity is reported in **RGB carrier slots** (`width * height * 3`).
+//! The alpha channel is never a carrier. Each embedded payload bit
+//! occupies `STEGO_SPREAD_FACTOR * redundancy` slots. The cloned
+//! [`embed`] and in-place [`embed_in_place`] paths share the same corrected
+//! V2 mutation core.
+//!
+//! # Raw vs framed vs in-place
+//!
+//! - **Raw** ([`embed`]/[`extract`]) — caller-supplied payload length and
+//!   config. Use when the caller already knows the payload length.
+//! - **In-place** ([`embed_in_place`]) — caller's `RgbaImage` buffer is
+//!   mutated; no full-image clone. Returns [`InPlaceEmbedReport`].
+//! - **Framed** ([`embed_framed`], [`extract_framed`]) — wraps the payload
+//!   in a self-describing header with a CRC32 and recovers without caller
+//!   knowledge of the original payload length.
+//!
+//! All three paths share the same corrected V2 carrier model.
 
 pub use crate::lsb_internal::{capacity, embed, extract, LsbConfig, DEFAULT_TILE_SIZE};
 pub use crate::types::InPlaceEmbedReport;

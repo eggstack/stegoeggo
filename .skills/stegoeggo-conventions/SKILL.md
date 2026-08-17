@@ -130,6 +130,7 @@ fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8]) -
 9. **Generic carrier error type** — The public `stego` module uses `StegoError`, not the root crate `Error`. Convert via `From<StegoError> for Error`.
 10. **JPEG DCT one-pass embed** — Supported DCT embedding computes max feasible redundancy from capacity, then embeds+encodes once. No retry loop.
 11. **Generic framed carrier API** — `lsb::embed_framed`/`extract_framed` and `jpeg::embed_framed`/`extract_framed` compose `frame::{encode, decode_prefix, decode}` over the raw carriers. Framed extraction keeps the seed/config explicit, validates capacity before full extraction, and treats CRC32 as corruption detection rather than authentication.
+12. **Plan 073 fallible config** — `LsbConfig::try_new`, `LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and `JpegConfig::try_with_redundancy` all return `StegoError::InvalidConfig` for out-of-range redundancy. The panicking `with_redundancy` builder is retained for compile-time-constant values; use the fallible path whenever the value comes from runtime configuration.
 
 ## Build & Test
 ```bash

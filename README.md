@@ -213,17 +213,31 @@ No optional feature is enabled by default. The CLI enables the application featu
 
 The workspace also contains [`stegoeggo-stego`](stegoeggo-stego/), a lower-level, application-neutral carrier crate for callers that want generic LSB/JPEG steganography without StegoEggo's rights-policy layer.
 
-Its raw carrier functions accept arbitrary bytes with caller-supplied lengths
-(and JPEG extraction redundancy). For callers that already own a mutable RGBA
-buffer, `lsb::embed_in_place` avoids the intentional full-image clone performed
-by the convenient cloning `lsb::embed` and returns an `InPlaceEmbedReport`.
-Both paths share the same corrected carrier mutation core. Its `lsb::embed_framed`/
-`lsb::extract_framed` and `jpeg::embed_framed`/`jpeg::extract_framed`
-convenience functions add the existing bounded frame format so payloads can be
-recovered later using only the resulting carrier and the same seed/config.
+It exposes three operation styles on the same corrected carrier model:
+
+- **Raw** — `lsb::embed`/`extract` and `jpeg::embed`/`extract` accept
+  arbitrary bytes with caller-supplied payload length (and, for JPEG,
+  the `actual_redundancy` returned by the embed report).
+- **In-place** (LSB) — `lsb::embed_in_place` mutates the caller's
+  `RgbaImage` and avoids the intentional full-image clone performed by
+  the cloning `lsb::embed`. Both paths share the same corrected
+  carrier mutation core.
+- **Framed** — `lsb::embed_framed`/`lsb::extract_framed` and
+  `jpeg::embed_framed`/`jpeg::extract_framed` add the existing bounded
+  11-byte frame format. Framed extraction recovers payloads using only
+  the resulting carrier and the same seed/config; JPEG framed
+  extraction probes the configured redundancy down to 1, so the embed
+  report is not needed.
+
+For untrusted configuration values, `LsbConfig::try_new`,
+`LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and
+`JpegConfig::try_with_redundancy` return `StegoError::InvalidConfig`
+instead of panicking on out-of-range redundancy. The original
+`with_redundancy` builder is retained for compile-time-constant values.
+
 The frame CRC32 detects accidental corruption; it is not adversarial
 authentication. See [`examples/generic_stego.rs`](examples/generic_stego.rs)
-for raw and framed usage.
+for raw, in-place, and framed usage.
 
 Internally, the rights-aware hidden-marker adapter is organized by responsibility under `src/protected/steganography/`: marker construction, carrier embedding, extraction/search, verification, and legacy compatibility are separate modules behind the existing `SteganographyProtector` facade.
 

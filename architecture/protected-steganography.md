@@ -199,7 +199,7 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 ## Module Interactions
 
 - **lib.rs**: Applied in Standard pipeline
-- **stegoeggo-stego/src/lsb.rs**: Public LSB API surface (`embed`, `embed_in_place`, `extract`, `embed_framed`, `extract_framed`, `capacity`, `LsbConfig`, `InPlaceEmbedReport`, `DEFAULT_TILE_SIZE`). Raw operations are backed by `lsb_internal`; framed operations compose the public frame module with those raw calls.
+- **stegoeggo-stego/src/lsb.rs**: Public LSB API surface (`embed`, `embed_in_place`, `extract`, `embed_framed`, `extract_framed`, `capacity`, `LsbConfig`, `InPlaceEmbedReport`, `DEFAULT_TILE_SIZE`). Raw operations are backed by `lsb_internal`; framed operations compose the public frame module with those raw calls. `LsbConfig` exposes fallible `try_new` and `try_with_redundancy` for untrusted input; the panicking `with_redundancy` is retained for compile-time-constant values.
 - **stegoeggo-stego/src/application_support.rs**: Narrow parent-crate operations for payload-aware LSB and JPEG calls; hidden behind the optional `application-support` feature. Its opaque tiled-JPEG search context owns decoded state for one operation and exposes no parser, coefficient, or F5 types
 - **stegoeggo-stego/src/lsb_internal.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). Private; no application-type imports.
 - **stegoeggo-stego/src/jpeg.rs**: Generic encoded-byte JPEG carrier facade (DCT capacity, raw/framed embed/extract, Q-table reassembly, seed hint). No application-type imports
@@ -314,6 +314,9 @@ stegoeggo::stego
 6. **Raw versus framed recovery** — Raw extraction requires caller-known length and, for JPEG, `actual_redundancy`. Framed extraction reads the fixed header first, validates the declared length against frame and carrier bounds, and for JPEG probes only the configured redundancy down to 1.
 7. **Frame composition** — Framed operations call the existing `frame::encode`, `frame::decode_prefix`, and `frame::decode`; they do not create a second carrier format or import application rights state.
 8. **CRC limitation** — The frame CRC32 detects accidental corruption but is not adversarial authentication.
+9. **Fallible configuration** — Both `LsbConfig` and `JpegConfig` expose `try_new(seed, redundancy)` and `try_with_redundancy(value)` returning `StegoError::InvalidConfig` for out-of-range values. The original `with_redundancy` is retained for compatibility with callers that pass validated constants; it still panics on invalid values.
+10. **Capacity units are documented per carrier** — `CapacityReport` and `EmbedReport` explicitly state that LSB uses RGB carrier slots and JPEG uses non-zero AC coefficients. `InPlaceEmbedReport` is RGB carrier slots only.
+11. **CRC vs authentication scope** — The `frame` module-level docs lead with "CRC32 is corruption detection, not authentication". Report units are spelled out in `CapacityReport`/`EmbedReport`/`InPlaceEmbedReport` field docs.
 
 ### Frame Wire Format
 

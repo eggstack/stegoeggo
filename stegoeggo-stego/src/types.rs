@@ -203,11 +203,16 @@ pub enum EmbedStatus {
 }
 
 /// Summary returned by an in-place LSB embedding operation.
+///
+/// Capacity fields are in **RGB carrier slots** (`width * height * 3`).
+/// The alpha channel is never a carrier. `payload_bytes` is the raw
+/// payload size in bytes placed in the carrier; for framed operations it
+/// includes the frame header and CRC32 overhead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InPlaceEmbedReport {
     /// Whether the payload was embedded.
     pub embedded: bool,
-    /// Payload size in bytes.
+    /// Payload size in bytes placed in the carrier.
     pub payload_bytes: usize,
     /// Required capacity in RGB carrier slots.
     pub required_capacity: usize,

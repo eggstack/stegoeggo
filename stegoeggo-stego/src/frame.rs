@@ -1,3 +1,34 @@
+//! Self-describing generic frame for bounded carrier payloads.
+//!
+//! The generic frame format is a small TLV-style wrapper that lets callers
+//! recover a payload without retaining the original payload length. It is
+//! purely a convenience for the generic carrier API — it is **not**
+//! StegoEggo's application payload, has no rights-policy semantics, and
+//! does not authenticate the payload against an adversary.
+//!
+//! # CRC32 is corruption detection, not authentication
+//!
+//! The frame CRC32 is a checksum that catches accidental corruption, lossy
+//! re-encoding damage, and carrier truncation. It does **not** prove the
+//! payload was produced by any particular party. Callers needing
+//! authentication should layer HMAC or Ed25519 over the unframed payload
+//! before embedding, not rely on this frame.
+//!
+//! # Layout
+//!
+//! ```text
+//! Offset  Size  Field
+//! 0       2     Magic [0x53, 0x47]
+//! 2       1     Version (=1)
+//! 3       4     Payload length (u32 LE)
+//! 7       4     CRC32 of payload bytes
+//! 11..    N     Payload bytes
+//! ```
+//!
+//! Maximum payload size is 16 MiB. The 11-byte frame header is the
+//! overhead added by `embed_framed` operations, and it is counted in
+//! `payload_bytes` reports.
+
 /// Magic bytes identifying a framed generic payload: `[0x53, 0x47]` ("SG").
 pub const FRAMED_MAGIC: [u8; 2] = [0x53, 0x47];
 

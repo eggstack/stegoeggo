@@ -570,3 +570,40 @@ fn public_stego_error_into_crate_error() {
     let crate_err: stegoeggo::Error = err.into();
     assert!(crate_err.to_string().contains("checksum mismatch"));
 }
+
+#[test]
+fn public_lsb_config_try_new_rejects_untrusted_redundancy() {
+    let user_redundancy: usize = 99;
+    let result = LsbConfig::try_new(42, user_redundancy);
+    assert!(matches!(result, Err(StegoError::InvalidConfig(_))));
+
+    let config = LsbConfig::try_new(42, 5).unwrap();
+    assert_eq!(config.redundancy(), 5);
+}
+
+#[test]
+fn public_lsb_config_try_with_redundancy_rejects_untrusted_redundancy() {
+    let result = LsbConfig::new(42).try_with_redundancy(50);
+    assert!(matches!(result, Err(StegoError::InvalidConfig(_))));
+
+    let config = LsbConfig::new(42).try_with_redundancy(4).unwrap();
+    assert_eq!(config.redundancy(), 4);
+}
+
+#[test]
+fn public_jpeg_config_try_new_rejects_untrusted_redundancy() {
+    let result = JpegConfig::try_new(42, 0);
+    assert!(matches!(result, Err(StegoError::InvalidConfig(_))));
+
+    let config = JpegConfig::try_new(42, 6).unwrap();
+    assert_eq!(config.redundancy(), 6);
+}
+
+#[test]
+fn public_jpeg_config_try_with_redundancy_rejects_untrusted_redundancy() {
+    let result = JpegConfig::new(42).try_with_redundancy(11);
+    assert!(matches!(result, Err(StegoError::InvalidConfig(_))));
+
+    let config = JpegConfig::new(42).try_with_redundancy(2).unwrap();
+    assert_eq!(config.redundancy(), 2);
+}

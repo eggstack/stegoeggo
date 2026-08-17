@@ -1,3 +1,44 @@
+//! Public encoded-JPEG DCT steganography carrier.
+//!
+//! Application-neutral embed/extract and capacity API on top of the
+//! crate-internal mechanics in [`crate::jpeg_transcoder`]. The header
+//! parser, coefficient map, Huffman state, and F5 implementation are
+//! private; only operation-level public helpers are exposed here.
+//!
+//! # Capacity units
+//!
+//! Capacity is reported in **eligible non-zero AC coefficients** across
+//! all components. The DC coefficient and zero-valued AC coefficients are
+//! not carriers. Embedding auto-selects the largest feasible redundancy
+//! (capped by the configured redundancy) via one pass; failed embeds
+//! still emit a seed-only carrier via quantization-table LSBs.
+//!
+//! # Raw vs framed
+//!
+//! - **Raw** ([`embed`], [`extract`]) — caller-supplied payload length and
+//!   the `actual_redundancy` returned by the embed report. Use when the
+//!   caller wants explicit control of redundancy.
+//! - **Framed** ([`embed_framed`], [`extract_framed`]) — wraps the payload
+//!   in a self-describing header with a CRC32 and recovers without caller
+//!   knowledge of the original payload length or the actual redundancy
+//!   used at embed time. Extract probes the configured redundancy down
+//!   to 1.
+//!
+//! # Supported JPEG subset
+//!
+//! Only **8-bit, sequential, single-scan, Huffman-coded** JPEGs with up to
+//! 4 components and supported sampling factors are embeddable. Progressive,
+//! arithmetic, multi-scan, restart-interval, and other unsupported inputs
+//! are rejected by [`probe_support`] and return
+//! [`StegoError::UnsupportedJpeg`]; only the seed hint may be embedded
+//! in those inputs.
+//!
+//! # Container preservation
+//!
+//! Successful embedding uses the original-JPEG byte-preserving encode
+//! path, so APP2, APP13, APP14, COM, and unknown marker segments survive
+//! byte-for-byte.
+
 use crate::error::{JpegUnsupportedReason, StegoError};
 use crate::jpeg_transcoder::{DctStegoF5, JpegHeader, JpegTranscoder};
 
@@ -149,6 +190,11 @@ fn reassemble_jpeg_with_qtables(
 /// Controls the seed and redundancy for F5-style DCT coefficient
 /// embedding and extraction.
 ///
+/// Use [`JpegConfig::new`] for compile-time-valid values and
+/// [`JpegConfig::try_new`] / [`JpegConfig::try_with_redundancy`] when the
+/// redundancy comes from untrusted input (configuration files, CLI parsing,
+/// network requests, etc.).
+///
 /// # Examples
 ///
 /// ```rust
@@ -174,12 +220,33 @@ impl JpegConfig {
         }
     }
 
+    /// Fallible constructor that validates the redundancy up front.
+    ///
+    /// Use this when the redundancy value comes from untrusted input. Returns
+    /// [`StegoError::InvalidConfig`] if `redundancy` is outside `1..=10`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use stegoeggo_stego::jpeg::JpegConfig;
+    ///
+    /// let config = JpegConfig::try_new(42, 3)?;
+    /// assert_eq!(config.redundancy(), 3);
+    /// # Ok::<_, stegoeggo_stego::StegoError>(())
+    /// ```
+    pub fn try_new(seed: u64, redundancy: usize) -> Result<Self, StegoError> {
+        crate::constants::validate_redundancy(redundancy)?;
+        Ok(Self { seed, redundancy })
+    }
+
     /// Set the redundancy level (1–10). Higher redundancy increases
     /// robustness at the cost of reduced capacity.
     ///
     /// # Panics
     ///
-    /// Panics if `redundancy` is 0 or greater than 10.
+    /// Panics if `redundancy` is 0 or greater than 10. Use
+    /// [`JpegConfig::try_with_redundancy`](Self::try_with_redundancy) when
+    /// the value is not statically known to be in `1..=10`.
     #[must_use]
     pub fn with_redundancy(mut self, redundancy: usize) -> Self {
         assert!(
@@ -188,6 +255,28 @@ impl JpegConfig {
         );
         self.redundancy = redundancy;
         self
+    }
+
+    /// Fallible variant of [`with_redundancy`](Self::with_redundancy).
+    ///
+    /// Returns [`StegoError::InvalidConfig`] if `redundancy` is outside
+    /// `1..=10`. Prefer this over [`with_redundancy`](Self::with_redundancy)
+    /// when the value is derived from runtime configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use stegoeggo_stego::jpeg::JpegConfig;
+    ///
+    /// let user_redundancy: usize = 99;
+    /// let result = JpegConfig::new(42).try_with_redundancy(user_redundancy);
+    /// assert!(result.is_err());
+    /// # Ok::<_, stegoeggo_stego::StegoError>(())
+    /// ```
+    pub fn try_with_redundancy(mut self, redundancy: usize) -> Result<Self, StegoError> {
+        crate::constants::validate_redundancy(redundancy)?;
+        self.redundancy = redundancy;
+        Ok(self)
     }
 
     /// The seed used for DCT coefficient selection.
@@ -769,5 +858,65 @@ mod tests {
         )
         .unwrap();
         assert_eq!(&recovered, payload);
+    }
+
+    #[test]
+    fn jpeg_config_try_new_accepts_valid_redundancy() {
+        for r in 1..=10usize {
+            let config = JpegConfig::try_new(42, r).unwrap();
+            assert_eq!(config.redundancy(), r);
+            assert_eq!(config.seed(), 42);
+        }
+    }
+
+    #[test]
+    fn jpeg_config_try_new_rejects_out_of_range_redundancy() {
+        assert!(matches!(
+            JpegConfig::try_new(42, 0),
+            Err(StegoError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            JpegConfig::try_new(42, 11),
+            Err(StegoError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            JpegConfig::try_new(42, usize::MAX),
+            Err(StegoError::InvalidConfig(_))
+        ));
+    }
+
+    #[test]
+    fn jpeg_config_try_with_redundancy_accepts_valid_values() {
+        let config = JpegConfig::new(42).try_with_redundancy(7).unwrap();
+        assert_eq!(config.redundancy(), 7);
+    }
+
+    #[test]
+    fn jpeg_config_try_with_redundancy_rejects_out_of_range() {
+        assert!(JpegConfig::new(42).try_with_redundancy(0).is_err());
+        assert!(JpegConfig::new(42).try_with_redundancy(11).is_err());
+        assert!(JpegConfig::new(42).try_with_redundancy(usize::MAX).is_err());
+    }
+
+    #[test]
+    fn jpeg_config_fallible_does_not_panic() {
+        for r in [0usize, 11, usize::MAX, 100, 1_000_000] {
+            let result = std::panic::catch_unwind(|| JpegConfig::try_new(42, r));
+            assert!(result.is_ok(), "try_new panicked for redundancy {r}");
+            assert!(
+                result.unwrap().is_err(),
+                "expected error for redundancy {r}"
+            );
+
+            let result = std::panic::catch_unwind(|| JpegConfig::new(42).try_with_redundancy(r));
+            assert!(
+                result.is_ok(),
+                "try_with_redundancy panicked for redundancy {r}"
+            );
+            assert!(
+                result.unwrap().is_err(),
+                "expected error for redundancy {r}"
+            );
+        }
     }
 }

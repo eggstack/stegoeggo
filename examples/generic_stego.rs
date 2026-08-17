@@ -1,7 +1,7 @@
 /// Generic carrier API example: embed and extract arbitrary bytes.
 ///
-/// Demonstrates raw and framed round-trips for both LSB (pixel-domain)
-/// and JPEG (DCT-domain) carriers using `stegoeggo::stego`.
+/// Demonstrates raw, in-place, and framed round-trips for both LSB
+/// (pixel-domain) and JPEG (DCT-domain) carriers using `stegoeggo::stego`.
 use image::{ImageBuffer, Rgb, RgbaImage};
 use stegoeggo::stego::{
     jpeg::{self, JpegConfig},
@@ -30,6 +30,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let recovered = lsb::extract(&report.output, secret.len(), &config)?;
     println!("LSB extracted: {:?}", String::from_utf8_lossy(&recovered));
+
+    // --- LSB in-place round-trip (no full-image clone) ---
+    let mut img_in_place = make_lsb_image(128, 128);
+    let in_place_report = lsb::embed_in_place(&mut img_in_place, secret, &config)?;
+    println!(
+        "LSB in-place embedded: {} ({} bytes)",
+        in_place_report.embedded, in_place_report.payload_bytes
+    );
+
+    let recovered_in_place = lsb::extract(&img_in_place, secret.len(), &config)?;
+    println!(
+        "LSB in-place extracted: {:?}",
+        String::from_utf8_lossy(&recovered_in_place)
+    );
+
+    // --- LSB config from untrusted runtime value ---
+    let runtime_redundancy: usize = 3;
+    let trusted_config = LsbConfig::try_new(seed, runtime_redundancy)?;
+    println!(
+        "LSB config from runtime: redundancy {}",
+        trusted_config.redundancy()
+    );
 
     // --- JPEG (DCT-domain) raw round-trip ---
     let jpeg_bytes = make_test_jpeg(128, 128);
