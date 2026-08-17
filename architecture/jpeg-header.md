@@ -89,7 +89,7 @@ pub struct ScanComponent {
 - **mod.rs**: `JpegHeader::parse` called by `JpegTranscoder::decode_coefficients`
 - **entropy.rs**: Header data used to build Huffman decoders/encoders
 - **stego_f5.rs**: Quantization tables modified for seed embedding
-- **steganography/embed.rs**: Header used for JPEG reassembly after DCT stego
+- **steganography/embed.rs**: Header is accessed only through `stegoeggo_stego::application_support` operations; the root crate never imports `JpegHeader` directly
 
 ## Checked Scan Structure
 

@@ -18,7 +18,7 @@ Three crate-private functions perform the actual work:
 - `execute_stego_and_metadata()` — Standard hidden marker: DCT/LSB stego + metadata injection
 - `execute_stego_and_metadata_tiled()` — Tiled variant for crop-resistant mode
 
-These functions use `RightsMetadataProtector::inject_bytes_from_plan()` for metadata injection, which accepts `&ResolvedProtectionPlan` directly. The steganography side exposes `*_from_plan` methods (`SteganographyProtector::apply_dct_stego_bytes_from_plan`, `apply_to_image_with_summary_from_plan`, `embed_lsb_tiled_*`) that consume the plan directly. There is no `plan_to_context()` adapter: the resolved plan is the only execution state for the canonical path.
+These functions use `RightsMetadataProtector::inject_bytes_from_plan()` for metadata injection, which accepts `&ResolvedProtectionPlan` directly. The steganography side exposes `*_from_plan` methods (`SteganographyProtector::apply_dct_stego_bytes_from_plan`, `apply_to_image_with_summary_from_plan`, `embed_lsb_tiled_*`) that consume the plan directly. The `apply_dct_stego_bytes_from_plan` dispatcher lives in `src/protected/steganography/embed.rs`; the plan-driven embed path uses the carrier's narrow `application_support` operation layer and never reconstructs a `ProtectionContext` from the plan. There is no `plan_to_context()` adapter: the resolved plan is the only execution state for the canonical path.
 
 ## ProtectionPipeline (legacy path)
 
@@ -47,7 +47,7 @@ pub struct ProtectionPipeline {
    c. Inject metadata to bytes
 ```
 
-The JPEG fast path (`apply_bytes_pipeline`) calls the carrier crate's encoded-byte JPEG operations. Those operations privately decode and re-encode DCT coefficients, bypassing pixel decode/encode cycles. It only triggers when **both** input and output are JPEG — format conversion always takes the full pipeline. This is critical for the sub-10ms latency target.
+The JPEG fast path (`apply_bytes_pipeline`) calls the carrier crate's encoded-byte JPEG operations. Those operations privately decode and re-encode DCT coefficients, bypassing pixel decode/encode cycles. It only triggers when **both** input and output are JPEG — format conversion always takes the full pipeline. This is critical for the sub-10ms latency target. The root-side call site is `SteganographyProtector::apply_dct_stego_bytes_from_plan` in `src/protected/steganography/embed.rs`; the carrier-side helpers live behind `stegoeggo_stego::application_support::jpeg_embed` so JPEG parser, coefficient, and F5 types stay private to the carrier crate.
 
 ### Light Level Flow
 
@@ -96,6 +96,8 @@ The library intentionally does not own proxy-level cache policy, concurrency lim
 - **types.rs**: Uses `ProtectionLevel`, `ProtectionContext`, `ImageOutputFormat`, `ProtectionRequest`, `ResolvedProtectionPlan`
 - **traits.rs**: Calls `Protector::apply()` and `Protector::apply_bytes()`
 - **protected/*.rs**: Delegates to specific protector implementations
+- **protected/steganography/**: Decomposed application stego adapter. `mod.rs` is the facade; `marker.rs` builds V3 application payloads, `embed.rs` dispatches embedding operations (LSB, tiled LSB, JPEG DCT/F5, seed-only), `extract.rs` owns seed discovery and bounded search, `verify.rs` classifies payload integrity and authentication, `legacy.rs` isolates V1/V2 compatibility-only decoding
 - **stegoeggo-stego/src/jpeg.rs**: Public encoded-byte JPEG carrier operations used by the application adapter; `jpeg_transcoder/` remains private.
-- **stegoeggo-stego/src/lsb.rs** + **stegoeggo-stego/src/application_support.rs**: Public generic LSB operations and the narrow parent-crate support layer. `lsb_internal.rs` remains private.
+- **stegoeggo-stego/src/lsb.rs** + **stegoeggo-stego/src/application_support.rs**: Public generic LSB operations (raw, in-place, framed) and the narrow parent-crate support layer. `lsb_internal.rs` remains private.
+- **stegoeggo-stego/src/frame.rs**: Self-describing framed payload (`encode`/`decode`/`decode_prefix`) used by the LSB and JPEG framed convenience methods.
 - **util/image.rs**: Used for encoding, format detection, image loading

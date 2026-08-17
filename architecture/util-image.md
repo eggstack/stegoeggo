@@ -29,6 +29,7 @@ pub struct PixelSelectionRng { state: u64 }
 
 ## Module Interactions
 
-- **protected/steganography/extract.rs**: Owns application extraction search; LSB carrier selection is delegated to `stegoeggo-stego`
+- **protected/steganography/extract.rs**: Owns application extraction search and seed discovery; LSB carrier mechanics are delegated to `stegoeggo-stego`
+- **protected/steganography/embed.rs**: Owns carrier selection and embedding dispatch; uses `stegoeggo-stego` for raw/in-place LSB and framed encoded-JPEG ops
 - **util/seed.rs**: `generate_random_seed()` used for default context seeds
 - **lib.rs**: Uses encoding/detection functions for format routing

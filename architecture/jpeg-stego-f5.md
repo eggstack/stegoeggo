@@ -73,7 +73,8 @@ F5-specific PRNG for DCT coefficient shuffling. **Different algorithm from `XorS
 
 ## Module Interactions
 
-- **steganography/embed.rs**: `apply_dct_stego_bytes_from_plan` (canonical) and the legacy `apply_dct_stego_bytes` (legacy context path) call `DctStegoF5` methods
+- **steganography/embed.rs**: `apply_dct_stego_bytes_from_plan` (canonical) and the legacy `apply_dct_stego_bytes` (legacy context path) call `DctStegoF5` methods through the carrier's narrow `application_support` operation layer
+- **steganography/extract.rs**: `extract_f5_tiled_candidates`, `dct_candidates`, and `dct_outcome_with_seed` consume opaque candidate identity from the carrier-owned `TiledJpegSearch`; root never receives F5 objects directly
 - **jpeg-transcoder.md**: Uses `JpegTranscoder` for coefficient decode/encode
 - **jpeg-header.md**: Modifies quantization tables for seed embedding
 - **jpeg-entropy.md**: Works with decoded `Coefficients` type

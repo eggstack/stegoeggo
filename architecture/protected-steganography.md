@@ -10,6 +10,8 @@ The rights-aware hidden-marker adapter is split into five responsibility modules
 - `verify.rs` parses payloads and classifies CRC/HMAC/signature, malformed, unsupported, and authentication failures.
 - `legacy.rs` contains compatibility-only V1/V2 decoding and ECC adapters.
 
+`mod.rs` is a thin facade: it hosts shared types (`CandidateOutcome`, `V3PrefixResult`, `PayloadMalformedReason`, `ValidatedV3Header`, `V3ProbeResult`, `ExtractionTrace`), the `SteganographyProtector` constructors + `Protector` trait routing, the `StegoPayload` accessor struct, and unit tests. All embedding, extraction, and verification logic lives in the named submodules — no carrier algorithm is reimplemented in `mod.rs`.
+
 Generic carrier mechanics (permutations, bit embedding/extraction, capacity calculation) remain delegated to `stegoeggo-stego`.
 
 ## Payload Format
@@ -311,12 +313,13 @@ stegoeggo::stego
 3. **`intensity` not exposed** — Redundancy is the explicit capacity/cost control
 4. **Error model** — `StegoError` converts to crate `Error` via `From`
 5. **Frame is optional** — Raw APIs don't require framing
-6. **Raw versus framed recovery** — Raw extraction requires caller-known length and, for JPEG, `actual_redundancy`. Framed extraction reads the fixed header first, validates the declared length against frame and carrier bounds, and for JPEG probes only the configured redundancy down to 1.
-7. **Frame composition** — Framed operations call the existing `frame::encode`, `frame::decode_prefix`, and `frame::decode`; they do not create a second carrier format or import application rights state.
-8. **CRC limitation** — The frame CRC32 detects accidental corruption but is not adversarial authentication.
-9. **Fallible configuration** — Both `LsbConfig` and `JpegConfig` expose `try_new(seed, redundancy)` and `try_with_redundancy(value)` returning `StegoError::InvalidConfig` for out-of-range values. The original `with_redundancy` is retained for compatibility with callers that pass validated constants; it still panics on invalid values.
-10. **Capacity units are documented per carrier** — `CapacityReport` and `EmbedReport` explicitly state that LSB uses RGB carrier slots and JPEG uses non-zero AC coefficients. `InPlaceEmbedReport` is RGB carrier slots only.
-11. **CRC vs authentication scope** — The `frame` module-level docs lead with "CRC32 is corruption detection, not authentication". Report units are spelled out in `CapacityReport`/`EmbedReport`/`InPlaceEmbedReport` field docs.
+6. **Three operation styles** — Raw (`embed`/`extract`, caller knows payload length and JPEG `actual_redundancy`), in-place (`lsb::embed_in_place` mutates the caller's `RgbaImage` without an output image), and framed (`embed_framed`/`extract_framed` over `frame::encode`/`decode_prefix`/`decode`). The cloning `lsb::embed` and in-place `lsb::embed_in_place` paths share one corrected V2 mutation core; corrected V2 bitstreams are read/written directly without intermediate payload-bit vectors.
+7. **Raw versus framed recovery** — Raw extraction requires caller-known length and, for JPEG, `actual_redundancy`. Framed extraction reads the fixed header first, validates the declared length against frame and carrier bounds, and for JPEG probes only the configured redundancy down to 1.
+8. **Frame composition** — Framed operations call the existing `frame::encode`, `frame::decode_prefix`, and `frame::decode`; they do not create a second carrier format or import application rights state.
+9. **CRC limitation** — The frame CRC32 detects accidental corruption but is not adversarial authentication.
+10. **Fallible configuration** — Both `LsbConfig` and `JpegConfig` expose `try_new(seed, redundancy)` and `try_with_redundancy(value)` returning `StegoError::InvalidConfig` for out-of-range values. The original `with_redundancy` is retained for compatibility with callers that pass validated constants; it still panics on invalid values.
+11. **Capacity units are documented per carrier** — `CapacityReport` and `EmbedReport` explicitly state that LSB uses RGB carrier slots and JPEG uses non-zero AC coefficients. `InPlaceEmbedReport` is RGB carrier slots only.
+12. **CRC vs authentication scope** — The `frame` module-level docs lead with "CRC32 is corruption detection, not authentication". Report units are spelled out in `CapacityReport`/`EmbedReport`/`InPlaceEmbedReport` field docs.
 
 ### Frame Wire Format
 

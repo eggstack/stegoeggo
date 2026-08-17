@@ -1,8 +1,10 @@
 # Roadmap 069: Stego API Ergonomics and Application-Adapter Simplification
 
-Status: Ready for implementation
+Status: COMPLETE — Plans 070-074 closed in order; evidence in `plans/070-status.md` through `plans/074-status.md`
 
 Audited planning baseline: `main` at `f717fd5c99adf17be2bc94d315c71d18f8c77c3d`
+
+Plan 074 closure note: the four implementation plans (070 application-adapter decomposition, 071 framed carrier convenience API, 072 LSB in-place + bitstream allocation optimization, 073 generic public API hardening) are independently verified against the current source in `plans/074-status.md`. Root stego responsibilities are genuinely split (`mod.rs` is a thin facade + shared types + tests; `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs` own their respective concerns). No carrier algorithm was duplicated back into the root crate, and the private `jpeg_transcoder` / `lsb_internal` modules remain outside the default public API. `./scripts/check.sh` passes locally (1642 tests passed, 25 ignored, 0 failed) and `./scripts/release-check.sh --allow-dirty --skip-check --stage=pre` passes. No version bump, publication, tag, GitHub Release, or CI expansion occurred across this roadmap.
 
 Predecessor: `plans/057-stego-carrier-library-and-pipeline-simplification-roadmap.md` and its closure through Plan 068.
 
