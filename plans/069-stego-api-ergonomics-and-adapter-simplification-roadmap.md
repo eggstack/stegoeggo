@@ -1,10 +1,10 @@
 # Roadmap 069: Stego API Ergonomics and Application-Adapter Simplification
 
-Status: PARTIAL — post-closure residuals tracked by Plan 075
+Status: COMPLETE — Plans 070-075 closed in order; evidence in `plans/070-status.md` through `plans/075-status.md`
 
 Audited planning baseline: `main` at `f717fd5c99adf17be2bc94d315c71d18f8c77c3d`
 
-Plan 074 closure note: the four implementation plans (070 application-adapter decomposition, 071 framed carrier convenience API, 072 LSB in-place + bitstream allocation optimization, 073 generic public API hardening) were independently verified against the source in `plans/074-status.md`. A later audit found a missing/chronologically incomplete Plan-073 ledger record, repeated JPEG coefficient decoding during framed extraction, JPEG numeric-validation and error-precedence residuals, biased benchmark evidence, and inaccurate carrier cadence wording. Plans 070-074 implementation remains valid; Plan 075 owns these corrective residuals only.
+Plan 075 final closure note: Plans 070-074 implementation remains valid. Plan 075 reconciled the retrospectively missing Plan-073 ledger chronology, made framed JPEG extraction single-decode with deterministic candidate-error precedence, hardened public JPEG arithmetic and redundancy validation, corrected the LSB benchmark evidence, and aligned package/cadence wording with lockstep release policy. The final evidence ledger is `plans/075-status.md`; no version bump, publication, tag, GitHub Release, or CI expansion occurred.
 
 Predecessor: `plans/057-stego-carrier-library-and-pipeline-simplification-roadmap.md` and its closure through Plan 068.
 
@@ -17,6 +17,7 @@ Implementation plans:
 3. `plans/072-lsb-in-place-and-bitstream-allocation-optimization.md`
 4. `plans/073-generic-stego-public-api-hardening.md`
 5. `plans/074-stego-ergonomics-evidence-and-documentation-closure.md`
+6. `plans/075-jpeg-framed-extraction-and-evidence-corrective-closure.md`
 
 Each implementation plan must create and force-track its own `plans/NNN-status.md` ledger before product-source edits. This planning commit authorizes implementation work but is not completion evidence.
 
