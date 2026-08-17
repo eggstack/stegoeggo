@@ -121,6 +121,8 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Generic stego API uses `StegoError`** — The public `stego` module uses its own `StegoError` type, not the crate root `Error`. Convert via `From<StegoError> for Error`
 - **Plan 073 fallible config** — `LsbConfig::try_new`, `LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and `JpegConfig::try_with_redundancy` all return `StegoError::InvalidConfig` for out-of-range redundancy. The panicking `with_redundancy` builder is retained for compatibility with compile-time-constant callers
 - **JPEG `extract` requires `actual_redundancy`** — The JPEG embed auto-downgrades redundancy when capacity is insufficient. Pass `report.actual_redundancy` to `extract` to match what was embedded
+- **JPEG framed extraction reuses one decode** — `jpeg::extract_framed()` validates support, decodes the coefficient container once, and reuses private retained state across the configured redundancy search. Preserve the bounded search from configured redundancy down to 1; do not rebuild it from public `capacity()`/`extract()` calls or expose a JPEG session.
+- **JPEG public numeric inputs are checked** — Payload-bit and required-capacity arithmetic returns `StegoError::InvalidConfig` on overflow, and raw `jpeg::extract()` rejects `actual_redundancy` outside `1..=10` instead of relying on private F5 clamping.
 - **`#[serde(skip)]` on `config` field** — MAC keys and legal metadata are lost in serde roundtrips
 - **CLI unified path** — The CLI always routes through `ProtectionRequest`. There is no dual legacy/request code path. `ProtectionLevel::default_policy()` computes level defaults: `Standard`→`ProhibitedAiMlTraining`, `Light`/`Disabled`→`Unspecified`. `--dmi auto` and omitted `--dmi` are equivalent. Mixed conflicting policy options (e.g., `--rights-policy` contradicting `--no-ai-training`) are configuration errors (exit code 2)
 - **CLI exit codes** — `0`=ok, `1`=error, `2`=config, `3`=integrity, `5`=internal. `--verify` always exits 0; use output text to determine protection state, not exit code
@@ -209,6 +211,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **F5 tiled block set** — MCU-interleaved: `block_idx = (mcu_y * mcus_per_row + mcu_x) * h * v + sub_y * h + sub_x`. Do NOT assume row-major ordering
 - **JPEG DCT one-pass embed** — Supported DCT embedding computes max feasible redundancy from capacity, then embeds+encodes once. No retry loop, no roundtrip decode/extract self-test. Capacity-selected redundancy = min(requested, available / payload_bits)
 - **Tiled LSB direct region** — Tiled embed computes V2 carrier slots using sub-image dimensions and maps coordinates to full image, eliminating crop/blit allocations. Extraction crops sub-images and uses V2 carrier which matches the sub-image slot mapping
+- **LSB benchmark equivalence** — `lsb_clone_vs_in_place` must give every measured in-place iteration a fresh pristine image through Criterion batching; the preparation clone stays outside the timed in-place closure.
 
 **Canonical metadata format:**
 
@@ -236,6 +239,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **JPEG fast path**: When input/output are both JPEG, the application adapter calls the carrier's public encoded-byte operations, which privately operate on DCT coefficients and bypass pixel decode/encode — see `architecture/jpeg-transcoder.md`
 - **Policy-first API**: `ProtectionRequest` + `RightsPolicy` are the canonical API — see `architecture/types.md`
 - **`#![forbid(unsafe_code)]`** throughout the library crate and `stegoeggo-stego`
+- **Standalone carrier package wording** — `stegoeggo-stego` has its own package and public API surface, but current release checks enforce root/carrier version lockstep; do not describe an independent release cadence.
 
 ## Validation Scripts
 

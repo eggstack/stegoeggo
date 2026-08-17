@@ -217,8 +217,8 @@ pub(crate) mod protected;
 /// [`stegoeggo_stego`](https://docs.rs/stegoeggo-stego) carrier crate so
 /// direct callers can use the same primitive operations without engaging
 /// the StegoEggo rights/policy surface. For standalone generic use, prefer
-/// the dedicated crate directly — it has its own README and version
-/// cadence, and is the documented public home for these types.
+/// the dedicated crate directly — it has its own package and public API
+/// surface, and is the documented public home for these types.
 pub mod stego {
     pub use stegoeggo_stego::error;
     pub use stegoeggo_stego::frame;

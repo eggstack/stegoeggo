@@ -12,6 +12,10 @@ carrier.
 metadata, XMP, plus:DataMining, HMAC, or any application semantics. It
 moves arbitrary bytes into and out of supported image carriers.
 
+The carrier is a standalone package with its own public API surface. It is
+currently versioned in workspace lockstep with the root crate; the package
+boundary does not imply an independent release cadence.
+
 ## What this crate is
 
 A small, focused library that exposes two image steganography carriers —
@@ -24,7 +28,9 @@ bytes that can be recovered later. Three operation styles are supported:
   and wants to avoid the full-image clone a copied `embed` would perform.
 - **Framed** — wraps the payload in a self-describing header with a
   CRC32. Recovered without the caller-retained payload length, and (for
-  JPEG) without the embed report's `actual_redundancy`.
+  JPEG) without the embed report's `actual_redundancy`. JPEG framed
+  extraction decodes the supported carrier once and reuses that state while
+  probing the configured redundancy down to 1.
 
 ## Supported carriers and limitations
 

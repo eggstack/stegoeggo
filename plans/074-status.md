@@ -83,6 +83,10 @@ jpeg_transcoder/       Private JPEG DCT internals (header.rs, entropy.rs, stego_
 - Phase 5: Reconciliation of architecture docs, README, and skills to the final
   decomposed + framed + in-place + fallible-config state. No behavior changes.
 - No new public APIs, no new dependencies, no new tests added in this closure plan.
+- Plan 075 later identified a chronology defect in the reconstructed Plan-073
+  ledger and residual JPEG framed-extraction, numeric-validation, benchmark,
+  and cadence-wording issues. Plan 074's broad architecture evidence remains
+  historical and is not rewritten as failed work.
 
 ## Verification log
 

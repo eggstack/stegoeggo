@@ -607,3 +607,45 @@ fn public_jpeg_config_try_with_redundancy_rejects_untrusted_redundancy() {
     let config = JpegConfig::new(42).try_with_redundancy(2).unwrap();
     assert_eq!(config.redundancy(), 2);
 }
+
+#[test]
+fn public_jpeg_raw_inputs_reject_overflow_and_invalid_redundancy() {
+    let jpeg_bytes = make_jpeg_bytes(256, 256);
+    let config = JpegConfig::new(42);
+
+    let capacity_result =
+        std::panic::catch_unwind(|| jpeg::capacity(&jpeg_bytes, usize::MAX, &config));
+    assert!(capacity_result.is_ok());
+    assert!(matches!(
+        capacity_result.unwrap(),
+        Err(StegoError::InvalidConfig(_))
+    ));
+
+    let extract_result =
+        std::panic::catch_unwind(|| jpeg::extract(&jpeg_bytes, usize::MAX, &config, 1));
+    assert!(extract_result.is_ok());
+    assert!(matches!(
+        extract_result.unwrap(),
+        Err(StegoError::InvalidConfig(_))
+    ));
+
+    for redundancy in [0, 11, usize::MAX] {
+        let result = jpeg::extract(&jpeg_bytes, 1, &config, redundancy);
+        assert!(matches!(result, Err(StegoError::InvalidConfig(_))));
+    }
+}
+
+#[test]
+fn public_jpeg_raw_redundancy_one_and_ten_remain_valid() {
+    let jpeg_bytes = make_jpeg_bytes(256, 256);
+
+    for redundancy in [1, 10] {
+        let config = JpegConfig::new(42).with_redundancy(redundancy);
+        let report = jpeg::embed(&jpeg_bytes, b"raw", &config).unwrap();
+        assert!(report.embedded);
+        assert_eq!(report.actual_redundancy, redundancy);
+        let recovered =
+            jpeg::extract(&report.output, 3, &config, report.actual_redundancy).unwrap();
+        assert_eq!(&recovered, b"raw");
+    }
+}

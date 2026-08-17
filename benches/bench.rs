@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 use image::{DynamicImage, RgbaImage};
 use std::alloc::System;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -365,12 +365,18 @@ fn benchmark_lsb_in_place(c: &mut Criterion) {
             b.iter(|| lsb::embed(black_box(source), black_box(&payload), &config))
         });
 
-        let mut in_place = source.clone();
         group.bench_function(BenchmarkId::new("in_place", label), |b| {
-            b.iter(|| {
-                let report = lsb::embed_in_place(&mut in_place, black_box(&payload), &config);
-                black_box(report)
-            })
+            b.iter_batched(
+                || source.clone(),
+                |mut image| {
+                    black_box(lsb::embed_in_place(
+                        black_box(&mut image),
+                        black_box(&payload),
+                        &config,
+                    ))
+                },
+                BatchSize::LargeInput,
+            )
         });
     }
 

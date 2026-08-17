@@ -211,7 +211,7 @@ The library keeps optional functionality behind Cargo features:
 
 No optional feature is enabled by default. The CLI enables the application features it needs internally; its `keygen`, `sign`, and `verify-manifest` subcommands are available only when `stegoeggo-cli` is built with its `signatures` feature.
 
-The workspace also contains [`stegoeggo-stego`](stegoeggo-stego/), a lower-level, application-neutral carrier crate for callers that want generic LSB/JPEG steganography without StegoEggo's rights-policy layer.
+The workspace also contains [`stegoeggo-stego`](stegoeggo-stego/), a lower-level, application-neutral carrier crate for callers that want generic LSB/JPEG steganography without StegoEggo's rights-policy layer. It is the standalone package and public API home for those carrier operations; workspace releases currently keep the root and carrier versions in lockstep.
 
 It exposes three operation styles on the same corrected carrier model:
 
