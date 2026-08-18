@@ -399,7 +399,7 @@ pub fn detect_format(bytes: &[u8]) -> Option<String> {
 /// Internal extraction returns `DmiValue::as_str()` values (e.g., "ProhibitedAiMlTraining").
 /// ExifTool returns PLUS vocab keys (e.g., "DMI-PROHIBITED-AIMLTRAINING") or display values
 /// (e.g., "Prohibited for AI/ML training"). This normalizes all forms for comparison.
-/// Also handles full canonical URIs (e.g., "http://ns.useplus.org/ldf/vocab/DMI-ALLOWED").
+/// Also handles full canonical URIs (e.g., <http://ns.useplus.org/ldf/vocab/DMI-ALLOWED>).
 #[must_use]
 pub fn normalize_dmi_value(s: &str) -> String {
     let stripped = s.strip_prefix(crate::types::PLUS_VOCAB_PREFIX).unwrap_or(s);
@@ -490,9 +490,11 @@ fn is_known_mojibake_exception(fixture: &str, field: &str, internal: &str, exter
 }
 
 /// Compare internal and external metadata extractions, adding check results
-/// to the report. Uses field-specific normalization and produces Fail for
-/// meaningful mismatches. The `fixture_name` parameter enables narrowly-scoped
-/// exception handling for known tool limitations (e.g., mojibake).
+/// to the report.
+///
+/// Uses field-specific normalization and produces Fail for meaningful
+/// mismatches. The `fixture_name` parameter enables narrowly-scoped exception
+/// handling for known tool limitations (e.g., mojibake).
 pub fn compare_extractions(
     internal: &InternalExtraction,
     external: &ExternalExtraction,

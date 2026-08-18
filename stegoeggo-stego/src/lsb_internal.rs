@@ -41,7 +41,7 @@ pub fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize 
 #[inline(always)]
 pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> usize {
     if slot_count <= 1 {
-        return index.min(slot_count);
+        return index.min(slot_count.saturating_sub(1));
     }
 
     let m = slot_count.next_power_of_two();
@@ -85,7 +85,11 @@ pub fn lsb_required_capacity_v2(payload_bits: usize, redundancy: usize) -> usize
 
 #[inline(always)]
 pub fn lsb_required_slots_legacy(payload_bits: usize) -> usize {
-    payload_bits.div_ceil(3) * STEGO_SPREAD_FACTOR * 3
+    payload_bits
+        .div_ceil(3)
+        .checked_mul(STEGO_SPREAD_FACTOR)
+        .and_then(|v| v.checked_mul(3))
+        .unwrap_or(usize::MAX)
 }
 
 #[allow(dead_code)]
@@ -395,7 +399,7 @@ pub fn extract_lsb_v2(
     }
 
     if !expected_bits.is_multiple_of(8) {
-        return Some(Vec::new());
+        return None;
     }
 
     let mut bytes = vec![0u8; expected_bits / 8];
@@ -648,7 +652,7 @@ impl LsbConfig {
     /// Fallible constructor that validates the redundancy up front.
     ///
     /// Use this when the redundancy value comes from untrusted input. Returns
-    /// [`StegoError::InvalidConfig`] if `redundancy` is outside `1..=10`.
+    /// [`StegoError::InvalidConfig`](crate::StegoError::InvalidConfig) if `redundancy` is outside `1..=10`.
     ///
     /// # Examples
     ///
@@ -684,7 +688,7 @@ impl LsbConfig {
 
     /// Fallible variant of [`with_redundancy`](Self::with_redundancy).
     ///
-    /// Returns [`StegoError::InvalidConfig`] if `redundancy` is outside
+    /// Returns [`StegoError::InvalidConfig`](crate::StegoError::InvalidConfig) if `redundancy` is outside
     /// `1..=10`. Prefer this over [`with_redundancy`](Self::with_redundancy)
     /// when the value is derived from runtime configuration.
     ///
@@ -764,7 +768,7 @@ pub fn capacity(img: &RgbaImage, payload_len: usize, config: &LsbConfig) -> supe
 ///
 /// # Errors
 ///
-/// Returns [`StegoError::EmptyCarrier`] if the image has zero pixels.
+/// Returns [`StegoError::EmptyCarrier`](crate::StegoError::EmptyCarrier) if the image has zero pixels.
 ///
 /// # Examples
 ///
@@ -830,7 +834,7 @@ pub fn embed_in_place(
 ///
 /// # Errors
 ///
-/// Returns [`StegoError::MalformedInput`] if extraction produces invalid data.
+/// Returns [`StegoError::MalformedInput`](crate::StegoError::MalformedInput) if extraction produces invalid data.
 ///
 /// # Examples
 ///

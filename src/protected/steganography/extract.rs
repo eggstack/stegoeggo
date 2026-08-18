@@ -146,6 +146,9 @@ impl SteganographyProtector {
                 return Some(result);
             }
         }
+        if let Some(result) = self.extract_payload_at_seed_legacy(img, prefix_bits, seed, mac_key) {
+            return Some(result);
+        }
         for pass in 0..5 {
             let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
             for redundancy in 1..=10 {

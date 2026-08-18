@@ -863,6 +863,12 @@ impl SteganographyProtector {
             Some(b) => b,
             None => return V3ProbeResult::MalformedV3,
         };
+        if bytes.len() >= 30 {
+            let auth_algo = bytes[29];
+            if crate::payload_v3::types::AuthAlgorithm::from_byte(auth_algo).is_none() {
+                return V3ProbeResult::MalformedV3;
+            }
+        }
         if bytes.len() >= 31 {
             let auth_tag_len = bytes[30] as usize;
             if total_length < crate::payload_v3::types::V3_CORE_SIZE + auth_tag_len {
@@ -876,12 +882,6 @@ impl SteganographyProtector {
             }
             if header_length < crate::payload_v3::types::V3_CORE_SIZE + key_id_len {
                 return V3ProbeResult::MalformedV3;
-            }
-            if bytes.len() >= 30 {
-                let auth_algo = bytes[29];
-                if crate::payload_v3::types::AuthAlgorithm::from_byte(auth_algo).is_none() {
-                    return V3ProbeResult::MalformedV3;
-                }
             }
         }
         V3ProbeResult::V3Detected {

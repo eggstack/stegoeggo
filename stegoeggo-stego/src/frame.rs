@@ -65,7 +65,7 @@ pub struct FrameHeader {
 ///
 /// # Errors
 ///
-/// Returns [`StegoError::InvalidConfig`] if the payload exceeds [`MAX_FRAME_PAYLOAD`].
+/// Returns [`StegoError::InvalidConfig`](crate::StegoError::InvalidConfig) if the payload exceeds [`MAX_FRAME_PAYLOAD`].
 pub fn encode(payload: &[u8]) -> Result<Vec<u8>, super::StegoError> {
     if payload.len() > MAX_FRAME_PAYLOAD {
         return Err(super::StegoError::InvalidConfig(format!(
@@ -90,12 +90,12 @@ pub fn encode(payload: &[u8]) -> Result<Vec<u8>, super::StegoError> {
 ///
 /// # Errors
 ///
-/// Returns [`StegoError::FrameNotFound`] if the data is too short for a header.
-/// Returns [`StegoError::MalformedFrame`] if the magic bytes don't match, the
+/// Returns [`StegoError::FrameNotFound`](crate::StegoError::FrameNotFound) if the data is too short for a header.
+/// Returns [`StegoError::MalformedFrame`](crate::StegoError::MalformedFrame) if the magic bytes don't match, the
 /// version is unknown, the declared payload length exceeds bounds, or there
 /// are trailing bytes after the complete frame.
-/// Returns [`StegoError::FrameChecksumMismatch`] if the CRC32 doesn't match.
-/// Returns [`StegoError::MalformedFrame`] if the data is shorter than header +
+/// Returns [`StegoError::FrameChecksumMismatch`](crate::StegoError::FrameChecksumMismatch) if the CRC32 doesn't match.
+/// Returns [`StegoError::MalformedFrame`](crate::StegoError::MalformedFrame) if the data is shorter than header +
 /// declared payload length.
 pub fn decode(data: &[u8]) -> Result<(FrameHeader, Vec<u8>), super::StegoError> {
     if data.len() < FRAME_HEADER_SIZE {

@@ -404,10 +404,6 @@ impl SteganographyProtector {
         let payload = self.generate_payload(&emission, ctx);
         let mut rgba = img.to_rgba8();
 
-        let format = ctx
-            .input_format()
-            .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
-
         let redundancy = ctx.effective_redundancy();
 
         match format {
@@ -415,13 +411,17 @@ impl SteganographyProtector {
                 if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
                     let outcome = self.embed_lsb_tiled(&rgba, &payload, ctx.seed(), tile_size);
                     let (mut result, summary) = outcome.into_parts();
-                    Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
+                    if summary.is_embedded() {
+                        Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
+                    }
                     Ok((DynamicImage::ImageRgba8(result), Some(summary)))
                 } else {
                     let report =
                         self.embed_lsb_v2_in_place(&mut rgba, &payload, ctx.seed(), redundancy)?;
                     let summary = Self::lsb_in_place_summary(report);
-                    Self::embed_seed_lsb_fallback(&mut rgba, ctx.seed());
+                    if summary.is_embedded() {
+                        Self::embed_seed_lsb_fallback(&mut rgba, ctx.seed());
+                    }
                     Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
                 }
             }
@@ -440,13 +440,17 @@ impl SteganographyProtector {
                 if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
                     let outcome = self.embed_lsb_tiled(&rgba, &payload, ctx.seed(), tile_size);
                     let (mut result, summary) = outcome.into_parts();
-                    Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
+                    if summary.is_embedded() {
+                        Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
+                    }
                     Ok((DynamicImage::ImageRgba8(result), Some(summary)))
                 } else {
                     let report =
                         self.embed_lsb_v2_in_place(&mut rgba, &payload, ctx.seed(), redundancy)?;
                     let summary = Self::lsb_in_place_summary(report);
-                    Self::embed_seed_lsb_fallback(&mut rgba, ctx.seed());
+                    if summary.is_embedded() {
+                        Self::embed_seed_lsb_fallback(&mut rgba, ctx.seed());
+                    }
                     Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
                 }
             }

@@ -1084,7 +1084,7 @@ impl LegalMetadata {
                     28
                 }
             }
-            _ => unreachable!(),
+            _ => unreachable!("month validated to 1..=12 above"),
         };
         if day < 1 || day > max_day {
             return Err(crate::Error::Config(format!(
@@ -3590,7 +3590,7 @@ pub struct ProcessingOptions {
     ///
     /// When `None`, the executor derives redundancy from intensity via
     /// [`ResolvedProtectionPlan::effective_redundancy`] (the same derivation
-    /// the legacy [`ProtectionContext::effective_redundancy`] used).
+    /// the legacy `ProtectionContext::effective_redundancy` used).
     pub stego_redundancy: Option<usize>,
     /// Caller-supplied 4-byte truncated content hash for provenance linkage.
     ///
@@ -3966,8 +3966,7 @@ impl ResolvedProtectionPlan {
     /// [`ProtectionRequest::with_stego_redundancy`] / the
     /// [`ProcessingOptions::stego_redundancy`] field, that value is used.
     /// Otherwise redundancy is derived from [`Self::intensity`] using the
-    /// same thresholds as the legacy
-    /// [`ProtectionContext::effective_redundancy`]:
+    /// same thresholds as the legacy `ProtectionContext::effective_redundancy`:
     /// - `intensity < 0.3` → 1
     /// - `intensity < 0.7` → 2
     /// - `intensity >= 0.7` → 3

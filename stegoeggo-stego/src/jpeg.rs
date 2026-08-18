@@ -1,7 +1,7 @@
 //! Public encoded-JPEG DCT steganography carrier.
 //!
 //! Application-neutral embed/extract and capacity API on top of the
-//! crate-internal mechanics in [`crate::jpeg_transcoder`]. The header
+//! crate-internal mechanics in `crate::jpeg_transcoder`. The header
 //! parser, coefficient map, Huffman state, and F5 implementation are
 //! private; only operation-level public helpers are exposed here.
 //!
@@ -697,7 +697,7 @@ pub fn embed_framed(
 /// * `config` — JPEG DCT carrier configuration.
 /// * `actual_redundancy` — The actual redundancy level used during embedding.
 ///   Pass `config.redundancy()` if embedding used the requested redundancy,
-///   or the `actual_redundancy` from the [`EmbedReport`] if embedding
+///   or the `actual_redundancy` from the [`EmbedReport`](super::EmbedReport) if embedding
 ///   auto-downgraded redundancy due to capacity constraints.
 ///
 /// # Errors

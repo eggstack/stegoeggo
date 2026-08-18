@@ -33,9 +33,8 @@
 //! ```
 //!
 //! The optional `application-support` feature exposes a narrow
-//! [`application_support`](application_support) module for the parent
-//! rights-protection crate. It stays `#[doc(hidden)]` and is not part of
-//! the default facade.
+//! `application_support` module for the parent rights-protection crate. It
+//! stays `#[doc(hidden)]` and is not part of the default facade.
 
 pub mod constants;
 pub mod error;
