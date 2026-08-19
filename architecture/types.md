@@ -1,6 +1,6 @@
 # Core Types
 
-**Source:** `src/types.rs` (~1964 lines)
+**Source:** `src/types.rs` (~5100 lines)
 
 Defines all core data structures used across the codebase. Uses builder pattern with `#[must_use]` on builder methods.
 
@@ -74,7 +74,7 @@ pub enum RightsPolicy {
     Allowed,
     ProhibitedAiMlTraining,
     ProhibitedGenerativeAiTraining,
-    ProhibitedExceptSearchEngineIndexing,
+    ProhibitedExceptSearchIndexing,
     ProhibitedAllDataMining,
     ProhibitedSeeConstraints,
 }
@@ -91,6 +91,7 @@ Controls steganographic embedding:
 ```rust
 pub enum HiddenMarkerMode {
     Disabled,
+    SeedOnly,
     BestEffort,
     Tiled { tile_size: u32 },
 }
@@ -134,6 +135,9 @@ pub struct ProcessingOptions {
     pub progressive_jpeg: Option<bool>,
     pub max_dimension: Option<u32>,
     pub metadata_update_policy: MetadataUpdatePolicy,
+    pub stego_redundancy: Option<usize>,
+    pub content_hash: Option<[u8; 4]>,
+    pub timestamp_override: Option<String>,
 }
 ```
 
@@ -146,17 +150,19 @@ pub struct ProtectionRequest {
     notice: RightsNotice,
     policy: RightsPolicy,
     channels: ProtectionChannels,
-    options: ProcessingOptions,
+    processing: ProcessingOptions,
+    seed: Option<u64>,
+    intensity: f32,
     mac_key: Option<Vec<u8>>,
     legal_metadata: Option<LegalMetadata>,
-    context: ProtectionContext,
+    resource_limits: Option<ResourceLimits>,
 }
 ```
 
 - `metadata_only(notice, policy)` — Fastest path: same-format output with metadata only
 - `with_hidden_marker(notice, policy)` — Adds best-effort steganography
 - `from_preset(preset, notice, policy)` — Creates from a `ProtectionPreset`
-- Builder methods: `with_mac_key()`, `with_legal_metadata()`, `with_processing_options()`
+- Builder methods: `with_seed()`, `with_intensity()`, `with_mac_key()`, `with_legal_metadata()`, `with_processing()`, `with_resource_limits()`, `with_output_format()`, `with_jpeg_quality()`, `with_progressive_jpeg()`, `with_max_dimension()`, `with_metadata_update_policy()`, `with_stego_redundancy()`, `with_content_hash()`, `with_timestamp_override()`
 
 ### ResolvedProtectionPlan
 

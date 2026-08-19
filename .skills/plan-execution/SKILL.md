@@ -13,6 +13,7 @@ Workflow for executing multi-wave parallel tasks in the stegoeggo codebase using
 - Worktrees go in a temporary directory outside the workspace (e.g., `/tmp/stegoeggo-wt-taskN`)
 - Each task gets its own branch: `fix/taskN-description`
 - Branch naming: `fix/` prefix for bug fixes, `feat/` for features
+- The workspace has two Rust crates: root (`stegoeggo`) and carrier (`stegoeggo-stego`)
 
 ## Workflow
 
@@ -93,6 +94,7 @@ git worktree remove /tmp/stegoeggo-wt-taskN
 - **Agent re-commits on main**: If a subagent says it committed but the worktree shows no changes, the agent likely committed to its worktree incorrectly. You may need to implement the fix directly on main.
 - **Merge conflicts**: When merging worktrees to main, conflicts can occur. Resolve by choosing the "main" version for unrelated changes and the "fix" version for the specific fix.
 - **Re-verify after merge**: Always re-run tests after merge to ensure no regressions.
+- **Carrier crate changes**: If a task touches `stegoeggo-stego/`, the root crate depends on it via path. Run workspace tests, not just root crate tests.
 
 ## Agent Prompt Template
 

@@ -36,25 +36,27 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 | `Vec<u8>` fields | `Option<Vec<u8>>` fields | `ProtectionConfig.mac_key` |
 | `bool` fields | `Option<bool>` fields | `inject_metadata`, `inject_legal_claims` |
 | Public methods | Private methods | `assemble_jpeg`, `get_scan_data_start` |
-| `Result<T>` returns | `Option<T>` returns | Various |
+| `Result<T>` returns | Direct returns | `verify_image_bytes` returns `VerificationStatus` directly |
 | `i64` array elements | `i16` array elements | `Coefficients` type |
 | Wrong enum variants | Actual enum variants | `DmiValue`, `TranscoderError` |
 | `String` fields | `Option<String>` fields | `Iscc.meta` |
-| V2 as current payload | V3 is the default | `protected/steganography.rs`, `payload_v3/` |
+| V2 as current payload | V3 is the default | `protected/steganography/`, `payload_v3/` |
 | 17 Error variants | 19 Error variants (18 always-available + 1 async) | `error.rs` |
 | 7 ProtectionWarning variants | 8 ProtectionWarning variants | `types.rs` |
 | `Option<bool>` returns | `VerificationStatus` returns | `verify_payload_from_bytes_with_key` |
+| `src/protected/steganography.rs` | Split into 5 modules under `src/protected/steganography/` | `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs` |
 
 ### 4. Key source files to always check
 
-- `src/types.rs` — All core type definitions, constructors, getters
+- `src/types.rs` — All core type definitions, constructors, getters (~5100 lines)
 - `src/traits.rs` — Protector trait
-- `src/lib.rs` — Pipeline orchestration, public API, module declarations
+- `src/lib.rs` — Pipeline orchestration, public API, module declarations (~2244 lines)
 - `src/error.rs` — Error variants (19 total: 18 always-available + 1 async-only `Task`)
-- `src/protected/steganography.rs` — Stego payload format, extraction, verification
+- `src/protected/steganography/mod.rs` — Facade + shared types; algorithm modules are `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs`
 - `stegoeggo-stego/src/jpeg_transcoder/` — JPEG DCT internals (private to carrier)
 - `src/payload_v3/types.rs` — V3 payload constants and types
-- `stegoeggo-stego/src/constants.rs` — Carrier-level tuning constants
+- `stegoeggo-stego/src/constants.rs` — Carrier-level tuning constants (`STEGO_SPREAD_FACTOR`, `STEGO_OFFSET_SEED_1`, `SPLITMIX64_SEED`, `MIN_REDUNDANCY`, `MAX_REDUNDANCY`)
+- `src/protected/constants.rs` — Application-level constants (`STEGO_OFFSET_SEED_1`, `XORSHIFT_SEED_OFFSET`)
 
 ### 5. Document findings in this format
 
@@ -77,8 +79,9 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 - `Option<bool>` fields have ambiguous `None` vs `false` semantics — document this explicitly
 - The carrier crate has two separate PRNG implementations (`PixelSelectionRng` in `util/image.rs` and `DctCoefficientRng` in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs`) — never interchange
 - ISCC implementation is NOT standard-compliant — uses custom component codes
-- `src/constants.rs` does NOT exist as a top-level file — constants are in `src/protected/constants.rs` and `stegoeggo-stego/src/constants.rs`
+- `src/constants.rs` does NOT exist as a top-level file — constants are in `src/protected/constants.rs` (application) and `stegoeggo-stego/src/constants.rs` (carrier)
 - The JPEG transcoder lives in the carrier crate (`stegoeggo-stego/src/jpeg_transcoder/`), not the root crate
+- `verify_image_bytes` returns `VerificationStatus` directly, not `Result<VerificationStatus>`
 
 ## Verified Discrepancies (do not re-report these)
 
@@ -100,4 +103,6 @@ These have been fixed in documentation — if the code hasn't changed, these are
 - **V3 is current** — `V3_PAYLOAD_VERSION = 3` is the default; V2/V1 are extraction-only legacy
 - **`CURRENT_PAYLOAD_VERSION`** does not exist — the constant is `V3_PAYLOAD_VERSION` in `src/payload_v3/types.rs`
 - **`EvidenceStrength`** has 4 variants: `NoNoticeFound`, `MetadataNoticeOnly`, `MetadataNoticeAndBestEffortStego`, `MetadataNoticeAndAuthenticatedProvenance`
-- **`TrustEvaluation`** has `trust_model: String`, `trusted: bool`, `reason: String` — no `chain_valid` field
+- **`TrustEvaluation`** does not exist as a struct — verification uses `NoticeVerification` (26 fields) and `VerificationResult`
+- **Steganography adapter** is split into 5 modules: `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs` behind `SteganographyProtector` facade
+- **Generic carrier crate** public API: `lsb`, `jpeg`, `frame`, `error`, `types` modules; `jpeg_transcoder` and `lsb_internal` are `pub(crate)`

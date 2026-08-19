@@ -208,7 +208,8 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 - **stegoeggo-stego/src/jpeg_transcoder/**: Private JPEG fast-path implementation used behind `jpeg.rs` and `application_support.rs`
 - **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: Private F5-style DCT manipulation
 - **util/image.rs**: `XorShiftRng` for LSB pixel selection
-- **protected/constants.rs**: `STEGO_OFFSET_SEED_1`, `STEGO_SPREAD_FACTOR`, etc.
+- **protected/constants.rs**: `STEGO_OFFSET_SEED_1`, `XORSHIFT_SEED_OFFSET`
+- **stegoeggo-stego/src/constants.rs**: `STEGO_SPREAD_FACTOR`, `STEGO_OFFSET_SEED_1`, `SPLITMIX64_SEED`, `MIN_REDUNDANCY`, `MAX_REDUNDANCY`
 - **types.rs**: Uses `ProtectionLevel`, `StegoPayload`
 
 ## Tiled Embedding (Crop Resistance)

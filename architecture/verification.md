@@ -98,9 +98,14 @@ Ed25519 signature results (one per signature in the manifest):
 
 Image-to-claim binding results:
 
-- `instance_digest_match: bool` — SHA-256 of image matches manifest
-- `embedded_payload_digest_match: Option<bool>` — Embedded payload digest match
-- `embedded_payload_version_match: Option<bool>` — Embedded payload version match
+- `instance_digest_present: bool` — Whether instance digest was found
+- `instance_digest_valid: bool` — SHA-256 of image matches manifest
+- `content_hash_present: bool` — Whether content hash was found
+- `content_hash_valid: bool` — Content hash matches expected value
+- `format_valid: bool` — Format matches expected format
+- `dimensions_valid: bool` — Dimensions match expected dimensions
+- `file_size_valid: bool` — File size matches expected size
+- `source: FieldSource` — Where binding data was obtained
 
 ### `TrustEvaluation`
 
@@ -118,6 +123,7 @@ Informational or warning messages:
 pub struct Diagnostic {
     level: DiagnosticLevel,  // Info, Warning, Error
     message: String,
+    source: String,
 }
 ```
 

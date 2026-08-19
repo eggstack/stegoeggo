@@ -183,10 +183,10 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 - **Strategy pattern** via `Protector` trait (`src/traits.rs`) with three levels: Disabled, Light, Standard — see `architecture/traits.md`
 - **Pipeline** (`src/lib.rs`): canonical `ProtectionRequest` execution is plan-driven; stateless `ProtectionPipeline` methods are compatibility adapters for legacy APIs — see `architecture/pipeline.md`
-- **Direct plan executor** (`src/lib.rs`): `execute_metadata_only()`, `execute_stego_and_metadata()`, `execute_stego_and_metadata_tiled()` — canonical execution from `ResolvedProtectionPlan`
-- **Application stego adapter** (`src/protected/steganography/`): `marker.rs` prepares payloads, `embed.rs` dispatches carrier operations, `extract.rs` owns seed/search orchestration, `verify.rs` classifies payload integrity/authentication, `legacy.rs` isolates V1/V2 compatibility; `mod.rs` is the facade
+- **Direct plan executor** (`src/lib.rs`): `execute_metadata_only()`, `execute_stego_and_metadata()`, `execute_stego_and_metadata_tiled()`, `execute_seed_only_and_metadata()` — canonical execution from `ResolvedProtectionPlan`
+- **Application stego adapter** (`src/protected/steganography/`): decomposed into five modules behind `SteganographyProtector` — `marker.rs` (V3 payload construction), `embed.rs` (carrier dispatch: LSB, tiled LSB, JPEG DCT/F5, seed-only), `extract.rs` (seed discovery and bounded search), `verify.rs` (integrity and authentication classification), `legacy.rs` (V1/V2 compatibility); `mod.rs` is the facade — see `architecture/protected-steganography.md`
 - **Generic carrier core** (`stegoeggo-stego/src/`): Application-neutral LSB and JPEG DCT carrier mechanics — see `architecture/protected-steganography.md`
-- **Public generic stego API** (`stegoeggo::stego`): Carrier-level embedding/extraction for arbitrary payload bytes, independent of the rights-protection pipeline
+- **Public generic stego API** (`stegoeggo::stego`): Carrier-level embedding/extraction for arbitrary payload bytes, independent of the rights-protection pipeline — see `architecture/protected-steganography.md`
 - **JPEG fast path**: When input/output are both JPEG, the application adapter calls the carrier's public encoded-byte operations, bypassing pixel decode/encode — see `architecture/jpeg-transcoder.md`
 - **Policy-first API**: `ProtectionRequest` + `RightsPolicy` are the canonical API — see `architecture/types.md`
 - **`#![forbid(unsafe_code)]`** throughout the library crate and `stegoeggo-stego`
@@ -200,6 +200,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - `scripts/validate-msrv-package.sh` — Fresh MSRV consumer resolution (packages crate, creates clean consumers, tests minimal and all-feature combos on declared MSRV)
 - `scripts/verify_metadata_conformance.sh` — Shell wrapper for conformance checks (delegates to Rust conformance harness)
 - `scripts/check_fuzz_sync.sh` — Verifies fuzz harness parity between fuzz/Cargo.toml and fuzz.yml workflow
+- `scripts/measure_binary_size.sh` — Measures compiled binary size for regression tracking
 
 ## Conformance Suite
 

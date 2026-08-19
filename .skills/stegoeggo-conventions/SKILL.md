@@ -12,11 +12,11 @@ description: Use when writing, modifying, or reviewing Rust code in the stegoegg
 ## Code Style
 - No comments in code unless explicitly asked by user
 - `#[must_use]` on all builder methods
-- `pub(crate)` for internal modules (protected, util, webp_container, xmp)
+- `pub(crate)` for internal modules (`protected`, `util`, `webp_container`, `xmp`)
 - `LazyLock` for static singletons (e.g., `DEFAULT_PIPELINE`)
 - `Arc<ProtectionConfig>` for shared heavy config fields
 - Private fields with getter methods on public types
-- `#![forbid(unsafe_code)]` throughout the library crate
+- `#![forbid(unsafe_code)]` throughout the library crate and `stegoeggo-stego`
 
 ## Canonical API (Release 4+)
 
@@ -51,9 +51,20 @@ pub enum RightsPolicy {
     Allowed,
     ProhibitedAiMlTraining,
     ProhibitedGenerativeAiTraining,
-    ProhibitedExceptSearchEngineIndexing,
+    ProhibitedExceptSearchIndexing,
     ProhibitedAllDataMining,
     ProhibitedSeeConstraints,
+}
+```
+
+### HiddenMarkerMode
+
+```rust
+pub enum HiddenMarkerMode {
+    Disabled,
+    SeedOnly,
+    BestEffort,
+    Tiled,
 }
 ```
 
@@ -73,6 +84,21 @@ pub enum RightsPolicy {
 - `MAX_FIELD_LEN = 8192` bytes per field
 - Auto-enables legal claims injection when present (no explicit `with_legal_claims(true)` needed)
 
+### ProcessingOptions
+- 8 fields: `output_format`, `jpeg_quality`, `progressive_jpeg`, `max_dimension`, `metadata_update_policy`, `stego_redundancy`, `content_hash`, `timestamp_override`
+
+## Public Module Layout
+
+### Root crate (`src/`)
+- **Public**: `conformance` (feature: conformance), `error`, `payload_v3`, `provenance`, `resource_limits`, `traits`, `types`, `verification`
+- **Public (feature-gated)**: `stego` (inline re-export of `stegoeggo_stego`), `async_api` (feature: async), `signing` (feature: signatures), `detached` (feature: detached-manifest)
+- **`pub(crate)`**: `protected`, `util`, `webp_container`, `xmp`
+
+### Carrier crate (`stegoeggo-stego/src/`)
+- **Public**: `constants`, `error`, `frame`, `jpeg`, `lsb`, `types`
+- **`pub(crate)`**: `jpeg_transcoder`, `lsb_internal`
+- **`pub(crate)` (feature: application-support)**: `application_support` (`#[doc(hidden)]`)
+
 ## Function Signatures
 
 ### Public entry points (in `src/lib.rs`)
@@ -81,7 +107,9 @@ fn process_request_bytes(img_bytes: &[u8], request: &ProtectionRequest) -> Resul
 fn process_request_bytes_with_warnings(img_bytes: &[u8], request: &ProtectionRequest) -> Result<(Vec<u8>, Vec<ProtectionWarning>)>
 fn process_request_bytes_with_report(img_bytes: &[u8], request: &ProtectionRequest) -> Result<(Vec<u8>, ExecutionReport)>
 fn process_image_bytes(img_bytes: &[u8], level: ProtectionLevel, ctx: &ProtectionContext) -> Result<Vec<u8>>
-fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> Result<VerificationStatus>
+fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus  // NOT Result
+fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> VerificationResult
+fn verify_legal_notice(img_bytes: &[u8], mac_key: &[u8]) -> NoticeVerification
 ```
 
 ### Legacy compatibility (deprecated but functional)
@@ -90,23 +118,61 @@ fn process_image(img: DynamicImage, level: ProtectionLevel, ctx: &ProtectionCont
 fn process_images_parallel(images: &[DynamicImage], level: ProtectionLevel, ctx: &ProtectionContext) -> Result<Vec<DynamicImage>>  // feature: parallel
 ```
 
-### Steganography methods (on SteganographyProtector)
+### Generic carrier API (`stegoeggo::stego`)
 ```rust
-// All are &self methods, NOT free functions
-fn extract_payload(&self, img: &DynamicImage) -> Option<StegoPayload>
-fn verify_payload(&self, img: &DynamicImage) -> bool
-fn verify_payload_with_key(&self, img: &DynamicImage, mac_key: &[u8]) -> Option<bool>
-fn verify_payload_from_bytes(&self, img_bytes: &[u8], seed: u64) -> bool
-fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus
+// LSB (pixel-domain)
+lsb::capacity(img, payload_len, &config) -> Result<CapacityReport>
+lsb::embed(img, payload, &config) -> Result<EmbedReport<RgbaImage>>
+lsb::extract(img, payload_len, &config) -> Result<Vec<u8>>
+lsb::embed_in_place(img, payload, &config) -> Result<InPlaceEmbedReport>
+lsb::embed_framed(img, payload, &config) -> Result<EmbedReport<RgbaImage>>
+lsb::extract_framed(img, &config) -> Result<Vec<u8>>
+
+// JPEG (DCT-domain)
+jpeg::capacity(jpeg_bytes, payload_len, &config) -> Result<CapacityReport>
+jpeg::embed(jpeg_bytes, payload, &config) -> Result<EmbedReport>
+jpeg::extract(jpeg_bytes, payload_len, &config, actual_redundancy) -> Result<Vec<u8>>
+jpeg::embed_framed(jpeg_bytes, payload, &config) -> Result<EmbedReport>
+jpeg::extract_framed(jpeg_bytes, &config) -> Result<Vec<u8>>
+jpeg::probe_support(jpeg_bytes) -> Result<JpegSupport>
+jpeg::embed_seed_hint(jpeg_bytes, seed) -> Result<Vec<u8>>
+jpeg::extract_seed_hint(jpeg_bytes) -> Result<Option<u64>>
+jpeg::is_progressive_jpeg(jpeg_bytes) -> bool
+
+// Frame (generic TLV wrapper)
+frame::encode(payload) -> Result<Vec<u8>>
+frame::decode(data) -> Result<(FrameHeader, Vec<u8>)>
+frame::decode_prefix(data) -> Result<(FrameHeader, usize)>
 ```
 
 ## Constants
-- `MIN_PAYLOAD_SIZE = 28` (24-byte header + 4-byte CRC32; parsing threshold, not output size)
-- `V3_PAYLOAD_VERSION = 3` (V3 is the current default; V1/V2 still supported for extraction only)
-- `STEGO_SPREAD_FACTOR = 5` (adjacent pixels per LSB bit)
-- `DEFAULT_TILE_SIZE = 64` (crop-resistant tile size default)
-- `MIN_TILE_SIZE = 32` (minimum tile size for crop resistance)
-- `estimated_latency_ms()` returns `u32` (not `f64`)
+
+### Carrier crate (`stegoeggo-stego/src/constants.rs`)
+- `STEGO_OFFSET_SEED_1: u64 = 0x517cc1b727220a95`
+- `STEGO_SPREAD_FACTOR: usize = 5`
+- `SPLITMIX64_SEED: u64 = 0x9e3779b97f4a7c15`
+- `MIN_REDUNDANCY: usize = 1`
+- `MAX_REDUNDANCY: usize = 10`
+
+### Application crate (`src/protected/constants.rs`)
+- `STEGO_OFFSET_SEED_1: u64 = 0x517cc1b727220a95`
+- `XORSHIFT_SEED_OFFSET: u64 = 0x123456789ABCDEF0`
+
+### Payload (`src/payload_v3/types.rs`)
+- `V3_MAGIC: [u8; 2] = [0x53, 0x45]` ("SE")
+- `V3_PAYLOAD_VERSION: u8 = 3`
+- `V3_CORE_SIZE: usize = 32`
+- `V3_MAX_EMBEDDED_SIZE: usize = 256`
+- `V3_MAX_EXTENSION_SIZE: usize = 128`
+- `V3_MAX_EXTENSION_COUNT: usize = 32`
+- `V3_DOMAIN_STRING: &[u8] = b"StegoEggo-v3"`
+
+### Application (`src/protected/steganography/mod.rs`)
+- `MIN_PAYLOAD_SIZE: usize = 28` (parsing threshold, not output size)
+
+### Generic carrier frame (`stegoeggo-stego/src/frame.rs`)
+- `FRAME_HEADER_SIZE: usize = 11`
+- `MAX_FRAME_PAYLOAD: usize = 16 * 1024 * 1024` (16 MiB)
 
 ## Payload Sizes
 
@@ -114,8 +180,8 @@ fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8]) -
 |------|------|-------|
 | V3 CRC (no MAC) | 36 bytes | 32-byte core + 4-byte CRC32 |
 | V3 HMAC | 48 bytes | 32-byte core + 16-byte HMAC-SHA256 |
-| V2 ECC (legacy) | 100 bytes | 32-byte header × 3 replication + 4 CRC32 |
-| V1 (legacy) | 76 bytes | 24-byte header × 3 + 4 CRC32 |
+| V2 ECC (legacy) | 100 bytes | 32-byte header x 3 replication + 4 CRC32 |
+| V1 (legacy) | 76 bytes | 24-byte header x 3 + 4 CRC32 |
 
 ## Common Pitfalls
 
@@ -129,11 +195,12 @@ fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8]) -
 8. **`verify_payload_from_bytes_with_key` returns `VerificationStatus`** — not `Option<bool>`.
 9. **Generic carrier error type** — The public `stego` module uses `StegoError`, not the root crate `Error`. Convert via `From<StegoError> for Error`.
 10. **JPEG DCT one-pass embed** — Supported DCT embedding computes max feasible redundancy from capacity, then embeds+encodes once. No retry loop.
-11. **Generic carrier operation styles** — The `stegoeggo::stego` facade exposes three styles on the same corrected carrier model: raw (`lsb::embed`/`extract`, `jpeg::embed`/`extract`, caller knows payload length and JPEG `actual_redundancy`); in-place (`lsb::embed_in_place` mutates the caller's `RgbaImage` and shares the corrected V2 mutation core with the cloning `lsb::embed`); and framed (`lsb::embed_framed`/`extract_framed`, `jpeg::embed_framed`/`extract_framed` over `frame::{encode, decode_prefix, decode}`). Framed extraction keeps the seed/config explicit, validates capacity before full extraction, and treats CRC32 as corruption detection rather than authentication.
-12. **Plan 073 fallible config** — `LsbConfig::try_new`, `LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and `JpegConfig::try_with_redundancy` all return `StegoError::InvalidConfig` for out-of-range redundancy. The panicking `with_redundancy` builder is retained for compile-time-constant values; use the fallible path whenever the value comes from runtime configuration.
+11. **Generic carrier operation styles** — The `stegoeggo::stego` facade exposes three styles: raw (`lsb::embed`/`extract`, `jpeg::embed`/`extract`, caller knows payload length and JPEG `actual_redundancy`); in-place (`lsb::embed_in_place` mutates the caller's `RgbaImage` and shares the corrected V2 mutation core with the cloning `lsb::embed`); and framed (`lsb::embed_framed`/`extract_framed`, `jpeg::embed_framed`/`extract_framed` over `frame::{encode, decode_prefix, decode}`). Framed extraction keeps the seed/config explicit, validates capacity before full extraction, and treats CRC32 as corruption detection rather than authentication.
+12. **Fallible config constructors** — `LsbConfig::try_new`, `LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and `JpegConfig::try_with_redundancy` all return `StegoError::InvalidConfig` for out-of-range redundancy. The panicking `with_redundancy` builder is retained for compile-time-constant values; use the fallible path whenever the value comes from runtime configuration.
 13. **Decomposed application stego adapter** — `src/protected/steganography/` is split into five responsibility modules behind `SteganographyProtector`: `marker.rs` (V3 payload construction), `embed.rs` (carrier dispatch: LSB, tiled LSB, JPEG DCT/F5, seed-only), `extract.rs` (seed discovery and bounded search), `verify.rs` (integrity and authentication classification), and `legacy.rs` (V1/V2 compatibility). `mod.rs` is a thin facade + shared types + tests; no carrier algorithm is reimplemented there.
-14. **JPEG framed extraction is single-decode** — `jpeg::extract_framed` retains private decoded coefficients for its bounded redundancy search. Do not recompose it from public `capacity`/`extract` calls, expose a JPEG session, or reduce the configured search domain. Public JPEG length arithmetic is checked and raw `actual_redundancy` must be validated before private F5 construction.
-15. **Benchmark equivalence** — The `lsb_clone_vs_in_place` benchmark uses Criterion batching so each in-place iteration starts from a pristine source image and the preparation clone remains outside the timed operation. Keep the clone and in-place paths on equivalent carrier state.
+14. **JPEG framed extraction is single-decode** — `jpeg::extract_framed` retains private decoded coefficients for its bounded redundancy search. Do not recompose it from public `capacity`/`extract` calls, expose a JPEG session, or reduce the configured search domain.
+15. **Benchmark equivalence** — The `lsb_clone_vs_in_place` benchmark uses Criterion batching so each in-place iteration starts from a pristine source image and the preparation clone remains outside the timed operation.
+16. **`verify_image_bytes` returns directly** — Returns `VerificationStatus`, not `Result<VerificationStatus>`. Use `verify_image_bytes_detailed` for full `VerificationResult`.
 
 ## Build & Test
 ```bash
@@ -145,7 +212,7 @@ cargo fmt --all -- --check              # Format check
 
 ## Testing Patterns
 - Unit tests live in each source file as `#[cfg(test)] mod tests`
-- Integration tests in `tests/` directory
+- Integration tests in `tests/` directory (30 test files)
 - Test with `ProtectionContext::new(intensity, seed)` for deterministic results
 - `ProtectionContext::default()` uses CSPRNG-backed seed (via `getrandom`) — safe for production; use `ProtectionContext::new(intensity, seed)` for reproducibility
 - Feature-gated tests: `tests/async_integration.rs` requires `async` feature

@@ -1,6 +1,6 @@
 # Constants
 
-**Source:** `src/protected/constants.rs` (~13 lines), `stegoeggo-stego/src/constants.rs`, and the application adapter under `src/protected/steganography/`
+**Source:** `src/protected/constants.rs` (~7 lines), `stegoeggo-stego/src/constants.rs`, and the application adapter under `src/protected/steganography/`
 
 Tuning constants used across the protection modules. The carrier crate
 (`stegoeggo-stego`) keeps its own copy of the carrier-only constants
@@ -13,7 +13,7 @@ extraction probing. The two copies are byte-identical.
 | Constant | Value | Source File | Purpose |
 |----------|-------|-------------|---------|
 | `STEGO_OFFSET_SEED_1` | `0x517cc1b727220a95` | `protected/constants.rs`, `stegoeggo-stego/src/constants.rs` | Multiplicative offset for stego pixel selection (legacy) |
-| `STEGO_SPREAD_FACTOR` | `5` | `protected/constants.rs`, `stegoeggo-stego/src/constants.rs` | Replicas per payload bit per redundancy level in the V2 carrier (total replicas = `STEGO_SPREAD_FACTOR * redundancy`) |
+| `STEGO_SPREAD_FACTOR` | `5` | `stegoeggo-stego/src/constants.rs` | Replicas per payload bit per redundancy level in the V2 carrier (total replicas = `STEGO_SPREAD_FACTOR * redundancy`) |
 | `XORSHIFT_SEED_OFFSET` | `0x123456789ABCDEF0` | `protected/constants.rs` | XOR offset for XorShiftRng initialization (legacy `PixelSelectionRng`) |
 | `SPLITMIX64_SEED` | `0x9e3779b97f4a7c15` | `stegoeggo-stego/src/constants.rs`, `util/seed.rs` | Splitmix64 mixing constant |
 | `DEFAULT_TILE_SIZE` | `64` | `stegoeggo-stego/src/lsb_internal.rs` (re-exported via `lsb.rs`) | Default crop-resistant tile size |
