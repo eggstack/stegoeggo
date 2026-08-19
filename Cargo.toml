@@ -27,6 +27,7 @@ include = [
     "STABILITY.md",
     "DEPRECATIONS.md",
     "RELEASING.md",
+    "docs/**/*.md",
     "examples/**/*.rs",
     "tests/**/*.rs",
     "benches/**/*.rs",

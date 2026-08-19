@@ -4,6 +4,8 @@
 
 stegoeggo helps content owners embed rights-reservation and AI-training restriction metadata into images at distribution time. The goal is to make copyright and AI-training restrictions discoverable by metadata-aware systems, and to provide redundant evidence channels that the restrictions were present when the image was distributed.
 
+See [formats.md](formats.md) for format-specific support details and [cli-usage.md](cli-usage.md) for CLI usage.
+
 ## Legal/Evidence Theory
 
 stegoeggo supports a notice-and-evidence workflow:

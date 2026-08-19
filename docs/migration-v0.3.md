@@ -2,7 +2,7 @@
 
 ## Overview
 
-v0.2.2 introduces semantic correctness for legal metadata across all formats (PNG, JPEG, WebP). The same `LegalMetadata` input now produces semantically equivalent output regardless of output format.
+v0.3.0 introduces semantic correctness for legal metadata across all formats (PNG, JPEG, WebP). The same `LegalMetadata` input now produces semantically equivalent output regardless of output format.
 
 ## Breaking Changes
 
