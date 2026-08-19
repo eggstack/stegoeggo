@@ -2,85 +2,84 @@
 
 `stegoeggo` is a Rust library and CLI for protecting images from unauthorized AI model training through rights-reservation metadata and steganographic markers. It applies multiple layers of protection — metadata injection and steganographic embedding — to serve as legal evidence of image ownership.
 
+**Version:** 0.3.2 · **MSRV:** Rust 1.87 · **License:** see root `Cargo.toml`
+
+## What This Document Is
+
+This is the top-level index. It gives you a bird's-eye view of every module, its role in the system, and where to find the deep-dive for each component. All deep-dive docs live in `architecture/`.
+
 ## Repository Layout
 
 ```
-stegoeggo/                          Workspace root
-├── src/                            Main library crate
+stegoeggo/                          Workspace root (4 crates)
+│
+├── src/                            Root library crate (stegoeggo)
+│   ├── lib.rs                      Pipeline orchestration + public API
+│   ├── types.rs                    Core types (~5100 lines)
+│   ├── traits.rs                   Protector trait
+│   ├── error.rs                    Error enum (19 variants)
+│   ├── protected/                  Protection strategies (all implement Protector)
+│   ├── payload_v3/                 V3 payload wire format
+│   ├── provenance/                 Provenance claim model
+│   ├── signing/                    Ed25519 signing (feature: signatures)
+│   ├── detached/                   Detached manifests (feature: detached-manifest)
+│   ├── verification/               Structured verification reports
+│   ├── util/                       Internal utilities (image, seed, ISCC)
+│   ├── bin/                        Conformance harness binary
+│   ├── xmp.rs                      XMP namespace-aware filtering
+│   ├── webp_container.rs           WebP RIFF container parsing
+│   ├── resource_limits.rs          Parser hardening / DoS prevention
+│   ├── conformance.rs              Conformance types (feature: conformance)
+│   └── async_api.rs                Async wrappers (feature: async)
+│
 ├── stegoeggo-stego/                Generic carrier crate (LSB, JPEG DCT)
-├── stegoeggo-cli/                  CLI binary
-├── fuzz/                           12 fuzz targets
-├── tests/                          31 integration test files
-├── examples/                       Usage examples
+│   ├── lsb.rs                      Pixel-domain LSB carrier (public)
+│   ├── jpeg.rs                     JPEG DCT carrier (public)
+│   ├── frame.rs                    Self-describing framed payload (public)
+│   ├── application_support.rs      Parent-crate bridge (feature-gated, hidden)
+│   ├── lsb_internal.rs             Permutation / slot mapping (private)
+│   └── jpeg_transcoder/            JPEG DCT internals (private)
+│
+├── stegoeggo-cli/                  CLI binary (stegoeggo)
+│   └── main.rs                     Clap-based CLI, ~2269 lines
+│
+├── fuzz/                           12 fuzz targets (libfuzzer-sys)
+├── tests/                          29 integration test files
+├── examples/                       4 usage examples
 ├── benches/                        Criterion benchmarks
-├── scripts/                        Validation scripts (7)
-├── architecture/                   This directory — 30 deep-dive docs
+├── scripts/                        7 validation scripts
+├── architecture/                   30 deep-dive docs (this directory)
 └── .github/workflows/              CI (3 workflows)
 ```
 
 **Crate dependency direction:** `cli → root → carrier`. The carrier crate knows nothing about rights-protection. The root crate re-exports the carrier's public API through `stegoeggo::stego`.
 
-## Getting Oriented
+## Module Map at a Glance
 
-This document is the index. Each component links to a dedicated deep-dive in `architecture/`.
-
-| I want to understand... | Read this |
-|-------------------------|-----------|
-| **Pipeline & API** | |
-| How the pipeline routes and orchestrates protection | [pipeline.md](pipeline.md) |
-| How `ProtectionRequest` resolves into an execution plan | [resolve.md](resolve.md) |
-| What `ProtectionRequest`, `ProtectionContext`, and other core types look like | [types.md](types.md) |
-| How protectors implement the `Protector` trait | [traits.md](traits.md) |
-| Error handling and all failure modes | [error.md](error.md) |
-| **Protection Strategies** | |
-| How metadata gets injected into images | [protected-metadata-trap.md](protected-metadata-trap.md) |
-| How steganographic payloads are embedded and extracted | [protected-steganography.md](protected-steganography.md) |
-| No-op protector for Disabled level | [protected-passthrough.md](protected-passthrough.md) |
-| Tuning constants | [constants.md](constants.md) |
-| **JPEG DCT Subsystem** | |
-| JPEG header parsing and scan analysis | [jpeg-header.md](jpeg-header.md) |
-| Huffman codec (encoder/decoder) | [jpeg-entropy.md](jpeg-entropy.md) |
-| F5-style DCT coefficient embedding | [jpeg-stego-f5.md](jpeg-stego-f5.md) |
-| JPEG transcoder decode/encode flow | [jpeg-transcoder.md](jpeg-transcoder.md) |
-| **Payload & Encoding** | |
-| The payload wire format (v3 with TLV extensions) | [payload-v3.md](payload-v3.md) |
-| Provenance claims and canonical serialization | [provenance.md](provenance.md) |
-| Provenance claim design specification | [provenance-claim.md](provenance-claim.md) |
-| **Authentication & Signing** | |
-| Ed25519 signing for provenance | [signing.md](signing.md) |
-| Detached signed manifests | [detached.md](detached.md) |
-| Detached manifest specification | [detached-manifest.md](detached-manifest.md) |
-| Verification reports and evidence strength | [verification.md](verification.md) |
-| **Utilities & Integration** | |
-| Image encoding, format detection, PRNG | [util-image.md](util-image.md) |
-| ISCC content identifiers | [util-iscc.md](util-iscc.md) |
-| CSPRNG seed generation | [util-seed.md](util-seed.md) |
-| Async API for WAF/CDN integration | [async-api.md](async-api.md) |
-| Parser hardening and DoS prevention | [resource-limits.md](resource-limits.md) |
-| Legal metadata field mapping across formats | [legal-metadata-field-mapping.md](legal-metadata-field-mapping.md) |
-| **Testing & Operations** | |
-| The conformance testing suite | [conformance.md](conformance.md) |
-| How the CLI works end-to-end | [cli.md](cli.md) |
-| **Design Records** | |
-| Why C2PA integration is deferred | [adr-c2pa.md](adr-c2pa.md) |
-
-## System Architecture
+Every component below links to a dedicated deep-dive in `architecture/`. Use this as your starting point.
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                            PUBLIC API                                     │
+                        ┌─────────────────────┐
+                        │   stegoeggo-cli     │  CLI binary: 30+ flags,
+                        │   main.rs           │  3 subcommands, 5 exit codes
+                        └─────────┬───────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        PUBLIC API LAYER                                  │
 │  process_image() | process_image_bytes() | process_request_bytes()      │
 │  process_images_parallel() | verify_image_bytes()                       │
-└────────────────────────────────┬─────────────────────────────────────────┘
+│  stego::embed/extract/inspect (generic carrier re-exports)              │
+└────────────────────────────────┬────────────────────────────────────────┘
                                  │
                                  ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                 ProtectionRequest → ResolvedProtectionPlan               │
-│                        src/lib.rs (orchestration)                        │
-│                                                                          │
-│   resolve_request() validates input, builds immutable plan.              │
-│   Legacy ProtectionContext/level APIs are adapters into this path.       │
-└────────────────────────────────┬─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│              ProtectionRequest → ResolvedProtectionPlan                  │
+│                    src/lib.rs (orchestration)                            │
+│                                                                         │
+│  resolve_request() validates input, builds immutable plan.              │
+│  Legacy ProtectionContext/level APIs are adapters into this path.       │
+└────────────────────────────────┬────────────────────────────────────────┘
                                  │
              ┌───────────────────┼───────────────────┐
              │                   │                   │
@@ -105,6 +104,21 @@ This document is the index. Each component links to a dedicated deep-dive in `ar
                     └──────────────────────┘
 ```
 
+## Feature Flags
+
+| Feature | Description | Default |
+|---------|-------------|---------|
+| `async` | Tokio-based async API wrappers | No |
+| `signatures` | Ed25519 signing via `ed25519-dalek` | No |
+| `detached-manifest` | Detached signed manifest sidecar | No |
+| `iscc` | ISCC content identifier computation | No |
+| `conformance` | Conformance harness binary + manifest parsing (TOML) | No |
+| `parallel` | Rayon-based parallel batch processing | No |
+| `test-seeds` | Fallback seed guessing (test infra only, never production) | No |
+| `fuzz` | Bounded JPEG dimension inspection for fuzz harnesses | No |
+
+Carrier crate: `application-support` exposes internal bridge for parent crate (`#[doc(hidden)]`).
+
 ## Protection Levels
 
 | Level | Perturbation | Stego | Metadata | Use Case |
@@ -114,6 +128,14 @@ This document is the index. Each component links to a dedicated deep-dive in `ar
 | `Standard` | Noise | LSB/DCT | Seed + DMI | General protection |
 
 Each level above `Disabled` activates metadata injection. `Light` adds the cheapest recoverable seed marker for the output format. `Standard` applies the full LSB or DCT payload.
+
+## Protection Strategies — Three Layers
+
+1. **Metadata injection** (`MetadataTrapProtector`): Embeds visible and machine-readable rights signals — `plus:DataMining` XMP, IPTC DMI, copyright notices, usage terms — into image containers (PNG tEXt/iTXt, JPEG COM/APP13, WebP XMP). These survive stripping and provide legal evidence.
+
+2. **Steganographic embedding** (`SteganographyProtector`): Hides a verifiable payload using LSB (PNG/WebP) or F5-style DCT (JPEG). Payloads carry seed, rights policy, optional HMAC authentication, and provenance digest. Supports tiled crop-resistant mode.
+
+3. **Detached manifests** (feature: `detached-manifest`): Signed JSON sidecar containing image digest, provenance claim, and Ed25519 signatures. Enables out-of-band verification.
 
 ## Request-Based API Flow (Release 4+)
 
@@ -175,9 +197,78 @@ Skips pixel decode/encode entirely. The carrier privately operates on DCT coeffi
 
 Progressive JPEGs fall back to seed-in-Q-tables only (coefficient manipulation unsupported).
 
-## Module Map
+## Component Index — Deep Dives
 
-### Root crate (`stegoeggo`)
+### Core Pipeline & API
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Pipeline** | [pipeline.md](pipeline.md) | `ProtectionPipeline` orchestration, format routing, JPEG fast path, LazyLock singletons, parallel threshold scaling |
+| **Request Resolution** | [resolve.md](resolve.md) | `resolve_request()` single validation point, immutable plan construction |
+| **Types** | [types.md](types.md) | `ProtectionLevel`, `ProtectionContext`, `RightsPolicy`, `ProtectionRequest`, `ProtectionPreset`, `ProtectionChannels`, `ExecutionReport`, v0.3→v0.4 migration |
+| **Traits** | [traits.md](traits.md) | `Protector` trait contract, `apply`/`apply_bytes` methods, implementation table |
+| **Error Types** | [error.md](error.md) | `Error` enum variants, structured resource-limit errors, async `Task` variant |
+| **Constants** | [constants.md](constants.md) | All tuning constants: `STEGO_SPREAD_FACTOR`, `XORSHIFT_SEED_OFFSET`, `SPLITMIX64_SEED`, tile defaults, payload version |
+
+### Protection Strategies
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Metadata Trap** | [protected-metadata-trap.md](protected-metadata-trap.md) | Canonical `plus:DataMining` XMP injection, seed embedding, legal metadata fields, format-specific injection (PNG tEXt, JPEG COM/APP, WebP XMP), metadata merge policies, idempotency |
+| **Steganography** | [protected-steganography.md](protected-steganography.md) | Decomposed application adapter (`marker.rs`/`embed.rs`/`extract.rs`/`verify.rs`/`legacy.rs`) wrapping LSB (PNG/WebP) + DCT F5 (JPEG); v3/v2/v1 payload generation/verification, majority voting, redundancy, tiled crop-resistant embedding. Also documents the public generic carrier API (`stegoeggo::stego`): raw, in-place, and framed operation styles for arbitrary payload bytes |
+| **Passthrough** | [protected-passthrough.md](protected-passthrough.md) | No-op for Disabled level, zero-allocation `Cow::Borrowed` return |
+
+### JPEG DCT Subsystem
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **JPEG Header** | [jpeg-header.md](jpeg-header.md) | `JpegHeader` parser: DQT/SOF/DHT/SOS markers, component extraction, checked scan structure analysis |
+| **JPEG Entropy** | [jpeg-entropy.md](jpeg-entropy.md) | Huffman codec: `CoefficientDecoder`/`CoefficientEncoder`, `BitReader`/`BitWriter`, zigzag order, standard Huffman tables |
+| **F5 DCT Stego** | [jpeg-stego-f5.md](jpeg-stego-f5.md) | F5-style embedding, no-zero variant, seed in Q-table LSBs, `F5XorShiftRng`, tiled F5 |
+| **JPEG Transcoder** | [jpeg-transcoder.md](jpeg-transcoder.md) | `JpegTranscoder` decode/encode flow, `DctSupport` probe, canonical Huffman construction, malformed entropy handling |
+
+### Payload & Encoding
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Payload v3** | [payload-v3.md](payload-v3.md) | TLV wire format, domain-separated authentication, ECC encoding, backward compatibility, parsing algorithm, security model |
+| **Provenance** | [provenance.md](provenance.md) | `ProvenanceClaim` builder, canonical JSON serialization, `TypedDigest`, usage in v3 payloads and detached manifests |
+| **Provenance Claim Spec** | [provenance-claim.md](provenance-claim.md) | 15-field schema, rights policy discriminants, binary encoding, test vectors |
+
+### Authentication & Signing
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Signing** | [signing.md](signing.md) | Ed25519 signing (feature-gated `signatures`), `SigningKey`/`VerifyingKey` with zeroize, capacity check |
+| **Detached Manifests** | [detached.md](detached.md) | Signed sidecar manifests (feature-gated `detached-manifest`), `TrustPolicy`, verification flow |
+| **Detached Manifest Spec** | [detached-manifest.md](detached-manifest.md) | Full JSON schema, signing protocol, size bounds, error handling |
+| **Verification** | [verification.md](verification.md) | Structured `VerificationReport`, per-channel sub-results, `EvidenceStrength` computation, builder API |
+
+### Utilities & Integration
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Image Utilities** | [util-image.md](util-image.md) | `PixelSelectionRng` (XorShift64 PRNG), encoding, format detection, image hashing |
+| **ISCC Identifiers** | [util-iscc.md](util-iscc.md) | Non-standard ISCC-like perceptual hashing, `ContentIdentifiers` |
+| **Seed Generation** | [util-seed.md](util-seed.md) | CSPRNG via `getrandom`, time-based splitmix64 fallback |
+| **Async API** | [async-api.md](async-api.md) | Tokio `spawn_blocking` wrappers for WAF/CDN integration |
+| **Resource Limits** | [resource-limits.md](resource-limits.md) | Parser hardening, DoS prevention, configurable limits with structured errors |
+| **Legal Metadata Mapping** | [legal-metadata-field-mapping.md](legal-metadata-field-mapping.md) | Field mapping across PNG/JPEG/WebP, round-trip issues |
+
+### Testing & Operations
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Conformance** | [conformance.md](conformance.md) | External tool integration (ExifTool, xmllint), fixture manifest, strict mode, exit codes |
+| **CLI** | [cli.md](cli.md) | Command-line interface, all flags, batch processing, verification mode, subcommands |
+
+### Design Records
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **C2PA ADR** | [adr-c2pa.md](adr-c2pa.md) | Architecture Decision Record: deferred C2PA integration |
+
+## Root Crate — Module Map
 
 ```
 src/
@@ -242,7 +333,7 @@ src/
     └── seed.rs                generate_random_seed() via getrandom (CSPRNG)
 ```
 
-### Carrier crate (`stegoeggo-stego`)
+## Carrier Crate — Module Map
 
 ```
 stegoeggo-stego/src/
@@ -261,82 +352,75 @@ stegoeggo-stego/src/
     └── stego_f5.rs            DctStegoF5, F5XorShiftRng
 ```
 
-`jpeg_transcoder/` and `lsb_internal.rs` are private implementation modules. The
-corrected LSB clone and in-place APIs share one mutation core, and corrected
-payload extraction writes directly into its final byte buffer. The root crate
-uses the narrow `application-support` feature internally and adopts the
-in-place operation when it already owns a mutable decoded RGBA image.
+`jpeg_transcoder/` and `lsb_internal.rs` are private implementation modules. The root crate uses the narrow `application-support` feature internally and adopts the in-place operation when it already owns a mutable decoded RGBA image.
 
-## Component Index — Deep Dives
+## Fuzz Targets
 
-### Core Pipeline & API
+12 targets in `fuzz/fuzz_targets/`, built on `libfuzzer-sys`. Run with: `cargo +nightly fuzz run <target> -- -max_total_time=60`.
 
-| Component | Deep Dive | What It Covers |
-|-----------|-----------|----------------|
-| **Pipeline** | [pipeline.md](pipeline.md) | `ProtectionPipeline` orchestration, format routing, JPEG fast path, LazyLock singletons, parallel threshold scaling |
-| **Request Resolution** | [resolve.md](resolve.md) | `resolve_request()` single validation point, immutable plan construction |
-| **Types** | [types.md](types.md) | `ProtectionLevel`, `ProtectionContext`, `RightsPolicy`, `ProtectionRequest`, `ProtectionPreset`, `ProtectionChannels`, `ExecutionReport`, v0.3→v0.4 migration |
-| **Traits** | [traits.md](traits.md) | `Protector` trait contract, `apply`/`apply_bytes` methods, implementation table |
-| **Error Types** | [error.md](error.md) | `Error` enum variants, structured resource-limit errors, async `Task` variant |
+| Target | What It Fuzzes |
+|--------|----------------|
+| `pipeline_bytes` | Full protection pipeline on arbitrary bytes |
+| `tiled_round_trip` | Tiled stego embed/extract round-trip |
+| `jpeg_parser` | JPEG header/structure parsing |
+| `payload_v3_parser` | V3 payload wire format parsing |
+| `png_metadata` | PNG metadata injection/extraction |
+| `webp_riff_parser` | WebP RIFF container parsing |
+| `xmp_extract` | XMP packet field filtering |
+| `metadata_merge` | XMP metadata merging |
+| `detached_manifest_parse` | Detached manifest JSON parsing |
+| `detached_manifest_verify` | Detached manifest verification |
+| `provenance_canonicalize` | Provenance claim canonical JSON |
+| `verification_report` | Verification report building |
 
-### Protection Strategies
+## Integration Test Coverage
 
-| Component | Deep Dive | What It Covers |
-|-----------|-----------|----------------|
-| **Metadata Trap** | [protected-metadata-trap.md](protected-metadata-trap.md) | Canonical `plus:DataMining` XMP injection, seed embedding, legal metadata fields, format-specific injection (PNG tEXt, JPEG COM/APP, WebP XMP), metadata merge policies, idempotency |
-| **Steganography** | [protected-steganography.md](protected-steganography.md) | Decomposed application adapter (`marker.rs`/`embed.rs`/`extract.rs`/`verify.rs`/`legacy.rs`) wrapping LSB (PNG/WebP) + DCT F5 (JPEG); v3/v2/v1 payload generation/verification, majority voting, redundancy, tiled crop-resistant embedding. Also documents the public generic carrier API (`stegoeggo::stego`): raw, in-place, and framed operation styles for arbitrary payload bytes |
-| **Passthrough** | [protected-passthrough.md](protected-passthrough.md) | No-op for Disabled level, zero-allocation `Cow::Borrowed` return |
-| **Constants** | [constants.md](constants.md) | All tuning constants: `STEGO_SPREAD_FACTOR`, `XORSHIFT_SEED_OFFSET`, `SPLITMIX64_SEED`, tile defaults, payload version |
+29 test files in `tests/`:
 
-### JPEG DCT Subsystem
+| File | Coverage Area |
+|------|---------------|
+| `basic.rs` | Basic protection pipeline |
+| `integration.rs` | Full integration tests |
+| `request_api.rs` | ProtectionRequest canonical API |
+| `semantic_correctness.rs` | Semantic correctness of protected output |
+| `preservation.rs` | Metadata preservation across formats |
+| `preservation_idempotence.rs` | Idempotent re-processing |
+| `cross_format_semantics.rs` | Cross-format (PNG/JPEG/WebP) semantic equivalence |
+| `cross_format_closure.rs` | Cross-format output closure |
+| `canonical_rights.rs` | Canonical rights notice handling |
+| `merge_policy.rs` | MetadataUpdatePolicy behavior |
+| `jpeg_container_preservation.rs` | JPEG segment preservation |
+| `public_stego_api.rs` | Public generic stego API |
+| `payload_v3_roundtrip.rs` | V3 payload round-trip |
+| `independent_v3_parser.rs` | Independent V3 parser validation |
+| `known_answer_vectors.rs` | Known-answer test vectors |
+| `verification_report_tests.rs` | VerificationReport builder |
+| `signing_tests.rs` | Ed25519 signing (feature: signatures) |
+| `detached_manifest_tests.rs` | Detached manifest (feature: detached-manifest) |
+| `provenance_claim_tests.rs` | Provenance claim canonical form |
+| `conformance_parser_tests.rs` | Conformance manifest parsing |
+| `conformance_negative.rs` | Conformance negative test cases |
+| `conformance_container_tests.rs` | Conformance container validation |
+| `conformance_harness_tests.rs` | Conformance harness (feature: conformance) |
+| `external_tools.rs` | External tool integration (`#[ignore]`) |
+| `generate_conformance_fixtures.rs` | Fixture generation |
+| `robustness.rs` | Fuzz regression tests |
+| `soak_tests.rs` | Long-running soak tests |
+| `async_integration.rs` | Async API (feature: async) |
+| `plan026_gate1_2_3_tests.rs` | Plan-gate regression tests |
+| `plan065_legacy_compat.rs` | Legacy API compatibility |
 
-| Component | Deep Dive | What It Covers |
-|-----------|-----------|----------------|
-| **JPEG Header** | [jpeg-header.md](jpeg-header.md) | `JpegHeader` parser: DQT/SOF/DHT/SOS markers, component extraction, checked scan structure analysis |
-| **JPEG Entropy** | [jpeg-entropy.md](jpeg-entropy.md) | Huffman codec: `CoefficientDecoder`/`CoefficientEncoder`, `BitReader`/`BitWriter`, zigzag order, standard Huffman tables |
-| **F5 DCT Stego** | [jpeg-stego-f5.md](jpeg-stego-f5.md) | F5-style embedding, no-zero variant, seed in Q-table LSBs, `F5XorShiftRng`, tiled F5 |
-| **JPEG Transcoder** | [jpeg-transcoder.md](jpeg-transcoder.md) | `JpegTranscoder` decode/encode flow, `DctSupport` probe, canonical Huffman construction, malformed entropy handling |
+## Validation Scripts
 
-### Payload & Encoding
-
-| Component | Deep Dive | What It Covers |
-|-----------|-----------|----------------|
-| **Payload v3** | [payload-v3.md](payload-v3.md) | TLV wire format, domain-separated authentication, ECC encoding, backward compatibility, parsing algorithm, security model |
-| **Provenance** | [provenance.md](provenance.md) | `ProvenanceClaim` builder, canonical JSON serialization, `TypedDigest`, usage in v3 payloads and detached manifests |
-| **Provenance Claim Spec** | [provenance-claim.md](provenance-claim.md) | 15-field schema, rights policy discriminants, binary encoding, test vectors |
-
-### Authentication & Signing
-
-| Component | Deep Dive | What It Covers |
-|-----------|-----------|----------------|
-| **Signing** | [signing.md](signing.md) | Ed25519 signing (feature-gated `signatures`), `SigningKey`/`VerifyingKey` with zeroize, capacity check |
-| **Detached Manifests** | [detached.md](detached.md) | Signed sidecar manifests (feature-gated `detached-manifest`), `TrustPolicy`, verification flow |
-| **Detached Manifest Spec** | [detached-manifest.md](detached-manifest.md) | Full JSON schema, signing protocol, size bounds, error handling |
-| **Verification** | [verification.md](verification.md) | Structured `VerificationReport`, per-channel sub-results, `EvidenceStrength` computation, builder API |
-
-### Utilities & Integration
-
-| Component | Deep Dive | What It Covers |
-|-----------|-----------|----------------|
-| **Image Utilities** | [util-image.md](util-image.md) | `PixelSelectionRng` (XorShift64 PRNG), encoding, format detection, image hashing |
-| **ISCC Identifiers** | [util-iscc.md](util-iscc.md) | Non-standard ISCC-like perceptual hashing, `ContentIdentifiers` |
-| **Seed Generation** | [util-seed.md](util-seed.md) | CSPRNG via `getrandom`, time-based splitmix64 fallback |
-| **Async API** | [async-api.md](async-api.md) | Tokio `spawn_blocking` wrappers for WAF/CDN integration |
-| **Resource Limits** | [resource-limits.md](resource-limits.md) | Parser hardening, DoS prevention, configurable limits with structured errors |
-| **Legal Metadata Mapping** | [legal-metadata-field-mapping.md](legal-metadata-field-mapping.md) | Field mapping across PNG/JPEG/WebP, round-trip issues |
-
-### Testing & Operations
-
-| Component | Deep Dive | What It Covers |
-|-----------|-----------|----------------|
-| **Conformance** | [conformance.md](conformance.md) | External tool integration (ExifTool, xmllint), fixture manifest, strict mode, exit codes |
-| **CLI** | [cli.md](cli.md) | Command-line interface, all flags, batch processing, verification mode |
-
-### Design Records
-
-| Component | Deep Dive | What It Covers |
-|-----------|-----------|----------------|
-| **C2PA ADR** | [adr-c2pa.md](adr-c2pa.md) | Architecture Decision Record: deferred C2PA integration |
+| Script | Purpose |
+|--------|---------|
+| `scripts/check.sh` | Fast CI checks: fmt, clippy, no-default-features, workspace tests |
+| `scripts/release-check.sh` | Pre-release validation (staged: pre, root, cli) |
+| `scripts/verify_metadata_conformance.sh` | External tool conformance (exiftool, xmllint) |
+| `scripts/validate-docs-rs.sh` | Docs.rs-equivalent rustdoc validation (nightly) |
+| `scripts/validate-msrv-package.sh` | Fresh MSRV consumer resolution (Rust 1.87) |
+| `scripts/check_fuzz_sync.sh` | Verify fuzz target parity with CI workflow |
+| `scripts/measure_binary_size.sh` | Binary size measurement |
 
 ## Key Design Decisions
 
@@ -444,3 +528,5 @@ When extracting from JPEG, check in order:
 2. Quantization table seed — detection only when the tables are preserved
 3. DCT coefficient extraction — fragile
 4. Pixel-based LSB — not applicable to JPEG
+
+
