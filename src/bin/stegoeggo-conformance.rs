@@ -1396,118 +1396,125 @@ pub fn run_harness(
             }
         }
 
-        let exiftool_path = exiftool_state
-            .path
-            .as_ref()
-            .expect("exiftool path should be set");
-        let external_result = external_extract_json(file, exiftool_path);
-        let external = match &external_result {
-            Ok(ext) => {
-                exiftool_state.record_invocation(true);
-                report.external.push(ext.clone());
-                match expected_external {
-                    ExtractionExpectation::Success => {
-                        let tool_ran = ext.version.is_some();
-                        if tool_ran {
-                            report.add_check(
-                                "external_extraction",
-                                CheckSeverity::Pass,
-                                "External extraction succeeded",
-                            );
-                        } else {
-                            report.add_check(
-                                "external_extraction",
-                                CheckSeverity::Fail,
-                                "External extraction tool did not run",
-                            );
+        if let Some(exiftool_path) = exiftool_state.path.as_ref() {
+            let external_result = external_extract_json(file, exiftool_path);
+            let external = match &external_result {
+                Ok(ext) => {
+                    exiftool_state.record_invocation(true);
+                    report.external.push(ext.clone());
+                    match expected_external {
+                        ExtractionExpectation::Success => {
+                            let tool_ran = ext.version.is_some();
+                            if tool_ran {
+                                report.add_check(
+                                    "external_extraction",
+                                    CheckSeverity::Pass,
+                                    "External extraction succeeded",
+                                );
+                            } else {
+                                report.add_check(
+                                    "external_extraction",
+                                    CheckSeverity::Fail,
+                                    "External extraction tool did not run",
+                                );
+                            }
                         }
-                    }
-                    ExtractionExpectation::NoNotice => {
-                        if ext.has_notice_content() {
-                            report.add_check(
+                        ExtractionExpectation::NoNotice => {
+                            if ext.has_notice_content() {
+                                report.add_check(
                                 "external_extraction",
                                 CheckSeverity::Fail,
                                 "External extraction returned notice content but NoNotice expected",
                             );
-                        } else {
+                            } else {
+                                report.add_check(
+                                    "external_extraction",
+                                    CheckSeverity::Pass,
+                                    "External extraction returned no notice (expected)",
+                                );
+                            }
+                        }
+                        ExtractionExpectation::Reject => {
                             report.add_check(
                                 "external_extraction",
-                                CheckSeverity::Pass,
-                                "External extraction returned no notice (expected)",
+                                CheckSeverity::Fail,
+                                "Expected rejection but extraction succeeded",
                             );
                         }
                     }
-                    ExtractionExpectation::Reject => {
-                        report.add_check(
-                            "external_extraction",
-                            CheckSeverity::Fail,
-                            "Expected rejection but extraction succeeded",
-                        );
-                    }
+                    ext.clone()
                 }
-                ext.clone()
-            }
-            Err(err) => {
-                exiftool_state.record_invocation(false);
-                let fallback = ExternalExtraction {
-                    tool: err.tool.clone(),
-                    version: None,
-                    ..Default::default()
-                };
-                report.external.push(fallback.clone());
-                match expected_external {
-                    ExtractionExpectation::Reject => {
-                        report.add_check(
-                            "external_extraction",
-                            CheckSeverity::Pass,
-                            &format!("Expected rejection: {}", err.stderr_summary),
-                        );
-                    }
-                    ExtractionExpectation::NoNotice => {
-                        report.add_check(
+                Err(err) => {
+                    exiftool_state.record_invocation(false);
+                    let fallback = ExternalExtraction {
+                        tool: err.tool.clone(),
+                        version: None,
+                        ..Default::default()
+                    };
+                    report.external.push(fallback.clone());
+                    match expected_external {
+                        ExtractionExpectation::Reject => {
+                            report.add_check(
+                                "external_extraction",
+                                CheckSeverity::Pass,
+                                &format!("Expected rejection: {}", err.stderr_summary),
+                            );
+                        }
+                        ExtractionExpectation::NoNotice => {
+                            report.add_check(
                             "external_extraction",
                             CheckSeverity::Fail,
                             "External extraction failed; command failure is not equivalent to no notice",
                         );
+                        }
+                        _ => {
+                            report.add_check_with_details(
+                                "external_extraction",
+                                CheckSeverity::Fail,
+                                &format!("External extraction failed: {}", err.stderr_summary),
+                                &format!(
+                                    "tool={}, exit={:?}, stderr_empty={}, json_failed={}",
+                                    err.tool,
+                                    err.exit_status,
+                                    err.output_empty,
+                                    err.json_parse_failed
+                                ),
+                            );
+                        }
                     }
-                    _ => {
-                        report.add_check_with_details(
-                            "external_extraction",
-                            CheckSeverity::Fail,
-                            &format!("External extraction failed: {}", err.stderr_summary),
-                            &format!(
-                                "tool={}, exit={:?}, stderr_empty={}, json_failed={}",
-                                err.tool, err.exit_status, err.output_empty, err.json_parse_failed
-                            ),
-                        );
-                    }
+                    fallback
                 }
-                fallback
-            }
-        };
-
-        for field in &required_ext_fields {
-            let found = match field.as_str() {
-                "canonical_data_mining" => external.canonical_data_mining.is_some(),
-                "copyright" => external.copyright.is_some(),
-                "usage_terms" => external.usage_terms.is_some(),
-                "rights_url" => external.rights_url.is_some(),
-                "credit_line" => external.credit_line.is_some(),
-                "copyright_owner" => external.copyright_owner.is_some(),
-                "ai_constraints" => external.ai_constraints.is_some(),
-                _ => external.extra.contains_key(field),
             };
-            if !found {
-                report.add_check_with_details(
-                    "required_external_field",
-                    CheckSeverity::Fail,
-                    &format!("Required external field '{}' not found", field),
-                    &format!("field={}", field),
-                );
-            }
-        }
 
-        conformance::compare_extractions(&report.internal.clone(), &external, &mut report);
+            for field in &required_ext_fields {
+                let found = match field.as_str() {
+                    "canonical_data_mining" => external.canonical_data_mining.is_some(),
+                    "copyright" => external.copyright.is_some(),
+                    "usage_terms" => external.usage_terms.is_some(),
+                    "rights_url" => external.rights_url.is_some(),
+                    "credit_line" => external.credit_line.is_some(),
+                    "copyright_owner" => external.copyright_owner.is_some(),
+                    "ai_constraints" => external.ai_constraints.is_some(),
+                    _ => external.extra.contains_key(field),
+                };
+                if !found {
+                    report.add_check_with_details(
+                        "required_external_field",
+                        CheckSeverity::Fail,
+                        &format!("Required external field '{}' not found", field),
+                        &format!("field={}", field),
+                    );
+                }
+            }
+
+            conformance::compare_extractions(&report.internal.clone(), &external, &mut report);
+        } else {
+            report.add_check(
+                "external_extraction",
+                CheckSeverity::Warn,
+                "Skipped external validation because exiftool was not found",
+            );
+        }
 
         if is_valid {
             if strict && !imagemagick_state.discovered {
@@ -1741,36 +1748,28 @@ fn main() {
                 i += 1;
             }
             "--json" => {
-                i += 1;
-                if i < args.len() {
-                    json_path = Some(PathBuf::from(&args[i]));
-                    i += 1;
-                }
+                json_path = Some(PathBuf::from(next_option_value(&args, &mut i, "--json")));
             }
             "--fixtures" => {
-                i += 1;
-                if i < args.len() {
-                    fixtures_dir = Some(PathBuf::from(&args[i]));
-                    i += 1;
-                }
+                fixtures_dir = Some(PathBuf::from(next_option_value(
+                    &args,
+                    &mut i,
+                    "--fixtures",
+                )));
             }
             "--format" => {
-                i += 1;
-                if i < args.len() {
-                    format_filter = Some(args[i].clone());
-                    i += 1;
-                }
+                format_filter = Some(next_option_value(&args, &mut i, "--format"));
             }
             "--all-formats" => {
                 format_filter = None;
                 i += 1;
             }
             "--manifest" => {
-                i += 1;
-                if i < args.len() {
-                    manifest_path = Some(PathBuf::from(&args[i]));
-                    i += 1;
-                }
+                manifest_path = Some(PathBuf::from(next_option_value(
+                    &args,
+                    &mut i,
+                    "--manifest",
+                )));
             }
             _ => {
                 eprintln!(
@@ -1826,7 +1825,14 @@ fn main() {
 
     if let Some(ref path) = json_path {
         let json = serde_json::to_string_pretty(&run_report).unwrap();
-        std::fs::write(path, &json).unwrap();
+        if let Err(error) = std::fs::write(path, &json) {
+            eprintln!(
+                "Error: failed to write JSON report to {}: {}",
+                path.display(),
+                error
+            );
+            std::process::exit(EXIT_INTERNAL);
+        }
         eprintln!("JSON report written to {}", path.display());
     }
 
@@ -1842,5 +1848,20 @@ fn main() {
     }
     if failed > 0 {
         std::process::exit(EXIT_FAIL);
+    }
+}
+
+fn next_option_value(args: &[String], index: &mut usize, option: &str) -> String {
+    *index += 1;
+    let value = args.get(*index).filter(|value| !value.starts_with("--"));
+    match value {
+        Some(value) => {
+            *index += 1;
+            value.clone()
+        }
+        None => {
+            eprintln!("Error: {} requires a value", option);
+            std::process::exit(EXIT_CONFIG);
+        }
     }
 }

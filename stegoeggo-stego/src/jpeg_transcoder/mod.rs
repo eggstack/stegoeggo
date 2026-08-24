@@ -414,6 +414,10 @@ impl JpegTranscoder {
                 // Copy the original SOS header verbatim, replace scan data, append EOI.
                 // The SOS header includes component table assignments and spectral
                 // selection which must match the header state.
+                if pos + 4 > original_jpeg.len() {
+                    output.extend_from_slice(&original_jpeg[pos..]);
+                    return Ok(output);
+                }
                 let orig_seg_len =
                     u16::from_be_bytes([original_jpeg[pos + 2], original_jpeg[pos + 3]]) as usize;
                 let sos_end = pos + 2 + orig_seg_len;

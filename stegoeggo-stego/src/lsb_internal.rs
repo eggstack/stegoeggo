@@ -400,7 +400,6 @@ pub fn extract_lsb_v2(
     img: &RgbaImage,
     expected_bits: usize,
     seed: u64,
-    base_slot: usize,
     redundancy: usize,
 ) -> Option<Vec<u8>> {
     let (width, height) = img.dimensions();
@@ -408,7 +407,7 @@ pub fn extract_lsb_v2(
     let replicas_per_bit = STEGO_SPREAD_FACTOR.checked_mul(redundancy)?;
 
     let required_slots = expected_bits.checked_mul(replicas_per_bit)?;
-    if base_slot.checked_add(required_slots)? > available {
+    if required_slots > available {
         return None;
     }
 
@@ -423,7 +422,7 @@ pub fn extract_lsb_v2(
         let mut ones = 0u32;
 
         for s in 0..replicas_per_bit {
-            let logical = base_slot + i * replicas_per_bit + s;
+            let logical = i * replicas_per_bit + s;
             let slot = stego_permutation_v2(logical, available, seed);
             let (pixel_index, slot_channel) =
                 carrier_v2_slot_to_pixel_channel(slot, width, height)?;
@@ -568,7 +567,10 @@ pub fn blit_rgba(dst: &mut RgbaImage, x: u32, y: u32, src: &RgbaImage) {
 
 pub fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
     let (width, height) = img.dimensions();
-    let total_channels = (width * height * 3) as usize;
+    let total_channels = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|channels| channels.checked_mul(3))
+        .unwrap_or(usize::MAX);
     if total_channels < 64 {
         return;
     }
@@ -613,7 +615,10 @@ pub fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
 
 pub fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
     let (width, height) = img.dimensions();
-    let total_channels = (width * height * 3) as usize;
+    let total_channels = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|channels| channels.checked_mul(3))
+        .unwrap_or(usize::MAX);
     if total_channels < 64 {
         return None;
     }
@@ -880,7 +885,7 @@ pub fn extract(
     let bits = payload_len.checked_mul(8).ok_or_else(|| {
         super::StegoError::ResourceLimitExceeded("payload length overflow".into())
     })?;
-    extract_lsb_v2(img, bits, config.seed(), 0, config.redundancy())
+    extract_lsb_v2(img, bits, config.seed(), config.redundancy())
         .ok_or_else(|| super::StegoError::MalformedInput("extraction returned no data".into()))
 }
 

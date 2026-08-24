@@ -1606,8 +1606,8 @@ mod progressive_jpeg_warning {
         assert!(!protected.is_empty());
         assert_eq!(
             warning,
-            Some(ProtectionWarning::ProgressiveJpegFallback),
-            "Should warn about progressive JPEG fallback"
+            Some(ProtectionWarning::JpegReencodeFragile),
+            "Baseline output should not claim a progressive fallback without an unsupported embed"
         );
     }
 
@@ -1628,6 +1628,23 @@ mod progressive_jpeg_warning {
             Some(ProtectionWarning::JpegReencodeFragile),
             "Baseline JPEG output should warn about downstream re-encode fragility"
         );
+    }
+
+    #[test]
+    fn test_baseline_jpeg_does_not_warn_about_progressive_fallback() {
+        let img = create_test_image(64, 64);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_format(ImageOutputFormat::Jpeg)
+            .with_progressive_jpeg(true)
+            .with_mac_key(b"shared-test-key".to_vec());
+
+        let (_, warnings) =
+            process_image_bytes_with_warnings(&jpeg_bytes, ProtectionLevel::Standard, &ctx)
+                .unwrap();
+
+        assert!(!warnings.contains(&ProtectionWarning::ProgressiveJpegFallback));
     }
 
     #[test]

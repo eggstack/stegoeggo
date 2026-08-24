@@ -475,6 +475,17 @@ mod tests {
     }
 
     #[test]
+    fn compute_payload_mac_v3_uses_domain_separation() {
+        let data = vec![1u8; 32];
+        let key = b"test-key";
+        let mut raw_mac = HmacSha256::new_from_slice(key).unwrap();
+        raw_mac.update(&data);
+        let raw = raw_mac.finalize().into_bytes();
+        let v3 = SteganographyProtector::compute_payload_mac_v3(&data, key);
+        assert_ne!(v3, raw[..16]);
+    }
+
+    #[test]
     fn verify_payload_mac_match() {
         let data = vec![42u8; 24];
         let key = b"my-key";
@@ -1649,7 +1660,7 @@ mod tests {
         let out_img = result.into_inner();
 
         let payload_bits = payload.len() * 8;
-        let extracted = protector.extract_lsb_v2(&out_img, payload_bits, 42, 0, 1);
+        let extracted = protector.extract_lsb_v2(&out_img, payload_bits, 42, 1);
         assert!(extracted.is_some(), "direct V2 extract must succeed");
         assert_eq!(extracted.unwrap(), payload);
     }
@@ -1666,7 +1677,7 @@ mod tests {
 
         let payload_bits = payload.len() * 8;
         let extracted = protector
-            .extract_lsb_v2(&out_img, payload_bits, 42, 0, redundancy)
+            .extract_lsb_v2(&out_img, payload_bits, 42, redundancy)
             .expect("V2 extraction with matching redundancy must succeed");
         assert_eq!(extracted, payload);
     }
@@ -1706,7 +1717,7 @@ mod tests {
         assert!(v2_result.is_embedded());
         let v2_img = v2_result.into_inner();
 
-        let extracted = protector.extract_lsb_v2(&v2_img, payload.len() * 8, seed, 0, 1);
+        let extracted = protector.extract_lsb_v2(&v2_img, payload.len() * 8, seed, 1);
         assert!(
             extracted.is_some(),
             "V2 extraction must find V2-embedded payload"

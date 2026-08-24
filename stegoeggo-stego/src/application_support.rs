@@ -58,10 +58,9 @@ pub fn corrected_lsb_extract(
     image: &RgbaImage,
     expected_bits: usize,
     seed: u64,
-    base_slot: usize,
     redundancy: usize,
 ) -> Option<Vec<u8>> {
-    lsb_internal::extract_lsb_v2(image, expected_bits, seed, base_slot, redundancy)
+    lsb_internal::extract_lsb_v2(image, expected_bits, seed, redundancy)
 }
 
 pub fn legacy_lsb_extract(image: &RgbaImage, expected_bits: usize, seed: u64) -> Option<Vec<u8>> {

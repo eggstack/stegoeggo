@@ -83,7 +83,7 @@ pub const ED25519_OVERHEAD_BYTES: usize = 168;
 - Private key material is zeroized on drop via `zeroize` crate
 - `Debug` output shows only hex-encoded key ID, not key bytes
 - No `Serialize` implementation on `SigningKey` prevents accidental key material serialization
-- Ed25519 has built-in domain separation; the `SIGNATURE_DOMAIN` constant is retained for backward compatibility
+- Ed25519 has no application-level context parameter; the `SIGNATURE_DOMAIN` constant is retained for backward compatibility and is not prepended to existing detached-signature claim bytes
 - Domain-separated MAC keys prevent cross-domain forgery in v3 payloads
 
 ## Usage in Pipeline

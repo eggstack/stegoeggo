@@ -286,7 +286,13 @@ fn reassemble_jpeg_with_qtables(
         if marker == 0xDB {
             let segment_len =
                 u16::from_be_bytes([jpeg_bytes[pos + 2], jpeg_bytes[pos + 3]]) as usize;
-            pos += 2 + segment_len;
+            let segment_end = pos + 2 + segment_len;
+            if segment_end > jpeg_bytes.len() {
+                return Err(StegoError::MalformedInput(
+                    "Malformed JPEG segment length exceeds buffer".into(),
+                ));
+            }
+            pos = segment_end;
 
             if !wrote_tables {
                 for table in header.quantization_tables.iter().flatten() {

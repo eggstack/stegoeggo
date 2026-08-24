@@ -511,16 +511,23 @@ fn check_input_output_disjoint(input: &Path, output: &Path) -> Result<(), Error>
             format!("resolve input path: {e}"),
         ))
     })?;
-    let output_parent = output.parent().unwrap_or_else(|| Path::new("."));
-    let output_canonical = output
-        .canonicalize()
-        .or_else(|_| output_parent.canonicalize())
-        .map_err(|e| {
-            Error::Io(std::io::Error::new(
-                e.kind(),
-                format!("resolve output path: {e}"),
-            ))
-        })?;
+    let output_canonical = match output.canonicalize() {
+        Ok(path) => path,
+        Err(_) => {
+            let output_parent = output.parent().unwrap_or_else(|| Path::new("."));
+            let parent = output_parent.canonicalize().map_err(|e| {
+                Error::Io(std::io::Error::new(
+                    e.kind(),
+                    format!("resolve output path: {e}"),
+                ))
+            })?;
+            parent.join(
+                output
+                    .file_name()
+                    .ok_or_else(|| Error::Config("Output path has no file name".to_string()))?,
+            )
+        }
+    };
     if input_canonical == output_canonical {
         return Err(Error::Config(
             "Input and output paths resolve to the same file; use --output to specify a different path".to_string(),
@@ -696,12 +703,24 @@ fn has_new_style_flags(args: &Args) -> bool {
 }
 
 #[allow(deprecated)]
+#[cfg(test)]
 fn build_protection_request(args: &Args) -> Result<ProtectionRequest, Box<dyn std::error::Error>> {
+    build_protection_request_with_explicit_options(args, false, false)
+}
+
+fn build_protection_request_with_explicit_options(
+    args: &Args,
+    level_explicit: bool,
+    profile_explicit: bool,
+) -> Result<ProtectionRequest, Box<dyn std::error::Error>> {
     let is_new_style = has_new_style_flags(args);
 
     if is_new_style
         && args.preset.is_some()
-        && (args.level != ProtectionLevelArg::Standard || args.profile != ProfileArg::LegalNotice)
+        && (level_explicit
+            || profile_explicit
+            || args.level != ProtectionLevelArg::Standard
+            || args.profile != ProfileArg::LegalNotice)
     {
         return Err("Cannot combine --preset with --level/--profile; use --preset alone or --level/--profile alone".into());
     }
@@ -1193,17 +1212,7 @@ fn handle_verify_manifest(
         Vec::new()
     };
 
-    let payload_mac_key = payload_key.as_deref().map(|k| {
-        if let Some(hex_str) = k.strip_prefix('@') {
-            fs::read(PathBuf::from(hex_str))
-                .map_err(|e| format!("Failed to read payload key file: {}", e))
-                .unwrap_or_default()
-        } else if k == "->" {
-            Vec::new()
-        } else {
-            hex::decode(k).unwrap_or_else(|_| k.as_bytes().to_vec())
-        }
-    });
+    let payload_mac_key = resolve_key_input(&payload_key, "")?;
 
     let options = DetachedVerificationOptions {
         trust_policy: None,
@@ -1685,7 +1694,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let request = build_protection_request(&args)?;
+    let level_explicit = std::env::args().any(|arg| {
+        arg == "--level"
+            || arg.starts_with("--level=")
+            || arg == "-l"
+            || (arg.starts_with("-l") && arg.len() > 2)
+    });
+    let profile_explicit = std::env::args().any(|arg| {
+        arg == "--profile"
+            || arg.starts_with("--profile=")
+            || arg == "-p"
+            || (arg.starts_with("-p") && arg.len() > 2)
+    });
+    let request =
+        build_protection_request_with_explicit_options(&args, level_explicit, profile_explicit)?;
 
     let evidence_profile = evidence_profile_for_display(&args);
 
@@ -2196,6 +2218,14 @@ mod tests {
         args.preset = Some(PresetArg::Maximal);
         args.level = ProtectionLevelArg::Light;
         let result = build_protection_request(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_preset_and_explicit_default_level_conflict() {
+        let mut args = default_args();
+        args.preset = Some(PresetArg::Maximal);
+        let result = build_protection_request_with_explicit_options(&args, true, false);
         assert!(result.is_err());
     }
 

@@ -5,8 +5,10 @@ use crate::Error;
 
 /// Domain separation string for signature computation.
 ///
-/// Note: Ed25519 has built-in domain separation. This constant is retained
-/// for backward compatibility and documentation purposes.
+/// Ed25519 does not provide an application-level context parameter. This
+/// constant is retained for backward compatibility; detached signatures use
+/// the canonical claim bytes directly and are separated by their manifest
+/// signature algorithm and placement.
 pub const SIGNATURE_DOMAIN: &[u8] = b"StegoEggo-Sig-v1";
 
 /// Maximum key identifier length in bytes.

@@ -62,11 +62,6 @@ pub fn resolve_request(
         )
     };
 
-    if request.channels().authentication == AuthenticationMode::Hmac && request.mac_key().is_none()
-    {
-        warnings.push(ProtectionWarning::MissingMacKey);
-    }
-
     if !request.channels().rights_metadata {
         warnings.push(ProtectionWarning::MetadataInjectionDisabled);
     }

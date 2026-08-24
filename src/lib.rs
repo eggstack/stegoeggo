@@ -764,13 +764,6 @@ pub fn process_image_bytes_with_warnings(
 
     let output_format = plan.output_format();
 
-    if level == ProtectionLevel::Standard
-        && ctx.progressive_jpeg()
-        && output_format == ImageOutputFormat::Jpeg
-    {
-        warnings.push(ProtectionWarning::ProgressiveJpegFallback);
-    }
-
     if level != ProtectionLevel::Disabled && output_format == ImageOutputFormat::Jpeg {
         warnings.push(ProtectionWarning::JpegReencodeFragile);
     }
@@ -1186,9 +1179,14 @@ fn observe_metadata_work(
                     img_bytes[pos + 6],
                     img_bytes[pos + 7],
                 ]) as usize;
-                let padded = chunk_size + (chunk_size & 1);
-                budget.observe_webp_chunk(8 + padded);
-                pos += 8 + padded;
+                let padded = chunk_size.saturating_add(chunk_size & 1);
+                let chunk_end = pos.saturating_add(8).saturating_add(padded);
+                if chunk_end > img_bytes.len() {
+                    budget.observe_webp_chunk(img_bytes.len() - pos);
+                    break;
+                }
+                budget.observe_webp_chunk(chunk_end - pos);
+                pos = chunk_end;
             }
         }
     }

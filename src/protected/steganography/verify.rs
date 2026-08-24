@@ -93,16 +93,13 @@ impl SteganographyProtector {
             return CandidateOutcome::NotFound;
         }
 
-        if let Some(metadata_seed) = metadata_seed {
-            if let Ok(img) = image::load_from_memory(img_bytes) {
+        if let Ok(img) = image::load_from_memory(img_bytes) {
+            if let Some(metadata_seed) = metadata_seed {
                 let outcome = self.verify_payload_with_seed_outcome(&img, metadata_seed, mac_key);
                 if !matches!(&outcome, CandidateOutcome::NotFound) {
                     return outcome;
                 }
             }
-        }
-
-        if let Ok(img) = image::load_from_memory(img_bytes) {
             let rgba = img.to_rgba8();
             if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
                 let outcome = self.verify_payload_with_seed_outcome(&img, fallback_seed, mac_key);
@@ -121,7 +118,11 @@ impl SteganographyProtector {
                 }
             }
 
-            for &seed in &[42u64, 0, 1, 12345, 99999, 123456789] {
+            #[cfg(feature = "test-seeds")]
+            for &seed in FALLBACK_SEEDS
+                .iter()
+                .take(self.limits.max_verification_seeds())
+            {
                 let outcome = self.verify_tiled_extraction_outcome(
                     &rgba,
                     seed,
@@ -129,37 +130,6 @@ impl SteganographyProtector {
                     self.limits.max_tile_extraction_origins() as u32,
                     mac_key,
                 );
-                let outcome = if suppress_unstructured_candidates {
-                    match outcome {
-                        CandidateOutcome::Valid(payload)
-                        | CandidateOutcome::Invalid(payload)
-                        | CandidateOutcome::AuthenticationKeyMissing(payload)
-                        | CandidateOutcome::AuthenticationFailed(payload)
-                            if !Self::payload_is_structurally_plausible(&payload) =>
-                        {
-                            CandidateOutcome::NotFound
-                        }
-                        CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
-                            CandidateOutcome::NotFound
-                        }
-                        outcome => outcome,
-                    }
-                } else {
-                    outcome
-                };
-                if !matches!(&outcome, CandidateOutcome::NotFound) {
-                    return outcome;
-                }
-            }
-        }
-
-        #[cfg(feature = "test-seeds")]
-        if let Ok(img) = image::load_from_memory(img_bytes) {
-            for &seed in FALLBACK_SEEDS
-                .iter()
-                .take(self.limits.max_verification_seeds())
-            {
-                let outcome = self.verify_payload_with_seed_outcome(&img, seed, mac_key);
                 let outcome = if suppress_unstructured_candidates {
                     match outcome {
                         CandidateOutcome::Valid(payload)
@@ -391,6 +361,7 @@ impl SteganographyProtector {
         None
     }
 
+    #[cfg(feature = "test-seeds")]
     pub(crate) fn payload_is_structurally_plausible(payload: &[u8]) -> bool {
         let decoded = Self::try_ecc_decode(payload).unwrap_or_else(|| payload.to_vec());
         Self::parse_stego_payload(&decoded).is_some()
@@ -458,6 +429,7 @@ impl SteganographyProtector {
 
     pub(crate) fn compute_payload_mac_v3(payload_without_mac: &[u8], mac_key: &[u8]) -> [u8; 16] {
         let mut mac = Self::new_hmac(mac_key);
+        mac.update(crate::payload_v3::types::V3_DOMAIN_STRING);
         mac.update(payload_without_mac);
         let result = mac.finalize().into_bytes();
         let mut out = [0u8; 16];
@@ -580,10 +552,16 @@ impl SteganographyProtector {
                     tag == expected
                 }
                 2 if !mac_key.is_empty() => {
-                    let mut mac = Self::new_hmac(mac_key);
-                    mac.update(core_and_ext);
-                    let result = mac.finalize().into_bytes();
-                    result[..tag.len()].ct_eq(tag).into()
+                    let expected = Self::compute_payload_mac_v3(core_and_ext, mac_key);
+                    let authenticated = expected[..tag.len()].ct_eq(tag).into();
+                    if authenticated {
+                        true
+                    } else {
+                        let mut legacy_mac = Self::new_hmac(mac_key);
+                        legacy_mac.update(core_and_ext);
+                        let result = legacy_mac.finalize().into_bytes();
+                        result[..tag.len()].ct_eq(tag).into()
+                    }
                 }
                 _ => false,
             }

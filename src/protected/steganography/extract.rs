@@ -141,7 +141,7 @@ impl SteganographyProtector {
         let prefix_bits = 6 * 8;
         for redundancy in 1..=10 {
             if let Some(result) =
-                self.extract_payload_at_seed_v2(img, prefix_bits, seed, mac_key, 0, redundancy)
+                self.extract_payload_at_seed_v2(img, prefix_bits, seed, mac_key, redundancy)
             {
                 return Some(result);
             }
@@ -157,7 +157,6 @@ impl SteganographyProtector {
                     prefix_bits,
                     offset_seed,
                     mac_key,
-                    0,
                     redundancy,
                 ) {
                     return Some(result);
@@ -178,15 +177,12 @@ impl SteganographyProtector {
         prefix_bits: usize,
         seed: u64,
         mac_key: &[u8],
-        base_slot: usize,
         redundancy: usize,
     ) -> Option<Vec<u8>> {
-        if let Some(prefix) = self.extract_lsb_v2(img, prefix_bits, seed, base_slot, redundancy) {
+        if let Some(prefix) = self.extract_lsb_v2(img, prefix_bits, seed, redundancy) {
             match Self::classify_v3_probe(&prefix, Some(&self.limits)) {
                 V3ProbeResult::V3Detected { total_bits, .. } => {
-                    if let Some(full) =
-                        self.extract_lsb_v2(img, total_bits, seed, base_slot, redundancy)
-                    {
+                    if let Some(full) = self.extract_lsb_v2(img, total_bits, seed, redundancy) {
                         if Self::verify_payload_integrity(&full, mac_key) {
                             return Some(Self::truncate_to_actual_payload(&full));
                         }
@@ -194,8 +190,7 @@ impl SteganographyProtector {
                 }
                 V3ProbeResult::NotV3 => {
                     for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                        if let Some(payload) =
-                            self.extract_lsb_v2(img, ecc_bits, seed, base_slot, redundancy)
+                        if let Some(payload) = self.extract_lsb_v2(img, ecc_bits, seed, redundancy)
                         {
                             if Self::try_ecc_decode(&payload).is_some() {
                                 return Some(payload);
@@ -261,7 +256,7 @@ impl SteganographyProtector {
         let prefix_bits = 6 * 8;
         for redundancy in 1..=10 {
             let v2_corrected =
-                self.verify_extract_at_seed_v2(img, prefix_bits, seed, mac_key, 0, redundancy);
+                self.verify_extract_at_seed_v2(img, prefix_bits, seed, mac_key, redundancy);
             match &v2_corrected {
                 CandidateOutcome::Valid(_)
                 | CandidateOutcome::Invalid(_)
@@ -286,7 +281,6 @@ impl SteganographyProtector {
                     prefix_bits,
                     offset_seed,
                     mac_key,
-                    0,
                     redundancy,
                 );
                 match &v2_outcome {
@@ -338,16 +332,13 @@ impl SteganographyProtector {
         prefix_bits: usize,
         seed: u64,
         mac_key: &[u8],
-        base_slot: usize,
         redundancy: usize,
     ) -> CandidateOutcome {
         let mut last_outcome: Option<CandidateOutcome> = None;
-        if let Some(prefix) = self.extract_lsb_v2(img, prefix_bits, seed, base_slot, redundancy) {
+        if let Some(prefix) = self.extract_lsb_v2(img, prefix_bits, seed, redundancy) {
             match Self::classify_v3_probe(&prefix, Some(&self.limits)) {
                 V3ProbeResult::V3Detected { total_bits, .. } => {
-                    if let Some(full) =
-                        self.extract_lsb_v2(img, total_bits, seed, base_slot, redundancy)
-                    {
+                    if let Some(full) = self.extract_lsb_v2(img, total_bits, seed, redundancy) {
                         if Self::verify_payload_integrity(&full, mac_key) {
                             return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
                                 &full,
@@ -360,8 +351,7 @@ impl SteganographyProtector {
                 }
                 V3ProbeResult::NotV3 => {
                     for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                        if let Some(payload) =
-                            self.extract_lsb_v2(img, ecc_bits, seed, base_slot, redundancy)
+                        if let Some(payload) = self.extract_lsb_v2(img, ecc_bits, seed, redundancy)
                         {
                             if Self::try_ecc_decode(&payload).is_some() {
                                 return CandidateOutcome::Valid(payload);
@@ -816,10 +806,9 @@ impl SteganographyProtector {
         img: &RgbaImage,
         expected_bits: usize,
         seed: u64,
-        base_slot: usize,
         redundancy: usize,
     ) -> Option<Vec<u8>> {
-        carrier_support::corrected_lsb_extract(img, expected_bits, seed, base_slot, redundancy)
+        carrier_support::corrected_lsb_extract(img, expected_bits, seed, redundancy)
     }
 
     pub(crate) fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
@@ -839,7 +828,7 @@ impl SteganographyProtector {
     ) -> Option<Vec<u8>> {
         let prefix_bits = 6 * 8;
 
-        if let Some(prefix) = self.extract_lsb_v2(sub, prefix_bits, seed, 0, 1) {
+        if let Some(prefix) = self.extract_lsb_v2(sub, prefix_bits, seed, 1) {
             if let Some(result) =
                 self.probe_payload_from_prefix_v2(sub, &prefix, prefix_bits, seed, mac_key)
             {
@@ -875,7 +864,7 @@ impl SteganographyProtector {
                 let header_bytes = if header_bits <= prefix_bits {
                     prefix[..header_length].to_vec()
                 } else {
-                    self.extract_lsb_v2(img, header_bits, seed, 0, 1)?
+                    self.extract_lsb_v2(img, header_bits, seed, 1)?
                 };
                 if Self::validate_v3_header(&header_bytes, Some(&self.limits)).is_err() {
                     return None;
@@ -884,7 +873,7 @@ impl SteganographyProtector {
                 let full = if total_bits <= prefix_bits {
                     prefix[..total_length].to_vec()
                 } else {
-                    self.extract_lsb_v2(img, total_bits, seed, 0, 1)?
+                    self.extract_lsb_v2(img, total_bits, seed, 1)?
                 };
                 if Self::verify_payload_integrity(&full, mac_key) {
                     return Some(Self::truncate_to_actual_payload(&full));
@@ -895,7 +884,7 @@ impl SteganographyProtector {
                     let payload = if ecc_bits <= prefix_bits {
                         prefix.to_vec()
                     } else {
-                        match self.extract_lsb_v2(img, ecc_bits, seed, 0, 1) {
+                        match self.extract_lsb_v2(img, ecc_bits, seed, 1) {
                             Some(p) => p,
                             None => continue,
                         }
@@ -983,7 +972,7 @@ impl SteganographyProtector {
                 let header_bits = header_length * 8;
                 let header_bytes = if header_bits <= prefix_bits {
                     prefix[..header_length].to_vec()
-                } else if let Some(h) = self.extract_lsb_v2(img, header_bits, seed, 0, 1) {
+                } else if let Some(h) = self.extract_lsb_v2(img, header_bits, seed, 1) {
                     h
                 } else {
                     return CandidateOutcome::NotFound;
@@ -994,7 +983,7 @@ impl SteganographyProtector {
                 let total_bits = total_length * 8;
                 let full = if total_bits <= prefix_bits {
                     prefix[..total_length].to_vec()
-                } else if let Some(f) = self.extract_lsb_v2(img, total_bits, seed, 0, 1) {
+                } else if let Some(f) = self.extract_lsb_v2(img, total_bits, seed, 1) {
                     f
                 } else {
                     return CandidateOutcome::NotFound;
@@ -1008,7 +997,7 @@ impl SteganographyProtector {
                 for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
                     let payload = if ecc_bits <= prefix_bits {
                         prefix.to_vec()
-                    } else if let Some(p) = self.extract_lsb_v2(img, ecc_bits, seed, 0, 1) {
+                    } else if let Some(p) = self.extract_lsb_v2(img, ecc_bits, seed, 1) {
                         p
                     } else {
                         continue;
@@ -1156,8 +1145,7 @@ impl SteganographyProtector {
                             local_seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
                         let prefix_bits = V3_PREFIX_BYTES * 8;
 
-                        if let Some(prefix) =
-                            self.extract_lsb_v2(&sub, prefix_bits, offset_seed, 0, 1)
+                        if let Some(prefix) = self.extract_lsb_v2(&sub, prefix_bits, offset_seed, 1)
                         {
                             let outcome = self.verify_probe_payload_from_prefix(
                                 &sub,
