@@ -278,6 +278,11 @@ fn reassemble_jpeg_with_qtables(
 
         let marker = jpeg_bytes[pos + 1];
 
+        if marker == 0xFF {
+            pos += 1;
+            continue;
+        }
+
         if marker == 0xDA || marker == 0xD9 {
             output.extend_from_slice(&jpeg_bytes[pos..]);
             break;
@@ -319,7 +324,7 @@ fn reassemble_jpeg_with_qtables(
         }
 
         if marker == 0x00 {
-            pos += 1;
+            pos += 2;
             continue;
         }
 

@@ -4,6 +4,10 @@ use super::*;
 
 impl SteganographyProtector {
     pub(crate) fn parse_stego_payload_v1(payload: &[u8]) -> Option<StegoPayload> {
+        if payload.len() < 24 {
+            return None;
+        }
+
         let protection_level = payload[1];
 
         let extracted_seed = u64::from_le_bytes([

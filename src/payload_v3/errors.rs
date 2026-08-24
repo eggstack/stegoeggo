@@ -15,12 +15,17 @@ pub enum PayloadV3ParseError {
     /// Payload version is not supported.
     #[error("Unsupported payload version: {0}")]
     UnsupportedVersion(u8),
-    /// Header length exceeds total payload length.
-    #[error("Header length {header} exceeds total payload length {total}")]
+    /// Header length is shorter than the required core + key ID size.
+    ///
+    /// Raised when the declared `header_length` cannot hold the 32-byte core
+    /// plus the declared key ID. (Historical name: the check compares the
+    /// header length against the minimum required size, not against
+    /// `total_length`.)
+    #[error("Header length {header} is shorter than the required core+key-id size {total}")]
     HeaderExceedsTotal {
         /// Declared header length.
         header: usize,
-        /// Total payload length.
+        /// Minimum required core + key ID length.
         total: usize,
     },
     /// Header length and extension flag do not describe the same layout.

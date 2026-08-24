@@ -78,8 +78,9 @@ impl DctStegoF5 {
     ///
     /// Embeds 12 bytes: 4 bytes magic + 8 bytes seed (u64).
     ///
-    /// Positions where the quantization value is 1 are skipped because `1 & 0xFE`
-    /// would change the value from 1 to 0, corrupting the Q-table. This means
+    /// Positions where the quantization value is less than 2 are skipped:
+    /// setting the LSB of a value of 1 would change it to 0, and a position
+    /// holding 0 could flip to 1, both corrupting the Q-table. This means
     /// fewer bits are embedded than intended. Extraction skips the same
     /// positions; if fewer than 96 carrier positions remain across both
     /// tables, the seed cannot be recovered and the caller falls back to
@@ -106,7 +107,7 @@ impl DctStegoF5 {
                     if bit_idx >= bits.len() {
                         break;
                     }
-                    if quant.values[pos] == 1 {
+                    if quant.values[pos] < 2 {
                         continue;
                     }
                     if bits[bit_idx] == 1 {
@@ -127,12 +128,13 @@ impl DctStegoF5 {
         let mut bits: Vec<u8> = Vec::new();
 
         // Extract bits from quantization tables, skipping positions whose
-        // value is 1 exactly as embedding does (they carry no embedded bit).
-        // Read from both tables since we embed 96 bits across 2 tables
+        // value is less than 2 exactly as embedding does (they carry no
+        // embedded bit). Read from both tables since we embed 96 bits
+        // across 2 tables
         for table_idx in 0..2 {
             if let Some(ref quant) = header.quantization_tables[table_idx] {
                 for &val in quant.values.iter().take(64) {
-                    if val == 1 {
+                    if val < 2 {
                         continue;
                     }
                     bits.push((val & 1) as u8);
@@ -945,6 +947,41 @@ mod tests {
         stego
             .embed_seed_in_quantization_tables(&mut header, seed)
             .unwrap();
+
+        assert_eq!(
+            stego.extract_seed_from_quantization_tables(&header),
+            Some(seed)
+        );
+    }
+
+    #[test]
+    fn test_seed_roundtrip_with_zero_quant_values() {
+        let mut header = JpegHeader::default();
+        for i in 0..2 {
+            let mut table = crate::jpeg_transcoder::header::QuantizationTable {
+                table_id: i as u8,
+                precision: 8,
+                values: [16; 64],
+            };
+            for k in (2..64).step_by(5) {
+                table.values[k] = 0;
+            }
+            header.quantization_tables[i] = Some(table);
+        }
+
+        let seed = 0x0FEDCBA987654321u64;
+        let stego = DctStegoF5::new();
+        stego
+            .embed_seed_in_quantization_tables(&mut header, seed)
+            .unwrap();
+
+        // Positions holding invalid values (< 2) must be left untouched so
+        // embed and extract stay in sync.
+        for table in header.quantization_tables.iter().flatten() {
+            for k in (2..64).step_by(5) {
+                assert_eq!(table.values[k], 0);
+            }
+        }
 
         assert_eq!(
             stego.extract_seed_from_quantization_tables(&header),

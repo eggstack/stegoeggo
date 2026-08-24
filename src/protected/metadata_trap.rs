@@ -2170,8 +2170,14 @@ impl RightsMetadataProtector {
         let mut output = Vec::with_capacity(webp_data.len());
         output.extend_from_slice(&webp_data[0..12]);
 
+        // XMP is intentionally left in place: injection replaces stego-owned
+        // XMP at the rdf:Description level (merge_or_replace_webp_xmp),
+        // preserving unrelated descriptions. Only non-XMP stego-owned
+        // content — legacy EXIF seed chunks — is stripped here.
+        let mut removed_exif = false;
         let mut pos = 12;
         while pos + 8 <= webp_data.len() {
+            let chunk_id = &webp_data[pos..pos + 4];
             let chunk_size = u32::from_le_bytes([
                 webp_data[pos + 4],
                 webp_data[pos + 5],
@@ -2183,13 +2189,25 @@ impl RightsMetadataProtector {
             let data_end = data_start + chunk_size;
 
             if data_end <= webp_data.len() {
-                output.extend_from_slice(&webp_data[pos..data_end]);
-                if chunk_size & 1 != 0 {
-                    output.push(0);
+                let is_legacy_exif_seed = chunk_id == b"EXIF"
+                    && webp_data[data_start..data_end]
+                        .windows(b"Protection seed: ".len())
+                        .any(|w| w == b"Protection seed: ");
+                if is_legacy_exif_seed {
+                    removed_exif = true;
+                } else {
+                    output.extend_from_slice(&webp_data[pos..data_end]);
+                    if chunk_size & 1 != 0 {
+                        output.push(0);
+                    }
                 }
             }
 
             pos += 8 + padded_size;
+        }
+
+        if removed_exif && output.len() >= 20 && &output[12..16] == b"VP8X" {
+            output[20] &= !0x08;
         }
 
         let new_riff_size = (output.len() - 8) as u32;
@@ -3034,6 +3052,81 @@ mod tests {
             None,
         );
         assert!(result.is_err());
+    }
+
+    fn build_webp_with_stego_chunks() -> Vec<u8> {
+        let base = encode_webp(&make_test_image());
+        assert_eq!(&base[0..4], b"RIFF");
+        assert!(base.len() >= 12);
+        // The image crate emits simple (non-VP8X) lossless WebP; append a
+        // VP8X header chunk so VP8X flag fix-up can be exercised.
+        let mut out = Vec::new();
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&[0, 0, 0, 0]);
+        out.extend_from_slice(b"WEBP");
+        let vp8x_data = [0x0Cu8, 0, 0, 0, 63, 0, 0, 63, 0, 0];
+        out.extend_from_slice(b"VP8X");
+        out.extend_from_slice(&(vp8x_data.len() as u32).to_le_bytes());
+        out.extend_from_slice(&vp8x_data);
+        out.extend_from_slice(&base[12..]);
+        out.extend_from_slice(&RightsMetadataProtector::create_webp_xmp_chunk(
+            &RightsMetadataProtector::generate_xmp_dmi(DmiValue::ProhibitedAiMlTraining, Some(7)),
+        ));
+        out.extend_from_slice(&RightsMetadataProtector::create_webp_exif_chunk(7));
+        let riff_size = (out.len() - 8) as u32;
+        out[4] = riff_size as u8;
+        out[5] = (riff_size >> 8) as u8;
+        out[6] = (riff_size >> 16) as u8;
+        out[7] = (riff_size >> 24) as u8;
+        out
+    }
+
+    #[test]
+    fn strip_stego_owned_webp_removes_legacy_exif_seed() {
+        let webp = build_webp_with_stego_chunks();
+
+        let stripped = RightsMetadataProtector::strip_stego_owned_webp(&webp).unwrap();
+
+        let mut saw_xmp = false;
+        let mut saw_exif = false;
+        let mut pos = 12;
+        while pos + 8 <= stripped.len() {
+            let id = &stripped[pos..pos + 4];
+            let size = u32::from_le_bytes([
+                stripped[pos + 4],
+                stripped[pos + 5],
+                stripped[pos + 6],
+                stripped[pos + 7],
+            ]) as usize;
+            if id == b"XMP " {
+                saw_xmp = true;
+            }
+            if id == b"EXIF" {
+                saw_exif = true;
+            }
+            pos += 8 + size + (size & 1);
+        }
+        assert!(
+            !saw_exif,
+            "legacy EXIF seed chunk must not survive stripping"
+        );
+        assert!(
+            saw_xmp,
+            "XMP is replaced at the description level during injection, not stripped"
+        );
+
+        assert_eq!(&stripped[12..16], b"VP8X");
+        let flags = stripped[20];
+        assert_eq!(
+            flags & 0x08,
+            0,
+            "VP8X EXIF flag must be cleared after stripping"
+        );
+        assert_ne!(flags & 0x04, 0, "unrelated VP8X XMP flag must be preserved");
+
+        let riff_size =
+            u32::from_le_bytes([stripped[4], stripped[5], stripped[6], stripped[7]]) as usize;
+        assert_eq!(riff_size, stripped.len() - 8);
     }
 
     // ── Seed extraction dispatch ──────────────────────────────────────

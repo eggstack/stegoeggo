@@ -547,14 +547,19 @@ impl SteganographyProtector {
             if total_length < crate::payload_v3::types::V3_CORE_SIZE + auth_tag_len {
                 return false;
             }
-            let core_and_ext = &payload[..total_length - auth_tag_len];
-            let tag = &payload[total_length - auth_tag_len..total_length];
+            // The declared tag length must match the algorithm exactly; a
+            // zero-length or truncated HMAC tag would otherwise authenticate
+            // with any key (empty prefix compares equal to an empty slice).
             match auth_algo {
-                1 => {
+                1 if auth_tag_len == 4 => {
+                    let core_and_ext = &payload[..total_length - auth_tag_len];
+                    let tag = &payload[total_length - auth_tag_len..total_length];
                     let expected = Self::compute_checksum(core_and_ext);
                     tag == expected
                 }
-                2 if !mac_key.is_empty() => {
+                2 if auth_tag_len == 16 && !mac_key.is_empty() => {
+                    let core_and_ext = &payload[..total_length - auth_tag_len];
+                    let tag = &payload[total_length - auth_tag_len..total_length];
                     let expected = Self::compute_payload_mac_v3(core_and_ext, mac_key);
                     let Some(expected_prefix) = expected.get(..tag.len()) else {
                         return false;
@@ -729,11 +734,9 @@ impl SteganographyProtector {
 
         let channels = if header_bytes.len() >= 10 {
             let channel_bits = u16::from_le_bytes([header_bytes[8], header_bytes[9]]);
-            ProtectionChannels::from_bits(channel_bits).unwrap_or(ProtectionChannels {
-                rights_metadata: true,
-                hidden_marker: true,
-                authentication: true,
-            })
+            ProtectionChannels::from_bits(channel_bits).ok_or(V3PrefixResult::Malformed(
+                PayloadMalformedReason::InvalidChannels,
+            ))?
         } else {
             ProtectionChannels {
                 rights_metadata: true,
@@ -907,5 +910,70 @@ mod tests {
         assert!(!SteganographyProtector::verify_payload_integrity(
             &payload, key
         ));
+    }
+
+    #[test]
+    fn verify_integrity_rejects_hmac_with_empty_tag_for_any_key() {
+        let total = crate::payload_v3::types::V3_CORE_SIZE;
+        let payload = v3_payload(total, 2, 0);
+        for key in [&b"secret-key"[..], b"other-key", b""] {
+            assert!(
+                !SteganographyProtector::verify_payload_integrity(&payload, key),
+                "HMAC payload with auth_tag_len=0 must not authenticate"
+            );
+        }
+    }
+
+    #[test]
+    fn verify_integrity_rejects_truncated_hmac_tags() {
+        let key = b"secret-key";
+        for tag_len in [1u8, 8, 15] {
+            let total = crate::payload_v3::types::V3_CORE_SIZE + tag_len as usize;
+            let mut payload = v3_payload(total, 2, tag_len);
+            let mac = SteganographyProtector::compute_payload_mac_v3(&payload[..32], key);
+            let start = crate::payload_v3::types::V3_CORE_SIZE;
+            payload[start..total].copy_from_slice(&mac[..tag_len as usize]);
+            assert!(!SteganographyProtector::verify_payload_integrity(
+                &payload, key
+            ));
+        }
+    }
+
+    #[test]
+    fn verify_integrity_rejects_crc32_with_mismatched_tag_length() {
+        let mut payload = v3_payload(36, 1, 4);
+        let checksum = SteganographyProtector::compute_checksum(&payload[..32]);
+        payload[32..36].copy_from_slice(&checksum);
+        assert!(SteganographyProtector::verify_payload_integrity(
+            &payload,
+            &[]
+        ));
+
+        for tag_len in [0u8, 2, 5] {
+            let total = crate::payload_v3::types::V3_CORE_SIZE + tag_len as usize;
+            let payload = v3_payload(total, 1, tag_len);
+            assert!(!SteganographyProtector::verify_payload_integrity(
+                &payload,
+                &[]
+            ));
+        }
+    }
+
+    #[test]
+    fn validate_v3_header_rejects_reserved_channel_bits() {
+        let mut header = v3_payload(crate::payload_v3::types::V3_CORE_SIZE, 0, 0);
+        header[9] = 0x04;
+        assert!(matches!(
+            SteganographyProtector::validate_v3_header(&header, None),
+            Err(V3PrefixResult::Malformed(
+                PayloadMalformedReason::InvalidChannels
+            ))
+        ));
+    }
+
+    #[test]
+    fn validate_v3_header_accepts_defined_channel_bits() {
+        let header = v3_payload(crate::payload_v3::types::V3_CORE_SIZE, 0, 0);
+        assert!(SteganographyProtector::validate_v3_header(&header, None).is_ok());
     }
 }

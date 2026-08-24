@@ -183,7 +183,9 @@ fn parse_v3(data: &[u8]) -> Result<ParsedPayload, PayloadV3ParseError> {
 
     if ext_end > ext_start {
         let ext_data = &data[ext_start..ext_end];
-        extensions = parse_extensions(ext_data)?;
+        let reject_unknown_critical =
+            header.flags & crate::payload_v3::types::PayloadFlags::CRITICAL_EXTENSION != 0;
+        extensions = parse_extensions(ext_data, reject_unknown_critical)?;
     }
 
     if header.total_length as usize > data.len() {
@@ -218,7 +220,10 @@ fn parse_v3(data: &[u8]) -> Result<ParsedPayload, PayloadV3ParseError> {
     }))
 }
 
-fn parse_extensions(data: &[u8]) -> Result<Vec<ExtensionEntry>, PayloadV3ParseError> {
+fn parse_extensions(
+    data: &[u8],
+    reject_unknown_critical: bool,
+) -> Result<Vec<ExtensionEntry>, PayloadV3ParseError> {
     let mut extensions = Vec::new();
     let mut total_ext_size = 0usize;
     let mut seen_types = [false; 256];
@@ -227,6 +232,16 @@ fn parse_extensions(data: &[u8]) -> Result<Vec<ExtensionEntry>, PayloadV3ParseEr
     while offset + 4 <= data.len() {
         let ext_type = u16::from_le_bytes([data[offset], data[offset + 1]]);
         let ext_len = u16::from_le_bytes([data[offset + 2], data[offset + 3]]);
+
+        // Private-use extensions (0x0100-0x01FF) are always non-critical;
+        // other unknown types are rejected when the critical-extension
+        // policy flag is set.
+        if reject_unknown_critical
+            && !(0x0100..=0x01FF).contains(&ext_type)
+            && crate::payload_v3::types::ExtensionType::from_u16(ext_type).is_none()
+        {
+            return Err(PayloadV3ParseError::UnknownCriticalExtension(ext_type));
+        }
 
         if ext_type == 0xFFFF {
             for &b in &data[offset..] {
@@ -392,5 +407,62 @@ mod tests {
     #[test]
     fn test_parse_empty() {
         assert!(parse_payload(&[]).is_err());
+    }
+
+    fn v3_with_extension(ext_type: u16, critical_flag: bool) -> Vec<u8> {
+        let ext = [(ext_type & 0xFF) as u8, (ext_type >> 8) as u8, 0, 0];
+        let total = V3_CORE_SIZE + ext.len();
+        let mut data = vec![0u8; total];
+        data[0] = V3_MAGIC[0];
+        data[1] = V3_MAGIC[1];
+        data[2] = V3_PAYLOAD_VERSION;
+        data[3] = total as u8;
+        data[4..6].copy_from_slice(&(total as u16).to_le_bytes());
+        let mut flags = crate::payload_v3::types::PayloadFlags::HAS_EXTENSIONS;
+        if critical_flag {
+            flags |= crate::payload_v3::types::PayloadFlags::CRITICAL_EXTENSION;
+        }
+        data[6..8].copy_from_slice(&flags.to_le_bytes());
+        data[V3_CORE_SIZE..].copy_from_slice(&ext);
+        data
+    }
+
+    #[test]
+    fn test_parse_unknown_critical_extension_rejected_when_flag_set() {
+        let data = v3_with_extension(0x0300, true);
+        assert!(matches!(
+            parse_payload(&data),
+            Err(PayloadV3ParseError::UnknownCriticalExtension(0x0300))
+        ));
+    }
+
+    #[test]
+    fn test_parse_unknown_extension_skipped_when_flag_clear() {
+        let data = v3_with_extension(0x0300, false);
+        match parse_payload(&data).unwrap() {
+            ParsedPayload::V3(v3) => assert_eq!(v3.extensions.len(), 1),
+            _ => panic!("Expected V3"),
+        }
+    }
+
+    #[test]
+    fn test_parse_private_use_extension_never_rejected() {
+        let data = v3_with_extension(0x0100, true);
+        match parse_payload(&data).unwrap() {
+            ParsedPayload::V3(v3) => {
+                assert_eq!(v3.extensions.len(), 1);
+                assert_eq!(v3.extensions[0].extension_type, 0x0100);
+            }
+            _ => panic!("Expected V3"),
+        }
+    }
+
+    #[test]
+    fn test_parse_known_extension_accepted_with_critical_flag() {
+        let data = v3_with_extension(0x0001, true);
+        match parse_payload(&data).unwrap() {
+            ParsedPayload::V3(v3) => assert_eq!(v3.extensions.len(), 1),
+            _ => panic!("Expected V3"),
+        }
     }
 }

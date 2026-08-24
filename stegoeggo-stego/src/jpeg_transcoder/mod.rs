@@ -410,6 +410,11 @@ impl JpegTranscoder {
 
             let marker = original_jpeg[pos + 1];
 
+            if marker == 0xFF {
+                pos += 1;
+                continue;
+            }
+
             if marker == 0xDA {
                 // Copy the original SOS header verbatim, replace scan data, append EOI.
                 // The SOS header includes component table assignments and spectral

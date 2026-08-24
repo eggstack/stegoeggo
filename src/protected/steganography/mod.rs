@@ -46,16 +46,15 @@ const V3_HMAC_PAYLOAD_SIZE: usize = crate::payload_v3::types::V3_CORE_SIZE + 16;
 /// V3 payload bits for HMAC mode.
 pub(crate) const V3_HMAC_PAYLOAD_BITS: usize = V3_HMAC_PAYLOAD_SIZE * 8;
 
-/// Payload versions the extractor knows how to parse, in preference order.
+/// Payload versions recognized by `parse_stego_payload`.
 ///
-/// When a future v3 lands, append `3` here and add a `parse_stego_payload_v3` arm
-/// in `parse_stego_payload`. The parser tries each version in order, so a single
-/// binary can read both old and new payloads without forcing a coordinated upgrade
-/// of every protected image in the wild.
-///
-/// Removing a version from this slice will make previously-protected images
-/// un-parseable. Only remove a version when you are confident no surviving
-/// protected image still uses it.
+/// V3 payloads are dispatched by their magic bytes before this list is
+/// consulted, so no per-version match arm exists for `3` in
+/// `parse_stego_payload`; the loop there only routes legacy versions.
+/// Keeping a version in this slice keeps images protected by older
+/// releases parseable. Removing a version from this slice will make
+/// previously-protected images un-parseable. Only remove a version when
+/// you are confident no surviving protected image still uses it.
 const SUPPORTED_PAYLOAD_VERSIONS: &[u8] = &[1, 2, 3];
 
 /// Common test/dev seeds tried when metadata seed is unavailable.
@@ -124,6 +123,7 @@ pub(crate) enum PayloadMalformedReason {
     KeyIdTooLong,
     HeaderTooShortForKeyId,
     InvalidAuthAlgorithm,
+    InvalidChannels,
     HeaderLengthMismatch,
     ExtensionFlagMismatch,
 }
@@ -851,6 +851,20 @@ mod tests {
         let mut payload = vec![0u8; 26];
         payload[0] = 99; // invalid version
         assert!(SteganographyProtector::parse_stego_payload(&payload).is_none());
+    }
+
+    #[test]
+    fn parse_stego_payload_v1_short_input_returns_none() {
+        for n in 0..24 {
+            let mut buf = vec![0u8; n];
+            if !buf.is_empty() {
+                buf[0] = 1;
+            }
+            assert!(
+                SteganographyProtector::parse_stego_payload_v1(&buf).is_none(),
+                "v1 parser must not panic on {n}-byte input"
+            );
+        }
     }
 
     #[test]

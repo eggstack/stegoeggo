@@ -566,30 +566,28 @@ fn compute_output_path(
 
 #[allow(deprecated)]
 fn evidence_profile_for_display(args: &Args) -> EvidenceProfile {
-    if args.preset.is_some() || args.rights_policy.is_some() || args.dry_run {
-        if let Some(preset_arg) = args.preset {
-            return match preset_arg {
-                PresetArg::LegalNotice => EvidenceProfile::LegalNotice,
-                PresetArg::LegalNoticeWithStego => EvidenceProfile::LegalNoticeWithStego,
-                PresetArg::AuthenticatedProvenance => EvidenceProfile::AuthenticatedProvenance,
-                PresetArg::Maximal => EvidenceProfile::Maximal,
-            };
-        }
-        if let Some(ref policy_arg) = args.rights_policy {
-            return match policy_arg {
-                RightsPolicyArg::Unspecified => EvidenceProfile::LegalNotice,
-                RightsPolicyArg::Allowed => EvidenceProfile::LegalNotice,
-                RightsPolicyArg::ProhibitedAiMlTraining => EvidenceProfile::LegalNotice,
-                RightsPolicyArg::ProhibitedGenerativeAiTraining => EvidenceProfile::LegalNotice,
-                RightsPolicyArg::ProhibitedExceptSearchIndexing => EvidenceProfile::LegalNotice,
-                RightsPolicyArg::ProhibitedAllDataMining => EvidenceProfile::LegalNotice,
-                RightsPolicyArg::ProhibitedSeeConstraints => EvidenceProfile::LegalNotice,
-            };
-        }
-        EvidenceProfile::LegalNotice
-    } else {
-        EvidenceProfile::from(args.profile.clone())
+    if let Some(preset_arg) = args.preset {
+        return match preset_arg {
+            PresetArg::LegalNotice => EvidenceProfile::LegalNotice,
+            PresetArg::LegalNoticeWithStego => EvidenceProfile::LegalNoticeWithStego,
+            PresetArg::AuthenticatedProvenance => EvidenceProfile::AuthenticatedProvenance,
+            PresetArg::Maximal => EvidenceProfile::Maximal,
+        };
     }
+    if args.dry_run {
+        return EvidenceProfile::LegalNotice;
+    }
+    if args.authentication.is_some() || args.hidden_marker.is_some() || args.rights_policy.is_some()
+    {
+        if matches!(args.authentication, Some(AuthenticationArg::Hmac)) {
+            return EvidenceProfile::AuthenticatedProvenance;
+        }
+        if matches!(args.hidden_marker, Some(HiddenMarkerArg::BestEffort)) {
+            return EvidenceProfile::LegalNoticeWithStego;
+        }
+        return EvidenceProfile::LegalNotice;
+    }
+    EvidenceProfile::from(args.profile.clone())
 }
 
 #[allow(deprecated)]
@@ -723,6 +721,13 @@ fn build_protection_request_with_explicit_options(
             || args.profile != ProfileArg::LegalNotice)
     {
         return Err("Cannot combine --preset with --level/--profile; use --preset alone or --level/--profile alone".into());
+    }
+
+    if is_new_style
+        && args.preset.is_some()
+        && (args.hidden_marker.is_some() || args.authentication.is_some())
+    {
+        return Err("Cannot combine --preset with --hidden-marker/--authentication; use --preset alone or explicit channel flags alone".into());
     }
 
     let (legal_metadata, legal_dmi_override) = build_legal_metadata(args);
@@ -1464,10 +1469,20 @@ struct JsonExecutionReport {
 #[derive(serde::Serialize)]
 struct JsonEmbedOutcomeSummary {
     status: String,
-    path: String,
+    embedding_path: String,
     payload_bytes: usize,
     required_capacity: usize,
     available_capacity: usize,
+}
+
+fn embed_path_label(path: stegoeggo::EmbedPath) -> &'static str {
+    match path {
+        stegoeggo::EmbedPath::Lsb => "lsb",
+        stegoeggo::EmbedPath::LsbTiled => "lsb-tiled",
+        stegoeggo::EmbedPath::DctF5 => "dct-f5",
+        stegoeggo::EmbedPath::DctF5Tiled => "dct-f5-tiled",
+        stegoeggo::EmbedPath::QTableSeedOnly => "q-table-seed-only",
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -1956,7 +1971,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 format_transcoded: report.format_transcoded(),
                 embed_summary: report.embed_summary().map(|s| JsonEmbedOutcomeSummary {
                     status: format!("{}", s.status),
-                    path: format!("{:?}", s.path),
+                    embedding_path: embed_path_label(s.path).to_string(),
                     payload_bytes: s.payload_bytes,
                     required_capacity: s.required_capacity,
                     available_capacity: s.available_capacity,
@@ -2295,5 +2310,81 @@ mod tests {
         let req = build_protection_request(&args).unwrap();
         assert!(req.channels().rights_metadata);
         assert_eq!(req.channels().hidden_marker, HiddenMarkerMode::BestEffort);
+    }
+
+    #[test]
+    fn test_preset_and_hidden_marker_conflict() {
+        let mut args = default_args();
+        args.preset = Some(PresetArg::LegalNotice);
+        args.hidden_marker = Some(HiddenMarkerArg::BestEffort);
+        let result = build_protection_request(&args);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Cannot combine --preset"), "Error: {}", err);
+    }
+
+    #[test]
+    fn test_preset_and_authentication_conflict() {
+        let mut args = default_args();
+        args.preset = Some(PresetArg::Maximal);
+        args.authentication = Some(AuthenticationArg::Hmac);
+        args.key = Some("deadbeef01234567deadbeef01234567".to_string());
+        let result = build_protection_request(&args);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Cannot combine --preset"), "Error: {}", err);
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_display_profile_reflects_channel_flags() {
+        let mut args = default_args();
+        args.rights_policy = Some(RightsPolicyArg::Allowed);
+        assert_eq!(
+            evidence_profile_for_display(&args),
+            EvidenceProfile::LegalNotice
+        );
+
+        let mut args = default_args();
+        args.rights_policy = Some(RightsPolicyArg::ProhibitedSeeConstraints);
+        args.hidden_marker = Some(HiddenMarkerArg::BestEffort);
+        assert_eq!(
+            evidence_profile_for_display(&args),
+            EvidenceProfile::LegalNoticeWithStego
+        );
+
+        let mut args = default_args();
+        args.rights_policy = Some(RightsPolicyArg::Unspecified);
+        args.hidden_marker = Some(HiddenMarkerArg::Disabled);
+        args.authentication = Some(AuthenticationArg::Hmac);
+        assert_eq!(
+            evidence_profile_for_display(&args),
+            EvidenceProfile::AuthenticatedProvenance
+        );
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_display_profile_preset_and_dry_run_and_legacy() {
+        let mut args = default_args();
+        args.preset = Some(PresetArg::Maximal);
+        assert_eq!(
+            evidence_profile_for_display(&args),
+            EvidenceProfile::Maximal
+        );
+
+        let mut args = default_args();
+        args.dry_run = true;
+        assert_eq!(
+            evidence_profile_for_display(&args),
+            EvidenceProfile::LegalNotice
+        );
+
+        let mut args = default_args();
+        args.profile = ProfileArg::AuthenticatedProvenance;
+        assert_eq!(
+            evidence_profile_for_display(&args),
+            EvidenceProfile::AuthenticatedProvenance
+        );
     }
 }
