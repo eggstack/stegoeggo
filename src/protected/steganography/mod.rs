@@ -447,6 +447,55 @@ mod tests {
         );
     }
 
+    #[test]
+    fn verify_extract_finds_legacy_payload_at_primary_seed() {
+        const SPREAD: usize = 5;
+        const SPLITMIX64_SEED: u64 = 0x9e3779b97f4a7c15;
+
+        fn splitmix64(x: u64) -> u64 {
+            let mut z = x.wrapping_add(SPLITMIX64_SEED);
+            z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
+            z ^ (z >> 31)
+        }
+
+        let seed = 42u64;
+        let mut img = make_large_test_image();
+        let (width, height) = img.dimensions();
+        let total_pixels = (width * height) as usize;
+
+        let mut header = vec![0u8; V2_HEADER_SIZE];
+        header[0] = 2;
+        header[2..10].copy_from_slice(&seed.to_le_bytes());
+        let ecc = crate::protected::ecc::ecc_encode(&header);
+        let mut payload = ecc.clone();
+        payload.extend_from_slice(&SteganographyProtector::compute_checksum(&ecc));
+
+        let bits: Vec<u8> = payload
+            .iter()
+            .flat_map(|&b| (0..8).map(move |i| (b >> i) & 1))
+            .collect();
+
+        let a = splitmix64(seed).wrapping_mul(2) | 1;
+        let b = splitmix64(seed.wrapping_add(SPLITMIX64_SEED));
+
+        for (i, &bit) in bits.iter().enumerate() {
+            let channel = i % 3;
+            for s in 0..SPREAD {
+                let logical = i * SPREAD + s;
+                let idx = (a.wrapping_mul(logical as u64).wrapping_add(b) as usize) % total_pixels;
+                let x = (idx as u32) % width;
+                let y = (idx as u32) / width;
+                let pixel = img.get_pixel_mut(x, y);
+                pixel[channel] = (pixel[channel] & 0xFE) | bit;
+            }
+        }
+
+        let protector = SteganographyProtector::new();
+        let outcome = protector.verify_extract_with_redundancy(&img, seed, &[]);
+        assert!(matches!(outcome, CandidateOutcome::Valid(_)));
+    }
+
     // ── HMAC ──────────────────────────────────────────────────────────
 
     #[test]

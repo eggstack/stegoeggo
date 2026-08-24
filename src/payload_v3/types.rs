@@ -162,7 +162,7 @@ impl PayloadFlags {
     /// Encode flags as a 16-bit bitfield.
     #[must_use]
     pub fn to_bits(self) -> u16 {
-        let mut bits = self.reserved & !Self::DEFINED_FLAGS;
+        let mut bits = self.reserved;
         if self.has_extensions {
             bits |= Self::HAS_EXTENSIONS;
         }
@@ -308,6 +308,22 @@ mod tests {
         let bits = flags.to_bits();
         assert_eq!(bits & 0x0420, 0x0420);
         assert_eq!(PayloadFlags::from_bits(bits), flags);
+    }
+
+    #[test]
+    fn test_payload_flags_to_bits_keeps_reserved_overlapping_defined_flag() {
+        let flags = PayloadFlags {
+            has_extensions: false,
+            has_key_id: false,
+            tiled: false,
+            progressive_jpeg: false,
+            critical_extension: false,
+            signed: false,
+            reserved: PayloadFlags::HAS_EXTENSIONS | 0x0400,
+        };
+        let bits = flags.to_bits();
+        let overlap = PayloadFlags::HAS_EXTENSIONS | 0x0400;
+        assert_eq!(bits & overlap, overlap);
     }
 
     #[test]

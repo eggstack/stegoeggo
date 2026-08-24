@@ -476,6 +476,9 @@ impl SteganographyProtector {
                 return false;
             }
             let auth_tag_len = payload[30] as usize;
+            if auth_tag_len < 4 {
+                return false;
+            }
             if total_length < crate::payload_v3::types::V3_CORE_SIZE + auth_tag_len {
                 return false;
             }
@@ -553,14 +556,19 @@ impl SteganographyProtector {
                 }
                 2 if !mac_key.is_empty() => {
                     let expected = Self::compute_payload_mac_v3(core_and_ext, mac_key);
-                    let authenticated = expected[..tag.len()].ct_eq(tag).into();
+                    let Some(expected_prefix) = expected.get(..tag.len()) else {
+                        return false;
+                    };
+                    let authenticated = expected_prefix.ct_eq(tag).into();
                     if authenticated {
                         true
                     } else {
                         let mut legacy_mac = Self::new_hmac(mac_key);
                         legacy_mac.update(core_and_ext);
                         let result = legacy_mac.finalize().into_bytes();
-                        result[..tag.len()].ct_eq(tag).into()
+                        result
+                            .get(..tag.len())
+                            .is_some_and(|legacy_prefix| legacy_prefix.ct_eq(tag).into())
                     }
                 }
                 _ => false,
@@ -835,5 +843,69 @@ impl SteganographyProtector {
             total_length,
             total_bits,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v3_payload(total_length: usize, auth_algo: u8, auth_tag_len: u8) -> Vec<u8> {
+        let mut payload = vec![0u8; total_length];
+        payload[0] = V3_MAGIC[0];
+        payload[1] = V3_MAGIC[1];
+        payload[2] = V3_PAYLOAD_VERSION;
+        payload[3] = crate::payload_v3::types::V3_CORE_SIZE as u8;
+        payload[4..6].copy_from_slice(&(total_length as u16).to_le_bytes());
+        payload[29] = auth_algo;
+        payload[30] = auth_tag_len;
+        payload
+    }
+
+    #[test]
+    fn verify_checksum_rejects_undersized_auth_tag() {
+        for tag_len in [0u8, 1, 2, 3] {
+            let payload = v3_payload(36, 1, tag_len);
+            assert!(!SteganographyProtector::verify_checksum(&payload));
+        }
+    }
+
+    #[test]
+    fn verify_integrity_rejects_oversized_hmac_tag() {
+        for tag_len in [17u8, 32, 200] {
+            let total = crate::payload_v3::types::V3_CORE_SIZE + tag_len as usize;
+            let payload = v3_payload(total, 2, tag_len);
+            assert!(!SteganographyProtector::verify_payload_integrity(
+                &payload, b"mac-key"
+            ));
+        }
+    }
+
+    #[test]
+    fn verify_accepts_wellformed_crc32_payload() {
+        let mut payload = v3_payload(36, 1, 4);
+        let checksum = SteganographyProtector::compute_checksum(&payload[..32]);
+        payload[32..36].copy_from_slice(&checksum);
+        assert!(SteganographyProtector::verify_checksum(&payload));
+        assert!(SteganographyProtector::verify_payload_integrity(
+            &payload,
+            &[]
+        ));
+    }
+
+    #[test]
+    fn verify_accepts_wellformed_hmac_payload_and_rejects_wrong_key() {
+        let key = b"secret-key";
+        let mut payload = v3_payload(48, 2, 16);
+        let mac = SteganographyProtector::compute_payload_mac_v3(&payload[..32], key);
+        payload[32..48].copy_from_slice(&mac);
+        assert!(SteganographyProtector::verify_payload_integrity(
+            &payload, key
+        ));
+
+        payload[40] ^= 0xFF;
+        assert!(!SteganographyProtector::verify_payload_integrity(
+            &payload, key
+        ));
     }
 }

@@ -273,6 +273,24 @@ impl SteganographyProtector {
                 _ => {}
             }
         }
+        let legacy_primary = self.verify_extract_at_seed_legacy(img, prefix_bits, seed, mac_key);
+        match &legacy_primary {
+            CandidateOutcome::Valid(_)
+            | CandidateOutcome::Invalid(_)
+            | CandidateOutcome::AuthenticationKeyMissing(_)
+            | CandidateOutcome::AuthenticationFailed(_)
+            | CandidateOutcome::MalformedV3
+            | CandidateOutcome::UnsupportedVersion(_)
+            | CandidateOutcome::ResourceLimitExceeded => {
+                if Self::candidate_seed_matches(&legacy_primary, seed) {
+                    return legacy_primary;
+                }
+                if last_outcome.is_none() {
+                    last_outcome = Some(legacy_primary);
+                }
+            }
+            _ => {}
+        }
         for pass in 0..5 {
             let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
             for redundancy in 1..=10 {

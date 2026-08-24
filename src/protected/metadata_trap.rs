@@ -728,7 +728,8 @@ impl RightsMetadataProtector {
                     break;
                 }
                 let pascal_len = scan[2] as usize;
-                let header_len = 3 + pascal_len;
+                let name_field_len = pascal_len + 1 + ((pascal_len + 1) & 1);
+                let header_len = 2 + name_field_len;
                 if header_len + 4 > scan.len() {
                     break;
                 }
@@ -748,7 +749,11 @@ impl RightsMetadataProtector {
                     return true;
                 }
                 let aligned = data_size + (data_size & 1);
-                scan = &scan[header_len + 4 + aligned..];
+                let next = header_len + 4 + aligned;
+                if next >= scan.len() {
+                    break;
+                }
+                scan = &scan[next..];
             }
             return false;
         }
@@ -757,14 +762,14 @@ impl RightsMetadataProtector {
 
     fn iptc_has_stego_properties(data: &[u8]) -> bool {
         let mut pos = 0;
-        while pos + 5 <= data.len() {
+        while pos + 6 <= data.len() {
             if data[pos] != 0x1C {
                 break;
             }
             let record = data[pos + 1];
-            let tag = u16::from_be_bytes([data[pos + 2], data[pos + 3]]);
-            let val_len = u16::from_be_bytes([data[pos + 4], data[pos + 5]]) as usize;
-            if record == 2 && (tag == 0x027A || tag == 0x027C || tag == 0x027D) {
+            let tag = data[pos + 2];
+            let val_len = u16::from_be_bytes([data[pos + 3], data[pos + 4]]) as usize;
+            if record == 2 && matches!(tag, 0x05 | 0x78 | 0x7A | 0x7C | 0x7D) {
                 return true;
             }
             pos += 6 + val_len;
@@ -1469,6 +1474,12 @@ impl RightsMetadataProtector {
         value: &[u8],
         limits: Option<&crate::ResourceLimits>,
     ) -> Result<Vec<u8>> {
+        if key.is_empty() || key.len() > 79 {
+            return Err(Error::Metadata(format!(
+                "PNG tEXt keyword length must be between 1 and 79 bytes, got {}",
+                key.len()
+            )));
+        }
         if let Some(lim) = limits {
             let total = key.len() + 1 + value.len();
             lim.check_metadata_size("tEXt field", total, lim.max_metadata_field_bytes())?;
@@ -2060,7 +2071,8 @@ impl RightsMetadataProtector {
                     break;
                 }
                 let pascal_len = scan[2] as usize;
-                let header_len = 3 + pascal_len;
+                let name_field_len = pascal_len + 1 + ((pascal_len + 1) & 1);
+                let header_len = 2 + name_field_len;
                 if header_len + 4 > scan.len() {
                     break;
                 }
@@ -2080,7 +2092,11 @@ impl RightsMetadataProtector {
                     return true;
                 }
                 let aligned = data_size + (data_size & 1);
-                scan = &scan[header_len + 4 + aligned..];
+                let next = header_len + 4 + aligned;
+                if next >= scan.len() {
+                    break;
+                }
+                scan = &scan[next..];
             }
             false
         } else {
@@ -3579,6 +3595,75 @@ mod tests {
             RightsMetadataProtector::extract_seed_from_image(&injected),
             Some(42)
         );
+    }
+
+    #[test]
+    fn iptc_detection_recognizes_generated_records() {
+        let data = RightsMetadataProtector::generate_iptc_iim_dmi(
+            DmiValue::ProhibitedAiMlTraining,
+            Some(42),
+        );
+        assert!(RightsMetadataProtector::iptc_has_stego_properties(&data));
+
+        let dmi_only =
+            RightsMetadataProtector::generate_iptc_iim_dmi(DmiValue::ProhibitedAiMlTraining, None);
+        assert!(RightsMetadataProtector::iptc_has_stego_properties(
+            &dmi_only
+        ));
+    }
+
+    #[test]
+    fn truncated_iptc_record_is_rejected_without_panicking() {
+        assert!(!RightsMetadataProtector::iptc_has_stego_properties(&[
+            0x1C, 0x02, 0x78, 0x00, 0x10
+        ]));
+        assert!(!RightsMetadataProtector::iptc_has_stego_properties(&[
+            0x1C, 0x02, 0x78, 0x00
+        ]));
+    }
+
+    #[test]
+    fn odd_sized_trailing_iptc_resource_does_not_panic() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"Photoshop 3.0\0");
+        data.extend_from_slice(&0x0404u16.to_be_bytes());
+        data.push(0);
+        data.push(0);
+        let iptc: [u8; 5] = [0x1C, 0x02, 0x78, 0x00, 0x41];
+        data.extend_from_slice(&(iptc.len() as u32).to_be_bytes());
+        data.extend_from_slice(&iptc);
+        assert!(!RightsMetadataProtector::jpeg_payload_has_stego_properties(
+            &data
+        ));
+    }
+
+    #[test]
+    fn repeated_protection_replaces_generated_app13_segment() {
+        let protector = RightsMetadataProtector::new();
+        let jpeg = encode_jpeg(&make_test_image());
+        let ctx = ProtectionContext::new(0.5, 42).with_dmi(DmiValue::ProhibitedAiMlTraining);
+        let once = protector.inject_bytes(&jpeg, &ctx).unwrap();
+        let twice = protector.inject_bytes(&once, &ctx).unwrap();
+
+        let count_once = once
+            .windows(14)
+            .filter(|w| *w == *b"Photoshop 3.0\0")
+            .count();
+        let count_twice = twice
+            .windows(14)
+            .filter(|w| *w == *b"Photoshop 3.0\0")
+            .count();
+        assert!(count_once >= 1);
+        assert_eq!(count_once, count_twice);
+    }
+
+    #[test]
+    fn png_text_chunk_rejects_invalid_keyword_lengths() {
+        assert!(RightsMetadataProtector::create_png_text_chunk(b"", b"value", None).is_err());
+        let long_key = [b'k'; 80];
+        assert!(RightsMetadataProtector::create_png_text_chunk(&long_key, b"value", None).is_err());
+        let max_key = [b'k'; 79];
+        assert!(RightsMetadataProtector::create_png_text_chunk(&max_key, b"value", None).is_ok());
     }
 
     #[test]

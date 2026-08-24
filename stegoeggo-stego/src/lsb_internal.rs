@@ -182,7 +182,10 @@ pub fn embed_lsb(
     let payload_bits = bytes_to_bits(payload);
 
     let total_pixels = (width * height) as usize;
-    let total_pixels_needed = payload_bits.len().div_ceil(3) * STEGO_SPREAD_FACTOR;
+    let total_pixels_needed = payload_bits
+        .len()
+        .saturating_mul(STEGO_SPREAD_FACTOR)
+        .div_ceil(3);
     let available_slots = lsb_available_slots(width, height);
     let required_slots = lsb_required_slots_legacy(payload_bits.len());
 
@@ -197,7 +200,11 @@ pub fn embed_lsb(
     }
 
     for pass in 0..redundancy {
-        let offset_seed = seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64));
+        let offset_seed = if pass == 0 {
+            seed
+        } else {
+            seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64))
+        };
 
         for (i, &bit) in payload_bits.iter().enumerate() {
             let channel = i % 3;

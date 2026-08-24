@@ -49,7 +49,7 @@ impl DctCoefficientRng {
     }
 
     fn gen_range(&mut self, range: usize) -> usize {
-        (self.next_u64() as usize) % range
+        (self.next_u64() % range as u64) as usize
     }
 }
 
@@ -80,9 +80,10 @@ impl DctStegoF5 {
     ///
     /// Positions where the quantization value is 1 are skipped because `1 & 0xFE`
     /// would change the value from 1 to 0, corrupting the Q-table. This means
-    /// fewer bits are embedded than intended. Extraction handles partial reads
-    /// gracefully — if the full seed cannot be recovered, the caller falls back
-    /// to other extraction methods.
+    /// fewer bits are embedded than intended. Extraction skips the same
+    /// positions; if fewer than 96 carrier positions remain across both
+    /// tables, the seed cannot be recovered and the caller falls back to
+    /// other extraction methods.
     pub fn embed_seed_in_quantization_tables(
         &self,
         header: &mut JpegHeader,
@@ -125,13 +126,14 @@ impl DctStegoF5 {
     pub fn extract_seed_from_quantization_tables(&self, header: &JpegHeader) -> Option<u64> {
         let mut bits: Vec<u8> = Vec::new();
 
-        // Extract bits from quantization tables
+        // Extract bits from quantization tables, skipping positions whose
+        // value is 1 exactly as embedding does (they carry no embedded bit).
         // Read from both tables since we embed 96 bits across 2 tables
         for table_idx in 0..2 {
             if let Some(ref quant) = header.quantization_tables[table_idx] {
-                for (j, &val) in quant.values.iter().enumerate() {
-                    if j >= 64 {
-                        break;
+                for &val in quant.values.iter().take(64) {
+                    if val == 1 {
+                        continue;
                     }
                     bits.push((val & 1) as u8);
                 }
@@ -413,7 +415,7 @@ impl DctStegoF5 {
             .map(|c| c.v_sampling as u32)
             .max()
             .unwrap_or(1);
-        let mcus_per_row = (header.width as usize + max_h as usize * 7) / (max_h as usize * 8);
+        let mcus_per_row = (header.width as u32).div_ceil(max_h * 8) as usize;
 
         let blocks_per_luma_tile = tile_size / 8;
 
@@ -910,6 +912,47 @@ mod tests {
     }
 
     #[test]
+    fn test_tile_block_set_covers_remainder_mcu_columns() {
+        let header = make_header_420(65, 65);
+        let coefficients = make_coefficients_for_header(&header);
+
+        let set = DctStegoF5::tile_block_set(&header, &coefficients, 0, 0, 64);
+
+        assert!(set.contains(&(1, 0)));
+        assert!(set.contains(&(1, 64)));
+        assert!(!set.contains(&(1, 16)));
+        assert!(set.contains(&(2, 18)));
+        assert!(!set.contains(&(2, 4)));
+    }
+
+    #[test]
+    fn test_seed_roundtrip_with_sparse_unit_quant_values() {
+        let mut header = JpegHeader::default();
+        for i in 0..2 {
+            let mut table = crate::jpeg_transcoder::header::QuantizationTable {
+                table_id: i as u8,
+                precision: 8,
+                values: [16; 64],
+            };
+            for k in (3..64).step_by(7) {
+                table.values[k] = 1;
+            }
+            header.quantization_tables[i] = Some(table);
+        }
+
+        let seed = 0x1234567890ABCDEFu64;
+        let stego = DctStegoF5::new();
+        stego
+            .embed_seed_in_quantization_tables(&mut header, seed)
+            .unwrap();
+
+        assert_eq!(
+            stego.extract_seed_from_quantization_tables(&header),
+            Some(seed)
+        );
+    }
+
+    #[test]
     fn test_f5_in_blocks_roundtrip() {
         let header = make_header_420(64, 64);
         let mut coefficients = make_coefficients_for_header(&header);
@@ -998,11 +1041,13 @@ mod tests {
             .max()
             .unwrap_or(1);
 
+        let mcus_per_row = (header.width as u32).div_ceil(max_h * 8);
+        let mcus_per_col = (header.height as u32).div_ceil(max_v * 8);
+
         let mut coefficients = HashMap::new();
         for comp in &header.components {
-            let blocks_x = (header.width as u32 * comp.h_sampling as u32 + max_h * 7) / (max_h * 8);
-            let blocks_y =
-                (header.height as u32 * comp.v_sampling as u32 + max_v * 7) / (max_v * 8);
+            let blocks_x = mcus_per_row * comp.h_sampling as u32;
+            let blocks_y = mcus_per_col * comp.v_sampling as u32;
             let total = (blocks_x * blocks_y) as usize;
             let mut blocks = Vec::with_capacity(total);
             for i in 0..total {

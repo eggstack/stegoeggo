@@ -176,8 +176,8 @@ pub fn jpeg_embed_tiled(
         .map(|c| c.v_sampling as u32)
         .max()
         .unwrap_or(1);
-    let luma_blocks_x = (header.width as u32 + max_h * 7) / (max_h * 8);
-    let luma_blocks_y = (header.height as u32 + max_v * 7) / (max_v * 8);
+    let luma_blocks_x = (header.width as u32).div_ceil(max_h * 8) * max_h;
+    let luma_blocks_y = (header.height as u32).div_ceil(max_v * 8) * max_v;
     let blocks_per_tile = tile_size / 8;
     if blocks_per_tile == 0 {
         return Err(StegoError::InvalidConfig(
@@ -455,8 +455,8 @@ fn tile_geometry(
         .map(|c| c.v_sampling as u32)
         .max()
         .unwrap_or(1);
-    let luma_blocks_x = (header.width as u32 + max_h * 7) / (max_h * 8);
-    let luma_blocks_y = (header.height as u32 + max_v * 7) / (max_v * 8);
+    let luma_blocks_x = (header.width as u32).div_ceil(max_h * 8) * max_h;
+    let luma_blocks_y = (header.height as u32).div_ceil(max_v * 8) * max_v;
     let blocks_per_tile = tile_size / 8;
     (blocks_per_tile > 0).then(|| {
         (
@@ -758,5 +758,47 @@ mod tests {
             tile_seed(MASTER_SEED, 0, 0),
         )
         .expect("skipped output should remain unverifiable"));
+    }
+
+    fn make_header_420(width: u16, height: u16) -> crate::jpeg_transcoder::JpegHeader {
+        let mut header = crate::jpeg_transcoder::JpegHeader::default();
+        header.width = width;
+        header.height = height;
+        header.components = vec![
+            crate::jpeg_transcoder::header::ScanComponent {
+                component_id: 1,
+                h_sampling: 2,
+                v_sampling: 2,
+                quant_table_id: 0,
+                dc_table_id: 0,
+                ac_table_id: 0,
+            },
+            crate::jpeg_transcoder::header::ScanComponent {
+                component_id: 2,
+                h_sampling: 1,
+                v_sampling: 1,
+                quant_table_id: 1,
+                dc_table_id: 0,
+                ac_table_id: 0,
+            },
+            crate::jpeg_transcoder::header::ScanComponent {
+                component_id: 3,
+                h_sampling: 1,
+                v_sampling: 1,
+                quant_table_id: 1,
+                dc_table_id: 0,
+                ac_table_id: 0,
+            },
+        ];
+        header
+    }
+
+    #[test]
+    fn tile_geometry_counts_subsampled_luma_blocks() {
+        let header = make_header_420(128, 128);
+        assert_eq!(tile_geometry(&header, 64), Some((2, 2)));
+
+        let small = make_header_420(64, 64);
+        assert_eq!(tile_geometry(&small, 64), Some((1, 1)));
     }
 }
