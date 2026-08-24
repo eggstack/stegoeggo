@@ -1023,6 +1023,27 @@ mod phase3_resource_limits {
     }
 
     #[test]
+    fn request_limits_are_checked_before_format_detection() {
+        let limits = ResourceLimits::builder().max_input_bytes(1).build();
+        let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42)
+            .with_resource_limits(limits);
+        let err = process_request_bytes(b"not-an-image", &request).unwrap_err();
+        assert!(err.to_string().contains("too large"), "got: {err}");
+    }
+
+    #[test]
+    fn jpeg_metadata_segments_are_counted_as_metadata_fields() {
+        let jpeg_bytes = image_to_jpeg_bytes(&create_test_image(64, 64), 90);
+        let request =
+            ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::ProhibitedAiMlTraining)
+                .with_seed(42);
+        let (_, report) = process_request_bytes_with_report(&jpeg_bytes, &request).unwrap();
+        let usage = report.resource_usage().unwrap();
+        assert!(usage.metadata_fields_extracted >= 3, "usage: {usage:?}");
+    }
+
+    #[test]
     fn small_input_within_limit_succeeds() {
         let limits = ResourceLimits::builder()
             .max_input_bytes(1024 * 1024)

@@ -57,14 +57,18 @@ pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> usize
 }
 
 #[inline(always)]
-pub fn carrier_v2_slot_to_pixel_channel(slot: usize, width: u32, height: u32) -> (usize, usize) {
+pub fn carrier_v2_slot_to_pixel_channel(
+    slot: usize,
+    width: u32,
+    height: u32,
+) -> Option<(usize, usize)> {
     let total_pixels = (width as usize).checked_mul(height as usize).unwrap_or(0);
     let pixel_index = slot / 3;
     let channel = slot % 3;
     if pixel_index >= total_pixels {
-        return (0, 0);
+        return None;
     }
-    (pixel_index, channel)
+    Some((pixel_index, channel))
 }
 
 #[inline(always)]
@@ -366,7 +370,17 @@ pub fn embed_lsb_v2_in_place(
                 .saturating_mul(replicas_per_bit)
                 .saturating_add(replica);
             let slot = stego_permutation_v2(logical, available, seed);
-            let (pixel_index, slot_channel) = carrier_v2_slot_to_pixel_channel(slot, width, height);
+            let Some((pixel_index, slot_channel)) =
+                carrier_v2_slot_to_pixel_channel(slot, width, height)
+            else {
+                return InPlaceEmbedReport {
+                    embedded: false,
+                    payload_bytes: payload.len(),
+                    required_capacity: required,
+                    available_capacity: available,
+                    actual_redundancy: redundancy,
+                };
+            };
             let x = pixel_index as u32 % width;
             let y = pixel_index as u32 / width;
             embed_bit_in_pixel(image, x, y, slot_channel, bit);
@@ -411,7 +425,8 @@ pub fn extract_lsb_v2(
         for s in 0..replicas_per_bit {
             let logical = base_slot + i * replicas_per_bit + s;
             let slot = stego_permutation_v2(logical, available, seed);
-            let (pixel_index, slot_channel) = carrier_v2_slot_to_pixel_channel(slot, width, height);
+            let (pixel_index, slot_channel) =
+                carrier_v2_slot_to_pixel_channel(slot, width, height)?;
             let x = pixel_index as u32 % width;
             let y = pixel_index as u32 / width;
             let pixel = img.get_pixel(x, y);
@@ -477,8 +492,17 @@ pub fn embed_lsb_tiled(
                     for s in 0..replicas_per_bit {
                         let logical = i.saturating_mul(replicas_per_bit).saturating_add(s);
                         let slot = stego_permutation_v2(logical, tile_available, seed_for_embed);
-                        let (pixel_index, slot_channel) =
-                            carrier_v2_slot_to_pixel_channel(slot, sub_w, sub_h);
+                        let Some((pixel_index, slot_channel)) =
+                            carrier_v2_slot_to_pixel_channel(slot, sub_w, sub_h)
+                        else {
+                            return EmbedOutcome::SkippedCapacity {
+                                output: img.clone(),
+                                payload_bytes: payload.len(),
+                                required_capacity: total_required.saturating_add(tile_required),
+                                available_capacity: total_available.saturating_add(tile_available),
+                                path: crate::types::EmbedPath::LsbTiled,
+                            };
+                        };
                         let lx = pixel_index as u32 % sub_w;
                         let ly = pixel_index as u32 / sub_w;
                         let fx = x0 + lx;
@@ -866,6 +890,12 @@ mod tests {
 
     fn uniform_image(width: u32, height: u32, value: u8) -> RgbaImage {
         RgbaImage::from_fn(width, height, |_x, _y| Rgba([value, value, value, 255]))
+    }
+
+    #[test]
+    fn carrier_slot_rejects_out_of_range_slot() {
+        assert_eq!(carrier_v2_slot_to_pixel_channel(2, 1, 1), Some((0, 2)));
+        assert_eq!(carrier_v2_slot_to_pixel_channel(3, 1, 1), None);
     }
 
     fn channel_value(img: &RgbaImage, x: u32, y: u32, channel: usize) -> u8 {

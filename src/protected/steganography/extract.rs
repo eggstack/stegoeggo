@@ -32,6 +32,7 @@ impl SteganographyProtector {
             | CandidateOutcome::UnsupportedVersion(_)
             | CandidateOutcome::AuthenticationKeyMissing(_)
             | CandidateOutcome::AuthenticationFailed(_)
+            | CandidateOutcome::ResourceLimitExceeded
             | CandidateOutcome::NotFound => None,
         }
     }
@@ -92,9 +93,8 @@ impl SteganographyProtector {
                     }
                     legacy_outcome.unwrap_or(CandidateOutcome::NotFound)
                 }
-                V3PrefixResult::Malformed(_) | V3PrefixResult::ResourceLimitExceeded => {
-                    CandidateOutcome::MalformedV3
-                }
+                V3PrefixResult::Malformed(_) => CandidateOutcome::MalformedV3,
+                V3PrefixResult::ResourceLimitExceeded => CandidateOutcome::ResourceLimitExceeded,
                 V3PrefixResult::UnsupportedVersion(version) => {
                     CandidateOutcome::UnsupportedVersion(version)
                 }
@@ -266,7 +266,8 @@ impl SteganographyProtector {
                 CandidateOutcome::Valid(_)
                 | CandidateOutcome::Invalid(_)
                 | CandidateOutcome::AuthenticationKeyMissing(_)
-                | CandidateOutcome::AuthenticationFailed(_) => {
+                | CandidateOutcome::AuthenticationFailed(_)
+                | CandidateOutcome::ResourceLimitExceeded => {
                     if Self::candidate_seed_matches(&v2_corrected, seed) {
                         return v2_corrected;
                     }
@@ -292,7 +293,8 @@ impl SteganographyProtector {
                     CandidateOutcome::Valid(_)
                     | CandidateOutcome::Invalid(_)
                     | CandidateOutcome::AuthenticationKeyMissing(_)
-                    | CandidateOutcome::AuthenticationFailed(_) => {
+                    | CandidateOutcome::AuthenticationFailed(_)
+                    | CandidateOutcome::ResourceLimitExceeded => {
                         if Self::candidate_seed_matches(&v2_outcome, seed) {
                             return v2_outcome;
                         }
@@ -312,7 +314,8 @@ impl SteganographyProtector {
                 | CandidateOutcome::AuthenticationKeyMissing(_)
                 | CandidateOutcome::AuthenticationFailed(_)
                 | CandidateOutcome::MalformedV3
-                | CandidateOutcome::UnsupportedVersion(_) => {
+                | CandidateOutcome::UnsupportedVersion(_)
+                | CandidateOutcome::ResourceLimitExceeded => {
                     if Self::candidate_seed_matches(&legacy_outcome, seed) {
                         return legacy_outcome;
                     }
@@ -381,7 +384,7 @@ impl SteganographyProtector {
                     last_outcome = Some(CandidateOutcome::UnsupportedVersion(v));
                 }
                 V3ProbeResult::ResourceLimitExceeded if last_outcome.is_none() => {
-                    last_outcome = Some(CandidateOutcome::MalformedV3);
+                    last_outcome = Some(CandidateOutcome::ResourceLimitExceeded);
                 }
                 _ => {}
             }
@@ -438,7 +441,7 @@ impl SteganographyProtector {
                     last_outcome = Some(CandidateOutcome::UnsupportedVersion(v));
                 }
                 V3ProbeResult::ResourceLimitExceeded if last_outcome.is_none() => {
-                    last_outcome = Some(CandidateOutcome::MalformedV3);
+                    last_outcome = Some(CandidateOutcome::ResourceLimitExceeded);
                 }
                 _ => {}
             }
@@ -498,6 +501,9 @@ impl SteganographyProtector {
                     return CandidateOutcome::AuthenticationFailed(payload);
                 }
             }
+            CandidateOutcome::ResourceLimitExceeded => {
+                return CandidateOutcome::ResourceLimitExceeded;
+            }
             CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {}
             CandidateOutcome::NotFound => {}
         }
@@ -530,6 +536,9 @@ impl SteganographyProtector {
                             if Self::verify_embedded_seed_matches(&payload, seed) {
                                 return CandidateOutcome::AuthenticationFailed(payload);
                             }
+                        }
+                        CandidateOutcome::ResourceLimitExceeded => {
+                            return CandidateOutcome::ResourceLimitExceeded;
                         }
                         CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
                         }
@@ -576,7 +585,8 @@ impl SteganographyProtector {
             CandidateOutcome::MalformedV3
             | CandidateOutcome::UnsupportedVersion(_)
             | CandidateOutcome::AuthenticationKeyMissing(_)
-            | CandidateOutcome::AuthenticationFailed(_) => outcome,
+            | CandidateOutcome::AuthenticationFailed(_)
+            | CandidateOutcome::ResourceLimitExceeded => outcome,
             CandidateOutcome::NotFound => CandidateOutcome::NotFound,
         }
     }
@@ -641,13 +651,13 @@ impl SteganographyProtector {
                 V3ProbeResult::UnsupportedVersion(version) if last_outcome.is_none() => {
                     last_outcome = Some(CandidateOutcome::UnsupportedVersion(version));
                 }
-                V3ProbeResult::ResourceLimitExceeded if last_outcome.is_none() => {
-                    last_outcome = Some(CandidateOutcome::MalformedV3);
+                V3ProbeResult::ResourceLimitExceeded => {
+                    if last_outcome.is_none() {
+                        last_outcome = Some(CandidateOutcome::ResourceLimitExceeded);
+                    }
                 }
                 V3ProbeResult::InsufficientCapacity => {}
-                V3ProbeResult::MalformedV3
-                | V3ProbeResult::UnsupportedVersion(_)
-                | V3ProbeResult::ResourceLimitExceeded => {
+                V3ProbeResult::MalformedV3 | V3ProbeResult::UnsupportedVersion(_) => {
                     if last_outcome.is_none() {
                         last_outcome = Some(CandidateOutcome::MalformedV3);
                     }
@@ -698,6 +708,10 @@ impl SteganographyProtector {
             (CandidateOutcome::UnsupportedVersion(version), _)
             | (_, CandidateOutcome::UnsupportedVersion(version)) => {
                 CandidateOutcome::UnsupportedVersion(version)
+            }
+            (CandidateOutcome::ResourceLimitExceeded, _)
+            | (_, CandidateOutcome::ResourceLimitExceeded) => {
+                CandidateOutcome::ResourceLimitExceeded
             }
             _ => CandidateOutcome::NotFound,
         }
@@ -1011,7 +1025,7 @@ impl SteganographyProtector {
             }
             V3PrefixResult::Malformed(_) => CandidateOutcome::MalformedV3,
             V3PrefixResult::UnsupportedVersion(v) => CandidateOutcome::UnsupportedVersion(v),
-            V3PrefixResult::ResourceLimitExceeded => CandidateOutcome::MalformedV3,
+            V3PrefixResult::ResourceLimitExceeded => CandidateOutcome::ResourceLimitExceeded,
         }
     }
 
@@ -1169,6 +1183,11 @@ impl SteganographyProtector {
                                 {
                                     last_outcome = Some(outcome);
                                 }
+                                CandidateOutcome::ResourceLimitExceeded
+                                    if last_outcome.is_none() =>
+                                {
+                                    last_outcome = Some(outcome);
+                                }
                                 _ => {}
                             }
                         }
@@ -1227,7 +1246,8 @@ impl SteganographyProtector {
                                 }
                                 V3PrefixResult::ResourceLimitExceeded => {
                                     if last_outcome.is_none() {
-                                        last_outcome = Some(CandidateOutcome::MalformedV3);
+                                        last_outcome =
+                                            Some(CandidateOutcome::ResourceLimitExceeded);
                                     }
                                 }
                                 V3PrefixResult::NotV3 => {

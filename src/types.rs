@@ -979,14 +979,13 @@ impl LegalMetadata {
                 field_name
             )));
         }
-        let has_scheme = url.contains("://");
-        if !has_scheme {
+        let Some(scheme_end) = url.find("://") else {
             return Err(crate::Error::Config(format!(
                 "URL field '{}' must include a scheme (e.g., https://): {}",
                 field_name, url
             )));
-        }
-        let after_scheme = &url[url.find("://").unwrap() + 3..];
+        };
+        let after_scheme = &url[scheme_end + 3..];
         if after_scheme.is_empty() {
             return Err(crate::Error::Config(format!(
                 "URL field '{}' must include an authority after the scheme: {}",

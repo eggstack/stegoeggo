@@ -1,18 +1,20 @@
-/// Generate a cryptographically secure random seed.
-///
-/// Uses `getrandom` (OS CSPRNG) for randomness. Falls back to system-time-based
-/// mixing if `getrandom` fails (e.g., in unusual sandboxed environments).
-/// Returns a non-zero u64.
-///
-/// This is suitable for generating unpredictable seeds in adversarial settings.
-/// For reproducible protection, use `ProtectionContext::new(intensity, seed)` with
-/// a seed of your choice.
-pub fn generate_random_seed() -> u64 {
+pub(crate) fn try_generate_random_seed() -> std::result::Result<u64, getrandom::Error> {
     let mut buf = [0u8; 8];
-    if getrandom::getrandom(&mut buf).is_ok() {
-        let x = u64::from_le_bytes(buf);
-        return if x == 0 { 42 } else { x };
+    getrandom::getrandom(&mut buf)?;
+    let x = u64::from_le_bytes(buf);
+    Ok(if x == 0 { 42 } else { x })
+}
+
+/// Generate a random seed for APIs that cannot propagate entropy errors.
+///
+/// Uses `getrandom` (OS CSPRNG) for randomness and falls back to system-time-based
+/// mixing if `getrandom` fails. Request-based protection APIs propagate that failure
+/// instead; use an explicit seed for reproducible protection.
+pub fn generate_random_seed() -> u64 {
+    if let Ok(seed) = try_generate_random_seed() {
+        return seed;
     }
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();

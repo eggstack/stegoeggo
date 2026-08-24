@@ -300,6 +300,7 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
                     ));
                 }
             }
+            Event::DocType(_) => {}
             Event::Start(start) => {
                 let (resolve, _) = reader.resolver().resolve_element(start.name());
                 let local = start.local_name();
@@ -582,12 +583,6 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
                     out.extend_from_slice(&value);
                 }
             }
-            other => {
-                return Err(Error::Metadata(format!(
-                    "Unsupported XMP event: {:?}",
-                    other
-                )));
-            }
         }
         buf.clear();
     }
@@ -760,11 +755,10 @@ pub(crate) fn merge_preserved_descriptions(
             Event::GeneralRef(reference) => {
                 append_xml_reference(&reference, &mut output)?;
             }
-            other => {
-                return Err(Error::Metadata(format!(
-                    "Unsupported XMP event in merge: {:?}",
-                    other
-                )));
+            Event::DocType(doctype) => {
+                output.extend_from_slice(b"<!DOCTYPE ");
+                output.extend_from_slice(doctype.as_ref());
+                output.push(b'>');
             }
         }
         buf.clear();
@@ -1232,6 +1226,21 @@ mod tests {
             .as_bytes()
             .to_vec();
         let _ = filter_xmp_packet(&packet).expect("should parse with comments/PIs");
+    }
+
+    #[test]
+    fn accepts_doctype_events() {
+        let packet = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE x:xmpmeta>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:RDF><rdf:Description rdf:about=""/></rdf:RDF>
+</x:xmpmeta>"#
+            .as_bytes();
+        assert_eq!(filter_xmp_packet(packet).unwrap().len(), 1);
+        let merged = merge_preserved_descriptions(packet, &[]).unwrap();
+        assert!(String::from_utf8(merged)
+            .unwrap()
+            .contains("<!DOCTYPE x:xmpmeta>"));
     }
 
     #[test]

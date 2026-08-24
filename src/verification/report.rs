@@ -1154,18 +1154,20 @@ impl VerificationReport {
         };
         let rights = rights.build();
 
+        let source = if let Some(payload) = notice.stego_payload() {
+            match payload.version() {
+                1 => FieldSource::EmbeddedPayloadV1,
+                2 => FieldSource::EmbeddedPayloadV2,
+                3 => FieldSource::EmbeddedPayloadV3,
+                _ => FieldSource::Xmp,
+            }
+        } else {
+            FieldSource::Xmp
+        };
+
         let mut hidden_marker = HiddenMarkerVerification::builder()
             .status(notice.stego_status())
-            .source(if notice.stego_payload().is_some() {
-                match notice.stego_payload().unwrap().version() {
-                    1 => FieldSource::EmbeddedPayloadV1,
-                    2 => FieldSource::EmbeddedPayloadV2,
-                    3 => FieldSource::EmbeddedPayloadV3,
-                    _ => FieldSource::Xmp,
-                }
-            } else {
-                FieldSource::Xmp
-            });
+            .source(source);
 
         if let Some(seed) = notice.protection_seed() {
             hidden_marker = hidden_marker.seed(seed);

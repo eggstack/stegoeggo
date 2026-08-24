@@ -1,6 +1,6 @@
 use crate::payload_v3::errors::PayloadV3ParseError;
 use crate::payload_v3::types::{
-    AuthAlgorithm, V3_CORE_SIZE, V3_MAGIC, V3_MAX_EMBEDDED_SIZE, V3_MAX_KEY_ID_LEN,
+    AuthAlgorithm, PayloadFlags, V3_CORE_SIZE, V3_MAGIC, V3_MAX_EMBEDDED_SIZE, V3_MAX_KEY_ID_LEN,
     V3_PAYLOAD_VERSION,
 };
 
@@ -136,6 +136,13 @@ impl PayloadV3Header {
             });
         }
 
+        let has_extension_bytes = header_length as usize > total_core;
+        if (flags & PayloadFlags::HAS_EXTENSIONS != 0) != has_extension_bytes {
+            return Err(PayloadV3ParseError::HeaderLengthMismatch {
+                header: header_length as usize,
+            });
+        }
+
         if total_length as usize > V3_MAX_EMBEDDED_SIZE {
             return Err(PayloadV3ParseError::Oversized {
                 size: total_length as usize,
@@ -250,6 +257,24 @@ mod tests {
                 key_id_len: 33,
                 max: 32
             })
+        ));
+    }
+
+    #[test]
+    fn test_header_extension_flag_matches_header_length() {
+        let mut bytes = make_test_header().to_bytes();
+        bytes[3] = (V3_CORE_SIZE + 1) as u8;
+        bytes[4..6].copy_from_slice(&(V3_CORE_SIZE as u16 + 1).to_le_bytes());
+        assert!(matches!(
+            PayloadV3Header::from_bytes(&bytes),
+            Err(PayloadV3ParseError::HeaderLengthMismatch { .. })
+        ));
+
+        let mut bytes = make_test_header().to_bytes();
+        bytes[6..8].copy_from_slice(&PayloadFlags::HAS_EXTENSIONS.to_le_bytes());
+        assert!(matches!(
+            PayloadV3Header::from_bytes(&bytes),
+            Err(PayloadV3ParseError::HeaderLengthMismatch { .. })
         ));
     }
 

@@ -34,9 +34,12 @@ pub fn resolve_request(
         policy => Some(DmiValue::from(policy)),
     };
 
-    let seed = request
-        .seed()
-        .unwrap_or_else(crate::util::seed::generate_random_seed);
+    let seed = match request.seed() {
+        Some(seed) => seed,
+        None => crate::util::seed::try_generate_random_seed().map_err(|error| {
+            Error::Crypto(format!("failed to generate protection seed: {error}"))
+        })?,
+    };
 
     let output_format = request.processing().output_format.unwrap_or(input_format);
 

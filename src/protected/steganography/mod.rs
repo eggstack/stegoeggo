@@ -86,6 +86,7 @@ pub(crate) enum CandidateOutcome {
     UnsupportedVersion(u8),
     AuthenticationKeyMissing(Vec<u8>),
     AuthenticationFailed(Vec<u8>),
+    ResourceLimitExceeded,
     NotFound,
 }
 
@@ -124,6 +125,7 @@ pub(crate) enum PayloadMalformedReason {
     HeaderTooShortForKeyId,
     InvalidAuthAlgorithm,
     HeaderLengthMismatch,
+    ExtensionFlagMismatch,
 }
 
 /// Validated v3 header fields extracted after the prefix stage.

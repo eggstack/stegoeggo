@@ -23,6 +23,12 @@ pub enum PayloadV3ParseError {
         /// Total payload length.
         total: usize,
     },
+    /// Header length and extension flag do not describe the same layout.
+    #[error("Header length {header} is inconsistent with the extension flag")]
+    HeaderLengthMismatch {
+        /// Declared header length.
+        header: usize,
+    },
     /// DMI policy byte is out of range.
     #[error("Invalid DMI policy byte: {0}")]
     InvalidDmiPolicy(u8),

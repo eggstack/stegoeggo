@@ -3,6 +3,11 @@
 use super::*;
 
 impl SteganographyProtector {
+    fn new_hmac(mac_key: &[u8]) -> HmacSha256 {
+        HmacSha256::new_from_slice(mac_key)
+            .unwrap_or_else(|_| unreachable!("HMAC accepts keys of every length"))
+    }
+
     pub(crate) fn payload_within_limits(&self, bytes: &[u8]) -> bool {
         bytes.len() <= self.limits.max_payload_bytes()
     }
@@ -49,124 +54,137 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> VerificationStatus {
+        match self.verify_payload_from_bytes_outcome(img_bytes, mac_key, false) {
+            CandidateOutcome::Valid(_) => VerificationStatus::Verified,
+            CandidateOutcome::Invalid(_)
+            | CandidateOutcome::MalformedV3
+            | CandidateOutcome::UnsupportedVersion(_)
+            | CandidateOutcome::AuthenticationKeyMissing(_)
+            | CandidateOutcome::AuthenticationFailed(_)
+            | CandidateOutcome::ResourceLimitExceeded => VerificationStatus::Invalid,
+            CandidateOutcome::NotFound => VerificationStatus::NotFound,
+        }
+    }
+
+    fn verify_payload_from_bytes_outcome(
+        &self,
+        img_bytes: &[u8],
+        mac_key: &[u8],
+        suppress_unstructured_candidates: bool,
+    ) -> CandidateOutcome {
         let metadata_seed = RightsMetadataProtector::extract_seed_from_image_with_limits(
             img_bytes,
             Some(&self.limits),
         );
 
-        // JPEG: check DCT stego directly (no re-encode needed)
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
-            match self.verify_extract_verified_dct(img_bytes, mac_key) {
-                CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
-                CandidateOutcome::Invalid(_)
-                | CandidateOutcome::MalformedV3
-                | CandidateOutcome::UnsupportedVersion(_)
-                | CandidateOutcome::AuthenticationKeyMissing(_)
-                | CandidateOutcome::AuthenticationFailed(_) => return VerificationStatus::Invalid,
-                CandidateOutcome::NotFound => {}
+            let outcome = self.verify_extract_verified_dct(img_bytes, mac_key);
+            if !matches!(&outcome, CandidateOutcome::NotFound) {
+                return outcome;
             }
 
             if let Some(metadata_seed) = metadata_seed {
-                match self.verify_extract_dct_with_seed(img_bytes, metadata_seed, mac_key) {
-                    CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
-                    CandidateOutcome::Invalid(_)
-                    | CandidateOutcome::MalformedV3
-                    | CandidateOutcome::UnsupportedVersion(_)
-                    | CandidateOutcome::AuthenticationKeyMissing(_)
-                    | CandidateOutcome::AuthenticationFailed(_) => {
-                        return VerificationStatus::Invalid
-                    }
-                    CandidateOutcome::NotFound => {}
+                let outcome = self.verify_extract_dct_with_seed(img_bytes, metadata_seed, mac_key);
+                if !matches!(&outcome, CandidateOutcome::NotFound) {
+                    return outcome;
                 }
             }
 
-            // JPEG output in this crate uses DCT/Q-table channels, not pixel
-            // LSB channels. Avoid a lossy decode and futile LSB scan in the
-            // reverse-proxy verification hot path.
-            return VerificationStatus::NotFound;
+            return CandidateOutcome::NotFound;
         }
 
-        // Extract metadata seed directly from bytes (works for PNG, JPEG, WebP)
         if let Some(metadata_seed) = metadata_seed {
             if let Ok(img) = image::load_from_memory(img_bytes) {
-                match self.verify_payload_with_seed_outcome(&img, metadata_seed, mac_key) {
-                    CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
-                    CandidateOutcome::Invalid(_)
-                    | CandidateOutcome::MalformedV3
-                    | CandidateOutcome::UnsupportedVersion(_)
-                    | CandidateOutcome::AuthenticationKeyMissing(_)
-                    | CandidateOutcome::AuthenticationFailed(_) => {
-                        return VerificationStatus::Invalid
-                    }
-                    CandidateOutcome::NotFound => {}
+                let outcome = self.verify_payload_with_seed_outcome(&img, metadata_seed, mac_key);
+                if !matches!(&outcome, CandidateOutcome::NotFound) {
+                    return outcome;
                 }
             }
         }
 
-        // Try LSB fallback seed (fixed-position LSB pattern)
         if let Ok(img) = image::load_from_memory(img_bytes) {
             let rgba = img.to_rgba8();
             if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
-                match self.verify_payload_with_seed_outcome(&img, fallback_seed, mac_key) {
-                    CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
-                    CandidateOutcome::Invalid(_)
-                    | CandidateOutcome::MalformedV3
-                    | CandidateOutcome::UnsupportedVersion(_)
-                    | CandidateOutcome::AuthenticationKeyMissing(_)
-                    | CandidateOutcome::AuthenticationFailed(_) => {
-                        return VerificationStatus::Invalid
+                let outcome = self.verify_payload_with_seed_outcome(&img, fallback_seed, mac_key);
+                let outcome = if suppress_unstructured_candidates {
+                    match outcome {
+                        CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
+                            CandidateOutcome::NotFound
+                        }
+                        outcome => outcome,
                     }
-                    CandidateOutcome::NotFound => {}
+                } else {
+                    outcome
+                };
+                if !matches!(&outcome, CandidateOutcome::NotFound) {
+                    return outcome;
                 }
             }
 
-            // Crop-resistant tiled payloads may survive after metadata and the
-            // fixed-position seed fallback are clipped away. Keep this bounded
-            // to the same small set used by payload extraction so verification
-            // remains predictable.
             for &seed in &[42u64, 0, 1, 12345, 99999, 123456789] {
-                match self.verify_tiled_extraction_outcome(
+                let outcome = self.verify_tiled_extraction_outcome(
                     &rgba,
                     seed,
                     DEFAULT_TILE_SIZE,
                     self.limits.max_tile_extraction_origins() as u32,
                     mac_key,
-                ) {
-                    CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
-                    CandidateOutcome::Invalid(_)
-                    | CandidateOutcome::MalformedV3
-                    | CandidateOutcome::UnsupportedVersion(_)
-                    | CandidateOutcome::AuthenticationKeyMissing(_)
-                    | CandidateOutcome::AuthenticationFailed(_) => {
-                        return VerificationStatus::Invalid
+                );
+                let outcome = if suppress_unstructured_candidates {
+                    match outcome {
+                        CandidateOutcome::Valid(payload)
+                        | CandidateOutcome::Invalid(payload)
+                        | CandidateOutcome::AuthenticationKeyMissing(payload)
+                        | CandidateOutcome::AuthenticationFailed(payload)
+                            if !Self::payload_is_structurally_plausible(&payload) =>
+                        {
+                            CandidateOutcome::NotFound
+                        }
+                        CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
+                            CandidateOutcome::NotFound
+                        }
+                        outcome => outcome,
                     }
-                    CandidateOutcome::NotFound => {}
+                } else {
+                    outcome
+                };
+                if !matches!(&outcome, CandidateOutcome::NotFound) {
+                    return outcome;
                 }
             }
         }
 
-        // LSB fallback: try known seeds via DynamicImage
         #[cfg(feature = "test-seeds")]
         if let Ok(img) = image::load_from_memory(img_bytes) {
             for &seed in FALLBACK_SEEDS
                 .iter()
                 .take(self.limits.max_verification_seeds())
             {
-                match self.verify_payload_with_seed_outcome(&img, seed, mac_key) {
-                    CandidateOutcome::Valid(_) => return VerificationStatus::Verified,
-                    CandidateOutcome::Invalid(_)
-                    | CandidateOutcome::MalformedV3
-                    | CandidateOutcome::UnsupportedVersion(_)
-                    | CandidateOutcome::AuthenticationKeyMissing(_)
-                    | CandidateOutcome::AuthenticationFailed(_) => {
-                        return VerificationStatus::Invalid
+                let outcome = self.verify_payload_with_seed_outcome(&img, seed, mac_key);
+                let outcome = if suppress_unstructured_candidates {
+                    match outcome {
+                        CandidateOutcome::Valid(payload)
+                        | CandidateOutcome::Invalid(payload)
+                        | CandidateOutcome::AuthenticationKeyMissing(payload)
+                        | CandidateOutcome::AuthenticationFailed(payload)
+                            if !Self::payload_is_structurally_plausible(&payload) =>
+                        {
+                            CandidateOutcome::NotFound
+                        }
+                        CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
+                            CandidateOutcome::NotFound
+                        }
+                        outcome => outcome,
                     }
-                    CandidateOutcome::NotFound => {}
+                } else {
+                    outcome
+                };
+                if !matches!(&outcome, CandidateOutcome::NotFound) {
+                    return outcome;
                 }
             }
         }
 
-        VerificationStatus::NotFound
+        CandidateOutcome::NotFound
     }
 
     /// Verify protection and return raw payload bytes for embedded reference checks.
@@ -184,85 +202,18 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> (VerificationStatus, Option<Vec<u8>>) {
-        let metadata_seed = RightsMetadataProtector::extract_seed_from_image_with_limits(
-            img_bytes,
-            Some(&self.limits),
-        );
-
-        if img_bytes.starts_with(&[0xFF, 0xD8]) {
-            match self.verify_extract_verified_dct(img_bytes, mac_key) {
-                CandidateOutcome::Valid(_) => return (VerificationStatus::Verified, None),
-                CandidateOutcome::Invalid(raw) => return (VerificationStatus::Invalid, Some(raw)),
-                CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
-                    return (VerificationStatus::Invalid, None)
-                }
-                CandidateOutcome::AuthenticationKeyMissing(raw)
-                | CandidateOutcome::AuthenticationFailed(raw) => {
-                    return (VerificationStatus::Invalid, Some(raw))
-                }
-                CandidateOutcome::NotFound => {}
+        match self.verify_payload_from_bytes_outcome(img_bytes, mac_key, true) {
+            CandidateOutcome::Valid(_) => (VerificationStatus::Verified, None),
+            CandidateOutcome::Invalid(raw)
+            | CandidateOutcome::AuthenticationKeyMissing(raw)
+            | CandidateOutcome::AuthenticationFailed(raw) => {
+                (VerificationStatus::Invalid, Some(raw))
             }
-
-            if let Some(metadata_seed) = metadata_seed {
-                match self.verify_extract_dct_with_seed(img_bytes, metadata_seed, mac_key) {
-                    CandidateOutcome::Valid(_) => return (VerificationStatus::Verified, None),
-                    CandidateOutcome::Invalid(raw) => {
-                        return (VerificationStatus::Invalid, Some(raw))
-                    }
-                    CandidateOutcome::AuthenticationKeyMissing(raw)
-                    | CandidateOutcome::AuthenticationFailed(raw) => {
-                        return (VerificationStatus::Invalid, Some(raw))
-                    }
-                    CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
-                        return (VerificationStatus::Invalid, None)
-                    }
-                    CandidateOutcome::NotFound => {}
-                }
-            }
-
-            return (VerificationStatus::NotFound, None);
+            CandidateOutcome::MalformedV3
+            | CandidateOutcome::UnsupportedVersion(_)
+            | CandidateOutcome::ResourceLimitExceeded => (VerificationStatus::Invalid, None),
+            CandidateOutcome::NotFound => (VerificationStatus::NotFound, None),
         }
-
-        if let Some(metadata_seed) = metadata_seed {
-            if let Ok(img) = image::load_from_memory(img_bytes) {
-                match self.verify_payload_with_seed_outcome(&img, metadata_seed, mac_key) {
-                    CandidateOutcome::Valid(_) => return (VerificationStatus::Verified, None),
-                    CandidateOutcome::Invalid(raw) => {
-                        return (VerificationStatus::Invalid, Some(raw))
-                    }
-                    CandidateOutcome::AuthenticationKeyMissing(raw)
-                    | CandidateOutcome::AuthenticationFailed(raw) => {
-                        return (VerificationStatus::Invalid, Some(raw))
-                    }
-                    CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
-                        return (VerificationStatus::Invalid, None)
-                    }
-                    CandidateOutcome::NotFound => {}
-                }
-            }
-        }
-
-        if let Ok(img) = image::load_from_memory(img_bytes) {
-            let rgba = img.to_rgba8();
-            if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
-                match self.verify_payload_with_seed_outcome(&img, fallback_seed, mac_key) {
-                    CandidateOutcome::Valid(_) => return (VerificationStatus::Verified, None),
-                    CandidateOutcome::Invalid(raw) => {
-                        return (VerificationStatus::Invalid, Some(raw))
-                    }
-                    CandidateOutcome::AuthenticationKeyMissing(raw)
-                    | CandidateOutcome::AuthenticationFailed(raw) => {
-                        return (VerificationStatus::Invalid, Some(raw))
-                    }
-                    CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
-                        return (VerificationStatus::Invalid, None)
-                    }
-                    CandidateOutcome::NotFound => {}
-                }
-            }
-        }
-
-        (VerificationStatus::NotFound, None)
     }
 
     /// Verify protection from raw image bytes using a known seed.
@@ -440,6 +391,11 @@ impl SteganographyProtector {
         None
     }
 
+    pub(crate) fn payload_is_structurally_plausible(payload: &[u8]) -> bool {
+        let decoded = Self::try_ecc_decode(payload).unwrap_or_else(|| payload.to_vec());
+        Self::parse_stego_payload(&decoded).is_some()
+    }
+
     pub(crate) fn parse_stego_payload_v3(payload: &[u8]) -> Option<StegoPayload> {
         if payload.len() < crate::payload_v3::types::V3_CORE_SIZE {
             return None;
@@ -492,7 +448,7 @@ impl SteganographyProtector {
     }
 
     pub(crate) fn compute_payload_mac(payload_without_mac: &[u8], mac_key: &[u8]) -> [u8; 8] {
-        let mut mac = HmacSha256::new_from_slice(mac_key).expect("HMAC can take key of any size");
+        let mut mac = Self::new_hmac(mac_key);
         mac.update(payload_without_mac);
         let result = mac.finalize().into_bytes();
         [
@@ -501,7 +457,7 @@ impl SteganographyProtector {
     }
 
     pub(crate) fn compute_payload_mac_v3(payload_without_mac: &[u8], mac_key: &[u8]) -> [u8; 16] {
-        let mut mac = HmacSha256::new_from_slice(mac_key).expect("HMAC can take key of any size");
+        let mut mac = Self::new_hmac(mac_key);
         mac.update(payload_without_mac);
         let result = mac.finalize().into_bytes();
         let mut out = [0u8; 16];
@@ -624,8 +580,7 @@ impl SteganographyProtector {
                     tag == expected
                 }
                 2 if !mac_key.is_empty() => {
-                    let mut mac =
-                        HmacSha256::new_from_slice(mac_key).expect("HMAC can take key of any size");
+                    let mut mac = Self::new_hmac(mac_key);
                     mac.update(core_and_ext);
                     let result = mac.finalize().into_bytes();
                     result[..tag.len()].ct_eq(tag).into()
@@ -808,6 +763,14 @@ impl SteganographyProtector {
             crate::payload_v3::types::PayloadFlags::from_bits(0)
         };
 
+        let has_extension_bytes =
+            header_length > crate::payload_v3::types::V3_CORE_SIZE + key_id_length;
+        if flags.has_extensions != has_extension_bytes {
+            return Err(V3PrefixResult::Malformed(
+                PayloadMalformedReason::ExtensionFlagMismatch,
+            ));
+        }
+
         Ok(ValidatedV3Header {
             header_length,
             total_length,
@@ -881,6 +844,11 @@ impl SteganographyProtector {
                 return V3ProbeResult::MalformedV3;
             }
             if header_length < crate::payload_v3::types::V3_CORE_SIZE + key_id_len {
+                return V3ProbeResult::MalformedV3;
+            }
+            let has_extension_bytes =
+                header_length > crate::payload_v3::types::V3_CORE_SIZE + key_id_len;
+            if (bytes[6] & 0x01 != 0) != has_extension_bytes {
                 return V3ProbeResult::MalformedV3;
             }
         }

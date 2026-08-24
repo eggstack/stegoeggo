@@ -737,6 +737,7 @@ pub fn process_image_bytes_with_warnings(
     }
 
     let request = request_from_legacy(level, ctx);
+    ctx.resource_limits().check_input_size(img_bytes.len())?;
     let input_format = ImageOutputFormat::from_magic_bytes(img_bytes)
         .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
     let plan = resolve_request(&request, input_format)?;
@@ -830,6 +831,11 @@ pub fn process_image_bytes_with_warnings(
 /// Returns [`Error::InvalidFormat`] if the image format cannot be determined.
 /// Returns config errors if the request contains invalid combinations.
 pub fn process_request_bytes(img_bytes: &[u8], request: &ProtectionRequest) -> Result<Vec<u8>> {
+    request
+        .resource_limits()
+        .cloned()
+        .unwrap_or_default()
+        .check_input_size(img_bytes.len())?;
     let input_format = ImageOutputFormat::from_magic_bytes(img_bytes)
         .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
 
@@ -874,6 +880,11 @@ pub fn process_request_bytes_with_warnings(
     img_bytes: &[u8],
     request: &ProtectionRequest,
 ) -> Result<(Vec<u8>, Vec<ProtectionWarning>)> {
+    request
+        .resource_limits()
+        .cloned()
+        .unwrap_or_default()
+        .check_input_size(img_bytes.len())?;
     let input_format = ImageOutputFormat::from_magic_bytes(img_bytes)
         .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
 
@@ -910,6 +921,11 @@ pub fn process_request_bytes_with_report(
     img_bytes: &[u8],
     request: &ProtectionRequest,
 ) -> Result<(Vec<u8>, ExecutionReport)> {
+    request
+        .resource_limits()
+        .cloned()
+        .unwrap_or_default()
+        .check_input_size(img_bytes.len())?;
     let input_format = ImageOutputFormat::from_magic_bytes(img_bytes)
         .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
 
@@ -1152,7 +1168,7 @@ fn observe_metadata_work(
                     break;
                 }
                 budget.observe_jpeg_segment(seg_end - pos);
-                if marker == 0xFE {
+                if matches!(marker, 0xE1 | 0xED | 0xFE) {
                     budget.observe_metadata_field(seg_len.saturating_sub(2));
                 }
                 pos = seg_end;
