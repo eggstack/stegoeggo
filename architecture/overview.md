@@ -2,7 +2,7 @@
 
 `stegoeggo` is a Rust library and CLI for protecting images from unauthorized AI model training through rights-reservation metadata and steganographic markers. It applies multiple layers of protection — metadata injection and steganographic embedding — to serve as legal evidence of image ownership.
 
-**Version:** 0.3.2 · **MSRV:** Rust 1.87 · **License:** see root `Cargo.toml`
+**Version:** 0.3.3 · **MSRV:** Rust 1.87 · **License:** see root `Cargo.toml`
 
 ## What This Document Is
 
@@ -41,10 +41,10 @@ stegoeggo/                          Workspace root (4 crates)
 │   └── jpeg_transcoder/            JPEG DCT internals (private)
 │
 ├── stegoeggo-cli/                  CLI binary (stegoeggo)
-│   └── main.rs                     Clap-based CLI, ~2269 lines
+│   └── main.rs                     Clap-based CLI, ~2490 lines
 │
 ├── fuzz/                           12 fuzz targets (libfuzzer-sys)
-├── tests/                          29 integration test files
+├── tests/                          30 integration test files
 ├── examples/                       4 usage examples
 ├── benches/                        Criterion benchmarks
 ├── scripts/                        7 validation scripts
@@ -68,7 +68,8 @@ Every component below links to a dedicated deep-dive in `architecture/`. Use thi
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        PUBLIC API LAYER                                  │
 │  process_image() | process_image_bytes() | process_request_bytes()      │
-│  process_images_parallel() | verify_image_bytes()                       │
+│  process_images_parallel() | process_images_bytes_parallel()            │
+│  verify_image_bytes() | verify_legal_notice()                           │
 │  stego::embed/extract/inspect (generic carrier re-exports)              │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  │
@@ -375,7 +376,7 @@ stegoeggo-stego/src/
 
 ## Integration Test Coverage
 
-29 test files in `tests/`:
+30 test files in `tests/`:
 
 | File | Coverage Area |
 |------|---------------|
