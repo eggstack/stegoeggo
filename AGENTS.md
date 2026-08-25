@@ -94,6 +94,7 @@ Rust **1.87** (declared in `Cargo.toml` and `stegoeggo-stego/Cargo.toml`). Toolc
 
 Feature-gated tests: `tests/async_integration.rs` requires `async`.
 The conformance binary (`stegoeggo-conformance`) requires the `conformance` feature.
+The CLI binary enables `iscc`, `conformance`, and `parallel` via its exact-version `stegoeggo` dependency, even though none are default features of the library.
 
 ## Deprecated API Surfaces
 
@@ -120,7 +121,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **`#[serde(skip)]` on `config` field** — MAC keys and legal metadata are lost in serde roundtrips
 - **CLI unified path** — The CLI always routes through `ProtectionRequest`. `--dmi auto` and omitted `--dmi` are equivalent. Mixed conflicting policy options are configuration errors (exit code 2)
 - **CLI exit codes** — `0`=ok, `1`=error, `2`=config, `3`=integrity, `5`=internal. `--verify` always exits 0; use output text to determine protection state, not exit code
-- **CLI new-style flags** — `--rights-policy`, `--preset`, `--hidden-marker`, `--authentication` route through canonical `ProtectionRequest`. `--preset` cannot combine with `--level`/`--profile`. `--rights-policy` replaces `--dmi`
+- **CLI new-style flags** — `--rights-policy`, `--preset`, `--hidden-marker`, `--authentication` route through canonical `ProtectionRequest`. `--preset` cannot combine with `--level`/`--profile`. `--rights-policy` replaces `--dmi`. `--dry-run` prints the resolved plan without processing
 - **CLI subcommands (feature: `signatures`)** — `keygen`, `sign`, `verify-manifest` are feature-gated. `verify-manifest` accepts `--payload-key` for HMAC verification. `--json` enables machine-readable output
 - **No `test-seeds` in production CLI** — `test-seeds` is test infrastructure only, never in production binary
 - **F5 seed Q-table edge case** — `embed_seed_in_quantization_tables()` fails if any quantization value in the first 2 tables is < 2
@@ -147,6 +148,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 **Metadata and API traps:**
 
 - **No synthetic defaults** — When no `LegalMetadata` is provided, no copyright text, no usage terms, no `DateCreated` are emitted
+- **Pixel-only paths drop file-level metadata** — `process_image`/`process_images_parallel` (`DynamicImage` in/out) embed stego markers only; PNG tEXt, JPEG COM/XMP, and WebP XMP do not survive. Use byte-path APIs (`process_request_bytes`, `process_image_bytes`) when metadata injection matters
 - **`inject_metadata` / `inject_legal_claims` are `Option<bool>`** — Default `None` (use level default) vs explicit `false` (disable). `with_metadata_injection(false)` ≠ not calling it at all
 - **`inject_legal_claims` auto-enables when `LegalMetadata` present** — No need to call `with_legal_claims(true)`
 - **`has_notice()` includes DMI** — Returns true when any legal field OR `dmi.is_some()` is found. `DmiValue::Allowed` and `DmiValue::Unspecified` make `has_notice()` true — this means "legal metadata was found" not "restrictions were imposed"
@@ -164,7 +166,6 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **Tiled steganography** (`with_tile_size(n)`) — Crop-resistant mode, full payload per tile. `tile_seed(master_seed, tile_x, tile_y)` uses splitmix64. Tiling is a Standard/canonical hidden-marker mode; legacy `Light` always resolves to `SeedOnly` regardless of tile size
 - **F5 tiled block set** — MCU-interleaved: `block_idx = (mcu_y * mcus_per_row + mcu_x) * h * v + sub_y * h + sub_x`. Do NOT assume row-major ordering
 - **JPEG DCT one-pass embed** — Supported DCT embedding computes max feasible redundancy from capacity, then embeds+encodes once. No retry loop, no roundtrip decode/extract self-test
-- **LSB benchmark equivalence** — `lsb_clone_vs_in_place` must give every measured in-place iteration a fresh pristine image through Criterion batching
 
 **Canonical metadata format:**
 
@@ -190,7 +191,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **JPEG fast path**: When input/output are both JPEG, the application adapter calls the carrier's public encoded-byte operations, bypassing pixel decode/encode — see `architecture/jpeg-transcoder.md`
 - **Policy-first API**: `ProtectionRequest` + `RightsPolicy` are the canonical API — see `architecture/types.md`
 - **`#![forbid(unsafe_code)]`** throughout the library crate and `stegoeggo-stego`
-- **Standalone carrier package wording** — `stegoeggo-stego` has its own package and public API surface, but current release checks enforce root/carrier version lockstep
+- **Standalone carrier package wording** — `stegoeggo-stego` has its own package and public API surface, but current release checks enforce version lockstep across carrier/root/CLI
 
 ## Validation Scripts
 
@@ -220,6 +221,7 @@ Releases are manual. GitHub Actions must not publish crates or create releases.
 Use direct Cargo/crates.io publication after local validation.
 Do not push a version tag as a publication mechanism.
 Published crates.io versions are immutable and cannot be reused.
+Publication follows dependency order: carrier (`stegoeggo-stego`) first, then library, then CLI. All three crates share one version, wired with exact `=X.Y.Z` dependencies.
 See `RELEASING.md` for the complete procedure.
 
 ## CI Complexity Guardrails
@@ -234,39 +236,19 @@ See `RELEASING.md` for the complete procedure.
 - Preserve specialist tests, but invoke them deliberately.
 - Any increase to required CI surface requires an explicit maintainer decision.
 
+## Repo-Local Agent Skills
+
+`.skills/` contains agent skills with triggers (loaded on demand):
+- `.skills/stegoeggo-conventions/SKILL.md` — code conventions, public API signatures, constants, common pitfalls
+- `.skills/architecture-review/SKILL.md` — workflow for verifying `architecture/` docs against source, including known discrepancy patterns
+- `.skills/plan-execution/SKILL.md` — multi-task execution from `plans/` via git worktrees + parallel agents
+
 ## Other Reference Files
 
-- `DEPRECATIONS.md` — Deprecated API inventory
+- `DEPRECATIONS.md` — Deprecated API inventory (removal targeted at v1.0.0, never in 0.x)
 - `SUPPORT.md` — Support matrix
 - `STABILITY.md` — Stability tiers
-- `architecture/` — Architecture documentation (30 files, verified against source)
-  - `architecture/overview.md` — Module map, protection levels, pipeline flow
-  - `architecture/pipeline.md` — Pipeline orchestration and public API (legacy + canonical paths)
-  - `architecture/traits.md` — Protector trait definition
-  - `architecture/types.md` — Core type definitions (ProtectionRequest, RightsPolicy, etc.)
-  - `architecture/constants.md` — Tuning constants and their values (carrier + application copies)
-  - `architecture/error.md` — Error variants (19 total: 18 always-available + 1 async-only)
-  - `architecture/verification.md` — VerificationReport and sub-verification types
-  - `architecture/cli.md` — CLI flags, subcommands, and exit codes
-  - `architecture/jpeg-transcoder.md` — JPEG DCT coefficient processing
-  - `architecture/jpeg-header.md` — JPEG header parsing and scan analysis
-  - `architecture/jpeg-entropy.md` — Huffman codec (decoder/encoder)
-  - `architecture/jpeg-stego-f5.md` — F5-style DCT steganography
-  - `architecture/protected-steganography.md` — LSB and DCT embedding methods, including generic carrier API and crate layout
-  - `architecture/protected-metadata-trap.md` — Metadata injection (RightsMetadataProtector)
-  - `architecture/protected-passthrough.md` — Disabled-level no-op
-  - `architecture/payload-v3.md` — V3 payload wire format and TLV extensions
-  - `architecture/provenance.md` — Provenance claims and digest binding
-  - `architecture/provenance-claim.md` — Provenance claim specification
-  - `architecture/signing.md` — Ed25519 signing module
-  - `architecture/detached.md` — Detached manifest sidecar
-  - `architecture/detached-manifest.md` — Detached manifest JSON schema
-  - `architecture/conformance.md` — Conformance harness and reporting
-  - `architecture/resource-limits.md` — Input validation and resource bounds
-  - `architecture/resolve.md` — ProtectionRequest → ResolvedProtectionPlan resolver
-  - `architecture/legal-metadata-field-mapping.md` — Field mapping across PNG/JPEG/WebP
-  - `architecture/util-image.md` — Image utilities (encoding, format detection)
-  - `architecture/util-iscc.md` — ISCC content identifier computation
-  - `architecture/util-seed.md` — CSPRNG seed generation
-  - `architecture/async-api.md` — Tokio-based async API
-  - `architecture/adr-c2pa.md` — C2PA integration deferred ADR
+- `RELEASING.md` — Manual publication procedure
+- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why
+- `docs/` — User-facing guides: `cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`
+- `architecture/` — 30 architecture documents, verified against source; file names match topics (`overview.md`, `pipeline.md`, `types.md`, `cli.md`, `constants.md`, `error.md`, `protected-steganography.md`, `jpeg-transcoder.md`, `payload-v3.md`, etc.)
