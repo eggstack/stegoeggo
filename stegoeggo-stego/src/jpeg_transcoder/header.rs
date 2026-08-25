@@ -269,6 +269,13 @@ impl JpegHeader {
 
             let segment_len = ((data[pos + 2] as usize) << 8) | (data[pos + 3] as usize);
 
+            if segment_len < 2 {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "Invalid JPEG segment length {} at byte offset {}",
+                    segment_len, pos
+                )));
+            }
+
             if segment_len > limits.max_jpeg_segment_bytes() {
                 return Err(TranscoderError::InvalidFormat(format!(
                     "JPEG segment size {} exceeds limit {}",
@@ -278,9 +285,13 @@ impl JpegHeader {
             }
 
             let segment_data_start = pos + 4;
-            let segment_data_end = (pos + 2 + segment_len)
-                .min(data.len())
-                .max(segment_data_start);
+            let segment_data_end = pos + 2 + segment_len;
+            if segment_data_end > data.len() {
+                return Err(TranscoderError::InvalidFormat(format!(
+                    "JPEG segment at offset {} extends beyond input",
+                    pos
+                )));
+            }
 
             let segment_data = &data[segment_data_start..segment_data_end];
 
@@ -882,6 +893,30 @@ mod tests {
     fn parse_tiny_data_returns_error() {
         let result = JpegHeader::parse(&[0xFF, 0xD8]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_rejects_segment_length_zero() {
+        let data = [0xFF, 0xD8, 0xFF, 0xFE, 0x00, 0x00, 0xFF, 0xD9];
+        let result = JpegHeader::parse(&data);
+        assert!(result.is_err(), "segment_len 0 must be rejected");
+    }
+
+    #[test]
+    fn parse_rejects_segment_length_one() {
+        let data = [0xFF, 0xD8, 0xFF, 0xFE, 0x00, 0x01, 0xFF, 0xD9];
+        let result = JpegHeader::parse(&data);
+        assert!(result.is_err(), "segment_len 1 must be rejected");
+    }
+
+    #[test]
+    fn parse_rejects_segment_extending_beyond_input() {
+        let data = [0xFF, 0xD8, 0xFF, 0xFE, 0xFF, 0xFF, 0x01, 0x02];
+        let result = JpegHeader::parse(&data);
+        assert!(
+            result.is_err(),
+            "segment declared length beyond input must be rejected"
+        );
     }
 
     #[test]

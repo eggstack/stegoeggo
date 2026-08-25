@@ -50,8 +50,13 @@ pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> usize
     let b = splitmix64(seed.wrapping_add(SPLITMIX64_SEED));
 
     let mut x = (a.wrapping_mul(index as u64).wrapping_add(b)) % (m as u64);
+    let mut attempts = 0usize;
     while (x as usize) >= slot_count {
         x = (a.wrapping_mul(x).wrapping_add(b)) % (m as u64);
+        attempts += 1;
+        if attempts >= 64 {
+            return (x % slot_count as u64) as usize;
+        }
     }
     x as usize
 }
@@ -962,6 +967,18 @@ mod tests {
     fn stego_permutation_empty_carrier_is_safe() {
         assert_eq!(stego_permutation(0, 0, 42), 0);
         assert_eq!(stego_permutation(17, 0, 42), 0);
+    }
+
+    #[test]
+    fn stego_permutation_v2_bounded_on_tiny_slot_counts() {
+        for slot_count in 2..=17usize {
+            for seed in 0..64u64 {
+                for index in 0..32usize {
+                    let slot = stego_permutation_v2(index, slot_count, seed);
+                    assert!(slot < slot_count, "slot {slot} out of range {slot_count}");
+                }
+            }
+        }
     }
 
     #[test]

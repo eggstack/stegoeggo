@@ -1016,7 +1016,9 @@ fn process_plan_bytes(
                 )));
             }
         }
-    } else if plan.is_metadata_only() || plan.channels().hidden_marker == HiddenMarkerMode::Disabled
+    } else if (plan.is_metadata_only()
+        || plan.channels().hidden_marker == HiddenMarkerMode::Disabled)
+        && plan.input_format() != plan.output_format()
     {
         return Err(Error::ImageDecode(
             "Image could not be decoded; metadata-only processing requires a valid image"
@@ -1121,7 +1123,7 @@ fn observe_metadata_work(
                 if chunk_type == b"IEND" {
                     break;
                 }
-                let chunk_total = 12 + chunk_len;
+                let chunk_total = chunk_len.saturating_add(12);
                 budget.observe_png_chunk(chunk_total);
                 let data_start = pos + 8;
                 let data_end = (data_start + chunk_len).min(img_bytes.len());

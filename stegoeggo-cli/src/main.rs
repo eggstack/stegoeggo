@@ -17,6 +17,10 @@ const EXIT_CONFIG: i32 = 2;
 const EXIT_INTEGRITY: i32 = 3;
 const EXIT_INTERNAL: i32 = 5;
 
+fn config_err(msg: impl std::fmt::Display) -> Box<dyn std::error::Error> {
+    Box::new(Error::Config(msg.to_string()))
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "stegoeggo")]
 #[command(about = "Embed legal-notice and rights-reservation metadata into images, with optional steganographic markers", long_about = None)]
@@ -421,31 +425,32 @@ fn resolve_key_input(
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
             let hex_key = input.trim();
-            return Ok(Some(
-                hex::decode(hex_key).map_err(|e| format!("Invalid hex key from stdin: {}", e))?,
-            ));
+            return Ok(Some(hex::decode(hex_key).map_err(|e| {
+                config_err(format!("Invalid hex key from stdin: {}", e))
+            })?));
         }
         if let Some(path_str) = key_str.strip_prefix('@') {
             let path = Path::new(path_str);
             if !path.exists() {
-                return Err(format!("Key file not found: {}", path_str).into());
+                return Err(config_err(format!("Key file not found: {}", path_str)));
             }
-            let contents = fs::read_to_string(path)
-                .map_err(|e| format!("Failed to read key file '{}': {}", path_str, e))?;
+            let contents = fs::read_to_string(path).map_err(|e| {
+                config_err(format!("Failed to read key file '{}': {}", path_str, e))
+            })?;
             let hex_key = contents.trim().replace(['\n', '\r'], "");
-            return Ok(Some(
-                hex::decode(&hex_key).map_err(|e| format!("Invalid hex key in file: {}", e))?,
-            ));
+            return Ok(Some(hex::decode(&hex_key).map_err(|e| {
+                config_err(format!("Invalid hex key in file: {}", e))
+            })?));
         }
         return Ok(Some(
-            hex::decode(key_str).map_err(|e| format!("Invalid hex key: {}", e))?,
+            hex::decode(key_str).map_err(|e| config_err(format!("Invalid hex key: {}", e)))?,
         ));
     }
 
     if let Ok(env_val) = std::env::var(env_var) {
         if !env_val.is_empty() {
             return Ok(Some(hex::decode(&env_val).map_err(|e| {
-                format!("Invalid hex key from {}: {}", env_var, e)
+                config_err(format!("Invalid hex key from {}: {}", env_var, e))
             })?));
         }
     }
@@ -720,14 +725,18 @@ fn build_protection_request_with_explicit_options(
             || args.level != ProtectionLevelArg::Standard
             || args.profile != ProfileArg::LegalNotice)
     {
-        return Err("Cannot combine --preset with --level/--profile; use --preset alone or --level/--profile alone".into());
+        return Err(config_err(
+            "Cannot combine --preset with --level/--profile; use --preset alone or --level/--profile alone",
+        ));
     }
 
     if is_new_style
         && args.preset.is_some()
         && (args.hidden_marker.is_some() || args.authentication.is_some())
     {
-        return Err("Cannot combine --preset with --hidden-marker/--authentication; use --preset alone or explicit channel flags alone".into());
+        return Err(config_err(
+            "Cannot combine --preset with --hidden-marker/--authentication; use --preset alone or explicit channel flags alone",
+        ));
     }
 
     let (legal_metadata, legal_dmi_override) = build_legal_metadata(args);
@@ -756,7 +765,9 @@ fn build_protection_request_with_explicit_options(
     };
 
     if args.metadata == Some(false) && legal_metadata.is_some() {
-        return Err("Cannot use --metadata false with legal metadata flags (--copyright-notice, --creator, etc.). Legal metadata requires metadata injection".into());
+        return Err(config_err(
+            "Cannot use --metadata false with legal metadata flags (--copyright-notice, --creator, etc.). Legal metadata requires metadata injection",
+        ));
     }
 
     let seed = args.seed.unwrap_or_else(generate_random_seed);
@@ -772,13 +783,17 @@ fn build_protection_request_with_explicit_options(
     };
 
     if matches!(channels.authentication, stegoeggo::AuthenticationMode::Hmac) && mac_key.is_none() {
-        return Err("HMAC authentication requires a key (--key hex, --key @file, --key -, or env STEGOEGGO_KEY)".into());
+        return Err(config_err(
+            "HMAC authentication requires a key (--key hex, --key @file, --key -, or env STEGOEGGO_KEY)",
+        ));
     }
 
     if matches!(channels.authentication, stegoeggo::AuthenticationMode::Hmac)
         && matches!(channels.hidden_marker, HiddenMarkerMode::Disabled)
     {
-        return Err("HMAC authentication requires a non-disabled hidden marker (--hidden-marker best-effort)".into());
+        return Err(config_err(
+            "HMAC authentication requires a non-disabled hidden marker (--hidden-marker best-effort)",
+        ));
     }
 
     let notice = stegoeggo::RightsNotice::default();
@@ -818,10 +833,10 @@ fn build_new_style_request(
     if let Some(dmi_val) = legal_dmi_override {
         let dmi_policy = RightsPolicy::from_dmi_value(dmi_val);
         if args.rights_policy.is_some() && dmi_policy != policy {
-            return Err(format!(
+            return Err(config_err(format!(
                 "Conflicting policy: --rights-policy {:?} contradicts --no-ai-training/--no-genai-training/--tdm-reserved",
                 args.rights_policy
-            ).into());
+            )));
         }
         policy = dmi_policy;
     }
@@ -830,11 +845,10 @@ fn build_new_style_request(
         if let Some(dmi_val) = dmi_arg.clone().into_dmi_value() {
             let dmi_policy = RightsPolicy::from_dmi_value(dmi_val);
             if args.rights_policy.is_some() && dmi_policy != policy {
-                return Err(format!(
+                return Err(config_err(format!(
                     "Conflicting policy: --rights-policy {:?} contradicts --dmi {:?}",
                     args.rights_policy, dmi_arg
-                )
-                .into());
+                )));
             }
             policy = dmi_policy;
         }
@@ -1051,13 +1065,20 @@ fn handle_keygen(
         key_id_hex,
         hex::encode(key.to_bytes())
     );
-    fs::write(&private_path, private_pem.as_bytes())?;
-
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&private_path, fs::Permissions::from_mode(0o600))?;
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&private_path)?;
+        file.write_all(private_pem.as_bytes())?;
     }
+    #[cfg(not(unix))]
+    fs::write(&private_path, private_pem.as_bytes())?;
 
     let public_pem = format!(
         "-----BEGIN STEGOEGGO PUBLIC KEY-----\nkey_id:{}\n{}\n-----END STEGOEGGO PUBLIC KEY-----\n",
@@ -1106,21 +1127,29 @@ fn handle_sign(
             )
         });
 
-    let key_bytes_vec = hex::decode(&hex_key.0)
-        .map_err(|e| format!("Invalid hex key data in {}: {}", key_path.display(), e))?;
+    let key_bytes_vec = hex::decode(&hex_key.0).map_err(|e| {
+        config_err(format!(
+            "Invalid hex key data in {}: {}",
+            key_path.display(),
+            e
+        ))
+    })?;
     if key_bytes_vec.len() != 32 {
-        return Err(format!("Private key must be 32 bytes, got {}", key_bytes_vec.len()).into());
+        return Err(config_err(format!(
+            "Private key must be 32 bytes, got {}",
+            key_bytes_vec.len()
+        )));
     }
     let mut raw_key = [0u8; 32];
     raw_key.copy_from_slice(&key_bytes_vec);
 
     let signing_key = SigningKey::from_bytes(raw_key, hex_key.1.into_bytes())
-        .map_err(|e| format!("Invalid signing key: {}", e))?;
+        .map_err(|e| config_err(format!("Invalid signing key: {}", e)))?;
 
     let manifest_bytes = fs::read(manifest_path)?;
     let limits = ResourceLimits::default();
     let mut manifest = DetachedManifest::from_json_with_limits(&manifest_bytes, &limits)
-        .map_err(|e| format!("Manifest parsing failed: {}", e))?;
+        .map_err(|e| config_err(format!("Manifest parsing failed: {}", e)))?;
 
     let claim_bytes = manifest.claim.canonical_bytes();
     let signature_bytes = signing_key.sign(&claim_bytes);
@@ -1172,7 +1201,7 @@ fn handle_verify_manifest(
     let manifest_bytes = fs::read(manifest_path)?;
     let limits = ResourceLimits::default();
     let manifest = DetachedManifest::from_json_with_limits(&manifest_bytes, &limits)
-        .map_err(|e| format!("Manifest parsing failed: {}", e))?;
+        .map_err(|e| config_err(format!("Manifest parsing failed: {}", e)))?;
 
     let image_bytes = fs::read(image_path)?;
 
@@ -1201,10 +1230,13 @@ fn handle_verify_manifest(
                 )
             });
 
-        let pub_bytes_vec =
-            hex::decode(&hex_pub).map_err(|e| format!("Invalid hex in public key file: {}", e))?;
+        let pub_bytes_vec = hex::decode(&hex_pub)
+            .map_err(|e| config_err(format!("Invalid hex in public key file: {}", e)))?;
         if pub_bytes_vec.len() != 32 {
-            return Err(format!("Public key must be 32 bytes, got {}", pub_bytes_vec.len()).into());
+            return Err(config_err(format!(
+                "Public key must be 32 bytes, got {}",
+                pub_bytes_vec.len()
+            )));
         }
         let mut raw_pub = [0u8; 32];
         raw_pub.copy_from_slice(&pub_bytes_vec);
@@ -1401,7 +1433,7 @@ fn extract_pem_field(pem_str: &str, begin_tag: &str) -> Option<String> {
     let end_marker = start_marker.replacen("BEGIN", "END", 1);
 
     let start = pem_str.find(&start_marker)? + start_marker.len();
-    let end = pem_str.find(&end_marker)?;
+    let end = pem_str[start..].find(&end_marker)? + start;
     Some(pem_str[start..end].trim().to_string())
 }
 
@@ -2242,6 +2274,38 @@ mod tests {
         args.preset = Some(PresetArg::Maximal);
         let result = build_protection_request_with_explicit_options(&args, true, false);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_policy_conflict_errors_are_config_errors() {
+        let mut args = default_args();
+        args.preset = Some(PresetArg::Maximal);
+        args.level = ProtectionLevelArg::Light;
+        let err = build_protection_request(&args).unwrap_err();
+        let downcast = err
+            .downcast_ref::<stegoeggo::Error>()
+            .expect("policy conflicts must be stegoeggo::Error for exit-code classification");
+        assert!(
+            matches!(downcast, stegoeggo::Error::Config(_)),
+            "expected Config error, got: {downcast:?}"
+        );
+    }
+
+    #[cfg(feature = "signatures")]
+    #[test]
+    fn test_extract_pem_field_end_before_begin_returns_none() {
+        let pem = "-----END STEGOEGGO PRIVATE KEY-----\nabc\n";
+        assert_eq!(extract_pem_field(pem, "BEGIN STEGOEGGO PRIVATE KEY"), None);
+    }
+
+    #[cfg(feature = "signatures")]
+    #[test]
+    fn test_extract_pem_field_normal_block() {
+        let pem = "-----BEGIN STEGOEGGO PRIVATE KEY-----\nkey_id:abcd\n1234\n-----END STEGOEGGO PRIVATE KEY-----\n";
+        assert_eq!(
+            extract_pem_field(pem, "BEGIN STEGOEGGO PRIVATE KEY"),
+            Some("key_id:abcd\n1234".to_string())
+        );
     }
 
     #[test]

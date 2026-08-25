@@ -1043,12 +1043,17 @@ fn extract_xmp_seq_all(xmp: &str, tag: &str) -> Option<Vec<String>> {
     let seq_start = start + open.len();
     let seq_end = xmp[seq_start..].find(&close)? + seq_start;
     let seq_content = &xmp[seq_start..seq_end];
-    let li_open = "<rdf:li>";
+    let li_open = "<rdf:li";
     let li_close = "</rdf:li>";
     let mut results = Vec::new();
     let mut pos = 0;
     while let Some(li_start) = seq_content[pos..].find(li_open) {
-        let value_start = pos + li_start + li_open.len();
+        let open_tag_start = pos + li_start;
+        let after_open = open_tag_start + li_open.len();
+        let Some(gt_rel) = seq_content[after_open..].find('>') else {
+            break;
+        };
+        let value_start = after_open + gt_rel + 1;
         if let Some(li_end) = seq_content[value_start..].find(li_close) {
             let value = &seq_content[value_start..value_start + li_end];
             if !value.is_empty() {
@@ -1067,11 +1072,11 @@ fn extract_xmp_seq_all(xmp: &str, tag: &str) -> Option<Vec<String>> {
 }
 
 fn unescape_xml(s: &str) -> String {
-    s.replace("&amp;", "&")
-        .replace("&lt;", "<")
+    s.replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
+        .replace("&amp;", "&")
 }
 
 fn extract_xmp_alt_property(xmp: &str, tag: &str) -> Option<String> {
@@ -1104,11 +1109,11 @@ fn extract_webp_notice(
 ) -> NoticeFields {
     let mut copyright_holder: Option<String> = None;
     let mut creator: Option<String> = None;
-    let mut contact: Option<String> = None;
+    let contact: Option<String> = None;
     let mut rights_url: Option<String> = None;
     let mut usage_terms: Option<String> = None;
     let mut ai_constraints: Option<String> = None;
-    let license_url: Option<String> = None;
+    let mut license_url: Option<String> = None;
     let mut web_statement_of_rights: Option<String> = None;
     let mut credit_line: Option<String> = None;
     let mut copyright_owner: Option<String> = None;
@@ -1155,19 +1160,14 @@ fn extract_webp_notice(
                         .to_string()
                 });
                 creator = extract_xmp_seq_property(xmp_str, "dc:creator");
-                contact = extract_xmp_text_property(xmp_str, "photoshop:Credit");
                 if let Some(v) = extract_xmp_text_property(xmp_str, "xmpRights:WebStatement") {
                     rights_url = Some(v.clone());
+                    license_url = Some(v.clone());
                     web_statement_of_rights = Some(v);
                 }
                 usage_terms = extract_xmp_alt_property(xmp_str, "xmpRights:UsageTerms");
                 ai_constraints = extract_xmp_text_property(xmp_str, "stegoeggo:AIConstraints");
                 credit_line = extract_xmp_text_property(xmp_str, "photoshop:Credit");
-                if let Some(v) = extract_xmp_text_property(xmp_str, "photoshop:DateCreated") {
-                    if copyright_holder.is_none() {
-                        copyright_holder = Some(v);
-                    }
-                }
                 copyright_owner = extract_xmp_text_property(xmp_str, "stegoeggo:CopyrightOwner");
                 licensor_name = extract_xmp_text_property(xmp_str, "stegoeggo:LicensorName");
                 licensor_email = extract_xmp_text_property(xmp_str, "stegoeggo:LicensorEmail");
@@ -1531,6 +1531,33 @@ fn check_xml_depth(xmp_str: &str, max_depth: usize) -> bool {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'<' {
+            if xmp_str[i..].starts_with("<!--") {
+                match xmp_str[i..].find("-->") {
+                    Some(rel) => {
+                        i += rel + 3;
+                        continue;
+                    }
+                    None => break,
+                }
+            }
+            if xmp_str[i..].starts_with("<?") {
+                match xmp_str[i..].find("?>") {
+                    Some(rel) => {
+                        i += rel + 2;
+                        continue;
+                    }
+                    None => break,
+                }
+            }
+            if xmp_str[i..].starts_with("<!") {
+                match xmp_str[i + 1..].find('>') {
+                    Some(rel) => {
+                        i += rel + 2;
+                        continue;
+                    }
+                    None => break,
+                }
+            }
             if i + 1 < bytes.len() && bytes[i + 1] == b'/' {
                 depth = depth.saturating_sub(1);
                 i += 2;
@@ -1688,11 +1715,19 @@ fn parse_xmp_for_dmi_with_limits(
 
 fn extract_xmp_attr(xmp_str: &str, attr_name: &str) -> Option<String> {
     let pattern = format!("{}=\"", attr_name);
-    if let Some(start) = xmp_str.find(&pattern) {
-        let value_start = start + pattern.len();
-        if let Some(end) = xmp_str[value_start..].find('"') {
-            return Some(xmp_str[value_start..value_start + end].to_string());
+    let start = xmp_str.find(&pattern)?;
+    let value_start = start + pattern.len();
+    let mut cursor = value_start;
+    while let Some(end_rel) = xmp_str[cursor..].find('"') {
+        let end = cursor + end_rel;
+        let terminator_ok = match xmp_str[end + 1..].chars().next() {
+            None => true,
+            Some(c) => c.is_whitespace() || c == '/' || c == '>',
+        };
+        if terminator_ok {
+            return Some(xmp_str[value_start..end].to_string());
         }
+        cursor = end + 1;
     }
     None
 }
@@ -1904,6 +1939,46 @@ mod tests {
     #[test]
     fn xml_depth_empty_string() {
         assert!(check_xml_depth("", 32));
+    }
+
+    #[test]
+    fn unescape_xml_does_not_double_decode_entities() {
+        assert_eq!(unescape_xml("&amp;lt;script&amp;gt;"), "&lt;script&gt;");
+        assert_eq!(unescape_xml("&amp;"), "&");
+        assert_eq!(unescape_xml("&amp;amp;"), "&amp;");
+        assert_eq!(unescape_xml("a &lt; b &gt; c"), "a < b > c");
+    }
+
+    #[test]
+    fn extract_xmp_seq_all_reads_attributed_list_items() {
+        let xmp = r#"<dc:creator><rdf:Seq><rdf:li xml:lang="x-default">Author</rdf:li></rdf:Seq></dc:creator>"#;
+        assert_eq!(
+            extract_xmp_seq_all(xmp, "dc:creator"),
+            Some(vec!["Author".to_string()])
+        );
+    }
+
+    #[test]
+    fn xml_depth_ignores_processing_instructions_and_comments() {
+        let xmp = "<?xpacket begin=\"\u{FEFF}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\
+                    <!-- created by a tool -->\
+                    <a><b>text</b></a>\
+                    <?xpacket end=\"w\"?>";
+        assert!(check_xml_depth(xmp, 2));
+    }
+
+    #[test]
+    fn extract_xmp_attr_resists_embedded_quote_manipulation() {
+        let xmp = "<x plus:DataMining=\"DMI-PROHIBITED\"junk\"/>";
+        assert_eq!(
+            extract_xmp_attr(xmp, "plus:DataMining"),
+            Some("DMI-PROHIBITED\"junk".to_string())
+        );
+        let plain = r#"<x plus:DataMining="DMI-PROHIBITED-GENAI"/>"#;
+        assert_eq!(
+            extract_xmp_attr(plain, "plus:DataMining"),
+            Some("DMI-PROHIBITED-GENAI".to_string())
+        );
     }
 
     #[test]

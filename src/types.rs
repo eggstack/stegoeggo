@@ -3393,14 +3393,7 @@ impl ProtectionWarning {
                 }
             }
             ProtectionWarning::ContradictoryLegalClaims => WarningSeverity::Warning,
-            ProtectionWarning::MissingRightsConstraints => match profile {
-                EvidenceProfile::LegalNotice | EvidenceProfile::LegalNoticeWithStego => {
-                    WarningSeverity::Error
-                }
-                EvidenceProfile::AuthenticatedProvenance | EvidenceProfile::Maximal => {
-                    WarningSeverity::Error
-                }
-            },
+            ProtectionWarning::MissingRightsConstraints => WarningSeverity::Error,
         }
     }
 }

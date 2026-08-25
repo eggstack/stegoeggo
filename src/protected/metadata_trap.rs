@@ -1409,8 +1409,17 @@ impl RightsMetadataProtector {
         let mut output = Vec::with_capacity(new_len);
         output.extend_from_slice(webp_data);
         output.extend_from_slice(&xmp_chunk);
-        if let Some(exif) = exif_chunk {
-            output.extend_from_slice(&exif);
+        if let Some(exif) = &exif_chunk {
+            output.extend_from_slice(exif);
+        }
+
+        if output.len() >= 21 && &output[12..16] == b"VP8X" {
+            let mut flags = output[20];
+            flags |= 0x04;
+            if exif_chunk.is_some() {
+                flags |= 0x08;
+            }
+            output[20] = flags;
         }
 
         // Update RIFF file size in header (bytes 4-8, little-endian)
