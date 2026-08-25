@@ -28,6 +28,7 @@ pub fn resolve_request(
 ### Validation Steps
 
 1. **Channel validation** — `validate_channels()` checks that:
+   - HMAC authentication requires an enabled hidden marker
    - HMAC authentication requires a MAC key
    - `ProhibitedSeeConstraints` policy requires `ai_constraints` or `web_statement_of_rights`
    - Non-Unspecified rights policy requires `rights_metadata` to be enabled

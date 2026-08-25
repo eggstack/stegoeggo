@@ -18,7 +18,7 @@ capacity limits (target: 32–64 bytes core, ≤ 256 bytes total embedded).
 
 | Property | v1 | v2 | v3 |
 |---|---|---|---|
-| Header size | 24 bytes (fixed) | 32 bytes (fixed) | 20 bytes core + variable extensions |
+| Header size | 24 bytes (fixed) | 32 bytes (fixed) | 32 bytes core + variable extensions |
 | Magic bytes | none | none | `0x53 0x45` ("SE") |
 | Extensibility | none | reserved bytes | TLV extension section |
 | Auth coverage | header bytes only | header bytes only | domain-separated: header + context string |
@@ -69,10 +69,10 @@ payloads. The parser tries versions in order: v3 → v2 → v1 (see
 | 11 | 8 | `seed` | `u64 LE` | Extraction seed for pixel/DCT permutation |
 | 19 | 2 | `intensity` | `u16 LE` | Embedding intensity, `f32 * 100.0` |
 | 21 | 8 | `content_hash` | `[u8; 8]` | Truncated content/instance hash (see §5.3) |
-| 29 | 1 | `key_id_len` | `u8` | Length of `key_id` in bytes (0–32) |
-| 30 | 0–32 | `key_id` | `bytes` | Key identifier (see §5.4) |
-| 30+N | 1 | `auth_algo` | `u8` | Authentication algorithm ID (see §5.5) |
-| 31+N | 1 | `auth_tag_len` | `u8` | Length of auth tag/signature in bytes |
+| 29 | 1 | `auth_algorithm` | `u8` | Authentication algorithm ID (see §5.5) |
+| 30 | 1 | `auth_tag_len` | `u8` | Length of auth tag/signature in bytes |
+| 31 | 1 | `key_id_len` | `u8` | Length of `key_id` in bytes (0–32) |
+| 32 | 0–32 | `key_id` | `bytes` | Key identifier (see §5.4) |
 | 32+N | M | `extensions` | TLV… | Extension section (see §7) |
 | 32+N+M | T | `auth_tag` | `bytes` | Authentication tag (see §5.6) |
 
@@ -126,7 +126,7 @@ One-byte discriminant of the rights policy. Values map 1:1 to `DmiValue`:
 | 4 | `ProhibitedExceptSearchEngineIndexing` |
 | 5 | `Prohibited` |
 | 6 | `ProhibitedSeeConstraints` |
-| 7–255 | Reserved |
+| 7–255 | Reserved (rejected at parse time) |
 
 This is a *snapshot* of the policy at embed time. It is NOT a mutable
 policy copy — the authoritative policy lives in metadata channels. The
@@ -209,7 +209,7 @@ The minimum v3 payload with no key_id, no extensions, no auth:
 + 1 byte auth_algo=2, 1 byte auth_tag_len=16
 + 0 bytes extensions
 + 16 bytes HMAC-SHA256-truncated
-= 66 bytes
+= 64 bytes
 ```
 
 ### 6.3. Maximum Embedded Payload
@@ -232,8 +232,8 @@ ECC encoding uses 3× repetition (same as v1/v2):
 |------|-----------|-----------|---------|-------|
 | No key, no ext | 32 | 96 | +4 | 100 |
 | No key, 16-byte ext | 48 | 144 | +4 | 148 |
-| HMAC, no ext | 46 (core+key+algo) | — | — | 46 + 16 = 62 |
-| HMAC, 16-byte ext | 62 | — | — | 62 + 16 = 78 |
+| HMAC, no ext | 50 (core+key+algo+taglen) | — | — | 50 + 16 = 66 |
+| HMAC, 16-byte ext | 70 | — | — | 70 + 16 = 86 |
 
 When using ECC encoding (no MAC key), the auth tag is CRC32 over the
 ECC-encoded bytes, same as v1/v2.
@@ -482,22 +482,20 @@ fn parse_v3(payload: &[u8]) -> Result<StegoPayloadV3> {
     // 10. Read content hash
     let content_hash = payload[21..29].try_into()?;
 
-    // 11. Read key_id
-    let key_id_len = payload[29] as usize;
+    // 11. Read auth algo, tag length, and key_id length
+    let auth_algo = payload[29];
+    let auth_tag_len = payload[30];
+    let key_id_len = payload[31] as usize;
     require(key_id_len <= 32, "key_id too long");
-    require(30 + key_id_len < header_length, "key_id overflows header");
-    let key_id = &payload[30..30 + key_id_len];
+    require(32 + key_id_len < header_length, "key_id overflows header");
+    let key_id = &payload[32..32 + key_id_len];
 
-    // 12. Read auth algo and tag length
-    let auth_algo = payload[30 + key_id_len];
-    let auth_tag_len = payload[31 + key_id_len] as usize;
-
-    // 13. Parse extensions
+    // 12. Parse extensions
     let ext_start = 32 + key_id_len;
     let ext_end = header_length;
     let extensions = parse_extensions(&payload[ext_start..ext_end])?;
 
-    // 14. Read auth tag
+    // 13. Read auth tag
     let auth_tag = &payload[header_length..header_length + auth_tag_len];
 
     Ok(StegoPayloadV3 { ... })
@@ -537,7 +535,7 @@ forcing an upgrade.
 
 ### 11.3. Migration Path
 
-When `CURRENT_PAYLOAD_VERSION` is bumped to 3 in the codebase:
+When `V3_PAYLOAD_VERSION` is bumped to 3 in the codebase:
 - `SUPPORTED_PAYLOAD_VERSIONS` becomes `[1, 2, 3]`.
 - `generate_payload()` writes v3 format.
 - `parse_stego_payload()` gains a `parse_stego_payload_v3` arm.

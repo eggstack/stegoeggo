@@ -157,6 +157,7 @@ objects.
 | `coverage` | `Option<CoverageCheckResult>` | Coverage enforcement result |
 | `digest_verification` | `Vec<DigestCheckResult>` | Per-fixture SHA-256 results |
 | `summary` | `ConformanceSummary` | Aggregate counts |
+| `incomplete_reasons` | `Vec<String>` | Reasons the run is incomplete, if any |
 | `fixtures` | `Vec<ConformanceReport>` | Per-fixture reports |
 
 ### ConformanceReport (per-fixture)

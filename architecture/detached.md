@@ -46,9 +46,10 @@ pub struct DetachedManifest {
 
 ### Serialization
 
-- `to_json_pretty()` — Human-readable JSON
-- `to_json_compact()` — Machine-readable JSON (deterministic with sorted keys)
-- `from_json(#[serde_json::Value])` — Parse from JSON value
+- `canonical_bytes() -> Vec<u8>` — Canonical JSON bytes (sorted keys, compact) for digest computation
+- `digest() -> [u8; 32]` — SHA-256 of canonical bytes
+- `from_json(bytes: &[u8]) -> Result<Self, Error>` — Deserialize from JSON bytes with size/version validation
+- `from_json_with_limits(bytes: &[u8], limits: &ResourceLimits) -> Result<Self, Error>` — Deserialize with explicit resource limits
 
 ## `SignatureRecord`
 
@@ -115,11 +116,12 @@ Returns `"sha256:<hex>"` of the raw image bytes.
 
 ### Entry Points
 
-- `verify_detached_manifest(manifest, image_bytes)` — Basic verification
-- `verify_detached_manifest_with_keys(manifest, image_bytes, keys)` — With trusted keys
-- `verify_detached_manifest_with_mac(manifest, image_bytes, keys, mac_key)` — With HMAC key
-- `verify_detached_manifest_with_limits(manifest, image_bytes, keys, limits)` — With resource limits
-- `verify_detached_manifest_with_options(manifest, image_bytes, options)` — Full options
+- `verify_detached_manifest(image_bytes, manifest, trust)` — Basic verification with trust policy
+- `verify_detached_manifest_with_keys(image_bytes, manifest, expected_keys: Option<&[Vec<u8>]>)` — With flat key-ID set
+- `verify_detached_manifest_with_limits(image_bytes, manifest, trust, limits)` — With resource limits
+- `verify_detached_manifest_with_limits_and_mac(image_bytes, manifest, trust, limits, payload_mac_key)` — With limits and HMAC key
+- `verify_detached_manifest_with_keys_and_mac(image_bytes, manifest, expected_keys, payload_mac_key)` — With flat key-ID set and HMAC key
+- `verify_detached_manifest_with_options(image_bytes, manifest, options)` — Full options via `DetachedVerificationOptions`
 
 ### `TrustPolicy`
 
@@ -167,9 +169,11 @@ Tracks whether the in-image stego payload referenced by the manifest is present 
 - `VersionMismatch` — Payload found but wrong version
 - `DigestMismatch` — Payload found but digest differs
 - `Malformed` — Payload found but unparseable
+- `Present` — **Deprecated:** use `PresentValid`
 - `PresentValid` — Reference declared and valid payload found
 - `AuthenticationKeyMissing` — HMAC-protected reference but no MAC key
 - `AuthenticationFailed` — HMAC verification failed
+- `UnsupportedVersion` — Payload found but version is not supported
 
 ## Limits
 

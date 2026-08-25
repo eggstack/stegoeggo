@@ -204,7 +204,7 @@ Progressive JPEGs fall back to seed-in-Q-tables only (coefficient manipulation u
 
 | Component | Deep Dive | What It Covers |
 |-----------|-----------|----------------|
-| **Pipeline** | [pipeline.md](pipeline.md) | `ProtectionPipeline` orchestration, format routing, JPEG fast path, LazyLock singletons, parallel threshold scaling |
+| **Pipeline** | [pipeline.md](pipeline.md) | `ProtectionPipeline` orchestration, format routing, JPEG fast path, legacy compatibility adapters |
 | **Request Resolution** | [resolve.md](resolve.md) | `resolve_request()` single validation point, immutable plan construction |
 | **Types** | [types.md](types.md) | `ProtectionLevel`, `ProtectionContext`, `RightsPolicy`, `ProtectionRequest`, `ProtectionPreset`, `ProtectionChannels`, `ExecutionReport`, v0.3→v0.4 migration |
 | **Traits** | [traits.md](traits.md) | `Protector` trait contract, `apply`/`apply_bytes` methods, implementation table |
@@ -225,7 +225,7 @@ Progressive JPEGs fall back to seed-in-Q-tables only (coefficient manipulation u
 |-----------|-----------|----------------|
 | **JPEG Header** | [jpeg-header.md](jpeg-header.md) | `JpegHeader` parser: DQT/SOF/DHT/SOS markers, component extraction, checked scan structure analysis |
 | **JPEG Entropy** | [jpeg-entropy.md](jpeg-entropy.md) | Huffman codec: `CoefficientDecoder`/`CoefficientEncoder`, `BitReader`/`BitWriter`, zigzag order, standard Huffman tables |
-| **F5 DCT Stego** | [jpeg-stego-f5.md](jpeg-stego-f5.md) | F5-style embedding, no-zero variant, seed in Q-table LSBs, `F5XorShiftRng`, tiled F5 |
+| **F5 DCT Stego** | [jpeg-stego-f5.md](jpeg-stego-f5.md) | F5-style embedding, no-zero variant, seed in Q-table LSBs, `DctCoefficientRng`, tiled F5 |
 | **JPEG Transcoder** | [jpeg-transcoder.md](jpeg-transcoder.md) | `JpegTranscoder` decode/encode flow, `DctSupport` probe, canonical Huffman construction, malformed entropy handling |
 
 ### Payload & Encoding
@@ -273,7 +273,7 @@ Progressive JPEGs fall back to seed-in-Q-tables only (coefficient manipulation u
 
 ```
 src/
-├── lib.rs                     Pipeline orchestration, public API, LazyLock singletons
+├── lib.rs                     Pipeline orchestration, public API
 ├── types.rs                   ProtectionLevel, ProtectionContext, ProtectionRequest,
 │                              RightsPolicy, LegalMetadata, ExecutionReport, etc.
 ├── traits.rs                  Protector trait (apply/apply_bytes)
@@ -350,7 +350,7 @@ stegoeggo-stego/src/
 └── jpeg_transcoder/           JPEG DCT internals (private)
     ├── header.rs              JpegHeader, HuffmanTable parsing
     ├── entropy.rs             CoefficientDecoder/Encoder (Huffman codec)
-    └── stego_f5.rs            DctStegoF5, F5XorShiftRng
+    └── stego_f5.rs            DctStegoF5, DctCoefficientRng
 ```
 
 `jpeg_transcoder/` and `lsb_internal.rs` are private implementation modules. The root crate uses the narrow `application-support` feature internally and adopts the in-place operation when it already owns a mutable decoded RGBA image.
@@ -466,14 +466,6 @@ They use different algorithms and produce different sequences for the same seed.
 
 `ProtectionConfig` (MAC key + legal metadata) is wrapped in `Arc<ProtectionConfig>` and stored in `ProtectionContext`. This allows cheap cloning of context while sharing the heavy config.
 
-### LazyLock Singletons
-
-The default pipeline uses `LazyLock<ProtectionPipeline>` for thread-safe one-time initialization:
-
-```rust
-static DEFAULT_PIPELINE: LazyLock<ProtectionPipeline> = LazyLock::new(ProtectionPipeline::new);
-```
-
 ### Stego Payload Format
 
 - V3 is the current default: 32-byte core + TLV extensions (CRC: 36 bytes, HMAC: 48 bytes)
@@ -489,10 +481,6 @@ Three-state control (`Option<bool>`) for metadata injection:
 - `Some(false)`: force-disable
 
 `None` and `Some(false)` have different semantics for non-Disabled levels — the former injects, the latter suppresses.
-
-### Parallel Threshold Scaling
-
-`parallel_threshold()` returns `cores * 64 * 64` — scales with rayon thread count. At 1 core: 4096 pixels. At 4 cores: 16384 pixels. At 16 cores: 65536 pixels.
 
 ## Dependencies
 

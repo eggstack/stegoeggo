@@ -131,8 +131,8 @@ Image processing options:
 ```rust
 pub struct ProcessingOptions {
     pub output_format: Option<ImageOutputFormat>,
-    pub jpeg_quality: Option<u8>,
-    pub progressive_jpeg: Option<bool>,
+    pub jpeg_quality: u8,
+    pub progressive_jpeg: bool,
     pub max_dimension: Option<u32>,
     pub metadata_update_policy: MetadataUpdatePolicy,
     pub stego_redundancy: Option<usize>,
@@ -153,8 +153,8 @@ pub struct ProtectionRequest {
     processing: ProcessingOptions,
     seed: Option<u64>,
     intensity: f32,
-    mac_key: Option<Vec<u8>>,
     legal_metadata: Option<LegalMetadata>,
+    mac_key: Option<Vec<u8>>,
     resource_limits: Option<ResourceLimits>,
 }
 ```
@@ -225,7 +225,7 @@ pub enum DmiValue {
 
 Auto-mapped from `ProtectionLevel` via `ProtectionLevel::default_policy()` in `types.rs`: Disabled|Light→Unspecified, Standard→ProhibitedAiMlTraining. No `impl From<ProtectionLevel> for DmiValue` exists — use the helper function directly.
 
-`plus_vocab_key()` returns the bare PLUS LDF vocabulary key (e.g., `DMI-PROHIBITED-AIMLTRAINING`). `plus_vocab_uri()` returns the full canonical URI (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`), which is emitted in XMP `plus:DataMining` attributes. `from_plus_vocab_key()` parses a bare key (or full URI) back to the enum variant. Legacy `Iptc4xmpExt:DMI-*` values are still parsed for backward compatibility but not emitted by default.
+`plus_vocab_key()` returns the bare PLUS LDF vocabulary key (e.g., `DMI-PROHIBITED-AIMLTRAINING`). `plus_vocab_uri()` returns the full canonical URI (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`), which is emitted in XMP `plus:DataMining` attributes. `from_plus_vocab_key()` parses a bare key back to the enum variant — it rejects values containing `/`, `:`, `?`, or `#`; full URIs go through `from_plus_vocab_uri()` instead. Legacy `Iptc4xmpExt:DMI-*` values are still parsed for backward compatibility but not emitted by default.
 
 ## ProtectionContext
 
@@ -254,6 +254,7 @@ ProtectionContext::new(intensity, seed)  // intensity clamped to [0.0, 1.0]
 | `tile_size` | `Option<u32>` | None | Crop-resistant tile size (32..=1024). None/0 = disabled |
 | `tile_extraction_max_origins` | `u32` | 64 | Max candidate tile origins for extraction |
 | `content_hash` | `Option<[u8; 4]>` | None | Truncated content hash for provenance tracking (v2 payloads) |
+| `metadata_update_policy` | `Option<MetadataUpdatePolicy>` | None | Policy for updating metadata when re-processing; defaults to `ReplaceStegoOwned` |
 | `evidence_profile` | `Option<EvidenceProfile>` | None | Warning interpretation and evidence posture (defaults to `LegalNotice` when not set) |
 | `config` | `Option<Arc<ProtectionConfig>>` | None | `#[serde(skip)]` — MAC key + legal metadata |
 
@@ -466,6 +467,9 @@ Extracted stego data (returned from `SteganographyProtector::extract_payload`):
 - `seed() -> u64`
 - `intensity() -> f32`
 - `version() -> u8`
+- `content_hash() -> Option<[u8; 4]>`
+- `dmi_value() -> Option<DmiValue>`
+- `raw_payload() -> Option<&[u8]>`
 
 ## ProtectionWarning
 
@@ -556,7 +560,7 @@ Note: The blanket `external_coverage_pct` field has been removed. Coverage is no
 ## ConformanceReport
 
 The JSON report type for per-fixture conformance results. In addition to the
-core fields (`fixture`, `format`, `decode_valid`, `xmp_valid`, `internal`,
+core fields (`fixture`, `format`, `generated_by`, `decode_valid`, `xmp_valid`, `internal`,
 `external`, `checks`, `conflicts`, `passed`), it includes manifest-linked metadata:
 
 - `fixture_id: Option<String>` — Manifest fixture ID, if matched

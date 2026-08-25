@@ -1,6 +1,6 @@
 # CLI Tool
 
-**Source:** `stegoeggo-cli/src/main.rs` (~2269 lines)
+**Source:** `stegoeggo-cli/src/main.rs` (~2487 lines)
 
 Command-line interface for `stegoeggo`. Built with `clap` 4 (derive). Routes all protection through `ProtectionRequest`.
 
@@ -15,12 +15,12 @@ stegoeggo [OPTIONS] <INPUT>...
 | Flag | Long | Description | Default |
 |------|------|-------------|---------|
 | `-o` | `--output` | Output directory (for batch) or output file (for single) | current directory |
-| `-V` | `--verify` | Verify protection signature | false |
+| | `--verify` | Verify protection signature | false |
 | `-l` | `--level` | Protection level | standard |
 | `-p` | `--profile` | Evidence profile | legal-notice |
 | `-i` | `--intensity` | Float 0.0–1.0 | 0.5 |
 | `-s` | `--seed` | Seed for reproducibility | random |
-| `-f` | `--format` | Output format (png/jpg/webp) | auto |
+| `-f` | `--format` | Output format (png/jpg/webp) — preserves input format, falls back to PNG | None (preserve input) |
 | | `--stego-redundancy` | 1–10 | 2 |
 | | `--jpeg-quality` | 1–100 | 90 |
 | | `--progressive` | Progressive JPEG | false |
@@ -28,16 +28,23 @@ stegoeggo [OPTIONS] <INPUT>...
 | `-d` | `--dmi` | DMI metadata value (legacy syntax) | auto |
 | | `--metadata` | Inject metadata (None = use level default) | None |
 | | `--legal-claims` | Inject legal claims | false |
-| | `--copyright-holder` | Copyright holder name (alias for `--copyright-notice`) | none |
+| | `--copyright-notice` | Copyright notice text (alias: `--copyright-holder`) | none |
 | | `--creator` | Creator/author name | none |
 | | `--contact` | Contact email or URL | none |
 | | `--rights-url` | URL to full usage terms | none |
 | | `--usage-terms` | Brief usage terms summary | none |
+| | `--credit-line` | Credit line text (e.g., 'Photo by Jane Doe / Acme Corp') | none |
+| | `--copyright-owner` | Copyright owner name (distinct from copyright holder notice text) | none |
+| | `--licensor-name` | Licensor name for PLUS structured rights | none |
+| | `--licensor-email` | Licensor email for PLUS structured rights | none |
+| | `--licensor-url` | Licensor URL for PLUS structured rights | none |
+| | `--content-created-at` | Content creation date (ISO 8601) | none |
 | | `--ai-constraints` | AI-specific constraints text | none |
 | | `--no-ai-training` | Prohibit AI/ML training (DMI shorthand) | false |
 | | `--no-genai-training` | Prohibit generative AI training (DMI shorthand) | false |
 | | `--tdm-reserved` | Reserve TDM rights (DMI shorthand) — deprecated; sets ProhibitedSeeConstraints | false |
 | `-k` | `--key` | Hex cryptographic key | none |
+| | `--known-seeds` | Additional seeds to try during verification (comma-separated u64) | none |
 | `-j` | `--jobs` | Parallel jobs | 1 |
 | | `--strict` | Exit with error if any warnings have error severity for the active evidence profile | false |
 | | `--json` | Output results as JSON | false |
@@ -53,16 +60,17 @@ All protection routes through `build_protection_request()` → `ProtectionReques
 
 ### Legacy Policy Resolution
 
-`legacy_default_dmi()` computes the default DMI value from the protection level:
+`resolve_legacy_dmi()` applies the default DMI value when `--dmi` is omitted or set to `auto`:
+
 - `Disabled` / `Light` → `Unspecified`
 - `Standard` → `ProhibitedAiMlTraining`
 
-`resolve_legacy_dmi()` applies this default when `--dmi` is omitted or set to `auto`. Explicit `--dmi` values override the level default.
+Explicit `--dmi` values override the level default.
 
 ### Normalization Sequence
 
 ```
-base legacy level default (via legacy_default_dmi)
+base legacy level default (via resolve_legacy_dmi)
 explicit --dmi, if not auto
 legal shorthand override (--no-ai-training, --no-genai-training, --tdm-reserved), if present
 conflict check against canonical explicit rights policy
@@ -100,7 +108,7 @@ The `--profile` flag selects the evidence profile:
 - `authenticated-provenance`: Cryptographic payload verification. MAC key expected via `--key`.
 - `maximal`: All channels. MAC key optional.
 
-Legal metadata flags (`--copyright-holder`, etc.) auto-enable metadata injection. The profile affects which warnings are emitted, not the raw processing pipeline.
+Legal metadata flags (`--copyright-notice`, etc.) auto-enable metadata injection. The profile affects which warnings are emitted, not the raw processing pipeline.
 
 ## Batch Processing
 
@@ -112,7 +120,7 @@ When multiple inputs are provided:
 - Rayon thread pool initialization fails silently if already initialized
 - Single-file, sequential batch, and parallel batch all use the same `ProtectionRequest`
 
-## Verification Mode (`-V`)
+## Verification Mode (`--verify`)
 
 1. Load image bytes (from `-o` output file if specified, otherwise input)
 2. Call `verify_legal_notice()` which:

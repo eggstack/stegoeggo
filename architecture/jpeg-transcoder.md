@@ -99,7 +99,7 @@ pub struct JpegStructure {
 ```
 
 Each `JpegScanSpan` records the SOS marker and header end plus the exact entropy slice
-boundaries. `JpegHeader::analyze_structure_checked(data)` returns `Result` and fails
+boundaries. `JpegHeader::analyze_structure_checked(data)` (visibility: `pub(crate)`) returns `Result` and fails
 closed on malformed marker runs, short or overlong segments, malformed SOS extents, and
 unterminated entropy. It preserves the first `FF` of repeated marker-fill runs as the
 marker offset, keeps exactly `FF 00` inside entropy, and rejects `FF FF 00`. Restart
@@ -120,18 +120,20 @@ Component ID → list of 8×8 blocks (64 DCT coefficients each). Stored in natur
 ## Scan Data Utilities
 
 ```rust
-pub fn get_scan_data_start(data: &[u8]) -> Option<usize>
+mod scan_utils {
+    pub fn get_scan_data_start(data: &[u8]) -> Option<usize>  // pub within private mod
+}
 ```
 
-Finds the SOS (Start of Scan) marker position. Uses `checked_add` to prevent integer overflow with malformed segment lengths. Advances past all non-scan markers (APP, DQT, DHT, COM, etc.).
+Lives inside a private `mod scan_utils` — not a top-level public function. Finds the SOS (Start of Scan) marker position. Uses `checked_add` to prevent integer overflow with malformed segment lengths. Advances past all non-scan markers (APP, DQT, DHT, COM, etc.).
 
 ## is_progressive_jpeg
 
 ```rust
-pub fn is_progressive_jpeg(jpeg_data: &[u8]) -> bool
+fn is_progressive_jpeg(jpeg_data: &[u8]) -> bool  // private fn in mod.rs
 ```
 
-Checks if the JPEG uses progressive coding (SOF2 marker). Used to decide between full F5 stego (baseline) and seed-only stego (progressive).
+Checks if the JPEG uses progressive coding (SOF2 marker). Used to decide between full F5 stego (baseline) and seed-only stego (progressive). The public re-export lives at `stegoeggo_stego::jpeg::is_progressive_jpeg` / crate root — the fn in `mod.rs` is the private implementation.
 
 ## Error Type
 

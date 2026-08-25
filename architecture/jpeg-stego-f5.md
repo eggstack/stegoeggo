@@ -7,10 +7,10 @@ F5-style steganographic embedding in JPEG DCT coefficients. The most sophisticat
 ## DctStegoF5
 
 ```rust
-pub struct DctStegoF5;
+pub struct DctStegoF5 { redundancy: usize }
 ```
 
-Static methods for F5 coefficient manipulation.
+Methods for F5 coefficient manipulation, parameterized by redundancy.
 
 ## Seed Embedding in Quantization Tables
 
@@ -32,15 +32,15 @@ Clears quantization table LSBs with `&= 0xFE`. A quantization value of 1 would b
 ## F5 Embedding
 
 ```rust
-pub fn embed_f5(coefficients: &mut Coefficients, payload: &[u8], seed: u64) -> Result<usize>
-pub fn extract_f5(coefficients: &Coefficients, expected_bits: usize, seed: u64) -> Vec<u8>
+pub fn embed_f5(&self, coefficients: &mut Coefficients, payload: &[u8], seed: u64) -> Result<usize>
+pub fn extract_f5(&self, coefficients: &Coefficients, expected_bits: usize, seed: u64) -> Vec<u8>
 ```
 
 `expected_bits` is the original payload bit count. Redundancy is handled internally by reading `expected_bits * redundancy` bits before majority voting.
 
 ### F5 Algorithm
 
-1. Use `F5XorShiftRng` to generate a permutation of coefficient positions
+1. Use `DctCoefficientRng` (private tuple struct, distinct from `PixelSelectionRng` in the root crate) to generate a permutation of coefficient positions
 2. For each payload bit:
    - Find next non-zero coefficient
    - Modify LSB to match payload bit
@@ -48,9 +48,9 @@ pub fn extract_f5(coefficients: &Coefficients, expected_bits: usize, seed: u64) 
 
 ### No-Zero Variant
 
-When |coef|==1 and LSB mismatches:
+When |coef| ≤ 2 and LSB mismatches (to avoid creating zeros or near-zero values):
 - **Standard F5:** Would decrement to 0 (shrinkage — detectable pattern)
-- **No-zero variant:** Increments absolute value (+1→+2, -1→-2)
+- **No-zero variant:** For |coef| ≤ 2, sets to ±3; for larger values, decrements absolute value
 
 This avoids detectable zero creation. The embed/extract position alignment is preserved because no coefficient is ever zeroed out.
 
@@ -63,13 +63,13 @@ F5 extraction handles redundancy-based majority voting in a single pass (not mul
 
 Note: The 5-pass extraction logic with multiple seed derivations is in `steganography/extract.rs` (`extract_with_redundancy`), not in F5 extraction.
 
-## F5XorShiftRng
+## DctCoefficientRng (private)
 
 ```rust
-pub struct F5XorShiftRng { state: u64 }
+struct DctCoefficientRng(u64);  // private tuple struct
 ```
 
-F5-specific PRNG for DCT coefficient shuffling. **Different algorithm from `XorShiftRng`** in `util/image.rs`. Do NOT interchange — each is paired with their respective embed/extract code paths.
+F5-specific PRNG for DCT coefficient shuffling. **Different algorithm from `PixelSelectionRng`** in `util/image.rs`. Do NOT interchange — each is paired with their respective embed/extract code paths. This type is private to `stego_f5.rs` and not exposed publicly.
 
 ## Module Interactions
 
@@ -98,8 +98,8 @@ used by the coefficient container.
 ### Block-Scoped Embed/Extract
 
 ```rust
-pub fn embed_f5_in_blocks(coefficients, payload, seed, tile_blocks) -> Result<usize>
-pub fn extract_f5_from_blocks(coefficients, expected_bits, seed, tile_blocks) -> Vec<u8>
+pub fn embed_f5_in_blocks(&self, coefficients, payload, seed, tile_blocks) -> Result<usize>
+pub fn extract_f5_from_blocks(&self, coefficients, expected_bits, seed, tile_blocks) -> Vec<u8>
 ```
 
 Same F5 algorithm as the global variants but the carrier set is restricted to

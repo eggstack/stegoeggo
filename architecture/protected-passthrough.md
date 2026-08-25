@@ -10,7 +10,7 @@ No-op protector for the `Disabled` protection level.
 pub struct PassthroughProtector;
 
 impl Protector for PassthroughProtector {
-    fn apply(&self, img: &DynamicImage, _ctx: &ProtectionContext) -> Result<Cow<DynamicImage>> {
+    fn apply<'a>(&self, img: &'a DynamicImage, _ctx: &ProtectionContext) -> Result<Cow<'a, DynamicImage>> {
         Ok(Cow::Borrowed(img))  // No modification
     }
 

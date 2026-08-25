@@ -19,7 +19,7 @@ src/signing/
 
 Wraps `ed25519_dalek::SigningKey` with a key identifier. Private key material is zeroized on drop. `Debug` does not reveal key bytes. `Serialize`/`Deserialize` are intentionally not implemented.
 
-- `from_bytes([u8; 32], Vec<u8>)` — Create from raw seed + key ID
+- `from_bytes([u8; 32], Vec<u8>) -> Result<Self, Error>` — Create from raw seed + key ID. Returns `Error::Config` if `key_id` exceeds 32 bytes.
 - `generate()` — Random key with 16-byte random key ID
 - `sign(&[u8]) -> Vec<u8>` — Deterministic Ed25519 signature (64 bytes)
 - `verifying_key() -> VerifyingKey` — Derive public key
@@ -39,7 +39,7 @@ pub enum SignatureResult {
     Valid,
     Invalid,
     MalformedSignature,
-    MalformedPublicKey,
+    KeyNotSupplied,
 }
 ```
 
@@ -49,6 +49,10 @@ Bundles signing key, key ID, and placement preference. Does not implement `Seria
 
 - `new(SigningKey, SignaturePlacement)` — Full constructor
 - `with_key(SigningKey)` — Preferred-embedded placement
+- `signing_key() -> &SigningKey` — Reference to signing key
+- `key_id() -> &[u8]` — Key identifier
+- `verifying_key() -> VerifyingKey` — Derived public key
+- `placement() -> SignaturePlacement` — Current placement preference
 - `check_capacity(available_bytes) -> SignatureCapacity` — Fits or NeedsDetached
 
 ### `SignaturePlacement`
@@ -63,7 +67,7 @@ pub enum SignaturePlacement {
 
 ## Capacity Check
 
-`check_signature_capacity()` computes whether an Ed25519 signature fits within the available payload byte budget:
+`check_signature_capacity(available_bytes, key_id_len, placement)` computes whether an Ed25519 signature fits within the available payload byte budget:
 
 - Core header: 32 bytes (`V3_CORE_SIZE`)
 - Key ID: variable (0–32 bytes)

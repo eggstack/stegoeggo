@@ -1,6 +1,6 @@
 # Metadata Trap Protector
 
-**Source:** `src/protected/metadata_trap.rs` (~3895 lines)
+**Source:** `src/protected/metadata_trap.rs` (~4084 lines)
 
 The largest module. Injects metadata into image files. Operates at the byte level — the `DynamicImage` API cannot preserve injected text chunks through encode/decode cycles. Estimated latency: 2ms.
 
@@ -9,7 +9,7 @@ The largest module. Injects metadata into image files. Operates at the byte leve
 - **`apply()` returns `Cow::Borrowed(img)` unchanged** — metadata injection cannot survive through the `DynamicImage` API
 - **`inject_bytes()`** — Legacy metadata injection using `&ProtectionContext`
 - **`inject_bytes_from_plan()`** — Canonical metadata injection using `&ResolvedProtectionPlan` directly (no `ProtectionContext` reconstruction)
-- **Pipeline routes `Light` level through `apply_light_bytes()`** which encodes, injects metadata, then decodes
+- **Pipeline routes `Light` level through `execute_seed_only_and_metadata()`** which resolves to `HiddenMarkerMode::SeedOnly` and calls `inject_bytes_from_plan` (legacy level APIs translate via `request_from_legacy()` into `ProtectionRequest`)
 - **Canonical path uses `inject_bytes_from_plan()`** from `execute_metadata_only()` and `execute_stego_and_metadata*()`
 
 ## Metadata Types
@@ -179,6 +179,7 @@ so external RDF parsers (e.g. `exiftool`) can read the legal fields:
 ## Utility Functions
 
 - `current_date_iso()` — Manual ISO date computation (test-only, no chrono dependency)
+- `current_timestamp_iso8601()` — pub(crate) runtime timestamp for notice_applied_at auto-computation
 - CRC32 computation for PNG chunk checksums
 
 ## Module Interactions

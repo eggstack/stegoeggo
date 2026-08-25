@@ -88,7 +88,7 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 These have been fixed in documentation — if the code hasn't changed, these are now correctly documented:
 
 - **`XorShiftRng::new`** uses `wrapping_add`, not XOR — use `seed.wrapping_add(XORSHIFT_SEED_OFFSET)`
-- **`parallel_threshold()`** scales as `cores * 64 * 64` — 1c:4096, 4c:16384, 16c:65536
+- **`parallel_threshold()`** and **`LazyLock` singletons** do NOT exist anywhere in the current codebase — docs claiming them are stale; free functions delegate directly to `request_from_legacy()` + `process_request_bytes()`
 - **`verify_image_bytes`** DOES perform DCT stego verification — contrary to old docs
 - **CLI batch** does NOT preserve directory structure — outputs flat to `-o` dir
 - **`LegalMetadata`** field is `ai_constraints` (not `ai_training_constraints`)

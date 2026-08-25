@@ -46,21 +46,21 @@ Fields are always serialized in the order shown above (1–15). This order is th
 
 The `rights_policy` field is a single byte encoding the rights/data-mining policy:
 
-| Byte | Variant | PLUS LDF Key (bare) |
-|------|---------|---------------------|
-| `0x00` | Unspecified | `DMI-UNSPECIFIED` |
-| `0x01` | Allowed | `DMI-ALLOWED` |
-| `0x02` | ProhibitedAiMlTraining | `DMI-PROHIBITED-AIMLTRAINING` |
-| `0x03` | ProhibitedGenAiMlTraining | `DMI-PROHIBITED-GENAIMLTRAINING` |
-| `0x04` | ProhibitedExceptSearchEngineIndexing | `DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING` |
-| `0x05` | ProhibitedAllDataMining | `DMI-PROHIBITED` |
-| `0x06` | ProhibitedSeeConstraints | `DMI-PROHIBITED-SEECONSTRAINT` |
+| Byte | DmiValue Variant | RightsPolicy Variant | PLUS LDF Key (bare) |
+|------|------------------|----------------------|---------------------|
+| `0x00` | `Unspecified` | `Unspecified` | `DMI-UNSPECIFIED` |
+| `0x01` | `Allowed` | `Allowed` | `DMI-ALLOWED` |
+| `0x02` | `ProhibitedAiMlTraining` | `ProhibitedAiMlTraining` | `DMI-PROHIBITED-AIMLTRAINING` |
+| `0x03` | `ProhibitedGenAiMlTraining` | `ProhibitedGenerativeAiTraining` | `DMI-PROHIBITED-GENAIMLTRAINING` |
+| `0x04` | `ProhibitedExceptSearchEngineIndexing` | `ProhibitedExceptSearchIndexing` | `DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING` |
+| `0x05` | `Prohibited` | `ProhibitedAllDataMining` | `DMI-PROHIBITED` |
+| `0x06` | `ProhibitedSeeConstraints` | `ProhibitedSeeConstraints` | `DMI-PROHIBITED-SEECONSTRAINT` |
 
 Values `0x07`–`0xFF` are reserved for future use. Parsers must reject claims with unknown policy bytes.
 
 Note: These are bare `plus_vocab_key()` values for the provenance byte mapping. XMP `plus:DataMining` attributes use the full URI form (`http://ns.useplus.org/ldf/vocab/{key}`).
 
-This mapping aligns with `RightsPolicy::to_byte()` / `RightsPolicy::from_byte()` in `src/types.rs` and the PLUS controlled-vocabulary keys in `DmiValue::plus_vocab_key()`.
+This mapping corresponds to the `DmiValue` enum discriminant order in `src/types.rs` (each variant's position in the enum declaration gives its byte value) and the PLUS controlled-vocabulary keys in `DmiValue::plus_vocab_key()`. `RightsPolicy` maps to `DmiValue` via `RightsPolicy::to_dmi_value()` / `RightsPolicy::from_dmi_value()`.
 
 ## Digest Encoding
 
@@ -128,6 +128,8 @@ Note: The field numbering (1–15 in the field table) is a specification conveni
 The `ProvenanceClaim` type itself always defines all 15 fields. The decision of which fields to populate is made at the call site. Embedded payloads populate a strict subset; detached manifests populate all fields. The canonical JSON for signing includes only the fields that are present (non-null).
 
 ## Binary Encoding (Embedded Payload)
+
+> **Note:** The binary encoding described below is a proposed/planned format. It is **not implemented** in the current source code. No symbols matching this layout (e.g. `notice_digest_len`, `content_code_len` as u16 big-endian fields) exist in the codebase. The current embedded payload path uses the canonical JSON encoding.
 
 When embedded in a steganographic payload, the claim is serialized as:
 
@@ -287,12 +289,12 @@ Implementation must ensure:
 
 ## Migration from Current Payload Format
 
-Current stego payloads (v2) carry a 24-byte compact header. The provenance claim is a new payload format that replaces this header in v3:
+Current stego payloads (v2) carry a 32-byte compact header. The provenance claim is a new payload format that replaces this header in v3:
 
 | Version | Format | Signing |
 |---------|--------|---------|
 | v1 (legacy) | 24-byte fixed header | None |
-| v2 (current) | 24-byte header + optional HMAC | HMAC-SHA256 |
+| v2 (current) | 32-byte header + optional HMAC | HMAC-SHA256 |
 | v3 (planned) | Provenance claim (JSON or binary) | ed25519 or HMAC-SHA256 |
 
 v3 payloads embed the binary-encoded claim in the steganographic layer. Extraction reconstructs the claim, verifies the signature, and checks all digests. Backward compatibility is maintained: v3 extractors must also extract v1/v2 payloads.

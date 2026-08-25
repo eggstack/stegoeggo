@@ -1,6 +1,6 @@
 # Pipeline & Public API
 
-**Source:** `src/lib.rs` (~2282 lines)
+**Source:** `src/lib.rs` (~2260 lines)
 
 The pipeline is the central orchestration layer. It provides two execution paths: the canonical request-based path (via direct plan executor) and the legacy level-based compatibility path (via a stateless `ProtectionPipeline`). Both paths share the same carrier operations and metadata injection. Parallel batch processing functions require the `parallel` feature.
 
@@ -31,8 +31,8 @@ pub struct ProtectionPipeline {
 
 ### Key Methods
 
-- `process(&img, level, &ctx) -> Cow<DynamicImage>` — Pixel-level processing (validates dimensions)
-- `process_bytes(&img_bytes, level, &ctx) -> Vec<u8>` — Byte-level processing (validates dimensions for JPEG via header parse, and for non-JPEG via validate_dimensions after decode)
+- `process(&img, level, &ctx) -> Result<Cow<DynamicImage>>` — Pixel-level processing (validates dimensions)
+- `process_bytes(&img_bytes, level, &ctx) -> Result<Vec<u8>>` — Byte-level processing (validates dimensions for JPEG via header parse, and for non-JPEG via validate_dimensions after decode)
 
 ### Pipeline Flow (Standard)
 
@@ -59,13 +59,14 @@ When both input and output are JPEG, `apply_bytes_pipeline` skips pixel decode/e
 
 ## Convenience Functions
 
-Free functions that use a `LazyLock<ProtectionPipeline>` singleton:
+Free functions that delegate to the canonical request/plan execution path via `request_from_legacy()` and `process_request_bytes()`:
 
-- `process_image(img, level, &ctx)` — Single image, pixel path
-- `process_image_bytes(bytes, level, &ctx)` — Single image, byte path. Auto-detects input format from magic bytes and sets `input_format` on context if not already set.
+- `process_image(img, level, &ctx) -> Result<DynamicImage>` — Single image, pixel path. Takes owned `DynamicImage`.
+- `process_image_bytes(bytes, level, &ctx) -> Result<Vec<u8>>` — Single image, byte path. Auto-detects input format from magic bytes and sets `input_format` on context if not already set.
 - `process_images_parallel(images, level, &ctx)` — Rayon parallel batch
 - `process_images_bytes_parallel(images, level, &ctx)` — Parallel batch, byte path
-- `process_image_bytes_with_warnings(bytes, level, &ctx) -> (Vec<u8>, Vec<ProtectionWarning>)` — Recommended reverse-proxy API. Keeps processing byte-oriented and returns advisory/degradation warnings for proxy policy/logging.
+- `process_image_bytes_with_info(bytes, level, &ctx) -> Result<(Vec<u8>, Option<ProtectionWarning>)>` — Convenience wrapper returning the first warning.
+- `process_image_bytes_with_warnings(bytes, level, &ctx) -> Result<(Vec<u8>, Vec<ProtectionWarning>)>` — Recommended reverse-proxy API. Keeps processing byte-oriented and returns advisory/degradation warnings for proxy policy/logging.
 - `verify_image_bytes(bytes, mac_key) -> VerificationStatus` — Free function (not a pipeline method). Checks DCT stego first, then metadata seed extraction, then falls back to LSB stego payload extraction for non-JPEG formats. Returns `VerificationStatus` (`Verified`, `Invalid`, `NotFound`).
 - `verify_image_bytes_detailed(bytes, mac_key) -> VerificationResult` — Distinguishes verified payloads from metadata-only evidence.
 

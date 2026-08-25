@@ -45,6 +45,15 @@ By convention, detached manifests use the suffix `.stegoeggo.json`. For an image
 
 ## Schema
 
+> **Implementation Status:** The Rust types currently implement a simpler schema than this target spec.
+> - `SignatureRecord`: uses `algorithm`/`key_id(Vec<u8>)`/`signature(hex String)`; lacks `signed_at`/`signer_info`
+> - `PublicKeyEntry`: lacks `fingerprint`/`label`
+> - `EmbeddedReference`: lacks `payload_size_bytes`/`stego_algorithm`/`redundancy`; `payload_digest` is a plain string, not `ContentDigest`
+> - `TrustMetadata`: uses `trust_model`/`trusted`/`reason`/`certificate_chain`; spec defines `trust_chain`/`distribution_policy`/`expiry`
+> - `ProvenanceClaim.rights_policy` is `u8` (numeric enum), not a string
+> - Digests are plain strings (`"sha256:..."`), no `ContentDigest` type
+> - Canonicalization does not NFC-normalize string values
+
 ```json
 {
   "schema_version": 1,
@@ -65,7 +74,7 @@ By convention, detached manifests use the suffix `.stegoeggo.json`. For an image
 | `signatures` | `Vec<SignatureRecord>` | Yes | One or more signature records. Empty array is valid (unsigned claim). |
 | `public_keys` | `Vec<PublicKeyEntry>` | No | Public keys or key references. Optional; only needed when keys are embedded directly. |
 | `embedded_reference` | `EmbeddedReference \| null` | No | Digest of the image-embedded stego payload. Null when no embedded marker exists. |
-| `trust_metadata` | `TrustMetadata \| null` | No | Bounded trust metadata. Feature-gated behind `trust-metadata` feature flag. Null when not used. |
+| `trust_metadata` | `TrustMetadata \| null` | No | Bounded trust metadata. Null when not used. |
 
 ## Provenance Claim
 
@@ -267,7 +276,7 @@ Links the manifest to the image-embedded stego payload.
 
 ## TrustMetadata
 
-Bounded, optional trust context. Feature-gated behind `trust-metadata` cargo feature.
+Bounded, optional trust context.
 
 ```json
 {
@@ -461,22 +470,21 @@ The library enforces maximum sizes to prevent abuse:
 
 | Constraint | Limit | Error |
 |-----------|-------|-------|
-| Total manifest JSON size | 64 KiB | `Error::Manifest` |
-| `claim` serialized size | 32 KiB | `Error::Manifest` |
-| `signatures` array length | 16 entries | `Error::Manifest` |
-| `public_keys` array length | 16 entries | `Error::Manifest` |
-| `trust_chain` array length | 8 entries | `Error::Manifest` |
-| Single `signature_bytes` | 256 bytes (decoded) | `Error::Manifest` |
-| Single `key_bytes` | 512 bytes (decoded) | `Error::Manifest` |
-| String field max length | 4096 bytes (UTF-8) | `Error::Manifest` |
-| Nesting depth | 8 levels | `Error::Manifest` |
-| `rights_notice` fields | 15 (max defined) | `Error::Manifest` |
+| Total manifest JSON size | 64 KiB | `Error::Config` |
+| `signatures` array length | 16 entries | `Error::Config` |
+| `public_keys` array length | 16 entries | `Error::Config` |
+| `trust_chain` array length | 8 entries | `Error::Config` |
+| Single `signature_bytes` | 256 bytes (decoded) | `Error::Config` |
+| Single `key_bytes` | 512 bytes (decoded) | `Error::Config` |
+| String field max length | 4096 bytes (UTF-8) | `Error::Config` |
+| Nesting depth | 8 levels | `Error::Config` |
+| `rights_notice` fields | 16 (max defined) | `Error::Config` |
 
 These limits are library constants, not protocol-mandated. A future schema version may relax them.
 
 ## Error Handling
 
-All manifest errors use `Error::Manifest` with a descriptive message:
+All manifest errors use `Error::Config` with a descriptive message:
 
 | Condition | Message |
 |-----------|---------|
@@ -494,11 +502,10 @@ All manifest errors use `Error::Manifest` with a descriptive message:
 
 | Feature Flag | What It Enables | Default |
 |-------------|----------------|---------|
-| `trust-metadata` | `TrustMetadata` deserialization and validation | Off (off by default) |
-| `ed25519` | Ed25519 signature verification via `ed25519-dalek` | On |
-| `ecdsa` | ECDSA P-256/P-384 verification via `p256`/`p384` crates | Off |
+| `signatures` | Ed25519 signature verification via `ed25519-dalek` | Off |
+| `detached-manifest` | Detached manifest support | Off |
 
-Without the `trust-metadata` feature, `TrustMetadata` is deserialized as `null` and ignored. This keeps the default dependency set small.
+These are the actual Cargo feature gates in the library. The spec defines additional algorithms (ECDSA) and trust-metadata features that are not yet implemented as separate feature flags.
 
 ## Migration from Embedded-Only
 
@@ -524,7 +531,7 @@ The manifest format makes no assumptions about how it is stored or distributed:
 | Database | Stored as a JSON blob, keyed by image digest |
 | CDN edge | Embedded in response headers or separate URL |
 
-The library can serialize to bytes (`to_json()`) and deserialize from bytes (`from_json()`). The caller handles transport.
+The library can serialize to canonical bytes (`canonical_bytes()`) and deserialize from bytes (`from_json()`). The caller handles transport.
 
 ## Backward Compatibility
 

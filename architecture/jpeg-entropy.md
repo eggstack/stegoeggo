@@ -69,11 +69,11 @@ Coefficients exceeding these ranges are clamped to the maximum representable val
 Low-level bit I/O:
 
 ```rust
-struct BitReader<'a> { data: &'a [u8], byte_pos: usize, bit_pos: u8 }
-struct BitWriter { bytes: Vec<u8>, current_byte: u8, bit_pos: u8 }
+struct BitReader<'a> { data: &'a [u8], byte_pos: usize, bit_pos: u8, eoi_reached: bool, restart_seen: bool }
+struct BitWriter { data: Vec<u8>, current_byte: u8, bits_in_byte: u8 }
 ```
 
-- `BitReader` reads bits from entropy data, handles marker stuffing (0xFF 0x00 → 0xFF)
+- `BitReader` reads bits from entropy data in MSB-first order (`bit_pos` initializes to 7). Handles marker stuffing (0xFF 0x00 → 0xFF) and silently skips RST markers (0xD0–0xD7) by advancing past them and recursing.
 - `BitWriter` writes bits with byte alignment and stuffing
 
 ## Zigzag Order

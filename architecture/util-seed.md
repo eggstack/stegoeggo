@@ -12,25 +12,22 @@ pub fn generate_random_seed() -> u64
 
 ## Implementation
 
-The function fills an 8-byte buffer from `getrandom::getrandom` (which reads from the OS CSPRNG — e.g. `/dev/urandom`, `getrandom(2)`, or `BCryptGenRandom` depending on platform) and interprets it as a little-endian `u64`:
+`generate_random_seed()` delegates to a `pub(crate)` helper `try_generate_random_seed() -> Result<u64, getrandom::Error>` that fills an 8-byte buffer from `getrandom::getrandom` and interprets it as a little-endian `u64`:
 
 ```rust
-let mut buf = [0u8; 8];
-if getrandom::getrandom(&mut buf).is_ok() {
+pub(crate) fn try_generate_random_seed() -> std::result::Result<u64, getrandom::Error> {
+    let mut buf = [0u8; 8];
+    getrandom::getrandom(&mut buf)?;
     let x = u64::from_le_bytes(buf);
-    return if x == 0 { 42 } else { x };
+    Ok(if x == 0 { 42 } else { x })
 }
 ```
 
 ### Fallback (rare)
 
-`getrandom` is essentially always available on supported platforms, but the function guards the failure case anyway. If `getrandom` returns an error (for example in an unusual sandboxed environment), the function falls back to a `SystemTime`-derived splitmix64 mix and emits a warning to `stderr`:
+`getrandom` is essentially always available on supported platforms, but the function guards the failure case anyway. If `getrandom` returns an error (for example in an unusual sandboxed environment), the function falls back to a `SystemTime`-derived splitmix64 mix silently (no warning emitted):
 
 ```rust
-eprintln!(
-    "[stegoeggo] WARNING: getrandom unavailable, using time-based seed (not cryptographically secure). \
-     For adversarial settings, use ProtectionContext::new(intensity, external_csprng_seed)"
-);
 let now = std::time::SystemTime::now()
     .duration_since(std::time::UNIX_EPOCH)
     .unwrap_or_default();
@@ -51,7 +48,7 @@ The fallback uses `unwrap_or_default()` (does NOT panic on pre-UNIX-epoch clocks
 
 In the common case, the returned seed is **cryptographically secure** — drawn directly from the OS CSPRNG via `getrandom` and unbiased by the `non-zero` guard. This is suitable for generating unpredictable seeds in adversarial settings.
 
-The time-based fallback path is **not** cryptographically secure: an attacker who knows the request time (within ~ms) can reproduce the seed. The fallback is only reached in unusual sandboxed environments where `getrandom` is unavailable, and a warning is logged to make the situation observable.
+The time-based fallback path is **not** cryptographically secure: an attacker who knows the request time (within ~ms) can reproduce the seed. The fallback is only reached in unusual sandboxed environments where `getrandom` is unavailable.
 
 For **reproducible** protection across runs (e.g. tests, deterministic pipelines), pass an explicit seed via `ProtectionContext::new(intensity, seed)` instead of relying on `generate_random_seed()`.
 

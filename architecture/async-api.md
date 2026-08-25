@@ -12,7 +12,7 @@ pub async fn process_image_bytes_async(img_bytes: Vec<u8>, level: ProtectionLeve
 pub async fn process_image_bytes_with_warnings_async(img_bytes: Vec<u8>, level: ProtectionLevel, ctx: ProtectionContext) -> Result<(Vec<u8>, Vec<ProtectionWarning>)>
 pub async fn process_images_parallel_async(images: Vec<DynamicImage>, level: ProtectionLevel, ctx: ProtectionContext) -> Result<Vec<DynamicImage>>  // requires `parallel` feature
 pub async fn process_images_bytes_parallel_async(images: Vec<Vec<u8>>, level: ProtectionLevel, ctx: ProtectionContext) -> Result<Vec<Vec<u8>>>  // requires `parallel` feature
-pub async fn verify_image_bytes_async(img_bytes: Vec<u8>, mac_key: Vec<u8>) -> Result<Option<bool>>
+pub async fn verify_image_bytes_async(img_bytes: Vec<u8>, mac_key: Vec<u8>) -> Result<VerificationStatus>
 ```
 
 ## Design Decisions

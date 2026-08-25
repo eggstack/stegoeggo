@@ -20,19 +20,19 @@ Generic carrier mechanics (permutations, bit embedding/extraction, capacity calc
 
 ```
 Offset  Size  Field
-0       2     Magic bytes ('S', 'E')
+0       2     Magic [0x53, 0x45]
 2       1     Version (=3)
-3       1     Header length (includes extensions and key ID)
-4       2     Total payload length
-6       8     Seed (little-endian)
-14      2     Intensity (0–10000, little-endian)
-16      1     DMI policy byte
-17      8     Content hash (truncated)
-25      1     Key ID length (0–32)
-26      1     Auth algorithm (0=CRC32, 1=HMAC-SHA256, 2=Ed25519)
-27      1     Auth tag length
-28      2     Flags
-30      2     Reserved
+3       1     Header length (=32)
+4       2     Total payload length (u16 LE)
+6       2     Flags (u16 LE)
+8       2     Protection channels (u16 LE)
+10      1     DMI policy byte
+11      8     Seed (u64 LE)
+19      2     Intensity (u16 LE, scaled x100)
+21      8     Content hash (truncated)
+29      1     Auth algorithm (None=0, Crc32=1, HmacSha256Truncated=2, Ed25519=3)
+30      1     Auth tag length
+31      1     Reserved (0)
 ```
 
 V3 supports TLV extensions for additional metadata and optionally carries an Ed25519 signature or HMAC-SHA256 authentication tag.
@@ -85,23 +85,27 @@ Getter methods: `protection_level()`, `seed()`, `intensity()`, `version()`.
 ### LSB Embedding (PNG/WebP)
 
 ```rust
-fn embed_lsb_v2_in_place(
-    img: &mut RgbaImage,
-    payload: &[u8],
-    seed: u64,
-    redundancy: usize,
-) -> InPlaceEmbedReport
-fn embed_lsb_v2(
+pub(crate) fn embed_lsb_v2(
+    &self,
     img: &RgbaImage,
     payload: &[u8],
     seed: u64,
     redundancy: usize,
 ) -> EmbedOutcome<RgbaImage>
-fn extract_lsb_v2(
+
+pub(crate) fn embed_lsb_v2_in_place(
+    &self,
+    img: &mut RgbaImage,
+    payload: &[u8],
+    seed: u64,
+    redundancy: usize,
+) -> Result<InPlaceEmbedReport>
+
+pub(crate) fn extract_lsb_v2(
+    &self,
     img: &RgbaImage,
     expected_bits: usize,
     seed: u64,
-    base_slot: usize,
     redundancy: usize,
 ) -> Option<Vec<u8>>
 ```
@@ -128,11 +132,12 @@ fn extract_lsb_v2(
   majority-voted bits into its final byte buffer; no bit-per-byte intermediate
   vector is used.
 
-**Extraction probing order:**
+**Extraction probing order (within `extract_with_redundancy`):**
 
-1. V2 corrected: raw seed, redundancy 1..=10
-2. V2 legacy: offset seeds (`seed * (STEGO_OFFSET_SEED_1 + pass)`), redundancy 1..=10
-3. Legacy carrier: offset seeds, legacy extraction
+1. Raw seed: try V2-corrected r=1..=10, then legacy
+2. For each of 5 offset seeds (`raw_seed * (STEGO_OFFSET_SEED_1 + pass)`): try V2-corrected r=1..=10, then legacy
+
+Legacy attempt follows each V2 attempt per-seed variant; not three separate global phases.
 
 **WebP caveat:** LSB embedding survives **lossless** WebP round-trips (which is what `stegoeggo` produces via the `image` crate's `WebPEncoder::new_lossless`). Lossy WebP re-encoding (the common web delivery path) destroys the LSB payload. If WebP is the chosen delivery format, configure the CDN to deliver lossless WebP, or accept metadata-only protection.
 
@@ -185,14 +190,14 @@ Seed detection is not the same as payload verification: a JPEG can expose its se
 
 ### Majority Voting
 
-Extraction always runs 5 passes. Each pass uses different seed derivation. Results are combined via majority voting for robustness against noise.
+Extraction probes seed variants sequentially. The first successful pass wins; passes are NOT combined via majority voting. Majority voting occurs WITHIN a single extraction attempt across `STEGO_SPREAD_FACTOR * redundancy` carrier slots per bit.
 
 ## Redundancy
 
 - Configurable 1–10 via `ProtectionContext::stego_redundancy` (clamped via `.with_stego_redundancy(n)`)
 - Non-tiled DCT: capacity-selected redundancy = `min(requested, available / payload_bits)`, single embed+encode
 - Tiled LSB: redundancy=1 per tile (tile grid provides the redundancy)
-- Extraction always runs 5 passes regardless of redundancy setting
+- Extraction probes the raw seed + 5 offset-seed variants (each trying redundancy 1..=10); first successful attempt wins
 
 ## Fallback Seeds
 

@@ -26,7 +26,6 @@ pub struct ProvenanceClaim {
     pub file_size: u64,                // File size in bytes
     pub format: String,                // "png", "jpeg", "webp"
     pub height: u32,
-    pub width: u32,
     pub instance_digest: String,       // "sha256:<hex>" of file bytes
     pub issuer_id: String,             // Base64url-encoded issuer/key ID
     pub notice_digest: String,         // SHA-256 of normalized rights-notice text
@@ -35,6 +34,7 @@ pub struct ProvenanceClaim {
     pub schema_version: u8,            // Currently 1
     pub software: String,              // e.g. "stegoeggo/0.5.0"
     pub statement_uri: Option<String>, // URI to rights statement
+    pub width: u32,
 }
 ```
 
@@ -83,12 +83,12 @@ Content digest computation:
 ```rust
 pub struct TypedDigest {
     algorithm: String,  // e.g. "sha256"
-    hex: String,
+    value: String,
 }
 ```
 
-- `from_image_bytes(&[u8])` — SHA-256 of raw bytes
-- `to_string()` — `"sha256:<hex>"` format
+- `sha256(&[u8])` — SHA-256 of raw bytes
+- `to_string_value()` — `"sha256:<hex>"` format
 
 ## Version
 

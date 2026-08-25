@@ -19,8 +19,9 @@ pub struct JpegHeader {
     pub components: Vec<ScanComponent>,
     pub app0_marker: Option<Vec<u8>>,
     pub app1_markers: Vec<Vec<u8>>,
+    pub com_markers: Vec<Vec<u8>>,
     pub restart_interval: u16,
-    pub progressive: bool,
+    pub is_progressive: bool,
 }
 ```
 
@@ -93,7 +94,7 @@ pub struct ScanComponent {
 
 ## Checked Scan Structure
 
-`JpegHeader::analyze_structure_checked(data) -> Result<JpegStructure>` walks the
+`JpegHeader::analyze_structure_checked(data) -> Result<JpegStructure>` (visibility: `pub(crate)`) walks the
 complete marker stream without decoding DCT coefficients. It rejects truncated marker
 runs, missing or short segment lengths, segment extents beyond the input, malformed SOS
 boundaries, and entropy scans that reach EOF without a terminating marker.
