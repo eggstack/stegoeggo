@@ -1577,7 +1577,17 @@ impl RightsMetadataProtector {
             .unwrap_or(0);
         payload.extend_from_slice(&now.to_le_bytes());
 
-        let dmi_byte = dmi.map(|d| d as u8).unwrap_or(0);
+        let dmi_byte = dmi
+            .map(|d| match d {
+                DmiValue::Unspecified => 0u8,
+                DmiValue::Allowed => 1,
+                DmiValue::ProhibitedAiMlTraining => 2,
+                DmiValue::ProhibitedGenAiMlTraining => 3,
+                DmiValue::ProhibitedExceptSearchEngineIndexing => 4,
+                DmiValue::Prohibited => 5,
+                DmiValue::ProhibitedSeeConstraints => 6,
+            })
+            .unwrap_or(0);
         payload.push(dmi_byte);
 
         let checksum = Self::crc16(&payload);
@@ -1858,9 +1868,9 @@ impl RightsMetadataProtector {
                 }
             }
 
-            if marker == 0xED {
+            if marker == 0xED && segment_len >= 2 {
                 let seg_start = pos + 4;
-                let seg_end = (seg_start + segment_len).min(jpeg_data.len());
+                let seg_end = (pos + 2 + segment_len).min(jpeg_data.len());
                 let seg_data = &jpeg_data[seg_start..seg_end];
                 if let Some(seed) = Self::extract_seed_from_iptc(seg_data) {
                     return Some(seed);

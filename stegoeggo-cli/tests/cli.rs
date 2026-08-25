@@ -1795,3 +1795,116 @@ fn test_hmac_with_disabled_marker_exits_error() {
         "HMAC with disabled marker should fail"
     );
 }
+
+#[test]
+fn test_corrupt_image_decode_exits_error_not_internal() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("corrupt.png");
+    let mut corrupt = b"\x89PNG\r\n\x1a\n".to_vec();
+    corrupt.extend_from_slice(b"truncated body garbage");
+    fs::write(&input, corrupt).unwrap();
+    let output_path = tmp.path().join("out.png");
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output_path)
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert_eq!(
+        result.status.code(),
+        Some(1),
+        "decode failure must exit 1 (error), got {:?}: {}",
+        result.status.code(),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("Image error:"),
+        "failure must surface as Error::Image, got: {stderr}"
+    );
+}
+
+#[test]
+fn test_conflicting_policy_shorthand_and_dmi_exits_config() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+    let output_path = tmp.path().join("out.png");
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output_path)
+        .arg("--hidden-marker")
+        .arg("best-effort")
+        .arg("--no-ai-training")
+        .arg("--dmi")
+        .arg("allowed")
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "conflicting shorthand + --dmi must exit 2 (config), got {:?}",
+        result.status.code()
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("Conflicting policy"), "stderr: {stderr}");
+}
+
+#[test]
+fn test_conflicting_rights_policy_and_dmi_exits_config() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    create_test_png(&input);
+    let output_path = tmp.path().join("out.png");
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output_path)
+        .arg("--rights-policy")
+        .arg("prohibited-ai-ml-training")
+        .arg("--dmi")
+        .arg("allowed")
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "conflicting --rights-policy + --dmi must exit 2 (config), got {:?}",
+        result.status.code()
+    );
+}
+
+#[test]
+fn test_batch_duplicate_stems_with_file_output_exits_config() {
+    let tmp = tempfile::tempdir().unwrap();
+    let first = tmp.path().join("photo.png");
+    create_test_png(&first);
+    let subdir = tmp.path().join("sub");
+    fs::create_dir(&subdir).unwrap();
+    let second = subdir.join("photo.png");
+    create_test_png(&second);
+    let out_file = tmp.path().join("out.png");
+
+    let result = Command::new(cli_bin())
+        .arg(&first)
+        .arg(&second)
+        .arg("-o")
+        .arg(&out_file)
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "duplicate stems with file-valued --output must exit 2 (config), got {:?}: {}",
+        result.status.code(),
+        String::from_utf8_lossy(&result.stderr)
+    );
+}

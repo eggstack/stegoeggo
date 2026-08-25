@@ -326,7 +326,9 @@ impl DctStegoF5 {
     /// `expected_bits` is the original payload bit count before redundancy
     /// repetition. When redundancy is greater than 1, the extractor reads
     /// `expected_bits * redundancy` bits and then majority-votes them back
-    /// down to the original length.
+    /// down to the original length. An even redundancy can produce a tied
+    /// vote; a tied position makes the whole extraction ambiguous and an
+    /// empty vector is returned so callers treat the candidate as failed.
     pub fn extract_f5(
         &self,
         coefficients: &HashMap<u8, Vec<[i16; 64]>>,
@@ -382,6 +384,9 @@ impl DctStegoF5 {
                     if idx < bits.len() && bits[idx] == 1 {
                         ones += 1;
                     }
+                }
+                if ones * 2 == self.redundancy {
+                    return Vec::new();
                 }
                 decoded_bits.push(if ones > self.redundancy / 2 { 1 } else { 0 });
             }
@@ -638,6 +643,9 @@ impl DctStegoF5 {
                         ones += 1;
                     }
                 }
+                if ones * 2 == self.redundancy {
+                    return Vec::new();
+                }
                 decoded_bits.push(if ones > self.redundancy / 2 { 1 } else { 0 });
             }
             return decoded_bits;
@@ -791,6 +799,44 @@ mod tests {
 
         let bits = stego.extract_f5(&coefficients, expected_bits, 42);
         assert_eq!(bits_to_bytes(&bits), payload);
+    }
+
+    #[test]
+    fn test_f5_redundancy_2_roundtrip() {
+        let stego = DctStegoF5::with_redundancy(2);
+        let mut coefficients = make_coefficients(8);
+        let payload = b"ABCD";
+
+        stego.embed_f5(&mut coefficients, payload, 42).unwrap();
+
+        let bits = stego.extract_f5(&coefficients, payload.len() * 8, 42);
+        assert_eq!(bits_to_bytes(&bits), payload);
+    }
+
+    #[test]
+    fn test_f5_even_redundancy_tied_vote_fails_closed() {
+        let stego = DctStegoF5::with_redundancy(2);
+        let expected_bits = b"ABCD".len() * 8;
+
+        for corrupted_idx in 0..expected_bits {
+            let mut coefficients = make_coefficients(8);
+            let payload = b"ABCD";
+            stego.embed_f5(&mut coefficients, payload, 42).unwrap();
+
+            let positions = shuffled_positions(&coefficients, 42);
+            let (comp_id, block_idx, pos) = positions[corrupted_idx];
+            let block = coefficients
+                .get_mut(&comp_id)
+                .and_then(|blocks| blocks.get_mut(block_idx))
+                .unwrap();
+            block[pos] = flip_lsb_without_zero(block[pos]);
+
+            let bits = stego.extract_f5(&coefficients, expected_bits, 42);
+            assert!(
+                bits.is_empty(),
+                "single flipped copy at slot {corrupted_idx} must not decode to wrong data"
+            );
+        }
     }
 
     #[test]

@@ -94,7 +94,7 @@ EOF
     rm -f "$CONSUMER_DIR/Cargo.lock"
 
     cd "$CONSUMER_DIR"
-    cargo +1.87 check 2>&1
+    cargo +"${MSRV}" check 2>&1
     echo "Feature combo ${label}: OK"
     echo ""
     cd - > /dev/null

@@ -112,7 +112,7 @@ pub fn jpeg_embed(
     seed: u64,
     redundancy: usize,
 ) -> StegoResult<EmbedOutcome<Vec<u8>>> {
-    let config = jpeg::JpegConfig::new(seed).with_redundancy(redundancy);
+    let config = jpeg::JpegConfig::try_new(seed, redundancy)?;
     let report = jpeg::embed(jpeg_bytes, payload, &config)?;
     let path = EmbedPath::DctF5;
     if report.embedded {
@@ -140,7 +140,7 @@ pub fn jpeg_extract(
     seed: u64,
     redundancy: usize,
 ) -> StegoResult<Vec<u8>> {
-    let config = jpeg::JpegConfig::new(seed).with_redundancy(redundancy);
+    let config = jpeg::JpegConfig::try_new(seed, redundancy)?;
     jpeg::extract(jpeg_bytes, payload_len, &config, redundancy)
 }
 

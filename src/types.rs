@@ -2147,7 +2147,6 @@ impl ProtectionContext {
             .dmi_value()
             .or_else(|| {
                 self.protection_level().and_then(|level| match level {
-                    ProtectionLevel::Light => Some(DmiValue::Prohibited),
                     ProtectionLevel::Standard => Some(DmiValue::ProhibitedAiMlTraining),
                     _ => None,
                 })

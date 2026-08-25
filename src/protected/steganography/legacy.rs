@@ -80,7 +80,7 @@ impl SteganographyProtector {
         // Try v2 data length first (32 bytes), then v1 (24 bytes)
         for &data_len in &[V2_HEADER_SIZE, 24usize] {
             let ecc_len = data_len * ecc::REPLICATION_FACTOR;
-            if payload.len() >= ecc_len {
+            if payload.len() >= ecc_len + 4 {
                 if let Some(decoded) = ecc::ecc_decode(payload, data_len) {
                     if decoded.len() >= data_len {
                         let checksum_start = ecc_len;
@@ -97,5 +97,18 @@ impl SteganographyProtector {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn try_ecc_decode_rejects_payload_without_checksum_room() {
+        let exact_v2 = vec![0u8; V2_HEADER_SIZE * ecc::REPLICATION_FACTOR];
+        assert!(SteganographyProtector::try_ecc_decode(&exact_v2).is_none());
+        let exact_v1 = vec![0u8; 24 * ecc::REPLICATION_FACTOR];
+        assert!(SteganographyProtector::try_ecc_decode(&exact_v1).is_none());
     }
 }

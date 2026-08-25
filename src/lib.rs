@@ -1130,7 +1130,10 @@ fn observe_metadata_work(
                 if (chunk_type == b"tEXt" || chunk_type == b"iTXt") && data_end > data_start {
                     budget.observe_metadata_field(data_end - data_start);
                 }
-                pos += chunk_total;
+                pos = match pos.checked_add(chunk_total) {
+                    Some(next) => next,
+                    None => break,
+                };
                 if pos > img_bytes.len() {
                     break;
                 }

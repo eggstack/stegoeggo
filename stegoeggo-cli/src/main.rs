@@ -569,6 +569,14 @@ fn compute_output_path(
     }
 }
 
+fn has_duplicate_stems(files: &[PathBuf]) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    files.iter().any(|f| {
+        let stem = f.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+        !seen.insert(stem.to_string())
+    })
+}
+
 #[allow(deprecated)]
 fn evidence_profile_for_display(args: &Args) -> EvidenceProfile {
     if let Some(preset_arg) = args.preset {
@@ -837,10 +845,12 @@ fn build_new_style_request(
         .rights_policy
         .map(RightsPolicy::from)
         .unwrap_or(RightsPolicy::Unspecified);
+    let rights_policy_set = args.rights_policy.is_some();
+    let shorthand_set = legal_dmi_override.is_some();
 
     if let Some(dmi_val) = legal_dmi_override {
         let dmi_policy = RightsPolicy::from_dmi_value(dmi_val);
-        if args.rights_policy.is_some() && dmi_policy != policy {
+        if rights_policy_set && dmi_policy != policy {
             return Err(config_err(format!(
                 "Conflicting policy: --rights-policy {:?} contradicts --no-ai-training/--no-genai-training/--tdm-reserved",
                 args.rights_policy
@@ -852,10 +862,16 @@ fn build_new_style_request(
     if let Some(ref dmi_arg) = args.dmi {
         if let Some(dmi_val) = dmi_arg.clone().into_dmi_value() {
             let dmi_policy = RightsPolicy::from_dmi_value(dmi_val);
-            if args.rights_policy.is_some() && dmi_policy != policy {
+            if (rights_policy_set || shorthand_set) && dmi_policy != policy {
+                if rights_policy_set {
+                    return Err(config_err(format!(
+                        "Conflicting policy: --rights-policy {:?} contradicts --dmi {:?}",
+                        args.rights_policy, dmi_arg
+                    )));
+                }
                 return Err(config_err(format!(
-                    "Conflicting policy: --rights-policy {:?} contradicts --dmi {:?}",
-                    args.rights_policy, dmi_arg
+                    "Conflicting policy: --dmi {:?} contradicts --no-ai-training/--no-genai-training/--tdm-reserved",
+                    dmi_arg
                 )));
             }
             policy = dmi_policy;
@@ -1468,6 +1484,7 @@ fn classify_error(e: &(dyn std::error::Error + 'static)) -> i32 {
             Error::PayloadVerification(_) | Error::Crypto(_) => EXIT_INTEGRITY,
             Error::ImageDecode(_)
             | Error::ImageEncode(_)
+            | Error::Image(_)
             | Error::ImageTruncated(_)
             | Error::Steganography(_)
             | Error::InvalidFormat(_) => EXIT_ERROR,
@@ -1835,6 +1852,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     if is_batch {
         use rayon::prelude::*;
+
+        if let Some(ref out) = args.output {
+            let file_like = out.is_file() || (out.extension().is_some() && is_image_file(out));
+            if file_like && has_duplicate_stems(&input_files) {
+                return Err(config_err(
+                    "--output names a file but the batch input contains duplicate file stems; \
+                     use a directory --output or rename inputs",
+                ));
+            }
+        }
 
         #[allow(clippy::type_complexity)]
         let results: Vec<

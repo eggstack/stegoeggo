@@ -1,4 +1,4 @@
-use crate::constants::{SPLITMIX64_SEED, STEGO_OFFSET_SEED_1, STEGO_SPREAD_FACTOR};
+use crate::constants::{SPLITMIX64_SEED, STEGO_SPREAD_FACTOR};
 use crate::types::{EmbedOutcome, InPlaceEmbedReport};
 use image::{Rgba, RgbaImage};
 
@@ -55,7 +55,7 @@ pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> usize
         x = (a.wrapping_mul(x).wrapping_add(b)) % (m as u64);
         attempts += 1;
         if attempts >= 64 {
-            return (x % slot_count as u64) as usize;
+            return (splitmix64(x) % slot_count as u64) as usize;
         }
     }
     x as usize
@@ -171,12 +171,7 @@ pub fn embed_bit_in_pixel(output: &mut RgbaImage, x: u32, y: u32, channel: usize
 }
 
 #[allow(dead_code)]
-pub fn embed_lsb(
-    img: &RgbaImage,
-    payload: &[u8],
-    seed: u64,
-    redundancy: usize,
-) -> EmbedOutcome<RgbaImage> {
+pub fn embed_lsb(img: &RgbaImage, payload: &[u8], seed: u64) -> EmbedOutcome<RgbaImage> {
     let (width, height) = img.dimensions();
     let mut output = img.clone();
 
@@ -200,24 +195,16 @@ pub fn embed_lsb(
         };
     }
 
-    for pass in 0..redundancy {
-        let offset_seed = if pass == 0 {
-            seed
-        } else {
-            seed.wrapping_mul(STEGO_OFFSET_SEED_1.wrapping_add(pass as u64))
-        };
+    for (i, &bit) in payload_bits.iter().enumerate() {
+        let channel = i % 3;
+        for s in 0..STEGO_SPREAD_FACTOR {
+            let logical = i * STEGO_SPREAD_FACTOR + s;
+            let idx = stego_permutation(logical, total_pixels, seed);
 
-        for (i, &bit) in payload_bits.iter().enumerate() {
-            let channel = i % 3;
-            for s in 0..STEGO_SPREAD_FACTOR {
-                let logical = i * STEGO_SPREAD_FACTOR + s;
-                let idx = stego_permutation(logical, total_pixels, offset_seed);
+            let x = idx as u32 % width;
+            let y = idx as u32 / width;
 
-                let x = idx as u32 % width;
-                let y = idx as u32 / width;
-
-                embed_bit_in_pixel(&mut output, x, y, channel, bit);
-            }
+            embed_bit_in_pixel(&mut output, x, y, channel, bit);
         }
     }
 
@@ -1011,7 +998,7 @@ mod tests {
         }
 
         let sub = crop_rgba(&output, 0, 0, 64, 64);
-        let seed = tile_seed(42, 0, 0).wrapping_mul(STEGO_OFFSET_SEED_1);
+        let seed = tile_seed(42, 0, 0).wrapping_mul(crate::constants::STEGO_OFFSET_SEED_1);
         let recovered = extract_lsb_v2(&sub, payload.len() * 8, seed, 1)
             .expect("full tile should carry the payload");
         assert_eq!(recovered, payload);
@@ -1026,6 +1013,22 @@ mod tests {
                     assert!(slot < slot_count, "slot {slot} out of range {slot_count}");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn stego_permutation_v2_tiny_carriers_reach_every_slot() {
+        for slot_count in [2usize, 3, 5] {
+            let hits: std::collections::HashSet<usize> = (0..512u64)
+                .flat_map(|seed| {
+                    (0..16usize).map(move |index| stego_permutation_v2(index, slot_count, seed))
+                })
+                .collect();
+            assert_eq!(
+                hits.len(),
+                slot_count,
+                "slot_count {slot_count}: permutation collapsed onto {hits:?}"
+            );
         }
     }
 
