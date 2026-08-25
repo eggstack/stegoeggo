@@ -696,8 +696,10 @@ mod tests {
         let mut positions: Vec<(u8, usize, usize)> = Vec::new();
         for (comp_id, blocks) in coefficients.iter() {
             for (block_idx, block) in blocks.iter().enumerate() {
-                for (pos, _) in block.iter().enumerate().skip(1) {
-                    positions.push((*comp_id, block_idx, pos));
+                for (pos, &coef) in block.iter().enumerate().skip(1) {
+                    if coef.abs() >= 2 {
+                        positions.push((*comp_id, block_idx, pos));
+                    }
                 }
             }
         }

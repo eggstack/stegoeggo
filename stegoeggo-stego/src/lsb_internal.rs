@@ -94,11 +94,7 @@ pub fn lsb_required_capacity_v2(payload_bits: usize, redundancy: usize) -> usize
 
 #[inline(always)]
 pub fn lsb_required_slots_legacy(payload_bits: usize) -> usize {
-    payload_bits
-        .div_ceil(3)
-        .checked_mul(STEGO_SPREAD_FACTOR)
-        .and_then(|v| v.checked_mul(3))
-        .unwrap_or(usize::MAX)
+    payload_bits.saturating_mul(STEGO_SPREAD_FACTOR)
 }
 
 #[allow(dead_code)]
@@ -489,6 +485,11 @@ pub fn embed_lsb_tiled(
             let y1 = (y0 + tile_size).min(height);
             let sub_w = x1 - x0;
             let sub_h = y1 - y0;
+
+            if sub_w < tile_size || sub_h < tile_size {
+                tile_x += 1;
+                continue;
+            }
 
             let local_seed = tile_seed(master_seed, tile_x, tile_y);
             let tile_available = lsb_available_slots(sub_w, sub_h);
@@ -967,6 +968,53 @@ mod tests {
     fn stego_permutation_empty_carrier_is_safe() {
         assert_eq!(stego_permutation(0, 0, 42), 0);
         assert_eq!(stego_permutation(17, 0, 42), 0);
+    }
+
+    #[test]
+    fn embed_lsb_tiled_skips_partial_edge_tiles() {
+        let img = uniform_image(100, 100, 128);
+        let payload = b"tile";
+
+        let outcome = embed_lsb_tiled(&img, payload, 42, 64);
+        let EmbedOutcome::Embedded {
+            output,
+            required_capacity,
+            available_capacity,
+            ..
+        } = outcome
+        else {
+            panic!("full 64x64 tile should embed");
+        };
+
+        assert_eq!(
+            required_capacity,
+            payload.len() * 8 * STEGO_SPREAD_FACTOR,
+            "only the single full 64x64 tile counts toward required capacity"
+        );
+        assert_eq!(
+            available_capacity,
+            lsb_available_slots(64, 64),
+            "partial edge tiles must not contribute capacity"
+        );
+
+        for y in 0..100u32 {
+            for x in 0..100u32 {
+                if x < 64 && y < 64 {
+                    continue;
+                }
+                assert_eq!(
+                    channel_value(&output, x, y, 0),
+                    128,
+                    "pixel outside the full tile must be untouched"
+                );
+            }
+        }
+
+        let sub = crop_rgba(&output, 0, 0, 64, 64);
+        let seed = tile_seed(42, 0, 0).wrapping_mul(STEGO_OFFSET_SEED_1);
+        let recovered = extract_lsb_v2(&sub, payload.len() * 8, seed, 1)
+            .expect("full tile should carry the payload");
+        assert_eq!(recovered, payload);
     }
 
     #[test]

@@ -226,7 +226,7 @@ fn parse_extensions(
 ) -> Result<Vec<ExtensionEntry>, PayloadV3ParseError> {
     let mut extensions = Vec::new();
     let mut total_ext_size = 0usize;
-    let mut seen_types = [false; 256];
+    let mut seen_types = std::collections::HashSet::new();
     let mut offset = 0usize;
 
     while offset + 4 <= data.len() {
@@ -271,14 +271,8 @@ fn parse_extensions(
             break;
         }
 
-        if ext_type < 0x0100 {
-            let idx = ext_type as usize;
-            if idx < seen_types.len() && seen_types[idx] {
-                return Err(PayloadV3ParseError::DuplicateExtension(ext_type));
-            }
-            if idx < seen_types.len() {
-                seen_types[idx] = true;
-            }
+        if !(0x0100..=0x01FF).contains(&ext_type) && !seen_types.insert(ext_type) {
+            return Err(PayloadV3ParseError::DuplicateExtension(ext_type));
         }
 
         let ext_data = data[offset + 4..offset + 4 + ext_len].to_vec();

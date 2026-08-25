@@ -803,6 +803,14 @@ fn build_protection_request_with_explicit_options(
         .with_intensity(args.intensity.clamp(0.0, 1.0))
         .with_jpeg_quality(args.jpeg_quality.clamp(1, 100));
 
+    if !(1..=10).contains(&args.stego_redundancy) {
+        return Err(config_err(format!(
+            "--stego-redundancy must be between 1 and 10, got {}",
+            args.stego_redundancy
+        )));
+    }
+    request = request.with_stego_redundancy(args.stego_redundancy);
+
     if let Some(fmt) = output_format {
         request = request.with_output_format(fmt);
     }
@@ -930,7 +938,8 @@ fn build_legacy_style_request(
 
     let hidden_marker = match protection_level {
         ProtectionLevel::Disabled => HiddenMarkerMode::Disabled,
-        ProtectionLevel::Light | ProtectionLevel::Standard => HiddenMarkerMode::BestEffort,
+        ProtectionLevel::Light => HiddenMarkerMode::SeedOnly,
+        ProtectionLevel::Standard => HiddenMarkerMode::BestEffort,
         _ => HiddenMarkerMode::Disabled,
     };
 
@@ -2151,7 +2160,31 @@ mod tests {
         let req = build_protection_request(&args).unwrap();
         assert_eq!(req.policy(), RightsPolicy::Unspecified);
         assert!(req.channels().rights_metadata);
-        assert_eq!(req.channels().hidden_marker, HiddenMarkerMode::BestEffort);
+        assert_eq!(req.channels().hidden_marker, HiddenMarkerMode::SeedOnly);
+    }
+
+    #[test]
+    fn test_stego_redundancy_is_applied_to_request() {
+        let mut args = default_args();
+        args.stego_redundancy = 8;
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.processing().stego_redundancy, Some(8));
+    }
+
+    #[test]
+    fn test_stego_redundancy_out_of_range_is_config_error() {
+        for out_of_range in [0usize, 11, 100] {
+            let mut args = default_args();
+            args.stego_redundancy = out_of_range;
+            let err = build_protection_request(&args).unwrap_err();
+            let downcast = err.downcast_ref::<stegoeggo::Error>().expect(
+                "redundancy validation must be stegoeggo::Error for exit-code classification",
+            );
+            assert!(
+                matches!(downcast, stegoeggo::Error::Config(_)),
+                "expected Config error for redundancy {out_of_range}, got: {downcast:?}"
+            );
+        }
     }
 
     #[test]

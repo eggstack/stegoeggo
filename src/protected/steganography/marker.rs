@@ -92,6 +92,10 @@ impl SteganographyProtector {
         buf.push(auth_tag_len);
         buf.push(0);
 
+        debug_assert!(
+            emission.extensions.is_empty() && emission.key_id.is_none(),
+            "V3 writer does not emit extensions or key IDs; flags must not advertise them"
+        );
         debug_assert_eq!(buf.len(), crate::payload_v3::types::V3_CORE_SIZE);
 
         let auth_tag = if let Some(key) = ctx.mac_key() {
@@ -176,6 +180,10 @@ impl SteganographyProtector {
         buf.push(auth_tag_len);
         buf.push(0);
 
+        debug_assert!(
+            emission.extensions.is_empty() && emission.key_id.is_none(),
+            "V3 writer does not emit extensions or key IDs; flags must not advertise them"
+        );
         debug_assert_eq!(buf.len(), V3_CORE_SIZE);
 
         let auth_tag = if let Some(key) = plan.mac_key() {

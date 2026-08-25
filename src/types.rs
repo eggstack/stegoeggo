@@ -683,6 +683,7 @@ impl RightsNotice {
             || self.contact_email.is_some()
             || self.license_url.is_some()
             || self.usage_terms.is_some()
+            || self.usage_terms_lang.is_some()
             || self.creation_date.is_some()
             || self.ai_constraints.is_some()
             || self.web_statement_of_rights.is_some()

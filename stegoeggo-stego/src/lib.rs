@@ -102,6 +102,7 @@ pub struct EmbedReport<T = Vec<u8>> {
     /// Available capacity in carrier units.
     pub available_capacity: usize,
     /// The actual redundancy level used for embedding (may differ from
-    /// the requested level if capacity was insufficient).
+    /// the requested level if capacity was insufficient). Zero when
+    /// nothing was embedded.
     pub actual_redundancy: usize,
 }

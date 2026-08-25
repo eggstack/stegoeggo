@@ -375,6 +375,11 @@ impl RightsMetadataProtector {
             }
         }
 
+        if output.len() > u32::MAX as usize + 8 {
+            return Err(Error::Metadata(
+                "WebP file would exceed 4 GiB limit after metadata injection".to_string(),
+            ));
+        }
         let riff_size = (output.len() - 8) as u32;
         output[4] = riff_size as u8;
         output[5] = (riff_size >> 8) as u8;
@@ -778,7 +783,7 @@ impl RightsMetadataProtector {
     }
 
     fn xmp_has_stego_properties(xmp: &[u8]) -> bool {
-        if xmp.windows(20).any(|w| w == b"stegoeggo:") {
+        if xmp.windows(b"stegoeggo:".len()).any(|w| w == b"stegoeggo:") {
             return true;
         }
         if xmp
@@ -2679,6 +2684,47 @@ mod tests {
             dmi.is_none(),
             "DMI-PROHIBITED should not be emitted in new output"
         );
+    }
+
+    #[test]
+    fn xmp_stego_detection_matches_stegoeggo_namespace_without_plus_property() {
+        let xmp = b"<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\
+                     <x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\
+                     <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\
+                     <rdf:Description rdf:about=\"\" \
+                     xmlns:stegoeggo=\"https://github.com/eggstack/stegoeggo\" \
+                     stegoeggo:ProtectionSeed=\"42\"/>\
+                     </rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+        assert!(RightsMetadataProtector::xmp_has_stego_properties(xmp));
+
+        let plain_xmp =
+            b"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"/></x:xmpmeta>";
+        assert!(!RightsMetadataProtector::xmp_has_stego_properties(
+            plain_xmp
+        ));
+    }
+
+    #[test]
+    fn webp_stego_detection_matches_xmp_seed_marker_only() {
+        let protector = RightsMetadataProtector::new();
+        let xmp = b"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\
+                     <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\
+                     <rdf:Description rdf:about=\"\" \
+                     xmlns:stegoeggo=\"https://github.com/eggstack/stegoeggo\" \
+                     stegoeggo:ProtectionSeed=\"42\"/>\
+                     </rdf:RDF></x:xmpmeta>";
+        let xmp_chunk_len = (xmp.len() as u32).to_le_bytes();
+        let mut webp = Vec::new();
+        webp.extend_from_slice(b"RIFF");
+        webp.extend_from_slice(&((12 + 8 + xmp.len()) as u32).to_le_bytes());
+        webp.extend_from_slice(b"WEBP");
+        webp.extend_from_slice(b"XMP ");
+        webp.extend_from_slice(&xmp_chunk_len);
+        webp.extend_from_slice(xmp);
+        if xmp.len() & 1 != 0 {
+            webp.push(0);
+        }
+        assert!(protector.webp_has_stego_metadata(&webp));
     }
 
     #[test]

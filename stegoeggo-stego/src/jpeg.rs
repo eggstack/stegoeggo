@@ -670,7 +670,7 @@ pub fn embed(
         payload_bytes: payload.len(),
         required_capacity: required,
         available_capacity: available,
-        actual_redundancy: config.redundancy(),
+        actual_redundancy: 0,
     })
 }
 
