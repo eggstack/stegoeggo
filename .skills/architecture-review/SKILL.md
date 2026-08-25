@@ -50,8 +50,9 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 
 - `src/types.rs` — All core type definitions, constructors, getters (~5100 lines)
 - `src/traits.rs` — Protector trait
-- `src/lib.rs` — Pipeline orchestration, public API, module declarations (~2244 lines)
+- `src/lib.rs` — Pipeline orchestration, public API, module declarations (~2260 lines)
 - `src/error.rs` — Error variants (19 total: 18 always-available + 1 async-only `Task`)
+- `src/verification/report.rs` — `VerificationReport`, `TrustEvaluation`, sub-verification types
 - `src/protected/steganography/mod.rs` — Facade + shared types; algorithm modules are `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs`
 - `stegoeggo-stego/src/jpeg_transcoder/` — JPEG DCT internals (private to carrier)
 - `src/payload_v3/types.rs` — V3 payload constants and types
@@ -103,6 +104,7 @@ These have been fixed in documentation — if the code hasn't changed, these are
 - **V3 is current** — `V3_PAYLOAD_VERSION = 3` is the default; V2/V1 are extraction-only legacy
 - **`CURRENT_PAYLOAD_VERSION`** does not exist — the constant is `V3_PAYLOAD_VERSION` in `src/payload_v3/types.rs`
 - **`EvidenceStrength`** has 4 variants: `NoNoticeFound`, `MetadataNoticeOnly`, `MetadataNoticeAndBestEffortStego`, `MetadataNoticeAndAuthenticatedProvenance`
-- **`TrustEvaluation`** does not exist as a struct — verification uses `NoticeVerification` (26 fields) and `VerificationResult`
+- **Verification types are all real** — do not flag these as fabricated: `NoticeVerification` (`src/types.rs:2496`, notice-level evidence), `VerificationResult` (`src/types.rs:2200`, enum), `VerificationReport` + `TrustEvaluation` + `TrustEvaluationBuilder` (`src/verification/report.rs:1003/:838/:874`). `architecture/verification.md` documents them correctly
+- **`VerificationStatus` is live** — not deprecated; it is the return type of `verify_image_bytes`. Do not mark it deprecated or suggest migrating away from it
 - **Steganography adapter** is split into 5 modules: `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs` behind `SteganographyProtector` facade
 - **Generic carrier crate** public API: `lsb`, `jpeg`, `frame`, `error`, `types` modules; `jpeg_transcoder` and `lsb_internal` are `pub(crate)`

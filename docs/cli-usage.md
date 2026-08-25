@@ -125,7 +125,6 @@ Without a MAC key, hidden-payload integrity uses non-cryptographic checks intend
 | 1 | `EXIT_ERROR` | General error (I/O, image decode/encode, etc.) |
 | 2 | `EXIT_CONFIG` | Malformed manifest, config error, or input validation failure |
 | 3 | `EXIT_INTEGRITY` | Digest mismatch, binding failure, or signature/integrity failure |
-| 4 | `EXIT_TRUST` | Cryptographically valid but untrusted (no matching public key) |
 | 5 | `EXIT_INTERNAL` | Internal or unexpected error |
 
 The `--verify` flag always exits 0; use output text to determine protection state, not the process exit code.

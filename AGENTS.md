@@ -102,10 +102,13 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 - `EvidenceProfile` — use `ProtectionPreset` instead
 - `with_dmi()` — use `RightsPolicy` in `ProtectionRequest`
+- `with_legal_claims()` — auto-enabled when `LegalMetadata` present; explicit `false` emits `ContradictoryLegalClaims`
 - `with_metadata_injection()` — use `ProtectionChannels`
 - `with_inject_legal_claims()` — use `ProtectionChannels`
-- `compute_iscc()` — use `compute_content_identifiers()`
+- `compute_iscc()` / `compute_iscc_with_metadata()` / `compute_iscc_from_bytes()` — use the `compute_content_identifiers*()` equivalents
 - `NoticeVerification::new()` positional constructor — use `NoticeVerification::builder()`
+
+Not deprecated (do not migrate away): `VerificationStatus` — still the return type of `verify_image_bytes`. The structured reports (`VerificationReport`, `VerificationResult`, `NoticeVerification`) are richer alternatives, not replacements for a removed API.
 
 **Policy-first architecture (Release 4+):** `ProtectionRequest` and `RightsPolicy` are the canonical API. `ProtectionLevel` and `EvidenceProfile` are deprecated compatibility adapters.
 
@@ -193,6 +196,42 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - **`#![forbid(unsafe_code)]`** throughout the library crate and `stegoeggo-stego`
 - **Standalone carrier package wording** — `stegoeggo-stego` has its own package and public API surface, but current release checks enforce version lockstep across carrier/root/CLI
 
+### Architecture Docs Index
+
+Master index with repo layout, module maps, and data-flow diagrams: `architecture/overview.md`. Deep dives:
+
+| Doc | Topic |
+|-----|-------|
+| `pipeline.md` | `ProtectionPipeline` orchestration, format routing, legacy adapters |
+| `resolve.md` | `resolve_request()` single validation point → immutable `ResolvedProtectionPlan` |
+| `types.md` | `RightsPolicy`, `ProtectionRequest`, `ProtectionPreset`, `ProtectionChannels`, `ExecutionReport` |
+| `traits.md` | `Protector` trait contract + implementation table |
+| `error.md` | `Error` enum (19 variants incl. structured resource-limit errors) |
+| `constants.md` | Tuning constants in both crates (`STEGO_SPREAD_FACTOR`, seeds, payload sizes) |
+| `protected-metadata-trap.md` | Metadata injection: canonical `plus:DataMining`, per-format writers, merge policies |
+| `protected-steganography.md` | Application adapter (5 modules) + public generic carrier API (`stegoeggo::stego`) |
+| `protected-passthrough.md` | No-op strategy for `Disabled` |
+| `jpeg-header.md` | `JpegHeader` parser, checked scan-structure analysis |
+| `jpeg-entropy.md` | Huffman codec (`CoefficientDecoder`/`CoefficientEncoder`) |
+| `jpeg-stego-f5.md` | F5 DCT stego, Q-table seed, `DctCoefficientRng`, tiled F5 block order |
+| `jpeg-transcoder.md` | Decode/encode flow, `DctSupport` probe, preserving encoding |
+| `payload-v3.md` | V3 TLV wire format, domain-separated auth, ECC, multi-version parsing |
+| `provenance.md` | `ProvenanceClaim` builder, canonical JSON, `TypedDigest` |
+| `provenance-claim.md` | 15-field claim schema, binary encoding, test vectors |
+| `signing.md` | Ed25519 signing (`signatures` feature), zeroize |
+| `detached.md` | Detached manifest flow, `TrustPolicy` |
+| `detached-manifest.md` | Manifest JSON schema and signing protocol spec |
+| `verification.md` | `VerificationReport`, per-channel sub-results, `TrustEvaluation`, `EvidenceStrength` |
+| `util-image.md` | `PixelSelectionRng`, encoding, format detection, hashing |
+| `util-iscc.md` | ISCC via `iscc-lib` delegation (`iscc` feature) |
+| `util-seed.md` | CSPRNG seed via `getrandom`, splitmix64 fallback |
+| `async-api.md` | Tokio `spawn_blocking` wrappers (`async` feature) |
+| `resource-limits.md` | Parser hardening, configurable limits, structured errors |
+| `legal-metadata-field-mapping.md` | Legal field mapping across PNG/JPEG/WebP, round-trip caveats |
+| `conformance.md` | Conformance harness, fixtures, strict mode, exit codes |
+| `cli.md` | CLI flags, subcommands, exit codes, batch behavior |
+| `adr-c2pa.md` | ADR: C2PA integration deferred |
+
 ## Validation Scripts
 
 - `scripts/check.sh` — Fast deterministic checks used by local development and required CI (fmt, clippy, no-default-features, tests)
@@ -245,10 +284,12 @@ See `RELEASING.md` for the complete procedure.
 
 ## Other Reference Files
 
+- `CHANGELOG.md` — Keep-a-Changelog release notes (cut a version section when bumping versions)
 - `DEPRECATIONS.md` — Deprecated API inventory (removal targeted at v1.0.0, never in 0.x)
 - `SUPPORT.md` — Support matrix
 - `STABILITY.md` — Stability tiers
 - `RELEASING.md` — Manual publication procedure
-- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why
+- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why. Next plan number: 076+
+- `examples/` — Four runnable examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) referenced by `docs/rust-api.md`; keep them compiling when changing public APIs
 - `docs/` — User-facing guides: `cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`
-- `architecture/` — 30 architecture documents, verified against source; file names match topics (`overview.md`, `pipeline.md`, `types.md`, `cli.md`, `constants.md`, `error.md`, `protected-steganography.md`, `jpeg-transcoder.md`, `payload-v3.md`, etc.)
+- `architecture/` — 30 architecture documents, verified against source; indexed in the table above and in `architecture/overview.md`

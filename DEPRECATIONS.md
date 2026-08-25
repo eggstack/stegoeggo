@@ -11,10 +11,16 @@ This document tracks all deprecated public API surfaces, their replacements, and
 | `with_dmi()` | `RightsPolicy` in `ProtectionRequest` | v0.2.2 | v1.0.0 |
 | `with_metadata_injection()` | `ProtectionChannels::metadata_only()` or `ProtectionRequest` builder | v0.2.2 | v1.0.0 |
 | `with_inject_legal_claims()` | Auto-enabled with `LegalMetadata` | v0.2.2 | v1.0.0 |
+| `with_legal_claims()` | Auto-enabled with `LegalMetadata` (explicit `false` emits `ContradictoryLegalClaims`) | v0.2.2 | v1.0.0 |
 | `compute_iscc()` | `compute_content_identifiers()` | v0.2.2 | v1.0.0 |
-| `compute_iscc_detailed()` | `compute_content_identifiers()` | v0.2.2 | v1.0.0 |
-| `VerificationStatus` | `VerificationReport` | v0.2.2 | v1.0.0 |
+| `compute_iscc_with_metadata()` | `compute_content_identifiers_with_metadata()` | v0.2.2 | v1.0.0 |
+| `compute_iscc_from_bytes()` | `compute_content_identifiers_from_bytes()` | v0.2.2 | v1.0.0 |
 | `NoticeVerification::new()` (positional) | `NoticeVerification::builder()` | v0.2.2 | v1.0.0 |
+
+Note: `VerificationStatus` is **not** deprecated — it remains the return type of
+`verify_image_bytes`. The structured reports (`VerificationReport`,
+`VerificationResult`, `NoticeVerification`) are richer alternatives for callers
+who need per-channel detail, not replacements for a removed API.
 
 ## Deprecated in v0.3.0
 

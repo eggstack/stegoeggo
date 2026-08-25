@@ -1,6 +1,6 @@
 ---
 name: plan-execution
-description: Use when executing tasks from plans/plan.md or any multi-wave parallel task plan. Triggers on tasks like "execute plan", "work through plan items", "run parallel tasks", or when working from a structured task list with worktrees.
+description: Use when executing tasks from a numbered implementation plan in plans/ (`NNN-name.md`) or any multi-wave parallel task plan. Triggers on tasks like "execute plan", "work through plan items", "run parallel tasks", or when working from a structured task list with worktrees.
 ---
 
 # Plan-Based Task Execution
@@ -9,11 +9,12 @@ Workflow for executing multi-wave parallel tasks in the stegoeggo codebase using
 
 ## Quick Reference
 
-- Plans live in `plans/`
+- Plans live in `plans/` as numbered files (`NNN-name.md`) with `-status.md` companions; the status file is the authoritative record of what is done
+- Plans are sequential — the next new plan takes the lowest unused number (currently 076+). Never renumber or edit historical plans except their `-status.md`
 - Worktrees go in a temporary directory outside the workspace (e.g., `/tmp/stegoeggo-wt-taskN`)
 - Each task gets its own branch: `fix/taskN-description`
 - Branch naming: `fix/` prefix for bug fixes, `feat/` for features
-- The workspace has two Rust crates: root (`stegoeggo`) and carrier (`stegoeggo-stego`)
+- The workspace has four crates: root (`stegoeggo`), carrier (`stegoeggo-stego`), CLI (`stegoeggo-cli`), fuzz (`fuzz`)
 
 ## Workflow
 

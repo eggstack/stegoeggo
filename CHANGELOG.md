@@ -6,7 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Documentation audit pass: all 30 `architecture/` deep-dives re-verified against source (24 corrected); `AGENTS.md` now carries a complete architecture doc index; agent skills refreshed (verification type surface, plan numbering, stale discrepancy claims removed)
+- `docs/cli-usage.md`: removed nonexistent exit code 4 (`EXIT_TRUST`) — the CLI defines exit codes 0, 1, 2, 3, and 5 only
+- `DEPRECATIONS.md`: removed incorrect `VerificationStatus` deprecation row (it remains a live API) and the nonexistent `compute_iscc_detailed()`; added rows for `with_legal_claims()`, `compute_iscc_with_metadata()`, and `compute_iscc_from_bytes()`
+
+## [0.3.3] - 2026-08-19
+
 ### Added
+- `stegoeggo-stego` workspace member — application-neutral generic carrier crate extracted from the root crate (`lsb`, `jpeg`, `frame`, `types`, `error`, `constants` public; `jpeg_transcoder` and `lsb_internal` private implementation details)
+- Public generic stego API `stegoeggo::stego` — raw (`embed`/`extract`), in-place (`lsb::embed_in_place`), and framed (`embed_framed`/`extract_framed`) operation styles for arbitrary payload bytes over LSB (pixel-domain) and JPEG (DCT-domain) carriers, independent of the rights-protection pipeline
+- Self-describing frame format (`frame::encode`/`decode`/`decode_prefix`) — 11-byte header with magic, version, length, and CRC32; framed extraction needs no caller-known payload length (JPEG framed probes configured redundancy down to 1 using a single coefficient decode)
+- Fallible config constructors — `LsbConfig::try_new`/`try_with_redundancy` and `JpegConfig::try_new`/`try_with_redundancy` return `StegoError::InvalidConfig` instead of panicking on out-of-range redundancy
+- Corrected V2 spread-spectrum LSB carrier — single bijective permutation over `width * height * 3` slots, shared by the cloning and in-place embed paths
 - `iscc` feature gate — ISCC content-identifier support (`compute_content_identifiers`) is now opt-in; CLI enables it by default
 - `conformance` feature gate — conformance harness binary and manifest parsing are now opt-in; `stegoeggo-conformance` requires `--features conformance`
 - `parallel` feature gate — Rayon-based parallel batch processing (`process_images_parallel`) is now opt-in; CLI enables it by default
@@ -32,6 +44,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - WebP XMP merge/replace: at most one XMP chunk in output; existing non-StegoEggo properties preserved under `ReplaceStegoOwned`
 
 ### Changed
+- Pipeline converged onto the canonical plan path — `resolve_request()` validates once into an immutable `ResolvedProtectionPlan`; legacy `ProtectionPipeline` methods are stateless adapters that delegate to the same request path
+- Application stego adapter decomposed into five responsibility modules behind `SteganographyProtector` — `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs`
+- CLI consolidated onto the canonical `ProtectionRequest` path with `--rights-policy`, `--preset`, `--hidden-marker`, `--authentication`, and `--dry-run`; conflicting policy options are configuration errors (exit code 2)
+- LSB embedding/extraction allocation optimizations; JPEG DCT embed simplified to a single pass with no roundtrip decode/extract self-test
+- User documentation split out of the README into dedicated guides under `docs/` (`cli-usage.md`, `rust-api.md`, `formats.md`, `carrier-crate.md`, `legal_notice_model.md`)
 - `RightsSignalKind` now has a new variant `LegacyBarePlusVocabularyKey` for bare PLUS vocabulary keys in `plus:DataMining` (e.g., `"DMI-PROHIBITED-AIMLTRAINING"` instead of full URI). Bare keys are parsed for backward compatibility but classified as `LegacyBarePlusVocabularyKey`, not `CanonicalPlusDataMining`
 - `DmiValue::from_plus_vocab_key()` now only accepts bare keys (no longer accepts URIs via `rsplit('/')`). It rejects values containing `/`, `:`, `?`, `#`, or leading/trailing whitespace
 - `DmiValue::from_plus_vocab_uri()` is now strict — only accepts exact canonical vocabulary URIs under `http://ns.useplus.org/ldf/vocab/`. Unknown-origin URLs are rejected and do not set `canonical_dmi`
@@ -54,10 +71,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Unused `sha2` direct dependency from CLI crate (retained in dev-dependencies for tests)
 
 ### Fixed
-- 0.3.0 changelog entry corrected from "Unreleased" to actual publication date
-- README installation examples updated to current 0.3 release line
-- SECURITY.md updated to include 0.3.x as supported
 - Edge MCU block skip removed — decoder and encoder now both process all blocks specified by MCU geometry
+
+## [0.3.2] - 2026-07-28
+
+### Added
+- `scripts/validate-docs-rs.sh` — docs.rs-equivalent rustdoc validation gate (nightly, `DOCS_RS=1`, `cfg(docsrs)`, workspace + packaged crate)
+- `scripts/validate-msrv-package.sh` — fresh MSRV consumer resolution testing on the declared MSRV (Rust 1.87)
+
+### Changed
+- `image` dependency pinned to `=0.25.6` for MSRV 1.87 compatibility
+- Unified release validation via `validate-release.sh` in release/publish workflows (later replaced by `check.sh` + `release-check.sh`)
+
+### Fixed
+- CHANGELOG 0.3.0 entry dated with its actual publication date; 0.3.1 entry added
+- README installation examples updated to the 0.3 release line
+- SECURITY.md lists 0.3.x as supported
 
 ## [0.3.1] - 2026-07-28
 

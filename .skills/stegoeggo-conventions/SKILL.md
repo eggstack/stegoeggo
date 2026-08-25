@@ -108,9 +108,20 @@ fn process_request_bytes_with_warnings(img_bytes: &[u8], request: &ProtectionReq
 fn process_request_bytes_with_report(img_bytes: &[u8], request: &ProtectionRequest) -> Result<(Vec<u8>, ExecutionReport)>
 fn process_image_bytes(img_bytes: &[u8], level: ProtectionLevel, ctx: &ProtectionContext) -> Result<Vec<u8>>
 fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus  // NOT Result
-fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> VerificationResult
-fn verify_legal_notice(img_bytes: &[u8], mac_key: &[u8]) -> NoticeVerification
+fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> VerificationResult  // enum, src/types.rs:2200
+fn verify_legal_notice(img_bytes: &[u8], mac_key: &[u8]) -> NoticeVerification  // struct, src/types.rs:2496
 ```
+
+### Verification type surface
+
+Four distinct verification types — pick the right one:
+
+| Type | Location | Use |
+|------|----------|-----|
+| `VerificationStatus` | `src/types.rs:2288` | Coarse result of `verify_image_bytes`; live, NOT deprecated |
+| `VerificationResult` | `src/types.rs:2200` (enum) | Detailed payload verification via `verify_image_bytes_detailed` |
+| `NoticeVerification` | `src/types.rs:2496` | Legal-notice evidence via `verify_legal_notice`; build with `NoticeVerification::builder()` |
+| `VerificationReport` | `src/verification/report.rs:1003` | Full structured report (`TrustEvaluation`, `EvidenceStrength`) via `VerificationReportBuilder` |
 
 ### Legacy compatibility (deprecated but functional)
 ```rust
@@ -216,4 +227,10 @@ cargo fmt --all -- --check              # Format check
 - Test with `ProtectionContext::new(intensity, seed)` for deterministic results
 - `ProtectionContext::default()` uses CSPRNG-backed seed (via `getrandom`) — safe for production; use `ProtectionContext::new(intensity, seed)` for reproducibility
 - Feature-gated tests: `tests/async_integration.rs` requires `async` feature
-- Public generic carrier tests belong in `tests/public_stego_api.rs`; framed tests must verify recovery without retaining the original payload length, and JPEG tests must cover auto-downgraded redundancy.
+- Public generic carrier tests belong in `tests/public_stego_api.rs`; framed tests must verify recovery without retaining the original payload length, and JPEG tests must cover auto-downgraded redundancy
+
+## Where Documentation Lives
+- User-facing guides: `docs/` (`cli-usage.md`, `rust-api.md`, `formats.md`, `carrier-crate.md`, `legal_notice_model.md`, `migration-v0.3.md`)
+- Architecture deep-dives: `architecture/` (30 files), indexed by `architecture/overview.md`
+- Agent conventions: this file plus `AGENTS.md` gotchas (CLI flags, exit codes, container correctness)
+- Runnable examples: `examples/` (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) — keep these compiling when changing public APIs
