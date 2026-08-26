@@ -10,11 +10,17 @@ use image::ImageDecoder;
 use std::borrow::Cow;
 
 fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
+    s.chars()
+        .filter(|c| matches!(*c, '\u{9}' | '\u{A}' | '\u{D}') || (*c >= '\u{20}' && *c != '\u{7F}'))
+        .map(|c| match c {
+            '&' => "&amp;".to_string(),
+            '<' => "&lt;".to_string(),
+            '>' => "&gt;".to_string(),
+            '"' => "&quot;".to_string(),
+            '\'' => "&apos;".to_string(),
+            c => c.to_string(),
+        })
+        .collect()
 }
 
 /// Manual date computation from Unix epoch.

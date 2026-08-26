@@ -13,6 +13,14 @@ use thiserror::Error;
 
 pub type Coefficients = HashMap<u8, Vec<[i16; 64]>>;
 
+pub enum CoefficientDecode {
+    Supported {
+        header: Box<JpegHeader>,
+        coefficients: Coefficients,
+    },
+    Unsupported(DctUnsupportedReason),
+}
+
 #[derive(Error, Debug)]
 pub enum TranscoderError {
     #[error("Invalid JPEG format: {0}")]
@@ -180,27 +188,38 @@ fn checked_supported_structure(
 pub struct JpegTranscoder;
 
 impl JpegTranscoder {
-    /// Decode JPEG and extract raw DCT coefficients
-    pub fn decode_coefficients(jpeg_data: &[u8]) -> Result<(JpegHeader, Coefficients)> {
+    pub fn decode_coefficients_with_probe(jpeg_data: &[u8]) -> Result<CoefficientDecode> {
         let header = JpegHeader::parse(jpeg_data)?;
-
-        let structure = checked_supported_structure(&header, jpeg_data).map_err(|reason| {
-            TranscoderError::Unsupported(format!(
-                "DCT embedding not supported for {}: {}",
-                reason, reason
-            ))
-        })?;
+        let structure = match checked_supported_structure(&header, jpeg_data) {
+            Ok(structure) => structure,
+            Err(reason) => return Ok(CoefficientDecode::Unsupported(reason)),
+        };
 
         let scan_span = structure.scan_spans.first().ok_or_else(|| {
             TranscoderError::InvalidFormat("No scan span found in supported JPEG".into())
         })?;
-
         let entropy_slice = &jpeg_data[scan_span.entropy_start..scan_span.entropy_end];
-
         let decoder = CoefficientDecoder::new(header.clone(), entropy_slice.to_vec());
         let coefficients = decoder.decode()?;
 
-        Ok((header, coefficients))
+        Ok(CoefficientDecode::Supported {
+            header: Box::new(header),
+            coefficients,
+        })
+    }
+
+    /// Decode JPEG and extract raw DCT coefficients
+    pub fn decode_coefficients(jpeg_data: &[u8]) -> Result<(JpegHeader, Coefficients)> {
+        match Self::decode_coefficients_with_probe(jpeg_data)? {
+            CoefficientDecode::Supported {
+                header,
+                coefficients,
+            } => Ok((*header, coefficients)),
+            CoefficientDecode::Unsupported(reason) => Err(TranscoderError::Unsupported(format!(
+                "DCT embedding not supported for {}: {}",
+                reason, reason
+            ))),
+        }
     }
 
     /// Encode DCT coefficients back to JPEG using the original byte stream

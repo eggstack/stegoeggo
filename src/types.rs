@@ -697,6 +697,35 @@ impl RightsNotice {
             || self.notice_applied_at.is_some()
     }
 
+    pub(crate) fn validate(&self) -> crate::Result<()> {
+        for (name, value) in [
+            ("copyright_holder", self.copyright_holder.as_deref()),
+            ("contact_email", self.contact_email.as_deref()),
+            ("license_url", self.license_url.as_deref()),
+            ("usage_terms", self.usage_terms.as_deref()),
+            ("usage_terms_lang", self.usage_terms_lang.as_deref()),
+            ("creation_date", self.creation_date.as_deref()),
+            ("ai_constraints", self.ai_constraints.as_deref()),
+            (
+                "web_statement_of_rights",
+                self.web_statement_of_rights.as_deref(),
+            ),
+            ("creator", self.creator.as_deref()),
+            ("credit_line", self.credit_line.as_deref()),
+            ("copyright_owner", self.copyright_owner.as_deref()),
+            ("licensor_name", self.licensor_name.as_deref()),
+            ("licensor_email", self.licensor_email.as_deref()),
+            ("licensor_url", self.licensor_url.as_deref()),
+            ("metadata_date", self.metadata_date.as_deref()),
+            ("notice_applied_at", self.notice_applied_at.as_deref()),
+        ] {
+            if let Some(value) = value {
+                validate_legal_field(name, value)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Sets the copyright holder name.
     #[must_use]
     pub fn with_copyright_holder(mut self, holder: impl Into<String>) -> Self {
@@ -867,6 +896,9 @@ impl RightsNotice {
         if let Some(v) = legal.metadata_date() {
             self.metadata_date = Some(v.to_string());
         }
+        if let Some(v) = legal.notice_applied_at() {
+            self.notice_applied_at = Some(v.to_string());
+        }
         self
     }
 }
@@ -922,14 +954,7 @@ impl LegalMetadata {
     pub fn validate(&self) -> crate::Result<()> {
         let check = |name: &str, val: &Option<String>| -> crate::Result<()> {
             if let Some(v) = val {
-                if v.len() > Self::MAX_FIELD_LEN {
-                    return Err(crate::Error::Config(format!(
-                        "Legal metadata field '{}' exceeds maximum length of {} bytes (got {})",
-                        name,
-                        Self::MAX_FIELD_LEN,
-                        v.len()
-                    )));
-                }
+                validate_legal_field(name, v)?;
             }
             Ok(())
         };
@@ -1366,6 +1391,27 @@ impl LegalMetadata {
         self.notice_applied_at = Some(ts.into());
         self
     }
+}
+
+fn validate_legal_field(name: &str, value: &str) -> crate::Result<()> {
+    if value.len() > LegalMetadata::MAX_FIELD_LEN {
+        return Err(crate::Error::Config(format!(
+            "Legal metadata field '{}' exceeds maximum length of {} bytes (got {})",
+            name,
+            LegalMetadata::MAX_FIELD_LEN,
+            value.len()
+        )));
+    }
+    if value
+        .chars()
+        .any(|c| !matches!(c, '\u{9}' | '\u{A}' | '\u{D}') && (c < '\u{20}' || c == '\u{7F}'))
+    {
+        return Err(crate::Error::Config(format!(
+            "Legal metadata field '{}' contains XML-illegal control characters",
+            name
+        )));
+    }
+    Ok(())
 }
 
 /// Heavy configuration that is shared across requests via `Arc`.

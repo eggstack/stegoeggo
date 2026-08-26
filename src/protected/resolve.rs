@@ -9,6 +9,10 @@ pub fn resolve_request(
 
     validate_channels(request.channels(), request.mac_key())?;
 
+    if let Some(legal) = request.legal_metadata() {
+        legal.validate()?;
+    }
+
     if request.policy() != RightsPolicy::Unspecified && !request.channels().rights_metadata {
         return Err(Error::Config(
             "A non-Unspecified rights policy requires rights_metadata to be enabled".into(),
@@ -61,6 +65,7 @@ pub fn resolve_request(
             request.legal_metadata().is_some() && !legal_has_explicit_ts,
         )
     };
+    effective_notice.validate()?;
 
     if !request.channels().rights_metadata {
         warnings.push(ProtectionWarning::MetadataInjectionDisabled);

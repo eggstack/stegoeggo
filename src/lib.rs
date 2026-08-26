@@ -309,6 +309,7 @@ pub use async_api::{process_images_bytes_parallel_async, process_images_parallel
 use image::DynamicImage;
 use image::GenericImageView;
 use std::borrow::Cow;
+use std::io::Cursor;
 
 /// Internal pipeline output that carries both the processed bytes and the
 /// structured embedding outcome. Public functions extract just the bytes;
@@ -559,14 +560,6 @@ fn request_from_legacy(level: ProtectionLevel, ctx: &ProtectionContext) -> Prote
     notice = notice.with_seed(ctx.seed());
 
     let legal_claims_decision = legal_claims_decision(ctx);
-    if legal_claims_decision == LegalClaimsDecision::Include {
-        if let Some(meta) = ctx.legal_metadata() {
-            notice = notice.with_legal_metadata_fields(meta);
-            if let Some(ts) = meta.notice_applied_at() {
-                notice = notice.with_notice_applied_at(ts.to_string());
-            }
-        }
-    }
 
     let output_format = ctx.output_format();
     let mut request = ProtectionRequest::new(notice, policy, channels)
@@ -774,12 +767,13 @@ pub fn process_image_bytes_with_warnings(
             ImageOutputFormat::Png | ImageOutputFormat::WebP
         )
     {
-        if let Ok(img) = image::load_from_memory(img_bytes) {
-            let (w, h) = img.dimensions();
-            let total_slots = (w as usize) * (h as usize) * 3;
-            let slots_needed = SteganographyProtector::lsb_pixels_needed(ctx);
-            if total_slots < slots_needed {
-                warnings.push(ProtectionWarning::LsbCapacitySkipped);
+        if let Ok(reader) = image::ImageReader::new(Cursor::new(img_bytes)).with_guessed_format() {
+            if let Ok((w, h)) = reader.into_dimensions() {
+                let total_slots = (w as usize) * (h as usize) * 3;
+                let slots_needed = SteganographyProtector::lsb_pixels_needed(ctx);
+                if total_slots < slots_needed {
+                    warnings.push(ProtectionWarning::LsbCapacitySkipped);
+                }
             }
         }
     }

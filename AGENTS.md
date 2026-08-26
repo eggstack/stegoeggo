@@ -114,7 +114,7 @@ Not deprecated (do not migrate away): `VerificationStatus` — still the return 
 
 ## Gotchas
 
-- **`MIN_PAYLOAD_SIZE` is 28, not the output size** — Non-MAC payloads are 76 bytes (ECC-encoded), MAC payloads are 32 bytes. The constant is a parsing threshold
+- **`MIN_PAYLOAD_SIZE` is 28, not the output size** — V3 non-MAC payloads are 36 bytes, V3 MAC payloads are 48 bytes; legacy V1 non-MAC payloads are 76 bytes and legacy V1 MAC payloads are 32 bytes. The constant is a parsing threshold
 - **Two separate XorShiftRng implementations** — `PixelSelectionRng` in `src/util/image.rs` and `DctCoefficientRng` in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs`. Different algorithms, different sequences for same seed. Do NOT interchange them
 - **`ProtectionContext::default()` uses CSPRNG seed** — For reproducible results, use `ProtectionContext::new(intensity, seed)` with an explicit seed
 - **Pipeline flow order** — JPEG output: encode → DCT stego → metadata. Non-JPEG: pixel stego → encode → metadata. JPEG→JPEG fast path bypasses pixel decode entirely
@@ -123,7 +123,7 @@ Not deprecated (do not migrate away): `VerificationStatus` — still the return 
 - **JPEG framed extraction reuses one decode** — `jpeg::extract_framed()` validates support, decodes the coefficient container once, and reuses private retained state across the configured redundancy search
 - **`#[serde(skip)]` on `config` field** — MAC keys and legal metadata are lost in serde roundtrips
 - **CLI unified path** — The CLI always routes through `ProtectionRequest`. `--dmi auto` and omitted `--dmi` are equivalent. Mixed conflicting policy options are configuration errors (exit code 2)
-- **CLI exit codes** — `0`=ok, `1`=error, `2`=config, `3`=integrity, `5`=internal. `--verify` always exits 0; use output text to determine protection state, not exit code
+- **CLI exit codes** — General commands use `0`=ok, `1`=error, `2`=config, `3`=integrity, `5`=internal. `verify-manifest` additionally uses `4` for a cryptographically verified but untrusted manifest. `--verify` always exits 0; use output text to determine protection state, not exit code
 - **CLI new-style flags** — `--rights-policy`, `--preset`, `--hidden-marker`, `--authentication` route through canonical `ProtectionRequest`. `--preset` cannot combine with `--level`/`--profile`. `--rights-policy` replaces `--dmi`. `--dry-run` prints the resolved plan without processing
 - **CLI subcommands (feature: `signatures`)** — `keygen`, `sign`, `verify-manifest` are feature-gated. `verify-manifest` accepts `--payload-key` for HMAC verification. `--json` enables machine-readable output
 - **No `test-seeds` in production CLI** — `test-seeds` is test infrastructure only, never in production binary

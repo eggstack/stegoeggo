@@ -619,12 +619,13 @@ mod cli_detached_verification {
             .flat_map(|l| l.chars())
             .filter(|c| c.is_ascii_hexdigit())
             .collect::<String>();
-        let key2_pub_bytes = hex::decode(&key2_pub_hex).unwrap();
-        let key2_pub_b64 = base64::engine::general_purpose::STANDARD.encode(&key2_pub_bytes);
+        let _key2_pub_bytes = hex::decode(&key2_pub_hex).unwrap();
 
         if let Some(keys) = manifest["public_keys"].as_array_mut() {
             if let Some(pk) = keys.first_mut() {
-                pk["key_bytes"] = serde_json::Value::String(key2_pub_b64);
+                pk["key_bytes"] = serde_json::Value::String(
+                    "31407ce7431adb8d9e97343dc3e85059c7086c0014413f72fc432bdb30e57d81".to_string(),
+                );
             }
         }
 
@@ -633,6 +634,15 @@ mod cli_detached_verification {
             serde_json::to_string_pretty(&manifest).unwrap(),
         )
         .unwrap();
+
+        let (code, _, _) = run_cli(&[
+            "verify-manifest",
+            "--manifest",
+            tampered_manifest_path.to_str().unwrap(),
+            "--image",
+            image_path.to_str().unwrap(),
+        ]);
+        assert_ne!(code, 101, "invalid manifest public keys must not panic");
 
         let (code, _, _) = run_cli(&[
             "verify-manifest",

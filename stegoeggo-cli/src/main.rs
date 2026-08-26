@@ -1072,7 +1072,7 @@ fn handle_keygen(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use stegoeggo::signing::SigningKey;
 
-    let key = SigningKey::generate();
+    let key = SigningKey::generate()?;
     let verifying_key = key.verifying_key();
 
     let key_id_hex = key_id
@@ -1265,7 +1265,8 @@ fn handle_verify_manifest(
         }
         let mut raw_pub = [0u8; 32];
         raw_pub.copy_from_slice(&pub_bytes_vec);
-        let vk = VerifyingKey::from_bytes(raw_pub, key_id_hex.into_bytes());
+        let vk = VerifyingKey::from_bytes(raw_pub, key_id_hex.into_bytes())
+            .map_err(|e| config_err(format!("Invalid public key: {e}")))?;
         vec![stegoeggo::detached::TrustedVerifyingKey {
             key_id: vk.key_id().to_vec(),
             key: vk,

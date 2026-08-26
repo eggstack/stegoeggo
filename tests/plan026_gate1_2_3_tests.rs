@@ -279,7 +279,7 @@ mod detached_tests {
         let image_bytes = make_test_image_bytes();
         let claim = make_test_claim_for(&image_bytes);
 
-        let signing_key = SigningKey::generate();
+        let signing_key = SigningKey::generate().unwrap();
         let claim_bytes = claim.canonical_bytes();
         let sig = signing_key.sign(&claim_bytes);
         let sig_hex = hex::encode(&sig);
@@ -318,7 +318,7 @@ mod detached_tests {
         let image_bytes = make_test_image_bytes();
         let claim = make_test_claim_for(&image_bytes);
 
-        let signing_key = SigningKey::generate();
+        let signing_key = SigningKey::generate().unwrap();
         let claim_bytes = claim.canonical_bytes();
         let sig = signing_key.sign(&claim_bytes);
         let sig_hex = hex::encode(&sig);
@@ -348,7 +348,7 @@ mod detached_tests {
         let image_bytes = make_test_image_bytes();
         let claim = make_test_claim_for(&image_bytes);
 
-        let signing_key = SigningKey::generate();
+        let signing_key = SigningKey::generate().unwrap();
         let claim_bytes = claim.canonical_bytes();
         let sig = signing_key.sign(&claim_bytes);
         let sig_hex = hex::encode(&sig);
@@ -618,7 +618,7 @@ mod detached_tests {
         let image_bytes = make_test_image_bytes();
         let claim = make_test_claim_for(&image_bytes);
 
-        let signing_key = SigningKey::generate();
+        let signing_key = SigningKey::generate().unwrap();
         let claim_bytes = claim.canonical_bytes();
         let sig = signing_key.sign(&claim_bytes);
         let sig_hex = hex::encode(&sig);
@@ -655,7 +655,7 @@ mod detached_tests {
         let image_bytes = make_test_image_bytes();
         let claim = make_test_claim_for(&image_bytes);
 
-        let signing_key = SigningKey::generate();
+        let signing_key = SigningKey::generate().unwrap();
         let claim_bytes = claim.canonical_bytes();
         let sig = signing_key.sign(&claim_bytes);
         let sig_hex = hex::encode(&sig);

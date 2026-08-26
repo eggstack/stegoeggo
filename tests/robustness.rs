@@ -1067,6 +1067,27 @@ mod malformed_input {
     }
 
     #[test]
+    fn legal_metadata_validate_rejects_xml_control_characters() {
+        let meta = stegoeggo::LegalMetadata::new().with_usage_terms("Terms\u{1}with control");
+        let result = meta.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("XML-illegal"));
+    }
+
+    #[test]
+    fn canonical_request_rejects_oversized_notice_fields() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let oversized = "x".repeat(stegoeggo::LegalMetadata::MAX_FIELD_LEN + 1);
+        let request = stegoeggo::ProtectionRequest::metadata_only(
+            stegoeggo::RightsNotice::new().with_copyright_holder(oversized),
+            stegoeggo::RightsPolicy::ProhibitedAiMlTraining,
+        );
+
+        assert!(stegoeggo::process_request_bytes(&png_bytes, &request).is_err());
+    }
+
+    #[test]
     fn oversized_metadata_field_rejected_by_pipeline() {
         let img = create_test_image(64, 64);
         let png_bytes = image_to_png_bytes(&img);

@@ -6,7 +6,7 @@ use ed25519_dalek::Signer;
 
 #[test]
 fn test_key_generation() {
-    let key = SigningKey::generate();
+    let key = SigningKey::generate().unwrap();
     assert_eq!(key.key_id().len(), 16);
     let pk = key.public_key_bytes();
     assert_eq!(pk.len(), 32);
@@ -14,7 +14,7 @@ fn test_key_generation() {
 
 #[test]
 fn test_sign_and_verify() {
-    let signing_key = SigningKey::generate();
+    let signing_key = SigningKey::generate().unwrap();
     let verifying_key = signing_key.verifying_key();
 
     let claim = b"test provenance claim data";
@@ -28,8 +28,8 @@ fn test_sign_and_verify() {
 
 #[test]
 fn test_wrong_key_fails() {
-    let key1 = SigningKey::generate();
-    let key2 = SigningKey::generate();
+    let key1 = SigningKey::generate().unwrap();
+    let key2 = SigningKey::generate().unwrap();
 
     let claim = b"test claim";
     let signature = key1.sign(claim);
@@ -42,7 +42,7 @@ fn test_wrong_key_fails() {
 
 #[test]
 fn test_altered_claim_fails() {
-    let key = SigningKey::generate();
+    let key = SigningKey::generate().unwrap();
     let claim = b"original claim";
     let signature = key.sign(claim);
 
@@ -54,7 +54,7 @@ fn test_altered_claim_fails() {
 
 #[test]
 fn test_key_not_revealed_in_debug() {
-    let key = SigningKey::generate();
+    let key = SigningKey::generate().unwrap();
     let debug = format!("{:?}", key);
 
     assert!(debug.contains("SigningKey"));
@@ -65,7 +65,7 @@ fn test_key_not_revealed_in_debug() {
 
 #[test]
 fn test_key_not_serializable() {
-    let key = SigningKey::generate();
+    let key = SigningKey::generate().unwrap();
     let vk = key.verifying_key();
 
     let vk_json = serde_json::to_string(&vk).unwrap();
@@ -78,7 +78,7 @@ fn test_key_not_serializable() {
 
 #[test]
 fn test_zeroize_on_drop() {
-    let mut key = SigningKey::generate();
+    let mut key = SigningKey::generate().unwrap();
     let original_key_bytes = key.to_bytes();
 
     key.zeroize();
@@ -88,7 +88,7 @@ fn test_zeroize_on_drop() {
 
 #[test]
 fn test_verifying_key_serialization_roundtrip() {
-    let signing_key = SigningKey::generate();
+    let signing_key = SigningKey::generate().unwrap();
     let vk = signing_key.verifying_key();
 
     let json = serde_json::to_string(&vk).unwrap();
@@ -99,7 +99,7 @@ fn test_verifying_key_serialization_roundtrip() {
 
 #[test]
 fn test_signature_is_64_bytes() {
-    let key = SigningKey::generate();
+    let key = SigningKey::generate().unwrap();
     let signature = key.sign(b"test");
     assert_eq!(signature.len(), 64);
 }
@@ -117,7 +117,7 @@ fn test_deterministic_signing() {
 
 #[test]
 fn test_malformed_signature_rejected() {
-    let key = SigningKey::generate();
+    let key = SigningKey::generate().unwrap();
     assert_eq!(
         key.verifying_key().verify(b"test", &[0u8; 32]),
         SignatureResult::MalformedSignature
@@ -152,8 +152,8 @@ fn test_signature_result_display() {
 
 #[test]
 fn test_generate_produces_unique_keys() {
-    let key1 = SigningKey::generate();
-    let key2 = SigningKey::generate();
+    let key1 = SigningKey::generate().unwrap();
+    let key2 = SigningKey::generate().unwrap();
     assert_ne!(key1.public_key_bytes(), key2.public_key_bytes());
     assert_ne!(key1.key_id(), key2.key_id());
 }
@@ -203,7 +203,7 @@ fn test_rfc8032_known_answer_public_key() {
 
 #[test]
 fn test_signature_bit_flip_rejected() {
-    let key = SigningKey::generate();
+    let key = SigningKey::generate().unwrap();
     let claim = b"test claim for bit flip";
     let sig = key.sign(claim);
     let mut sig_bytes = sig;
@@ -216,7 +216,7 @@ fn test_signature_bit_flip_rejected() {
 
 #[test]
 fn test_signing_key_not_serializable() {
-    let key = SigningKey::generate();
+    let key = SigningKey::generate().unwrap();
     let _: &dyn std::fmt::Debug = &key;
 }
 
@@ -236,7 +236,7 @@ fn test_verify_independently_created_signature() {
 
 #[test]
 fn test_truncated_signature_rejected() {
-    let key = SigningKey::generate();
+    let key = SigningKey::generate().unwrap();
     let claim = b"truncated test";
     for len in [32, 63, 65] {
         let mut sig_bytes = vec![0u8; len];

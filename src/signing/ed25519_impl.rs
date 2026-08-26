@@ -55,17 +55,19 @@ impl SigningKey {
     }
 
     /// Generate a new random signing key with a random 16-byte key identifier.
-    pub fn generate() -> Self {
+    pub fn generate() -> Result<Self, Error> {
         let mut key_bytes = [0u8; 32];
-        getrandom::getrandom(&mut key_bytes).expect("failed to generate random key");
+        getrandom::getrandom(&mut key_bytes)
+            .map_err(|e| Error::Crypto(format!("failed to generate random key: {e}")))?;
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&key_bytes);
         let mut key_id = [0u8; 16];
-        getrandom::getrandom(&mut key_id).expect("failed to generate random key ID");
-        Self {
+        getrandom::getrandom(&mut key_id)
+            .map_err(|e| Error::Crypto(format!("failed to generate random key ID: {e}")))?;
+        Ok(Self {
             signing_key,
             secret_bytes: key_bytes,
             key_id: key_id.to_vec(),
-        }
+        })
     }
 
     /// Get the key identifier.
@@ -125,13 +127,15 @@ pub struct VerifyingKey {
 
 impl VerifyingKey {
     /// Create from raw key bytes and a key identifier.
-    pub fn from_bytes(key_bytes: [u8; 32], key_id: Vec<u8>) -> Self {
+    ///
+    /// Returns an error if the bytes do not encode a valid Ed25519 public key.
+    pub fn from_bytes(key_bytes: [u8; 32], key_id: Vec<u8>) -> Result<Self, Error> {
         let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&key_bytes)
-            .expect("invalid ed25519 public key bytes");
-        Self {
+            .map_err(|e| Error::Crypto(format!("invalid ed25519 public key: {e}")))?;
+        Ok(Self {
             verifying_key,
             key_id,
-        }
+        })
     }
 
     /// Get the key identifier.
@@ -271,12 +275,22 @@ mod tests {
 
     #[test]
     fn signing_key_debug_does_not_expose_key_bytes() {
-        let key = SigningKey::generate();
+        let key = SigningKey::generate().unwrap();
         let debug = format!("{:?}", key);
         assert!(debug.contains("SigningKey"));
         assert!(debug.contains("key_id"));
         let secret_hex = hex::encode(key.secret_bytes);
         assert!(!debug.contains(&secret_hex));
+    }
+
+    #[test]
+    fn invalid_verifying_key_returns_error() {
+        let bytes: [u8; 32] =
+            hex::decode("31407ce7431adb8d9e97343dc3e85059c7086c0014413f72fc432bdb30e57d81")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        assert!(VerifyingKey::from_bytes(bytes, Vec::new()).is_err());
     }
 
     #[test]
@@ -388,8 +402,8 @@ mod tests {
 
     #[test]
     fn generate_produces_unique_keys() {
-        let key1 = SigningKey::generate();
-        let key2 = SigningKey::generate();
+        let key1 = SigningKey::generate().unwrap();
+        let key2 = SigningKey::generate().unwrap();
         assert_ne!(key1.secret_bytes, key2.secret_bytes);
     }
 

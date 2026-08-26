@@ -463,8 +463,23 @@ fn verify_detached_manifest_inner(
                 };
 
             if let Some(raw_pub) = verify_key_bytes {
-                let vk =
-                    crate::signing::VerifyingKey::from_bytes(raw_pub, sig_record.key_id.clone());
+                let vk = match crate::signing::VerifyingKey::from_bytes(
+                    raw_pub,
+                    sig_record.key_id.clone(),
+                ) {
+                    Ok(vk) => vk,
+                    Err(_) => {
+                        builder = builder.add_signature(
+                            SignatureVerification::builder()
+                                .present(true)
+                                .structurally_valid(false)
+                                .key_material_matched(key_material_matched)
+                                .source(FieldSource::DetachedManifest)
+                                .build(),
+                        );
+                        continue;
+                    }
+                };
 
                 let claim_bytes = manifest.claim.canonical_bytes();
                 let result = vk.verify(&claim_bytes, &sig_bytes);

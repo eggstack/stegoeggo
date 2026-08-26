@@ -130,16 +130,17 @@ fn decode_supported_carrier(
         return Err(StegoError::MalformedInput("not a valid JPEG".to_string()));
     }
 
-    let support = probe_support(jpeg_bytes)?;
-    if let JpegSupport::Unsupported(reason) = support {
-        return Err(StegoError::UnsupportedJpeg(reason));
-    }
-
     #[cfg(test)]
     JPEG_COEFFICIENT_DECODE_COUNT.with(|count| count.set(count.get() + 1));
 
-    let (_, coefficients) = JpegTranscoder::decode_coefficients(jpeg_bytes)
+    let decoded = JpegTranscoder::decode_coefficients_with_probe(jpeg_bytes)
         .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+    let coefficients = match decoded {
+        crate::jpeg_transcoder::CoefficientDecode::Supported { coefficients, .. } => coefficients,
+        crate::jpeg_transcoder::CoefficientDecode::Unsupported(reason) => {
+            return Err(StegoError::UnsupportedJpeg(map_unsupported_reason(reason)));
+        }
+    };
     let available_capacity = dct_payload_capacity(&coefficients);
 
     Ok(DecodedJpegCarrier {
@@ -614,13 +615,17 @@ pub fn embed(
         return Err(StegoError::MalformedInput("not a valid JPEG".to_string()));
     }
 
-    let support = probe_support(jpeg_bytes)?;
-    if let JpegSupport::Unsupported(reason) = support {
-        return Err(StegoError::UnsupportedJpeg(reason));
-    }
-
-    let (header, coefficients) = JpegTranscoder::decode_coefficients(jpeg_bytes)
+    let decoded = JpegTranscoder::decode_coefficients_with_probe(jpeg_bytes)
         .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+    let (header, coefficients) = match decoded {
+        crate::jpeg_transcoder::CoefficientDecode::Supported {
+            header,
+            coefficients,
+        } => (*header, coefficients),
+        crate::jpeg_transcoder::CoefficientDecode::Unsupported(reason) => {
+            return Err(StegoError::UnsupportedJpeg(map_unsupported_reason(reason)));
+        }
+    };
 
     let available = dct_payload_capacity(&coefficients);
 

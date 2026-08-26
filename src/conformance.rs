@@ -721,7 +721,9 @@ pub fn collect_fixture_files(dir: &Path, format_filter: &Option<String>) -> Vec<
         return files;
     }
     if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
+        let mut entries: Vec<_> = entries.flatten().collect();
+        entries.sort_by_key(|entry| entry.path());
+        for entry in entries {
             let path = entry.path();
             if path.is_dir() {
                 files.extend(collect_fixture_files(&path, format_filter));

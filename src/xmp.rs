@@ -206,6 +206,9 @@ fn attr_raw_value(attr: &Attribute, reader: &NsReader<&[u8]>) -> Result<Vec<u8>>
 
 fn escape_attr_value(value: &[u8], out: &mut Vec<u8>) {
     for &b in value {
+        if matches!(b, 0x00..=0x08 | 0x0B..=0x0C | 0x0E..=0x1F | 0x7F) {
+            continue;
+        }
         match b {
             b'&' => out.extend_from_slice(b"&amp;"),
             b'<' => out.extend_from_slice(b"&lt;"),
@@ -218,6 +221,9 @@ fn escape_attr_value(value: &[u8], out: &mut Vec<u8>) {
 
 fn escape_text_value(value: &[u8], out: &mut Vec<u8>) {
     for &b in value {
+        if matches!(b, 0x00..=0x08 | 0x0B..=0x0C | 0x0E..=0x1F | 0x7F) {
+            continue;
+        }
         match b {
             b'&' => out.extend_from_slice(b"&amp;"),
             b'<' => out.extend_from_slice(b"&lt;"),
