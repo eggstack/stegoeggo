@@ -194,7 +194,7 @@ Extraction probes seed variants sequentially. The first successful pass wins; pa
 
 ## Redundancy
 
-- Configurable 1–10 via `ProtectionContext::stego_redundancy` (clamped via `.with_stego_redundancy(n)`)
+- Configurable 1–10 via `ProtectionContext::stego_redundancy`; invalid values return a configuration error when the context is used
 - Non-tiled DCT: capacity-selected redundancy = `min(requested, available / payload_bits)`, single embed+encode
 - Tiled LSB: redundancy=1 per tile (tile grid provides the redundancy)
 - Extraction probes the raw seed + 5 offset-seed variants (each trying redundancy 1..=10); first successful attempt wins

@@ -415,6 +415,7 @@ pub fn process_image(
     if level == ProtectionLevel::Disabled {
         return Ok(img);
     }
+    ctx.validate()?;
     let format = ctx
         .output_format()
         .or_else(|| ctx.input_format())
@@ -650,6 +651,7 @@ pub fn process_image_bytes(
     if level == ProtectionLevel::Disabled {
         return Ok(img_bytes.to_vec());
     }
+    ctx.validate()?;
     if let Some(meta) = ctx.legal_metadata() {
         meta.validate()?;
     }

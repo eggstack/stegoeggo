@@ -26,7 +26,7 @@ extraction probing. The two copies are byte-identical.
 - `STEGO_OFFSET_SEED_1` is a large prime-like constant used in the seed derivation formula for legacy offset seeds: `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)`. The corrected V2 carrier uses the raw seed directly without this offset
 - `STEGO_SPREAD_FACTOR` is the base replication factor per payload bit; the corrected V2 carrier multiplies this by the redundancy parameter to get total replicas per bit
 - `XORSHIFT_SEED_OFFSET` ensures non-zero initial state for the `PixelSelectionRng` PRNG
-- Tile size is clamped to `32..=1024` (0 disables tiling)
+- Tile size accepts `32..=1024` (0 disables tiling); invalid values return a configuration error
 
 ## Module Interactions
 

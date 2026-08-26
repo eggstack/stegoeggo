@@ -7,6 +7,18 @@ pub fn resolve_request(
 ) -> Result<ResolvedProtectionPlan> {
     let mut warnings = Vec::new();
 
+    if let Some(redundancy) = request.processing().stego_redundancy {
+        validate_stego_redundancy(redundancy)?;
+    }
+    validate_jpeg_quality(request.processing().jpeg_quality)?;
+    if let HiddenMarkerMode::Tiled { tile_size } = request.channels().hidden_marker {
+        if !(32..=1024).contains(&tile_size) {
+            return Err(Error::Config(format!(
+                "tile size must be in 32..=1024, got {tile_size}"
+            )));
+        }
+    }
+
     validate_channels(request.channels(), request.mac_key())?;
 
     if let Some(legal) = request.legal_metadata() {

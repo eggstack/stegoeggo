@@ -217,7 +217,7 @@ impl SteganographyProtector {
     /// Verify protection using a known seed.
     ///
     /// Extracts the LSB payload with the given seed and checks both the checksum
-    /// and the embedded seed value. Also tries metadata-extracted seeds as fallback.
+    /// and the embedded seed value. Metadata is only available through the byte APIs.
     pub fn verify_payload_with_seed(&self, img: &DynamicImage, seed: u64) -> bool {
         let rgba = img.to_rgba8();
 
@@ -231,32 +231,6 @@ impl SteganographyProtector {
                 if let Some(embedded_seed) = Self::extract_embedded_seed(&header) {
                     if embedded_seed == seed {
                         return true;
-                    }
-                }
-            }
-        }
-
-        if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
-            if let Some(metadata_seed) =
-                RightsMetadataProtector::extract_seed_from_image_with_limits(
-                    &encoded,
-                    Some(&self.limits),
-                )
-            {
-                if metadata_seed != seed {
-                    if let Some(payload) = self.extract_with_redundancy(&rgba, metadata_seed, &[]) {
-                        let header = if let Some(decoded) = Self::try_ecc_decode(&payload) {
-                            decoded
-                        } else {
-                            payload.clone()
-                        };
-                        if Self::verify_checksum(&payload) {
-                            if let Some(embedded_seed) = Self::extract_embedded_seed(&header) {
-                                if embedded_seed == seed {
-                                    return true;
-                                }
-                            }
-                        }
                     }
                 }
             }

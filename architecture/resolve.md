@@ -27,21 +27,23 @@ pub fn resolve_request(
 
 ### Validation Steps
 
-1. **Channel validation** — `validate_channels()` checks that:
+1. **Processing validation** — Rejects out-of-range JPEG quality, stego redundancy, and tiled marker sizes.
+
+2. **Channel validation** — `validate_channels()` checks that:
    - HMAC authentication requires an enabled hidden marker
    - HMAC authentication requires a MAC key
    - `ProhibitedSeeConstraints` policy requires `ai_constraints` or `web_statement_of_rights`
    - Non-Unspecified rights policy requires `rights_metadata` to be enabled
 
-2. **DMI resolution** — Maps `RightsPolicy` to `DmiValue`:
+3. **DMI resolution** — Maps `RightsPolicy` to `DmiValue`:
    - `Unspecified` → `None`
    - All others → `Some(DmiValue::from(policy))`
 
-3. **Seed resolution** — Uses explicit seed from request, or generates a random one
+4. **Seed resolution** — Uses explicit seed from request, or generates a random one
 
-4. **Output format** — Uses explicit format from request, or matches input format
+5. **Output format** — Uses explicit format from request, or matches input format
 
-5. **Warning collection** — Collects warnings during resolution:
+6. **Warning collection** — Collects warnings during resolution:
    - `MissingMacKey` — HMAC requested but no MAC key provided
    - `MetadataInjectionDisabled` — `rights_metadata` is false
 

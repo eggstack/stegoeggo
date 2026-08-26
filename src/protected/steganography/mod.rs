@@ -228,10 +228,12 @@ impl Protector for SteganographyProtector {
         img: &'a DynamicImage,
         ctx: &ProtectionContext,
     ) -> Result<Cow<'a, DynamicImage>> {
+        ctx.validate()?;
         Ok(Cow::Owned(self.apply_to_image_owned(img, ctx)?))
     }
 
     fn apply_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
+        ctx.validate()?;
         let format = ctx.input_format().unwrap_or_else(|| {
             crate::types::ImageOutputFormat::from_magic_bytes(img_bytes)
                 .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT)

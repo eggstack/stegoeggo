@@ -720,7 +720,11 @@ impl RightsNotice {
             ("notice_applied_at", self.notice_applied_at.as_deref()),
         ] {
             if let Some(value) = value {
-                validate_legal_field(name, value)?;
+                if name == "usage_terms_lang" {
+                    validate_language_tag(name, value)?;
+                } else {
+                    validate_legal_field(name, value)?;
+                }
             }
         }
         Ok(())
@@ -943,7 +947,7 @@ impl LegalMetadata {
     /// Validates that all set fields are within the allowed byte length.
     ///
     /// Returns `Ok(())` if all fields are valid, or `Err` with a description
-    /// of the first oversized field found.
+    /// of the first invalid field found.
     ///
     /// # Errors
     ///
@@ -951,6 +955,7 @@ impl LegalMetadata {
     ///
     /// URL fields (`license_url`, `web_statement_of_rights`, `licensor_url`)
     /// are also validated for basic syntactic correctness (scheme + authority).
+    /// The `usage_terms_lang` field is validated as a BCP 47 language tag.
     pub fn validate(&self) -> crate::Result<()> {
         let check = |name: &str, val: &Option<String>| -> crate::Result<()> {
             if let Some(v) = val {
@@ -979,7 +984,9 @@ impl LegalMetadata {
         check("licensor_url", &self.licensor_url)?;
         check("metadata_date", &self.metadata_date)?;
         check("notice_applied_at", &self.notice_applied_at)?;
-        check("usage_terms_lang", &self.usage_terms_lang)?;
+        if let Some(value) = &self.usage_terms_lang {
+            validate_language_tag("usage_terms_lang", value)?;
+        }
 
         check_url("license_url", &self.license_url)?;
         check_url("web_statement_of_rights", &self.web_statement_of_rights)?;
@@ -1414,6 +1421,90 @@ fn validate_legal_field(name: &str, value: &str) -> crate::Result<()> {
     Ok(())
 }
 
+fn validate_language_tag(name: &str, value: &str) -> crate::Result<()> {
+    if value.is_empty() {
+        return Err(crate::Error::Config(format!(
+            "Legal metadata field '{}' must be a valid BCP 47 language tag",
+            name
+        )));
+    }
+
+    let mut subtags = value.split('-');
+    let Some(primary) = subtags.next() else {
+        return Err(crate::Error::Config(format!(
+            "Legal metadata field '{}' must be a valid BCP 47 language tag",
+            name
+        )));
+    };
+
+    let valid_subtag = |subtag: &str, min_len: usize| {
+        (min_len..=8).contains(&subtag.len())
+            && subtag.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    };
+
+    if primary.eq_ignore_ascii_case("x") {
+        if subtags.clone().next().is_none() || subtags.any(|subtag| !valid_subtag(subtag, 1)) {
+            return Err(crate::Error::Config(format!(
+                "Legal metadata field '{}' must be a valid BCP 47 language tag",
+                name
+            )));
+        }
+        return Ok(());
+    }
+
+    if !(2..=8).contains(&primary.len())
+        || !primary.bytes().all(|byte| byte.is_ascii_alphabetic())
+        || subtags.any(|subtag| !valid_subtag(subtag, 1))
+    {
+        return Err(crate::Error::Config(format!(
+            "Legal metadata field '{}' must be a valid BCP 47 language tag",
+            name
+        )));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn validate_stego_redundancy(redundancy: usize) -> crate::Result<()> {
+    if (1..=10).contains(&redundancy) {
+        Ok(())
+    } else {
+        Err(crate::Error::Config(format!(
+            "stego redundancy must be in 1..=10, got {redundancy}"
+        )))
+    }
+}
+
+pub(crate) fn validate_jpeg_quality(quality: u8) -> crate::Result<()> {
+    if (1..=100).contains(&quality) {
+        Ok(())
+    } else {
+        Err(crate::Error::Config(format!(
+            "JPEG quality must be in 1..=100, got {quality}"
+        )))
+    }
+}
+
+pub(crate) fn validate_tile_size(size: u32) -> crate::Result<()> {
+    if size == 0 || (32..=1024).contains(&size) {
+        Ok(())
+    } else {
+        Err(crate::Error::Config(format!(
+            "tile size must be 0 or in 32..=1024, got {size}"
+        )))
+    }
+}
+
+pub(crate) fn validate_tile_extraction_max_origins(origins: u32) -> crate::Result<()> {
+    if (1..=4096).contains(&origins) {
+        Ok(())
+    } else {
+        Err(crate::Error::Config(format!(
+            "maximum tile extraction origins must be in 1..=4096, got {origins}"
+        )))
+    }
+}
+
 /// Heavy configuration that is shared across requests via `Arc`.
 /// Create once, reuse across many image processing calls.
 /// This avoids per-request heap allocation of large fields.
@@ -1618,6 +1709,17 @@ impl Default for ProtectionContext {
 }
 
 impl ProtectionContext {
+    pub(crate) fn validate(&self) -> crate::Result<()> {
+        if let Some(redundancy) = self.stego_redundancy {
+            validate_stego_redundancy(redundancy)?;
+        }
+        validate_jpeg_quality(self.jpeg_quality)?;
+        if let Some(tile_size) = self.tile_size {
+            validate_tile_size(tile_size)?;
+        }
+        validate_tile_extraction_max_origins(self.tile_extraction_max_origins)
+    }
+
     /// Create a new ProtectionContext with the specified intensity and seed.
     ///
     /// Intensity is clamped to the range [0.0, 1.0].
@@ -1868,18 +1970,20 @@ impl ProtectionContext {
     }
 
     /// Set the stego embedding redundancy (1-10). Higher values are more robust
-    /// for verification but slower. When not set, redundancy is derived from
-    /// `intensity` via the internal `effective_redundancy()` helper.
+    /// for verification but slower. Invalid values are rejected when the context
+    /// is used. When not set, redundancy is derived from `intensity` via the
+    /// internal `effective_redundancy()` helper.
     #[must_use]
     pub fn with_stego_redundancy(mut self, redundancy: usize) -> Self {
-        self.stego_redundancy = Some(redundancy.clamp(1, 10));
+        self.stego_redundancy = Some(redundancy);
         self
     }
 
-    /// Set the JPEG encoding quality (1-100). Default is 90.
+    /// Set the JPEG encoding quality (1-100). Invalid values are rejected when
+    /// the context is used. Default is 90.
     #[must_use]
     pub fn with_jpeg_quality(mut self, quality: u8) -> Self {
-        self.jpeg_quality = quality.clamp(1, 100);
+        self.jpeg_quality = quality;
         self
     }
 
@@ -1899,7 +2003,7 @@ impl ProtectionContext {
     ///
     /// Pass `0` to disable tiling (same as never calling this method).
     /// Valid range for non-zero values: 32..=1024. Values outside that range
-    /// are clamped. The most common choice is 64 (matches the LSB tile
+    /// are rejected when the context is used. The most common choice is 64 (matches the LSB tile
     /// capacity for the default ECC payload).
     ///
     /// Tiled embedding multiplies total embed work by the tile count, so
@@ -1918,20 +2022,17 @@ impl ProtectionContext {
     /// ```
     #[must_use]
     pub fn with_tile_size(mut self, size: u32) -> Self {
-        if size == 0 {
-            self.tile_size = Some(0);
-        } else {
-            self.tile_size = Some(size.clamp(32, 1024));
-        }
+        self.tile_size = Some(size);
         self
     }
 
     /// Set the maximum number of candidate tile origins the extractor will
-    /// try. Default is 64. Higher values increase extraction time but improve
+    /// try (1..=4096). Invalid values are rejected when the context is used.
+    /// Default is 64. Higher values increase extraction time but improve
     /// recovery from small or misaligned crops.
     #[must_use]
     pub fn with_tile_extraction_max_origins(mut self, n: u32) -> Self {
-        self.tile_extraction_max_origins = n.clamp(1, 4096);
+        self.tile_extraction_max_origins = n;
         self
     }
 
@@ -2156,10 +2257,10 @@ impl ProtectionContext {
     }
 
     /// Get the maximum number of candidate tile origins the extractor will
-    /// try. Always at least 1.
+    /// try.
     #[must_use]
     pub fn tile_extraction_max_origins(&self) -> u32 {
-        self.tile_extraction_max_origins.max(1)
+        self.tile_extraction_max_origins
     }
 
     /// Get the content hash, if set.
@@ -3544,7 +3645,7 @@ pub enum HiddenMarkerMode {
     BestEffort,
     /// Crop-resistant tiled mode with validated tile size.
     Tiled {
-        /// Tile dimension in pixels. Must be >= 16.
+        /// Tile dimension in pixels. Must be in the range 32..=1024.
         tile_size: u32,
     },
 }
@@ -3756,10 +3857,10 @@ impl ProtectionRequest {
         self
     }
 
-    /// Sets JPEG quality.
+    /// Sets JPEG quality. Invalid values are rejected during request resolution.
     #[must_use]
     pub fn with_jpeg_quality(mut self, quality: u8) -> Self {
-        self.processing.jpeg_quality = quality.clamp(1, 100);
+        self.processing.jpeg_quality = quality;
         self
     }
 
@@ -3784,13 +3885,14 @@ impl ProtectionRequest {
         self
     }
 
-    /// Sets the caller-supplied stego redundancy override.
+    /// Sets the caller-supplied stego redundancy override. Invalid values are
+    /// rejected during request resolution.
     ///
     /// When set, this value reaches the canonical executor unchanged instead
     /// of being derived from intensity. Range 1..=10.
     #[must_use]
     pub fn with_stego_redundancy(mut self, redundancy: usize) -> Self {
-        self.processing.stego_redundancy = Some(redundancy.clamp(1, 10));
+        self.processing.stego_redundancy = Some(redundancy);
         self
     }
 
@@ -4278,6 +4380,16 @@ mod tests {
     }
 
     #[test]
+    fn invalid_numeric_context_values_are_preserved_for_validation() {
+        let ctx = ProtectionContext::new(0.5, 42)
+            .with_stego_redundancy(0)
+            .with_jpeg_quality(0);
+        assert_eq!(ctx.stego_redundancy_field(), Some(0));
+        assert_eq!(ctx.jpeg_quality(), 0);
+        assert!(ctx.validate().is_err());
+    }
+
+    #[test]
     fn intensity_clamped() {
         let ctx = ProtectionContext::new(2.0, 42);
         assert_eq!(ctx.intensity(), 1.0);
@@ -4351,19 +4463,17 @@ mod tests {
     }
 
     #[test]
-    fn with_tile_size_clamps_below_minimum() {
+    fn with_tile_size_preserves_below_minimum_for_validation() {
         let ctx = ProtectionContext::new(0.5, 42).with_tile_size(8);
-        assert_eq!(ctx.tile_size(), Some(32), "values below 32 clamp up to 32");
+        assert_eq!(ctx.tile_size(), Some(8));
+        assert!(ctx.validate().is_err());
     }
 
     #[test]
-    fn with_tile_size_clamps_above_maximum() {
+    fn with_tile_size_preserves_above_maximum_for_validation() {
         let ctx = ProtectionContext::new(0.5, 42).with_tile_size(4096);
-        assert_eq!(
-            ctx.tile_size(),
-            Some(1024),
-            "values above 1024 clamp down to 1024"
-        );
+        assert_eq!(ctx.tile_size(), Some(4096));
+        assert!(ctx.validate().is_err());
     }
 
     #[test]
@@ -4373,9 +4483,10 @@ mod tests {
     }
 
     #[test]
-    fn with_tile_extraction_max_origins_zero_clamps_to_one() {
+    fn with_tile_extraction_max_origins_preserves_zero_for_validation() {
         let ctx = ProtectionContext::new(0.5, 42).with_tile_extraction_max_origins(0);
-        assert_eq!(ctx.tile_extraction_max_origins(), 1);
+        assert_eq!(ctx.tile_extraction_max_origins(), 0);
+        assert!(ctx.validate().is_err());
     }
 
     #[test]

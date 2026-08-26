@@ -357,13 +357,30 @@ pub fn embed_lsb_v2_in_place(
         };
     }
 
-    let replicas_per_bit = STEGO_SPREAD_FACTOR.saturating_mul(redundancy);
+    let Some(replicas_per_bit) = STEGO_SPREAD_FACTOR.checked_mul(redundancy) else {
+        return InPlaceEmbedReport {
+            embedded: false,
+            payload_bytes: payload.len(),
+            required_capacity: required,
+            available_capacity: available,
+            actual_redundancy: redundancy,
+        };
+    };
     for bit_index in 0..bit_len {
         let bit = payload_bit(payload, bit_index);
         for replica in 0..replicas_per_bit {
-            let logical = bit_index
-                .saturating_mul(replicas_per_bit)
-                .saturating_add(replica);
+            let Some(logical) = bit_index
+                .checked_mul(replicas_per_bit)
+                .and_then(|value| value.checked_add(replica))
+            else {
+                return InPlaceEmbedReport {
+                    embedded: false,
+                    payload_bytes: payload.len(),
+                    required_capacity: required,
+                    available_capacity: available,
+                    actual_redundancy: redundancy,
+                };
+            };
             let slot = stego_permutation_v2(logical, available, seed);
             let Some((pixel_index, slot_channel)) =
                 carrier_v2_slot_to_pixel_channel(slot, width, height)

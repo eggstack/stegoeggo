@@ -4,8 +4,9 @@ use image::ImageEncoder;
 use stegoeggo::{
     process_image_bytes, process_request_bytes, process_request_bytes_with_report, resolve_request,
     AuthenticationMode, DmiValue, HiddenMarkerMode, ImageOutputFormat, LegalMetadata,
-    ProtectionChannels, ProtectionContext, ProtectionLevel, ProtectionPreset, ProtectionRequest,
-    ProtectionWarning, ResourceLimits, RightsNotice, RightsPolicy, VerificationStatus,
+    LocalizedText, ProcessingOptions, ProtectionChannels, ProtectionContext, ProtectionLevel,
+    ProtectionPreset, ProtectionRequest, ProtectionWarning, ResourceLimits, RightsNotice,
+    RightsPolicy, VerificationStatus,
 };
 
 fn create_test_image(width: u32, height: u32) -> image::DynamicImage {
@@ -104,6 +105,91 @@ mod resolve_request_validation {
             "Expected missing MAC key error, got: {}",
             err
         );
+    }
+
+    #[test]
+    fn invalid_processing_values_are_rejected_during_resolution() {
+        for redundancy in [0, 11, usize::MAX] {
+            let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Allowed)
+                .with_stego_redundancy(redundancy);
+            let error = resolve_request(&request, ImageOutputFormat::Png).unwrap_err();
+            assert!(
+                error.to_string().contains("stego redundancy"),
+                "unexpected builder redundancy error: {error}"
+            );
+
+            let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Allowed)
+                .with_processing(ProcessingOptions {
+                    stego_redundancy: Some(redundancy),
+                    ..ProcessingOptions::default()
+                });
+            let error = resolve_request(&request, ImageOutputFormat::Png).unwrap_err();
+            assert!(
+                error.to_string().contains("stego redundancy"),
+                "unexpected redundancy error: {error}"
+            );
+        }
+
+        for quality in [0, 101] {
+            let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Allowed)
+                .with_jpeg_quality(quality);
+            let error = resolve_request(&request, ImageOutputFormat::Png).unwrap_err();
+            assert!(
+                error.to_string().contains("JPEG quality"),
+                "unexpected builder JPEG quality error: {error}"
+            );
+
+            let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Allowed)
+                .with_processing(ProcessingOptions {
+                    jpeg_quality: quality,
+                    ..ProcessingOptions::default()
+                });
+            let error = resolve_request(&request, ImageOutputFormat::Png).unwrap_err();
+            assert!(
+                error.to_string().contains("JPEG quality"),
+                "unexpected JPEG quality error: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_tiled_sizes_are_rejected_during_resolution() {
+        for tile_size in [0, 8, 1025] {
+            let request = ProtectionRequest::new(
+                simple_notice(),
+                RightsPolicy::Allowed,
+                ProtectionChannels {
+                    rights_metadata: true,
+                    hidden_marker: HiddenMarkerMode::Tiled { tile_size },
+                    authentication: AuthenticationMode::None,
+                },
+            );
+            let error = resolve_request(&request, ImageOutputFormat::Png).unwrap_err();
+            assert!(
+                error.to_string().contains("tile size"),
+                "unexpected tile size error: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_usage_terms_language_tag_is_rejected() {
+        let metadata = LegalMetadata::new().with_usage_terms_localized(LocalizedText::with_lang(
+            "All rights reserved",
+            "not a tag!!!",
+        ));
+        let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Allowed)
+            .with_legal_metadata(metadata);
+
+        let error = resolve_request(&request, ImageOutputFormat::Png).unwrap_err();
+        assert!(error.to_string().contains("BCP 47"));
+
+        let valid_metadata = LegalMetadata::new()
+            .with_usage_terms_localized(LocalizedText::with_lang("Tous droits réservés", "fr-FR"));
+        let valid_request =
+            ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Allowed)
+                .with_legal_metadata(valid_metadata);
+        assert!(resolve_request(&valid_request, ImageOutputFormat::Png).is_ok());
     }
 
     #[test]
