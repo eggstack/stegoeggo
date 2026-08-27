@@ -30,8 +30,8 @@ pub struct DetachedManifest {
 ### Builder Methods
 
 - `new(claim)` — Create with schema version 1
-- `with_signature(SignatureRecord)` — Add signature (max 16, deduplicates by algorithm+key_id)
-- `with_public_key(PublicKeyEntry)` — Add public key (max 16, deduplicates by key_id)
+- `with_signature(SignatureRecord) -> Result<Self, Error>` — Add a signature (max 16, deduplicates by algorithm+key_id)
+- `with_public_key(PublicKeyEntry) -> Result<Self, Error>` — Add a public key (max 16, deduplicates by key_id)
 - `with_embedded_reference(EmbeddedReference)` — Link to in-image stego payload
 - `with_trust_metadata(TrustMetadata)` — Add trust chain metadata
 
@@ -43,11 +43,12 @@ pub struct DetachedManifest {
 - Correct byte lengths (32-byte public keys, 64-byte signatures)
 - Each signature references an existing public key
 - No duplicate signatures or public keys
+- Signature and public-key counts do not exceed their maximums
 
 ### Serialization
 
-- `canonical_bytes() -> Vec<u8>` — Canonical JSON bytes (sorted keys, compact) for digest computation
-- `digest() -> [u8; 32]` — SHA-256 of canonical bytes
+- `canonical_bytes() -> Result<Vec<u8>, Error>` — Canonical JSON bytes (sorted keys and entries, compact) for digest computation
+- `digest() -> Result<[u8; 32], Error>` — SHA-256 of canonical bytes
 - `from_json(bytes: &[u8]) -> Result<Self, Error>` — Deserialize from JSON bytes with size/version validation
 - `from_json_with_limits(bytes: &[u8], limits: &ResourceLimits) -> Result<Self, Error>` — Deserialize with explicit resource limits
 

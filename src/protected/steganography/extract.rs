@@ -771,11 +771,7 @@ impl SteganographyProtector {
             return None;
         }
         // V3: check magic bytes and read seed from v3 offset
-        if header.len() >= 19
-            && header[0] == V3_MAGIC[0]
-            && header[1] == V3_MAGIC[1]
-            && header[2] == V3_PAYLOAD_VERSION
-        {
+        if header.len() >= 19 && header[0] == V3_MAGIC[0] && header[1] == V3_MAGIC[1] {
             return Some(u64::from_le_bytes([
                 header[11], header[12], header[13], header[14], header[15], header[16], header[17],
                 header[18],

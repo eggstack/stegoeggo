@@ -1,11 +1,5 @@
 /// Errors encountered when parsing a stego payload.
-///
-/// New variants may be added in minor releases; downstream code should
-/// treat this enum as non-exhaustive (no wildcard match required to
-/// compile against future additions, but exhaustive `match` expressions
-/// must add a wildcard arm).
 #[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
 pub enum PayloadV3ParseError {
     /// Payload is shorter than the minimum required size.
     #[error("Payload too short: need at least {min} bytes, got {actual}")]

@@ -291,11 +291,13 @@ mod detached_tests {
                 key_id: vk.key_id().to_vec(),
                 signature: sig_hex,
             })
+            .unwrap()
             .with_public_key(PublicKeyEntry {
                 key_id: vk.key_id().to_vec(),
                 algorithm: "ed25519".to_string(),
                 key_bytes: hex::encode(vk.as_bytes()),
-            });
+            })
+            .unwrap();
 
         let trust = TrustPolicy::TrustNone;
         let result = verify_detached_manifest(&image_bytes, &manifest, &trust);
@@ -330,11 +332,13 @@ mod detached_tests {
                 key_id: vk.key_id().to_vec(),
                 signature: sig_hex,
             })
+            .unwrap()
             .with_public_key(PublicKeyEntry {
                 key_id: vk.key_id().to_vec(),
                 algorithm: "ed25519".to_string(),
                 key_bytes: hex::encode(vk.as_bytes()),
-            });
+            })
+            .unwrap();
 
         let trust = TrustPolicy::TrustKeys(vec![vk.key_id().to_vec()]);
         let result = verify_detached_manifest(&image_bytes, &manifest, &trust);
@@ -360,11 +364,13 @@ mod detached_tests {
                 key_id: vk.key_id().to_vec(),
                 signature: sig_hex,
             })
+            .unwrap()
             .with_public_key(PublicKeyEntry {
                 key_id: vk.key_id().to_vec(),
                 algorithm: "ed25519".to_string(),
                 key_bytes: hex::encode(vk.as_bytes()),
-            });
+            })
+            .unwrap();
 
         let trust = TrustPolicy::TrustKeys(vec![vec![0xFF; 32]]);
         let result = verify_detached_manifest(&image_bytes, &manifest, &trust);
@@ -630,11 +636,13 @@ mod detached_tests {
                 key_id: vk.key_id().to_vec(),
                 signature: sig_hex,
             })
+            .unwrap()
             .with_public_key(PublicKeyEntry {
                 key_id: vk.key_id().to_vec(),
                 algorithm: "ed25519".to_string(),
                 key_bytes: hex::encode(vk.as_bytes()),
             })
+            .unwrap()
             .with_trust_metadata(TrustMetadata {
                 trust_model: "test".to_string(),
                 trusted: true,
@@ -667,11 +675,13 @@ mod detached_tests {
                 key_id: vk.key_id().to_vec(),
                 signature: sig_hex,
             })
+            .unwrap()
             .with_public_key(PublicKeyEntry {
                 key_id: vk.key_id().to_vec(),
                 algorithm: "ed25519".to_string(),
                 key_bytes: hex::encode(vk.as_bytes()),
-            });
+            })
+            .unwrap();
 
         let trust = TrustPolicy::TrustKeys(vec![vk.key_id().to_vec()]);
         let result = verify_detached_manifest(&image_bytes, &manifest, &trust);

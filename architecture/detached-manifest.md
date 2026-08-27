@@ -531,7 +531,7 @@ The manifest format makes no assumptions about how it is stored or distributed:
 | Database | Stored as a JSON blob, keyed by image digest |
 | CDN edge | Embedded in response headers or separate URL |
 
-The library can serialize to canonical bytes (`canonical_bytes()`) and deserialize from bytes (`from_json()`). The caller handles transport.
+The library can serialize to canonical bytes (`canonical_bytes()`) and deserialize from bytes (`from_json()`). Canonical serialization sorts signature and public-key entries. The caller handles transport.
 
 ## Backward Compatibility
 

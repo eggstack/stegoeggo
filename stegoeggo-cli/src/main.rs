@@ -1187,7 +1187,7 @@ fn handle_sign(
         key_id,
         signature: signature_hex,
     };
-    manifest = manifest.with_signature(sig_record);
+    manifest = manifest.with_signature(sig_record)?;
 
     let public_key = signing_key.verifying_key();
     let pub_entry = PublicKeyEntry {
@@ -1195,7 +1195,7 @@ fn handle_sign(
         algorithm: "ed25519".to_string(),
         key_bytes: hex::encode(public_key.as_bytes()),
     };
-    manifest = manifest.with_public_key(pub_entry);
+    manifest = manifest.with_public_key(pub_entry)?;
 
     let signed_json = serde_json::to_string_pretty(&manifest)?;
     let out_path = output.as_ref().unwrap_or(manifest_path);

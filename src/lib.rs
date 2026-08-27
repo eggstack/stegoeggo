@@ -783,12 +783,17 @@ pub fn process_image_bytes_with_warnings(
         }
     }
 
-    warnings.dedup();
+    let mut unique_warnings = Vec::with_capacity(warnings.len());
+    for warning in warnings {
+        if !unique_warnings.contains(&warning) {
+            unique_warnings.push(warning);
+        }
+    }
 
-    let mut all_warnings = warnings;
+    let mut all_warnings = unique_warnings;
 
     let mut budget =
-        crate::resource_limits::OperationBudget::new(plan.resource_limits(), img_bytes.len());
+        crate::resource_limits::OperationObserver::new(plan.resource_limits(), img_bytes.len());
     let pipeline_result = process_plan_bytes(img_bytes, &plan, &mut budget)?;
 
     for w in plan.warnings() {
@@ -838,7 +843,7 @@ pub fn process_request_bytes(img_bytes: &[u8], request: &ProtectionRequest) -> R
     }
 
     let mut budget =
-        crate::resource_limits::OperationBudget::new(plan.resource_limits(), img_bytes.len());
+        crate::resource_limits::OperationObserver::new(plan.resource_limits(), img_bytes.len());
     process_plan_bytes(img_bytes, &plan, &mut budget).map(|r| r.bytes)
 }
 
@@ -889,7 +894,7 @@ pub fn process_request_bytes_with_warnings(
     let mut all_warnings = plan.warnings().to_vec();
 
     let mut budget =
-        crate::resource_limits::OperationBudget::new(plan.resource_limits(), img_bytes.len());
+        crate::resource_limits::OperationObserver::new(plan.resource_limits(), img_bytes.len());
     let pipeline_result = process_plan_bytes(img_bytes, &plan, &mut budget)?;
 
     if let Some(ref summary) = pipeline_result.embed_summary {
@@ -932,7 +937,7 @@ pub fn process_request_bytes_with_report(
     let format_transcoded = input_format != output_format;
 
     let mut budget =
-        crate::resource_limits::OperationBudget::new(plan.resource_limits(), img_bytes.len());
+        crate::resource_limits::OperationObserver::new(plan.resource_limits(), img_bytes.len());
 
     let pipeline_result = process_plan_bytes(img_bytes, &plan, &mut budget)?;
     let result = pipeline_result.bytes;
@@ -985,7 +990,7 @@ pub fn process_request_bytes_with_report(
 fn process_plan_bytes(
     img_bytes: &[u8],
     plan: &ResolvedProtectionPlan,
-    budget: &mut crate::resource_limits::OperationBudget,
+    budget: &mut crate::resource_limits::OperationObserver,
 ) -> Result<PipelineResult> {
     let limits = plan.resource_limits();
     limits.check_input_size(img_bytes.len())?;
@@ -1076,7 +1081,7 @@ fn process_plan_bytes(
 fn execute_metadata_only(
     img_bytes: &[u8],
     plan: &ResolvedProtectionPlan,
-    budget: &mut crate::resource_limits::OperationBudget,
+    budget: &mut crate::resource_limits::OperationObserver,
 ) -> Result<Vec<u8>> {
     let input_format = plan.input_format();
     let output_format = plan.output_format();
@@ -1103,7 +1108,7 @@ fn execute_metadata_only(
 fn observe_metadata_work(
     img_bytes: &[u8],
     format: crate::types::ImageOutputFormat,
-    budget: &mut crate::resource_limits::OperationBudget,
+    budget: &mut crate::resource_limits::OperationObserver,
 ) {
     match format {
         crate::types::ImageOutputFormat::Png => {
@@ -1203,7 +1208,7 @@ fn execute_stego_and_metadata(
     output_format: ImageOutputFormat,
     steganography: &SteganographyProtector,
     metadata_trap: &RightsMetadataProtector,
-    budget: &mut crate::resource_limits::OperationBudget,
+    budget: &mut crate::resource_limits::OperationObserver,
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
@@ -1270,7 +1275,7 @@ fn execute_stego_and_metadata_tiled(
     tile_size: u32,
     steganography: &SteganographyProtector,
     metadata_trap: &RightsMetadataProtector,
-    budget: &mut crate::resource_limits::OperationBudget,
+    budget: &mut crate::resource_limits::OperationObserver,
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();
@@ -1338,7 +1343,7 @@ fn execute_seed_only_and_metadata(
     output_format: ImageOutputFormat,
     steganography: &SteganographyProtector,
     metadata_trap: &RightsMetadataProtector,
-    budget: &mut crate::resource_limits::OperationBudget,
+    budget: &mut crate::resource_limits::OperationObserver,
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let limits = plan.resource_limits();

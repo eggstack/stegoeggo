@@ -158,11 +158,13 @@ fn test_known_answer_manifest_roundtrip() {
             key_id: vec![0xAA, 0xBB],
             signature: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789".to_string(),
         })
+        .unwrap()
         .with_public_key(PublicKeyEntry {
             key_id: vec![0xAA, 0xBB],
             algorithm: "ed25519".to_string(),
             key_bytes: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
         })
+        .unwrap()
         .with_embedded_reference(EmbeddedReference {
             payload_digest:
                 "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
@@ -170,7 +172,7 @@ fn test_known_answer_manifest_roundtrip() {
             payload_version: 3,
         });
 
-    let bytes = manifest.canonical_bytes();
+    let bytes = manifest.canonical_bytes().unwrap();
     let parsed = DetachedManifest::from_json(&bytes).unwrap();
 
     assert_eq!(parsed.schema_version, 1);
@@ -196,7 +198,7 @@ fn test_known_answer_manifest_with_trust_metadata() {
 
     let manifest = DetachedManifest::new(claim).with_trust_metadata(trust.clone());
 
-    let bytes = manifest.canonical_bytes();
+    let bytes = manifest.canonical_bytes().unwrap();
     let parsed = DetachedManifest::from_json(&bytes).unwrap();
 
     assert!(parsed.trust_metadata.is_some());
@@ -215,8 +217,8 @@ fn test_known_answer_manifest_digest_stability() {
         .with_software("stegoeggo/0.2.2");
 
     let manifest = DetachedManifest::new(claim);
-    let digest1 = manifest.digest();
-    let digest2 = manifest.digest();
+    let digest1 = manifest.digest().unwrap();
+    let digest2 = manifest.digest().unwrap();
 
     assert_eq!(digest1, digest2, "Manifest digest must be deterministic");
     assert_eq!(digest1.len(), 32);

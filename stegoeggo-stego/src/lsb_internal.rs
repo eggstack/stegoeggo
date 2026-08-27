@@ -79,18 +79,17 @@ pub fn carrier_v2_slot_to_pixel_channel(
 /// Returns the total number of independent pixel-channel carrier slots
 /// available in an image of the given dimensions.
 ///
-/// `unwrap_or(0)` here is safe under the `ResourceLimits::check_dimensions`
-/// invariant (max 16384×16384 pixels). The 0-sentinel signals "no carrier
-/// capacity" which makes the embedder fall back to `SkippedCapacity` rather
-/// than a panic, preserving the API contract that this function returns a
-/// `usize` instead of `Option<usize>`. If invariants change, surface a
-/// `ResourceLimitExceeded` error here instead of silently returning 0.
 #[inline(always)]
-pub fn lsb_available_slots(width: u32, height: u32) -> usize {
+pub fn lsb_available_slots(width: u32, height: u32) -> Option<usize> {
     (width as usize)
         .checked_mul(height as usize)
         .and_then(|p| p.checked_mul(3))
-        .unwrap_or(0)
+}
+
+fn checked_lsb_available_slots(width: u32, height: u32) -> Result<usize, super::StegoError> {
+    lsb_available_slots(width, height).ok_or_else(|| {
+        super::StegoError::ResourceLimitExceeded("carrier dimensions overflow".into())
+    })
 }
 
 #[inline(always)]
@@ -112,7 +111,7 @@ pub fn lsb_capacity_for_image(
     height: u32,
     payload_bits: usize,
     redundancy: usize,
-) -> (usize, usize) {
+) -> (usize, Option<usize>) {
     (
         lsb_required_capacity_v2(payload_bits, redundancy),
         lsb_available_slots(width, height),
@@ -191,7 +190,15 @@ pub fn embed_lsb(img: &RgbaImage, payload: &[u8], seed: u64) -> EmbedOutcome<Rgb
         .len()
         .saturating_mul(STEGO_SPREAD_FACTOR)
         .div_ceil(3);
-    let available_slots = lsb_available_slots(width, height);
+    let Some(available_slots) = lsb_available_slots(width, height) else {
+        return EmbedOutcome::SkippedCapacity {
+            output,
+            payload_bytes: payload.len(),
+            required_capacity: usize::MAX,
+            available_capacity: 0,
+            path: crate::types::EmbedPath::Lsb,
+        };
+    };
     let required_slots = lsb_required_slots_legacy(payload_bits.len());
 
     if total_pixels_needed > total_pixels {
@@ -228,9 +235,10 @@ pub fn embed_lsb(img: &RgbaImage, payload: &[u8], seed: u64) -> EmbedOutcome<Rgb
 
 pub fn extract_lsb(img: &RgbaImage, expected_bits: usize, seed: u64) -> Option<Vec<u8>> {
     let (width, height) = img.dimensions();
-    let total_pixels = (width * height) as usize;
+    let total_pixels = (width as usize).checked_mul(height as usize)?;
+    let available = lsb_available_slots(width, height)?;
 
-    if expected_bits * STEGO_SPREAD_FACTOR > total_pixels * 3 {
+    if expected_bits.checked_mul(STEGO_SPREAD_FACTOR)? > available {
         return None;
     }
 
@@ -272,9 +280,10 @@ pub fn extract_lsb_range(
     seed: u64,
 ) -> Option<Vec<u8>> {
     let (width, height) = img.dimensions();
-    let total_pixels = (width * height) as usize;
+    let total_pixels = (width as usize).checked_mul(height as usize)?;
+    let available = lsb_available_slots(width, height)?;
 
-    if expected_bits * STEGO_SPREAD_FACTOR > total_pixels * 3 {
+    if expected_bits.checked_mul(STEGO_SPREAD_FACTOR)? > available {
         return None;
     }
     if offset + count > expected_bits {
@@ -344,7 +353,15 @@ pub fn embed_lsb_v2_in_place(
     redundancy: usize,
 ) -> InPlaceEmbedReport {
     let (width, height) = image.dimensions();
-    let available = lsb_available_slots(width, height);
+    let Some(available) = lsb_available_slots(width, height) else {
+        return InPlaceEmbedReport {
+            embedded: false,
+            payload_bytes: payload.len(),
+            required_capacity: usize::MAX,
+            available_capacity: 0,
+            actual_redundancy: redundancy,
+        };
+    };
     let Some(bit_len) = payload.len().checked_mul(8) else {
         return InPlaceEmbedReport {
             embedded: false,
@@ -424,7 +441,7 @@ pub fn extract_lsb_v2(
     redundancy: usize,
 ) -> Option<Vec<u8>> {
     let (width, height) = img.dimensions();
-    let available = lsb_available_slots(width, height);
+    let available = lsb_available_slots(width, height)?;
     let replicas_per_bit = STEGO_SPREAD_FACTOR.checked_mul(redundancy)?;
 
     let required_slots = expected_bits.checked_mul(replicas_per_bit)?;
@@ -505,7 +522,15 @@ pub fn embed_lsb_tiled(
             }
 
             let local_seed = tile_seed(master_seed, tile_x, tile_y);
-            let tile_available = lsb_available_slots(sub_w, sub_h);
+            let Some(tile_available) = lsb_available_slots(sub_w, sub_h) else {
+                return EmbedOutcome::SkippedCapacity {
+                    output: img.clone(),
+                    payload_bytes: payload.len(),
+                    required_capacity: usize::MAX,
+                    available_capacity: total_available,
+                    path: crate::types::EmbedPath::LsbTiled,
+                };
+            };
             let tile_required = lsb_required_capacity_v2(bit_len, 1);
 
             if tile_available >= tile_required && bit_len > 0 {
@@ -596,7 +621,7 @@ pub fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
     let total_channels = (width as usize)
         .checked_mul(height as usize)
         .and_then(|channels| channels.checked_mul(3))
-        .unwrap_or(usize::MAX);
+        .unwrap_or(0);
     if total_channels < 64 {
         return;
     }
@@ -644,7 +669,7 @@ pub fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
     let total_channels = (width as usize)
         .checked_mul(height as usize)
         .and_then(|channels| channels.checked_mul(3))
-        .unwrap_or(usize::MAX);
+        .unwrap_or(0);
     if total_channels < 64 {
         return None;
     }
@@ -795,19 +820,23 @@ impl LsbConfig {
 ///
 /// let img = RgbaImage::new(100, 100);
 /// let config = LsbConfig::new(42);
-/// let report = lsb::capacity(&img, 100, &config);
+/// let report = lsb::capacity(&img, 100, &config).unwrap();
 /// assert!(report.is_sufficient());
 /// ```
-#[must_use]
-pub fn capacity(img: &RgbaImage, payload_len: usize, config: &LsbConfig) -> super::CapacityReport {
+#[must_use = "capacity reports should be inspected"]
+pub fn capacity(
+    img: &RgbaImage,
+    payload_len: usize,
+    config: &LsbConfig,
+) -> Result<super::CapacityReport, super::StegoError> {
     let (w, h) = img.dimensions();
-    let available = lsb_available_slots(w, h);
+    let available = checked_lsb_available_slots(w, h)?;
     let payload_bits = payload_len.saturating_mul(8);
     let required = lsb_required_capacity_v2(payload_bits, config.redundancy());
-    super::CapacityReport {
+    Ok(super::CapacityReport {
         required,
         available,
-    }
+    })
 }
 
 /// Embed arbitrary bytes into an RGBA image using V2 corrected carrier LSB.
@@ -844,6 +873,7 @@ pub fn embed(
     if img.dimensions() == (0, 0) {
         return Err(super::StegoError::EmptyCarrier);
     }
+    checked_lsb_available_slots(img.width(), img.height())?;
 
     let mut output = img.clone();
     let report = embed_lsb_v2_in_place(&mut output, payload, config.seed(), config.redundancy());
@@ -870,6 +900,7 @@ pub fn embed_in_place(
     if img.dimensions() == (0, 0) {
         return Err(super::StegoError::EmptyCarrier);
     }
+    checked_lsb_available_slots(img.width(), img.height())?;
 
     Ok(embed_lsb_v2_in_place(
         img,
@@ -911,6 +942,7 @@ pub fn extract(
     let bits = payload_len.checked_mul(8).ok_or_else(|| {
         super::StegoError::ResourceLimitExceeded("payload length overflow".into())
     })?;
+    checked_lsb_available_slots(img.width(), img.height())?;
     extract_lsb_v2(img, bits, config.seed(), config.redundancy())
         .ok_or_else(|| super::StegoError::MalformedInput("extraction returned no data".into()))
 }
@@ -927,6 +959,11 @@ mod tests {
     fn carrier_slot_rejects_out_of_range_slot() {
         assert_eq!(carrier_v2_slot_to_pixel_channel(2, 1, 1), Some((0, 2)));
         assert_eq!(carrier_v2_slot_to_pixel_channel(3, 1, 1), None);
+    }
+
+    #[test]
+    fn lsb_available_slots_rejects_overflow() {
+        assert_eq!(lsb_available_slots(u32::MAX, u32::MAX), None);
     }
 
     fn channel_value(img: &RgbaImage, x: u32, y: u32, channel: usize) -> u8 {
@@ -1006,7 +1043,7 @@ mod tests {
         );
         assert_eq!(
             available_capacity,
-            lsb_available_slots(64, 64),
+            lsb_available_slots(64, 64).unwrap(),
             "partial edge tiles must not contribute capacity"
         );
 

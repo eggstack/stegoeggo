@@ -457,18 +457,18 @@ impl fmt::Display for ResourceUsage {
     }
 }
 
-/// Operation-local budget that combines enforcement and observation.
+/// Operation-local observer for resource usage.
 ///
 /// Created at the start of a processing operation and consumed at the end.
 /// Enforcement checks (`check_*`) and observation calls (`observe_*`) happen
 /// together where work occurs, ensuring reports contain observed work rather
 /// than post-hoc estimates.
-pub(crate) struct OperationBudget {
+pub(crate) struct OperationObserver {
     usage: ResourceUsage,
     peak_alloc: usize,
 }
 
-impl OperationBudget {
+impl OperationObserver {
     pub fn new(_limits: &ResourceLimits, input_bytes: usize) -> Self {
         Self {
             usage: ResourceUsage::begin(input_bytes),

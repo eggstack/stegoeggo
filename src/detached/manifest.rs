@@ -96,35 +96,43 @@ impl DetachedManifest {
         }
     }
 
-    /// Add a signature record (up to [`MAX_SIGNATURES`]).
+    /// Add a signature record.
     ///
     /// Silently skips if a signature with the same (algorithm, key_id) already exists.
-    #[must_use]
-    pub fn with_signature(mut self, sig: SignatureRecord) -> Self {
-        if self.signatures.len() < MAX_SIGNATURES {
-            let is_dup = self
-                .signatures
-                .iter()
-                .any(|s| s.algorithm == sig.algorithm && s.key_id == sig.key_id);
-            if !is_dup {
-                self.signatures.push(sig);
+    #[must_use = "the updated manifest result should be handled"]
+    pub fn with_signature(mut self, sig: SignatureRecord) -> crate::Result<Self> {
+        let is_dup = self
+            .signatures
+            .iter()
+            .any(|s| s.algorithm == sig.algorithm && s.key_id == sig.key_id);
+        if !is_dup {
+            if self.signatures.len() >= MAX_SIGNATURES {
+                return Err(crate::Error::Config(format!(
+                    "Signature count exceeds maximum {}",
+                    MAX_SIGNATURES
+                )));
             }
+            self.signatures.push(sig);
         }
-        self
+        Ok(self)
     }
 
-    /// Add a public key entry (up to [`MAX_PUBLIC_KEYS`]).
+    /// Add a public key entry.
     ///
     /// Silently skips if a public key with the same key_id already exists.
-    #[must_use]
-    pub fn with_public_key(mut self, key: PublicKeyEntry) -> Self {
-        if self.public_keys.len() < MAX_PUBLIC_KEYS {
-            let is_dup = self.public_keys.iter().any(|k| k.key_id == key.key_id);
-            if !is_dup {
-                self.public_keys.push(key);
+    #[must_use = "the updated manifest result should be handled"]
+    pub fn with_public_key(mut self, key: PublicKeyEntry) -> crate::Result<Self> {
+        let is_dup = self.public_keys.iter().any(|k| k.key_id == key.key_id);
+        if !is_dup {
+            if self.public_keys.len() >= MAX_PUBLIC_KEYS {
+                return Err(crate::Error::Config(format!(
+                    "Public key count exceeds maximum {}",
+                    MAX_PUBLIC_KEYS
+                )));
             }
+            self.public_keys.push(key);
         }
-        self
+        Ok(self)
     }
 
     /// Set the embedded payload reference.
@@ -148,6 +156,21 @@ impl DetachedManifest {
     /// references an existing public key.
     pub fn validate(&self) -> Result<(), Vec<String>> {
         let mut errors = Vec::new();
+
+        if self.public_keys.len() > MAX_PUBLIC_KEYS {
+            errors.push(format!(
+                "Public key count {} exceeds maximum {}",
+                self.public_keys.len(),
+                MAX_PUBLIC_KEYS
+            ));
+        }
+        if self.signatures.len() > MAX_SIGNATURES {
+            errors.push(format!(
+                "Signature count {} exceeds maximum {}",
+                self.signatures.len(),
+                MAX_SIGNATURES
+            ));
+        }
 
         // Check for empty key IDs and validate key_bytes hex/length
         for (i, key) in self.public_keys.iter().enumerate() {
@@ -235,7 +258,7 @@ impl DetachedManifest {
     /// Produces deterministic JSON with sorted keys and no whitespace.
     /// This is used for digest computation. Signing uses the claim-level
     /// canonical bytes, not the full manifest.
-    pub fn canonical_bytes(&self) -> Vec<u8> {
+    pub fn canonical_bytes(&self) -> crate::Result<Vec<u8>> {
         let mut map = serde_json::Map::new();
         map.insert("claim".into(), {
             let mut claim_map = serde_json::Map::new();
@@ -323,10 +346,16 @@ impl DetachedManifest {
                 None => serde_json::Value::Null,
             },
         );
+        let mut public_keys = self.public_keys.clone();
+        public_keys.sort_by(|a, b| {
+            a.key_id
+                .cmp(&b.key_id)
+                .then_with(|| a.algorithm.cmp(&b.algorithm))
+                .then_with(|| a.key_bytes.cmp(&b.key_bytes))
+        });
         map.insert(
             "public_keys".into(),
-            serde_json::json!(self
-                .public_keys
+            serde_json::json!(public_keys
                 .iter()
                 .map(|k| {
                     let mut m = serde_json::Map::new();
@@ -347,10 +376,16 @@ impl DetachedManifest {
             "schema_version".into(),
             serde_json::Value::Number(self.schema_version.into()),
         );
+        let mut signatures = self.signatures.clone();
+        signatures.sort_by(|a, b| {
+            a.key_id
+                .cmp(&b.key_id)
+                .then_with(|| a.algorithm.cmp(&b.algorithm))
+                .then_with(|| a.signature.cmp(&b.signature))
+        });
         map.insert(
             "signatures".into(),
-            serde_json::json!(self
-                .signatures
+            serde_json::json!(signatures
                 .iter()
                 .map(|s| {
                     let mut m = serde_json::Map::new();
@@ -387,16 +422,14 @@ impl DetachedManifest {
             );
         }
         let canonical = serde_json::Value::Object(map);
-        serde_json::to_string(&canonical)
-            .expect("detached manifest canonical serialization failed")
-            .into_bytes()
+        Ok(serde_json::to_vec(&canonical)?)
     }
 
     /// Compute SHA-256 digest of the canonical bytes.
-    pub fn digest(&self) -> [u8; 32] {
+    pub fn digest(&self) -> crate::Result<[u8; 32]> {
         let mut hasher = Sha256::new();
-        hasher.update(self.canonical_bytes());
-        hasher.finalize().into()
+        hasher.update(self.canonical_bytes()?);
+        Ok(hasher.finalize().into())
     }
 
     /// Deserialize a manifest from JSON bytes.

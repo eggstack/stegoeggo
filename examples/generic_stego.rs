@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = make_lsb_image(128, 128);
 
     let config = LsbConfig::new(seed);
-    let capacity = lsb::capacity(&img, secret.len(), &config);
+    let capacity = lsb::capacity(&img, secret.len(), &config)?;
     println!(
         "LSB capacity: {} available, {} required",
         capacity.available, capacity.required

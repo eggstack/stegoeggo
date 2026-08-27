@@ -60,18 +60,18 @@ Limits violations produce structured errors:
 - `Error::MetadataLimitExceeded { kind, size, limit }` — Metadata too large
 - `Error::VerificationBudgetExceeded { kind, count, limit }` — Too many candidates
 
-## `OperationBudget`
+## `OperationObserver`
 
-`pub(crate)` struct that combines enforcement and observation for a single processing operation:
+`pub(crate)` struct that observes resource usage for a single processing operation:
 
 ```rust
-pub(crate) struct OperationBudget {
+pub(crate) struct OperationObserver {
     usage: ResourceUsage,
     peak_alloc: usize,
 }
 ```
 
-Constructed via `OperationBudget::new(_limits, input_bytes)` at the start of `process_plan_bytes()`. Consumed via `finish(self, output_bytes) -> ResourceUsage` at the end. Tracks resource consumption through `observe_*` methods (`observe_png_chunk`, `observe_jpeg_segment`, `observe_webp_chunk`, `observe_metadata_field`, `observe_alloc`). The returned `ResourceUsage` contains 10 tracked counters: `input_bytes`, `png_chunks_scanned`, `jpeg_segments_scanned`, `webp_riff_chunks_scanned`, `xmp_bytes_parsed`, `metadata_fields_extracted`, `metadata_bytes_copied`, `tile_origins_checked`, `verification_seeds_tried`, `peak_allocations_bytes`.
+Constructed via `OperationObserver::new(_limits, input_bytes)` at the start of `process_plan_bytes()`. Consumed via `finish(self, output_bytes) -> ResourceUsage` at the end. Tracks resource consumption through `observe_*` methods (`observe_png_chunk`, `observe_jpeg_segment`, `observe_webp_chunk`, `observe_metadata_field`, `observe_alloc`). The returned `ResourceUsage` contains 10 tracked counters: `input_bytes`, `png_chunks_scanned`, `jpeg_segments_scanned`, `webp_riff_chunks_scanned`, `xmp_bytes_parsed`, `metadata_fields_extracted`, `metadata_bytes_copied`, `tile_origins_checked`, `verification_seeds_tried`, `peak_allocations_bytes`.
 
 ## Integration with ProtectionRequest
 

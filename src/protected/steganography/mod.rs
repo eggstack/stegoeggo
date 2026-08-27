@@ -657,7 +657,7 @@ mod tests {
 
     #[test]
     fn generate_payload_seed_roundtrip() {
-        let seed = 0xDEAD_BEEF_CAFE_BABE;
+        let seed: u64 = 0xDEAD_BEEF_CAFE_BABE;
         let protector = SteganographyProtector::new();
         let ctx = ctx_no_mac(seed);
         let payload = protector.generate_payload_from_ctx(&ctx);
@@ -673,6 +673,20 @@ mod tests {
             payload[18],
         ]);
         assert_eq!(extracted_seed, seed);
+    }
+
+    #[test]
+    fn extract_embedded_seed_uses_v3_layout_for_unknown_version() {
+        let seed: u64 = 0xDEAD_BEEF_CAFE_BABE;
+        let mut header = vec![0u8; 19];
+        header[0..2].copy_from_slice(&V3_MAGIC);
+        header[2] = V3_PAYLOAD_VERSION + 1;
+        header[11..19].copy_from_slice(&seed.to_le_bytes());
+
+        assert_eq!(
+            SteganographyProtector::extract_embedded_seed(&header),
+            Some(seed)
+        );
     }
 
     #[test]

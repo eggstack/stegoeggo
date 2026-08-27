@@ -214,9 +214,16 @@ fn escape_attr_value(value: &[u8], out: &mut Vec<u8>) {
             b'<' => out.extend_from_slice(b"&lt;"),
             b'>' => out.extend_from_slice(b"&gt;"),
             b'"' => out.extend_from_slice(b"&quot;"),
+            b'\'' => out.extend_from_slice(b"&apos;"),
             _ => out.push(b),
         }
     }
+}
+
+pub(crate) fn escape_metadata_value(value: &str) -> String {
+    let mut out = Vec::with_capacity(value.len());
+    escape_attr_value(value.as_bytes(), &mut out);
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn escape_text_value(value: &[u8], out: &mut Vec<u8>) {

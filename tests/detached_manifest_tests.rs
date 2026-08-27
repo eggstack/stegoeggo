@@ -38,7 +38,9 @@ fn test_manifest_with_signature() {
         signature: "abc123def456".to_string(),
     };
 
-    let manifest = DetachedManifest::new(make_test_claim()).with_signature(sig);
+    let manifest = DetachedManifest::new(make_test_claim())
+        .with_signature(sig)
+        .unwrap();
 
     assert_eq!(manifest.signatures.len(), 1);
     assert_eq!(manifest.signatures[0].algorithm, "ed25519");
@@ -53,7 +55,9 @@ fn test_manifest_with_public_key() {
         key_bytes: "hex_encoded_key".to_string(),
     };
 
-    let manifest = DetachedManifest::new(make_test_claim()).with_public_key(key);
+    let manifest = DetachedManifest::new(make_test_claim())
+        .with_public_key(key)
+        .unwrap();
 
     assert_eq!(manifest.public_keys.len(), 1);
     assert_eq!(manifest.public_keys[0].algorithm, "ed25519");
@@ -64,8 +68,8 @@ fn test_manifest_with_public_key() {
 fn test_manifest_canonical_bytes() {
     let manifest = DetachedManifest::new(make_test_claim());
 
-    let bytes1 = manifest.canonical_bytes();
-    let bytes2 = manifest.canonical_bytes();
+    let bytes1 = manifest.canonical_bytes().unwrap();
+    let bytes2 = manifest.canonical_bytes().unwrap();
 
     assert_eq!(bytes1, bytes2);
     assert!(!bytes1.is_empty());
@@ -79,8 +83,8 @@ fn test_manifest_canonical_bytes() {
 fn test_manifest_digest() {
     let manifest = DetachedManifest::new(make_test_claim());
 
-    let digest1 = manifest.digest();
-    let digest2 = manifest.digest();
+    let digest1 = manifest.digest().unwrap();
+    let digest2 = manifest.digest().unwrap();
 
     assert_eq!(digest1, digest2);
     assert_eq!(digest1.len(), 32);
@@ -94,17 +98,19 @@ fn test_manifest_from_json_roundtrip() {
             key_id: vec![10],
             signature: "a".repeat(128),
         })
+        .unwrap()
         .with_public_key(PublicKeyEntry {
             key_id: vec![10],
             algorithm: "ed25519".to_string(),
             key_bytes: "b".repeat(64),
         })
+        .unwrap()
         .with_embedded_reference(EmbeddedReference {
             payload_digest: "sha256:abcdef".to_string(),
             payload_version: 3,
         });
 
-    let json_bytes = manifest.canonical_bytes();
+    let json_bytes = manifest.canonical_bytes().unwrap();
     let parsed = DetachedManifest::from_json(&json_bytes).unwrap();
 
     assert_eq!(parsed.schema_version, manifest.schema_version);
@@ -120,24 +126,88 @@ fn test_manifest_from_json_roundtrip() {
 fn test_manifest_size_limits() {
     let mut manifest = DetachedManifest::new(make_test_claim());
 
-    for i in 0..MAX_SIGNATURES + 5 {
-        manifest = manifest.with_signature(SignatureRecord {
-            algorithm: "ed25519".to_string(),
-            key_id: vec![i as u8],
-            signature: format!("sig_{}", i),
-        });
+    for i in 0..MAX_SIGNATURES {
+        manifest = manifest
+            .with_signature(SignatureRecord {
+                algorithm: "ed25519".to_string(),
+                key_id: vec![i as u8],
+                signature: format!("sig_{}", i),
+            })
+            .unwrap();
     }
     assert_eq!(manifest.signatures.len(), MAX_SIGNATURES);
+    assert!(manifest
+        .with_signature(SignatureRecord {
+            algorithm: "ed25519".to_string(),
+            key_id: vec![MAX_SIGNATURES as u8],
+            signature: "overflow".to_string(),
+        })
+        .is_err());
 
     let mut manifest = DetachedManifest::new(make_test_claim());
-    for i in 0..MAX_PUBLIC_KEYS + 5 {
-        manifest = manifest.with_public_key(PublicKeyEntry {
-            key_id: vec![i as u8],
-            algorithm: "ed25519".to_string(),
-            key_bytes: format!("key_{}", i),
-        });
+    for i in 0..MAX_PUBLIC_KEYS {
+        manifest = manifest
+            .with_public_key(PublicKeyEntry {
+                key_id: vec![i as u8],
+                algorithm: "ed25519".to_string(),
+                key_bytes: format!("key_{}", i),
+            })
+            .unwrap();
     }
     assert_eq!(manifest.public_keys.len(), MAX_PUBLIC_KEYS);
+    assert!(manifest
+        .with_public_key(PublicKeyEntry {
+            key_id: vec![MAX_PUBLIC_KEYS as u8],
+            algorithm: "ed25519".to_string(),
+            key_bytes: "overflow".to_string(),
+        })
+        .is_err());
+}
+
+#[test]
+fn test_manifest_digest_is_independent_of_entry_order() {
+    let claim = make_test_claim();
+    let signature_a = SignatureRecord {
+        algorithm: "ed25519".to_string(),
+        key_id: vec![1],
+        signature: "a".repeat(128),
+    };
+    let signature_b = SignatureRecord {
+        algorithm: "ed25519".to_string(),
+        key_id: vec![2],
+        signature: "b".repeat(128),
+    };
+    let key_a = PublicKeyEntry {
+        key_id: vec![1],
+        algorithm: "ed25519".to_string(),
+        key_bytes: "a".repeat(64),
+    };
+    let key_b = PublicKeyEntry {
+        key_id: vec![2],
+        algorithm: "ed25519".to_string(),
+        key_bytes: "b".repeat(64),
+    };
+
+    let first = DetachedManifest::new(claim.clone())
+        .with_signature(signature_a.clone())
+        .unwrap()
+        .with_signature(signature_b.clone())
+        .unwrap()
+        .with_public_key(key_a.clone())
+        .unwrap()
+        .with_public_key(key_b.clone())
+        .unwrap();
+    let second = DetachedManifest::new(claim)
+        .with_signature(signature_b)
+        .unwrap()
+        .with_signature(signature_a)
+        .unwrap()
+        .with_public_key(key_b)
+        .unwrap()
+        .with_public_key(key_a)
+        .unwrap();
+
+    assert_eq!(first.digest().unwrap(), second.digest().unwrap());
 }
 
 #[test]
@@ -148,7 +218,7 @@ fn test_manifest_digest_differs_for_different_claims() {
     let manifest1 = DetachedManifest::new(claim1);
     let manifest2 = DetachedManifest::new(claim2);
 
-    assert_ne!(manifest1.digest(), manifest2.digest());
+    assert_ne!(manifest1.digest().unwrap(), manifest2.digest().unwrap());
 }
 
 #[test]
@@ -169,7 +239,7 @@ fn test_manifest_with_embedded_reference() {
 #[test]
 fn test_manifest_json_is_valid_json() {
     let manifest = DetachedManifest::new(make_test_claim());
-    let bytes = manifest.canonical_bytes();
+    let bytes = manifest.canonical_bytes().unwrap();
 
     let parsed: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert!(parsed.is_object());
@@ -207,11 +277,13 @@ fn make_signed_manifest() -> (DetachedManifest, Vec<u8>, SigningKey) {
             key_id: b"test-key-id".to_vec(),
             signature: sig_hex,
         })
+        .unwrap()
         .with_public_key(PublicKeyEntry {
             key_id: b"test-key-id".to_vec(),
             algorithm: "ed25519".to_string(),
             key_bytes: hex::encode(vk.as_bytes()),
-        });
+        })
+        .unwrap();
 
     (manifest, image_bytes.to_vec(), sk)
 }
@@ -383,11 +455,13 @@ fn test_unknown_algorithm_rejected() {
             key_id: b"test-key-id".to_vec(),
             signature: hex::encode(&sig_bytes),
         })
+        .unwrap()
         .with_public_key(PublicKeyEntry {
             key_id: b"test-key-id".to_vec(),
             algorithm: "ed25519".to_string(),
             key_bytes: hex::encode(vk.as_bytes()),
-        });
+        })
+        .unwrap();
 
     let result = verify_detached_manifest(image_bytes, &manifest, &TrustPolicy::TrustNone);
     assert_eq!(result.report.signatures().len(), 1);
@@ -416,11 +490,13 @@ fn test_encoding_mismatch_rejected() {
             key_id: b"test-key-id".to_vec(),
             signature: hex::encode(sig_bytes),
         })
+        .unwrap()
         .with_public_key(PublicKeyEntry {
             key_id: b"test-key-id".to_vec(),
             algorithm: "ed25519".to_string(),
             key_bytes: "++invalid-hex++".to_string(),
-        });
+        })
+        .unwrap();
 
     let result = verify_detached_manifest(image_bytes, &manifest, &TrustPolicy::TrustNone);
     assert!(!result.manifest_valid);
@@ -450,11 +526,13 @@ fn test_wrong_key_content_fails() {
             key_id: b"test-key-id".to_vec(),
             signature: hex::encode(sig_bytes),
         })
+        .unwrap()
         .with_public_key(PublicKeyEntry {
             key_id: b"test-key-id".to_vec(),
             algorithm: "ed25519".to_string(),
             key_bytes: hex::encode([0xFFu8; 32]),
-        });
+        })
+        .unwrap();
 
     let result = verify_detached_manifest(image_bytes, &manifest, &TrustPolicy::TrustNone);
     assert_eq!(result.report.signatures().len(), 1);
@@ -573,7 +651,7 @@ fn test_oversized_manifest_fails_parsing() {
 #[test]
 fn test_unknown_schema_version_fails_parsing() {
     let manifest = DetachedManifest::new(make_test_claim());
-    let mut json_bytes = manifest.canonical_bytes();
+    let mut json_bytes = manifest.canonical_bytes().unwrap();
     let mut parsed: serde_json::Value = serde_json::from_slice(&json_bytes).unwrap();
     parsed["schema_version"] = serde_json::Value::from(99);
     json_bytes = serde_json::to_vec(&parsed).unwrap();
@@ -591,7 +669,7 @@ fn test_unknown_schema_version_fails_parsing() {
 #[test]
 fn test_schema_version_zero_fails_parsing() {
     let manifest = DetachedManifest::new(make_test_claim());
-    let mut json_bytes = manifest.canonical_bytes();
+    let mut json_bytes = manifest.canonical_bytes().unwrap();
     let mut parsed: serde_json::Value = serde_json::from_slice(&json_bytes).unwrap();
     parsed["schema_version"] = serde_json::Value::from(0);
     json_bytes = serde_json::to_vec(&parsed).unwrap();
@@ -630,16 +708,19 @@ fn test_duplicate_key_ids_in_signatures_are_handled() {
             key_id: b"dup-key".to_vec(),
             signature: sig_hex.clone(),
         })
+        .unwrap()
         .with_signature(SignatureRecord {
             algorithm: "ed25519".to_string(),
             key_id: b"dup-key".to_vec(),
             signature: sig_hex,
         })
+        .unwrap()
         .with_public_key(PublicKeyEntry {
             key_id: b"dup-key".to_vec(),
             algorithm: "ed25519".to_string(),
             key_bytes: hex::encode(vk.as_bytes()),
-        });
+        })
+        .unwrap();
 
     assert_eq!(manifest.signatures.len(), 1);
     let result = verify_detached_manifest(image_bytes, &manifest, &TrustPolicy::TrustNone);
@@ -796,11 +877,13 @@ mod trust_verifying_key_tests {
                 key_id: sig_key_id.to_vec(),
                 signature: sig_hex,
             })
+            .unwrap()
             .with_public_key(PublicKeyEntry {
                 key_id: manifest_key_id.to_vec(),
                 algorithm: "ed25519".to_string(),
                 key_bytes: hex::encode(pub_key_bytes),
             })
+            .unwrap()
     }
 
     fn make_claim(image_bytes: &[u8]) -> ProvenanceClaim {
@@ -967,11 +1050,13 @@ mod trust_verifying_key_tests {
                 key_id: b"key-a-id".to_vec(),
                 signature: hex::encode(&sig_bytes),
             })
+            .unwrap()
             .with_public_key(stegoeggo::detached::PublicKeyEntry {
                 key_id: b"key-a-id".to_vec(),
                 algorithm: "ed25519".to_string(),
                 key_bytes: hex::encode(vk_a.as_bytes()),
-            });
+            })
+            .unwrap();
 
         let trusted = vec![TrustedVerifyingKey {
             key_id: b"key-a-id".to_vec(),
@@ -1091,11 +1176,13 @@ mod trust_verifying_key_tests {
                 key_id: b"key-a-id".to_vec(),
                 signature: hex::encode(&sig_bytes),
             })
+            .unwrap()
             .with_public_key(PublicKeyEntry {
                 key_id: b"key-a-id".to_vec(),
                 algorithm: "ed25519".to_string(),
                 key_bytes: hex::encode(vk_a.as_bytes()),
-            });
+            })
+            .unwrap();
 
         // Add a conflicting public key entry under the same key ID.
         manifest.public_keys.push(PublicKeyEntry {

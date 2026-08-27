@@ -164,7 +164,7 @@ fn public_lsb_capacity_preflight() {
     let img = make_lsb_image(100, 100);
     let config = LsbConfig::new(42);
 
-    let report = lsb::capacity(&img, 100, &config);
+    let report = lsb::capacity(&img, 100, &config).unwrap();
     assert!(report.is_sufficient());
     assert!(report.available > 0);
     assert!(report.required > 0);
@@ -223,8 +223,8 @@ fn public_lsb_redundancy_affects_capacity() {
     let config_r1 = LsbConfig::new(42).with_redundancy(1);
     let config_r3 = LsbConfig::new(42).with_redundancy(3);
 
-    let cap_r1 = lsb::capacity(&img, 100, &config_r1);
-    let cap_r3 = lsb::capacity(&img, 100, &config_r3);
+    let cap_r1 = lsb::capacity(&img, 100, &config_r1).unwrap();
+    let cap_r3 = lsb::capacity(&img, 100, &config_r3).unwrap();
 
     assert!(cap_r1.required < cap_r3.required);
 }

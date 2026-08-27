@@ -319,7 +319,7 @@ impl PayloadBuilder {
         buf.push(expected_tag_len as u8);
         buf.push(self.key_id.len() as u8);
 
-        debug_assert_eq!(buf.len(), V3_CORE_SIZE);
+        assert_eq!(buf.len(), V3_CORE_SIZE);
 
         // Key ID
         buf.extend_from_slice(&self.key_id);
@@ -334,7 +334,7 @@ impl PayloadBuilder {
         // Authentication tag
         buf.extend_from_slice(&self.auth_tag);
 
-        debug_assert_eq!(buf.len(), total_length);
+        assert_eq!(buf.len(), total_length);
 
         Ok(buf)
     }

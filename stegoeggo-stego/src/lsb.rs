@@ -89,7 +89,7 @@ pub fn extract_framed(
     img: &image::RgbaImage,
     config: &LsbConfig,
 ) -> Result<Vec<u8>, super::StegoError> {
-    let prefix_capacity = capacity(img, crate::frame::FRAME_HEADER_SIZE, config);
+    let prefix_capacity = capacity(img, crate::frame::FRAME_HEADER_SIZE, config)?;
     if !prefix_capacity.is_sufficient() {
         return Err(super::StegoError::InsufficientCapacity {
             required: prefix_capacity.required,
@@ -99,7 +99,7 @@ pub fn extract_framed(
 
     let prefix = extract(img, crate::frame::FRAME_HEADER_SIZE, config)?;
     let (_, total_len) = crate::frame::decode_prefix(&prefix)?;
-    let frame_capacity = capacity(img, total_len, config);
+    let frame_capacity = capacity(img, total_len, config)?;
     if !frame_capacity.is_sufficient() {
         return Err(super::StegoError::InsufficientCapacity {
             required: frame_capacity.required,

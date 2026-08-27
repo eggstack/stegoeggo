@@ -10,17 +10,20 @@ use image::ImageDecoder;
 use std::borrow::Cow;
 
 fn xml_escape(s: &str) -> String {
-    s.chars()
-        .filter(|c| matches!(*c, '\u{9}' | '\u{A}' | '\u{D}') || (*c >= '\u{20}' && *c != '\u{7F}'))
-        .map(|c| match c {
-            '&' => "&amp;".to_string(),
-            '<' => "&lt;".to_string(),
-            '>' => "&gt;".to_string(),
-            '"' => "&quot;".to_string(),
-            '\'' => "&apos;".to_string(),
-            c => c.to_string(),
-        })
-        .collect()
+    crate::xmp::escape_metadata_value(s)
+}
+
+fn has_copyright_prefix(value: &str) -> bool {
+    let Some(prefix) = value.get(.."Copyright".len()) else {
+        return false;
+    };
+    if !prefix.eq_ignore_ascii_case("Copyright") {
+        return false;
+    }
+    value
+        .get("Copyright".len()..)
+        .and_then(|rest| rest.chars().next())
+        .is_none_or(|next| next.is_whitespace() || matches!(next, '(' | ':'))
 }
 
 /// Manual date computation from Unix epoch.
@@ -155,7 +158,7 @@ impl RightsMetadataProtector {
         };
 
         if let Some(holder) = legal.copyright_holder() {
-            let copyright = if holder.contains("Copyright") {
+            let copyright = if has_copyright_prefix(holder) {
                 holder.to_string()
             } else {
                 format!("Copyright (c) {}", holder)
@@ -240,7 +243,7 @@ impl RightsMetadataProtector {
         notice: &RightsNotice,
     ) {
         if let Some(holder) = notice.copyright_holder() {
-            let copyright = if holder.contains("Copyright") {
+            let copyright = if has_copyright_prefix(holder) {
                 holder.to_string()
             } else {
                 format!("Copyright (c) {}", holder)
@@ -487,7 +490,7 @@ impl RightsMetadataProtector {
             ));
         }
         if let Some(holder) = notice.copyright_holder() {
-            let copyright = if holder.contains("Copyright") {
+            let copyright = if has_copyright_prefix(holder) {
                 holder.to_string()
             } else {
                 format!("Copyright (c) {}", holder)
@@ -3962,6 +3965,14 @@ mod tests {
     fn xml_escape_no_change_for_plain_text() {
         let input = "Simple copyright notice 2024";
         assert_eq!(xml_escape(input), input);
+    }
+
+    #[test]
+    fn copyright_prefix_detection_is_case_insensitive_and_bounded() {
+        assert!(has_copyright_prefix("COPYRIGHT (c) ACME"));
+        assert!(has_copyright_prefix("Copyright: ACME"));
+        assert!(!has_copyright_prefix("Copyrightable Designs LLC"));
+        assert!(!has_copyright_prefix("ACME Copyright 2024"));
     }
 
     #[test]
