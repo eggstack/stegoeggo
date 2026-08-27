@@ -205,7 +205,9 @@ pub(crate) fn parse_anmf_frame(
             }
             _ => {}
         }
-        let padded = sub_size + (sub_size & 1);
+        let padded = sub_size
+            .checked_add(sub_size & 1)
+            .ok_or_else(|| Error::Metadata("ANMF nested chunk padded overflow".to_string()))?;
         let next_pos = sub_data_start
             .checked_add(padded)
             .ok_or_else(|| Error::Metadata("ANMF nested chunk padded overflow".to_string()))?;
@@ -421,7 +423,9 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
             data_len: chunk_size,
         });
 
-        let padded = chunk_size + (chunk_size & 1);
+        let padded = chunk_size
+            .checked_add(chunk_size & 1)
+            .ok_or_else(|| Error::Metadata("RIFF chunk alignment overflow".to_string()))?;
         let padded_end = data_start
             .checked_add(padded)
             .ok_or_else(|| Error::Metadata("RIFF chunk alignment overflow".to_string()))?;

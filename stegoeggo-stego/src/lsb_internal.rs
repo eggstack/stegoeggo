@@ -67,7 +67,7 @@ pub fn carrier_v2_slot_to_pixel_channel(
     width: u32,
     height: u32,
 ) -> Option<(usize, usize)> {
-    let total_pixels = (width as usize).checked_mul(height as usize).unwrap_or(0);
+    let total_pixels = (width as usize).checked_mul(height as usize)?;
     let pixel_index = slot / 3;
     let channel = slot % 3;
     if pixel_index >= total_pixels {
@@ -76,6 +76,15 @@ pub fn carrier_v2_slot_to_pixel_channel(
     Some((pixel_index, channel))
 }
 
+/// Returns the total number of independent pixel-channel carrier slots
+/// available in an image of the given dimensions.
+///
+/// `unwrap_or(0)` here is safe under the `ResourceLimits::check_dimensions`
+/// invariant (max 16384×16384 pixels). The 0-sentinel signals "no carrier
+/// capacity" which makes the embedder fall back to `SkippedCapacity` rather
+/// than a panic, preserving the API contract that this function returns a
+/// `usize` instead of `Option<usize>`. If invariants change, surface a
+/// `ResourceLimitExceeded` error here instead of silently returning 0.
 #[inline(always)]
 pub fn lsb_available_slots(width: u32, height: u32) -> usize {
     (width as usize)

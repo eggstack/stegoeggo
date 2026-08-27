@@ -771,7 +771,10 @@ pub fn process_image_bytes_with_warnings(
     {
         if let Ok(reader) = image::ImageReader::new(Cursor::new(img_bytes)).with_guessed_format() {
             if let Ok((w, h)) = reader.into_dimensions() {
-                let total_slots = (w as usize) * (h as usize) * 3;
+                let total_slots = (w as usize)
+                    .checked_mul(h as usize)
+                    .and_then(|v| v.checked_mul(3))
+                    .unwrap_or(usize::MAX);
                 let slots_needed = SteganographyProtector::lsb_pixels_needed(ctx);
                 if total_slots < slots_needed {
                     warnings.push(ProtectionWarning::LsbCapacitySkipped);

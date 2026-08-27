@@ -1,5 +1,11 @@
 /// Errors encountered when parsing a stego payload.
+///
+/// New variants may be added in minor releases; downstream code should
+/// treat this enum as non-exhaustive (no wildcard match required to
+/// compile against future additions, but exhaustive `match` expressions
+/// must add a wildcard arm).
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum PayloadV3ParseError {
     /// Payload is shorter than the minimum required size.
     #[error("Payload too short: need at least {min} bytes, got {actual}")]
@@ -18,9 +24,16 @@ pub enum PayloadV3ParseError {
     /// Header length is shorter than the required core + key ID size.
     ///
     /// Raised when the declared `header_length` cannot hold the 32-byte core
-    /// plus the declared key ID. (Historical name: the check compares the
-    /// header length against the minimum required size, not against
-    /// `total_length`.)
+    /// plus the declared key ID.
+    ///
+    /// **Note on naming:** The variant name `HeaderExceedsTotal` is a
+    /// historical misname — the check compares the header length against
+    /// the minimum required `total_core = V3_CORE_SIZE + key_id_len`, not
+    /// against `total_length`. Renaming the variant would be a breaking
+    /// change, so it is preserved for semver compatibility. New callers
+    /// should pattern-match on the fields directly: `header < total` means
+    /// the header is too short to hold the core + key ID, not that the
+    /// header exceeds the total payload.
     #[error("Header length {header} is shorter than the required core+key-id size {total}")]
     HeaderExceedsTotal {
         /// Declared header length.
