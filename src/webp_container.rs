@@ -279,12 +279,16 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
         .checked_add(riff_size)
         .ok_or_else(|| Error::Metadata("RIFF size overflow".to_string()))?;
 
-    if declared_end != data.len() {
-        return Err(Error::Metadata(format!(
-            "RIFF declared size {} does not match physical input length {}",
-            riff_size,
-            data.len() - 8
-        )));
+    match data.len().checked_sub(declared_end) {
+        Some(0) => {}
+        Some(1) if data[declared_end] == 0 => {}
+        _ => {
+            return Err(Error::Metadata(format!(
+                "RIFF declared size {} does not match physical input length {}",
+                riff_size,
+                data.len().saturating_sub(8)
+            )));
+        }
     }
 
     let mut chunks = Vec::new();
@@ -844,6 +848,16 @@ mod tests {
         assert_eq!(parsed.image_kind, WebPImageKind::LossyVP8);
         assert!(!parsed.has_xmp);
         assert_eq!(parsed.chunks.len(), 1);
+    }
+
+    #[test]
+    fn parse_accepts_single_zero_byte_after_declared_riff_extent() {
+        let mut data = make_simple_vp8_webp();
+        data.push(0);
+        assert!(parse_webp(&data, None).is_ok());
+
+        data.push(0);
+        assert!(parse_webp(&data, None).is_err());
     }
 
     #[test]

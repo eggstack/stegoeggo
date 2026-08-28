@@ -105,11 +105,11 @@ fn apply_timestamp_override(
     override_ts: Option<&str>,
     auto_compute: bool,
 ) -> RightsNotice {
-    if notice.notice_applied_at().is_some() {
-        return notice;
-    }
     if let Some(ts) = override_ts {
         return notice.with_notice_applied_at(ts.to_string());
+    }
+    if notice.notice_applied_at().is_some() {
+        return notice;
     }
     if auto_compute {
         return notice

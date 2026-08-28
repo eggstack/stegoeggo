@@ -771,12 +771,11 @@ pub fn process_image_bytes_with_warnings(
     {
         if let Ok(reader) = image::ImageReader::new(Cursor::new(img_bytes)).with_guessed_format() {
             if let Ok((w, h)) = reader.into_dimensions() {
-                let total_slots = (w as usize)
+                let capacity = (w as usize)
                     .checked_mul(h as usize)
-                    .and_then(|v| v.checked_mul(3))
-                    .unwrap_or(usize::MAX);
+                    .and_then(|v| v.checked_mul(3));
                 let slots_needed = SteganographyProtector::lsb_pixels_needed(ctx);
-                if total_slots < slots_needed {
+                if capacity.is_none_or(|total_slots| total_slots < slots_needed) {
                     warnings.push(ProtectionWarning::LsbCapacitySkipped);
                 }
             }
@@ -805,9 +804,6 @@ pub fn process_image_bytes_with_warnings(
     if let Some(ref summary) = pipeline_result.embed_summary {
         let runtime = warnings_from_embed_outcome(summary);
         for w in runtime {
-            if w == ProtectionWarning::LsbCapacitySkipped {
-                continue;
-            }
             if !all_warnings.contains(&w) {
                 all_warnings.push(w);
             }

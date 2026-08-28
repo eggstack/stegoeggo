@@ -39,12 +39,12 @@ pub fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize 
 }
 
 #[inline(always)]
-pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> usize {
+pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> Option<usize> {
     if slot_count <= 1 {
-        return index.min(slot_count.saturating_sub(1));
+        return Some(index.min(slot_count.saturating_sub(1)));
     }
 
-    let m = slot_count.next_power_of_two();
+    let m = slot_count.checked_next_power_of_two()?;
 
     let a = splitmix64(seed).wrapping_mul(2) | 1;
     let b = splitmix64(seed.wrapping_add(SPLITMIX64_SEED));
@@ -55,10 +55,10 @@ pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> usize
         x = (a.wrapping_mul(x).wrapping_add(b)) % (m as u64);
         attempts += 1;
         if attempts >= 64 {
-            return (splitmix64(x) % slot_count as u64) as usize;
+            return Some((splitmix64(x) % slot_count as u64) as usize);
         }
     }
-    x as usize
+    Some(x as usize)
 }
 
 #[inline(always)]
@@ -407,7 +407,15 @@ pub fn embed_lsb_v2_in_place(
                     actual_redundancy: redundancy,
                 };
             };
-            let slot = stego_permutation_v2(logical, available, seed);
+            let Some(slot) = stego_permutation_v2(logical, available, seed) else {
+                return InPlaceEmbedReport {
+                    embedded: false,
+                    payload_bytes: payload.len(),
+                    required_capacity: required,
+                    available_capacity: available,
+                    actual_redundancy: redundancy,
+                };
+            };
             let Some((pixel_index, slot_channel)) =
                 carrier_v2_slot_to_pixel_channel(slot, width, height)
             else {
@@ -461,7 +469,7 @@ pub fn extract_lsb_v2(
 
         for s in 0..replicas_per_bit {
             let logical = i * replicas_per_bit + s;
-            let slot = stego_permutation_v2(logical, available, seed);
+            let slot = stego_permutation_v2(logical, available, seed)?;
             let (pixel_index, slot_channel) =
                 carrier_v2_slot_to_pixel_channel(slot, width, height)?;
             let x = pixel_index as u32 % width;
@@ -541,7 +549,17 @@ pub fn embed_lsb_tiled(
                     let bit = payload_bit(payload, i);
                     for s in 0..replicas_per_bit {
                         let logical = i.saturating_mul(replicas_per_bit).saturating_add(s);
-                        let slot = stego_permutation_v2(logical, tile_available, seed_for_embed);
+                        let Some(slot) =
+                            stego_permutation_v2(logical, tile_available, seed_for_embed)
+                        else {
+                            return EmbedOutcome::SkippedCapacity {
+                                output: img.clone(),
+                                payload_bytes: payload.len(),
+                                required_capacity: total_required.saturating_add(tile_required),
+                                available_capacity: total_available.saturating_add(tile_available),
+                                path: crate::types::EmbedPath::LsbTiled,
+                            };
+                        };
                         let Some((pixel_index, slot_channel)) =
                             carrier_v2_slot_to_pixel_channel(slot, sub_w, sub_h)
                         else {
@@ -1072,7 +1090,8 @@ mod tests {
         for slot_count in 2..=17usize {
             for seed in 0..64u64 {
                 for index in 0..32usize {
-                    let slot = stego_permutation_v2(index, slot_count, seed);
+                    let slot = stego_permutation_v2(index, slot_count, seed)
+                        .expect("tiny slot counts have a valid permutation domain");
                     assert!(slot < slot_count, "slot {slot} out of range {slot_count}");
                 }
             }
@@ -1080,11 +1099,19 @@ mod tests {
     }
 
     #[test]
+    fn stego_permutation_v2_rejects_power_of_two_overflow() {
+        assert_eq!(stego_permutation_v2(0, usize::MAX, 42), None);
+    }
+
+    #[test]
     fn stego_permutation_v2_tiny_carriers_reach_every_slot() {
         for slot_count in [2usize, 3, 5] {
             let hits: std::collections::HashSet<usize> = (0..512u64)
                 .flat_map(|seed| {
-                    (0..16usize).map(move |index| stego_permutation_v2(index, slot_count, seed))
+                    (0..16usize).map(move |index| {
+                        stego_permutation_v2(index, slot_count, seed)
+                            .expect("tiny slot counts have a valid permutation domain")
+                    })
                 })
                 .collect();
             assert_eq!(

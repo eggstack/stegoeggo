@@ -303,6 +303,7 @@ impl RightsMetadataProtector {
         webp_data: &[u8],
         notice: &RightsNotice,
     ) -> Result<Vec<u8>> {
+        notice.validate()?;
         if !notice.has_legal_content() && notice.dmi().is_none() {
             return Ok(webp_data.to_vec());
         }
@@ -3965,6 +3966,17 @@ mod tests {
     fn xml_escape_no_change_for_plain_text() {
         let input = "Simple copyright notice 2024";
         assert_eq!(xml_escape(input), input);
+    }
+
+    #[test]
+    fn webp_injection_rejects_xml_illegal_controls() {
+        let protector = RightsMetadataProtector::new();
+        let notice = RightsNotice::new().with_creator("invalid\u{0001}value");
+        let webp = encode_webp(&make_test_image());
+
+        assert!(protector
+            .inject_text_chunks_webp_from_notice(&webp, &notice)
+            .is_err());
     }
 
     #[test]

@@ -248,6 +248,19 @@ mod resolve_request_validation {
     }
 
     #[test]
+    fn timestamp_override_replaces_explicit_notice_timestamp() {
+        let notice = simple_notice().with_notice_applied_at("2025-01-01T00:00:00Z");
+        let request = ProtectionRequest::metadata_only(notice, RightsPolicy::Allowed)
+            .with_timestamp_override("2025-02-02T00:00:00Z");
+
+        let plan = resolve_request(&request, ImageOutputFormat::Png).unwrap();
+        assert_eq!(
+            plan.effective_notice().notice_applied_at(),
+            Some("2025-02-02T00:00:00Z")
+        );
+    }
+
+    #[test]
     fn unspecified_policy_yields_no_dmi() {
         let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Unspecified);
         let plan = resolve_request(&request, ImageOutputFormat::Png).unwrap();

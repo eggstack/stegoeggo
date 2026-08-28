@@ -424,7 +424,7 @@ fn resolve_key_input(
         if key_str == "-" {
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
-            let hex_key = input.trim();
+            let hex_key = normalize_hex_key(&input);
             return Ok(Some(hex::decode(hex_key).map_err(|e| {
                 config_err(format!("Invalid hex key from stdin: {}", e))
             })?));
@@ -437,25 +437,31 @@ fn resolve_key_input(
             let contents = fs::read_to_string(path).map_err(|e| {
                 config_err(format!("Failed to read key file '{}': {}", path_str, e))
             })?;
-            let hex_key = contents.trim().replace(['\n', '\r'], "");
+            let hex_key = normalize_hex_key(&contents);
             return Ok(Some(hex::decode(&hex_key).map_err(|e| {
                 config_err(format!("Invalid hex key in file: {}", e))
             })?));
         }
+        let hex_key = normalize_hex_key(key_str);
         return Ok(Some(
-            hex::decode(key_str).map_err(|e| config_err(format!("Invalid hex key: {}", e)))?,
+            hex::decode(hex_key).map_err(|e| config_err(format!("Invalid hex key: {}", e)))?,
         ));
     }
 
     if let Ok(env_val) = std::env::var(env_var) {
         if !env_val.is_empty() {
-            return Ok(Some(hex::decode(&env_val).map_err(|e| {
+            let hex_key = normalize_hex_key(&env_val);
+            return Ok(Some(hex::decode(hex_key).map_err(|e| {
                 config_err(format!("Invalid hex key from {}: {}", env_var, e))
             })?));
         }
     }
 
     Ok(None)
+}
+
+fn normalize_hex_key(value: &str) -> String {
+    value.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
 fn collect_input_files(inputs: &[PathBuf]) -> Vec<PathBuf> {
@@ -474,6 +480,7 @@ fn collect_input_files(inputs: &[PathBuf]) -> Vec<PathBuf> {
             files.push(input.clone());
         }
     }
+    files.sort();
     files
 }
 
@@ -554,7 +561,11 @@ fn compute_output_path(
         .to_string();
     let ext = output_format.extension();
 
-    let count = seen.entry(PathBuf::from(&stem)).or_insert(0);
+    let filename = format!("{}_protected.{}", stem, ext);
+    let base_path = output_dir
+        .as_ref()
+        .map_or_else(|| PathBuf::from(&filename), |dir| dir.join(&filename));
+    let count = seen.entry(base_path).or_insert(0);
     if *count > 0 {
         let out_path = if let Some(ref dir) = output_dir {
             dir.join(format!("{}_protected_{}.{}", stem, count, ext))
@@ -1868,31 +1879,31 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let results: Vec<
             Result<(PathBuf, PathBuf, Vec<ProtectionWarning>), (PathBuf, String)>,
         > = if args.jobs > 1 {
-            let seen_paths: std::sync::Mutex<HashMap<PathBuf, usize>> =
-                std::sync::Mutex::new(HashMap::new());
+            let mut seen: HashMap<PathBuf, usize> = HashMap::new();
+            let planned_outputs: Vec<Option<PathBuf>> = input_files
+                .iter()
+                .map(|input_path| {
+                    let detected = fs::read(input_path)
+                        .ok()
+                        .and_then(|bytes| ImageOutputFormat::from_magic_bytes(&bytes))
+                        .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+                    let effective_format = output_format.unwrap_or(detected);
+                    compute_output_path(input_path, &args.output, effective_format, &mut seen)
+                })
+                .collect();
 
             input_files
                 .par_iter()
+                .zip(planned_outputs.par_iter())
                 .with_max_len(1)
-                .map(|input_path| {
-                    let input_bytes_preview =
-                        fs::read(input_path).map_err(|e| (input_path.clone(), e.to_string()))?;
-                    let detected = ImageOutputFormat::from_magic_bytes(&input_bytes_preview)
-                        .unwrap_or(DEFAULT_OUTPUT_FORMAT);
-                    let effective_format = output_format.unwrap_or(detected);
-
-                    let mut seen = seen_paths.lock().unwrap_or_else(|e| e.into_inner());
-                    let override_output =
-                        compute_output_path(input_path, &args.output, effective_format, &mut seen);
-                    drop(seen);
-
+                .map(|(input_path, override_output)| {
                     process_single_file(
                         input_path,
                         &args.output,
                         output_format,
                         &request,
                         args.verbose,
-                        override_output,
+                        override_output.clone(),
                     )
                     .map(|(output, warnings)| (input_path.clone(), output, warnings))
                     .map_err(|e| (input_path.clone(), e.to_string()))
@@ -2150,6 +2161,55 @@ mod tests {
         assert_eq!(req.policy(), RightsPolicy::ProhibitedAiMlTraining);
         assert!(req.channels().rights_metadata);
         assert_eq!(req.channels().hidden_marker, HiddenMarkerMode::BestEffort);
+    }
+
+    #[test]
+    fn hex_key_normalization_removes_all_whitespace() {
+        assert_eq!(normalize_hex_key(" ab\tcd\nef\r"), "abcdef");
+    }
+
+    #[test]
+    fn key_file_accepts_inner_whitespace() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("key.txt");
+        fs::write(&path, "ab cd\tef\n").unwrap();
+        let key_arg = Some(format!("@{}", path.display()));
+
+        assert_eq!(
+            resolve_key_input(&key_arg, "").unwrap(),
+            Some(vec![0xab, 0xcd, 0xef])
+        );
+    }
+
+    #[test]
+    fn collect_input_files_returns_sorted_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("b.png");
+        let second = temp.path().join("a.png");
+        fs::write(&first, []).unwrap();
+        fs::write(&second, []).unwrap();
+
+        assert_eq!(
+            collect_input_files(&[temp.path().to_path_buf()]),
+            vec![second, first]
+        );
+    }
+
+    #[test]
+    fn compute_output_path_deduplicates_candidate_output_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let input = PathBuf::from("photo.png");
+        let output_dir = Some(temp.path().to_path_buf());
+        let mut seen = HashMap::new();
+
+        assert_eq!(
+            compute_output_path(&input, &output_dir, ImageOutputFormat::Png, &mut seen),
+            None
+        );
+        assert_eq!(
+            compute_output_path(&input, &output_dir, ImageOutputFormat::Png, &mut seen),
+            Some(temp.path().join("photo_protected_1.png"))
+        );
     }
 
     #[test]

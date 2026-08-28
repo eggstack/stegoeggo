@@ -1718,8 +1718,8 @@ mod progressive_jpeg_warning {
         .unwrap();
         assert!(warnings_without_mac.contains(&ProtectionWarning::LsbCapacitySkipped));
 
-        // Use a larger image that can fit v3 HMAC payload
-        let img = create_test_image(32, 32);
+        // Use a larger image that can fit the v3 HMAC payload at default redundancy.
+        let img = create_test_image(40, 40);
         let png_bytes = image_to_png_bytes(&img);
         let ctx_with_mac = ProtectionContext::new(0.5, 42)
             .with_format(ImageOutputFormat::Png)
