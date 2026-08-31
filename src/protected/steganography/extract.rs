@@ -560,7 +560,7 @@ impl SteganographyProtector {
             &rgba,
             seed,
             DEFAULT_TILE_SIZE,
-            self.limits.max_tile_extraction_origins() as u32,
+            self.limits.max_tile_extraction_origins_u32(),
             mac_key,
         )
     }
@@ -692,7 +692,7 @@ impl SteganographyProtector {
             jpeg_bytes,
             seed,
             DEFAULT_TILE_SIZE,
-            self.limits.max_tile_extraction_origins() as u32,
+            self.limits.max_tile_extraction_origins_u32(),
             mac_key,
         );
         if matches!(tiled_outcome, CandidateOutcome::Valid(_)) {
@@ -737,7 +737,7 @@ impl SteganographyProtector {
                 jpeg_bytes,
                 seed,
                 DEFAULT_TILE_SIZE,
-                self.limits.max_tile_extraction_origins() as u32,
+                self.limits.max_tile_extraction_origins_u32(),
                 mac_key,
             ),
         }
@@ -1321,7 +1321,7 @@ impl SteganographyProtector {
                     img_bytes,
                     metadata_seed,
                     DEFAULT_TILE_SIZE,
-                    self.limits.max_tile_extraction_origins() as u32,
+                    self.limits.max_tile_extraction_origins_u32(),
                     mac_key,
                 ) {
                     if !self.payload_within_limits(&payload_bytes) {
@@ -1379,7 +1379,7 @@ impl SteganographyProtector {
                     &rgba,
                     seed,
                     DEFAULT_TILE_SIZE,
-                    self.limits.max_tile_extraction_origins() as u32,
+                    self.limits.max_tile_extraction_origins_u32(),
                     mac_key,
                 ) {
                     if let Some(decoded) = Self::try_ecc_decode(&payload) {
@@ -1429,7 +1429,7 @@ impl SteganographyProtector {
             &rgba,
             seed,
             DEFAULT_TILE_SIZE,
-            self.limits.max_tile_extraction_origins() as u32,
+            self.limits.max_tile_extraction_origins_u32(),
             mac_key,
         ) {
             if let Some(decoded) = Self::try_ecc_decode(&payload) {
@@ -1466,7 +1466,7 @@ impl SteganographyProtector {
             &rgba,
             seed,
             DEFAULT_TILE_SIZE,
-            self.limits.max_tile_extraction_origins() as u32,
+            self.limits.max_tile_extraction_origins_u32(),
             &[],
         ) {
             if let Some(decoded) = Self::try_ecc_decode(&payload) {

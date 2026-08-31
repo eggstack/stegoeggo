@@ -23,7 +23,7 @@ fn has_copyright_prefix(value: &str) -> bool {
     value
         .get("Copyright".len()..)
         .and_then(|rest| rest.chars().next())
-        .is_none_or(|next| next.is_whitespace() || matches!(next, '(' | ':'))
+        .is_some_and(|next| next.is_whitespace() || matches!(next, '(' | ':'))
 }
 
 /// Manual date computation from Unix epoch.
@@ -47,7 +47,10 @@ fn current_date_parts() -> (i32, usize, u64, u64) {
             break;
         }
         remaining_days -= year_days;
-        year += 1;
+        let Some(next_year) = year.checked_add(1) else {
+            break;
+        };
+        year = next_year;
     }
 
     let month_lengths = [
@@ -385,12 +388,13 @@ impl RightsMetadataProtector {
             }
         }
 
-        if output.len() > u32::MAX as usize + 8 {
+        if output.len() >= u32::MAX as usize + 8 {
             return Err(Error::Metadata(
                 "WebP file would exceed 4 GiB limit after metadata injection".to_string(),
             ));
         }
-        let riff_size = (output.len() - 8) as u32;
+        let riff_size = u32::try_from(output.len() - 8)
+            .map_err(|_| Error::Metadata("WebP RIFF size exceeds the u32 limit".to_string()))?;
         output[4] = riff_size as u8;
         output[5] = (riff_size >> 8) as u8;
         output[6] = (riff_size >> 16) as u8;
@@ -674,6 +678,10 @@ impl RightsMetadataProtector {
                 }
                 let comment_len =
                     u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
+                if comment_len < 2 {
+                    pos += 2 + comment_len;
+                    continue;
+                }
                 let comment_start = pos + 4;
                 let comment_end = (comment_start + comment_len - 2).min(jpeg_data.len());
                 let comment = &jpeg_data[comment_start..comment_end];
@@ -2653,6 +2661,15 @@ mod tests {
         assert_eq!(date.len(), 10);
         assert_eq!(date.as_bytes()[4], b'-');
         assert_eq!(date.as_bytes()[7], b'-');
+    }
+
+    #[test]
+    fn malformed_short_jpeg_comment_does_not_scan_the_tail() {
+        let mut jpeg = vec![0xFF, 0xD8, 0xFF, 0xFE, 0x00, 0x01];
+        jpeg.extend_from_slice(b"X-Protection-Seed: 42");
+
+        assert!(!RightsMetadataProtector::new()
+            .has_stego_owned_metadata(&jpeg, ImageOutputFormat::Jpeg,));
     }
 
     // ── Metadata generation ───────────────────────────────────────────

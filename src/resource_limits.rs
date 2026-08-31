@@ -160,6 +160,10 @@ impl ResourceLimits {
         self.max_tile_extraction_origins
     }
 
+    pub(crate) fn max_tile_extraction_origins_u32(&self) -> u32 {
+        u32::try_from(self.max_tile_extraction_origins).unwrap_or(u32::MAX)
+    }
+
     /// Maximum number of verification seeds to try.
     pub fn max_verification_seeds(&self) -> usize {
         self.max_verification_seeds
@@ -530,6 +534,14 @@ mod tests {
         assert_eq!(limits.max_payload_bytes(), 256);
         assert_eq!(limits.max_tile_extraction_origins(), 16);
         assert_eq!(limits.max_verification_seeds(), 32);
+    }
+
+    #[test]
+    fn tile_origin_limit_clamps_to_u32() {
+        let limits = ResourceLimits::builder()
+            .max_tile_extraction_origins(usize::MAX)
+            .build();
+        assert_eq!(limits.max_tile_extraction_origins_u32(), u32::MAX);
     }
 
     #[test]

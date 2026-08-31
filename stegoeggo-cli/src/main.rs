@@ -553,7 +553,7 @@ fn compute_output_path(
     output_dir: &Option<PathBuf>,
     output_format: ImageOutputFormat,
     seen: &mut HashMap<PathBuf, usize>,
-) -> Option<PathBuf> {
+) -> PathBuf {
     let stem = input_path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -565,7 +565,7 @@ fn compute_output_path(
     let base_path = output_dir
         .as_ref()
         .map_or_else(|| PathBuf::from(&filename), |dir| dir.join(&filename));
-    let count = seen.entry(base_path).or_insert(0);
+    let count = seen.entry(base_path.clone()).or_insert(0);
     if *count > 0 {
         let out_path = if let Some(ref dir) = output_dir {
             dir.join(format!("{}_protected_{}.{}", stem, count, ext))
@@ -573,10 +573,10 @@ fn compute_output_path(
             PathBuf::from(format!("{}_protected_{}.{}", stem, count, ext))
         };
         *count += 1;
-        Some(out_path)
+        out_path
     } else {
         *count = 1;
-        None
+        base_path
     }
 }
 
@@ -1880,7 +1880,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Result<(PathBuf, PathBuf, Vec<ProtectionWarning>), (PathBuf, String)>,
         > = if args.jobs > 1 {
             let mut seen: HashMap<PathBuf, usize> = HashMap::new();
-            let planned_outputs: Vec<Option<PathBuf>> = input_files
+            let planned_outputs: Vec<PathBuf> = input_files
                 .iter()
                 .map(|input_path| {
                     let detected = fs::read(input_path)
@@ -1903,7 +1903,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         output_format,
                         &request,
                         args.verbose,
-                        override_output.clone(),
+                        Some(override_output.clone()),
                     )
                     .map(|(output, warnings)| (input_path.clone(), output, warnings))
                     .map_err(|e| (input_path.clone(), e.to_string()))
@@ -1930,7 +1930,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         output_format,
                         &request,
                         args.verbose,
-                        override_output,
+                        Some(override_output),
                     )
                     .map(|(output, warnings)| (input_path.clone(), output, warnings))
                     .map_err(|e| (input_path.clone(), e.to_string()))
@@ -2204,11 +2204,37 @@ mod tests {
 
         assert_eq!(
             compute_output_path(&input, &output_dir, ImageOutputFormat::Png, &mut seen),
-            None
+            temp.path().join("photo_protected.png")
         );
         assert_eq!(
             compute_output_path(&input, &output_dir, ImageOutputFormat::Png, &mut seen),
-            Some(temp.path().join("photo_protected_1.png"))
+            temp.path().join("photo_protected_1.png")
+        );
+    }
+
+    #[test]
+    fn compute_output_path_deduplicates_stems_from_different_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        let output_dir = Some(temp.path().to_path_buf());
+        let mut seen = HashMap::new();
+
+        assert_eq!(
+            compute_output_path(
+                Path::new("a/photo.png"),
+                &output_dir,
+                ImageOutputFormat::Png,
+                &mut seen,
+            ),
+            temp.path().join("photo_protected.png")
+        );
+        assert_eq!(
+            compute_output_path(
+                Path::new("b/photo.png"),
+                &output_dir,
+                ImageOutputFormat::Png,
+                &mut seen,
+            ),
+            temp.path().join("photo_protected_1.png")
         );
     }
 

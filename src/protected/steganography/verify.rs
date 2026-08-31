@@ -42,7 +42,7 @@ impl SteganographyProtector {
         if let Ok(png_bytes) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
             self.verify_payload_from_bytes_with_key(&png_bytes, mac_key)
         } else {
-            VerificationStatus::NotFound
+            VerificationStatus::Invalid
         }
     }
 
@@ -70,7 +70,7 @@ impl SteganographyProtector {
         &self,
         img_bytes: &[u8],
         mac_key: &[u8],
-        suppress_unstructured_candidates: bool,
+        _suppress_unstructured_candidates: bool,
     ) -> CandidateOutcome {
         let metadata_seed = RightsMetadataProtector::extract_seed_from_image_with_limits(
             img_bytes,
@@ -103,8 +103,16 @@ impl SteganographyProtector {
             let rgba = img.to_rgba8();
             if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
                 let outcome = self.verify_payload_with_seed_outcome(&img, fallback_seed, mac_key);
-                let outcome = if suppress_unstructured_candidates {
+                let outcome = if fallback_seed == 0 {
                     match outcome {
+                        CandidateOutcome::Valid(payload)
+                        | CandidateOutcome::Invalid(payload)
+                        | CandidateOutcome::AuthenticationKeyMissing(payload)
+                        | CandidateOutcome::AuthenticationFailed(payload)
+                            if !Self::payload_is_structurally_plausible(&payload) =>
+                        {
+                            CandidateOutcome::NotFound
+                        }
                         CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
                             CandidateOutcome::NotFound
                         }
@@ -127,10 +135,10 @@ impl SteganographyProtector {
                     &rgba,
                     seed,
                     DEFAULT_TILE_SIZE,
-                    self.limits.max_tile_extraction_origins() as u32,
+                    self.limits.max_tile_extraction_origins_u32(),
                     mac_key,
                 );
-                let outcome = if suppress_unstructured_candidates {
+                let outcome = if _suppress_unstructured_candidates {
                     match outcome {
                         CandidateOutcome::Valid(payload)
                         | CandidateOutcome::Invalid(payload)
@@ -165,7 +173,7 @@ impl SteganographyProtector {
     /// wrong HMAC keys.
     ///
     /// Returns `(VerificationStatus, Option<Vec<u8>>)` where the second
-    /// element contains the raw payload bytes when a payload was found but
+    /// element contains raw payload bytes when a payload was found but
     /// verification failed.
     pub fn verify_and_extract_raw_from_bytes(
         &self,
@@ -184,6 +192,32 @@ impl SteganographyProtector {
             | CandidateOutcome::ResourceLimitExceeded => (VerificationStatus::Invalid, None),
             CandidateOutcome::NotFound => (VerificationStatus::NotFound, None),
         }
+    }
+
+    pub(crate) fn verify_and_extract_raw_for_detailed(
+        &self,
+        img_bytes: &[u8],
+        mac_key: &[u8],
+    ) -> (VerificationStatus, Option<Vec<u8>>) {
+        match self.verify_payload_from_bytes_outcome(img_bytes, mac_key, true) {
+            CandidateOutcome::Valid(raw) => (VerificationStatus::Verified, Some(raw)),
+            CandidateOutcome::Invalid(raw)
+            | CandidateOutcome::AuthenticationKeyMissing(raw)
+            | CandidateOutcome::AuthenticationFailed(raw) => {
+                (VerificationStatus::Invalid, Some(raw))
+            }
+            CandidateOutcome::MalformedV3
+            | CandidateOutcome::UnsupportedVersion(_)
+            | CandidateOutcome::ResourceLimitExceeded => (VerificationStatus::Invalid, None),
+            CandidateOutcome::NotFound => (VerificationStatus::NotFound, None),
+        }
+    }
+
+    pub(crate) fn parse_verified_payload(raw: &[u8]) -> Option<StegoPayload> {
+        let decoded = Self::try_ecc_decode(raw).unwrap_or_else(|| raw.to_vec());
+        let mut payload = Self::parse_stego_payload(&decoded)?;
+        payload.raw_payload = Some(Self::truncate_to_actual_payload(raw));
+        Some(payload)
     }
 
     /// Verify protection from raw image bytes using a known seed.
@@ -243,7 +277,7 @@ impl SteganographyProtector {
             &rgba,
             seed,
             DEFAULT_TILE_SIZE,
-            self.limits.max_tile_extraction_origins() as u32,
+            self.limits.max_tile_extraction_origins_u32(),
             &[],
         ) {
             return true;
@@ -335,7 +369,6 @@ impl SteganographyProtector {
         None
     }
 
-    #[cfg(feature = "test-seeds")]
     pub(crate) fn payload_is_structurally_plausible(payload: &[u8]) -> bool {
         let decoded = Self::try_ecc_decode(payload).unwrap_or_else(|| payload.to_vec());
         Self::parse_stego_payload(&decoded).is_some()
@@ -931,6 +964,15 @@ mod tests {
                 &[]
             ));
         }
+    }
+
+    #[test]
+    fn encode_failure_is_invalid_verification() {
+        let image = DynamicImage::new_rgba8(0, 0);
+        assert_eq!(
+            SteganographyProtector::new().verify_payload_with_key(&image, &[]),
+            VerificationStatus::Invalid
+        );
     }
 
     #[test]

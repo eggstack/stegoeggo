@@ -369,8 +369,7 @@ impl ProtectionPipeline {
             return Ok(Cow::Borrowed(img));
         }
 
-        let bytes = process_image(img.clone(), level, ctx)?;
-        Ok(Cow::Owned(bytes))
+        Ok(Cow::Owned(process_image_ref(img, level, ctx)?))
     }
 
     /// Process image bytes with the specified protection level.
@@ -415,19 +414,43 @@ pub fn process_image(
     if level == ProtectionLevel::Disabled {
         return Ok(img);
     }
+    process_image_ref(&img, level, ctx)
+}
+
+fn process_image_ref(
+    img: &DynamicImage,
+    level: ProtectionLevel,
+    ctx: &ProtectionContext,
+) -> Result<DynamicImage> {
     ctx.validate()?;
+    ProtectionPipeline::validate_dimensions(img, ctx.max_dimension())?;
     let format = ctx
         .output_format()
         .or_else(|| ctx.input_format())
         .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
-    let img_bytes = crate::util::image::encode_image_with_options(
-        &img,
-        Some(format),
-        ctx.progressive_jpeg(),
-        ctx.jpeg_quality(),
-    )?;
-    let protected_bytes = process_image_bytes(&img_bytes, level, ctx)?;
-    image::load_from_memory(&protected_bytes).map_err(|e| Error::ImageDecode(e.to_string()))
+    let steganography = SteganographyProtector::new();
+
+    if level == ProtectionLevel::Light {
+        if format == crate::types::ImageOutputFormat::Jpeg {
+            let jpeg_bytes = crate::util::image::encode_image_with_options(
+                img,
+                Some(format),
+                ctx.progressive_jpeg(),
+                ctx.jpeg_quality(),
+            )?;
+            let with_seed = steganography.apply_qtable_seed_bytes(&jpeg_bytes, ctx.seed())?;
+            return image::load_from_memory(&with_seed)
+                .map_err(|e| Error::ImageDecode(e.to_string()));
+        }
+
+        let mut rgba = img.to_rgba8();
+        SteganographyProtector::embed_seed_lsb_fallback_pub(&mut rgba, ctx.seed());
+        return Ok(DynamicImage::ImageRgba8(rgba));
+    }
+
+    let stego_ctx = ctx.clone().with_input_format(format);
+    let (processed, _summary) = steganography.apply_to_image_with_summary(img, &stego_ctx)?;
+    Ok(processed)
 }
 
 /// Process multiple images in parallel.
@@ -1123,10 +1146,15 @@ fn observe_metadata_work(
                 if chunk_type == b"IEND" {
                     break;
                 }
-                let chunk_total = chunk_len.saturating_add(12);
+                let Some(chunk_total) = chunk_len.checked_add(12) else {
+                    break;
+                };
                 budget.observe_png_chunk(chunk_total);
                 let data_start = pos + 8;
-                let data_end = (data_start + chunk_len).min(img_bytes.len());
+                let data_end = data_start
+                    .checked_add(chunk_len)
+                    .unwrap_or(img_bytes.len())
+                    .min(img_bytes.len());
                 if (chunk_type == b"tEXt" || chunk_type == b"iTXt") && data_end > data_start {
                     budget.observe_metadata_field(data_end - data_start);
                 }
@@ -1207,14 +1235,6 @@ fn execute_stego_and_metadata(
     budget: &mut crate::resource_limits::OperationObserver,
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
-        let limits = plan.resource_limits();
-        let info = stego::jpeg::inspect(
-            img_bytes,
-            limits.max_jpeg_segments(),
-            limits.max_jpeg_segment_bytes(),
-        )?;
-        limits.check_dimensions(info.width, info.height)?;
-
         let with_stego = steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, None)?;
         let (output, embed_summary) = with_stego.into_parts();
         let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
@@ -1274,14 +1294,6 @@ fn execute_stego_and_metadata_tiled(
     budget: &mut crate::resource_limits::OperationObserver,
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
-        let limits = plan.resource_limits();
-        let info = stego::jpeg::inspect(
-            img_bytes,
-            limits.max_jpeg_segments(),
-            limits.max_jpeg_segment_bytes(),
-        )?;
-        limits.check_dimensions(info.width, info.height)?;
-
         let with_stego =
             steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, Some(tile_size))?;
         let (output, embed_summary) = with_stego.into_parts();
@@ -1342,14 +1354,6 @@ fn execute_seed_only_and_metadata(
     budget: &mut crate::resource_limits::OperationObserver,
 ) -> Result<PipelineResult> {
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
-        let limits = plan.resource_limits();
-        let info = stego::jpeg::inspect(
-            img_bytes,
-            limits.max_jpeg_segments(),
-            limits.max_jpeg_segment_bytes(),
-        )?;
-        limits.check_dimensions(info.width, info.height)?;
-
         let with_seed = steganography.apply_qtable_seed_bytes(img_bytes, plan.seed())?;
         let bytes = metadata_trap.inject_bytes_from_plan(&with_seed, plan)?;
         observe_metadata_work(&bytes, output_format, budget);
@@ -1469,19 +1473,20 @@ pub fn verify_image_bytes_with_limits(
 pub fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> VerificationResult {
     let stego = SteganographyProtector::new();
 
-    match stego.verify_payload_from_bytes_with_key(img_bytes, mac_key) {
-        VerificationStatus::Verified => {
-            if let Some(payload) = stego.extract_payload_from_bytes_with_key(img_bytes, mac_key) {
+    let (status, raw_payload) = stego.verify_and_extract_raw_for_detailed(img_bytes, mac_key);
+    match (status, raw_payload) {
+        (VerificationStatus::Verified, Some(raw)) => {
+            if let Some(payload) = SteganographyProtector::parse_verified_payload(&raw) {
                 return VerificationResult::Verified { payload };
             }
             return VerificationResult::NotFound;
         }
-        VerificationStatus::Invalid => {
-            if let Some(payload) = stego.extract_payload_from_bytes_with_key(img_bytes, mac_key) {
+        (VerificationStatus::Invalid, Some(raw)) => {
+            if let Some(payload) = SteganographyProtector::parse_verified_payload(&raw) {
                 return VerificationResult::Corrupted { payload };
             }
         }
-        VerificationStatus::NotFound => {}
+        _ => {}
     }
 
     if let Some(seed) = RightsMetadataProtector::extract_seed_from_image(img_bytes) {
@@ -1502,19 +1507,20 @@ pub fn verify_image_bytes_detailed_with_limits(
 ) -> VerificationResult {
     let stego = SteganographyProtector::with_resource_limits(limits.clone());
 
-    match stego.verify_payload_from_bytes_with_key(img_bytes, mac_key) {
-        VerificationStatus::Verified => {
-            if let Some(payload) = stego.extract_payload_from_bytes_with_key(img_bytes, mac_key) {
+    let (status, raw_payload) = stego.verify_and_extract_raw_for_detailed(img_bytes, mac_key);
+    match (status, raw_payload) {
+        (VerificationStatus::Verified, Some(raw)) => {
+            if let Some(payload) = SteganographyProtector::parse_verified_payload(&raw) {
                 return VerificationResult::Verified { payload };
             }
             return VerificationResult::NotFound;
         }
-        VerificationStatus::Invalid => {
-            if let Some(payload) = stego.extract_payload_from_bytes_with_key(img_bytes, mac_key) {
+        (VerificationStatus::Invalid, Some(raw)) => {
+            if let Some(payload) = SteganographyProtector::parse_verified_payload(&raw) {
                 return VerificationResult::Corrupted { payload };
             }
         }
-        VerificationStatus::NotFound => {}
+        _ => {}
     }
 
     if let Some(seed) = RightsMetadataProtector::extract_seed_from_image(img_bytes) {

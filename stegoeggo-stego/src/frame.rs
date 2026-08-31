@@ -78,7 +78,8 @@ pub fn encode(payload: &[u8]) -> Result<Vec<u8>, super::StegoError> {
     let mut buf = Vec::with_capacity(FRAME_HEADER_SIZE + payload.len());
     buf.extend_from_slice(&FRAMED_MAGIC);
     buf.push(FRAME_VERSION);
-    buf.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    let payload_len = u32::try_from(payload.len()).expect("MAX_FRAME_PAYLOAD fits in u32");
+    buf.extend_from_slice(&payload_len.to_le_bytes());
     buf.extend_from_slice(&crc32fast::hash(payload).to_le_bytes());
     buf.extend_from_slice(payload);
     Ok(buf)

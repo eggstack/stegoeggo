@@ -169,13 +169,7 @@ pub fn embed_bit_in_pixel(output: &mut RgbaImage, x: u32, y: u32, channel: usize
         }
     };
 
-    let new_pixel = Rgba([
-        if channel == 0 { new_val } else { pixel[0] },
-        if channel == 1 { new_val } else { pixel[1] },
-        if channel == 2 { new_val } else { pixel[2] },
-        pixel[3],
-    ]);
-    output.put_pixel(x, y, new_pixel);
+    output.get_pixel_mut(x, y)[channel] = new_val;
 }
 
 #[allow(dead_code)]
@@ -532,7 +526,7 @@ pub fn embed_lsb_tiled(
             let local_seed = tile_seed(master_seed, tile_x, tile_y);
             let Some(tile_available) = lsb_available_slots(sub_w, sub_h) else {
                 return EmbedOutcome::SkippedCapacity {
-                    output: img.clone(),
+                    output,
                     payload_bytes: payload.len(),
                     required_capacity: usize::MAX,
                     available_capacity: total_available,
@@ -553,7 +547,7 @@ pub fn embed_lsb_tiled(
                             stego_permutation_v2(logical, tile_available, seed_for_embed)
                         else {
                             return EmbedOutcome::SkippedCapacity {
-                                output: img.clone(),
+                                output,
                                 payload_bytes: payload.len(),
                                 required_capacity: total_required.saturating_add(tile_required),
                                 available_capacity: total_available.saturating_add(tile_available),
@@ -564,7 +558,7 @@ pub fn embed_lsb_tiled(
                             carrier_v2_slot_to_pixel_channel(slot, sub_w, sub_h)
                         else {
                             return EmbedOutcome::SkippedCapacity {
-                                output: img.clone(),
+                                output,
                                 payload_bytes: payload.len(),
                                 required_capacity: total_required.saturating_add(tile_required),
                                 available_capacity: total_available.saturating_add(tile_available),
@@ -705,11 +699,7 @@ pub fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
         }
     }
     let seed = u64::from_le_bytes(bytes);
-    if seed == 0 {
-        None
-    } else {
-        Some(seed)
-    }
+    Some(seed)
 }
 
 /// Configuration for LSB carrier operations.
@@ -1266,6 +1256,13 @@ mod tests {
             assert_eq!(seed, Some(7));
             let _ = payload;
         }
+    }
+
+    #[test]
+    fn embed_extract_seed_zero_roundtrips() {
+        let mut img = uniform_image(16, 16, 0);
+        embed_seed_lsb_fallback(&mut img, 0);
+        assert_eq!(extract_seed_lsb_fallback(&img), Some(0));
     }
 
     #[test]
