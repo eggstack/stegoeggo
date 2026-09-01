@@ -49,7 +49,7 @@ impl DctCoefficientRng {
     }
 
     fn gen_range(&mut self, range: usize) -> usize {
-        debug_assert!(range > 0);
+        assert!(range > 0);
         let range_u64 = range as u64;
         let zone = u64::MAX - (u64::MAX % range_u64);
         loop {

@@ -32,7 +32,7 @@ Offset  Size  Field
 21      8     Content hash (truncated)
 29      1     Auth algorithm (None=0, Crc32=1, HmacSha256Truncated=2, Ed25519=3)
 30      1     Auth tag length
-31      1     Reserved (0)
+31      1     Key ID length (u8, 0..=V3_MAX_KEY_ID_LEN)
 ```
 
 V3 supports TLV extensions for additional metadata and optionally carries an Ed25519 signature or HMAC-SHA256 authentication tag.

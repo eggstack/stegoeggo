@@ -183,12 +183,6 @@ struct Args {
     key: Option<String>,
 
     #[arg(
-        long,
-        help = "Additional seeds to try during verification (comma-separated u64 values)"
-    )]
-    known_seeds: Option<String>,
-
-    #[arg(
         short = 'j',
         long = "jobs",
         default_value = "1",
@@ -1003,6 +997,8 @@ fn build_legacy_style_request(
     Ok((policy, channels))
 }
 
+#[allow(dead_code)]
+#[allow(clippy::ptr_arg)]
 fn process_single_file(
     input_path: &PathBuf,
     output_dir: &Option<PathBuf>,
@@ -1012,9 +1008,29 @@ fn process_single_file(
     override_output: Option<PathBuf>,
 ) -> Result<(PathBuf, Vec<ProtectionWarning>), Error> {
     let input_bytes = fs::read(input_path).map_err(Error::Io)?;
+    process_single_file_with_bytes(
+        input_path,
+        &input_bytes,
+        output_dir,
+        output_format,
+        request,
+        verbose,
+        override_output,
+    )
+}
 
+#[allow(clippy::ptr_arg)]
+fn process_single_file_with_bytes(
+    input_path: &PathBuf,
+    input_bytes: &[u8],
+    output_dir: &Option<PathBuf>,
+    output_format: Option<ImageOutputFormat>,
+    request: &stegoeggo::ProtectionRequest,
+    verbose: bool,
+    override_output: Option<PathBuf>,
+) -> Result<(PathBuf, Vec<ProtectionWarning>), Error> {
     let detected_format =
-        ImageOutputFormat::from_magic_bytes(&input_bytes).unwrap_or(DEFAULT_OUTPUT_FORMAT);
+        ImageOutputFormat::from_magic_bytes(input_bytes).unwrap_or(DEFAULT_OUTPUT_FORMAT);
 
     if verbose {
         if let Some(fmt) = output_format {
@@ -1027,7 +1043,7 @@ fn process_single_file(
         }
     }
 
-    let (output_bytes, warnings) = process_request_bytes_with_warnings(&input_bytes, request)?;
+    let (output_bytes, warnings) = process_request_bytes_with_warnings(input_bytes, request)?;
 
     let effective_format = output_format.unwrap_or(detected_format);
 
@@ -1884,25 +1900,51 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Result<(PathBuf, PathBuf, Vec<ProtectionWarning>), (PathBuf, String)>,
         > = if args.jobs > 1 {
             let mut seen: HashMap<PathBuf, usize> = HashMap::new();
-            let planned_outputs: Vec<PathBuf> = input_files
-                .iter()
-                .map(|input_path| {
-                    let detected = fs::read(input_path)
-                        .ok()
-                        .and_then(|bytes| ImageOutputFormat::from_magic_bytes(&bytes))
-                        .unwrap_or(DEFAULT_OUTPUT_FORMAT);
-                    let effective_format = output_format.unwrap_or(detected);
-                    compute_output_path(input_path, &args.output, effective_format, &mut seen)
-                })
-                .collect();
+            let mut batch_inputs: Vec<(PathBuf, Option<Vec<u8>>, PathBuf, Option<String>)> =
+                Vec::new();
+            for input_path in &input_files {
+                match fs::read(input_path) {
+                    Ok(bytes) => {
+                        let detected = ImageOutputFormat::from_magic_bytes(&bytes)
+                            .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+                        let effective_format = output_format.unwrap_or(detected);
+                        let out_path = compute_output_path(
+                            input_path,
+                            &args.output,
+                            effective_format,
+                            &mut seen,
+                        );
+                        batch_inputs.push((input_path.clone(), Some(bytes), out_path, None));
+                    }
+                    Err(e) => {
+                        let effective_format = output_format.unwrap_or(DEFAULT_OUTPUT_FORMAT);
+                        let out_path = compute_output_path(
+                            input_path,
+                            &args.output,
+                            effective_format,
+                            &mut seen,
+                        );
+                        batch_inputs.push((
+                            input_path.clone(),
+                            None,
+                            out_path,
+                            Some(e.to_string()),
+                        ));
+                    }
+                }
+            }
 
-            input_files
+            batch_inputs
                 .par_iter()
-                .zip(planned_outputs.par_iter())
                 .with_max_len(1)
-                .map(|(input_path, override_output)| {
-                    process_single_file(
+                .map(|(input_path, maybe_bytes, override_output, maybe_err)| {
+                    if let Some(err) = maybe_err {
+                        return Err((input_path.clone(), err.clone()));
+                    }
+                    let input_bytes = maybe_bytes.as_ref().unwrap();
+                    process_single_file_with_bytes(
                         input_path,
+                        input_bytes,
                         &args.output,
                         output_format,
                         &request,
@@ -1928,8 +1970,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let override_output =
                         compute_output_path(input_path, &args.output, effective_format, &mut seen);
 
-                    process_single_file(
+                    process_single_file_with_bytes(
                         input_path,
+                        &input_bytes_preview,
                         &args.output,
                         output_format,
                         &request,
@@ -2144,7 +2187,6 @@ mod tests {
             licensor_url: None,
             content_created_at: None,
             key: None,
-            known_seeds: None,
             jobs: 1,
             strict: false,
             json: false,
