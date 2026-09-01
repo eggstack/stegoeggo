@@ -49,7 +49,15 @@ impl DctCoefficientRng {
     }
 
     fn gen_range(&mut self, range: usize) -> usize {
-        (self.next_u64() % range as u64) as usize
+        debug_assert!(range > 0);
+        let range_u64 = range as u64;
+        let zone = u64::MAX - (u64::MAX % range_u64);
+        loop {
+            let v = self.next_u64();
+            if v < zone {
+                return (v % range_u64) as usize;
+            }
+        }
     }
 }
 
@@ -326,9 +334,17 @@ impl DctStegoF5 {
     /// `expected_bits` is the original payload bit count before redundancy
     /// repetition. When redundancy is greater than 1, the extractor reads
     /// `expected_bits * redundancy` bits and then majority-votes them back
-    /// down to the original length. An even redundancy can produce a tied
-    /// vote; a tied position makes the whole extraction ambiguous and an
-    /// empty vector is returned so callers treat the candidate as failed.
+    /// down to the original length.
+    ///
+    /// **Tie sentinel:** An even `redundancy` can produce a tied vote
+    /// (`ones * 2 == redundancy`). A single tied position makes the whole
+    /// extraction ambiguous and the function returns an **empty vector** as a
+    /// sentinel meaning “tamper-detected / fail closed”. Callers must treat
+    /// `Vec::is_empty()` as extraction failure, not as “zero-length payload”.
+    /// Future callers that call `extract_f5(..., redundancy=2)` directly and
+    /// check `bits.len() == expected_bits` will misinterpret the sentinel;
+    /// prefer odd redundancy (1,3,5…) or check for the empty sentinel
+    /// explicitly before interpreting the result.
     pub fn extract_f5(
         &self,
         coefficients: &HashMap<u8, Vec<[i16; 64]>>,
@@ -588,6 +604,9 @@ impl DctStegoF5 {
     ///
     /// Same algorithm as [`extract_f5`](Self::extract_f5) but the carrier set
     /// is limited to the specified `(comp_id, block_idx)` pairs.
+    ///
+    /// Shares the same even-redundancy tie sentinel as [`extract_f5`](Self::extract_f5):
+    /// a tied majority vote returns an empty vector to signal failure.
     pub fn extract_f5_from_blocks(
         &self,
         coefficients: &HashMap<u8, Vec<[i16; 64]>>,
@@ -884,6 +903,49 @@ mod tests {
             .extract_seed_from_quantization_tables(&header)
             .unwrap();
         assert_eq!(extracted, seed);
+    }
+
+    #[test]
+    fn dct_coefficient_rng_zero_seed_is_stable_and_distinct() {
+        let mut a = DctCoefficientRng::new(0);
+        let mut b = DctCoefficientRng::new(0);
+        let first_a = a.next_u64();
+        let first_b = b.next_u64();
+        assert_eq!(
+            first_a, first_b,
+            "DctCoefficientRng(0) must be deterministic"
+        );
+        assert_ne!(first_a, 0, "zero seed must not produce zero state");
+        let mut c = DctCoefficientRng::new(1);
+        assert_eq!(
+            first_a,
+            c.next_u64(),
+            "both seed 0 (mapped to 1) and seed 1 must produce same first output under this RNG's zero-guard"
+        );
+        let mut d = DctCoefficientRng::new(0);
+        let second = {
+            d.next_u64();
+            d.next_u64()
+        };
+        assert_ne!(first_a, second);
+    }
+
+    #[test]
+    fn dct_and_pixel_rngs_produce_different_sequences_for_same_seed() {
+        let mut dct = DctCoefficientRng::new(0);
+        let dct_first = dct.next_u64();
+        const PIX_FIRST_FOR_ZERO: u64 = 0xb7fb0288c5ee4339;
+        assert_ne!(
+            dct_first, PIX_FIRST_FOR_ZERO,
+            "DctCoefficientRng(0) {dct_first:#x} must differ from PixelSelectionRng(0) {PIX_FIRST_FOR_ZERO:#x} — do not unify the two RNGs"
+        );
+        let mut dct42 = DctCoefficientRng::new(42);
+        let dct42_first = dct42.next_u64();
+        const PIX_FIRST_FOR_42: u64 = 0x25eedbfc15706989;
+        assert_ne!(
+            dct42_first, PIX_FIRST_FOR_42,
+            "DctCoefficientRng(42) must differ from PixelSelectionRng(42)"
+        );
     }
 
     #[test]

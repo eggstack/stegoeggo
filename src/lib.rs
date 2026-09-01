@@ -779,6 +779,12 @@ pub fn process_image_bytes_with_warnings(
     {
         warnings.push(ProtectionWarning::ContradictoryLegalClaims);
     }
+    // Note: `ContradictoryLegalClaims` is a warning in the library for
+    // backward compatibility, while the CLI rejects the same combination
+    // (`--metadata false` + legal flags) as `EXIT_CONFIG` 2. Callers that
+    // ignore warnings will silently lose legal metadata because
+    // `generate_rights_metadata_from_notice` no-ops when
+    // `should_inject_metadata == false`.
 
     let output_format = plan.output_format();
 

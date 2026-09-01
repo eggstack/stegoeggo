@@ -60,12 +60,7 @@ fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
-fn current_date_parts() -> (i32, usize, u64, u64) {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-
+fn date_parts_from_secs(now: u64) -> (i32, usize, u64, u64) {
     let mut remaining_days = now / 86400;
     let mut year = 1970i32;
 
@@ -106,6 +101,26 @@ fn current_date_parts() -> (i32, usize, u64, u64) {
     }
 
     (year, month + 1, remaining_days + 1, now % 86400)
+}
+
+fn current_date_parts() -> (i32, usize, u64, u64) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    date_parts_from_secs(now)
+}
+
+#[cfg(test)]
+fn timestamp_iso8601_from_secs(secs: u64) -> String {
+    let (year, month, day, day_secs) = date_parts_from_secs(secs);
+    let hours = day_secs / 3600;
+    let minutes = (day_secs % 3600) / 60;
+    let seconds = day_secs % 60;
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        year, month, day, hours, minutes, seconds
+    )
 }
 
 #[cfg(test)]
@@ -379,6 +394,10 @@ impl RightsMetadataProtector {
         let derived = crate::webp_container::derive_features(&parsed);
         let features = derived.with_xmp(has_metadata);
         let vp8x_flags = features.as_vp8x_flags();
+        // Note: if the original WebP was malformed (reserved VP8X bits 0xC1
+        // set), `derive_features` + `validate_webp_output` silently
+        // normalizes it to valid. This is intentional — injection fixes
+        // reserved bits rather than preserving malformed flags.
 
         let vp8x_data = crate::webp_container::encode_vp8x_chunk(width, height, vp8x_flags)?;
         output.extend_from_slice(b"VP8X");
@@ -2704,6 +2723,54 @@ mod tests {
         assert_eq!(date.len(), 10);
         assert_eq!(date.as_bytes()[4], b'-');
         assert_eq!(date.as_bytes()[7], b'-');
+    }
+
+    #[test]
+    fn date_parts_from_secs_epoch() {
+        assert_eq!(date_parts_from_secs(0), (1970, 1, 1, 0));
+        assert_eq!(date_parts_from_secs(86400), (1970, 1, 2, 0));
+        assert_eq!(date_parts_from_secs(86400 + 3600), (1970, 1, 2, 3600));
+    }
+
+    #[test]
+    fn date_parts_from_secs_known_dates() {
+        assert_eq!(timestamp_iso8601_from_secs(0), "1970-01-01T00:00:00Z");
+        assert_eq!(
+            timestamp_iso8601_from_secs(946684800),
+            "2000-01-01T00:00:00Z"
+        );
+        assert_eq!(
+            timestamp_iso8601_from_secs(951782400),
+            "2000-02-29T00:00:00Z"
+        );
+        assert_eq!(
+            timestamp_iso8601_from_secs(951868800),
+            "2000-03-01T00:00:00Z"
+        );
+        assert_eq!(
+            timestamp_iso8601_from_secs(1582934400),
+            "2020-02-29T00:00:00Z"
+        );
+        assert_eq!(
+            timestamp_iso8601_from_secs(1583020800),
+            "2020-03-01T00:00:00Z"
+        );
+    }
+
+    #[test]
+    fn date_parts_from_secs_leap_year_boundaries() {
+        assert_eq!(date_parts_from_secs(68169600), (1972, 2, 29, 0));
+        let (y, m, d, _) = date_parts_from_secs(68169600 + 86400);
+        assert_eq!((y, m, d), (1972, 3, 1));
+        assert_eq!(date_parts_from_secs(4102444800), (2100, 1, 1, 0));
+    }
+
+    #[test]
+    fn timestamp_iso8601_from_secs_midday() {
+        assert_eq!(
+            timestamp_iso8601_from_secs(946684800 + 12 * 3600 + 34 * 60 + 56),
+            "2000-01-01T12:34:56Z"
+        );
     }
 
     #[test]

@@ -1515,6 +1515,20 @@ pub(crate) fn validate_tile_extraction_max_origins(origins: u32) -> crate::Resul
     }
 }
 
+pub(crate) fn validate_intensity(intensity: f32) -> crate::Result<()> {
+    if !intensity.is_finite() {
+        return Err(crate::Error::Config(format!(
+            "intensity must be finite, got {intensity}"
+        )));
+    }
+    if !(0.0..=1.0).contains(&intensity) {
+        return Err(crate::Error::Config(format!(
+            "intensity must be in 0.0..=1.0, got {intensity}"
+        )));
+    }
+    Ok(())
+}
+
 /// Heavy configuration that is shared across requests via `Arc`.
 /// Create once, reuse across many image processing calls.
 /// This avoids per-request heap allocation of large fields.
@@ -1720,6 +1734,7 @@ impl Default for ProtectionContext {
 
 impl ProtectionContext {
     pub(crate) fn validate(&self) -> crate::Result<()> {
+        validate_intensity(self.intensity)?;
         if let Some(redundancy) = self.stego_redundancy {
             validate_stego_redundancy(redundancy)?;
         }
@@ -1918,6 +1933,17 @@ impl ProtectionContext {
     /// This means `.with_metadata_injection(true)` on a `Standard` context is
     /// a no-op (metadata was already on), while `.with_metadata_injection(false)`
     /// suppresses it — a meaningful behavioral difference.
+    ///
+    /// When `enable` is `false` and legal metadata is present, the library
+    /// path (`process_image_bytes_with_warnings` and `resolve_request`) emits a
+    /// [`ContradictoryLegalClaims`](ProtectionWarning::ContradictoryLegalClaims)
+    /// warning and the legal metadata is not emitted
+    /// (`generate_rights_metadata_from_notice` no-ops when
+    /// `should_inject_metadata == false`). The CLI rejects the same
+    /// combination as a hard configuration error (exit code 2) for stricter
+    /// policy enforcement. This library/CLI inconsistency is intentional for
+    /// backward compatibility — callers that do not inspect warnings will
+    /// silently get an image without the expected legal claims.
     #[deprecated(
         since = "0.4.0",
         note = "Use ProtectionChannels::metadata_only() or ProtectionRequest builder instead."

@@ -403,7 +403,9 @@ impl JpegConfig {
     ///
     /// Panics if `redundancy` is 0 or greater than 10. Use
     /// [`JpegConfig::try_with_redundancy`](Self::try_with_redundancy) when
-    /// the value is not statically known to be in `1..=10`.
+    /// the value is not statically known to be in `1..=10` (for example
+    /// values from configuration files, CLI flags, or network payloads,
+    /// which must not abort the process on invalid input).
     #[must_use]
     pub fn with_redundancy(mut self, redundancy: usize) -> Self {
         assert!(

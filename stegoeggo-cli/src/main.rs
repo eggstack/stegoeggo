@@ -815,6 +815,12 @@ fn build_protection_request_with_explicit_options(
         ));
     }
 
+    if !args.intensity.is_finite() {
+        return Err(config_err(format!(
+            "--intensity must be finite, got {}",
+            args.intensity
+        )));
+    }
     let notice = stegoeggo::RightsNotice::default();
 
     let mut request = stegoeggo::ProtectionRequest::new(notice, policy, channels)

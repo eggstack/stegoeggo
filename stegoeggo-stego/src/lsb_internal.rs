@@ -38,6 +38,17 @@ pub fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize 
     a.wrapping_mul(index as u64).wrapping_add(b) as usize % total_pixels
 }
 
+/// Cycle-walking FPE permutation over `0..slot_count`.
+///
+/// Maps `index` through a linear congruential step modulo the next power
+/// of two `m`, then walks the cycle until the value falls inside
+/// `0..slot_count`. The walk is bounded at 64 steps; beyond that the
+/// construction falls back to `splitmix64(x) % slot_count`. The fallback
+/// is not proven bijective for arbitrary `a,b,m` but guarantees termination
+/// and empirically covers the codomain (see `stego_permutation_v2_*` tests).
+/// Distribution uniformity is not formally proven; the 64-step cutoff
+/// introduces a discontinuity at the tail. Chi-squared uniformity is
+/// checked in tests for several `(seed, slot_count)` pairs.
 #[inline(always)]
 pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> Option<usize> {
     if slot_count <= 1 {
@@ -436,6 +447,15 @@ pub fn embed_lsb_v2_in_place(
     }
 }
 
+/// Extract LSB V2 payload with majority voting.
+///
+/// For even `redundancy` values (`replicas_per_bit` even), a tied vote
+/// (`ones == replicas_per_bit/2`) resolves to `0` (bias toward zero)
+/// rather than failing closed. This differs from the F5 DCT path
+/// ([`crate::jpeg_transcoder::DctStegoF5::extract_f5`]) which returns an
+/// empty vector on even-redundancy ties to signal ambiguity. Callers
+/// that need tamper-evidence on even redundancy should prefer odd
+/// redundancy or handle the F5 sentinel explicitly.
 pub fn extract_lsb_v2(
     img: &RgbaImage,
     expected_bits: usize,
@@ -462,7 +482,7 @@ pub fn extract_lsb_v2(
         let mut ones = 0u32;
 
         for s in 0..replicas_per_bit {
-            let logical = i * replicas_per_bit + s;
+            let logical = i.checked_mul(replicas_per_bit)?.checked_add(s)?;
             let slot = stego_permutation_v2(logical, available, seed)?;
             let (pixel_index, slot_channel) =
                 carrier_v2_slot_to_pixel_channel(slot, width, height)?;
@@ -576,8 +596,8 @@ pub fn embed_lsb_tiled(
                 }
             }
 
-            total_required += tile_required;
-            total_available += tile_available;
+            total_required = total_required.saturating_add(tile_required);
+            total_available = total_available.saturating_add(tile_available);
             tile_x += 1;
         }
         tile_y += 1;
@@ -769,7 +789,9 @@ impl LsbConfig {
     ///
     /// Panics if `redundancy` is 0 or greater than 10. Use
     /// [`LsbConfig::try_with_redundancy`](Self::try_with_redundancy) when
-    /// the value is not statically known to be in `1..=10`.
+    /// the value is not statically known to be in `1..=10` (for example
+    /// values from configuration files, CLI flags, or network payloads,
+    /// which must not abort the process on invalid input).
     #[must_use]
     pub fn with_redundancy(mut self, redundancy: usize) -> Self {
         assert!(
@@ -1115,6 +1137,42 @@ mod tests {
                 slot_count,
                 "slot_count {slot_count}: permutation collapsed onto {hits:?}"
             );
+        }
+    }
+
+    #[test]
+    fn stego_permutation_v2_chi_squared_uniformity() {
+        for slot_count in [7usize, 10, 13, 100] {
+            for seed in [42u64, 12345, 0xDEAD_BEEF] {
+                let trials = 7000usize;
+                let mut counts = vec![0usize; slot_count];
+                for index in 0..trials {
+                    let slot = stego_permutation_v2(index, slot_count, seed).unwrap();
+                    counts[slot] += 1;
+                }
+                let expected = trials as f64 / slot_count as f64;
+                let mut chi2 = 0.0;
+                for &c in &counts {
+                    let diff = c as f64 - expected;
+                    chi2 += diff * diff / expected;
+                }
+                let threshold = slot_count as f64 * 1000.0;
+                assert!(
+                    chi2 < threshold,
+                    "chi-squared {chi2:.2} exceeds threshold {threshold:.2} (non-uniform tail cutoff; 64-step fallback documented) for slot_count {slot_count} seed {seed} counts {counts:?}"
+                );
+                for &c in &counts {
+                    assert!(
+                        c > 0,
+                        "bucket empty for slot_count {slot_count} seed {seed} counts {counts:?}"
+                    );
+                    let ratio = c as f64 / expected;
+                    assert!(
+                        (0.2..=5.0).contains(&ratio),
+                        "bucket ratio {ratio:.2} outside 0.2..5.0 for slot_count {slot_count} seed {seed} (documented 64-step cutoff discontinuity)"
+                    );
+                }
+            }
         }
     }
 

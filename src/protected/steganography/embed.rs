@@ -104,6 +104,14 @@ impl SteganographyProtector {
         plan.effective_redundancy()
     }
 
+    /// Legacy capacity estimate for tEXt capacity checks.
+    ///
+    /// Computes `payload_bits * STEGO_SPREAD_FACTOR` without accounting for
+    /// future V3 `key_id` / TLV extension bytes. Safe today because the V3
+    /// writer never emits them (`debug_assert!(emission.extensions.is_empty())`
+    /// in `marker.rs:95`), but will under-count if extensions are ever
+    /// emitted. When extension support lands, derive `payload_bits` from the
+    /// actual emitted payload size instead of the fixed CRC/HMAC constants.
     #[allow(dead_code)]
     pub(crate) fn lsb_pixels_needed_from_plan(
         plan: &crate::types::ResolvedProtectionPlan,

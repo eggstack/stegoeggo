@@ -7,6 +7,7 @@ pub fn resolve_request(
 ) -> Result<ResolvedProtectionPlan> {
     let mut warnings = Vec::new();
 
+    validate_intensity(request.intensity())?;
     if let Some(redundancy) = request.processing().stego_redundancy {
         validate_stego_redundancy(redundancy)?;
     }
@@ -27,7 +28,7 @@ pub fn resolve_request(
 
     if request.policy() != RightsPolicy::Unspecified && !request.channels().rights_metadata {
         return Err(Error::Config(
-            "A non-Unspecified rights policy requires rights_metadata to be enabled".into(),
+            "A non-Unspecified rights policy requires rights_metadata to be enabled (use MetadataUpdatePolicy::PreserveExisting with rights_metadata=true if you want stego-only but must declare a policy)".into(),
         ));
     }
 

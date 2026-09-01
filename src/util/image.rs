@@ -42,7 +42,14 @@ impl PixelSelectionRng {
             return range.start;
         }
         let size = range.end - range.start;
-        range.start + (self.next_u64() as usize % size)
+        let size_u64 = size as u64;
+        let zone = u64::MAX - (u64::MAX % size_u64);
+        loop {
+            let v = self.next_u64();
+            if v < zone {
+                return range.start + (v % size_u64) as usize;
+            }
+        }
     }
 }
 
@@ -245,5 +252,50 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("supports dimensions up to"));
+    }
+
+    #[test]
+    fn pixel_selection_rng_zero_seed_is_stable_and_nonzero() {
+        let mut a = PixelSelectionRng::new(0);
+        let mut b = PixelSelectionRng::new(0);
+        let first_a = a.next_u64();
+        let first_b = b.next_u64();
+        assert_eq!(
+            first_a, first_b,
+            "PixelSelectionRng(0) must be deterministic"
+        );
+        assert_ne!(first_a, 0, "zero seed must not produce zero state");
+
+        let mut c = PixelSelectionRng::new(1);
+        assert_ne!(
+            first_a,
+            c.next_u64(),
+            "different seeds must produce different sequences"
+        );
+
+        let mut d = PixelSelectionRng::new(0);
+        let second = {
+            d.next_u64();
+            d.next_u64()
+        };
+        assert_ne!(first_a, second);
+    }
+
+    #[test]
+    fn pixel_and_dct_rngs_produce_different_sequences_for_same_seed() {
+        let mut pix = PixelSelectionRng::new(0);
+        let pix_first = pix.next_u64();
+        const DCT_FIRST_FOR_ZERO: u64 = 0x40822041;
+        assert_ne!(
+            pix_first, DCT_FIRST_FOR_ZERO,
+            "PixelSelectionRng(0) {pix_first:#x} must differ from DctCoefficientRng(0) {DCT_FIRST_FOR_ZERO:#x} — do not unify the two RNGs"
+        );
+        let mut pix42 = PixelSelectionRng::new(42);
+        let pix42_first = pix42.next_u64();
+        const DCT_FIRST_FOR_42: u64 = 0xa95514aaa;
+        assert_ne!(
+            pix42_first, DCT_FIRST_FOR_42,
+            "PixelSelectionRng(42) must differ from DctCoefficientRng(42)"
+        );
     }
 }
