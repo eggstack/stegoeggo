@@ -117,15 +117,11 @@ impl PayloadBuilder {
 
     /// Set the key identifier.
     ///
-    /// # Panics
-    ///
-    /// Panics if `key_id` exceeds 32 bytes.
+    /// Length validation is deferred to [`PayloadBuilder::build`]; passing a
+    /// `key_id` longer than [`V3_MAX_KEY_ID_LEN`] will surface as a
+    /// [`PayloadV3ParseError`] from `build()` rather than panicking.
     #[must_use]
     pub fn key_id(mut self, key_id: Vec<u8>) -> Self {
-        assert!(
-            key_id.len() <= V3_MAX_KEY_ID_LEN,
-            "Key ID exceeds maximum length"
-        );
         self.key_id = key_id;
         self
     }
@@ -268,6 +264,13 @@ impl PayloadBuilder {
     /// Returns [`PayloadV3ParseError`] if the payload exceeds size limits
     /// or contains invalid field combinations.
     pub fn build(self) -> Result<Vec<u8>, PayloadV3ParseError> {
+        if self.key_id.len() > V3_MAX_KEY_ID_LEN {
+            return Err(PayloadV3ParseError::Oversized {
+                size: self.key_id.len(),
+                max: V3_MAX_KEY_ID_LEN,
+            });
+        }
+
         if self.extensions.len() > V3_MAX_EXTENSION_COUNT {
             return Err(PayloadV3ParseError::ExtensionsTooLarge);
         }
@@ -319,7 +322,7 @@ impl PayloadBuilder {
         buf.push(expected_tag_len as u8);
         buf.push(self.key_id.len() as u8);
 
-        assert_eq!(buf.len(), V3_CORE_SIZE);
+        debug_assert_eq!(buf.len(), V3_CORE_SIZE);
 
         // Key ID
         buf.extend_from_slice(&self.key_id);
@@ -334,7 +337,7 @@ impl PayloadBuilder {
         // Authentication tag
         buf.extend_from_slice(&self.auth_tag);
 
-        assert_eq!(buf.len(), total_length);
+        debug_assert_eq!(buf.len(), total_length);
 
         Ok(buf)
     }
@@ -369,6 +372,26 @@ mod tests {
         assert_eq!(payload.len(), V3_CORE_SIZE + 16);
         assert_eq!(payload[31], 16); // key_id_len
         assert_eq!(&payload[V3_CORE_SIZE..V3_CORE_SIZE + 16], &[0xAA; 16]);
+    }
+
+    #[test]
+    fn test_build_oversized_key_id_returns_err() {
+        let result = PayloadBuilder::new()
+            .key_id(vec![0u8; V3_MAX_KEY_ID_LEN + 1])
+            .build();
+        assert!(
+            matches!(result, Err(PayloadV3ParseError::Oversized { .. })),
+            "oversized key_id must surface as PayloadV3ParseError::Oversized, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_build_max_size_key_id_succeeds() {
+        let result = PayloadBuilder::new()
+            .key_id(vec![0u8; V3_MAX_KEY_ID_LEN])
+            .build();
+        assert!(result.is_ok(), "max-size key_id must build without error");
     }
 
     #[test]

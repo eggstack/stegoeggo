@@ -231,6 +231,16 @@ impl EvidenceProfile {
 ///
 /// Controls how the protection pipeline handles existing metadata when
 /// re-processing an already-protected image.
+///
+/// # Caveats
+///
+/// Ownership on PNG is detected by `tEXt`/`iTXt` keyword alone (no namespace).
+/// Common keywords like `Copyright`, `Creator`, `UsageTerms`, and
+/// `License` may already appear in user-authored PNGs produced by other
+/// tools. With `ReplaceStegoOwned`, those chunks are removed before
+/// re-injection; with `FailOnConflict`, processing aborts. JPEG and WebP
+/// ownership is more precise (structured COM, namespaced XMP, RIFF chunk
+/// IDs) and is not affected by this caveat.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum MetadataUpdatePolicy {
@@ -2074,8 +2084,14 @@ impl ProtectionContext {
     /// Override the auto-computed `notice_applied_at` timestamp.
     ///
     /// When set, this value replaces the wall-clock timestamp that would
-    /// otherwise be auto-computed. Intended for testing to produce
-    /// deterministic output. Not serialized.
+    /// otherwise be auto-computed. Without an override and without an explicit
+    /// `LegalMetadata::notice_applied_at`, `resolve_request` injects the
+    /// current wall-clock time, so a second `resolve_request` over the same
+    /// `ProtectionRequest` will produce a different `notice_applied_at`.
+    /// Callers that need a deterministic `effective_notice` (for example
+    /// conformance snapshots or CI golden-file comparisons) must set
+    /// `timestamp_override` or supply an explicit
+    /// `LegalMetadata::notice_applied_at`. Not serialized.
     #[must_use]
     pub fn with_timestamp_override(mut self, ts: impl Into<String>) -> Self {
         self.timestamp_override = Some(ts.into());
@@ -3908,6 +3924,15 @@ impl ProtectionRequest {
 
     /// Sets the caller-supplied timestamp override for the notice-applied-at
     /// timestamp. Replaces the auto-computed wall-clock timestamp.
+    ///
+    /// Without an override and without an explicit
+    /// `LegalMetadata::notice_applied_at`, `resolve_request` injects the
+    /// current wall-clock time, so a second `resolve_request` over the same
+    /// `ProtectionRequest` will produce a different `notice_applied_at`.
+    /// Callers that need a deterministic `effective_notice` (for example
+    /// conformance snapshots or CI golden-file comparisons) must set
+    /// `timestamp_override` or supply an explicit
+    /// `LegalMetadata::notice_applied_at`.
     #[must_use]
     pub fn with_timestamp_override(mut self, ts: impl Into<String>) -> Self {
         self.processing.timestamp_override = Some(ts.into());

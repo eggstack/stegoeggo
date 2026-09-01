@@ -6,10 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- PNG `ReplaceStegoOwned` no longer duplicates legal-notice `tEXt` chunks (`Copyright`, `Creator`, etc.) on metadata-only re-processing — `strip_stego_owned_png`, `collect_stego_owned_png_keys`, and `png_has_stego_metadata` now share a single `STEGO_OWNED_PNG_KEYS` constant covering all 18 stego-owned keywords instead of only the 2 seed-related ones
+- PNG XMP `iTXt` (`XML:com.adobe.xmp`) is now recognised as stego-owned across `png_has_stego_metadata`, `strip_stego_owned_png`, and `collect_stego_owned_png_keys`; `ReplaceStegoOwned` strips existing XMP chunks before re-injection so a second round no longer appends a duplicate
+- `PayloadBuilder::key_id` is no longer fallible-by-panic — length validation now happens in `build()` and surfaces as `PayloadV3ParseError::Oversized`; internal `assert_eq!` invariants demoted to `debug_assert_eq!`
+- `png_has_stego_metadata`, `collect_stego_owned_png_keys`, `webp_has_stego_metadata`, and `collect_stego_owned_webp_keys` use `checked_add` for chunk-walk offsets (latent overflow on adversarial inputs)
+- `strip_stego_owned_webp` RIFF size rewrite uses `u32::try_from` and returns `Error::Metadata` on overflow (was silent truncation via `as u32`)
+
 ### Changed
 - Documentation audit pass: all 30 `architecture/` deep-dives re-verified against source (24 corrected); `AGENTS.md` now carries a complete architecture doc index; agent skills refreshed (verification type surface, plan numbering, stale discrepancy claims removed)
 - `docs/cli-usage.md`: removed nonexistent exit code 4 (`EXIT_TRUST`) — the CLI defines exit codes 0, 1, 2, 3, and 5 only
 - `DEPRECATIONS.md`: removed incorrect `VerificationStatus` deprecation row (it remains a live API) and the nonexistent `compute_iscc_detailed()`; added rows for `with_legal_claims()`, `compute_iscc_with_metadata()`, and `compute_iscc_from_bytes()`
+- `MetadataUpdatePolicy` and `timestamp_override` docs call out the PNG `tEXt` keyword ambiguity and the wall-clock determinism requirement respectively
 
 ## [0.3.3] - 2026-08-19
 

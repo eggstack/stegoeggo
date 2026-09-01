@@ -259,7 +259,7 @@ fn unrelated_xmp_namespace_preserved_in_png() {
 
 #[test]
 fn existing_creator_preserved_in_png() {
-    let base = png_with_text_chunk("Creator", "Original Creator");
+    let base = png_with_text_chunk("Author", "Original Author");
     let ctx = ProtectionContext::new(0.5, 42)
         .with_format(ImageOutputFormat::Png)
         .with_legal_metadata(LegalMetadata::new().with_copyright_holder("New Holder"))
@@ -268,8 +268,8 @@ fn existing_creator_preserved_in_png() {
     let output = trap.inject_bytes(&base, &ctx).unwrap();
 
     assert!(
-        has_text_chunk(&output, "Creator"),
-        "Original Creator chunk should survive byte-level injection"
+        has_text_chunk(&output, "Author"),
+        "Original Author chunk should survive byte-level injection"
     );
 }
 

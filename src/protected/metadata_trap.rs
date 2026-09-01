@@ -9,6 +9,34 @@ use image::DynamicImage;
 use image::ImageDecoder;
 use std::borrow::Cow;
 
+/// All PNG `tEXt` and `iTXt` keywords owned by StegoEggo.
+///
+/// Shared by `png_has_stego_metadata`, `strip_stego_owned_png`, and
+/// `collect_stego_owned_png_keys` to ensure the three sites agree on what
+/// counts as StegoEggo-owned metadata. Includes the `XML:com.adobe.xmp`
+/// XMP iTXt keyword (BUG-02).
+const STEGO_OWNED_PNG_KEYS: &[&[u8]] = &[
+    b"X-Protection-Seed",
+    b"DMI-PROHIBITED",
+    b"XML:com.adobe.xmp",
+    b"noai",
+    b"Copyright",
+    b"Contact",
+    b"License",
+    b"UsageTerms",
+    b"DateCreated",
+    b"AIConstraints",
+    b"WebStatementOfRights",
+    b"Creator",
+    b"CreditLine",
+    b"CopyrightOwner",
+    b"LicensorName",
+    b"LicensorEmail",
+    b"LicensorURL",
+    b"MetadataDate",
+    b"NoticeAppliedAt",
+];
+
 fn xml_escape(s: &str) -> String {
     crate::xmp::escape_metadata_value(s)
 }
@@ -621,35 +649,26 @@ impl RightsMetadataProtector {
 
             if chunk_type == b"tEXt" || chunk_type == b"iTXt" {
                 let data_start = pos + 8;
-                let data_end = (data_start + chunk_len).min(png_data.len());
+                let Some(data_end) = data_start.checked_add(chunk_len) else {
+                    break;
+                };
+                let data_end = data_end.min(png_data.len());
                 let data = &png_data[data_start..data_end];
                 if let Some(null_pos) = data.iter().position(|&b| b == 0) {
                     let key = &data[..null_pos];
-                    if key == b"X-Protection-Seed"
-                        || key == b"DMI-PROHIBITED"
-                        || key == b"noai"
-                        || key == b"Copyright"
-                        || key == b"Contact"
-                        || key == b"License"
-                        || key == b"UsageTerms"
-                        || key == b"DateCreated"
-                        || key == b"AIConstraints"
-                        || key == b"WebStatementOfRights"
-                        || key == b"Creator"
-                        || key == b"CreditLine"
-                        || key == b"CopyrightOwner"
-                        || key == b"LicensorName"
-                        || key == b"LicensorEmail"
-                        || key == b"LicensorURL"
-                        || key == b"MetadataDate"
-                        || key == b"NoticeAppliedAt"
-                    {
+                    if Self::is_stego_owned_text_key(key) {
                         return true;
                     }
                 }
             }
 
-            pos += 12 + chunk_len;
+            let Some(chunk_end) = pos.checked_add(12).and_then(|p| p.checked_add(chunk_len)) else {
+                break;
+            };
+            if chunk_end > png_data.len() {
+                break;
+            }
+            pos = chunk_end;
         }
         false
     }
@@ -827,8 +846,12 @@ impl RightsMetadataProtector {
                 webp_data[pos + 7],
             ]) as usize;
             let padded_size = chunk_size + (chunk_size & 1);
-            let data_start = pos + 8;
-            let data_end = data_start + chunk_size;
+            let Some(data_start) = pos.checked_add(8) else {
+                break;
+            };
+            let Some(data_end) = data_start.checked_add(chunk_size) else {
+                break;
+            };
 
             if chunk_id == b"XMP "
                 && data_end <= webp_data.len()
@@ -837,7 +860,10 @@ impl RightsMetadataProtector {
                 return true;
             }
 
-            pos += 8 + padded_size;
+            let Some(next_pos) = pos.checked_add(8).and_then(|p| p.checked_add(padded_size)) else {
+                break;
+            };
+            pos = next_pos;
         }
         false
     }
@@ -2013,7 +2039,7 @@ impl RightsMetadataProtector {
     }
 
     fn is_stego_owned_text_key(key: &[u8]) -> bool {
-        matches!(key, b"X-Protection-Seed" | b"DMI-PROHIBITED")
+        STEGO_OWNED_PNG_KEYS.contains(&key)
     }
 
     fn strip_stego_owned_png(png_data: &[u8]) -> Result<Vec<u8>> {
@@ -2252,7 +2278,12 @@ impl RightsMetadataProtector {
             output[20] &= !0x08;
         }
 
-        let new_riff_size = (output.len() - 8) as u32;
+        let new_riff_size = u32::try_from(output.len() - 8).map_err(|_| {
+            Error::Metadata(format!(
+                "WebP RIFF size {} exceeds u32 limit after strip",
+                output.len() - 8
+            ))
+        })?;
         output[4] = new_riff_size as u8;
         output[5] = (new_riff_size >> 8) as u8;
         output[6] = (new_riff_size >> 16) as u8;
@@ -2280,7 +2311,10 @@ impl RightsMetadataProtector {
             }
             if chunk_type == b"tEXt" || chunk_type == b"iTXt" {
                 let data_start = pos + 8;
-                let data_end = (data_start + chunk_len).min(png_data.len());
+                let Some(data_end) = data_start.checked_add(chunk_len) else {
+                    break;
+                };
+                let data_end = data_end.min(png_data.len());
                 let data = &png_data[data_start..data_end];
                 if let Some(null_pos) = data.iter().position(|&b| b == 0) {
                     let key = &data[..null_pos];
@@ -2289,7 +2323,9 @@ impl RightsMetadataProtector {
                     }
                 }
             }
-            let chunk_end = pos + 12 + chunk_len;
+            let Some(chunk_end) = pos.checked_add(12).and_then(|p| p.checked_add(chunk_len)) else {
+                break;
+            };
             if chunk_end > png_data.len() {
                 break;
             }
@@ -2375,15 +2411,22 @@ impl RightsMetadataProtector {
                 webp_data[pos + 7],
             ]) as usize;
             let padded_size = chunk_size + (chunk_size & 1);
-            let data_start = pos + 8;
-            let data_end = data_start + chunk_size;
+            let Some(data_start) = pos.checked_add(8) else {
+                break;
+            };
+            let Some(data_end) = data_start.checked_add(chunk_size) else {
+                break;
+            };
             if chunk_id == b"XMP "
                 && data_end <= webp_data.len()
                 && Self::xmp_has_stego_properties(&webp_data[data_start..data_end])
             {
                 keys.push(b"XMP".to_vec());
             }
-            pos += 8 + padded_size;
+            let Some(next_pos) = pos.checked_add(8).and_then(|p| p.checked_add(padded_size)) else {
+                break;
+            };
+            pos = next_pos;
         }
         keys
     }
