@@ -1,5 +1,6 @@
 /// Errors encountered when parsing a stego payload.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum PayloadV3ParseError {
     /// Payload is shorter than the minimum required size.
     #[error("Payload too short: need at least {min} bytes, got {actual}")]

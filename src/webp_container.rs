@@ -733,13 +733,11 @@ pub(crate) fn vp8l_has_alpha(payload: &[u8]) -> Result<bool> {
 pub(crate) fn validate_webp_output(data: &[u8]) -> Result<()> {
     let parsed = parse_webp(data, None)?;
 
-    if parsed.vp8x_index.is_none() {
+    let Some(vp8x_idx) = parsed.vp8x_index else {
         return Err(Error::Metadata(
             "Output WebP missing VP8X chunk".to_string(),
         ));
-    }
-
-    let vp8x_idx = parsed.vp8x_index.unwrap();
+    };
     let chunk = &parsed.chunks[vp8x_idx];
     if chunk.data_len < 10 {
         return Err(Error::Metadata("VP8X too short in output".to_string()));

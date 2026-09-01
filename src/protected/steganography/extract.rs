@@ -659,17 +659,11 @@ impl SteganographyProtector {
                 V3ProbeResult::UnsupportedVersion(version) if last_outcome.is_none() => {
                     last_outcome = Some(CandidateOutcome::UnsupportedVersion(version));
                 }
-                V3ProbeResult::ResourceLimitExceeded => {
-                    if last_outcome.is_none() {
-                        last_outcome = Some(CandidateOutcome::ResourceLimitExceeded);
-                    }
+                V3ProbeResult::ResourceLimitExceeded if last_outcome.is_none() => {
+                    last_outcome = Some(CandidateOutcome::ResourceLimitExceeded);
                 }
                 V3ProbeResult::InsufficientCapacity => {}
-                V3ProbeResult::MalformedV3 | V3ProbeResult::UnsupportedVersion(_) => {
-                    if last_outcome.is_none() {
-                        last_outcome = Some(CandidateOutcome::MalformedV3);
-                    }
-                }
+                _ => {}
             }
         }
         last_outcome.unwrap_or(CandidateOutcome::NotFound)

@@ -604,8 +604,14 @@ pub fn embed_lsb_tiled(
 
 pub fn crop_rgba(src: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> RgbaImage {
     let mut out = RgbaImage::new(w, h);
-    for dy in 0..h {
-        for dx in 0..w {
+    let (width, height) = src.dimensions();
+    if w == 0 || h == 0 || x >= width || y >= height {
+        return out;
+    }
+    let copy_w = w.min(width - x);
+    let copy_h = h.min(height - y);
+    for dy in 0..copy_h {
+        for dx in 0..copy_w {
             let p = src.get_pixel(x + dx, y + dy);
             out.put_pixel(dx, dy, *p);
         }

@@ -909,9 +909,7 @@ fn build_new_style_request(
             })
             .unwrap_or(stegoeggo::AuthenticationMode::None);
 
-        let notice = stegoeggo::RightsNotice::default();
         let rights_metadata = policy != RightsPolicy::Unspecified
-            || notice.has_legal_content()
             || _legal_metadata.is_some()
             || !matches!(hidden, HiddenMarkerMode::Disabled);
 
