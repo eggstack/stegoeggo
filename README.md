@@ -1,13 +1,13 @@
 # stegoeggo
 
-Embed machine-readable rights-reservation metadata and AI-training restriction notices in images, with optional best-effort steganographic markers for redundant evidence.
-
 [![CI](https://github.com/eggstack/stegoeggo/actions/workflows/ci.yml/badge.svg)](https://github.com/eggstack/stegoeggo/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/stegoeggo)](https://crates.io/crates/stegoeggo)
 [![Crates.io downloads](https://img.shields.io/crates/d/stegoeggo)](https://crates.io/crates/stegoeggo)
 [![Documentation](https://docs.rs/stegoeggo/badge.svg)](https://docs.rs/stegoeggo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MSRV](https://img.shields.io/badge/MSRV-1.87-blue.svg)](https://blog.rust-lang.org/)
+
+Embed machine-readable rights-reservation metadata and AI-training restriction notices in images, with optional best-effort steganographic markers for redundant evidence.
 
 `stegoeggo` is primarily a **rights-notice metadata tool**. It writes explicit rights policy and copyright information into PNG, JPEG, and WebP files. A hidden marker can also be added as a second, best-effort evidence channel.
 
