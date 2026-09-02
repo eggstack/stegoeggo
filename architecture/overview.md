@@ -198,6 +198,17 @@ Skips pixel decode/encode entirely. The carrier privately operates on DCT coeffi
 
 Progressive JPEGs fall back to seed-in-Q-tables only (coefficient manipulation unsupported).
 
+### WebP container correctness
+
+WebP injection rebuilds the RIFF structure and re-encodes the VP8X chunk from
+`derive_features(&parsed).with_xmp(has_metadata)` via `encode_vp8x_chunk`,
+which clears reserved bits `0xC1`. If the source file is malformed (reserved
+bits set), the output is silently normalized to a spec-compliant VP8X header
+rather than preserving the malformed flags. This is intentional — injection
+fixes reserved bits rather than preserving them — and breaks byte-for-byte
+idempotence for preservation fixtures with malformed inputs. JPEG’s
+preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
+
 ## Component Index — Deep Dives
 
 ### Core Pipeline & API

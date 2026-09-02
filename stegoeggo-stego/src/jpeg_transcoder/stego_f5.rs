@@ -344,10 +344,14 @@ impl DctStegoF5 {
     /// extraction ambiguous and the function returns an **empty vector** as a
     /// sentinel meaning “tamper-detected / fail closed”. Callers must treat
     /// `Vec::is_empty()` as extraction failure, not as “zero-length payload”.
-    /// Future callers that call `extract_f5(..., redundancy=2)` directly and
-    /// check `bits.len() == expected_bits` will misinterpret the sentinel;
-    /// prefer odd redundancy (1,3,5…) or check for the empty sentinel
-    /// explicitly before interpreting the result.
+    /// The LSB V2 carrier (`crate::lsb_internal::extract_lsb_v2`) uses the
+    /// same fail-closed policy but signals it with `None` rather than an
+    /// empty vector; the public carrier helpers normalize both to
+    /// `StegoError::MalformedInput`. Future callers that call
+    /// `extract_f5(..., redundancy=2)` directly and check `bits.len() ==
+    /// expected_bits` will misinterpret the sentinel; prefer odd redundancy
+    /// (1,3,5…) or check for the empty sentinel explicitly before
+    /// interpreting the result.
     pub fn extract_f5(
         &self,
         coefficients: &HashMap<u8, Vec<[i16; 64]>>,

@@ -450,12 +450,17 @@ pub fn embed_lsb_v2_in_place(
 /// Extract LSB V2 payload with majority voting.
 ///
 /// For even `redundancy` values (`replicas_per_bit` even), a tied vote
-/// (`ones == replicas_per_bit/2`) resolves to `0` (bias toward zero)
-/// rather than failing closed. This differs from the F5 DCT path
+/// (`ones * 2 == replicas_per_bit`) is treated as extraction failure and
+/// returns `None` (fail-closed). This matches the F5 DCT path
 /// ([`crate::jpeg_transcoder::DctStegoF5::extract_f5`]) which returns an
-/// empty vector on even-redundancy ties to signal ambiguity. Callers
-/// that need tamper-evidence on even redundancy should prefer odd
-/// redundancy or handle the F5 sentinel explicitly.
+/// empty vector on even-redundancy ties to signal ambiguity. Both carriers
+/// treat a tie as tamper-detected; the carrier-level public helpers
+/// (`stego::lsb::extract`, `stego::jpeg::extract`) normalize the two
+/// sentinels to `StegoError::MalformedInput`, and the application
+/// verification pipeline maps them to `NotFound` (indistinguishable from
+/// absence) for the high-level `VerificationReport` — callers that need
+/// explicit tamper evidence should prefer odd redundancy (1,3,5…) or
+/// inspect the carrier error directly.
 pub fn extract_lsb_v2(
     img: &RgbaImage,
     expected_bits: usize,
@@ -527,7 +532,15 @@ pub fn embed_lsb_tiled(
     let mut total_required = 0usize;
     let mut total_available = 0usize;
 
-    let bit_len = payload.len().saturating_mul(8);
+    let Some(bit_len) = payload.len().checked_mul(8) else {
+        return EmbedOutcome::SkippedCapacity {
+            output,
+            payload_bytes: payload.len(),
+            required_capacity: usize::MAX,
+            available_capacity: 0,
+            path: crate::types::EmbedPath::LsbTiled,
+        };
+    };
 
     let mut tile_y: u32 = 0;
     while tile_y * tile_size < height {
@@ -565,7 +578,18 @@ pub fn embed_lsb_tiled(
                 for i in 0..bit_len {
                     let bit = payload_bit(payload, i);
                     for s in 0..replicas_per_bit {
-                        let logical = i.saturating_mul(replicas_per_bit).saturating_add(s);
+                        let Some(logical) = i
+                            .checked_mul(replicas_per_bit)
+                            .and_then(|v| v.checked_add(s))
+                        else {
+                            return EmbedOutcome::SkippedCapacity {
+                                output,
+                                payload_bytes: payload.len(),
+                                required_capacity: total_required.saturating_add(tile_required),
+                                available_capacity: total_available.saturating_add(tile_available),
+                                path: crate::types::EmbedPath::LsbTiled,
+                            };
+                        };
                         let Some(slot) =
                             stego_permutation_v2(logical, tile_available, seed_for_embed)
                         else {
@@ -788,19 +812,23 @@ impl LsbConfig {
     /// Set the redundancy level (1–10). Higher redundancy increases
     /// robustness at the cost of reduced capacity.
     ///
-    /// # Panics
-    ///
-    /// Panics if `redundancy` is 0 or greater than 10. Use
+    /// In debug builds, panics if `redundancy` is 0 or greater than 10. In
+    /// release builds with `panic=abort`, an out-of-range value is clamped to
+    /// `1..=10` to avoid aborting the process; prefer
     /// [`LsbConfig::try_with_redundancy`](Self::try_with_redundancy) when
     /// the value is not statically known to be in `1..=10` (for example
     /// values from configuration files, CLI flags, or network payloads,
     /// which must not abort the process on invalid input).
     #[must_use]
     pub fn with_redundancy(mut self, redundancy: usize) -> Self {
-        assert!(
+        debug_assert!(
             (1..=10).contains(&redundancy),
             "redundancy must be 1..=10, got {redundancy}"
         );
+        if !(1..=10).contains(&redundancy) {
+            self.redundancy = redundancy.clamp(1, 10);
+            return self;
+        }
         self.redundancy = redundancy;
         self
     }

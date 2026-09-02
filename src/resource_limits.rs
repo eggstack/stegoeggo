@@ -501,7 +501,6 @@ impl OperationObserver {
                 limit: self.limits.max_png_chunks(),
             });
         }
-        self.usage.metadata_bytes_copied += bytes;
         self.observe_alloc(bytes);
     }
 
@@ -516,7 +515,6 @@ impl OperationObserver {
                 limit: self.limits.max_jpeg_segments(),
             });
         }
-        self.usage.metadata_bytes_copied += bytes;
         self.observe_alloc(bytes);
     }
 
@@ -531,7 +529,6 @@ impl OperationObserver {
                 limit: self.limits.max_webp_riff_chunks(),
             });
         }
-        self.usage.metadata_bytes_copied += bytes;
         self.observe_alloc(bytes);
     }
 

@@ -399,19 +399,23 @@ impl JpegConfig {
     /// Set the redundancy level (1–10). Higher redundancy increases
     /// robustness at the cost of reduced capacity.
     ///
-    /// # Panics
-    ///
-    /// Panics if `redundancy` is 0 or greater than 10. Use
+    /// In debug builds, panics if `redundancy` is 0 or greater than 10. In
+    /// release builds with `panic=abort`, an out-of-range value is clamped to
+    /// `1..=10` to avoid aborting the process; prefer
     /// [`JpegConfig::try_with_redundancy`](Self::try_with_redundancy) when
     /// the value is not statically known to be in `1..=10` (for example
     /// values from configuration files, CLI flags, or network payloads,
     /// which must not abort the process on invalid input).
     #[must_use]
     pub fn with_redundancy(mut self, redundancy: usize) -> Self {
-        assert!(
+        debug_assert!(
             (1..=10).contains(&redundancy),
             "redundancy must be 1..=10, got {redundancy}"
         );
+        if !(1..=10).contains(&redundancy) {
+            self.redundancy = redundancy.clamp(1, 10);
+            return self;
+        }
         self.redundancy = redundancy;
         self
     }

@@ -153,11 +153,14 @@ fn ensure_jpeg_dimensions_supported(width: u32, height: u32) -> Result<()> {
         ));
     }
     if width > MAX_JPEG_DIMENSION || height > MAX_JPEG_DIMENSION {
-        return Err(Error::ImageEncode(format!(
-            "JPEG encoder supports dimensions up to {}x{}; got {}x{}",
-            MAX_JPEG_DIMENSION, MAX_JPEG_DIMENSION, width, height
-        )));
+        return Err(Error::DimensionsExceeded {
+            width,
+            height,
+            max_width: MAX_JPEG_DIMENSION,
+            max_height: MAX_JPEG_DIMENSION,
+        });
     }
+    crate::resource_limits::ResourceLimits::default().check_dimensions(width, height)?;
     Ok(())
 }
 
@@ -245,7 +248,8 @@ mod tests {
     fn jpeg_encoding_rejects_dimensions_that_do_not_fit_jpeg_encoder() {
         let too_wide = DynamicImage::new_rgb8(MAX_JPEG_DIMENSION + 1, 1);
         let err = encode_image(&too_wide, ImageFormat::Jpeg).unwrap_err();
-        assert!(err.to_string().contains("supports dimensions up to"));
+        assert!(matches!(err, crate::Error::DimensionsExceeded { .. }));
+        assert!(err.to_string().contains("exceeds"));
 
         let too_tall = DynamicImage::new_rgb8(1, MAX_JPEG_DIMENSION + 1);
         let err = encode_image_with_options(
@@ -255,7 +259,8 @@ mod tests {
             90,
         )
         .unwrap_err();
-        assert!(err.to_string().contains("supports dimensions up to"));
+        assert!(matches!(err, crate::Error::DimensionsExceeded { .. }));
+        assert!(err.to_string().contains("exceeds"));
     }
 
     #[test]

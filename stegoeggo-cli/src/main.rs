@@ -1852,29 +1852,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if args.dry_run {
-        let input_path = &input_files[0];
-        let input_bytes = fs::read(input_path)?;
-        let input_format = stegoeggo::ImageOutputFormat::from_magic_bytes(&input_bytes)
-            .unwrap_or(DEFAULT_OUTPUT_FORMAT);
-        let plan = stegoeggo::resolve_request(&request, input_format)?;
-        println!("Resolved Protection Plan:");
-        println!("  Effective policy: {:?}", plan.effective_policy());
-        println!("  Effective DMI: {:?}", plan.effective_dmi());
-        println!(
-            "  Channels: rights_metadata={}, hidden_marker={:?}, auth={:?}",
-            plan.channels().rights_metadata,
-            plan.channels().hidden_marker,
-            plan.channels().authentication
-        );
-        println!("  Input format: {:?}", plan.input_format());
-        println!("  Output format: {:?}", plan.output_format());
-        println!("  Seed: {}", plan.seed());
-        println!("  Intensity: {}", plan.intensity());
-        println!("  Metadata-only: {}", plan.is_metadata_only());
-        if !plan.warnings().is_empty() {
-            println!("  Warnings:");
-            for w in plan.warnings() {
-                println!("    - {}", w);
+        for input_path in &input_files {
+            let input_bytes = fs::read(input_path)?;
+            let input_format = stegoeggo::ImageOutputFormat::from_magic_bytes(&input_bytes)
+                .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+            let plan = stegoeggo::resolve_request(&request, input_format)?;
+            if input_files.len() > 1 {
+                println!("File: {}", input_path.display());
+            }
+            println!("Resolved Protection Plan:");
+            println!("  Effective policy: {:?}", plan.effective_policy());
+            println!("  Effective DMI: {:?}", plan.effective_dmi());
+            println!(
+                "  Channels: rights_metadata={}, hidden_marker={:?}, auth={:?}",
+                plan.channels().rights_metadata,
+                plan.channels().hidden_marker,
+                plan.channels().authentication
+            );
+            println!("  Input format: {:?}", plan.input_format());
+            println!("  Output format: {:?}", plan.output_format());
+            println!("  Seed: {}", plan.seed());
+            println!("  Intensity: {}", plan.intensity());
+            println!("  Metadata-only: {}", plan.is_metadata_only());
+            if !plan.warnings().is_empty() {
+                println!("  Warnings:");
+                for w in plan.warnings() {
+                    println!("    - {}", w);
+                }
             }
         }
         return Ok(());

@@ -4,6 +4,7 @@ Embed machine-readable rights-reservation metadata and AI-training restriction n
 
 [![CI](https://github.com/eggstack/stegoeggo/actions/workflows/ci.yml/badge.svg)](https://github.com/eggstack/stegoeggo/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/stegoeggo)](https://crates.io/crates/stegoeggo)
+[![Crates.io downloads](https://img.shields.io/crates/d/stegoeggo)](https://crates.io/crates/stegoeggo)
 [![Documentation](https://docs.rs/stegoeggo/badge.svg)](https://docs.rs/stegoeggo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MSRV](https://img.shields.io/badge/MSRV-1.87-blue.svg)](https://blog.rust-lang.org/)

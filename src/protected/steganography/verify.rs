@@ -105,6 +105,9 @@ impl SteganographyProtector {
                 let outcome = self.verify_payload_with_seed_outcome(&img, fallback_seed, mac_key);
                 let outcome = if fallback_seed == 0 {
                     match outcome {
+                        CandidateOutcome::ResourceLimitExceeded => {
+                            CandidateOutcome::ResourceLimitExceeded
+                        }
                         CandidateOutcome::Valid(payload)
                         | CandidateOutcome::Invalid(payload)
                         | CandidateOutcome::AuthenticationKeyMissing(payload)
@@ -140,6 +143,9 @@ impl SteganographyProtector {
                 );
                 let outcome = if _suppress_unstructured_candidates {
                     match outcome {
+                        CandidateOutcome::ResourceLimitExceeded => {
+                            CandidateOutcome::ResourceLimitExceeded
+                        }
                         CandidateOutcome::Valid(payload)
                         | CandidateOutcome::Invalid(payload)
                         | CandidateOutcome::AuthenticationKeyMissing(payload)
