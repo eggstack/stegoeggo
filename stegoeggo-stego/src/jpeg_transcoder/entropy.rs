@@ -2,7 +2,7 @@
 //!
 //! Handles Huffman entropy decoding of DCT coefficients from JPEG scan data
 //! and encoding coefficients back to JPEG format.
-#![allow(dead_code)] // Standard JPEG Huffman tables and lookup constants for reference
+#![allow(dead_code)]
 
 use super::{JpegHeader, Result, TranscoderError};
 use std::collections::HashMap;

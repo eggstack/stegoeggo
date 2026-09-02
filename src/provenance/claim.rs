@@ -257,7 +257,7 @@ impl ProvenanceClaim {
         map.insert("width".into(), serde_json::Value::Number(self.width.into()));
         let canonical = serde_json::Value::Object(map);
         serde_json::to_string(&canonical)
-            .expect("provenance claim canonical serialization failed")
+            .unwrap_or_else(|_| "{}".to_string())
             .into_bytes()
     }
 
@@ -269,11 +269,41 @@ impl ProvenanceClaim {
         hasher.finalize().into()
     }
 
-    /// Create a claim ID from random bytes.
+    /// Try to create a claim ID from OS randomness.
+    ///
+    /// Returns `Ok` with 16 random bytes on success, or the underlying
+    /// `getrandom` error if entropy is unavailable. Callers that need an
+    /// infallible ID should use [`Self::random_claim_id`], which falls back
+    /// to time-based mixing.
+    pub fn try_random_claim_id() -> Result<[u8; 16], getrandom::Error> {
+        let mut id = [0u8; 16];
+        getrandom(&mut id)?;
+        Ok(id)
+    }
+
+    /// Create a claim ID from random bytes, with fallback on failure.
     #[must_use]
     pub fn random_claim_id() -> [u8; 16] {
+        if let Ok(id) = Self::try_random_claim_id() {
+            return id;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let s = now.as_secs();
+        let ns = now.subsec_nanos() as u64;
+        let mut x = s ^ (ns.wrapping_mul(0x9E3779B97F4A7C15));
+        x ^= x >> 30;
+        x = x.wrapping_mul(0xBF58476D1CE4E5B9);
+        x ^= x >> 27;
+        x = x.wrapping_mul(0x94D049BB133111EB);
+        x ^= x >> 31;
         let mut id = [0u8; 16];
-        getrandom(&mut id).expect("failed to generate random claim ID");
+        id[..8].copy_from_slice(&x.to_le_bytes());
+        id[8..].copy_from_slice(&x.wrapping_mul(0x9E3779B97F4A7C15).to_le_bytes());
+        if id == [0u8; 16] {
+            id[0] = 42;
+        }
         id
     }
 }

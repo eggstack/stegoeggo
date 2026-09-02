@@ -686,7 +686,11 @@ impl RightsNotice {
         self.seed
     }
 
-    /// Returns `true` if any legal field is set.
+    /// Returns `true` if any legal text field is set (ignores DMI).
+    ///
+    /// This checks only the 16 textual legal fields and ignores the `dmi`
+    /// policy. Use `RightsNotice::has_notice()` (which includes DMI) when
+    /// deciding whether to emit `PLUS:DataMining`.
     #[must_use]
     pub fn has_legal_content(&self) -> bool {
         self.copyright_holder.is_some()
@@ -1173,7 +1177,11 @@ impl LegalMetadata {
         Ok(())
     }
 
-    /// Returns `true` if any legal metadata field is set.
+    /// Returns `true` if any legal metadata field is set (ignores DMI).
+    ///
+    /// Like `RightsNotice::has_legal_content`, this checks only textual
+    /// fields. DMI is tracked separately via `LegalMetadata::has_content`
+    /// vs `RightsNotice::has_notice`.
     #[must_use]
     pub fn has_content(&self) -> bool {
         self.copyright_holder.is_some()

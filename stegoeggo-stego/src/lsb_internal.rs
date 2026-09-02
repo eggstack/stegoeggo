@@ -42,17 +42,23 @@ pub fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize 
 ///
 /// Maps `index` through a linear congruential step modulo the next power
 /// of two `m`, then walks the cycle until the value falls inside
-/// `0..slot_count`. The walk is bounded at 64 steps; beyond that the
+/// `0..slot_count`. The walk is bounded at 256 steps; beyond that the
 /// construction falls back to `splitmix64(x) % slot_count`. The fallback
 /// is not proven bijective for arbitrary `a,b,m` but guarantees termination
 /// and empirically covers the codomain (see `stego_permutation_v2_*` tests).
-/// Distribution uniformity is not formally proven; the 64-step cutoff
+/// Distribution uniformity is not formally proven; the 256-step cutoff
 /// introduces a discontinuity at the tail. Chi-squared uniformity is
 /// checked in tests for several `(seed, slot_count)` pairs.
 #[inline(always)]
 pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> Option<usize> {
     if slot_count <= 1 {
-        return Some(index.min(slot_count.saturating_sub(1)));
+        if slot_count == 0 {
+            return None;
+        }
+        if index == 0 {
+            return Some(0);
+        }
+        return None;
     }
 
     let m = slot_count.checked_next_power_of_two()?;
@@ -65,7 +71,7 @@ pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> Optio
     while (x as usize) >= slot_count {
         x = (a.wrapping_mul(x).wrapping_add(b)) % (m as u64);
         attempts += 1;
-        if attempts >= 64 {
+        if attempts >= 256 {
             return Some((splitmix64(x) % slot_count as u64) as usize);
         }
     }
@@ -400,18 +406,12 @@ pub fn embed_lsb_v2_in_place(
     for bit_index in 0..bit_len {
         let bit = payload_bit(payload, bit_index);
         for replica in 0..replicas_per_bit {
-            let Some(logical) = bit_index
+            debug_assert!(bit_index.checked_mul(replicas_per_bit).is_some());
+            debug_assert!(bit_index
                 .checked_mul(replicas_per_bit)
-                .and_then(|value| value.checked_add(replica))
-            else {
-                return InPlaceEmbedReport {
-                    embedded: false,
-                    payload_bytes: payload.len(),
-                    required_capacity: required,
-                    available_capacity: available,
-                    actual_redundancy: redundancy,
-                };
-            };
+                .and_then(|v| v.checked_add(replica))
+                .is_some());
+            let logical = bit_index * replicas_per_bit + replica;
             let Some(slot) = stego_permutation_v2(logical, available, seed) else {
                 return InPlaceEmbedReport {
                     embedded: false,
@@ -494,6 +494,9 @@ pub fn extract_lsb_v2(
             ones += bit as u32;
         }
 
+        if ones * 2 == replicas_per_bit as u32 {
+            return None;
+        }
         if ones > threshold {
             bytes[i / 8] |= 1 << (i % 8);
         }

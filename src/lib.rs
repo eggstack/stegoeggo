@@ -1035,24 +1035,42 @@ fn process_plan_bytes(
                 )));
             }
         }
-    } else if let Ok(img) = load_image_from_bytes(img_bytes) {
-        let (width, height) = img.dimensions();
-        limits.check_dimensions(width, height)?;
-        if let Some(max_dim) = plan.processing().max_dimension {
-            if width > max_dim || height > max_dim {
-                return Err(Error::ImageDecode(format!(
-                    "Image dimensions {width}x{height} exceed max_dimension {max_dim}"
-                )));
+    } else {
+        let mut header_checked = false;
+        if let Ok(reader) = image::ImageReader::new(Cursor::new(img_bytes)).with_guessed_format() {
+            if let Ok((width, height)) = reader.into_dimensions() {
+                limits.check_dimensions(width, height)?;
+                if let Some(max_dim) = plan.processing().max_dimension {
+                    if width > max_dim || height > max_dim {
+                        return Err(Error::ImageDecode(format!(
+                            "Image dimensions {width}x{height} exceed max_dimension {max_dim}"
+                        )));
+                    }
+                }
+                header_checked = true;
             }
         }
-    } else if (plan.is_metadata_only()
-        || plan.channels().hidden_marker == HiddenMarkerMode::Disabled)
-        && plan.input_format() != plan.output_format()
-    {
-        return Err(Error::ImageDecode(
-            "Image could not be decoded; metadata-only processing requires a valid image"
-                .to_string(),
-        ));
+        if let Ok(img) = load_image_from_bytes(img_bytes) {
+            let (width, height) = img.dimensions();
+            if !header_checked {
+                limits.check_dimensions(width, height)?;
+                if let Some(max_dim) = plan.processing().max_dimension {
+                    if width > max_dim || height > max_dim {
+                        return Err(Error::ImageDecode(format!(
+                            "Image dimensions {width}x{height} exceed max_dimension {max_dim}"
+                        )));
+                    }
+                }
+            }
+        } else if (plan.is_metadata_only()
+            || plan.channels().hidden_marker == HiddenMarkerMode::Disabled)
+            && plan.input_format() != plan.output_format()
+        {
+            return Err(Error::ImageDecode(
+                "Image could not be decoded; metadata-only processing requires a valid image"
+                    .to_string(),
+            ));
+        }
     }
 
     if plan.is_metadata_only()
@@ -1121,12 +1139,12 @@ fn execute_metadata_only(
             plan.processing().jpeg_quality,
         )?;
         let result = metadata_trap.inject_bytes_from_plan(&encoded, plan)?;
-        observe_metadata_work(&result, output_format, budget);
+        observe_metadata_work(&result, output_format, budget)?;
         return Ok(result);
     }
 
     let result = metadata_trap.inject_bytes_from_plan(img_bytes, plan)?;
-    observe_metadata_work(&result, output_format, budget);
+    observe_metadata_work(&result, output_format, budget)?;
     Ok(result)
 }
 
@@ -1134,11 +1152,11 @@ fn observe_metadata_work(
     img_bytes: &[u8],
     format: crate::types::ImageOutputFormat,
     budget: &mut crate::resource_limits::OperationObserver,
-) {
+) -> Result<()> {
     match format {
         crate::types::ImageOutputFormat::Png => {
             if img_bytes.len() < 8 || &img_bytes[0..8] != b"\x89PNG\r\n\x1a\n" {
-                return;
+                return Ok(());
             }
             let mut pos = 8;
             while pos + 12 <= img_bytes.len() {
@@ -1175,7 +1193,7 @@ fn observe_metadata_work(
         }
         crate::types::ImageOutputFormat::Jpeg => {
             if img_bytes.len() < 2 || img_bytes[0] != 0xFF || img_bytes[1] != 0xD8 {
-                return;
+                return Ok(());
             }
             let mut pos = 2;
             while pos + 2 <= img_bytes.len() {
@@ -1208,7 +1226,7 @@ fn observe_metadata_work(
         }
         crate::types::ImageOutputFormat::WebP => {
             if img_bytes.len() < 12 || &img_bytes[0..4] != b"RIFF" || &img_bytes[8..12] != b"WEBP" {
-                return;
+                return Ok(());
             }
             let mut pos = 12;
             while pos + 8 <= img_bytes.len() {
@@ -1229,6 +1247,7 @@ fn observe_metadata_work(
             }
         }
     }
+    budget.check_limits()
 }
 
 fn execute_stego_and_metadata(
@@ -1244,7 +1263,7 @@ fn execute_stego_and_metadata(
         let with_stego = steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, None)?;
         let (output, embed_summary) = with_stego.into_parts();
         let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
-        observe_metadata_work(&bytes, output_format, budget);
+        observe_metadata_work(&bytes, output_format, budget)?;
         return Ok(PipelineResult {
             bytes,
             embed_summary: Some(embed_summary),
@@ -1265,7 +1284,7 @@ fn execute_stego_and_metadata(
         let with_stego = steganography.apply_dct_stego_bytes_from_plan(&jpeg_bytes, plan, None)?;
         let (output, embed_summary) = with_stego.into_parts();
         let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
-        observe_metadata_work(&bytes, output_format, budget);
+        observe_metadata_work(&bytes, output_format, budget)?;
         return Ok(PipelineResult {
             bytes,
             embed_summary: Some(embed_summary),
@@ -1281,7 +1300,7 @@ fn execute_stego_and_metadata(
         plan.processing().jpeg_quality,
     )?;
     let bytes = metadata_trap.inject_bytes_from_plan(&encoded, plan)?;
-    observe_metadata_work(&bytes, output_format, budget);
+    observe_metadata_work(&bytes, output_format, budget)?;
     Ok(PipelineResult {
         bytes,
         embed_summary,
@@ -1304,7 +1323,7 @@ fn execute_stego_and_metadata_tiled(
             steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, Some(tile_size))?;
         let (output, embed_summary) = with_stego.into_parts();
         let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
-        observe_metadata_work(&bytes, output_format, budget);
+        observe_metadata_work(&bytes, output_format, budget)?;
         return Ok(PipelineResult {
             bytes,
             embed_summary: Some(embed_summary),
@@ -1326,7 +1345,7 @@ fn execute_stego_and_metadata_tiled(
             steganography.apply_dct_stego_bytes_from_plan(&jpeg_bytes, plan, Some(tile_size))?;
         let (output, embed_summary) = with_stego.into_parts();
         let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
-        observe_metadata_work(&bytes, output_format, budget);
+        observe_metadata_work(&bytes, output_format, budget)?;
         return Ok(PipelineResult {
             bytes,
             embed_summary: Some(embed_summary),
@@ -1342,7 +1361,7 @@ fn execute_stego_and_metadata_tiled(
         plan.processing().jpeg_quality,
     )?;
     let bytes = metadata_trap.inject_bytes_from_plan(&encoded, plan)?;
-    observe_metadata_work(&bytes, output_format, budget);
+    observe_metadata_work(&bytes, output_format, budget)?;
     Ok(PipelineResult {
         bytes,
         embed_summary,
@@ -1362,7 +1381,7 @@ fn execute_seed_only_and_metadata(
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let with_seed = steganography.apply_qtable_seed_bytes(img_bytes, plan.seed())?;
         let bytes = metadata_trap.inject_bytes_from_plan(&with_seed, plan)?;
-        observe_metadata_work(&bytes, output_format, budget);
+        observe_metadata_work(&bytes, output_format, budget)?;
         return Ok(PipelineResult {
             bytes,
             embed_summary: None,
@@ -1381,7 +1400,7 @@ fn execute_seed_only_and_metadata(
         )?;
         let with_metadata = metadata_trap.inject_bytes_from_plan(&jpeg_bytes, plan)?;
         let with_seed = steganography.apply_qtable_seed_bytes(&with_metadata, plan.seed())?;
-        observe_metadata_work(&with_seed, output_format, budget);
+        observe_metadata_work(&with_seed, output_format, budget)?;
         return Ok(PipelineResult {
             bytes: with_seed,
             embed_summary: None,
@@ -1401,7 +1420,7 @@ fn execute_seed_only_and_metadata(
         plan.processing().jpeg_quality,
     )?;
     let bytes = metadata_trap.inject_bytes_from_plan(&encoded, plan)?;
-    observe_metadata_work(&bytes, output_format, budget);
+    observe_metadata_work(&bytes, output_format, budget)?;
     Ok(PipelineResult {
         bytes,
         embed_summary: None,

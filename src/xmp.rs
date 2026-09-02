@@ -286,6 +286,14 @@ fn append_attr(out: &mut Vec<u8>, key: &[u8], value: &[u8]) {
 ///
 /// Returns an `Err` for any malformed packet or unrecognized structural issue.
 pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescription>> {
+    filter_xmp_packet_with_limits(packet, &crate::resource_limits::ResourceLimits::default())
+}
+
+pub(crate) fn filter_xmp_packet_with_limits(
+    packet: &[u8],
+    limits: &crate::resource_limits::ResourceLimits,
+) -> Result<Vec<PreservedDescription>> {
+    limits.check_metadata_size("XMP packet", packet.len(), limits.max_xmp_bytes())?;
     let packet_str = std::str::from_utf8(packet)
         .map_err(|e| Error::Metadata(format!("XMP packet is not valid UTF-8: {}", e)))?;
 
@@ -301,6 +309,8 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
     let mut description_has_unrelated = false;
     let mut owned_depth: usize = 0;
     let mut ns_stack = NsStack::new();
+    let mut xml_depth: usize = 0;
+    let mut property_count: usize = 0;
 
     loop {
         let event = reader.read_event_into(&mut buf).map_err(xmp_xml_error)?;
@@ -315,6 +325,24 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
             }
             Event::DocType(_) => {}
             Event::Start(start) => {
+                xml_depth += 1;
+                if xml_depth > limits.max_xml_depth() {
+                    return Err(Error::ContainerLimitExceeded {
+                        kind: "XML depth",
+                        count: xml_depth,
+                        limit: limits.max_xml_depth(),
+                    });
+                }
+                property_count += 1;
+                let attr_count = start.attributes().count();
+                property_count = property_count.saturating_add(attr_count);
+                if property_count > limits.max_xml_properties() {
+                    return Err(Error::ContainerLimitExceeded {
+                        kind: "XML properties",
+                        count: property_count,
+                        limit: limits.max_xml_properties(),
+                    });
+                }
                 let (resolve, _) = reader.resolver().resolve_element(start.name());
                 let local = start.local_name();
                 let local_str = local.as_ref();
@@ -429,6 +457,23 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
                 if !in_description && is_rdf {
                     continue;
                 }
+                property_count += 1;
+                let attr_count = empty.attributes().count();
+                property_count = property_count.saturating_add(attr_count);
+                if property_count > limits.max_xml_properties() {
+                    return Err(Error::ContainerLimitExceeded {
+                        kind: "XML properties",
+                        count: property_count,
+                        limit: limits.max_xml_properties(),
+                    });
+                }
+                if xml_depth + 1 > limits.max_xml_depth() {
+                    return Err(Error::ContainerLimitExceeded {
+                        kind: "XML depth",
+                        count: xml_depth + 1,
+                        limit: limits.max_xml_depth(),
+                    });
+                }
 
                 if !in_description {
                     let inherited = capture_resolver_bindings(&reader);
@@ -501,6 +546,7 @@ pub(crate) fn filter_xmp_packet(packet: &[u8]) -> Result<Vec<PreservedDescriptio
                 }
             }
             Event::End(end) => {
+                xml_depth = xml_depth.saturating_sub(1);
                 if !in_description {
                     continue;
                 }

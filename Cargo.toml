@@ -4,7 +4,7 @@ members = [".", "stegoeggo-stego", "stegoeggo-cli", "fuzz"]
 
 [package]
 name = "stegoeggo"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.87"
 description = "Rights-reservation metadata and AI-training restriction notices for images, with optional steganographic markers"
@@ -45,7 +45,7 @@ conformance = ["dep:toml", "unicode-normalization"]
 parallel = ["dep:rayon"]
 
 [dependencies]
-stegoeggo-stego = { path = "stegoeggo-stego", version = "=0.3.3", features = ["application-support"] }
+stegoeggo-stego = { path = "stegoeggo-stego", version = "=0.4.0", features = ["application-support"] }
 image = { version = "=0.25.6", default-features = false, features = ["png", "jpeg", "webp"] }
 jpeg-encoder = "0.7"
 serde = { version = "1.0", features = ["derive"] }

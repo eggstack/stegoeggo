@@ -14,6 +14,7 @@ pub fn generate_random_seed() -> u64 {
     if let Ok(seed) = try_generate_random_seed() {
         return seed;
     }
+    eprintln!("stegoeggo: getrandom failed, falling back to time-based seed (weak entropy)");
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

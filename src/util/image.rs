@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::error::{Error, Result};
 use crate::protected::constants::XORSHIFT_SEED_OFFSET;
 use digest::Digest;
@@ -14,10 +12,12 @@ const MAX_JPEG_DIMENSION: u32 = u16::MAX as u32;
 /// **WARNING:** These two PRNG implementations use different algorithms. Do NOT
 /// swap one for the other — they produce different sequences for the same seed
 /// and are each paired with their respective embed/extract code paths.
+#[allow(dead_code)]
 pub struct PixelSelectionRng {
     state: u64,
 }
 
+#[allow(dead_code)]
 impl PixelSelectionRng {
     #[inline]
     pub fn new(seed: u64) -> Self {
@@ -58,11 +58,13 @@ impl PixelSelectionRng {
 /// Returns the hex-encoded hash string. Used for cache key generation
 /// in precomputed variant lookup.
 pub fn compute_image_hash(img: &DynamicImage) -> String {
-    let rgba = img.to_rgba8();
-    let bytes = rgba.into_raw();
-
     let mut hasher = Sha256::new();
-    hasher.update(&bytes);
+    if let Some(rgba) = img.as_rgba8() {
+        hasher.update(rgba.as_raw());
+    } else {
+        let rgba = img.to_rgba8();
+        hasher.update(rgba.as_raw());
+    }
     let result = hasher.finalize();
 
     hex::encode(result)
@@ -137,9 +139,11 @@ pub fn encode_image_with_quality(
 }
 
 fn initial_capacity(width: u32, height: u32, channels: usize) -> usize {
-    (width as usize)
+    const MAX_INITIAL_CAPACITY: usize = 8 * 1024 * 1024;
+    let needed = (width as usize)
         .saturating_mul(height as usize)
-        .saturating_mul(channels)
+        .saturating_mul(channels);
+    needed.min(MAX_INITIAL_CAPACITY)
 }
 
 fn ensure_jpeg_dimensions_supported(width: u32, height: u32) -> Result<()> {

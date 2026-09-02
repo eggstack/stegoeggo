@@ -470,13 +470,17 @@ impl fmt::Display for ResourceUsage {
 pub(crate) struct OperationObserver {
     usage: ResourceUsage,
     peak_alloc: usize,
+    limits: ResourceLimits,
+    limit_error: Option<crate::Error>,
 }
 
 impl OperationObserver {
-    pub fn new(_limits: &ResourceLimits, input_bytes: usize) -> Self {
+    pub fn new(limits: &ResourceLimits, input_bytes: usize) -> Self {
         Self {
             usage: ResourceUsage::begin(input_bytes),
             peak_alloc: input_bytes,
+            limits: limits.clone(),
+            limit_error: None,
         }
     }
 
@@ -488,25 +492,95 @@ impl OperationObserver {
 
     pub fn observe_png_chunk(&mut self, bytes: usize) {
         self.usage.png_chunks_scanned += 1;
+        if self.usage.png_chunks_scanned > self.limits.max_png_chunks()
+            && self.limit_error.is_none()
+        {
+            self.limit_error = Some(crate::Error::ContainerLimitExceeded {
+                kind: "PNG chunks",
+                count: self.usage.png_chunks_scanned,
+                limit: self.limits.max_png_chunks(),
+            });
+        }
         self.usage.metadata_bytes_copied += bytes;
         self.observe_alloc(bytes);
     }
 
     pub fn observe_jpeg_segment(&mut self, bytes: usize) {
         self.usage.jpeg_segments_scanned += 1;
+        if self.usage.jpeg_segments_scanned > self.limits.max_jpeg_segments()
+            && self.limit_error.is_none()
+        {
+            self.limit_error = Some(crate::Error::ContainerLimitExceeded {
+                kind: "JPEG segments",
+                count: self.usage.jpeg_segments_scanned,
+                limit: self.limits.max_jpeg_segments(),
+            });
+        }
         self.usage.metadata_bytes_copied += bytes;
         self.observe_alloc(bytes);
     }
 
     pub fn observe_webp_chunk(&mut self, bytes: usize) {
         self.usage.webp_riff_chunks_scanned += 1;
+        if self.usage.webp_riff_chunks_scanned > self.limits.max_webp_riff_chunks()
+            && self.limit_error.is_none()
+        {
+            self.limit_error = Some(crate::Error::ContainerLimitExceeded {
+                kind: "WebP RIFF chunks",
+                count: self.usage.webp_riff_chunks_scanned,
+                limit: self.limits.max_webp_riff_chunks(),
+            });
+        }
         self.usage.metadata_bytes_copied += bytes;
         self.observe_alloc(bytes);
     }
 
     pub fn observe_metadata_field(&mut self, field_bytes: usize) {
         self.usage.metadata_fields_extracted += 1;
+        if self.usage.metadata_fields_extracted > self.limits.max_metadata_fields()
+            && self.limit_error.is_none()
+        {
+            self.limit_error = Some(crate::Error::ContainerLimitExceeded {
+                kind: "metadata fields",
+                count: self.usage.metadata_fields_extracted,
+                limit: self.limits.max_metadata_fields(),
+            });
+        }
+        if field_bytes > self.limits.max_metadata_field_bytes() && self.limit_error.is_none() {
+            self.limit_error = Some(crate::Error::MetadataLimitExceeded {
+                kind: "metadata field",
+                size: field_bytes,
+                limit: self.limits.max_metadata_field_bytes(),
+            });
+        }
         self.usage.metadata_bytes_copied += field_bytes;
+    }
+
+    pub fn check_limits(&self) -> crate::Result<()> {
+        if let Some(err) = &self.limit_error {
+            return Err(match err {
+                crate::Error::ContainerLimitExceeded { kind, count, limit } => {
+                    crate::Error::ContainerLimitExceeded {
+                        kind,
+                        count: *count,
+                        limit: *limit,
+                    }
+                }
+                crate::Error::MetadataLimitExceeded { kind, size, limit } => {
+                    crate::Error::MetadataLimitExceeded {
+                        kind,
+                        size: *size,
+                        limit: *limit,
+                    }
+                }
+                _ => crate::Error::ContainerLimitExceeded {
+                    kind: "observer",
+                    count: 0,
+                    limit: 0,
+                },
+            });
+        }
+        Ok(())
     }
 
     pub fn finish(mut self, output_bytes: usize) -> ResourceUsage {

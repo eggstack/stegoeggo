@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use image::RgbaImage;
 
 /// Compute embedding cost for each pixel in an RGBA image.
@@ -14,6 +12,7 @@ use image::RgbaImage;
 ///
 /// The cost is normalized so the minimum is 1.0 and the maximum is
 /// approximately `max_cost` (default 10.0).
+#[allow(dead_code)]
 pub fn compute_pixel_costs(img: &RgbaImage, max_cost: f32) -> Vec<f32> {
     let (w, h) = img.dimensions();
     let total = (w as usize) * (h as usize);
@@ -106,6 +105,7 @@ pub fn compute_pixel_costs(img: &RgbaImage, max_cost: f32) -> Vec<f32> {
 /// Compute embedding costs for a grayscale slice of an RGBA image.
 ///
 /// This is used for tiled embedding where only a sub-image is available.
+#[allow(dead_code)]
 pub fn compute_pixel_costs_sub(
     img: &RgbaImage,
     x0: u32,

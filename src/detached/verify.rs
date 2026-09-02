@@ -342,7 +342,7 @@ pub fn verify_detached_manifest_with_limits_and_mac(
     verify_detached_manifest_inner(image_bytes, manifest, trust, payload_mac_key, &[])
 }
 
-#[allow(unused_variables)]
+#[cfg_attr(not(feature = "signatures"), allow(unused_variables))]
 fn verify_detached_manifest_inner(
     image_bytes: &[u8],
     manifest: &DetachedManifest,

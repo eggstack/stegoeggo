@@ -409,6 +409,7 @@ fn public_lsb_framed_wrong_seed_returns_frame_error() {
         Err(StegoError::FrameNotFound)
             | Err(StegoError::MalformedFrame(_))
             | Err(StegoError::FrameChecksumMismatch)
+            | Err(StegoError::MalformedInput(_))
     ));
 }
 

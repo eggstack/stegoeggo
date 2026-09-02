@@ -261,11 +261,9 @@ impl SteganographyProtector {
             } else {
                 payload.clone()
             };
-            if Self::verify_checksum(&payload) {
-                if let Some(embedded_seed) = Self::extract_embedded_seed(&header) {
-                    if embedded_seed == seed {
-                        return true;
-                    }
+            if let Some(embedded_seed) = Self::extract_embedded_seed(&header) {
+                if embedded_seed == seed {
+                    return true;
                 }
             }
         }

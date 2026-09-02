@@ -2,7 +2,7 @@
 //!
 //! Parses JPEG file headers to extract quantization tables, Huffman tables,
 //! and other metadata needed for transcoding.
-#![allow(dead_code)] // JPEG spec reference types (color spaces, coding processes, lookup methods)
+#![allow(dead_code)]
 
 use super::{Result, TranscoderError};
 
@@ -39,6 +39,7 @@ impl ParseLimits {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum JpegCodingProcess {
     SequentialDCT,
     ProgressiveDCT,
@@ -47,6 +48,7 @@ pub enum JpegCodingProcess {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(clippy::upper_case_acronyms)]
+#[allow(dead_code)]
 pub enum JpegColorSpace {
     Grayscale,
     YCbCr,
@@ -367,12 +369,21 @@ impl JpegHeader {
             pos += 2 + segment_len;
         }
 
-        // Fix dimensions to use the largest SOF
         if largest_width > 0
             && (header.width as usize, header.height as usize) != (largest_width, largest_height)
         {
-            header.width = largest_width as u16;
-            header.height = largest_height as u16;
+            header.width = u16::try_from(largest_width).map_err(|_| {
+                TranscoderError::InvalidFormat(format!(
+                    "SOF width {} exceeds u16::MAX",
+                    largest_width
+                ))
+            })?;
+            header.height = u16::try_from(largest_height).map_err(|_| {
+                TranscoderError::InvalidFormat(format!(
+                    "SOF height {} exceeds u16::MAX",
+                    largest_height
+                ))
+            })?;
         }
 
         Ok(header)
@@ -583,8 +594,12 @@ impl JpegHeader {
 
         let mut available: i64 = 1;
         for &count in counts {
-            available *= 2;
-            available -= count as i64;
+            available = available
+                .checked_mul(2)
+                .ok_or_else(|| TranscoderError::InvalidFormat("DHT code space overflow".into()))?;
+            available = available
+                .checked_sub(count as i64)
+                .ok_or_else(|| TranscoderError::InvalidFormat("DHT code space underflow".into()))?;
             if available < 0 {
                 return Err(TranscoderError::InvalidFormat(format!(
                     "DHT table {} (class {}): code space oversubscribed",
