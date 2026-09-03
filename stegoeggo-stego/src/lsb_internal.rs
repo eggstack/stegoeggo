@@ -363,6 +363,16 @@ pub fn embed_lsb_v2_in_place(
     seed: u64,
     redundancy: usize,
 ) -> InPlaceEmbedReport {
+    if !(1..=10).contains(&redundancy) {
+        let (width, height) = image.dimensions();
+        return InPlaceEmbedReport {
+            embedded: false,
+            payload_bytes: payload.len(),
+            required_capacity: usize::MAX,
+            available_capacity: lsb_available_slots(width, height).unwrap_or(0),
+            actual_redundancy: redundancy,
+        };
+    }
     let (width, height) = image.dimensions();
     let Some(available) = lsb_available_slots(width, height) else {
         return InPlaceEmbedReport {
@@ -1031,6 +1041,16 @@ mod tests {
     #[test]
     fn lsb_available_slots_rejects_overflow() {
         assert_eq!(lsb_available_slots(u32::MAX, u32::MAX), None);
+    }
+
+    #[test]
+    fn embed_v2_rejects_out_of_range_redundancy() {
+        let mut img = uniform_image(16, 16, 128);
+        let report = embed_lsb_v2_in_place(&mut img, &[0xA5], 42, 0);
+        assert!(!report.embedded);
+        let mut img = uniform_image(16, 16, 128);
+        let report = embed_lsb_v2_in_place(&mut img, &[0xA5], 42, 11);
+        assert!(!report.embedded);
     }
 
     fn channel_value(img: &RgbaImage, x: u32, y: u32, channel: usize) -> u8 {

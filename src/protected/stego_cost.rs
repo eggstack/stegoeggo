@@ -15,7 +15,9 @@ use image::RgbaImage;
 #[allow(dead_code)]
 pub fn compute_pixel_costs(img: &RgbaImage, max_cost: f32) -> Vec<f32> {
     let (w, h) = img.dimensions();
-    let total = (w as usize) * (h as usize);
+    let Some(total) = (w as usize).checked_mul(h as usize) else {
+        return Vec::new();
+    };
     let mut costs = vec![0.0f32; total];
 
     // Convert to grayscale for cost computation
@@ -114,7 +116,19 @@ pub fn compute_pixel_costs_sub(
     h: u32,
     max_cost: f32,
 ) -> Vec<f32> {
-    let total = (w as usize) * (h as usize);
+    let Some(total) = (w as usize).checked_mul(h as usize) else {
+        return Vec::new();
+    };
+    let (img_w, img_h) = img.dimensions();
+    let Some(x1) = x0.checked_add(w) else {
+        return Vec::new();
+    };
+    let Some(y1) = y0.checked_add(h) else {
+        return Vec::new();
+    };
+    if x1 > img_w || y1 > img_h {
+        return Vec::new();
+    }
     let mut costs = vec![0.0f32; total];
 
     // Extract grayscale sub-image
@@ -251,6 +265,13 @@ mod tests {
         let img = make_textured_image(10, 8);
         let costs = compute_pixel_costs(&img, 10.0);
         assert_eq!(costs.len(), 80);
+    }
+
+    #[test]
+    fn sub_cost_rejects_out_of_bounds_region() {
+        let img = make_textured_image(32, 32);
+        assert!(compute_pixel_costs_sub(&img, 24, 24, 16, 16, 10.0).is_empty());
+        assert!(compute_pixel_costs_sub(&img, 0, 0, 33, 32, 10.0).is_empty());
     }
 
     #[test]

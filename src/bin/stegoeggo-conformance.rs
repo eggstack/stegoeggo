@@ -547,11 +547,13 @@ fn extract_xmp_from_webp(bytes: &[u8]) -> Option<String> {
                 bytes[pos + 6],
                 bytes[pos + 7],
             ]) as usize;
-            if pos + 8 + size <= bytes.len() {
-                let xmp_data = &bytes[pos + 8..pos + 8 + size];
-                let needle = b"<?xpacket begin=";
-                if let Some(start) = xmp_data.windows(needle.len()).position(|w| w == needle) {
-                    return String::from_utf8(xmp_data[start..].to_vec()).ok();
+            if let Some(end) = pos.checked_add(8).and_then(|v| v.checked_add(size)) {
+                if end <= bytes.len() {
+                    let xmp_data = &bytes[pos + 8..end];
+                    let needle = b"<?xpacket begin=";
+                    if let Some(start) = xmp_data.windows(needle.len()).position(|w| w == needle) {
+                        return String::from_utf8(xmp_data[start..].to_vec()).ok();
+                    }
                 }
             }
         }
@@ -567,8 +569,14 @@ fn extract_xmp_from_png(bytes: &[u8]) -> Option<String> {
             u32::from_be_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
                 as usize;
         let chunk_type = &bytes[pos + 4..pos + 8];
+        let Some(data_end) = pos.checked_add(8).and_then(|v| v.checked_add(length)) else {
+            break;
+        };
+        if data_end > bytes.len() {
+            break;
+        }
         if chunk_type == b"tEXt" || chunk_type == b"iTXt" {
-            let data = &bytes[pos + 8..pos + 8 + length];
+            let data = &bytes[pos + 8..data_end];
             if let Some(null_pos) = data.iter().position(|&b| b == 0) {
                 let key = &data[..null_pos];
                 if key == b"XML:com.adobe.xmp" {
@@ -581,7 +589,13 @@ fn extract_xmp_from_png(bytes: &[u8]) -> Option<String> {
                 }
             }
         }
-        pos += 12 + length;
+        let Some(next) = pos.checked_add(12).and_then(|v| v.checked_add(length)) else {
+            break;
+        };
+        if next <= pos {
+            break;
+        }
+        pos = next;
     }
     None
 }
@@ -598,14 +612,23 @@ fn extract_xmp_from_jpeg(bytes: &[u8]) -> Option<String> {
             continue;
         }
         let length = u16::from_be_bytes([bytes[pos + 2], bytes[pos + 3]]) as usize;
+        if length < 2 {
+            break;
+        }
+        let Some(end) = pos.checked_add(2).and_then(|v| v.checked_add(length)) else {
+            break;
+        };
+        if end > bytes.len() || end <= pos {
+            break;
+        }
         if marker == 0xE1 {
-            let data = &bytes[pos + 4..pos + 2 + length];
+            let data = &bytes[pos + 4..end];
             if data.starts_with(b"http://ns.adobe.com/xap/1.0/") {
-                let xmp_bytes = &data[29..];
+                let xmp_bytes = data.get(29..)?;
                 return String::from_utf8(xmp_bytes.to_vec()).ok();
             }
         }
-        pos += 2 + length;
+        pos = end;
     }
     None
 }
@@ -1863,5 +1886,27 @@ fn next_option_value(args: &[String], index: &mut usize, option: &str) -> String
             eprintln!("Error: {} requires a value", option);
             std::process::exit(EXIT_CONFIG);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn png_rejects_huge_chunk_length_without_panic() {
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        bytes.extend_from_slice(&u32::MAX.to_be_bytes());
+        bytes.extend_from_slice(b"tEXt");
+        bytes.extend_from_slice(&[0u8; 8]);
+        assert_eq!(extract_xmp_from_png(&bytes), None);
+    }
+
+    #[test]
+    fn jpeg_rejects_truncated_segment_without_panic() {
+        let bytes = [0xFF, 0xD8, 0xFF, 0xE1, 0xFF, 0xFF, 0x00, 0x00];
+        assert_eq!(extract_xmp_from_jpeg(&bytes), None);
+        let bytes = [0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x01];
+        assert_eq!(extract_xmp_from_jpeg(&bytes), None);
     }
 }

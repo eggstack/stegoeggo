@@ -119,7 +119,7 @@ impl SteganographyProtector {
         buf.push(auth_algo as u8);
         buf.push(auth_tag_len);
         buf.push(0);
-        debug_assert!(
+        assert!(
             emission.extensions.is_empty() && emission.key_id.is_none(),
             "V3 writer does not emit extensions or key IDs; flags must not advertise them"
         );

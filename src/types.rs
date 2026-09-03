@@ -1591,6 +1591,14 @@ impl ProtectionConfig {
 /// Context for protection operations containing intensity and configuration.
 ///
 /// Cheap to clone (heavy fields are in `Arc<ProtectionConfig>`).
+///
+/// Serialization loses the MAC key, legal metadata, resource limits, and
+/// timestamp override (`#[serde(skip)]`; keys must not serialize). The
+/// serialized form carries a `_config_dropped_warning` field when config was
+/// present. After deserialization re-attach via `with_mac_key()`,
+/// `with_legal_metadata()`, `with_config()`, or `with_resource_limits()`;
+/// check `mac_key().is_none()` when authentication matters, since use without
+/// a key falls back to CRC32 with a `MissingMacKey` warning.
 #[allow(deprecated)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProtectionContext {
@@ -2239,7 +2247,9 @@ impl ProtectionContext {
     /// Get the effective stego redundancy.
     ///
     /// When the user has explicitly set `stego_redundancy` via
-    /// `with_stego_redundancy()`, that value is returned. Otherwise,
+    /// `with_stego_redundancy()`, that value is returned clamped to `1..=10`
+    /// as defense-in-depth (out-of-range values are still rejected by
+    /// `validate()` / `resolve_request()`). Otherwise,
     /// the redundancy is derived from the current `intensity`:
     /// - `intensity < 0.3` → 1 (minimal embedding)
     /// - `intensity < 0.7` → 2 (standard)
@@ -2262,7 +2272,7 @@ impl ProtectionContext {
 
     pub(crate) fn effective_redundancy(&self) -> usize {
         if let Some(r) = self.stego_redundancy {
-            return r;
+            return r.clamp(1, 10);
         }
         let i = self.intensity;
         if i < 0.3 {
@@ -4163,7 +4173,9 @@ impl ResolvedProtectionPlan {
     ///
     /// When the caller supplied an explicit `stego_redundancy` via
     /// [`ProtectionRequest::with_stego_redundancy`] / the
-    /// [`ProcessingOptions::stego_redundancy`] field, that value is used.
+    /// [`ProcessingOptions::stego_redundancy`] field, that value is used
+    /// clamped to `1..=10` as defense-in-depth (plans are validated at
+    /// resolution time, so out-of-range values are rejected before this).
     /// Otherwise redundancy is derived from [`Self::intensity`] using the
     /// same thresholds as the legacy `ProtectionContext::effective_redundancy`:
     /// - `intensity < 0.3` → 1
@@ -4172,7 +4184,7 @@ impl ResolvedProtectionPlan {
     #[must_use]
     pub fn effective_redundancy(&self) -> usize {
         if let Some(r) = self.processing.stego_redundancy {
-            return r;
+            return r.clamp(1, 10);
         }
         let i = self.intensity;
         if i < 0.3 {
@@ -4445,6 +4457,16 @@ mod tests {
             .with_jpeg_quality(0);
         assert_eq!(ctx.stego_redundancy_field(), Some(0));
         assert_eq!(ctx.jpeg_quality(), 0);
+        assert!(ctx.validate().is_err());
+    }
+
+    #[test]
+    fn effective_redundancy_clamps_out_of_range_values() {
+        let ctx = ProtectionContext::new(0.5, 42).with_stego_redundancy(0);
+        assert_eq!(ctx.stego_redundancy(), 1);
+        assert!(ctx.validate().is_err());
+        let ctx = ProtectionContext::new(0.5, 42).with_stego_redundancy(99);
+        assert_eq!(ctx.stego_redundancy(), 10);
         assert!(ctx.validate().is_err());
     }
 
