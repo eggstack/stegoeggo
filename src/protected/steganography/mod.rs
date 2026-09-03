@@ -1221,9 +1221,7 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = protector
-            .embed_lsb_tiled(&img, &payload, 42, 64)
-            .into_inner();
+        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
         assert_eq!(embedded.dimensions(), img.dimensions());
 
         let recovered = protector
@@ -1238,9 +1236,7 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = protector
-            .embed_lsb_tiled(&img, &payload, 42, 64)
-            .into_inner();
+        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
         // Crop to the second tile (aligned offset, x0=64, y0=0).
         let cropped = SteganographyProtector::crop_rgba(&embedded, 64, 0, 64, 64);
 
@@ -1256,9 +1252,7 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = protector
-            .embed_lsb_tiled(&img, &payload, 42, 64)
-            .into_inner();
+        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
         // Crop with a 32-px offset (a 32 is a half-tile, NOT on a 64-px tile
         // boundary). The 96x96 window fully contains tile (1, 1) at original
         // (64, 64)-(127, 127). The embedded tile must still be recoverable
@@ -1278,9 +1272,7 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = protector
-            .embed_lsb_tiled(&img, &payload, 42, 64)
-            .into_inner();
+        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
         // Crop a region smaller than the full image but large enough to
         // contain tile (0, 0) entirely. Tile (0, 0) is at original
         // (0, 0)-(63, 63) and is fully captured by this crop.
@@ -1299,9 +1291,7 @@ mod tests {
         let ctx = ctx_with_mac(42, b"my-key");
         let payload = protector.generate_payload_from_ctx(&ctx);
 
-        let embedded = protector
-            .embed_lsb_tiled(&img, &payload, 42, 64)
-            .into_inner();
+        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
         // Crop with a 32-px offset; the 96x96 window fully contains tile
         // (1, 1) at original (64, 64)-(127, 127).
         let cropped = SteganographyProtector::crop_rgba(&embedded, 32, 32, 96, 96);
@@ -1322,9 +1312,7 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = protector
-            .embed_lsb_tiled(&img, &payload, 42, 64)
-            .into_inner();
+        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
 
         // max_origins = 1 should still find a payload from a no-crop case
         // because the (0, 0) origin is in the deterministic scan order.
@@ -1336,14 +1324,13 @@ mod tests {
 
     #[test]
     fn embed_lsb_tiled_zero_tile_size_falls_back() {
-        let protector = SteganographyProtector::new();
         let img = tileable_test_image();
         let payload = real_payload(42);
 
         // tile_size = 0 returns the image unchanged. This is the
         // "tiling disabled" sentinel — the caller is expected to route
         // through the non-tiled path instead.
-        let result = protector.embed_lsb_tiled(&img, &payload, 42, 0);
+        let result = carrier_support::tiled_lsb_embed(&img, &payload, 42, 0);
         assert!(result.is_skipped());
         assert_eq!(*result.output(), img);
     }
@@ -1386,9 +1373,7 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = protector
-            .embed_lsb_tiled(&img, &payload, 42, 64)
-            .into_inner();
+        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
         // Crop by 4 pixels (not aligned with 64px tile boundary) but large
         // enough that the window still fully contains tile (1, 1) at
         // original (64, 64)-(127, 127). The extraction scans grid
@@ -1521,6 +1506,40 @@ mod tests {
             recovered.is_some(),
             "max_origins=1 should still find payload at first tile"
         );
+    }
+
+    #[test]
+    fn plan078_standard_jpeg_verification_uses_single_search_context() {
+        let protector = SteganographyProtector::new();
+        let jpeg_bytes = tileable_test_jpeg();
+        let ctx = ProtectionContext::new(0.5, 42);
+        let protected = protector
+            .apply_dct_stego_bytes(&jpeg_bytes, &ctx)
+            .unwrap()
+            .into_inner();
+        SteganographyProtector::reset_jpeg_search_context_creations();
+        match protector.verify_extract_dct_with_seed(&protected, 42, &[]) {
+            CandidateOutcome::Valid(_) => {}
+            other => panic!("standard JPEG verification should succeed: {other:?}"),
+        }
+        assert_eq!(SteganographyProtector::jpeg_search_context_creations(), 1);
+    }
+
+    #[test]
+    fn plan078_tiled_fallback_jpeg_verification_uses_single_search_context() {
+        let protector = SteganographyProtector::new();
+        let jpeg_bytes = tileable_test_jpeg();
+        let ctx = ProtectionContext::new(0.5, 42).with_tile_size(64);
+        let protected = protector
+            .apply_dct_stego_bytes_tiled(&jpeg_bytes, &ctx, 64)
+            .unwrap()
+            .into_inner();
+        SteganographyProtector::reset_jpeg_search_context_creations();
+        match protector.verify_extract_dct_with_seed(&protected, 42, &[]) {
+            CandidateOutcome::Valid(_) => {}
+            other => panic!("tiled-fallback JPEG verification should succeed: {other:?}"),
+        }
+        assert_eq!(SteganographyProtector::jpeg_search_context_creations(), 1);
     }
 
     #[test]

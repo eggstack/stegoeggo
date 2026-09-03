@@ -526,31 +526,73 @@ pub fn embed_lsb_tiled(
     master_seed: u64,
     tile_size: u32,
 ) -> EmbedOutcome<RgbaImage> {
-    let (width, height) = img.dimensions();
+    let mut output = img.clone();
+    let report = embed_lsb_tiled_in_place(&mut output, payload, master_seed, tile_size);
+    if report.embedded {
+        EmbedOutcome::Embedded {
+            output,
+            payload_bytes: report.payload_bytes,
+            required_capacity: report.required_capacity,
+            available_capacity: report.available_capacity,
+            path: crate::types::EmbedPath::LsbTiled,
+        }
+    } else {
+        EmbedOutcome::SkippedCapacity {
+            output,
+            payload_bytes: report.payload_bytes,
+            required_capacity: report.required_capacity,
+            available_capacity: report.available_capacity,
+            path: crate::types::EmbedPath::LsbTiled,
+        }
+    }
+}
+
+struct TiledEmbedPlan {
+    x0: u32,
+    y0: u32,
+    sub_w: u32,
+    sub_h: u32,
+    seed_for_embed: u64,
+    tile_available: usize,
+}
+
+struct TiledTileScan {
+    tile_required: usize,
+    tile_available: usize,
+    embed: Option<TiledEmbedPlan>,
+}
+
+pub fn embed_lsb_tiled_in_place(
+    image: &mut RgbaImage,
+    payload: &[u8],
+    master_seed: u64,
+    tile_size: u32,
+) -> InPlaceEmbedReport {
+    const TILED_REDUNDANCY: usize = 1;
+    let (width, height) = image.dimensions();
     if tile_size == 0 || width < tile_size || height < tile_size {
-        return EmbedOutcome::SkippedCapacity {
-            output: img.clone(),
+        return InPlaceEmbedReport {
+            embedded: false,
             payload_bytes: payload.len(),
             required_capacity: 0,
             available_capacity: 0,
-            path: crate::types::EmbedPath::LsbTiled,
+            actual_redundancy: TILED_REDUNDANCY,
         };
     }
 
-    let mut output = img.clone();
-    let mut any_embedded = false;
-    let mut total_required = 0usize;
-    let mut total_available = 0usize;
-
     let Some(bit_len) = payload.len().checked_mul(8) else {
-        return EmbedOutcome::SkippedCapacity {
-            output,
+        return InPlaceEmbedReport {
+            embedded: false,
             payload_bytes: payload.len(),
             required_capacity: usize::MAX,
             available_capacity: 0,
-            path: crate::types::EmbedPath::LsbTiled,
+            actual_redundancy: TILED_REDUNDANCY,
         };
     };
+
+    let mut scans = Vec::new();
+    let mut total_required = 0usize;
+    let mut total_available = 0usize;
 
     let mut tile_y: u32 = 0;
     while tile_y * tile_size < height {
@@ -571,67 +613,29 @@ pub fn embed_lsb_tiled(
 
             let local_seed = tile_seed(master_seed, tile_x, tile_y);
             let Some(tile_available) = lsb_available_slots(sub_w, sub_h) else {
-                return EmbedOutcome::SkippedCapacity {
-                    output,
+                return InPlaceEmbedReport {
+                    embedded: false,
                     payload_bytes: payload.len(),
                     required_capacity: usize::MAX,
                     available_capacity: total_available,
-                    path: crate::types::EmbedPath::LsbTiled,
+                    actual_redundancy: TILED_REDUNDANCY,
                 };
             };
-            let tile_required = lsb_required_capacity_v2(bit_len, 1);
+            let tile_required = lsb_required_capacity_v2(bit_len, TILED_REDUNDANCY);
 
-            if tile_available >= tile_required && bit_len > 0 {
-                any_embedded = true;
-                let seed_for_embed = local_seed.wrapping_mul(crate::constants::STEGO_OFFSET_SEED_1);
-                let replicas_per_bit = STEGO_SPREAD_FACTOR;
-                for i in 0..bit_len {
-                    let bit = payload_bit(payload, i);
-                    for s in 0..replicas_per_bit {
-                        let Some(logical) = i
-                            .checked_mul(replicas_per_bit)
-                            .and_then(|v| v.checked_add(s))
-                        else {
-                            return EmbedOutcome::SkippedCapacity {
-                                output,
-                                payload_bytes: payload.len(),
-                                required_capacity: total_required.saturating_add(tile_required),
-                                available_capacity: total_available.saturating_add(tile_available),
-                                path: crate::types::EmbedPath::LsbTiled,
-                            };
-                        };
-                        let Some(slot) =
-                            stego_permutation_v2(logical, tile_available, seed_for_embed)
-                        else {
-                            return EmbedOutcome::SkippedCapacity {
-                                output,
-                                payload_bytes: payload.len(),
-                                required_capacity: total_required.saturating_add(tile_required),
-                                available_capacity: total_available.saturating_add(tile_available),
-                                path: crate::types::EmbedPath::LsbTiled,
-                            };
-                        };
-                        let Some((pixel_index, slot_channel)) =
-                            carrier_v2_slot_to_pixel_channel(slot, sub_w, sub_h)
-                        else {
-                            return EmbedOutcome::SkippedCapacity {
-                                output,
-                                payload_bytes: payload.len(),
-                                required_capacity: total_required.saturating_add(tile_required),
-                                available_capacity: total_available.saturating_add(tile_available),
-                                path: crate::types::EmbedPath::LsbTiled,
-                            };
-                        };
-                        let lx = pixel_index as u32 % sub_w;
-                        let ly = pixel_index as u32 / sub_w;
-                        let fx = x0 + lx;
-                        let fy = y0 + ly;
-                        if fx < width && fy < height {
-                            embed_bit_in_pixel(&mut output, fx, fy, slot_channel, bit);
-                        }
-                    }
-                }
-            }
+            let embed = (tile_available >= tile_required && bit_len > 0).then(|| TiledEmbedPlan {
+                x0,
+                y0,
+                sub_w,
+                sub_h,
+                seed_for_embed: local_seed.wrapping_mul(crate::constants::STEGO_OFFSET_SEED_1),
+                tile_available,
+            });
+            scans.push(TiledTileScan {
+                tile_required,
+                tile_available,
+                embed,
+            });
 
             total_required = total_required.saturating_add(tile_required);
             total_available = total_available.saturating_add(tile_available);
@@ -640,22 +644,79 @@ pub fn embed_lsb_tiled(
         tile_y += 1;
     }
 
-    if any_embedded {
-        EmbedOutcome::Embedded {
-            output,
+    if scans.iter().all(|scan| scan.embed.is_none()) {
+        return InPlaceEmbedReport {
+            embedded: false,
             payload_bytes: payload.len(),
             required_capacity: total_required,
             available_capacity: total_available,
-            path: crate::types::EmbedPath::LsbTiled,
+            actual_redundancy: TILED_REDUNDANCY,
+        };
+    }
+
+    let replicas_per_bit = STEGO_SPREAD_FACTOR;
+    let mut run_required = 0usize;
+    let mut run_available = 0usize;
+    for scan in &scans {
+        run_required = run_required.saturating_add(scan.tile_required);
+        run_available = run_available.saturating_add(scan.tile_available);
+        let Some(plan) = &scan.embed else {
+            continue;
+        };
+        for i in 0..bit_len {
+            let bit = payload_bit(payload, i);
+            for s in 0..replicas_per_bit {
+                let Some(logical) = i
+                    .checked_mul(replicas_per_bit)
+                    .and_then(|v| v.checked_add(s))
+                else {
+                    return InPlaceEmbedReport {
+                        embedded: false,
+                        payload_bytes: payload.len(),
+                        required_capacity: run_required,
+                        available_capacity: run_available,
+                        actual_redundancy: TILED_REDUNDANCY,
+                    };
+                };
+                let Some(slot) =
+                    stego_permutation_v2(logical, plan.tile_available, plan.seed_for_embed)
+                else {
+                    return InPlaceEmbedReport {
+                        embedded: false,
+                        payload_bytes: payload.len(),
+                        required_capacity: run_required,
+                        available_capacity: run_available,
+                        actual_redundancy: TILED_REDUNDANCY,
+                    };
+                };
+                let Some((pixel_index, slot_channel)) =
+                    carrier_v2_slot_to_pixel_channel(slot, plan.sub_w, plan.sub_h)
+                else {
+                    return InPlaceEmbedReport {
+                        embedded: false,
+                        payload_bytes: payload.len(),
+                        required_capacity: run_required,
+                        available_capacity: run_available,
+                        actual_redundancy: TILED_REDUNDANCY,
+                    };
+                };
+                let lx = pixel_index as u32 % plan.sub_w;
+                let ly = pixel_index as u32 / plan.sub_w;
+                let fx = plan.x0 + lx;
+                let fy = plan.y0 + ly;
+                if fx < width && fy < height {
+                    embed_bit_in_pixel(image, fx, fy, slot_channel, bit);
+                }
+            }
         }
-    } else {
-        EmbedOutcome::SkippedCapacity {
-            output,
-            payload_bytes: payload.len(),
-            required_capacity: total_required,
-            available_capacity: total_available,
-            path: crate::types::EmbedPath::LsbTiled,
-        }
+    }
+
+    InPlaceEmbedReport {
+        embedded: true,
+        payload_bytes: payload.len(),
+        required_capacity: total_required,
+        available_capacity: total_available,
+        actual_redundancy: TILED_REDUNDANCY,
     }
 }
 
@@ -1152,6 +1213,56 @@ mod tests {
         let recovered = extract_lsb_v2(&sub, payload.len() * 8, seed, 1)
             .expect("full tile should carry the payload");
         assert_eq!(recovered, payload);
+    }
+
+    #[test]
+    fn tiled_in_place_matches_cloning_embed() {
+        let img = uniform_image(256, 256, 0x7F);
+        let payload = vec![0xA5; 36];
+        let cloned = embed_lsb_tiled(&img, &payload, 42, 64);
+        let mut inplace = img.clone();
+        let report = embed_lsb_tiled_in_place(&mut inplace, &payload, 42, 64);
+        assert!(cloned.is_embedded());
+        assert!(report.embedded);
+        assert_eq!(inplace, cloned.into_inner());
+        assert_eq!(report.payload_bytes, payload.len());
+    }
+
+    #[test]
+    fn tiled_in_place_report_matches_cloning_capacities() {
+        let img = uniform_image(100, 100, 128);
+        let payload = b"tile";
+        let cloned = embed_lsb_tiled(&img, payload, 42, 64);
+        let mut inplace = img.clone();
+        let report = embed_lsb_tiled_in_place(&mut inplace, payload, 42, 64);
+        let EmbedOutcome::Embedded {
+            required_capacity,
+            available_capacity,
+            ..
+        } = cloned
+        else {
+            panic!("full 64x64 tile should embed");
+        };
+        assert_eq!(report.required_capacity, required_capacity);
+        assert_eq!(report.available_capacity, available_capacity);
+        assert_eq!(report.actual_redundancy, 1);
+    }
+
+    #[test]
+    fn tiled_in_place_leaves_carrier_unchanged_on_insufficient_capacity() {
+        let payload = vec![0xA5; 36];
+        let tiny = uniform_image(40, 40, 0x7F);
+        let mut untouched = tiny.clone();
+        let report = embed_lsb_tiled_in_place(&mut untouched, &payload, 42, 64);
+        assert!(!report.embedded);
+        assert_eq!(untouched, tiny);
+
+        let img = uniform_image(128, 128, 0x7F);
+        let oversized = vec![0xA5; 10_000];
+        let mut intact = img.clone();
+        let skipped = embed_lsb_tiled_in_place(&mut intact, &oversized, 42, 64);
+        assert!(!skipped.embedded);
+        assert_eq!(intact, img);
     }
 
     #[test]

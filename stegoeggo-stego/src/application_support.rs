@@ -13,8 +13,28 @@ thread_local! {
 }
 
 #[cfg(test)]
+thread_local! {
+    static TILED_EMBED_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
 fn record_tiled_search_decode() {
     TILED_SEARCH_DECODE_COUNT.with(|count| count.set(count.get() + 1));
+}
+
+#[cfg(test)]
+fn record_tiled_embed_decode() {
+    TILED_EMBED_DECODE_COUNT.with(|count| count.set(count.get() + 1));
+}
+
+#[cfg(test)]
+fn reset_tiled_embed_decode_count() {
+    TILED_EMBED_DECODE_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+fn tiled_embed_decode_count() -> usize {
+    TILED_EMBED_DECODE_COUNT.with(Cell::get)
 }
 
 #[cfg(test)]
@@ -86,6 +106,15 @@ pub fn tiled_lsb_embed(
     lsb_internal::embed_lsb_tiled(image, payload, seed, tile_size)
 }
 
+pub fn tiled_lsb_embed_in_place(
+    image: &mut RgbaImage,
+    payload: &[u8],
+    seed: u64,
+    tile_size: u32,
+) -> crate::types::InPlaceEmbedReport {
+    lsb_internal::embed_lsb_tiled_in_place(image, payload, seed, tile_size)
+}
+
 pub fn seed_fallback_embed(image: &mut RgbaImage, seed: u64) {
     lsb_internal::embed_seed_lsb_fallback(image, seed);
 }
@@ -134,16 +163,6 @@ pub fn jpeg_embed(
     }
 }
 
-pub fn jpeg_extract(
-    jpeg_bytes: &[u8],
-    payload_len: usize,
-    seed: u64,
-    redundancy: usize,
-) -> StegoResult<Vec<u8>> {
-    let config = jpeg::JpegConfig::try_new(seed, redundancy)?;
-    jpeg::extract(jpeg_bytes, payload_len, &config, redundancy)
-}
-
 pub fn jpeg_embed_tiled(
     jpeg_bytes: &[u8],
     payload: &[u8],
@@ -156,6 +175,8 @@ pub fn jpeg_embed_tiled(
         ));
     }
     jpeg::probe_support(jpeg_bytes)?;
+    #[cfg(test)]
+    record_tiled_embed_decode();
     let (header, mut coefficients) =
         crate::jpeg_transcoder::JpegTranscoder::decode_coefficients(jpeg_bytes)
             .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
@@ -235,9 +256,33 @@ pub fn jpeg_embed_tiled(
         });
     };
 
-    jpeg_tiled_outcome_after_verification(output, payload, tile_size, tile_x, tile_y, local_seed)
+    if !jpeg_tiled_payload_matches_decoded(
+        &header,
+        &coefficients,
+        payload,
+        tile_size,
+        tile_x,
+        tile_y,
+        local_seed,
+    ) {
+        return Ok(EmbedOutcome::SkippedCapacity {
+            output,
+            payload_bytes: payload.len(),
+            required_capacity: payload_bits,
+            available_capacity: 0,
+            path: EmbedPath::DctF5Tiled,
+        });
+    }
+    Ok(EmbedOutcome::Embedded {
+        output,
+        payload_bytes: payload.len(),
+        required_capacity: payload_bits,
+        available_capacity: payload_bits,
+        path: EmbedPath::DctF5Tiled,
+    })
 }
 
+#[cfg(test)]
 fn jpeg_tiled_outcome_after_verification(
     output: Vec<u8>,
     payload: &[u8],
@@ -265,6 +310,33 @@ fn jpeg_tiled_outcome_after_verification(
     })
 }
 
+fn jpeg_tiled_payload_matches_decoded(
+    header: &crate::jpeg_transcoder::JpegHeader,
+    coefficients: &crate::jpeg_transcoder::Coefficients,
+    payload: &[u8],
+    tile_size: u32,
+    tile_x: u32,
+    tile_y: u32,
+    local_seed: u64,
+) -> bool {
+    let tile_blocks = crate::jpeg_transcoder::DctStegoF5::tile_block_set(
+        header,
+        coefficients,
+        tile_x,
+        tile_y,
+        tile_size,
+    );
+    let payload_bits = payload.len().saturating_mul(8);
+    let bits = crate::jpeg_transcoder::DctStegoF5::with_redundancy(1).extract_f5_from_blocks(
+        coefficients,
+        payload_bits,
+        local_seed,
+        &tile_blocks,
+    );
+    bits.len() >= payload_bits && lsb_internal::bits_to_bytes(&bits) == payload
+}
+
+#[cfg(test)]
 fn jpeg_tiled_payload_matches(
     jpeg_bytes: &[u8],
     payload: &[u8],
@@ -273,24 +345,20 @@ fn jpeg_tiled_payload_matches(
     tile_y: u32,
     local_seed: u64,
 ) -> StegoResult<bool> {
+    #[cfg(test)]
+    record_tiled_embed_decode();
     let (header, coefficients) =
         crate::jpeg_transcoder::JpegTranscoder::decode_coefficients(jpeg_bytes)
             .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
-    let tile_blocks = crate::jpeg_transcoder::DctStegoF5::tile_block_set(
+    Ok(jpeg_tiled_payload_matches_decoded(
         &header,
         &coefficients,
+        payload,
+        tile_size,
         tile_x,
         tile_y,
-        tile_size,
-    );
-    let payload_bits = payload.len().saturating_mul(8);
-    let bits = crate::jpeg_transcoder::DctStegoF5::with_redundancy(1).extract_f5_from_blocks(
-        &coefficients,
-        payload_bits,
         local_seed,
-        &tile_blocks,
-    );
-    Ok(bits.len() >= payload_bits && lsb_internal::bits_to_bytes(&bits) == payload)
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -321,23 +389,100 @@ fn decode_tiled_search_coefficients(
     crate::jpeg_transcoder::JpegTranscoder::decode_coefficients(jpeg_bytes)
 }
 
-impl TiledJpegSearch {
-    pub fn new(jpeg_bytes: &[u8], tile_size: u32) -> Option<Self> {
-        if tile_size == 0 {
-            return None;
-        }
-        let (header, coefficients) = decode_tiled_search_coefficients(jpeg_bytes).ok()?;
-        let (tiles_x, tiles_y) = tile_geometry(&header, tile_size)?;
-        Some(Self {
+pub struct JpegSearchContext {
+    decoded: crate::jpeg::DecodedJpegCarrier,
+}
+
+impl JpegSearchContext {
+    pub fn new(jpeg_bytes: &[u8]) -> StegoResult<Self> {
+        Ok(Self {
+            decoded: crate::jpeg::decode_supported_carrier(jpeg_bytes)?,
+        })
+    }
+
+    pub fn extract(
+        &self,
+        payload_len: usize,
+        seed: u64,
+        redundancy: usize,
+    ) -> StegoResult<Vec<u8>> {
+        self.decoded.extract_raw(payload_len, seed, redundancy)
+    }
+
+    pub fn capacity(
+        &self,
+        payload_len: usize,
+        redundancy: usize,
+    ) -> StegoResult<crate::CapacityReport> {
+        self.decoded.capacity_for(payload_len, redundancy)
+    }
+
+    pub fn available_capacity(&self) -> usize {
+        self.decoded.available_capacity()
+    }
+
+    pub fn tiled_prefix_candidates(
+        &self,
+        master_seed: u64,
+        tile_size: u32,
+        max_origins: u32,
+        prefix_bits: usize,
+    ) -> Vec<(TiledJpegCandidateKey, Vec<u8>)> {
+        let Some(grid) = TiledGrid::for_decoded(&self.decoded, tile_size) else {
+            return Vec::new();
+        };
+        grid.prefix_candidates(master_seed, max_origins, prefix_bits)
+    }
+
+    pub fn tiled_extract_candidate(
+        &self,
+        master_seed: u64,
+        tile_size: u32,
+        candidate: TiledJpegCandidateKey,
+        payload_bits: usize,
+    ) -> Option<Vec<u8>> {
+        let grid = TiledGrid::for_decoded(&self.decoded, tile_size)?;
+        grid.extract_candidate(master_seed, candidate, payload_bits)
+    }
+}
+
+struct TiledGrid<'a> {
+    header: &'a crate::jpeg_transcoder::JpegHeader,
+    coefficients: &'a crate::jpeg_transcoder::Coefficients,
+    tile_size: u32,
+    tiles_x: u32,
+    tiles_y: u32,
+}
+
+impl<'a> TiledGrid<'a> {
+    fn new(
+        header: &'a crate::jpeg_transcoder::JpegHeader,
+        coefficients: &'a crate::jpeg_transcoder::Coefficients,
+        tile_size: u32,
+        tiles_x: u32,
+        tiles_y: u32,
+    ) -> Self {
+        Self {
             header,
             coefficients,
             tile_size,
             tiles_x,
             tiles_y,
-        })
+        }
     }
 
-    pub fn prefix_candidates(
+    fn for_decoded(decoded: &'a crate::jpeg::DecodedJpegCarrier, tile_size: u32) -> Option<Self> {
+        let (tiles_x, tiles_y) = tile_geometry(decoded.header(), tile_size)?;
+        Some(Self::new(
+            decoded.header(),
+            decoded.coefficients(),
+            tile_size,
+            tiles_x,
+            tiles_y,
+        ))
+    }
+
+    fn prefix_candidates(
         &self,
         master_seed: u64,
         max_origins: u32,
@@ -356,8 +501,8 @@ impl TiledJpegSearch {
                 }
                 origins_tried += 1;
                 let tile_blocks = crate::jpeg_transcoder::DctStegoF5::tile_block_set(
-                    &self.header,
-                    &self.coefficients,
+                    self.header,
+                    self.coefficients,
                     tx,
                     ty,
                     self.tile_size,
@@ -378,7 +523,7 @@ impl TiledJpegSearch {
                             let bits =
                                 crate::jpeg_transcoder::DctStegoF5::with_redundancy(redundancy)
                                     .extract_f5_from_blocks(
-                                        &self.coefficients,
+                                        self.coefficients,
                                         prefix_bits,
                                         local_seed,
                                         &tile_blocks,
@@ -404,18 +549,18 @@ impl TiledJpegSearch {
         candidates
     }
 
-    pub fn extract_candidate(
+    fn extract_candidate(
         &self,
         master_seed: u64,
         candidate: TiledJpegCandidateKey,
         payload_bits: usize,
     ) -> Option<Vec<u8>> {
-        if !self.valid_candidate(candidate) {
+        if !valid_tiled_candidate(candidate, self.tiles_x, self.tiles_y) {
             return None;
         }
         let tile_blocks = crate::jpeg_transcoder::DctStegoF5::tile_block_set(
-            &self.header,
-            &self.coefficients,
+            self.header,
+            self.coefficients,
             candidate.tile_x,
             candidate.tile_y,
             self.tile_size,
@@ -426,16 +571,63 @@ impl TiledJpegSearch {
         let local_seed = lsb_internal::tile_seed(master_seed, candidate.seed_x, candidate.seed_y);
         let bits =
             crate::jpeg_transcoder::DctStegoF5::with_redundancy(candidate.redundancy as usize)
-                .extract_f5_from_blocks(&self.coefficients, payload_bits, local_seed, &tile_blocks);
+                .extract_f5_from_blocks(self.coefficients, payload_bits, local_seed, &tile_blocks);
         (bits.len() >= payload_bits).then(|| lsb_internal::bits_to_bytes(&bits))
     }
+}
 
-    fn valid_candidate(&self, candidate: TiledJpegCandidateKey) -> bool {
-        candidate.tile_x < self.tiles_x
-            && candidate.tile_y < self.tiles_y
-            && candidate.seed_x < 16
-            && candidate.seed_y < 16
-            && (1..=10).contains(&candidate.redundancy)
+fn valid_tiled_candidate(candidate: TiledJpegCandidateKey, tiles_x: u32, tiles_y: u32) -> bool {
+    candidate.tile_x < tiles_x
+        && candidate.tile_y < tiles_y
+        && candidate.seed_x < 16
+        && candidate.seed_y < 16
+        && (1..=10).contains(&candidate.redundancy)
+}
+
+impl TiledJpegSearch {
+    pub fn new(jpeg_bytes: &[u8], tile_size: u32) -> Option<Self> {
+        if tile_size == 0 {
+            return None;
+        }
+        let (header, coefficients) = decode_tiled_search_coefficients(jpeg_bytes).ok()?;
+        let (tiles_x, tiles_y) = tile_geometry(&header, tile_size)?;
+        Some(Self {
+            header,
+            coefficients,
+            tile_size,
+            tiles_x,
+            tiles_y,
+        })
+    }
+
+    pub fn prefix_candidates(
+        &self,
+        master_seed: u64,
+        max_origins: u32,
+        prefix_bits: usize,
+    ) -> Vec<(TiledJpegCandidateKey, Vec<u8>)> {
+        self.grid()
+            .prefix_candidates(master_seed, max_origins, prefix_bits)
+    }
+
+    pub fn extract_candidate(
+        &self,
+        master_seed: u64,
+        candidate: TiledJpegCandidateKey,
+        payload_bits: usize,
+    ) -> Option<Vec<u8>> {
+        self.grid()
+            .extract_candidate(master_seed, candidate, payload_bits)
+    }
+
+    fn grid(&self) -> TiledGrid<'_> {
+        TiledGrid::new(
+            &self.header,
+            &self.coefficients,
+            self.tile_size,
+            self.tiles_x,
+            self.tiles_y,
+        )
     }
 }
 
@@ -611,6 +803,30 @@ mod tests {
     }
 
     #[test]
+    fn jpeg_search_context_decodes_once_for_standard_and_tiled_probes() {
+        crate::jpeg::reset_decode_count();
+        let payload = vec![0xA5; 36];
+        let embedded = jpeg_embed_tiled(&test_jpeg(), &payload, MASTER_SEED, TILE_SIZE)
+            .expect("tiled embed should succeed");
+        assert!(embedded.is_embedded());
+        let context =
+            JpegSearchContext::new(embedded.output()).expect("search context should decode");
+        assert_eq!(crate::jpeg::decode_count(), 1);
+        for redundancy in 1..=10 {
+            let _ = context.extract(6, MASTER_SEED, redundancy);
+            let _ = context.extract(36, MASTER_SEED, redundancy);
+            let _ = context.capacity(36, redundancy);
+        }
+        assert_eq!(context.available_capacity(), context.available_capacity());
+        let candidates = context.tiled_prefix_candidates(MASTER_SEED, TILE_SIZE, 1, 48);
+        assert!(!candidates.is_empty());
+        for (key, _) in &candidates {
+            let _ = context.tiled_extract_candidate(MASTER_SEED, TILE_SIZE, *key, 288);
+        }
+        assert_eq!(crate::jpeg::decode_count(), 1);
+    }
+
+    #[test]
     fn tiled_jpeg_search_decodes_once_for_multiple_candidate_extractions() {
         reset_tiled_search_decode_count();
         let embedded = jpeg_embed_tiled(&test_jpeg(), &[0xA5; 36], MASTER_SEED, TILE_SIZE)
@@ -667,6 +883,47 @@ mod tests {
             .expect("source search should include a second tile origin");
         let target = TiledJpegSearch::new(&test_jpeg(), 256).expect("target search should decode");
         assert!(target.extract_candidate(MASTER_SEED, key, 48).is_none());
+    }
+
+    #[test]
+    fn tiled_jpeg_embed_decode_count_per_operation() {
+        reset_tiled_embed_decode_count();
+        let payload = vec![0xA5; 36];
+        let result = jpeg_embed_tiled(&test_jpeg(), &payload, MASTER_SEED, TILE_SIZE)
+            .expect("tiled embed should succeed");
+        assert!(result.is_embedded());
+        assert_eq!(tiled_embed_decode_count(), 1);
+    }
+
+    #[test]
+    fn tiled_jpeg_embed_output_roundtrips_through_fresh_decode() {
+        reset_tiled_embed_decode_count();
+        let payload = vec![0xA5; 36];
+        let result = jpeg_embed_tiled(&test_jpeg(), &payload, MASTER_SEED, TILE_SIZE)
+            .expect("tiled embed should succeed");
+        assert!(result.is_embedded());
+        assert_eq!(tiled_embed_decode_count(), 1);
+        assert!(
+            jpeg_tiled_payload_matches(
+                result.output(),
+                &payload,
+                TILE_SIZE,
+                0,
+                0,
+                tile_seed(MASTER_SEED, 0, 0),
+            )
+            .expect("roundtrip decode should succeed"),
+            "encoded tiled output must verify through a fresh decode"
+        );
+        let search =
+            TiledJpegSearch::new(result.output(), TILE_SIZE).expect("tiled search should decode");
+        let candidates = search.prefix_candidates(MASTER_SEED, 1, 48);
+        assert!(candidates.iter().any(|(key, _)| {
+            search
+                .extract_candidate(MASTER_SEED, *key, payload.len() * 8)
+                .as_deref()
+                == Some(payload.as_slice())
+        }));
     }
 
     #[test]

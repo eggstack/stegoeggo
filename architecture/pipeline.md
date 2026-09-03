@@ -45,7 +45,7 @@ pub struct ProtectionPipeline {
 ### Key Methods
 
 - `process(&img, level, &ctx) -> Result<Cow<DynamicImage>>` — Pixel-level processing (validates dimensions)
-- `process_bytes(&img_bytes, level, &ctx) -> Result<Vec<u8>>` — Byte-level processing (validates dimensions for JPEG via header parse, and for non-JPEG via validate_dimensions after decode)
+- `process_bytes(&img_bytes, level, &ctx) -> Result<Vec<u8>>` — Byte-level processing (validates dimensions for JPEG via header parse, and for non-JPEG via a header-only dimension gate before the single full decode; the preflight never performs a discarded decode)
 
 ### Pipeline Flow (Standard)
 
@@ -82,7 +82,7 @@ Free functions that delegate to the canonical request/plan execution path via `r
 
 ## Dimension Validation
 
-`process()` validates image dimensions against `max_dimension` from the context and returns an error if exceeded. `process_bytes()` validates dimensions for active protection levels: JPEG inputs are checked from parsed headers before DCT/Q-table processing, and non-JPEG inputs are checked after decode. Reverse proxies should still enforce input byte-size limits before calling the library.
+`process()` validates image dimensions against `max_dimension` from the context and returns an error if exceeded. `process_bytes()` validates dimensions for active protection levels: JPEG inputs are checked from parsed headers before DCT/Q-table processing, and non-JPEG inputs pass a header-only dimension gate before their single full decode (whose executor re-checks dimensions defensively). Reverse proxies should still enforce input byte-size limits before calling the library.
 
 ## Reverse Proxy Integration
 

@@ -4,8 +4,9 @@ use std::alloc::System;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use stegoeggo::stego::lsb::{self, LsbConfig};
 use stegoeggo::{
-    process_image_bytes, process_request_bytes, ImageOutputFormat, ProtectionContext,
-    ProtectionLevel, ProtectionPipeline, ProtectionRequest, RightsNotice, RightsPolicy,
+    process_image_bytes, process_request_bytes, verify_image_bytes, AuthenticationMode,
+    HiddenMarkerMode, ImageOutputFormat, ProtectionChannels, ProtectionContext, ProtectionLevel,
+    ProtectionPipeline, ProtectionRequest, RightsNotice, RightsPolicy, VerificationStatus,
 };
 
 static ALLOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -43,6 +44,19 @@ fn get_allocated_bytes() -> usize {
 
 fn create_test_image(width: u32, height: u32) -> DynamicImage {
     DynamicImage::new_rgb8(width, height)
+}
+
+fn create_textured_image(width: u32, height: u32) -> DynamicImage {
+    let mut img = image::RgbImage::new(width, height);
+    for y in 0..height {
+        for x in 0..width {
+            let r = ((x * 7 + y * 13) % 256) as u8;
+            let g = ((x * 11 + y * 3) % 256) as u8;
+            let b = ((x * 5 + y * 17) % 256) as u8;
+            img.put_pixel(x, y, image::Rgb([r, g, b]));
+        }
+    }
+    DynamicImage::ImageRgb8(img)
 }
 
 fn benchmark_pipeline_sizes(c: &mut Criterion) {
@@ -294,9 +308,10 @@ fn benchmark_jpeg_fast_path(c: &mut Criterion) {
 
 fn benchmark_tiled_embed(c: &mut Criterion) {
     let mut group = c.benchmark_group("tiled_embed");
+    group.sample_size(10);
 
     for size in [256u32, 1024] {
-        let img = create_test_image(size, size);
+        let img = create_textured_image(size, size);
         let jpeg_bytes = {
             let mut buf = std::io::Cursor::new(Vec::new());
             img.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
@@ -323,9 +338,10 @@ fn benchmark_tiled_embed(c: &mut Criterion) {
 
 fn benchmark_tiled_extract(c: &mut Criterion) {
     let mut group = c.benchmark_group("tiled_extract");
+    group.sample_size(10);
 
     for size in [256u32, 1024] {
-        let img = create_test_image(size, size);
+        let img = create_textured_image(size, size);
         let ctx = ProtectionContext::new(0.5, 42)
             .with_tile_size(64)
             .with_format(ImageOutputFormat::Jpeg);
@@ -340,6 +356,10 @@ fn benchmark_tiled_extract(c: &mut Criterion) {
             &ctx,
         )
         .unwrap();
+        assert_eq!(
+            verify_image_bytes(&protected, &[]),
+            VerificationStatus::Verified
+        );
 
         group.bench_with_input(
             BenchmarkId::new("jpeg_tiled", size),
@@ -481,6 +501,76 @@ fn benchmark_request_vs_legacy(c: &mut Criterion) {
     group.finish();
 }
 
+fn benchmark_jpeg_standard_verify(c: &mut Criterion) {
+    let mut group = c.benchmark_group("jpeg_standard_verify");
+    group.sample_size(10);
+
+    for size in [256u32, 1024] {
+        let img = create_textured_image(size, size);
+        let ctx = ProtectionContext::new(0.5, 42).with_format(ImageOutputFormat::Jpeg);
+
+        let jpeg_bytes = {
+            let mut buf = std::io::Cursor::new(Vec::new());
+            img.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
+            buf.into_inner()
+        };
+
+        let protected = process_image_bytes(&jpeg_bytes, ProtectionLevel::Standard, &ctx).unwrap();
+        assert_eq!(
+            verify_image_bytes(&protected, &[]),
+            VerificationStatus::Verified
+        );
+
+        group.bench_with_input(BenchmarkId::new("verify", size), &protected, |b, bytes| {
+            b.iter(|| verify_image_bytes(black_box(bytes), black_box(&[])));
+        });
+    }
+
+    group.finish();
+}
+
+fn benchmark_tiled_lsb_request(c: &mut Criterion) {
+    let mut group = c.benchmark_group("tiled_lsb_request");
+    group.sample_size(10);
+
+    let notice = RightsNotice::new().with_copyright_holder("Benchmark Author");
+    let channels = ProtectionChannels {
+        rights_metadata: true,
+        hidden_marker: HiddenMarkerMode::Tiled { tile_size: 64 },
+        authentication: AuthenticationMode::None,
+    };
+
+    for size in [256u32, 1024] {
+        let img = create_textured_image(size, size);
+        let mut png_bytes = Vec::new();
+        {
+            use image::ImageEncoder;
+            let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+            encoder
+                .write_image(&img.to_rgb8(), size, size, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        }
+
+        let request = ProtectionRequest::new(
+            notice.clone(),
+            RightsPolicy::ProhibitedAiMlTraining,
+            channels.clone(),
+        )
+        .with_seed(42)
+        .with_intensity(0.5);
+
+        group.bench_with_input(
+            BenchmarkId::new("png_tiled", size),
+            &(&png_bytes, &request),
+            |b, &(bytes, req)| {
+                b.iter(|| process_request_bytes(black_box(bytes), black_box(req)));
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     benchmark_pipeline_sizes,
@@ -496,5 +586,7 @@ criterion_group!(
     benchmark_lsb_in_place,
     benchmark_metadata_only,
     benchmark_request_vs_legacy,
+    benchmark_jpeg_standard_verify,
+    benchmark_tiled_lsb_request,
 );
 criterion_main!(benches);

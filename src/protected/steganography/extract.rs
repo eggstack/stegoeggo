@@ -2,6 +2,12 @@
 
 use super::*;
 
+#[cfg(test)]
+thread_local! {
+    static JPEG_SEARCH_CONTEXT_CREATIONS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
 impl SteganographyProtector {
     /// Extract and validate payload candidates from tiled F5 DCT stego.
     #[doc(hidden)]
@@ -107,29 +113,6 @@ impl SteganographyProtector {
             }
         }
         last_outcome.unwrap_or(CandidateOutcome::NotFound)
-    }
-
-    pub(crate) fn verify_extract_f5_tiled(
-        &self,
-        jpeg_bytes: &[u8],
-        master_seed: u64,
-        tile_size: u32,
-        max_origins: u32,
-        mac_key: &[u8],
-    ) -> CandidateOutcome {
-        if max_origins == 0 {
-            return CandidateOutcome::NotFound;
-        }
-        let prefix_bits = V3_PREFIX_BYTES * 8;
-        let Some(search) =
-            stegoeggo_stego::application_support::TiledJpegSearch::new(jpeg_bytes, tile_size)
-        else {
-            return CandidateOutcome::NotFound;
-        };
-        let candidates = search.prefix_candidates(master_seed, max_origins, prefix_bits);
-        self.evaluate_tiled_candidates(candidates, mac_key, |candidate, bits| {
-            search.extract_candidate(master_seed, candidate, bits)
-        })
     }
 
     pub(crate) fn extract_with_redundancy(
@@ -599,33 +582,49 @@ impl SteganographyProtector {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn reset_jpeg_search_context_creations() {
+        JPEG_SEARCH_CONTEXT_CREATIONS.with(|count| count.set(0));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn jpeg_search_context_creations() -> usize {
+        JPEG_SEARCH_CONTEXT_CREATIONS.with(std::cell::Cell::get)
+    }
+
+    pub(crate) fn new_jpeg_search_context(
+        jpeg_bytes: &[u8],
+    ) -> std::result::Result<carrier_support::JpegSearchContext, stegoeggo_stego::StegoError> {
+        #[cfg(test)]
+        JPEG_SEARCH_CONTEXT_CREATIONS.with(|count| count.set(count.get() + 1));
+        carrier_support::JpegSearchContext::new(jpeg_bytes)
+    }
+
     pub(crate) fn dct_candidates(
         &self,
-        jpeg_bytes: &[u8],
+        context: &carrier_support::JpegSearchContext,
         seed: u64,
         payload_bits: usize,
     ) -> Vec<Vec<u8>> {
         let payload_len = payload_bits.div_ceil(8);
         (1..=10)
-            .filter_map(|redundancy| {
-                carrier_support::jpeg_extract(jpeg_bytes, payload_len, seed, redundancy).ok()
-            })
+            .filter_map(|redundancy| context.extract(payload_len, seed, redundancy).ok())
             .filter(|payload| payload.len() >= payload_len)
             .collect()
     }
 
     pub(crate) fn dct_outcome_with_seed(
         &self,
-        jpeg_bytes: &[u8],
+        context: &carrier_support::JpegSearchContext,
         seed: u64,
         mac_key: &[u8],
     ) -> CandidateOutcome {
         let prefix_bits = V3_PREFIX_BYTES * 8;
         let mut last_outcome = None;
-        for prefix in self.dct_candidates(jpeg_bytes, seed, prefix_bits) {
+        for prefix in self.dct_candidates(context, seed, prefix_bits) {
             match Self::classify_v3_probe(&prefix, Some(&self.limits)) {
                 V3ProbeResult::V3Detected { total_bits, .. } => {
-                    for full in self.dct_candidates(jpeg_bytes, seed, total_bits) {
+                    for full in self.dct_candidates(context, seed, total_bits) {
                         if Self::verify_payload_integrity(&full, mac_key) {
                             return CandidateOutcome::Valid(Self::truncate_to_actual_payload(
                                 &full,
@@ -638,7 +637,7 @@ impl SteganographyProtector {
                 }
                 V3ProbeResult::NotV3 => {
                     for bits in [ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
-                        for payload in self.dct_candidates(jpeg_bytes, seed, bits) {
+                        for payload in self.dct_candidates(context, seed, bits) {
                             if Self::try_ecc_decode(&payload).is_some() {
                                 return CandidateOutcome::Valid(payload);
                             }
@@ -669,6 +668,56 @@ impl SteganographyProtector {
         last_outcome.unwrap_or(CandidateOutcome::NotFound)
     }
 
+    pub(crate) fn verify_extract_f5_tiled_with_context(
+        &self,
+        context: &carrier_support::JpegSearchContext,
+        master_seed: u64,
+        tile_size: u32,
+        max_origins: u32,
+        mac_key: &[u8],
+    ) -> CandidateOutcome {
+        if max_origins == 0 {
+            return CandidateOutcome::NotFound;
+        }
+        let prefix_bits = V3_PREFIX_BYTES * 8;
+        let candidates =
+            context.tiled_prefix_candidates(master_seed, tile_size, max_origins, prefix_bits);
+        self.evaluate_tiled_candidates(candidates, mac_key, |candidate, bits| {
+            context.tiled_extract_candidate(master_seed, tile_size, candidate, bits)
+        })
+    }
+
+    pub(crate) fn extract_f5_tiled_candidates_with_context(
+        &self,
+        context: &carrier_support::JpegSearchContext,
+        master_seed: u64,
+        tile_size: u32,
+        max_origins: u32,
+        mac_key: &[u8],
+    ) -> Option<Vec<u8>> {
+        if max_origins == 0 {
+            return None;
+        }
+        let prefix_bits = V3_PREFIX_BYTES * 8;
+        let candidates =
+            context.tiled_prefix_candidates(master_seed, tile_size, max_origins, prefix_bits);
+        if candidates.is_empty() {
+            return None;
+        }
+        match self.evaluate_tiled_candidates(candidates, mac_key, |candidate, bits| {
+            context.tiled_extract_candidate(master_seed, tile_size, candidate, bits)
+        }) {
+            CandidateOutcome::Valid(payload) => Some(payload),
+            CandidateOutcome::Invalid(_)
+            | CandidateOutcome::MalformedV3
+            | CandidateOutcome::UnsupportedVersion(_)
+            | CandidateOutcome::AuthenticationKeyMissing(_)
+            | CandidateOutcome::AuthenticationFailed(_)
+            | CandidateOutcome::ResourceLimitExceeded
+            | CandidateOutcome::NotFound => None,
+        }
+    }
+
     pub(crate) fn verify_extract_dct_with_seed(
         &self,
         jpeg_bytes: &[u8],
@@ -678,12 +727,15 @@ impl SteganographyProtector {
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return CandidateOutcome::NotFound;
         }
-        let dct_outcome = self.dct_outcome_with_seed(jpeg_bytes, seed, mac_key);
+        let Ok(context) = Self::new_jpeg_search_context(jpeg_bytes) else {
+            return CandidateOutcome::NotFound;
+        };
+        let dct_outcome = self.dct_outcome_with_seed(&context, seed, mac_key);
         if matches!(dct_outcome, CandidateOutcome::Valid(_)) {
             return dct_outcome;
         }
-        let tiled_outcome = self.verify_extract_f5_tiled(
-            jpeg_bytes,
+        let tiled_outcome = self.verify_extract_f5_tiled_with_context(
+            &context,
             seed,
             DEFAULT_TILE_SIZE,
             self.limits.max_tile_extraction_origins_u32(),
@@ -725,10 +777,11 @@ impl SteganographyProtector {
         mac_key: &[u8],
     ) -> Option<Vec<u8>> {
         let seed = carrier_jpeg::extract_seed_hint(jpeg_bytes).ok().flatten()?;
-        match self.dct_outcome_with_seed(jpeg_bytes, seed, mac_key) {
+        let context = Self::new_jpeg_search_context(jpeg_bytes).ok()?;
+        match self.dct_outcome_with_seed(&context, seed, mac_key) {
             CandidateOutcome::Valid(payload) => Some(payload),
-            _ => self.extract_f5_tiled_candidates(
-                jpeg_bytes,
+            _ => self.extract_f5_tiled_candidates_with_context(
+                &context,
                 seed,
                 DEFAULT_TILE_SIZE,
                 self.limits.max_tile_extraction_origins_u32(),
@@ -1295,29 +1348,23 @@ impl SteganographyProtector {
 
         // JPEG: try DCT extraction first (avoids pixel decode)
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
-            if let Some(payload_bytes) = self.extract_verified_dct_payload(img_bytes, mac_key) {
-                if !self.payload_within_limits(&payload_bytes) {
-                    return None;
-                }
-                if let Some(decoded) = Self::try_ecc_decode(&payload_bytes) {
-                    if let Some(payload) = Self::parse_stego_payload(&decoded) {
-                        return Some(payload);
-                    }
-                }
-                if Self::verify_payload_integrity(&payload_bytes, mac_key) {
-                    return Self::parse_stego_payload(&payload_bytes);
-                }
-            }
-
-            // Tiled F5 fallback for JPEG
-            if let Some(metadata_seed) = metadata_seed {
-                if let Some(payload_bytes) = self.extract_f5_tiled_candidates(
-                    img_bytes,
-                    metadata_seed,
-                    DEFAULT_TILE_SIZE,
-                    self.limits.max_tile_extraction_origins_u32(),
-                    mac_key,
-                ) {
+            if let Ok(context) = Self::new_jpeg_search_context(img_bytes) {
+                let hint_payload = carrier_jpeg::extract_seed_hint(img_bytes)
+                    .ok()
+                    .flatten()
+                    .and_then(
+                        |seed| match self.dct_outcome_with_seed(&context, seed, mac_key) {
+                            CandidateOutcome::Valid(payload) => Some(payload),
+                            _ => self.extract_f5_tiled_candidates_with_context(
+                                &context,
+                                seed,
+                                DEFAULT_TILE_SIZE,
+                                self.limits.max_tile_extraction_origins_u32(),
+                                mac_key,
+                            ),
+                        },
+                    );
+                if let Some(payload_bytes) = hint_payload {
                     if !self.payload_within_limits(&payload_bytes) {
                         return None;
                     }
@@ -1328,6 +1375,29 @@ impl SteganographyProtector {
                     }
                     if Self::verify_payload_integrity(&payload_bytes, mac_key) {
                         return Self::parse_stego_payload(&payload_bytes);
+                    }
+                }
+
+                // Tiled F5 fallback for JPEG
+                if let Some(metadata_seed) = metadata_seed {
+                    if let Some(payload_bytes) = self.extract_f5_tiled_candidates_with_context(
+                        &context,
+                        metadata_seed,
+                        DEFAULT_TILE_SIZE,
+                        self.limits.max_tile_extraction_origins_u32(),
+                        mac_key,
+                    ) {
+                        if !self.payload_within_limits(&payload_bytes) {
+                            return None;
+                        }
+                        if let Some(decoded) = Self::try_ecc_decode(&payload_bytes) {
+                            if let Some(payload) = Self::parse_stego_payload(&decoded) {
+                                return Some(payload);
+                            }
+                        }
+                        if Self::verify_payload_integrity(&payload_bytes, mac_key) {
+                            return Self::parse_stego_payload(&payload_bytes);
+                        }
                     }
                 }
             }

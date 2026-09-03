@@ -1036,7 +1036,6 @@ fn process_plan_bytes(
             }
         }
     } else {
-        let mut header_checked = false;
         if let Ok(reader) = image::ImageReader::new(Cursor::new(img_bytes)).with_guessed_format() {
             if let Ok((width, height)) = reader.into_dimensions() {
                 limits.check_dimensions(width, height)?;
@@ -1047,29 +1046,7 @@ fn process_plan_bytes(
                         )));
                     }
                 }
-                header_checked = true;
             }
-        }
-        if let Ok(img) = load_image_from_bytes(img_bytes) {
-            let (width, height) = img.dimensions();
-            if !header_checked {
-                limits.check_dimensions(width, height)?;
-                if let Some(max_dim) = plan.processing().max_dimension {
-                    if width > max_dim || height > max_dim {
-                        return Err(Error::ImageDecode(format!(
-                            "Image dimensions {width}x{height} exceed max_dimension {max_dim}"
-                        )));
-                    }
-                }
-            }
-        } else if (plan.is_metadata_only()
-            || plan.channels().hidden_marker == HiddenMarkerMode::Disabled)
-            && plan.input_format() != plan.output_format()
-        {
-            return Err(Error::ImageDecode(
-                "Image could not be decoded; metadata-only processing requires a valid image"
-                    .to_string(),
-            ));
         }
     }
 
@@ -2229,5 +2206,80 @@ mod tests {
         let channels = ProtectionPreset::AuthenticatedProvenance.to_channels();
         assert!(channels.has_stego());
         assert!(matches!(channels.authentication, AuthenticationMode::Hmac));
+    }
+
+    fn plan078_textured_png_bytes(size: u32) -> Vec<u8> {
+        use image::ImageEncoder;
+        let img = image::DynamicImage::new_rgb8(size, size);
+        let mut buffer = Vec::new();
+        let encoder = image::codecs::png::PngEncoder::new(&mut buffer);
+        let rgb = img.to_rgb8();
+        encoder
+            .write_image(&rgb, size, size, image::ExtendedColorType::Rgb8)
+            .unwrap();
+        buffer
+    }
+
+    fn plan078_hidden_marker_request() -> ProtectionRequest {
+        let notice = RightsNotice::new().with_copyright_holder("Plan 078");
+        ProtectionRequest::with_hidden_marker(notice, RightsPolicy::ProhibitedAiMlTraining)
+            .with_seed(42)
+            .with_intensity(0.5)
+    }
+
+    #[test]
+    fn plan078_png_marker_performs_single_pixel_decode() {
+        let png_bytes = plan078_textured_png_bytes(128);
+        crate::util::image::reset_load_decode_count();
+        let output = process_request_bytes(&png_bytes, &plan078_hidden_marker_request());
+        assert!(output.is_ok());
+        assert_eq!(crate::util::image::load_decode_count(), 1);
+    }
+
+    #[test]
+    fn plan078_metadata_only_png_performs_no_pixel_decode() {
+        let png_bytes = plan078_textured_png_bytes(128);
+        let notice = RightsNotice::new().with_copyright_holder("Plan 078");
+        let request =
+            ProtectionRequest::metadata_only(notice, RightsPolicy::ProhibitedAiMlTraining);
+        crate::util::image::reset_load_decode_count();
+        let output = process_request_bytes(&png_bytes, &request);
+        assert!(output.is_ok());
+        assert_eq!(crate::util::image::load_decode_count(), 0);
+    }
+
+    #[test]
+    fn plan078_tiled_png_request_verifies_with_single_decode() {
+        let png_bytes = plan078_textured_png_bytes(256);
+        let notice = RightsNotice::new().with_copyright_holder("Plan 078");
+        let channels = ProtectionChannels {
+            rights_metadata: true,
+            hidden_marker: HiddenMarkerMode::Tiled { tile_size: 64 },
+            authentication: AuthenticationMode::None,
+        };
+        let request =
+            ProtectionRequest::new(notice, RightsPolicy::ProhibitedAiMlTraining, channels)
+                .with_seed(42)
+                .with_intensity(0.5);
+        crate::util::image::reset_load_decode_count();
+        let output = process_request_bytes(&png_bytes, &request);
+        assert!(output.is_ok());
+        let protected = output.unwrap();
+        assert_eq!(crate::util::image::load_decode_count(), 1);
+        assert_eq!(
+            verify_image_bytes(&protected, &[]),
+            VerificationStatus::Verified
+        );
+    }
+
+    #[test]
+    fn plan078_malformed_input_still_fails_closed() {
+        let garbage = b"not an image at all";
+        crate::util::image::reset_load_decode_count();
+        assert!(process_request_bytes(garbage, &plan078_hidden_marker_request()).is_err());
+        let notice = RightsNotice::new().with_copyright_holder("Plan 078");
+        let request =
+            ProtectionRequest::metadata_only(notice, RightsPolicy::ProhibitedAiMlTraining);
+        assert!(process_request_bytes(garbage, &request).is_err());
     }
 }

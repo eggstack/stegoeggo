@@ -205,7 +205,25 @@ pub fn encode_image_with_options(
 ///
 /// Delegates to `image::load_from_memory` with automatic format detection.
 pub fn load_image_from_bytes(bytes: &[u8]) -> Result<DynamicImage> {
+    #[cfg(test)]
+    LOAD_IMAGE_DECODE_COUNT.with(|count| count.set(count.get() + 1));
     Ok(image::load_from_memory(bytes)?)
+}
+
+#[cfg(test)]
+thread_local! {
+    static LOAD_IMAGE_DECODE_COUNT: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_load_decode_count() {
+    LOAD_IMAGE_DECODE_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn load_decode_count() -> usize {
+    LOAD_IMAGE_DECODE_COUNT.with(std::cell::Cell::get)
 }
 
 #[cfg(test)]

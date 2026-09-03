@@ -50,6 +50,16 @@ thread_local! {
     static JPEG_COEFFICIENT_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
+#[cfg(test)]
+pub(crate) fn reset_decode_count() {
+    JPEG_COEFFICIENT_DECODE_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn decode_count() -> usize {
+    JPEG_COEFFICIENT_DECODE_COUNT.with(Cell::get)
+}
+
 /// Basic JPEG dimensions returned by a bounded structural inspection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct JpegInfo {
@@ -99,9 +109,41 @@ fn dct_payload_capacity(coefficients: &crate::jpeg_transcoder::Coefficients) -> 
         .sum()
 }
 
-struct DecodedJpegCarrier {
+pub(crate) struct DecodedJpegCarrier {
+    header: Box<crate::jpeg_transcoder::JpegHeader>,
     coefficients: crate::jpeg_transcoder::Coefficients,
     available_capacity: usize,
+}
+
+impl DecodedJpegCarrier {
+    pub(crate) fn header(&self) -> &crate::jpeg_transcoder::JpegHeader {
+        &self.header
+    }
+
+    pub(crate) fn coefficients(&self) -> &crate::jpeg_transcoder::Coefficients {
+        &self.coefficients
+    }
+
+    pub(crate) fn available_capacity(&self) -> usize {
+        self.available_capacity
+    }
+
+    pub(crate) fn extract_raw(
+        &self,
+        payload_len: usize,
+        seed: u64,
+        redundancy: usize,
+    ) -> std::result::Result<Vec<u8>, StegoError> {
+        extract_from_decoded(self, payload_len, seed, redundancy)
+    }
+
+    pub(crate) fn capacity_for(
+        &self,
+        payload_len: usize,
+        redundancy: usize,
+    ) -> std::result::Result<super::CapacityReport, StegoError> {
+        capacity_from_decoded(self, payload_len, redundancy)
+    }
 }
 
 fn checked_payload_bits(payload_len: usize) -> std::result::Result<usize, StegoError> {
@@ -123,7 +165,7 @@ fn checked_required_capacity(
     })
 }
 
-fn decode_supported_carrier(
+pub(crate) fn decode_supported_carrier(
     jpeg_bytes: &[u8],
 ) -> std::result::Result<DecodedJpegCarrier, StegoError> {
     if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
@@ -135,8 +177,11 @@ fn decode_supported_carrier(
 
     let decoded = JpegTranscoder::decode_coefficients_with_probe(jpeg_bytes)
         .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
-    let coefficients = match decoded {
-        crate::jpeg_transcoder::CoefficientDecode::Supported { coefficients, .. } => coefficients,
+    let (header, coefficients) = match decoded {
+        crate::jpeg_transcoder::CoefficientDecode::Supported {
+            header,
+            coefficients,
+        } => (header, coefficients),
         crate::jpeg_transcoder::CoefficientDecode::Unsupported(reason) => {
             return Err(StegoError::UnsupportedJpeg(map_unsupported_reason(reason)));
         }
@@ -144,8 +189,9 @@ fn decode_supported_carrier(
     let available_capacity = dct_payload_capacity(&coefficients);
 
     Ok(DecodedJpegCarrier {
-        coefficients,
+        header,
         available_capacity,
+        coefficients,
     })
 }
 
@@ -1109,6 +1155,19 @@ mod tests {
         JPEG_COEFFICIENT_DECODE_COUNT.with(|count| count.set(0));
         assert!(extract_framed(&second, &wrong_seed).is_err());
         assert_eq!(JPEG_COEFFICIENT_DECODE_COUNT.with(Cell::get), 1);
+    }
+
+    #[test]
+    fn one_shot_extract_decodes_once_per_call() {
+        let jpeg_bytes = make_test_jpeg(256, 256);
+        let config = JpegConfig::new(42);
+        let report = embed(&jpeg_bytes, b"raw", &config).unwrap();
+        assert!(report.embedded);
+        JPEG_COEFFICIENT_DECODE_COUNT.with(|count| count.set(0));
+        for redundancy in 1..=10 {
+            let _ = extract(&report.output, 3, &config, redundancy);
+        }
+        assert_eq!(JPEG_COEFFICIENT_DECODE_COUNT.with(Cell::get), 10);
     }
 
     #[test]

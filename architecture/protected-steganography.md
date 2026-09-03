@@ -169,7 +169,7 @@ calling the carrier operation.
 - Calls the carrier crate's encoded-byte JPEG operations; the transcoder and F5 coefficient types remain private to `stegoeggo-stego`
 - `probe_dct_support_full()` gates DCT entry: rejects progressive, restart-bearing, non-8-bit, multi-scan, and sampling >4 inputs; unsupported inputs fall back to metadata-only processing
 - **One-pass embed**: Computes `max_feasible = available / payload_bits`, selects `min(requested, max_feasible)`, embeds+encodes once. No retry loop, no roundtrip decode/extract self-test. The DCT success path always uses `encode_coefficients_preserving` (the original-JPEG preserving path), so APP/COM/unknown segments survive byte-for-byte.
-- **Tiled JPEG success verification**: Tiled embedding records the first successful tile and its local seed, performs the normal single encode, then decodes the encoded output and extracts that exact tile. It reports `Embedded` only when the extracted payload matches the original; a failed post-encode check is reported as a non-success outcome.
+- **Tiled JPEG success verification**: Tiled embedding records the first successful tile and its local seed, performs the normal single encode, then re-extracts that exact tile from the already-mutated in-memory coefficients (one coefficient decode + one encode per embed; no production re-decode of the encoded output). It reports `Embedded` only when the extracted payload matches the original; a failed invariant check is reported as a non-success outcome. Encoded-output roundtrips remain covered by tests that verify through a fresh decode.
 - **Tiled JPEG extraction search**: Each extraction/verification call creates one operation-local carrier-owned search context. The coefficient container is decoded once; prefix enumeration, exact-key V3 header/full extraction, and V1/V2 fallback all reuse the retained private state. Candidate identity, origin bounds, nearby seed range (`0..=2`), and redundancy range (`1..=10`) are unchanged.
 
 ## Extraction & Verification
@@ -185,7 +185,7 @@ pub fn verify_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8
 ### Verification Flow
 
 1. Detect image format
-2. For JPEG: detect the seed in quantization tables, then verify DCT payload integrity from coefficients when available
+2. For JPEG: detect the seed in quantization tables, then verify DCT payload integrity from coefficients when available. One verification operation (standard probing, or standard plus tiled fallback) retains one private decoded coefficient state via the hidden `JpegSearchContext`; redundancy candidates (`1..=10`), prefix/full probes, and the tiled fallback all reuse it instead of re-decoding per candidate.
 3. For PNG/WebP: extract from pixel LSBs
 4. Verify integrity: HMAC-SHA256 (with key) or CRC32 checksum (without)
 5. HMAC uses `subtle::ConstantTimeEq::ct_eq()` to prevent timing attacks
@@ -211,7 +211,7 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 
 - **lib.rs**: Applied in Standard pipeline
 - **stegoeggo-stego/src/lsb.rs**: Public LSB API surface (`embed`, `embed_in_place`, `extract`, `embed_framed`, `extract_framed`, `capacity`, `LsbConfig`, `InPlaceEmbedReport`, `DEFAULT_TILE_SIZE`). Raw operations are backed by `lsb_internal`; framed operations compose the public frame module with those raw calls. `LsbConfig` exposes fallible `try_new` and `try_with_redundancy` for untrusted input; the panicking `with_redundancy` is retained for compile-time-constant values.
-- **stegoeggo-stego/src/application_support.rs**: Narrow parent-crate operations for payload-aware LSB and JPEG calls; hidden behind the optional `application-support` feature. Its opaque tiled-JPEG search context owns decoded state for one operation and exposes no parser, coefficient, or F5 types
+- **stegoeggo-stego/src/application_support.rs**: Narrow parent-crate operations for payload-aware LSB and JPEG calls; hidden behind the optional `application-support` feature. Its opaque `JpegSearchContext` owns one decoded coefficient state per operation for both standard and tiled search and exposes no parser, coefficient, or F5 types; `tiled_lsb_embed_in_place` is the parent-only in-place tiled LSB entry point
 - **stegoeggo-stego/src/lsb_internal.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). Private; no application-type imports.
 - **stegoeggo-stego/src/jpeg.rs**: Generic encoded-byte JPEG carrier facade (DCT capacity, raw/framed embed/extract, Q-table reassembly, seed hint). No application-type imports
 - **stegoeggo-stego/src/jpeg_transcoder/**: Private JPEG fast-path implementation used behind `jpeg.rs` and `application_support.rs`
@@ -248,10 +248,17 @@ in any cropped image produces the same seed, so extraction is self-coordinating.
 
 ### LSB Tiled Path
 
-- `embed_lsb_tiled`: embeds payload directly into image regions using V2 carrier
-  with sub-image slot coordinates, avoiding per-tile RgbaImage allocations. Each
-  tile computes carrier slots using the tile's dimensions and maps them to full-image
-  coordinates via `(x0 + lx, y0 + ly)`.
+- `embed_lsb_tiled_in_place` is the single shared tiled mutation core: it
+  validates geometry, scans tile capacity with no mutation (insufficient
+  capacity leaves the caller's buffer unchanged), then embeds directly into
+  tile regions of the caller's image using V2 carrier with sub-image slot
+  coordinates, avoiding per-tile RgbaImage allocations. Each tile computes
+  carrier slots using the tile's dimensions and maps them to full-image
+  coordinates via `(x0 + lx, y0 + ly)`. `embed_lsb_tiled` is a clone-once
+  convenience wrapper delegating to this core with pixel-identical output.
+  The parent raster path mutates its already-owned RGBA buffer through the
+  core, so a tiled raster operation holds the decoded source plus one owned
+  RGBA buffer instead of two same-sized output buffers.
 - `extract_lsb_tiled_candidates`: scans candidate tile origins in the cropped
   image (stride = `tile_size / 2`, up to `max_origins`), crops sub-images, tries
   grid coordinates around each origin, extracts and verifies integrity.
@@ -331,6 +338,7 @@ stegoeggo::stego
 11. **Fallible configuration** — Both `LsbConfig` and `JpegConfig` expose `try_new(seed, redundancy)` and `try_with_redundancy(value)` returning `StegoError::InvalidConfig` for out-of-range values. The original `with_redundancy` is retained for compatibility with callers that pass validated constants; it still panics on invalid values. JPEG public payload-bit and required-capacity calculations are checked, and raw `jpeg::extract` rejects `actual_redundancy` outside `1..=10`.
 12. **Capacity units are documented per carrier** — `CapacityReport` and `EmbedReport` explicitly state that LSB uses RGB carrier slots and JPEG uses non-zero AC coefficients. `InPlaceEmbedReport` is RGB carrier slots only.
 13. **CRC vs authentication scope** — The `frame` module-level docs lead with "CRC32 is corruption detection, not authentication". Report units are spelled out in `CapacityReport`/`EmbedReport`/`InPlaceEmbedReport` field docs.
+14. **Single-decode targets (Plan 078)** — Normal execution performs one pixel decode per raster operation (zero for same-format metadata-only container rewrites and JPEG→JPEG DCT fast paths), one coefficient decode per JPEG embed, and one coefficient decode per application JPEG verification operation including tiled fallback. Reuse state stays private or hidden (`DecodedJpegCarrier`, `JpegSearchContext`); the recorded evidence disposition for a public prepared-JPEG API is `PRIVATE-REUSE-SUFFICIENT` (see `plans/078-status.md`).
 
 ### Frame Wire Format
 

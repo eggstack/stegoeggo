@@ -182,12 +182,12 @@ impl SteganographyProtector {
         let redundancy = Self::effective_redundancy_for_plan(plan);
 
         if let Some(ts) = tile_size.filter(|&s| s > 0) {
-            let outcome = self.embed_lsb_tiled(&rgba, &payload, seed, ts);
-            let (mut result, summary) = outcome.into_parts();
+            let report = self.embed_lsb_tiled_in_place(&mut rgba, &payload, seed, ts);
+            let summary = Self::lsb_tiled_in_place_summary(report);
             if summary.is_embedded() {
-                Self::embed_seed_lsb_fallback(&mut result, seed);
+                Self::embed_seed_lsb_fallback(&mut rgba, seed);
             }
-            Ok((DynamicImage::ImageRgba8(result), Some(summary)))
+            Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
         } else {
             let report = self.embed_lsb_v2_in_place(&mut rgba, &payload, seed, redundancy)?;
             let summary = Self::lsb_in_place_summary(report);
@@ -262,21 +262,36 @@ impl SteganographyProtector {
     /// already cover the same payload.
     ///
     /// Tiles do not overlap; right/bottom edge tiles may be partial and the
-    /// embed is silently skipped for those (the existing `embed_lsb` capacity
-    /// check at line 870 handles "image smaller than payload"). At least one
-    /// full interior tile will survive any reasonable crop.
+    /// embed is silently skipped for those. At least one full interior tile
+    /// will survive any reasonable crop.
     ///
-    /// When `tile_size == 0` the image is returned unchanged — this is the
+    /// When `tile_size == 0` the image is left unchanged — this is the
     /// "tiling disabled" sentinel, and the caller is expected to route
     /// through the non-tiled path instead.
-    pub(crate) fn embed_lsb_tiled(
+    pub(crate) fn embed_lsb_tiled_in_place(
         &self,
-        img: &RgbaImage,
+        img: &mut RgbaImage,
         payload: &[u8],
         master_seed: u64,
         tile_size: u32,
-    ) -> crate::stego::EmbedOutcome<RgbaImage> {
-        carrier_support::tiled_lsb_embed(img, payload, master_seed, tile_size)
+    ) -> crate::stego::InPlaceEmbedReport {
+        carrier_support::tiled_lsb_embed_in_place(img, payload, master_seed, tile_size)
+    }
+
+    fn lsb_tiled_in_place_summary(
+        report: crate::stego::InPlaceEmbedReport,
+    ) -> crate::stego::EmbedOutcomeSummary {
+        crate::stego::EmbedOutcomeSummary {
+            status: if report.embedded {
+                crate::stego::EmbedStatus::Embedded
+            } else {
+                crate::stego::EmbedStatus::SkippedCapacity
+            },
+            path: crate::stego::EmbedPath::LsbTiled,
+            payload_bytes: report.payload_bytes,
+            required_capacity: report.required_capacity,
+            available_capacity: report.available_capacity,
+        }
     }
 
     pub(crate) fn apply_to_image_owned(
@@ -324,12 +339,13 @@ impl SteganographyProtector {
         match format {
             crate::types::ImageOutputFormat::Png => {
                 if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
-                    let outcome = self.embed_lsb_tiled(&rgba, &payload, ctx.seed(), tile_size);
-                    let (mut result, summary) = outcome.into_parts();
+                    let report =
+                        self.embed_lsb_tiled_in_place(&mut rgba, &payload, ctx.seed(), tile_size);
+                    let summary = Self::lsb_tiled_in_place_summary(report);
                     if summary.is_embedded() {
-                        Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
+                        Self::embed_seed_lsb_fallback(&mut rgba, ctx.seed());
                     }
-                    Ok((DynamicImage::ImageRgba8(result), Some(summary)))
+                    Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
                 } else {
                     let report =
                         self.embed_lsb_v2_in_place(&mut rgba, &payload, ctx.seed(), redundancy)?;
@@ -353,12 +369,13 @@ impl SteganographyProtector {
             }
             crate::types::ImageOutputFormat::WebP => {
                 if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
-                    let outcome = self.embed_lsb_tiled(&rgba, &payload, ctx.seed(), tile_size);
-                    let (mut result, summary) = outcome.into_parts();
+                    let report =
+                        self.embed_lsb_tiled_in_place(&mut rgba, &payload, ctx.seed(), tile_size);
+                    let summary = Self::lsb_tiled_in_place_summary(report);
                     if summary.is_embedded() {
-                        Self::embed_seed_lsb_fallback(&mut result, ctx.seed());
+                        Self::embed_seed_lsb_fallback(&mut rgba, ctx.seed());
                     }
-                    Ok((DynamicImage::ImageRgba8(result), Some(summary)))
+                    Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
                 } else {
                     let report =
                         self.embed_lsb_v2_in_place(&mut rgba, &payload, ctx.seed(), redundancy)?;
