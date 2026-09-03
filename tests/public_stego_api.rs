@@ -534,6 +534,80 @@ fn public_lsb_tiled_config() {
 }
 
 #[test]
+fn public_lsb_tiled_raw_roundtrip_via_root_reexport() {
+    let img = make_lsb_image(128, 128);
+    let payload = b"root tiled lsb";
+    let config = stego::TileConfig::try_new(42, 64).unwrap();
+
+    let report = lsb::embed_tiled(&img, payload, &config).unwrap();
+    assert!(report.embedded);
+    let recovered = lsb::extract_tiled(&report.output, payload.len(), &config, 64).unwrap();
+    assert_eq!(&recovered, payload);
+}
+
+#[test]
+fn public_lsb_tiled_in_place_roundtrip_via_root_reexport() {
+    let mut img = make_lsb_image(128, 128);
+    let payload = b"root tiled in-place";
+    let config = stego::TileConfig::try_new(7, 64).unwrap();
+
+    let report = lsb::embed_tiled_in_place(&mut img, payload, &config).unwrap();
+    assert!(report.embedded);
+    let recovered = lsb::extract_tiled(&img, payload.len(), &config, 64).unwrap();
+    assert_eq!(&recovered, payload);
+}
+
+#[test]
+fn public_lsb_tiled_framed_recovers_without_length() {
+    let img = make_lsb_image(128, 128);
+    let payload = b"root framed tiled";
+    let config = stego::TileConfig::try_new(42, 64).unwrap();
+
+    let report = lsb::embed_tiled_framed(&img, payload, &config).unwrap();
+    assert!(report.embedded);
+    let recovered = lsb::extract_tiled_framed(&report.output, &config, 64).unwrap();
+    assert_eq!(&recovered, payload);
+}
+
+#[test]
+fn public_lsb_tiled_extraction_rejects_zero_origins() {
+    let img = make_lsb_image(128, 128);
+    let config = stego::TileConfig::try_new(42, 64).unwrap();
+    assert!(lsb::extract_tiled(&img, 4, &config, 0).is_err());
+    assert!(lsb::extract_tiled_framed(&img, &config, 0).is_err());
+}
+
+#[test]
+fn public_jpeg_tiled_raw_roundtrip_via_root_reexport() {
+    let jpeg_bytes = make_jpeg_bytes(256, 256);
+    let payload = b"root tiled jpeg";
+    let config = stego::TileConfig::try_new(42, 64).unwrap();
+
+    let report = jpeg::embed_tiled(&jpeg_bytes, payload, &config).unwrap();
+    assert!(report.embedded);
+    let recovered = jpeg::extract_tiled(&report.output, payload.len(), &config, 64).unwrap();
+    assert_eq!(&recovered, payload);
+}
+
+#[test]
+fn public_jpeg_tiled_framed_recovers_without_length() {
+    let jpeg_bytes = make_jpeg_bytes(256, 256);
+    let payload = b"root framed tiled jpeg";
+    let config = stego::TileConfig::try_new(42, 64).unwrap();
+
+    let report = jpeg::embed_tiled_framed(&jpeg_bytes, payload, &config).unwrap();
+    assert!(report.embedded);
+    let recovered = jpeg::extract_tiled_framed(&report.output, &config, 64).unwrap();
+    assert_eq!(&recovered, payload);
+}
+
+#[test]
+fn public_tile_config_rejects_zero_size() {
+    assert!(stego::TileConfig::try_new(42, 0).is_err());
+    assert!(stego::TileConfig::try_new(42, 64).is_ok());
+}
+
+#[test]
 fn public_jpeg_probe_support_baseline() {
     let jpeg_bytes = make_jpeg_bytes(256, 256);
     let support = jpeg::probe_support(&jpeg_bytes).unwrap();

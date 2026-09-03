@@ -4,7 +4,7 @@ The workspace contains [`stegoeggo-stego`](https://crates.io/crates/stegoeggo-st
 
 ## Operation styles
 
-It exposes three operation styles on the same corrected carrier model:
+It exposes four operation styles on the same corrected carrier model:
 
 ### Raw
 
@@ -18,6 +18,10 @@ It exposes three operation styles on the same corrected carrier model:
 
 `lsb::embed_framed`/`lsb::extract_framed` and `jpeg::embed_framed`/`jpeg::extract_framed` add the existing bounded 11-byte frame format. Framed extraction recovers payloads using only the resulting carrier and the same seed/config; JPEG framed extraction probes the configured redundancy down to 1, so the embed report is not needed.
 
+### Tiled (crop-oriented)
+
+`lsb::embed_tiled`/`embed_tiled_in_place`/`extract_tiled`/`embed_tiled_framed`/`extract_tiled_framed` and the `jpeg::` counterparts embed the full payload per tile with a shared `TileConfig { seed, tile_size }`. JPEG tiles require `>= 8` and a multiple of 8 with redundancy 1 per tile. Recovery is bounded by an explicit `max_origins` (`1..=MAX_TILED_ORIGINS`); framed tiled recovery validates CRC32 per candidate and needs no caller-known length. Raw tiled recovery returns the first candidate and cannot authenticate correctness.
+
 ## Configuration
 
 For untrusted configuration values, `LsbConfig::try_new`, `LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and `JpegConfig::try_with_redundancy` return `StegoError::InvalidConfig` instead of panicking on out-of-range redundancy. The original `with_redundancy` builder is retained for compile-time-constant values.
@@ -26,10 +30,11 @@ The frame CRC32 detects accidental corruption; it is not adversarial authenticat
 
 ## Usage
 
-See [`examples/generic_stego.rs`](https://github.com/eggstack/stegoeggo/blob/main/examples/generic_stego.rs) for raw, in-place, and framed usage.
+See [`examples/generic_stego.rs`](https://github.com/eggstack/stegoeggo/blob/main/examples/generic_stego.rs) for raw, in-place, framed, and tiled usage.
 
 ```rust
 use stegoeggo::stego::{
+    TileConfig,
     jpeg::{self, JpegConfig},
     lsb::{self, LsbConfig},
 };
@@ -56,6 +61,17 @@ let report = jpeg::embed(&jpeg_bytes, secret, &jpeg_config)?;
 let recovered = jpeg::extract(
     &report.output, secret.len(), &jpeg_config, report.actual_redundancy,
 )?;
+
+// Tiled crop-oriented round-trips (bounded recovery)
+let tile = TileConfig::try_new(seed, 64)?;
+let tiled = lsb::embed_tiled(&img, secret, &tile)?;
+let recovered = lsb::extract_tiled(&tiled.output, secret.len(), &tile, 64)?;
+
+let framed = lsb::embed_tiled_framed(&img, secret, &tile)?;
+let recovered = lsb::extract_tiled_framed(&framed.output, &tile, 64)?;
+
+let jtiled = jpeg::embed_tiled(&jpeg_bytes, secret, &tile)?;
+let recovered = jpeg::extract_tiled_framed(&jtiled.output, &tile, 64)?;
 ```
 
 ## Internal architecture

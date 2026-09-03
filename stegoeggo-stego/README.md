@@ -20,7 +20,7 @@ boundary does not imply an independent release cadence.
 
 A small, focused library that exposes two image steganography carriers —
 pixel-domain LSB and JPEG DCT — for callers that want to embed arbitrary
-bytes that can be recovered later. Three operation styles are supported:
+bytes that can be recovered later. Four operation styles are supported:
 
 - **Raw** — caller knows the payload length and (for JPEG) the actual
   redundancy returned by the embed report. Lowest overhead.
@@ -31,6 +31,11 @@ bytes that can be recovered later. Three operation styles are supported:
   JPEG) without the embed report's `actual_redundancy`. JPEG framed
   extraction decodes the supported carrier once and reuses that state while
   probing the configured redundancy down to 1.
+- **Tiled** — spatial/crop-oriented repetition: the full payload is embedded
+  in each `tile_size × tile_size` region with a deterministic tile-local
+  seed, so recovery survives crops that leave at least one intact tile.
+  Tiled extraction is explicitly bounded by `max_origins`. Raw tiled
+  recovery needs the payload length; framed tiled recovery does not.
 
 ## Supported carriers and limitations
 
@@ -126,6 +131,37 @@ assert!(report.embedded);
 Capacity is checked before the first pixel mutation, so an insufficient
 carrier is left unchanged. The cloning `embed` and in-place
 `embed_in_place` paths share the same corrected V2 mutation core.
+
+## Tiled API (crop resistance)
+
+Tiled operations embed the full payload in each tile so crops that preserve
+at least one intact tile remain recoverable (LSB: tile-aligned within the
+bounded stride search; JPEG DCT: crops preserving coefficients with no
+re-encode). Both carriers share one
+`TileConfig { seed, tile_size }`; JPEG tiles additionally require
+`tile_size >= 8` and a multiple of 8. Tiled JPEG uses redundancy 1 per tile
+(the grid is the redundancy). Raw tiled recovery returns the first candidate
+in scan order and cannot authenticate correctness — prefer framed tiled
+recovery for crops, which validates CRC32 per candidate.
+
+```rust
+use stegoeggo_stego::{TileConfig, lsb, jpeg};
+
+let tile = TileConfig::try_new(42, 64)?;
+let lsb_report = lsb::embed_tiled(&image, b"payload", &tile)?;
+let lsb_recovered = lsb::extract_tiled(&lsb_report.output, 7, &tile, 64)?;
+
+let framed = lsb::embed_tiled_framed(&image, b"payload", &tile)?;
+let payload = lsb::extract_tiled_framed(&framed.output, &tile, 64)?;
+
+let jpeg_report = jpeg::embed_tiled(&jpeg_bytes, b"payload", &tile)?;
+let jpeg_payload = jpeg::extract_tiled_framed(&jpeg_report.output, &tile, 64)?;
+```
+
+`max_origins` bounds the crop-origin scan (`1..=MAX_TILED_ORIGINS`);
+`0` and values above the maximum return `InvalidConfig`. No unbounded
+“search everything” convenience exists. Tiled extraction decodes JPEG
+coefficients once per operation and reuses that state across candidates.
 
 ## Capacity and redundancy
 
@@ -234,17 +270,21 @@ a small set of helper functions to the parent crate. It is intentionally
 ## API surface summary
 
 ```text
-stegoeggo_stego::lsb                          → LsbConfig, capacity, embed, embed_in_place,
-                                                extract, embed_framed, extract_framed
-stegoeggo_stego::jpeg                         → JpegConfig, JpegSupport, probe_support,
+stegoeggo_stego::lsb                          → LsbConfig, TileConfig, capacity, embed, embed_in_place,
+                                                extract, embed_framed, extract_framed,
+                                                embed_tiled, embed_tiled_in_place, extract_tiled,
+                                                embed_tiled_framed, extract_tiled_framed
+stegoeggo_stego::jpeg                         → JpegConfig, TileConfig, JpegSupport, probe_support,
                                                 capacity, embed, extract, embed_framed,
-                                                extract_framed, inspect, is_progressive_jpeg,
+                                                extract_framed, embed_tiled, extract_tiled,
+                                                embed_tiled_framed, extract_tiled_framed,
+                                                inspect, is_progressive_jpeg,
                                                 embed_seed_hint, extract_seed_hint
 stegoeggo_stego::frame                        → FRAMED_MAGIC, FRAME_VERSION, MAX_FRAME_PAYLOAD,
                                                 FRAME_HEADER_SIZE, FrameHeader, encode, decode,
                                                 decode_prefix
 stegoeggo_stego::error                        → StegoError, StegoResult, JpegUnsupportedReason
-stegoeggo_stego::{CapacityReport,             → structured reports
+stegoeggo_stego::{CapacityReport,             → structured reports + TileConfig, MAX_TILED_ORIGINS
                  EmbedReport, InPlaceEmbedReport,
                  EmbedOutcome, EmbedOutcomeSummary,
                  EmbedPath, EmbedStatus,

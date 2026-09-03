@@ -5,6 +5,7 @@ use crate::protected::ecc;
 use crate::protected::metadata_trap::RightsMetadataProtector;
 use crate::resource_limits::ResourceLimits;
 use crate::stego::jpeg as carrier_jpeg;
+use crate::stego::lsb as carrier_lsb;
 use crate::traits::Protector;
 use crate::types::{
     PayloadEmissionContext, ProtectionContext, ProtectionLevel, VerificationStatus,
@@ -1221,7 +1222,13 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
+        let embedded = crate::stego::lsb::embed_tiled(
+            &img,
+            &payload,
+            &crate::stego::TileConfig::try_new(42, 64).unwrap(),
+        )
+        .unwrap()
+        .output;
         assert_eq!(embedded.dimensions(), img.dimensions());
 
         let recovered = protector
@@ -1236,7 +1243,13 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
+        let embedded = crate::stego::lsb::embed_tiled(
+            &img,
+            &payload,
+            &crate::stego::TileConfig::try_new(42, 64).unwrap(),
+        )
+        .unwrap()
+        .output;
         // Crop to the second tile (aligned offset, x0=64, y0=0).
         let cropped = SteganographyProtector::crop_rgba(&embedded, 64, 0, 64, 64);
 
@@ -1252,7 +1265,13 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
+        let embedded = crate::stego::lsb::embed_tiled(
+            &img,
+            &payload,
+            &crate::stego::TileConfig::try_new(42, 64).unwrap(),
+        )
+        .unwrap()
+        .output;
         // Crop with a 32-px offset (a 32 is a half-tile, NOT on a 64-px tile
         // boundary). The 96x96 window fully contains tile (1, 1) at original
         // (64, 64)-(127, 127). The embedded tile must still be recoverable
@@ -1272,7 +1291,13 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
+        let embedded = crate::stego::lsb::embed_tiled(
+            &img,
+            &payload,
+            &crate::stego::TileConfig::try_new(42, 64).unwrap(),
+        )
+        .unwrap()
+        .output;
         // Crop a region smaller than the full image but large enough to
         // contain tile (0, 0) entirely. Tile (0, 0) is at original
         // (0, 0)-(63, 63) and is fully captured by this crop.
@@ -1291,7 +1316,13 @@ mod tests {
         let ctx = ctx_with_mac(42, b"my-key");
         let payload = protector.generate_payload_from_ctx(&ctx);
 
-        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
+        let embedded = crate::stego::lsb::embed_tiled(
+            &img,
+            &payload,
+            &crate::stego::TileConfig::try_new(42, 64).unwrap(),
+        )
+        .unwrap()
+        .output;
         // Crop with a 32-px offset; the 96x96 window fully contains tile
         // (1, 1) at original (64, 64)-(127, 127).
         let cropped = SteganographyProtector::crop_rgba(&embedded, 32, 32, 96, 96);
@@ -1312,7 +1343,13 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
+        let embedded = crate::stego::lsb::embed_tiled(
+            &img,
+            &payload,
+            &crate::stego::TileConfig::try_new(42, 64).unwrap(),
+        )
+        .unwrap()
+        .output;
 
         // max_origins = 1 should still find a payload from a no-crop case
         // because the (0, 0) origin is in the deterministic scan order.
@@ -1324,15 +1361,12 @@ mod tests {
 
     #[test]
     fn embed_lsb_tiled_zero_tile_size_falls_back() {
-        let img = tileable_test_image();
-        let payload = real_payload(42);
-
-        // tile_size = 0 returns the image unchanged. This is the
-        // "tiling disabled" sentinel — the caller is expected to route
-        // through the non-tiled path instead.
-        let result = carrier_support::tiled_lsb_embed(&img, &payload, 42, 0);
-        assert!(result.is_skipped());
-        assert_eq!(*result.output(), img);
+        // Stable `TileConfig` rejects zero tile sizes with `InvalidConfig`.
+        // The "tiling disabled" sentinel lives at the application routing
+        // layer (callers filter `tile_size > 0` and use the non-tiled path),
+        // not in the generic carrier.
+        let result = crate::stego::TileConfig::try_new(42, 0);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1373,7 +1407,13 @@ mod tests {
         let img = tileable_test_image();
         let payload = real_payload(42);
 
-        let embedded = carrier_support::tiled_lsb_embed(&img, &payload, 42, 64).into_inner();
+        let embedded = crate::stego::lsb::embed_tiled(
+            &img,
+            &payload,
+            &crate::stego::TileConfig::try_new(42, 64).unwrap(),
+        )
+        .unwrap()
+        .output;
         // Crop by 4 pixels (not aligned with 64px tile boundary) but large
         // enough that the window still fully contains tile (1, 1) at
         // original (64, 64)-(127, 127). The extraction scans grid

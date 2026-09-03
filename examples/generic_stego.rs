@@ -1,11 +1,12 @@
 /// Generic carrier API example: embed and extract arbitrary bytes.
 ///
-/// Demonstrates raw, in-place, and framed round-trips for both LSB
+/// Demonstrates raw, in-place, framed, and tiled round-trips for both LSB
 /// (pixel-domain) and JPEG (DCT-domain) carriers using `stegoeggo::stego`.
 use image::{ImageBuffer, Rgb, RgbaImage};
 use stegoeggo::stego::{
     jpeg::{self, JpegConfig},
     lsb::{self, LsbConfig},
+    TileConfig,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -101,6 +102,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    // --- Tiled LSB round-trips (crop-oriented, bounded recovery) ---
+    let tile = TileConfig::try_new(seed, 64)?;
+    let tiled_img = make_lsb_image(128, 128);
+    let tiled_report = lsb::embed_tiled(&tiled_img, secret, &tile)?;
+    println!(
+        "Tiled LSB embedded: {} ({} bytes)",
+        tiled_report.embedded, tiled_report.payload_bytes
+    );
+    let tiled_recovered = lsb::extract_tiled(&tiled_report.output, secret.len(), &tile, 64)?;
+    println!(
+        "Tiled LSB extracted: {:?}",
+        String::from_utf8_lossy(&tiled_recovered)
+    );
+
+    let framed_tiled = lsb::embed_tiled_framed(&tiled_img, secret, &tile)?;
+    let framed_recovered = lsb::extract_tiled_framed(&framed_tiled.output, &tile, 64)?;
+    println!(
+        "Framed tiled LSB extracted: {:?}",
+        String::from_utf8_lossy(&framed_recovered)
+    );
+
+    // --- Tiled JPEG round-trip (textured fixture: smooth gradients lack
+    // per-tile non-zero AC capacity) ---
+    let jpeg_tiled_bytes = make_textured_jpeg(256, 256);
+    if jpeg::probe_support(&jpeg_tiled_bytes)? == jpeg::JpegSupport::Supported {
+        let report = jpeg::embed_tiled_framed(&jpeg_tiled_bytes, secret, &tile)?;
+        println!(
+            "Tiled JPEG embedded: {} (actual redundancy: {})",
+            report.embedded, report.actual_redundancy
+        );
+        if report.embedded {
+            let recovered = jpeg::extract_tiled_framed(&report.output, &tile, 64)?;
+            println!(
+                "Tiled JPEG extracted: {:?}",
+                String::from_utf8_lossy(&recovered)
+            );
+        } else {
+            println!("Tiled JPEG skipped: insufficient per-tile capacity");
+        }
+    }
+
     Ok(())
 }
 
@@ -119,6 +161,22 @@ fn make_lsb_image(w: u32, h: u32) -> RgbaImage {
 
 fn make_test_jpeg(w: u32, h: u32) -> Vec<u8> {
     let img = ImageBuffer::<Rgb<u8>, _>::from_fn(w, h, |x, y| Rgb([x as u8, y as u8, 128]));
+    let mut buf = Vec::new();
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 90);
+    image::DynamicImage::ImageRgb8(img)
+        .write_with_encoder(encoder)
+        .unwrap();
+    buf
+}
+
+fn make_textured_jpeg(w: u32, h: u32) -> Vec<u8> {
+    let img = ImageBuffer::<Rgb<u8>, _>::from_fn(w, h, |x, y| {
+        Rgb([
+            ((x * 7 + y * 13) % 256) as u8,
+            ((x * 11 + y * 3) % 256) as u8,
+            ((x * 5 + y * 17) % 256) as u8,
+        ])
+    });
     let mut buf = Vec::new();
     let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 90);
     image::DynamicImage::ImageRgb8(img)

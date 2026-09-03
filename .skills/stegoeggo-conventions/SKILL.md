@@ -138,6 +138,11 @@ lsb::extract(img, payload_len, &config) -> Result<Vec<u8>>
 lsb::embed_in_place(img, payload, &config) -> Result<InPlaceEmbedReport>
 lsb::embed_framed(img, payload, &config) -> Result<EmbedReport<RgbaImage>>
 lsb::extract_framed(img, &config) -> Result<Vec<u8>>
+lsb::embed_tiled(img, payload, &tile) -> Result<EmbedReport<RgbaImage>>
+lsb::embed_tiled_in_place(img, payload, &tile) -> Result<InPlaceEmbedReport>
+lsb::extract_tiled(img, payload_len, &tile, max_origins) -> Result<Vec<u8>>
+lsb::embed_tiled_framed(img, payload, &tile) -> Result<EmbedReport<RgbaImage>>
+lsb::extract_tiled_framed(img, &tile, max_origins) -> Result<Vec<u8>>
 
 // JPEG (DCT-domain)
 jpeg::capacity(jpeg_bytes, payload_len, &config) -> Result<CapacityReport>
@@ -145,10 +150,18 @@ jpeg::embed(jpeg_bytes, payload, &config) -> Result<EmbedReport>
 jpeg::extract(jpeg_bytes, payload_len, &config, actual_redundancy) -> Result<Vec<u8>>
 jpeg::embed_framed(jpeg_bytes, payload, &config) -> Result<EmbedReport>
 jpeg::extract_framed(jpeg_bytes, &config) -> Result<Vec<u8>>
+jpeg::embed_tiled(jpeg_bytes, payload, &tile) -> Result<EmbedReport>
+jpeg::extract_tiled(jpeg_bytes, payload_len, &tile, max_origins) -> Result<Vec<u8>>
+jpeg::embed_tiled_framed(jpeg_bytes, payload, &tile) -> Result<EmbedReport>
+jpeg::extract_tiled_framed(jpeg_bytes, &tile, max_origins) -> Result<Vec<u8>>
 jpeg::probe_support(jpeg_bytes) -> Result<JpegSupport>
 jpeg::embed_seed_hint(jpeg_bytes, seed) -> Result<Vec<u8>>
 jpeg::extract_seed_hint(jpeg_bytes) -> Result<Option<u64>>
 jpeg::is_progressive_jpeg(jpeg_bytes) -> bool
+
+// Shared tiled config + bound
+TileConfig::try_new(seed, tile_size) -> Result<TileConfig>  // tile_size > 0; JPEG tiled needs >= 8 and multiple of 8
+MAX_TILED_ORIGINS: u32 = 4096  // hard maximum for max_origins; 0 is InvalidConfig
 
 // Frame (generic TLV wrapper)
 frame::encode(payload) -> Result<Vec<u8>>
@@ -206,9 +219,9 @@ frame::decode_prefix(data) -> Result<(FrameHeader, usize)>
 8. **`verify_payload_from_bytes_with_key` returns `VerificationStatus`** — not `Option<bool>`.
 9. **Generic carrier error type** — The public `stego` module uses `StegoError`, not the root crate `Error`. Convert via `From<StegoError> for Error`.
 10. **JPEG DCT one-pass embed** — Supported DCT embedding computes max feasible redundancy from capacity, then embeds+encodes once. No retry loop.
-11. **Generic carrier operation styles** — The `stegoeggo::stego` facade exposes three styles: raw (`lsb::embed`/`extract`, `jpeg::embed`/`extract`, caller knows payload length and JPEG `actual_redundancy`); in-place (`lsb::embed_in_place` mutates the caller's `RgbaImage` and shares the corrected V2 mutation core with the cloning `lsb::embed`); and framed (`lsb::embed_framed`/`extract_framed`, `jpeg::embed_framed`/`extract_framed` over `frame::{encode, decode_prefix, decode}`). Framed extraction keeps the seed/config explicit, validates capacity before full extraction, and treats CRC32 as corruption detection rather than authentication.
+11. **Generic carrier operation styles** — The `stegoeggo::stego` facade exposes four styles: raw (`lsb::embed`/`extract`, `jpeg::embed`/`extract`, caller knows payload length and JPEG `actual_redundancy`); in-place (`lsb::embed_in_place` mutates the caller's `RgbaImage` and shares the corrected V2 mutation core with the cloning `lsb::embed`); framed (`lsb::embed_framed`/`extract_framed`, `jpeg::embed_framed`/`extract_framed` over `frame::{encode, decode_prefix, decode}`); and tiled (`embed_tiled`/`embed_tiled_in_place`/`extract_tiled`/`embed_tiled_framed`/`extract_tiled_framed` over shared `TileConfig` with explicit `max_origins` in `1..=MAX_TILED_ORIGINS`). Framed extraction keeps the seed/config explicit, validates capacity before full extraction, and treats CRC32 as corruption detection rather than authentication. Raw tiled recovery returns the first candidate and cannot authenticate; prefer framed tiled for crops. Tiled JPEG uses redundancy 1 per tile and rejects non-multiple-of-8 sizes.
 12. **Fallible config constructors** — `LsbConfig::try_new`, `LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and `JpegConfig::try_with_redundancy` all return `StegoError::InvalidConfig` for out-of-range redundancy. The panicking `with_redundancy` builder is retained for compile-time-constant values; use the fallible path whenever the value comes from runtime configuration.
-13. **Decomposed application stego adapter** — `src/protected/steganography/` is split into five responsibility modules behind `SteganographyProtector`: `marker.rs` (V3 payload construction), `embed.rs` (carrier dispatch: LSB, tiled LSB, JPEG DCT/F5, seed-only), `extract.rs` (seed discovery and bounded search), `verify.rs` (integrity and authentication classification), and `legacy.rs` (V1/V2 compatibility). `mod.rs` is a thin facade + shared types + tests; no carrier algorithm is reimplemented there.
+13. **Decomposed application stego adapter** — `src/protected/steganography/` is split into five responsibility modules behind `SteganographyProtector`: `marker.rs` (V3 payload construction), `embed.rs` (carrier dispatch via stable `lsb`/`jpeg` ops: LSB, tiled LSB, JPEG DCT/F5, seed-only), `extract.rs` (seed discovery and bounded search, including hidden `JpegSearchContext` reuse), `verify.rs` (integrity and authentication classification), and `legacy.rs` (V1/V2 compatibility). `mod.rs` is a thin facade + shared types + tests; no carrier algorithm is reimplemented there. Hidden `application_support` holds only legacy/seed-fallback/search compat, never ordinary current embed/extract.
 14. **JPEG extraction is single-decode per operation** — `jpeg::extract_framed` retains private decoded coefficients for its bounded redundancy search; application verification shares one hidden `JpegSearchContext` across standard probing and tiled fallback. Do not recompose either from public `capacity`/`extract` calls, add per-redundancy `jpeg_extract` calls in `dct_candidates`, expose coefficient/header types, or reduce the configured search domain.
 18. **Tiled LSB has one in-place core** — `lsb_internal::embed_lsb_tiled_in_place` is the shared algorithm; the cloning `embed_lsb_tiled` delegates to it and the parent raster path mutates its owned RGBA directly. Insufficient capacity leaves the caller's buffer unchanged.
 19. **Raster preflight is header-only** — non-JPEG dimension gating uses `into_dimensions()` only; the executor owns the single full decode and re-checks dimensions defensively. Same-format metadata-only performs zero pixel decodes.

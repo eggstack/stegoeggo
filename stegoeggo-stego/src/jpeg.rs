@@ -13,7 +13,7 @@
 //! (capped by the configured redundancy) via one pass; failed embeds
 //! still emit a seed-only carrier via quantization-table LSBs.
 //!
-//! # Raw vs framed
+//! # Raw vs framed vs tiled
 //!
 //! - **Raw** ([`embed`], [`extract`]) — caller-supplied payload length and
 //!   the `actual_redundancy` returned by the embed report. Use when the
@@ -23,6 +23,11 @@
 //!   knowledge of the original payload length or the actual redundancy
 //!   used at embed time. Extract probes the configured redundancy down
 //!   to 1.
+//! - **Tiled** ([`embed_tiled`], [`extract_tiled`], [`embed_tiled_framed`],
+//!   [`extract_tiled_framed`]) — spatial/crop-oriented repetition: the full
+//!   payload is embedded in each tile's DCT blocks with redundancy 1 and a
+//!   deterministic tile-local seed. Recovery is explicitly bounded by
+//!   `max_origins` and decodes supported coefficients once per operation.
 //!
 //! # Supported JPEG subset
 //!
@@ -915,6 +920,403 @@ pub fn extract_seed_hint(jpeg_bytes: &[u8]) -> std::result::Result<Option<u64>, 
     extract_seed_hint_internal(jpeg_bytes)
 }
 
+pub use crate::types::TileConfig;
+
+/// Validate a JPEG tiled tile size.
+///
+/// Requires `tile_size >= 8` and a multiple of 8 so the size maps
+/// deterministically to DCT blocks. Rejects rather than silently truncating
+/// non-multiples.
+fn validate_jpeg_tile_size(tile_size: u32) -> std::result::Result<(), StegoError> {
+    if tile_size < 8 {
+        return Err(StegoError::InvalidConfig(format!(
+            "JPEG tile size must be at least 8, got {tile_size}"
+        )));
+    }
+    if !tile_size.is_multiple_of(8) {
+        return Err(StegoError::InvalidConfig(format!(
+            "JPEG tile size must be a multiple of 8, got {tile_size}"
+        )));
+    }
+    Ok(())
+}
+
+fn jpeg_tile_geometry(header: &JpegHeader, tile_size: u32) -> Option<(u32, u32)> {
+    let max_h = header
+        .components
+        .iter()
+        .map(|c| c.h_sampling as u32)
+        .max()
+        .unwrap_or(1);
+    let max_v = header
+        .components
+        .iter()
+        .map(|c| c.v_sampling as u32)
+        .max()
+        .unwrap_or(1);
+    let luma_blocks_x = (header.width as u32).div_ceil(max_h * 8) * max_h;
+    let luma_blocks_y = (header.height as u32).div_ceil(max_v * 8) * max_v;
+    let blocks_per_tile = tile_size / 8;
+    (blocks_per_tile > 0).then(|| {
+        (
+            luma_blocks_x / blocks_per_tile,
+            luma_blocks_y / blocks_per_tile,
+        )
+    })
+}
+
+fn jpeg_tiled_payload_matches_decoded(
+    header: &JpegHeader,
+    coefficients: &crate::jpeg_transcoder::Coefficients,
+    payload: &[u8],
+    tile_size: u32,
+    tile_x: u32,
+    tile_y: u32,
+    local_seed: u64,
+) -> bool {
+    let tile_blocks = DctStegoF5::tile_block_set(header, coefficients, tile_x, tile_y, tile_size);
+    let payload_bits = payload.len().saturating_mul(8);
+    let bits = DctStegoF5::with_redundancy(1).extract_f5_from_blocks(
+        coefficients,
+        payload_bits,
+        local_seed,
+        &tile_blocks,
+    );
+    bits.len() >= payload_bits && crate::lsb_internal::bits_to_bytes(&bits) == payload
+}
+
+/// Embed arbitrary bytes once per tile for crop resistance.
+///
+/// Each tile's DCT blocks embed the full payload with redundancy 1 using a
+/// deterministic tile-local seed (`tile_seed(master, tx, ty)`); the tile
+/// grid itself is the redundancy. Uses the same supported-JPEG subset and
+/// container-preserving encode as [`embed`]. The production self-check
+/// extracts the first successful tile from the already-mutated in-memory
+/// coefficients (one decode + one encode, no re-decode of the output).
+///
+/// # Errors
+///
+/// Returns [`StegoError::InvalidConfig`] for `tile_size < 8` or a
+/// non-multiple of 8. Returns [`StegoError::UnsupportedJpeg`] for
+/// unsupported structures (no silent conversion, no application seed
+/// fallback).
+///
+/// ```rust,no_run
+/// use stegoeggo_stego::jpeg::{self, TileConfig};
+///
+/// let jpeg_bytes = std::fs::read("photo.jpg").unwrap();
+/// let config = TileConfig::try_new(42, 64).unwrap();
+/// if jpeg::probe_support(&jpeg_bytes).unwrap() == jpeg::JpegSupport::Supported {
+///     let report = jpeg::embed_tiled(&jpeg_bytes, b"payload", &config).unwrap();
+///     assert!(report.embedded);
+/// }
+/// ```
+pub fn embed_tiled(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &TileConfig,
+) -> std::result::Result<super::EmbedReport, StegoError> {
+    validate_jpeg_tile_size(config.tile_size())?;
+    if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
+        return Err(StegoError::MalformedInput("not a valid JPEG".to_string()));
+    }
+    let tile_size = config.tile_size();
+    let seed = config.seed();
+    let payload_bits = payload.len().saturating_mul(8);
+
+    let decoded = JpegTranscoder::decode_coefficients_with_probe(jpeg_bytes)
+        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+    let (mut header, mut coefficients) = match decoded {
+        crate::jpeg_transcoder::CoefficientDecode::Supported {
+            header,
+            coefficients,
+        } => (*header, coefficients),
+        crate::jpeg_transcoder::CoefficientDecode::Unsupported(reason) => {
+            return Err(StegoError::UnsupportedJpeg(map_unsupported_reason(reason)));
+        }
+    };
+    DctStegoF5::new()
+        .embed_seed_in_quantization_tables(&mut header, seed)
+        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+
+    let max_h = header
+        .components
+        .iter()
+        .map(|c| c.h_sampling as u32)
+        .max()
+        .unwrap_or(1);
+    let max_v = header
+        .components
+        .iter()
+        .map(|c| c.v_sampling as u32)
+        .max()
+        .unwrap_or(1);
+    let luma_blocks_x = (header.width as u32).div_ceil(max_h * 8) * max_h;
+    let luma_blocks_y = (header.height as u32).div_ceil(max_v * 8) * max_v;
+    let blocks_per_tile = tile_size / 8;
+    let tiles_x = luma_blocks_x / blocks_per_tile;
+    let tiles_y = luma_blocks_y / blocks_per_tile;
+    let mut first_embedded: Option<(u32, u32, u64)> = None;
+
+    for ty in 0..tiles_y {
+        for tx in 0..tiles_x {
+            let tile_blocks = DctStegoF5::tile_block_set(&header, &coefficients, tx, ty, tile_size);
+            if tile_blocks.is_empty() {
+                continue;
+            }
+            if DctStegoF5::with_redundancy(1)
+                .embed_f5_in_blocks(
+                    &mut coefficients,
+                    payload,
+                    crate::lsb_internal::tile_seed(seed, tx, ty),
+                    &tile_blocks,
+                )
+                .is_ok()
+            {
+                first_embedded.get_or_insert((
+                    tx,
+                    ty,
+                    crate::lsb_internal::tile_seed(seed, tx, ty),
+                ));
+            }
+        }
+    }
+
+    let output = JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))
+        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+    let Some((tile_x, tile_y, local_seed)) = first_embedded else {
+        return Ok(super::EmbedReport {
+            embedded: false,
+            output,
+            payload_bytes: payload.len(),
+            required_capacity: payload_bits,
+            available_capacity: 0,
+            actual_redundancy: 0,
+        });
+    };
+
+    if !jpeg_tiled_payload_matches_decoded(
+        &header,
+        &coefficients,
+        payload,
+        tile_size,
+        tile_x,
+        tile_y,
+        local_seed,
+    ) {
+        return Ok(super::EmbedReport {
+            embedded: false,
+            output,
+            payload_bytes: payload.len(),
+            required_capacity: payload_bits,
+            available_capacity: 0,
+            actual_redundancy: 0,
+        });
+    }
+    Ok(super::EmbedReport {
+        embedded: true,
+        output,
+        payload_bytes: payload.len(),
+        required_capacity: payload_bits,
+        available_capacity: payload_bits,
+        actual_redundancy: 1,
+    })
+}
+
+/// Extract tiled payload bytes when the payload length is known.
+///
+/// Decodes supported coefficients once per operation and searches at most
+/// `max_origins` tile origins with the tile-grid neighbourhood (`0..=2`)
+/// used by the current tiled path. Returns the first candidate in
+/// deterministic scan order with redundancy 1.
+///
+/// Raw mode cannot authenticate correctness; prefer [`extract_tiled_framed`]
+/// for self-validating crop recovery.
+///
+/// # Errors
+///
+/// Returns [`StegoError::InvalidConfig`] for an invalid tile size or an
+/// out-of-range `max_origins`. Returns [`StegoError::UnsupportedJpeg`] for
+/// unsupported structures.
+pub fn extract_tiled(
+    jpeg_bytes: &[u8],
+    payload_len: usize,
+    config: &TileConfig,
+    max_origins: u32,
+) -> std::result::Result<Vec<u8>, StegoError> {
+    validate_jpeg_tile_size(config.tile_size())?;
+    crate::types::validate_max_origins(max_origins)?;
+    checked_payload_bits(payload_len)?;
+    let tile_size = config.tile_size();
+    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    let Some((tiles_x, tiles_y)) = jpeg_tile_geometry(&decoded.header, tile_size) else {
+        return Err(StegoError::InvalidConfig(format!(
+            "JPEG tile size {tile_size} does not map to DCT blocks"
+        )));
+    };
+    if tiles_x == 0 || tiles_y == 0 {
+        return Err(StegoError::InsufficientCapacity {
+            required: payload_len.saturating_mul(8),
+            available: 0,
+        });
+    }
+    let payload_bits = payload_len.saturating_mul(8);
+    let mut origins_tried = 0u32;
+    for ty in 0..tiles_y {
+        for tx in 0..tiles_x {
+            if origins_tried >= max_origins {
+                return Err(StegoError::FrameNotFound);
+            }
+            origins_tried += 1;
+            let tile_blocks = DctStegoF5::tile_block_set(
+                &decoded.header,
+                &decoded.coefficients,
+                tx,
+                ty,
+                tile_size,
+            );
+            if tile_blocks.is_empty() {
+                continue;
+            }
+            for dy in 0..=2u32 {
+                if ty.saturating_add(dy) >= 16 {
+                    break;
+                }
+                for dx in 0..=2u32 {
+                    if tx.saturating_add(dx) >= 16 {
+                        break;
+                    }
+                    let local_seed =
+                        crate::lsb_internal::tile_seed(config.seed(), tx + dx, ty + dy);
+                    let bits = DctStegoF5::with_redundancy(1).extract_f5_from_blocks(
+                        &decoded.coefficients,
+                        payload_bits,
+                        local_seed,
+                        &tile_blocks,
+                    );
+                    if bits.len() >= payload_bits {
+                        return Ok(crate::lsb_internal::bits_to_bytes(&bits));
+                    }
+                }
+            }
+        }
+    }
+    Err(StegoError::FrameNotFound)
+}
+
+/// Embed a self-describing framed payload once per tile.
+///
+/// The frame is encoded with [`crate::frame::encode`] and then embedded with
+/// [`embed_tiled`]. The report's `payload_bytes` includes frame overhead.
+pub fn embed_tiled_framed(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &TileConfig,
+) -> std::result::Result<super::EmbedReport, StegoError> {
+    let framed = crate::frame::encode(payload)?;
+    embed_tiled(jpeg_bytes, &framed, config)
+}
+
+/// Extract and validate a framed tiled payload without caller-known length.
+///
+/// Retains one decoded coefficient state across prefix/full candidate
+/// validation. A candidate's prefix, header, and full extraction stay tied
+/// to the same tile origin, seed-offset identity, and redundancy 1; equal
+/// prefix bytes from distinct candidates do not collapse identity. The
+/// declared frame length is validated against frame bounds and per-tile
+/// capacity before full extraction.
+///
+/// # Errors
+///
+/// Returns [`StegoError::InvalidConfig`] for an invalid tile size or an
+/// out-of-range `max_origins`. Returns [`StegoError::UnsupportedJpeg`] for
+/// unsupported structures. Returns [`StegoError::FrameNotFound`] when the
+/// bounded search finds no valid frame.
+pub fn extract_tiled_framed(
+    jpeg_bytes: &[u8],
+    config: &TileConfig,
+    max_origins: u32,
+) -> std::result::Result<Vec<u8>, StegoError> {
+    validate_jpeg_tile_size(config.tile_size())?;
+    crate::types::validate_max_origins(max_origins)?;
+    let tile_size = config.tile_size();
+    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    let Some((tiles_x, tiles_y)) = jpeg_tile_geometry(&decoded.header, tile_size) else {
+        return Err(StegoError::InvalidConfig(format!(
+            "JPEG tile size {tile_size} does not map to DCT blocks"
+        )));
+    };
+    if tiles_x == 0 || tiles_y == 0 {
+        let header_bits = crate::frame::FRAME_HEADER_SIZE.saturating_mul(8);
+        return Err(StegoError::InsufficientCapacity {
+            required: header_bits,
+            available: 0,
+        });
+    }
+    let prefix_bits = crate::frame::FRAME_HEADER_SIZE.saturating_mul(8);
+    let mut origins_tried = 0u32;
+    for ty in 0..tiles_y {
+        for tx in 0..tiles_x {
+            if origins_tried >= max_origins {
+                return Err(StegoError::FrameNotFound);
+            }
+            origins_tried += 1;
+            let tile_blocks = DctStegoF5::tile_block_set(
+                &decoded.header,
+                &decoded.coefficients,
+                tx,
+                ty,
+                tile_size,
+            );
+            if tile_blocks.is_empty() {
+                continue;
+            }
+            for dy in 0..=2u32 {
+                if ty.saturating_add(dy) >= 16 {
+                    break;
+                }
+                for dx in 0..=2u32 {
+                    if tx.saturating_add(dx) >= 16 {
+                        break;
+                    }
+                    let local_seed =
+                        crate::lsb_internal::tile_seed(config.seed(), tx + dx, ty + dy);
+                    let prefix_bits_vec = DctStegoF5::with_redundancy(1).extract_f5_from_blocks(
+                        &decoded.coefficients,
+                        prefix_bits,
+                        local_seed,
+                        &tile_blocks,
+                    );
+                    if prefix_bits_vec.len() < prefix_bits {
+                        continue;
+                    }
+                    let prefix = crate::lsb_internal::bits_to_bytes(&prefix_bits_vec);
+                    let Ok((_, total_len)) = crate::frame::decode_prefix(&prefix) else {
+                        continue;
+                    };
+                    let Some(total_bits) = total_len.checked_mul(8) else {
+                        continue;
+                    };
+                    let full_bits_vec = DctStegoF5::with_redundancy(1).extract_f5_from_blocks(
+                        &decoded.coefficients,
+                        total_bits,
+                        local_seed,
+                        &tile_blocks,
+                    );
+                    if full_bits_vec.len() < total_bits {
+                        continue;
+                    }
+                    let framed = crate::lsb_internal::bits_to_bytes(&full_bits_vec);
+                    if let Ok((_, payload)) = crate::frame::decode(&framed) {
+                        return Ok(payload);
+                    }
+                }
+            }
+        }
+    }
+    Err(StegoError::FrameNotFound)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1208,5 +1610,84 @@ mod tests {
             prefix_over_capacity.into_error(),
             StegoError::FrameNotFound
         ));
+    }
+
+    #[test]
+    fn tiled_config_jpeg_rejects_small_and_non_multiple() {
+        assert!(TileConfig::try_new(42, 0).is_err());
+        assert!(embed_tiled(
+            &make_test_jpeg(256, 256),
+            b"x",
+            &TileConfig::try_new(42, 7).unwrap()
+        )
+        .is_err());
+        assert!(embed_tiled(
+            &make_test_jpeg(256, 256),
+            b"x",
+            &TileConfig::try_new(42, 65).unwrap()
+        )
+        .is_err());
+        assert!(TileConfig::try_new(42, 64).is_ok());
+    }
+
+    #[test]
+    fn tiled_raw_roundtrip() {
+        let jpeg_bytes = make_test_jpeg(256, 256);
+        let payload = vec![0xA5; 36];
+        let config = TileConfig::try_new(42, 64).unwrap();
+        let report = embed_tiled(&jpeg_bytes, &payload, &config).unwrap();
+        assert!(report.embedded);
+        assert_eq!(report.actual_redundancy, 1);
+        let recovered = extract_tiled(&report.output, payload.len(), &config, 64).unwrap();
+        assert_eq!(recovered, payload);
+    }
+
+    #[test]
+    fn tiled_framed_recovers_without_length() {
+        let jpeg_bytes = make_test_jpeg(256, 256);
+        let payload = b"framed tiled jpeg";
+        let config = TileConfig::try_new(42, 64).unwrap();
+        let report = embed_tiled_framed(&jpeg_bytes, payload, &config).unwrap();
+        assert!(report.embedded);
+        let recovered = extract_tiled_framed(&report.output, &config, 64).unwrap();
+        assert_eq!(&recovered, payload);
+    }
+
+    #[test]
+    fn tiled_extraction_rejects_zero_origins() {
+        let jpeg_bytes = make_test_jpeg(256, 256);
+        let config = TileConfig::try_new(42, 64).unwrap();
+        assert!(extract_tiled(&jpeg_bytes, 4, &config, 0).is_err());
+        assert!(extract_tiled_framed(&jpeg_bytes, &config, 0).is_err());
+    }
+
+    #[test]
+    fn tiled_unsupported_jpeg_returns_structured_error() {
+        use jpeg_encoder::Encoder as JpegEnc;
+        let img = image::DynamicImage::new_rgb8(64, 64);
+        let rgb = img.to_rgb8();
+        let mut progressive_buf = Vec::new();
+        {
+            let mut enc = JpegEnc::new(&mut progressive_buf, 90);
+            enc.set_progressive(true);
+            enc.encode(rgb.as_raw(), 64, 64, jpeg_encoder::ColorType::Rgb)
+                .unwrap();
+        }
+        let config = TileConfig::try_new(42, 64).unwrap();
+        let result = embed_tiled(&progressive_buf, b"payload", &config);
+        assert!(matches!(
+            result,
+            Err(StegoError::UnsupportedJpeg(_)) | Err(StegoError::MalformedInput(_))
+        ));
+    }
+
+    #[test]
+    fn tiled_framed_decodes_once_per_operation() {
+        let jpeg_bytes = make_test_jpeg(256, 256);
+        let config = TileConfig::try_new(42, 64).unwrap();
+        let report = embed_tiled_framed(&jpeg_bytes, b"one", &config).unwrap();
+        reset_decode_count();
+        assert!(extract_tiled_framed(&report.output, &config, 64).is_ok());
+        assert_eq!(decode_count(), 1);
     }
 }

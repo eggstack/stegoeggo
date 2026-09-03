@@ -227,7 +227,8 @@ pub mod stego {
     pub use stegoeggo_stego::types;
     pub use stegoeggo_stego::{
         CapacityReport, EmbedOutcome, EmbedOutcomeSummary, EmbedPath, EmbedReport, EmbedStatus,
-        InPlaceEmbedReport, JpegUnsupportedReason, StegoError, StegoResult, DEFAULT_TILE_SIZE,
+        InPlaceEmbedReport, JpegUnsupportedReason, StegoError, StegoResult, TileConfig,
+        DEFAULT_TILE_SIZE, MAX_TILED_ORIGINS,
     };
 }
 pub(crate) mod util;

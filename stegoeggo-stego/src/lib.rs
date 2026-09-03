@@ -11,9 +11,10 @@
 //! The default public surface is operation-level:
 //!
 //! - [`lsb`] — pixel-domain LSB capacity, raw embed/extract, in-place embed,
-//!   and framed convenience.
+//!   framed convenience, and tiled crop-oriented operations.
 //! - [`jpeg`] — encoded-JPEG DCT capacity, raw embed/extract, framed
-//!   convenience, support probing, and seed hints.
+//!   convenience, tiled crop-oriented operations, support probing, and seed
+//!   hints.
 //! - [`frame`] — self-describing framed payload with CRC32.
 //! - [`error`] — [`StegoError`] and [`JpegUnsupportedReason`].
 //! - [`CapacityReport`], [`EmbedReport`], [`InPlaceEmbedReport`] — structured
@@ -52,7 +53,10 @@ pub mod application_support;
 pub use error::{JpegUnsupportedReason, StegoError, StegoResult};
 pub use jpeg::is_progressive_jpeg;
 pub use lsb::DEFAULT_TILE_SIZE;
-pub use types::{EmbedOutcome, EmbedOutcomeSummary, EmbedPath, EmbedStatus, InPlaceEmbedReport};
+pub use types::{
+    EmbedOutcome, EmbedOutcomeSummary, EmbedPath, EmbedStatus, InPlaceEmbedReport, TileConfig,
+    MAX_TILED_ORIGINS,
+};
 
 /// Capacity report for a carrier query.
 ///

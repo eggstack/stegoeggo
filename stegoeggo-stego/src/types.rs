@@ -258,3 +258,78 @@ impl EmbedOutcomeSummary {
         self.status == EmbedStatus::Embedded
     }
 }
+
+/// Hard maximum for bounded tiled recovery.
+///
+/// Tiled extraction enumerates at most this many tile origins per operation.
+/// Callers pass an explicit `max_origins` in `1..=MAX_TILED_ORIGINS`; larger
+/// values are rejected with [`crate::StegoError::InvalidConfig`].
+pub const MAX_TILED_ORIGINS: u32 = 4096;
+
+/// Shared application-neutral configuration for tiled carrier operations.
+///
+/// Both LSB and JPEG tiled operations use this type so callers do not need
+/// separate nearly-identical structs. It carries only carrier-domain state:
+/// the master seed tile coordinates are derived from, and the tile edge
+/// length in pixels.
+///
+/// Use [`TileConfig::try_new`] when the tile size comes from untrusted input.
+/// Generic validation requires `tile_size > 0` with checked geometry; JPEG
+/// tiled operations additionally require `tile_size >= 8` and a multiple of
+/// 8 so the size maps deterministically to DCT blocks.
+///
+/// # Examples
+///
+/// ```rust
+/// use stegoeggo_stego::TileConfig;
+///
+/// let config = TileConfig::try_new(42, 64)?;
+/// assert_eq!(config.seed(), 42);
+/// assert_eq!(config.tile_size(), 64);
+/// # Ok::<_, stegoeggo_stego::StegoError>(())
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TileConfig {
+    seed: u64,
+    tile_size: u32,
+}
+
+impl TileConfig {
+    /// Fallible constructor that validates the tile size up front.
+    ///
+    /// Returns [`crate::StegoError::InvalidConfig`] if `tile_size` is zero.
+    pub fn try_new(seed: u64, tile_size: u32) -> Result<Self, crate::StegoError> {
+        if tile_size == 0 {
+            return Err(crate::StegoError::InvalidConfig(
+                "tile size must be non-zero".to_string(),
+            ));
+        }
+        Ok(Self { seed, tile_size })
+    }
+
+    /// The master seed tile coordinates are derived from.
+    #[must_use]
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    /// The tile edge length in pixels.
+    #[must_use]
+    pub fn tile_size(&self) -> u32 {
+        self.tile_size
+    }
+}
+
+/// Validate an explicit tiled-extraction bound.
+///
+/// Rejects `0` and values above [`MAX_TILED_ORIGINS`] with
+/// [`crate::StegoError::InvalidConfig`]. Keeps `ResourceLimits` types out of
+/// the carrier API while guaranteeing every tiled recovery is bounded.
+pub(crate) fn validate_max_origins(max_origins: u32) -> Result<(), crate::StegoError> {
+    if max_origins == 0 || max_origins > MAX_TILED_ORIGINS {
+        return Err(crate::StegoError::InvalidConfig(format!(
+            "max_origins must be in 1..={MAX_TILED_ORIGINS}, got {max_origins}"
+        )));
+    }
+    Ok(())
+}

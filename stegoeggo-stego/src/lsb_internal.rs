@@ -330,33 +330,6 @@ pub fn extract_lsb_range(
     Some(bits_to_bytes(&bits))
 }
 
-pub fn embed_lsb_v2(
-    img: &RgbaImage,
-    payload: &[u8],
-    seed: u64,
-    redundancy: usize,
-) -> EmbedOutcome<RgbaImage> {
-    let mut output = img.clone();
-    let report = embed_lsb_v2_in_place(&mut output, payload, seed, redundancy);
-    if report.embedded {
-        EmbedOutcome::Embedded {
-            output,
-            payload_bytes: report.payload_bytes,
-            required_capacity: report.required_capacity,
-            available_capacity: report.available_capacity,
-            path: crate::types::EmbedPath::Lsb,
-        }
-    } else {
-        EmbedOutcome::SkippedCapacity {
-            output,
-            payload_bytes: report.payload_bytes,
-            required_capacity: report.required_capacity,
-            available_capacity: report.available_capacity,
-            path: crate::types::EmbedPath::Lsb,
-        }
-    }
-}
-
 pub fn embed_lsb_v2_in_place(
     image: &mut RgbaImage,
     payload: &[u8],

@@ -869,7 +869,12 @@ impl SteganographyProtector {
         seed: u64,
         redundancy: usize,
     ) -> Option<Vec<u8>> {
-        carrier_support::corrected_lsb_extract(img, expected_bits, seed, redundancy)
+        if !expected_bits.is_multiple_of(8) {
+            return None;
+        }
+        let payload_len = expected_bits / 8;
+        let config = super::carrier_lsb::LsbConfig::try_new(seed, redundancy).ok()?;
+        super::carrier_lsb::extract(img, payload_len, &config).ok()
     }
 
     pub(crate) fn extract_seed_lsb_fallback(img: &RgbaImage) -> Option<u64> {
@@ -1332,7 +1337,20 @@ impl SteganographyProtector {
     }
 
     pub(crate) fn crop_rgba(src: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> RgbaImage {
-        carrier_support::crop_image_region(src, x, y, w, h)
+        let mut out = RgbaImage::new(w, h);
+        let (width, height) = src.dimensions();
+        if w == 0 || h == 0 || x >= width || y >= height {
+            return out;
+        }
+        let copy_w = w.min(width - x);
+        let copy_h = h.min(height - y);
+        for dy in 0..copy_h {
+            for dx in 0..copy_w {
+                let p = src.get_pixel(x + dx, y + dy);
+                out.put_pixel(dx, dy, *p);
+            }
+        }
+        out
     }
 
     /// Extract and parse a protected payload directly from encoded image bytes.
