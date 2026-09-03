@@ -1099,21 +1099,18 @@ fn process_plan_bytes(
             &metadata_trap,
             budget,
         ),
-        HiddenMarkerMode::BestEffort => execute_stego_and_metadata(
+        HiddenMarkerMode::BestEffort => execute_full_marker_and_metadata(
             img_bytes,
             plan,
-            input_format,
-            output_format,
+            None,
             &steganography,
             &metadata_trap,
             budget,
         ),
-        HiddenMarkerMode::Tiled { tile_size } => execute_stego_and_metadata_tiled(
+        HiddenMarkerMode::Tiled { tile_size } => execute_full_marker_and_metadata(
             img_bytes,
             plan,
-            input_format,
-            output_format,
-            tile_size,
+            Some(tile_size),
             &steganography,
             &metadata_trap,
             budget,
@@ -1250,77 +1247,19 @@ fn observe_metadata_work(
     budget.check_limits()
 }
 
-fn execute_stego_and_metadata(
+fn execute_full_marker_and_metadata(
     img_bytes: &[u8],
     plan: &ResolvedProtectionPlan,
-    input_format: ImageOutputFormat,
-    output_format: ImageOutputFormat,
+    tile_size: Option<u32>,
     steganography: &SteganographyProtector,
     metadata_trap: &RightsMetadataProtector,
     budget: &mut crate::resource_limits::OperationObserver,
 ) -> Result<PipelineResult> {
-    if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
-        let with_stego = steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, None)?;
-        let (output, embed_summary) = with_stego.into_parts();
-        let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
-        observe_metadata_work(&bytes, output_format, budget)?;
-        return Ok(PipelineResult {
-            bytes,
-            embed_summary: Some(embed_summary),
-        });
-    }
-
-    let img = load_image_from_bytes(img_bytes)?;
-    let (width, height) = img.dimensions();
-    plan.resource_limits().check_dimensions(width, height)?;
-
-    if output_format == ImageOutputFormat::Jpeg {
-        let jpeg_bytes = crate::util::image::encode_image_with_options(
-            &img,
-            Some(output_format),
-            plan.processing().progressive_jpeg,
-            plan.processing().jpeg_quality,
-        )?;
-        let with_stego = steganography.apply_dct_stego_bytes_from_plan(&jpeg_bytes, plan, None)?;
-        let (output, embed_summary) = with_stego.into_parts();
-        let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
-        observe_metadata_work(&bytes, output_format, budget)?;
-        return Ok(PipelineResult {
-            bytes,
-            embed_summary: Some(embed_summary),
-        });
-    }
-
-    let (stego_img, embed_summary) =
-        steganography.apply_to_image_with_summary_from_plan(&img, plan, None)?;
-    let encoded = crate::util::image::encode_image_with_options(
-        &stego_img,
-        Some(output_format),
-        plan.processing().progressive_jpeg,
-        plan.processing().jpeg_quality,
-    )?;
-    let bytes = metadata_trap.inject_bytes_from_plan(&encoded, plan)?;
-    observe_metadata_work(&bytes, output_format, budget)?;
-    Ok(PipelineResult {
-        bytes,
-        embed_summary,
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-fn execute_stego_and_metadata_tiled(
-    img_bytes: &[u8],
-    plan: &ResolvedProtectionPlan,
-    input_format: ImageOutputFormat,
-    output_format: ImageOutputFormat,
-    tile_size: u32,
-    steganography: &SteganographyProtector,
-    metadata_trap: &RightsMetadataProtector,
-    budget: &mut crate::resource_limits::OperationObserver,
-) -> Result<PipelineResult> {
+    let input_format = plan.input_format();
+    let output_format = plan.output_format();
     if input_format == ImageOutputFormat::Jpeg && output_format == ImageOutputFormat::Jpeg {
         let with_stego =
-            steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, Some(tile_size))?;
+            steganography.apply_dct_stego_bytes_from_plan(img_bytes, plan, tile_size)?;
         let (output, embed_summary) = with_stego.into_parts();
         let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
         observe_metadata_work(&bytes, output_format, budget)?;
@@ -1342,7 +1281,7 @@ fn execute_stego_and_metadata_tiled(
             plan.processing().jpeg_quality,
         )?;
         let with_stego =
-            steganography.apply_dct_stego_bytes_from_plan(&jpeg_bytes, plan, Some(tile_size))?;
+            steganography.apply_dct_stego_bytes_from_plan(&jpeg_bytes, plan, tile_size)?;
         let (output, embed_summary) = with_stego.into_parts();
         let bytes = metadata_trap.inject_bytes_from_plan(&output, plan)?;
         observe_metadata_work(&bytes, output_format, budget)?;
@@ -1353,7 +1292,7 @@ fn execute_stego_and_metadata_tiled(
     }
 
     let (stego_img, embed_summary) =
-        steganography.apply_to_image_with_summary_from_plan(&img, plan, Some(tile_size))?;
+        steganography.apply_lsb_to_image_with_summary_from_plan(&img, plan, tile_size)?;
     let encoded = crate::util::image::encode_image_with_options(
         &stego_img,
         Some(output_format),

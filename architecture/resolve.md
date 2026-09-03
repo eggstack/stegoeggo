@@ -64,8 +64,8 @@ pub fn resolve_request(
 
 After Plan 061, the resolved plan is the direct execution state. The canonical
 request execution path (`process_request_bytes*` → `process_plan_bytes` →
-`execute_metadata_only` / `execute_stego_and_metadata` /
-`execute_stego_and_metadata_tiled`) consumes the plan directly via the
+`execute_metadata_only` / `execute_full_marker_and_metadata` /
+`execute_seed_only_and_metadata`) consumes the plan directly via the
 `*_from_plan` entry points on `SteganographyProtector` and
 `RightsMetadataProtector`. There is no `plan_to_context()` adapter left; legacy
 `ProtectionContext`/`ProtectionLevel` entry points are routed through

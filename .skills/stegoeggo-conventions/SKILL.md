@@ -212,6 +212,7 @@ frame::decode_prefix(data) -> Result<(FrameHeader, usize)>
 14. **JPEG framed extraction is single-decode** — `jpeg::extract_framed` retains private decoded coefficients for its bounded redundancy search. Do not recompose it from public `capacity`/`extract` calls, expose a JPEG session, or reduce the configured search domain.
 15. **Benchmark equivalence** — The `lsb_clone_vs_in_place` benchmark uses Criterion batching so each in-place iteration starts from a pristine source image and the preparation clone remains outside the timed operation.
 16. **`verify_image_bytes` returns directly** — Returns `VerificationStatus`, not `Result<VerificationStatus>`. Use `verify_image_bytes_detailed` for full `VerificationResult`.
+17. **Output-domain carrier routing** — Carrier family is selected from the final output format (`output_format == JPEG ? DCT : LSB`); input format controls fast-path reuse only. `execute_full_marker_and_metadata()` in `src/lib.rs` is the sole current-carrier router; `apply_lsb_to_image_with_summary_from_plan()` in `src/protected/steganography/embed.rs` is explicitly raster-domain and must never branch on `plan.input_format()`. JPEG→PNG/WebP is one pixel decode plus LSB, never a transient DCT step. `EmbedPath` follows the operation actually executed (`Lsb`/`LsbTiled` for raster output, `DctF5`/`DctF5Tiled` for JPEG output).
 
 ## Build & Test
 ```bash

@@ -20,9 +20,11 @@ Existing unrelated metadata is preserved where the format-specific update path s
 
 Hidden markers are an optional secondary signal using:
 
-- **LSB embedding** (PNG/WebP): Payload embedded in least-significant bits of pixel channels, with spread-spectrum and error-correcting codes for robustness.
-- **DCT embedding** (JPEG): F5-style perturbation of DCT coefficients, with seed storage in quantization tables.
+- **LSB embedding** (PNG/WebP output): Payload embedded in least-significant bits of pixel channels, with spread-spectrum and error-correcting codes for robustness.
+- **DCT embedding** (JPEG output): F5-style perturbation of DCT coefficients, with seed storage in quantization tables.
 - **Tiled embedding**: Crop-resistant mode that embeds the full payload in each tile of the image.
+
+The carrier is selected from the final output format: JPEG output uses the DCT domain, PNG/WebP output uses the pixel LSB domain. Input format only determines whether original JPEG bytes can be reused; a JPEG input converted to PNG/WebP receives a raster LSB marker, never a transient DCT marker.
 
 ## Common transformations and their effects
 

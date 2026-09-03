@@ -5,7 +5,7 @@
 The rights-aware hidden-marker adapter is split into five responsibility modules behind the `SteganographyProtector` facade:
 
 - `marker.rs` constructs current V3 application payload bytes from the resolved plan or compatibility context.
-- `embed.rs` selects the LSB, tiled LSB, JPEG DCT/F5, or seed-only carrier operation and maps carrier outcomes.
+- `embed.rs` provides the raster-domain LSB helper (`apply_lsb_to_image_with_summary_from_plan`), the encoded-byte JPEG DCT helper (`apply_dct_stego_bytes_from_plan`), and seed-only helpers; it does not select carrier family from input format.
 - `extract.rs` discovers seeds, performs bounded non-tiled/tiled searches, and reuses one carrier-owned tiled JPEG search per operation.
 - `verify.rs` parses payloads and classifies CRC/HMAC/signature, malformed, unsupported, and authentication failures.
 - `legacy.rs` contains compatibility-only V1/V2 decoding and ECC adapters.
@@ -81,6 +81,10 @@ pub struct StegoPayload { /* private fields */ }
 Getter methods: `protection_level()`, `seed()`, `intensity()`, `version()`.
 
 ## Embedding Methods
+
+### Output-Domain Carrier Invariant
+
+Carrier family is selected from the final output format; input format controls fast-path reuse only (`output_format == JPEG ? DCT : LSB`). The top-level executor `execute_full_marker_and_metadata()` in `src/lib.rs` is the sole current-carrier router. `apply_lsb_to_image_with_summary_from_plan()` is explicitly raster-domain and cannot choose JPEG DCT; JPEG DCT remains in `apply_dct_stego_bytes_from_plan()`. JPEG→PNG/WebP is one pixel decode followed by raster LSB with no transient JPEG DCT step. `EmbedPath` (`Lsb`/`LsbTiled` for raster output, `DctF5`/`DctF5Tiled` for JPEG output) is derived from the operation actually executed.
 
 ### LSB Embedding (PNG/WebP)
 

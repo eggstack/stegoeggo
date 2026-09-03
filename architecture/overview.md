@@ -2,7 +2,7 @@
 
 `stegoeggo` is a Rust library and CLI for protecting images from unauthorized AI model training through rights-reservation metadata and steganographic markers. It applies multiple layers of protection — metadata injection and steganographic embedding — to serve as legal evidence of image ownership.
 
-**Version:** 0.3.3 · **MSRV:** Rust 1.87 · **License:** see root `Cargo.toml`
+**Version:** 0.4.0 · **MSRV:** Rust 1.87 · **License:** see root `Cargo.toml`
 
 ## What This Document Is
 
@@ -134,7 +134,7 @@ Each level above `Disabled` activates metadata injection. `Light` adds the cheap
 
 1. **Metadata injection** (`MetadataTrapProtector`): Embeds visible and machine-readable rights signals — `plus:DataMining` XMP, IPTC DMI, copyright notices, usage terms — into image containers (PNG tEXt/iTXt, JPEG COM/APP13, WebP XMP). These survive stripping and provide legal evidence.
 
-2. **Steganographic embedding** (`SteganographyProtector`): Hides a verifiable payload using LSB (PNG/WebP) or F5-style DCT (JPEG). Payloads carry seed, rights policy, optional HMAC authentication, and provenance digest. Supports tiled crop-resistant mode.
+2. **Steganographic embedding** (`SteganographyProtector`): Hides a verifiable payload using LSB (PNG/WebP output) or F5-style DCT (JPEG output). Payloads carry seed, rights policy, optional HMAC authentication, and provenance digest. Supports tiled crop-resistant mode.
 
 3. **Detached manifests** (feature: `detached-manifest`): Signed JSON sidecar containing image digest, provenance claim, and Ed25519 signatures. Enables out-of-band verification.
 
@@ -176,15 +176,19 @@ process_plan_bytes()
        │                                              ├── JPEG: embed seed in Q-tables → inject metadata
        │                                              └── PNG/WebP: LSB seed fallback → encode → inject
        │
-       ├── HiddenMarkerMode::BestEffort ──────────► execute_stego_and_metadata()
-       │                                              ├── JPEG→JPEG fast path (byte-only):
-       │                                              │     DCT inspect → apply_dct_stego → inject metadata
-       │                                              └── Non-JPEG path:
-       │                                                    LSB stego → encode → inject metadata
-       │
-       └── HiddenMarkerMode::Tiled ───────────────► execute_stego_and_metadata_tiled()
-                                                      └── Same as BestEffort with tile_size parameter
+        ├── HiddenMarkerMode::BestEffort ──────────► execute_full_marker_and_metadata(None)
+        │                                              ├── JPEG→JPEG fast path (byte-only):
+        │                                              │     DCT inspect → apply_dct_stego → inject metadata
+        │                                              ├── JPEG output (transcoded):
+        │                                              │     decode once → encode JPEG once → DCT stego → inject
+        │                                              └── PNG/WebP output:
+        │                                                    decode pixels → LSB stego → encode → inject metadata
+        │
+        └── HiddenMarkerMode::Tiled ───────────────► execute_full_marker_and_metadata(Some(tile_size))
+                                                       └── Same routing with tiled LSB / tiled DCT carriers
 ```
+
+Carrier family is selected from the final output format (`output_format == JPEG ? DCT : LSB`); input format controls fast-path reuse only. JPEG→PNG/WebP is one pixel decode followed by raster LSB with no transient JPEG DCT step.
 
 Legacy `process_image_bytes()` adapters translate `ProtectionLevel` + `ProtectionContext` to a `ProtectionRequest` via `request_from_legacy()` and re-enter the canonical path.
 
@@ -497,7 +501,7 @@ Three-state control (`Option<bool>`) for metadata injection:
 
 | Crate | Version | Role | Feature |
 |-------|---------|------|---------|
-| `stegoeggo-stego` | 0.3 | Generic carrier core (LSB, JPEG DCT, transcoder) | — |
+| `stegoeggo-stego` | 0.4.0 | Generic carrier core (LSB, JPEG DCT, transcoder) | — |
 | `image` | 0.25 | Image loading, decoding, encoding (PNG, JPEG, WebP) | — |
 | `jpeg-encoder` | 0.7 | Direct JPEG encoding with quality/progressive control | — |
 | `quick-xml` | 0.41 | XMP parsing and serialization | — |

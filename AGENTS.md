@@ -118,6 +118,7 @@ Not deprecated (do not migrate away): `VerificationStatus` — still the return 
 - **Two separate XorShiftRng implementations** — `PixelSelectionRng` in `src/util/image.rs` and `DctCoefficientRng` in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs`. Different algorithms, different sequences for same seed. Do NOT interchange them
 - **`ProtectionContext::default()` uses CSPRNG seed** — For reproducible results, use `ProtectionContext::new(intensity, seed)` with an explicit seed
 - **Pipeline flow order** — JPEG output: encode → DCT stego → metadata. Non-JPEG: pixel stego → encode → metadata. JPEG→JPEG fast path bypasses pixel decode entirely
+- **Output-domain carrier routing** — Carrier family follows the final output format (`output_format == JPEG ? DCT : LSB`); input format controls fast-path reuse only. JPEG→PNG/WebP is one pixel decode plus raster LSB, never a transient DCT step
 - **Generic stego API uses `StegoError`** — The public `stego` module uses its own `StegoError` type, not the crate root `Error`. Convert via `From<StegoError> for Error`
 - **JPEG `extract` requires `actual_redundancy`** — The JPEG embed auto-downgrades redundancy when capacity is insufficient. Pass `report.actual_redundancy` to `extract` to match what was embedded
 - **JPEG framed extraction reuses one decode** — `jpeg::extract_framed()` validates support, decodes the coefficient container once, and reuses private retained state across the configured redundancy search
@@ -187,8 +188,8 @@ Not deprecated (do not migrate away): `VerificationStatus` — still the return 
 
 - **Strategy pattern** via `Protector` trait (`src/traits.rs`) with three levels: Disabled, Light, Standard — see `architecture/traits.md`
 - **Pipeline** (`src/lib.rs`): canonical `ProtectionRequest` execution is plan-driven; stateless `ProtectionPipeline` methods are compatibility adapters for legacy APIs — see `architecture/pipeline.md`
-- **Direct plan executor** (`src/lib.rs`): `execute_metadata_only()`, `execute_stego_and_metadata()`, `execute_stego_and_metadata_tiled()`, `execute_seed_only_and_metadata()` — canonical execution from `ResolvedProtectionPlan`
-- **Application stego adapter** (`src/protected/steganography/`): decomposed into five modules behind `SteganographyProtector` — `marker.rs` (V3 payload construction), `embed.rs` (carrier dispatch: LSB, tiled LSB, JPEG DCT/F5, seed-only), `extract.rs` (seed discovery and bounded search), `verify.rs` (integrity and authentication classification), `legacy.rs` (V1/V2 compatibility); `mod.rs` is the facade — see `architecture/protected-steganography.md`
+- **Direct plan executor** (`src/lib.rs`): `execute_metadata_only()`, `execute_full_marker_and_metadata()`, `execute_seed_only_and_metadata()` — canonical execution from `ResolvedProtectionPlan`
+- **Application stego adapter** (`src/protected/steganography/`): decomposed into five modules behind `SteganographyProtector` — `marker.rs` (V3 payload construction), `embed.rs` (raster LSB helper + encoded-byte JPEG DCT helper, no input-format carrier dispatch), `extract.rs` (seed discovery and bounded search), `verify.rs` (integrity and authentication classification), `legacy.rs` (V1/V2 compatibility); `mod.rs` is the facade — see `architecture/protected-steganography.md`
 - **Generic carrier core** (`stegoeggo-stego/src/`): Application-neutral LSB and JPEG DCT carrier mechanics — see `architecture/protected-steganography.md`
 - **Public generic stego API** (`stegoeggo::stego`): Carrier-level embedding/extraction for arbitrary payload bytes, independent of the rights-protection pipeline — see `architecture/protected-steganography.md`
 - **JPEG fast path**: When input/output are both JPEG, the application adapter calls the carrier's public encoded-byte operations, bypassing pixel decode/encode — see `architecture/jpeg-transcoder.md`
@@ -289,7 +290,7 @@ See `RELEASING.md` for the complete procedure.
 - `SUPPORT.md` — Support matrix
 - `STABILITY.md` — Stability tiers
 - `RELEASING.md` — Manual publication procedure
-- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why. Next plan number: 076+
+- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why. Next plan number: 081+
 - `examples/` — Four runnable examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) referenced by `docs/rust-api.md`; keep them compiling when changing public APIs
 - `docs/` — User-facing guides: `cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`
 - `architecture/` — 30 architecture documents, verified against source; indexed in the table above and in `architecture/overview.md`

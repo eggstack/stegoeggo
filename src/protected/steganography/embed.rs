@@ -162,29 +162,17 @@ impl SteganographyProtector {
         }
     }
 
-    pub(crate) fn apply_to_image_with_summary_from_plan(
+    pub(crate) fn apply_lsb_to_image_with_summary_from_plan(
         &self,
         img: &DynamicImage,
         plan: &crate::types::ResolvedProtectionPlan,
         tile_size: Option<u32>,
     ) -> Result<(DynamicImage, Option<crate::stego::EmbedOutcomeSummary>)> {
-        let format = plan.input_format();
         let is_tiled = tile_size.filter(|&s| s > 0).is_some();
-        let embed_path = match format {
-            crate::types::ImageOutputFormat::Jpeg => {
-                if is_tiled {
-                    crate::stego::EmbedPath::DctF5Tiled
-                } else {
-                    crate::stego::EmbedPath::DctF5
-                }
-            }
-            _ => {
-                if is_tiled {
-                    crate::stego::EmbedPath::LsbTiled
-                } else {
-                    crate::stego::EmbedPath::Lsb
-                }
-            }
+        let embed_path = if is_tiled {
+            crate::stego::EmbedPath::LsbTiled
+        } else {
+            crate::stego::EmbedPath::Lsb
         };
 
         let emission = PayloadEmissionContext::from_plan(plan, embed_path);
@@ -193,101 +181,20 @@ impl SteganographyProtector {
         let seed = plan.seed();
         let redundancy = Self::effective_redundancy_for_plan(plan);
 
-        match format {
-            crate::types::ImageOutputFormat::Png => {
-                if let Some(ts) = tile_size.filter(|&s| s > 0) {
-                    let outcome = self.embed_lsb_tiled(&rgba, &payload, seed, ts);
-                    let (mut result, summary) = outcome.into_parts();
-                    if summary.is_embedded() {
-                        Self::embed_seed_lsb_fallback(&mut result, seed);
-                    }
-                    Ok((DynamicImage::ImageRgba8(result), Some(summary)))
-                } else {
-                    let report =
-                        self.embed_lsb_v2_in_place(&mut rgba, &payload, seed, redundancy)?;
-                    let summary = Self::lsb_in_place_summary(report);
-                    if report.embedded {
-                        Self::embed_seed_lsb_fallback(&mut rgba, seed);
-                    }
-                    Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
-                }
+        if let Some(ts) = tile_size.filter(|&s| s > 0) {
+            let outcome = self.embed_lsb_tiled(&rgba, &payload, seed, ts);
+            let (mut result, summary) = outcome.into_parts();
+            if summary.is_embedded() {
+                Self::embed_seed_lsb_fallback(&mut result, seed);
             }
-            crate::types::ImageOutputFormat::Jpeg => {
-                let jpeg_bytes = crate::util::image::encode_image_with_options(
-                    img,
-                    Some(crate::types::ImageOutputFormat::Jpeg),
-                    plan.processing().progressive_jpeg,
-                    plan.processing().jpeg_quality,
-                )?;
-                let with_stego =
-                    self.apply_dct_stego_bytes_from_plan(&jpeg_bytes, plan, tile_size)?;
-                let (output, summary) = with_stego.into_parts();
-                Ok((image::load_from_memory(&output)?, Some(summary)))
+            Ok((DynamicImage::ImageRgba8(result), Some(summary)))
+        } else {
+            let report = self.embed_lsb_v2_in_place(&mut rgba, &payload, seed, redundancy)?;
+            let summary = Self::lsb_in_place_summary(report);
+            if report.embedded {
+                Self::embed_seed_lsb_fallback(&mut rgba, seed);
             }
-            crate::types::ImageOutputFormat::WebP => {
-                if let Some(ts) = tile_size.filter(|&s| s > 0) {
-                    let outcome = self.embed_lsb_tiled(&rgba, &payload, seed, ts);
-                    let (mut result, summary) = outcome.into_parts();
-                    if summary.is_embedded() {
-                        Self::embed_seed_lsb_fallback(&mut result, seed);
-                    }
-                    Ok((DynamicImage::ImageRgba8(result), Some(summary)))
-                } else {
-                    let report =
-                        self.embed_lsb_v2_in_place(&mut rgba, &payload, seed, redundancy)?;
-                    let summary = Self::lsb_in_place_summary(report);
-                    if report.embedded {
-                        Self::embed_seed_lsb_fallback(&mut rgba, seed);
-                    }
-                    Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
-                }
-            }
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn embed_lsb_minimal_from_plan(
-        &self,
-        img: &DynamicImage,
-        plan: &crate::types::ResolvedProtectionPlan,
-    ) -> DynamicImage {
-        let format = plan.input_format();
-        let embed_path = match format {
-            crate::types::ImageOutputFormat::Jpeg => crate::stego::EmbedPath::DctF5,
-            _ => crate::stego::EmbedPath::Lsb,
-        };
-        let emission = PayloadEmissionContext::from_plan(plan, embed_path);
-        let payload = self.generate_payload_for_plan(&emission, plan);
-        let mut rgba = img.to_rgba8();
-        let seed = plan.seed();
-
-        match format {
-            crate::types::ImageOutputFormat::Png | crate::types::ImageOutputFormat::WebP => {
-                if self
-                    .embed_lsb_v2_in_place(&mut rgba, &payload, seed, 1)
-                    .is_ok()
-                {
-                    DynamicImage::ImageRgba8(rgba)
-                } else {
-                    img.clone()
-                }
-            }
-            crate::types::ImageOutputFormat::Jpeg => {
-                if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Jpeg)
-                {
-                    if let Ok(with_seed) = self.apply_qtable_seed_bytes(&encoded, seed) {
-                        if let Ok(stego_img) = image::load_from_memory(&with_seed) {
-                            stego_img
-                        } else {
-                            img.clone()
-                        }
-                    } else {
-                        img.clone()
-                    }
-                } else {
-                    img.clone()
-                }
-            }
+            Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
         }
     }
 

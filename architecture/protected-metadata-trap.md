@@ -10,7 +10,7 @@ The largest module. Injects metadata into image files. Operates at the byte leve
 - **`inject_bytes()`** — Legacy metadata injection using `&ProtectionContext`
 - **`inject_bytes_from_plan()`** — Canonical metadata injection using `&ResolvedProtectionPlan` directly (no `ProtectionContext` reconstruction)
 - **Pipeline routes `Light` level through `execute_seed_only_and_metadata()`** which resolves to `HiddenMarkerMode::SeedOnly` and calls `inject_bytes_from_plan` (legacy level APIs translate via `request_from_legacy()` into `ProtectionRequest`)
-- **Canonical path uses `inject_bytes_from_plan()`** from `execute_metadata_only()` and `execute_stego_and_metadata*()`
+- **Canonical path uses `inject_bytes_from_plan()`** from `execute_metadata_only()`, `execute_full_marker_and_metadata()`, and `execute_seed_only_and_metadata()`
 
 ## Metadata Types
 

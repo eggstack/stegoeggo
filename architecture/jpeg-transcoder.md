@@ -170,4 +170,4 @@ Malformed entropy never produces partial successful coefficient maps.
 - **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: `DctStegoF5` for coefficient manipulation
 - **stegoeggo-stego/src/application_support.rs**: Narrow operation layer that exposes the carrier-owned `jpeg_embed` / `jpeg_extract` / `TiledJpegSearch` to the parent crate without re-exporting parser, coefficient, or F5 types
 - **stegoeggo/src/protected/steganography/embed.rs**: `apply_dct_stego_bytes_from_plan` (canonical) and the legacy `apply_dct_stego_bytes` (legacy context path) call the transcoder through `application_support`; both use preserving encoding for all DCT output
-- **stegoeggo/src/lib.rs**: Used in `apply_bytes_pipeline` when input/output are both JPEG
+- **stegoeggo/src/lib.rs**: Used in `execute_full_marker_and_metadata()` when input/output are both JPEG

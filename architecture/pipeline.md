@@ -15,10 +15,23 @@ ProtectionRequest → resolve_request() → ResolvedProtectionPlan → execute_p
 Three crate-private functions perform the actual work:
 
 - `execute_metadata_only()` — Same-format and cross-format metadata injection using plan fields directly (no `ProtectionContext` reconstruction)
-- `execute_stego_and_metadata()` — Standard hidden marker: DCT/LSB stego + metadata injection
-- `execute_stego_and_metadata_tiled()` — Tiled variant for crop-resistant mode
+- `execute_full_marker_and_metadata()` — BestEffort and Tiled hidden markers with one carrier router (`tile_size: None` vs `Some`); DCT/LSB stego + metadata injection
+- `execute_seed_only_and_metadata()` — Seed-only marker + metadata injection
 
-These functions use `RightsMetadataProtector::inject_bytes_from_plan()` for metadata injection, which accepts `&ResolvedProtectionPlan` directly. The steganography side exposes `*_from_plan` methods (`SteganographyProtector::apply_dct_stego_bytes_from_plan`, `apply_to_image_with_summary_from_plan`, `embed_lsb_tiled_*`) that consume the plan directly. The `apply_dct_stego_bytes_from_plan` dispatcher lives in `src/protected/steganography/embed.rs`; the plan-driven embed path uses the carrier's narrow `application_support` operation layer and never reconstructs a `ProtectionContext` from the plan. There is no `plan_to_context()` adapter: the resolved plan is the only execution state for the canonical path.
+These functions use `RightsMetadataProtector::inject_bytes_from_plan()` for metadata injection, which accepts `&ResolvedProtectionPlan` directly. The steganography side exposes `*_from_plan` methods (`SteganographyProtector::apply_dct_stego_bytes_from_plan`, `apply_lsb_to_image_with_summary_from_plan`, `embed_lsb_tiled_*`) that consume the plan directly. The `apply_dct_stego_bytes_from_plan` dispatcher lives in `src/protected/steganography/embed.rs`; the plan-driven embed path uses the carrier's narrow `application_support` operation layer and never reconstructs a `ProtectionContext` from the plan. There is no `plan_to_context()` adapter: the resolved plan is the only execution state for the canonical path.
+
+## Output-Domain Carrier Invariant
+
+Carrier family is selected from the final output format; input format controls fast-path reuse only:
+
+```
+output_format == JPEG ? DCT/F5 carrier : LSB carrier
+```
+
+- JPEG output → DCT/F5 (`EmbedPath::DctF5`) or tiled DCT/F5 (`EmbedPath::DctF5Tiled`), after either reusing the original JPEG bytes (JPEG→JPEG) or decoding once and encoding JPEG once (PNG/WebP→JPEG).
+- PNG/WebP output → LSB (`EmbedPath::Lsb`) or tiled LSB (`EmbedPath::LsbTiled`), executed directly on decoded pixels. JPEG→PNG/WebP is one pixel decode followed by raster LSB; there is no transient JPEG DCT step.
+- `EmbedPath` is derived from the operation actually executed, never from `plan.input_format()`.
+- `apply_lsb_to_image_with_summary_from_plan()` is explicitly raster-domain (`DynamicImage → owned RGBA → LSB/tiled-LSB → DynamicImage::ImageRgba8`) and cannot select JPEG DCT. JPEG DCT remains in the encoded-byte helper `apply_dct_stego_bytes_from_plan()`.
 
 ## ProtectionPipeline (legacy path)
 
@@ -36,18 +49,15 @@ pub struct ProtectionPipeline {
 
 ### Pipeline Flow (Standard)
 
+`execute_full_marker_and_metadata()` is the single current full-marker router:
+
 ```
-1. If JPEG output:
-   a. Encode to JPEG bytes first
-   b. Apply DCT stego to JPEG bytes
-   c. Inject metadata to JPEG bytes
-2. If non-JPEG output:
-   a. Apply pixel stego to DynamicImage
-   b. Encode to target format
-   c. Inject metadata to bytes
+1. If JPEG input + JPEG output: reuse original bytes → DCT stego → inject metadata
+2. Else if JPEG output: decode source once → encode JPEG once → DCT stego → inject metadata
+3. Else (PNG/WebP output): decode source pixels → LSB/tiled-LSB → encode final format → inject metadata
 ```
 
-The JPEG fast path (`apply_bytes_pipeline`) calls the carrier crate's encoded-byte JPEG operations. Those operations privately decode and re-encode DCT coefficients, bypassing pixel decode/encode cycles. It only triggers when **both** input and output are JPEG — format conversion always takes the full pipeline. This is critical for the sub-10ms latency target. The root-side call site is `SteganographyProtector::apply_dct_stego_bytes_from_plan` in `src/protected/steganography/embed.rs`; the carrier-side helpers live behind `stegoeggo_stego::application_support::jpeg_embed` so JPEG parser, coefficient, and F5 types stay private to the carrier crate.
+The JPEG fast path (`execute_full_marker_and_metadata()` JPEG→JPEG branch) calls the carrier crate's encoded-byte JPEG operations. Those operations privately decode and re-encode DCT coefficients, bypassing pixel decode/encode cycles. It only triggers when **both** input and output are JPEG — format conversion always takes the full pipeline. This is critical for the sub-10ms latency target. The root-side call site is `SteganographyProtector::apply_dct_stego_bytes_from_plan` in `src/protected/steganography/embed.rs`; the carrier-side helpers live behind `stegoeggo_stego::application_support::jpeg_embed` so JPEG parser, coefficient, and F5 types stay private to the carrier crate.
 
 ### Light Level Flow
 
@@ -55,7 +65,7 @@ The JPEG fast path (`apply_bytes_pipeline`) calls the carrier crate's encoded-by
 
 ### JPEG→JPEG Fast Path (bypasses pixel decode/encode)
 
-When both input and output are JPEG, `apply_bytes_pipeline` skips pixel decode/encode entirely and only applies DCT steganography + metadata injection. This preserves original quality and avoids lossy re-encoding artifacts.
+When both input and output are JPEG, `execute_full_marker_and_metadata()` skips pixel decode/encode entirely and only applies DCT steganography + metadata injection. This preserves original quality and avoids lossy re-encoding artifacts.
 
 ## Convenience Functions
 
@@ -89,6 +99,7 @@ The library intentionally does not own proxy-level cache policy, concurrency lim
 
 - `ImageOutputFormat::from_magic_bytes(bytes)` — Detects format from magic bytes
 - `ImageOutputFormat::from_extension(path)` — Detects from file extension
+- Carrier family follows the output domain only (`output_format == JPEG ? DCT : LSB`); the `(input_format, output_format)` pair is used solely to decide whether original JPEG bytes can be reused without transcoding
 - The pipeline checks if input and output are both JPEG to decide on the fast path
 - If input format cannot be determined, returns `Error::InvalidFormat`
 
