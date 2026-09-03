@@ -744,8 +744,7 @@ impl CoefficientEncoder {
 
                             // Encode DC coefficient
                             let dc_predictor = dc_predictors.entry(comp.component_id).or_insert(0);
-                            let diff_i32 = (block[0] as i32) - (*dc_predictor as i32);
-                            let diff = diff_i32 as i16;
+                            let diff = (block[0] as i32) - (*dc_predictor as i32);
                             *dc_predictor = block[0];
 
                             self.encode_dc_coefficient(&mut bit_writer, diff, dc_enc)?;
@@ -764,7 +763,7 @@ impl CoefficientEncoder {
     fn encode_dc_coefficient(
         &self,
         writer: &mut BitWriter,
-        diff: i16,
+        diff: i32,
         table: &HuffmanEncoderTable,
     ) -> Result<()> {
         if diff == 0 {
@@ -772,12 +771,12 @@ impl CoefficientEncoder {
             self.write_huffman_code(writer, table, 0)?;
         } else {
             let abs_diff = diff.unsigned_abs();
-            let size = self.magnitude_size(abs_diff);
+            let size = self.magnitude_size(u16::try_from(abs_diff).unwrap_or(u16::MAX));
 
             // Clamp to max encodable size (standard DC tables support up to 11)
             let encodable_size = size.min(11);
             let clamped_diff = if size > 11 {
-                let max_val = ((1i32 << 11) - 1) as i16;
+                let max_val = (1i32 << 11) - 1;
                 if diff > 0 {
                     max_val
                 } else {
@@ -796,7 +795,7 @@ impl CoefficientEncoder {
             } else {
                 // JPEG negative-value representation: add the max positive value
                 // for this size and write the resulting codeword bits.
-                let magnitude = (clamped_diff as i32 + ((1i32 << encodable_size) - 1)) as u16;
+                let magnitude = (clamped_diff + ((1i32 << encodable_size) - 1)) as u16;
                 writer.write_bits(magnitude, encodable_size);
             }
         }

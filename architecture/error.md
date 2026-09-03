@@ -6,7 +6,7 @@ Uses `thiserror` for ergonomic error derivation.
 
 ## Error Enum
 
-19 total variants: 18 always-available + 1 async-only (`Task`).
+19 total variants: 19 always-available + 1 async-only (`Task`).
 
 ```rust
 #[non_exhaustive]
@@ -19,6 +19,7 @@ pub enum Error {
     Config(String),
     Image(#[from] ImageError),
     Steganography(String),
+    InsufficientCapacity { required: usize, available: usize },
     InvalidFormat(String),
     ImageTruncated(String),
     PayloadVerification(String),
@@ -46,6 +47,7 @@ pub enum Error {
 | `Config` | `ProtectionContext` | Invalid configuration values |
 | `Image` | General / `stegoeggo-stego::jpeg_transcoder` | Image processing errors (unsupported features, etc.) |
 | `Steganography` | `SteganographyProtector` (and `stegoeggo-stego::StegoError` via `From`) | Stego embed/extract failures |
+| `InsufficientCapacity` | `StegoError::InsufficientCapacity` via `From` | Carrier capacity failure with structured counts |
 | `InvalidFormat` | Pipeline / `stegoeggo-stego::jpeg_transcoder` | Input format cannot be determined |
 | `ImageTruncated` | Pipeline | Image data was truncated |
 | `PayloadVerification` | `SteganographyProtector` | HMAC/checksum verification failed |

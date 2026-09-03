@@ -196,7 +196,15 @@ pub fn embed_lsb(img: &RgbaImage, payload: &[u8], seed: u64) -> EmbedOutcome<Rgb
 
     let payload_bits = bytes_to_bits(payload);
 
-    let total_pixels = (width * height) as usize;
+    let Some(total_pixels) = (width as usize).checked_mul(height as usize) else {
+        return EmbedOutcome::SkippedCapacity {
+            output,
+            payload_bytes: payload.len(),
+            required_capacity: lsb_required_slots_legacy(payload_bits.len()),
+            available_capacity: 0,
+            path: crate::types::EmbedPath::Lsb,
+        };
+    };
     let total_pixels_needed = payload_bits
         .len()
         .saturating_mul(STEGO_SPREAD_FACTOR)

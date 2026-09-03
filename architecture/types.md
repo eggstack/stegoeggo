@@ -299,7 +299,7 @@ Fields: `copyright_holder`, `contact_email`, `license_url`, `usage_terms`, `usag
 | `EvidenceProfile` | `ProtectionPreset` | Presets control actual channel behavior, not just warning severity |
 | `ProtectionContext::with_dmi()` | `RightsPolicy` in `ProtectionRequest` | Policy is never inferred from processing intensity |
 | `ProtectionContext::with_metadata_injection()` | `ProtectionChannels::rights_metadata` | Channel configuration is explicit |
-| `ProtectionContext::with_inject_legal_claims()` | `LegalMetadata` in request | Auto-injected when metadata is present |
+| `ProtectionContext::with_legal_claims()` | `LegalMetadata` in request | Auto-injected when metadata is present |
 
 ### Before/after examples
 

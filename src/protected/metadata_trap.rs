@@ -1377,9 +1377,15 @@ impl RightsMetadataProtector {
             ))
         })?;
         ifd.extend_from_slice(&count.to_le_bytes()); // count
-                                                     // Value: if <= 4 bytes, stored inline; otherwise offset from TIFF start.
-                                                     // Our data is always > 4 bytes, so use offset = 8 (header) + 2 (count) + 12 (entry) = 22
-        ifd.extend_from_slice(&22u32.to_le_bytes()); // offset to data
+                                                     // Value: if <= 4 bytes, stored inline (padded to 4);
+                                                     // otherwise offset from TIFF start = 8 (header) + 2 (count) + 12 (entry) = 22.
+        if exif_data.len() <= 4 {
+            let mut inline = [0u8; 4];
+            inline[..exif_data.len()].copy_from_slice(exif_data);
+            ifd.extend_from_slice(&inline);
+        } else {
+            ifd.extend_from_slice(&22u32.to_le_bytes()); // offset to data
+        }
 
         let total_len = tiff_prefix.len() + tiff_header.len() + ifd.len() + exif_data.len();
         let len_u16 = u16::try_from(total_len + 2).map_err(|_| {

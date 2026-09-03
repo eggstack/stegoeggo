@@ -257,7 +257,12 @@ impl JpegTranscoder {
         if let Some(ref app0) = header.app0_marker {
             output.push(0xFF);
             output.push(0xE0);
-            let len = (app0.len() + 2) as u16;
+            let len = u16::try_from(app0.len() + 2).map_err(|_| {
+                TranscoderError::InvalidFormat(format!(
+                    "APP0 marker length {} exceeds u16::MAX",
+                    app0.len() + 2
+                ))
+            })?;
             output.push((len >> 8) as u8);
             output.push((len & 0xFF) as u8);
             output.extend_from_slice(app0);
@@ -267,7 +272,12 @@ impl JpegTranscoder {
         for app1 in &header.app1_markers {
             output.push(0xFF);
             output.push(0xE1);
-            let len = (app1.len() + 2) as u16;
+            let len = u16::try_from(app1.len() + 2).map_err(|_| {
+                TranscoderError::InvalidFormat(format!(
+                    "APP1 marker length {} exceeds u16::MAX",
+                    app1.len() + 2
+                ))
+            })?;
             output.push((len >> 8) as u8);
             output.push((len & 0xFF) as u8);
             output.extend_from_slice(app1);
@@ -277,7 +287,12 @@ impl JpegTranscoder {
         for com in &header.com_markers {
             output.push(0xFF);
             output.push(0xFE);
-            let len = (com.len() + 2) as u16;
+            let len = u16::try_from(com.len() + 2).map_err(|_| {
+                TranscoderError::InvalidFormat(format!(
+                    "COM marker length {} exceeds u16::MAX",
+                    com.len() + 2
+                ))
+            })?;
             output.push((len >> 8) as u8);
             output.push((len & 0xFF) as u8);
             output.extend_from_slice(com);
@@ -319,7 +334,12 @@ impl JpegTranscoder {
         output.push(0xFF);
         output.push(0xC0);
         // Length = 8 + 3 * num_components (includes the 2-byte length field itself)
-        let sof_len = 8 + header.components.len() as u16 * 3;
+        let sof_len = u16::try_from(8 + header.components.len() * 3).map_err(|_| {
+            TranscoderError::InvalidFormat(format!(
+                "SOF length {} exceeds u16::MAX",
+                8 + header.components.len() * 3
+            ))
+        })?;
         output.push((sof_len >> 8) as u8);
         output.push((sof_len & 0xFF) as u8);
         output.push(header.precision);
@@ -346,7 +366,12 @@ impl JpegTranscoder {
         // SOS - Start of Scan
         output.push(0xFF);
         output.push(0xDA);
-        let sos_len = 6 + header.components.len() * 2;
+        let sos_len = u16::try_from(6 + header.components.len() * 2).map_err(|_| {
+            TranscoderError::InvalidFormat(format!(
+                "SOS length {} exceeds u16::MAX",
+                6 + header.components.len() * 2
+            ))
+        })?;
         output.push((sos_len >> 8) as u8);
         output.push((sos_len & 0xFF) as u8);
         output.push(header.components.len() as u8);

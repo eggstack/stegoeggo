@@ -13,7 +13,13 @@ impl From<StegoError> for Error {
     fn from(e: StegoError) -> Self {
         match &e {
             StegoError::InvalidConfig(msg) => Error::Config(msg.clone()),
-            StegoError::InsufficientCapacity { .. } => Error::Steganography(e.to_string()),
+            StegoError::InsufficientCapacity {
+                required,
+                available,
+            } => Error::InsufficientCapacity {
+                required: *required,
+                available: *available,
+            },
             StegoError::MalformedInput(msg) => Error::InvalidFormat(msg.clone()),
             StegoError::UnsupportedJpeg(_) => Error::InvalidFormat(e.to_string()),
             StegoError::FrameNotFound => Error::Steganography(e.to_string()),
@@ -68,6 +74,20 @@ pub enum Error {
     /// A steganographic embedding or extraction operation failed.
     #[error("Steganography error: {0}")]
     Steganography(String),
+
+    /// The carrier has insufficient capacity for the requested payload.
+    /// Preserves the structured `required`/`available` counts from
+    /// [`StegoError::InsufficientCapacity`] so callers can distinguish
+    /// capacity failures from other steganography errors programmatically.
+    /// (`StegoError::ResourceLimitExceeded` carries only a free-form message
+    /// and still maps to [`Error::Config`].)
+    #[error("Insufficient capacity: need {required} carrier units, have {available}")]
+    InsufficientCapacity {
+        /// Required capacity in carrier units.
+        required: usize,
+        /// Available capacity in the same units.
+        available: usize,
+    },
 
     /// The image format could not be determined or is unsupported.
     #[error("Invalid image format: {0}")]
@@ -310,6 +330,10 @@ mod tests {
             count: 100,
             limit: 16,
         };
+        let _ = Error::InsufficientCapacity {
+            required: 100,
+            available: 10,
+        };
     }
 
     #[test]
@@ -347,5 +371,41 @@ mod tests {
         assert!(s.contains("JPEG segments"));
         assert!(s.contains("200"));
         assert!(s.contains("100"));
+    }
+
+    #[test]
+    fn error_insufficient_capacity_display() {
+        let err = Error::InsufficientCapacity {
+            required: 100,
+            available: 10,
+        };
+        let s = err.to_string();
+        assert!(s.contains("100"));
+        assert!(s.contains("10"));
+    }
+
+    #[test]
+    fn error_from_stego_insufficient_capacity_preserves_counts() {
+        let stego = StegoError::InsufficientCapacity {
+            required: 100,
+            available: 10,
+        };
+        let err = Error::from(stego);
+        match err {
+            Error::InsufficientCapacity {
+                required,
+                available,
+            } => {
+                assert_eq!(required, 100);
+                assert_eq!(available, 10);
+            }
+            other => panic!("Expected Error::InsufficientCapacity, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn error_from_stego_resource_limit_is_config() {
+        let err = Error::from(StegoError::ResourceLimitExceeded("overflow".to_string()));
+        assert!(matches!(err, Error::Config(_)));
     }
 }

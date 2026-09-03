@@ -1,4 +1,5 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::parser::ValueSource;
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1602,7 +1603,8 @@ struct JsonVerifyOutput {
 
 #[allow(deprecated)]
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
+    let matches = Args::command().get_matches();
+    let args = Args::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
 
     #[cfg(feature = "signatures")]
     if let Some(ref cmd) = args.command {
@@ -1799,18 +1801,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let level_explicit = std::env::args().any(|arg| {
-        arg == "--level"
-            || arg.starts_with("--level=")
-            || arg == "-l"
-            || (arg.starts_with("-l") && arg.len() > 2)
-    });
-    let profile_explicit = std::env::args().any(|arg| {
-        arg == "--profile"
-            || arg.starts_with("--profile=")
-            || arg == "-p"
-            || (arg.starts_with("-p") && arg.len() > 2)
-    });
+    let level_explicit = matches.value_source("level") == Some(ValueSource::CommandLine);
+    let profile_explicit = matches.value_source("profile") == Some(ValueSource::CommandLine);
     let request =
         build_protection_request_with_explicit_options(&args, level_explicit, profile_explicit)?;
 
@@ -1945,7 +1937,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(err) = maybe_err {
                         return Err((input_path.clone(), err.clone()));
                     }
-                    let input_bytes = maybe_bytes.as_ref().unwrap();
+                    let Some(input_bytes) = maybe_bytes.as_ref() else {
+                        return Err((
+                            input_path.clone(),
+                            "internal error: batch input has neither bytes nor error".to_string(),
+                        ));
+                    };
                     process_single_file_with_bytes(
                         input_path,
                         input_bytes,

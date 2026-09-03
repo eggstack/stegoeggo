@@ -690,14 +690,15 @@ impl RightsNotice {
     ///
     /// This checks only the 16 textual legal fields and ignores the `dmi`
     /// policy. Use `RightsNotice::has_notice()` (which includes DMI) when
-    /// deciding whether to emit `PLUS:DataMining`.
+    /// deciding whether to emit `PLUS:DataMining`. A bare
+    /// `usage_terms_lang` without `usage_terms` does not count (a language
+    /// tag alone is a qualifier, not content).
     #[must_use]
     pub fn has_legal_content(&self) -> bool {
         self.copyright_holder.is_some()
             || self.contact_email.is_some()
             || self.license_url.is_some()
             || self.usage_terms.is_some()
-            || self.usage_terms_lang.is_some()
             || self.creation_date.is_some()
             || self.ai_constraints.is_some()
             || self.web_statement_of_rights.is_some()
@@ -1042,6 +1043,15 @@ impl LegalMetadata {
         Ok(())
     }
 
+    fn parse_date_component(field_name: &str, what: &str, text: &str) -> crate::Result<u32> {
+        text.parse().map_err(|_| {
+            crate::Error::Config(format!(
+                "Date field '{}' has invalid {} '{}': must be numeric",
+                field_name, what, text
+            ))
+        })
+    }
+
     fn validate_date(field_name: &str, value: &str) -> crate::Result<()> {
         if value.is_empty() {
             return Err(crate::Error::Config(format!(
@@ -1102,9 +1112,9 @@ impl LegalMetadata {
             )));
         }
 
-        let year: u32 = value[0..4].parse().unwrap_or(0);
-        let month: u32 = value[5..7].parse().unwrap_or(0);
-        let day: u32 = value[8..10].parse().unwrap_or(0);
+        let year: u32 = Self::parse_date_component(field_name, "year", &value[0..4])?;
+        let month: u32 = Self::parse_date_component(field_name, "month", &value[5..7])?;
+        let day: u32 = Self::parse_date_component(field_name, "day", &value[8..10])?;
 
         if !(1..=9999).contains(&year) {
             return Err(crate::Error::Config(format!(
@@ -1130,7 +1140,12 @@ impl LegalMetadata {
                     28
                 }
             }
-            _ => unreachable!("month validated to 1..=12 above"),
+            _ => {
+                return Err(crate::Error::Config(format!(
+                    "Date field '{}' has invalid month {}: must be 01-12",
+                    field_name, month
+                )));
+            }
         };
         if day < 1 || day > max_day {
             return Err(crate::Error::Config(format!(
@@ -1140,9 +1155,9 @@ impl LegalMetadata {
         }
 
         if value.len() >= 20 {
-            let hour: u32 = value[11..13].parse().unwrap_or(0);
-            let minute: u32 = value[14..16].parse().unwrap_or(0);
-            let second: u32 = value[17..19].parse().unwrap_or(0);
+            let hour: u32 = Self::parse_date_component(field_name, "hour", &value[11..13])?;
+            let minute: u32 = Self::parse_date_component(field_name, "minute", &value[14..16])?;
+            let second: u32 = Self::parse_date_component(field_name, "second", &value[17..19])?;
             if hour > 23 {
                 return Err(crate::Error::Config(format!(
                     "Date field '{}' has invalid hour {}: must be 00-23",
@@ -1164,8 +1179,10 @@ impl LegalMetadata {
         }
 
         if value.len() == 25 {
-            let offset_hour: u32 = value[20..22].parse().unwrap_or(0);
-            let offset_min: u32 = value[23..25].parse().unwrap_or(0);
+            let offset_hour: u32 =
+                Self::parse_date_component(field_name, "UTC offset hour", &value[20..22])?;
+            let offset_min: u32 =
+                Self::parse_date_component(field_name, "UTC offset minute", &value[23..25])?;
             if offset_hour > 23 || offset_min > 59 {
                 return Err(crate::Error::Config(format!(
                     "Date field '{}' has invalid UTC offset {}: must be +HH:MM or -HH:MM with HH<=23, MM<=59",
@@ -1181,14 +1198,14 @@ impl LegalMetadata {
     ///
     /// Like `RightsNotice::has_legal_content`, this checks only textual
     /// fields. DMI is tracked separately via `LegalMetadata::has_content`
-    /// vs `RightsNotice::has_notice`.
+    /// vs `RightsNotice::has_notice`. A bare `usage_terms_lang` without
+    /// `usage_terms` does not count.
     #[must_use]
     pub fn has_content(&self) -> bool {
         self.copyright_holder.is_some()
             || self.contact_email.is_some()
             || self.license_url.is_some()
             || self.usage_terms.is_some()
-            || self.usage_terms_lang.is_some()
             || self.creation_date.is_some()
             || self.ai_constraints.is_some()
             || self.web_statement_of_rights.is_some()
@@ -1595,10 +1612,15 @@ impl ProtectionConfig {
 /// Serialization loses the MAC key, legal metadata, resource limits, and
 /// timestamp override (`#[serde(skip)]`; keys must not serialize). The
 /// serialized form carries a `_config_dropped_warning` field when config was
-/// present. After deserialization re-attach via `with_mac_key()`,
+/// present, which is captured on deserialization (see
+/// [`ProtectionContext::config_dropped_in_serialization`]). After
+/// deserialization re-attach via `with_mac_key()`,
 /// `with_legal_metadata()`, `with_config()`, or `with_resource_limits()`;
-/// check `mac_key().is_none()` when authentication matters, since use without
-/// a key falls back to CRC32 with a `MissingMacKey` warning.
+/// check `mac_key().is_none()` when authentication matters, since legacy
+/// `ProtectionContext` entry points without a key fall back to CRC32 with a
+/// `MissingMacKey` warning, while a canonical [`ProtectionRequest`] with
+/// [`AuthenticationMode::Hmac`] and no key fails resolution with
+/// `Error::Config`.
 #[allow(deprecated)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProtectionContext {
@@ -1675,6 +1697,8 @@ pub struct ProtectionContext {
     config: Option<Arc<ProtectionConfig>>,
     #[serde(skip)]
     resource_limits: Option<crate::resource_limits::ResourceLimits>,
+    #[serde(rename = "_config_dropped_warning", default)]
+    config_dropped_warning: Option<String>,
 }
 
 impl Serialize for ProtectionContext {
@@ -1684,7 +1708,7 @@ impl Serialize for ProtectionContext {
     {
         use serde::ser::SerializeStruct;
         let mut fields = 17;
-        if self.config.is_some() {
+        if self.config.is_some() || self.config_dropped_warning.is_some() {
             fields += 1;
         }
         let mut s = serializer.serialize_struct("ProtectionContext", fields)?;
@@ -1713,6 +1737,8 @@ impl Serialize for ProtectionContext {
                 "_config_dropped_warning",
                 "ProtectionContext.config is not serialized; MAC key and legal metadata will be lost on roundtrip. Set them again after deserialization.",
             )?;
+        } else if let Some(warning) = &self.config_dropped_warning {
+            s.serialize_field("_config_dropped_warning", warning)?;
         }
         s.end()
     }
@@ -1744,6 +1770,7 @@ impl Default for ProtectionContext {
             timestamp_override: None,
             config: None,
             resource_limits: None,
+            config_dropped_warning: None,
         }
     }
 }
@@ -1801,6 +1828,7 @@ impl ProtectionContext {
             timestamp_override: None,
             config: None,
             resource_limits: None,
+            config_dropped_warning: None,
         }
     }
 
@@ -1847,6 +1875,20 @@ impl ProtectionContext {
     #[must_use]
     pub fn legal_metadata(&self) -> Option<&LegalMetadata> {
         self.config.as_ref().and_then(|c| c.legal_metadata.as_ref())
+    }
+
+    /// Returns `true` if this context was deserialized from a form that had
+    /// dropped its config (MAC key, legal metadata, resource limits,
+    /// timestamp override) during serialization.
+    ///
+    /// Check this after deserialization when authentication matters: a `true`
+    /// value means `mac_key()` and `legal_metadata()` are `None` because they
+    /// were lost in the roundtrip, not because they were never set.
+    /// Re-attach via `with_mac_key()`, `with_legal_metadata()`,
+    /// `with_config()`, or `with_resource_limits()`.
+    #[must_use]
+    pub fn config_dropped_in_serialization(&self) -> bool {
+        self.config_dropped_warning.is_some()
     }
 
     /// Set the maximum image dimension limit.
@@ -4274,7 +4316,10 @@ pub enum ProtectionPreset {
     LegalNoticeWithStego,
     /// Metadata + hidden marker + HMAC authentication. MAC key required.
     AuthenticatedProvenance,
-    /// All available channels. MAC used if provided.
+    /// All available channels. MAC key required: a request built from this
+    /// preset without a key fails resolution with `Error::Config`.
+    /// (Unlike the legacy `EvidenceProfile::Maximal`, which degrades to a
+    /// `MissingMacKey` warning when no key is present.)
     Maximal,
 }
 

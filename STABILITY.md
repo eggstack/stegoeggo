@@ -56,7 +56,7 @@ The following API surfaces are deprecated. They remain functional but will be re
 | `EvidenceProfile` | `ProtectionPreset` |
 | `with_dmi()` | `RightsPolicy` on `ProtectionRequest` |
 | `with_metadata_injection()` | `ProtectionChannels::metadata_only()` or `ProtectionRequest` builder |
-| `with_inject_legal_claims()` | Auto-enabled with `LegalMetadata` on `ProtectionRequest` |
+| `with_legal_claims()` | Auto-enabled with `LegalMetadata` (explicit `false` emits `ContradictoryLegalClaims`) |
 | `compute_iscc()` | `compute_content_identifiers()` |
 
 ## Experimental Feature-Gated API

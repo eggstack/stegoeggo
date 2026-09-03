@@ -561,7 +561,13 @@ fn request_from_legacy(level: ProtectionLevel, ctx: &ProtectionContext) -> Prote
                     .map_or(HiddenMarkerMode::BestEffort, |tile_size| {
                         HiddenMarkerMode::Tiled { tile_size }
                     }),
-                ProtectionLevel::Disabled => unreachable!(),
+                ProtectionLevel::Disabled => {
+                    debug_assert!(
+                        false,
+                        "Disabled is handled by the outer match; unreachable here"
+                    );
+                    HiddenMarkerMode::SeedOnly
+                }
             };
             ProtectionChannels {
                 rights_metadata,
@@ -751,6 +757,7 @@ pub fn process_image_bytes_with_warnings(
         return Ok((img_bytes.to_vec(), Vec::new()));
     }
 
+    ctx.validate()?;
     if let Some(meta) = ctx.legal_metadata() {
         meta.validate()?;
     }
@@ -769,6 +776,7 @@ pub fn process_image_bytes_with_warnings(
             ctx.evidence_profile(),
             EvidenceProfile::AuthenticatedProvenance | EvidenceProfile::Maximal
         )
+        && matches!(plan.channels().authentication, AuthenticationMode::None)
     {
         warnings.push(ProtectionWarning::MissingMacKey);
     }
@@ -1067,7 +1075,14 @@ fn process_plan_bytes(
     let metadata_trap = RightsMetadataProtector::new();
 
     match plan.channels().hidden_marker {
-        HiddenMarkerMode::Disabled => unreachable!("handled above"),
+        HiddenMarkerMode::Disabled => {
+            debug_assert!(false, "Disabled hidden marker is handled above");
+            let bytes = execute_metadata_only(img_bytes, plan, budget)?;
+            Ok(PipelineResult {
+                bytes,
+                embed_summary: None,
+            })
+        }
         HiddenMarkerMode::SeedOnly => execute_seed_only_and_metadata(
             img_bytes,
             plan,

@@ -104,7 +104,6 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - `with_dmi()` — use `RightsPolicy` in `ProtectionRequest`
 - `with_legal_claims()` — auto-enabled when `LegalMetadata` present; explicit `false` emits `ContradictoryLegalClaims`
 - `with_metadata_injection()` — use `ProtectionChannels`
-- `with_inject_legal_claims()` — use `ProtectionChannels`
 - `compute_iscc()` / `compute_iscc_with_metadata()` / `compute_iscc_from_bytes()` — use the `compute_content_identifiers*()` equivalents
 - `NoticeVerification::new()` positional constructor — use `NoticeVerification::builder()`
 

@@ -1076,6 +1076,23 @@ mod serde_tests {
             restored.mac_key().is_none(),
             "MAC key should be lost after serde roundtrip"
         );
+        assert!(
+            restored.config_dropped_in_serialization(),
+            "deserialized context should signal that config was dropped"
+        );
+    }
+
+    #[test]
+    fn test_no_config_no_dropped_signal_after_roundtrip() {
+        let ctx = ProtectionContext::new(0.7, 12345);
+
+        let json = serde_json::to_string(&ctx).unwrap();
+        assert!(
+            !json.contains("_config_dropped_warning"),
+            "no warning field when no config was present"
+        );
+        let restored: ProtectionContext = serde_json::from_str(&json).unwrap();
+        assert!(!restored.config_dropped_in_serialization());
     }
 }
 
