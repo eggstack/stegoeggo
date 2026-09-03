@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Public tiled carrier operations in `stegoeggo-stego` (also via `stegoeggo::stego`): `lsb::embed_tiled` / `embed_tiled_in_place` / `extract_tiled` / `embed_tiled_framed` / `extract_tiled_framed` and the `jpeg::` counterparts, sharing one fallible `TileConfig { seed, tile_size }`. Tiled extraction is bounded by an explicit `max_origins` (`1..=MAX_TILED_ORIGINS`); framed tiled recovery validates CRC32 and needs no caller-known length
+- Standalone-carrier consumer proof: the generic `lsb`/`jpeg`/`frame` APIs round-trip from an external crate on default features (no `application-support`), and the root `stegoeggo::stego` facade re-exports the full carrier surface
+
 ### Fixed
 - PNG `ReplaceStegoOwned` no longer duplicates legal-notice `tEXt` chunks (`Copyright`, `Creator`, etc.) on metadata-only re-processing — `strip_stego_owned_png`, `collect_stego_owned_png_keys`, and `png_has_stego_metadata` now share a single `STEGO_OWNED_PNG_KEYS` constant covering all 18 stego-owned keywords instead of only the 2 seed-related ones
 - PNG XMP `iTXt` (`XML:com.adobe.xmp`) is now recognised as stego-owned across `png_has_stego_metadata`, `strip_stego_owned_png`, and `collect_stego_owned_png_keys`; `ReplaceStegoOwned` strips existing XMP chunks before re-injection so a second round no longer appends a duplicate
@@ -18,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `docs/cli-usage.md`: removed nonexistent exit code 4 (`EXIT_TRUST`) — the CLI defines exit codes 0, 1, 2, 3, and 5 only
 - `DEPRECATIONS.md`: removed incorrect `VerificationStatus` deprecation row (it remains a live API) and the nonexistent `compute_iscc_detailed()`; added rows for `with_legal_claims()`, `compute_iscc_with_metadata()`, and `compute_iscc_from_bytes()`
 - `MetadataUpdatePolicy` and `timestamp_override` docs call out the PNG `tEXt` keyword ambiguity and the wall-clock determinism requirement respectively
+- Stego carrier selection now follows the final output format (`output JPEG -> DCT/F5`, `output PNG/WebP -> raster LSB`); a JPEG input transcoded to PNG/WebP no longer takes a transient JPEG-DCT path whose marker is lost on re-encode
+- JPEG application verification (standard probing plus tiled fallback) shares one decoded-coefficient search context per verification operation; tiled JPEG embedding self-checks against in-memory mutated coefficients instead of re-decoding its output; tiled raster embedding mutates the owned RGBA buffer instead of cloning it
 
 ## [0.3.3] - 2026-08-19
 

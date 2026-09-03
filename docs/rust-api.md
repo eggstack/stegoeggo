@@ -69,5 +69,5 @@ See [`examples/`](https://github.com/eggstack/stegoeggo/blob/main/examples) for 
 
 - `protect_and_verify.rs` — Full pipeline: protect an image and verify the protection
 - `legal_metadata.rs` — Legal metadata injection with copyright and usage terms
-- `generic_stego.rs` — Raw, in-place, and framed carrier operations
+- `generic_stego.rs` — Raw, in-place, framed, and tiled carrier operations
 - `verify_saved.rs` — Verify an already-protected image file

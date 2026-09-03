@@ -1,6 +1,21 @@
 # Roadmap 076: Stego Pipeline and Carrier Library Closure
 
-Status: Ready for implementation
+Status: COMPLETE
+
+Final disposition (Plan 080, evidence in `plans/080-status.md`, all rows
+R01-R29 CLOSED, no corrective product patch required):
+
+- Plan 077 routing correction disposition: complete (`16858ce`;
+  output-domain carrier routing with 17-test regression matrix).
+- Plan 078 measured optimization disposition: complete (`8b1c47b`;
+  single-decode verification/embed, in-place tiled LSB, header-only
+  preflight; prepared-API disposition `PRIVATE-REUSE-SUFFICIENT`).
+- Plan 079 public API/prepared-object disposition: complete (`def2077`;
+  public tiled carrier API + root dogfooding; prepared-API disposition
+  `NO-PROMOTION`).
+- Plan 080 final verification commit: ledger + documentation closure; zero
+  product-source edits; `./scripts/check.sh` exit 0; full workspace 1803
+  passed / 0 failed.
 
 Audited planning baseline: `main` at `6feb52a90d9afdc0c922cdb219529524ad94c168`
 

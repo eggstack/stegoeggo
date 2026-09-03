@@ -30,6 +30,22 @@ The following API surfaces are stable and follow semantic versioning guarantees.
 | `ExecutionReport` | `stegoeggo::types` |
 | `ProtectionWarning` | `stegoeggo::types` |
 
+### Generic Carrier API
+
+The standalone carrier surface is stable: raw (`embed`/`extract`), in-place
+(`lsb::embed_in_place`), framed (`embed_framed`/`extract_framed`), and tiled
+(`embed_tiled`, `embed_tiled_in_place`, `extract_tiled`,
+`embed_tiled_framed`, `extract_tiled_framed`) operations over LSB and JPEG
+carriers, with `LsbConfig`, `JpegConfig`, `TileConfig`, `MAX_TILED_ORIGINS`,
+`StegoError`, and the capacity/embed report types. There is no public
+prepared/reusable JPEG type; repeated verification search reuses a private
+single-decode context.
+
+| Item | Module |
+|------|--------|
+| `lsb`, `jpeg`, `frame`, `error`, `types` carrier modules | `stegoeggo::stego` / `stegoeggo-stego` |
+| `TileConfig`, `MAX_TILED_ORIGINS` | `stegoeggo::stego` / `stegoeggo-stego` |
+
 ## Deprecated Compatibility API
 
 The following API surfaces are deprecated. They remain functional but will be removed in v1.0.0 or the next semver-major release.
@@ -42,7 +58,6 @@ The following API surfaces are deprecated. They remain functional but will be re
 | `with_metadata_injection()` | `ProtectionChannels::metadata_only()` or `ProtectionRequest` builder |
 | `with_inject_legal_claims()` | Auto-enabled with `LegalMetadata` on `ProtectionRequest` |
 | `compute_iscc()` | `compute_content_identifiers()` |
-| `VerificationStatus` | `VerificationReport` |
 
 ## Experimental Feature-Gated API
 
@@ -99,11 +114,11 @@ The following output formats are stable and can be consumed by tooling.
 
 ## Internal Implementation Details
 
-The following modules are public but oriented toward internal use. API stability is best-effort; they may change in minor releases without notice.
+The following implementation details are oriented toward internal use. API stability is best-effort; they may change in minor releases without notice.
 
 | Module | Description |
 |--------|-------------|
-| `jpeg_transcoder/` | JPEG DCT coefficient processing |
+| `jpeg_transcoder/` (`stegoeggo-stego`, private) | JPEG DCT coefficient processing |
 | `payload_v3/` | Payload v3 wire format and TLV extensions |
 
 ## Deprecation Removal Policy
