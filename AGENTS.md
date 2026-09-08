@@ -107,7 +107,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 - `compute_iscc()` / `compute_iscc_with_metadata()` / `compute_iscc_from_bytes()` — use the `compute_content_identifiers*()` equivalents
 - `NoticeVerification::new()` positional constructor — use `NoticeVerification::builder()`
 
-Not deprecated (do not migrate away): `VerificationStatus` — still the return type of `verify_image_bytes`. The structured reports (`VerificationReport`, `VerificationResult`, `NoticeVerification`) are richer alternatives, not replacements for a removed API.
+Not deprecated (do not migrate away): `VerificationStatus` — still the return type of `verify_image_bytes`. `verify_image_bytes_report` is the canonical rich operation returning `VerificationReport`; `VerificationStatus`, `VerificationResult`, and `NoticeVerification` are centralized projections from the same canonical facts (`src/verification/canonical.rs`), not independent searches.
 
 **Policy-first architecture (Release 4+):** `ProtectionRequest` and `RightsPolicy` are the canonical API. `ProtectionLevel` and `EvidenceProfile` are deprecated compatibility adapters. New processing features must be expressed in `ProtectionRequest`/`ProcessingOptions`/`ProtectionChannels` first; legacy builders only translate via `request_from_legacy()`.
 

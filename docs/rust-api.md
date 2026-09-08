@@ -91,12 +91,24 @@ This distinction matters: file metadata lives in the encoded image container. AP
 
 ## Verification
 
-```rust
-use stegoeggo::verify_image_bytes;
+`verify_image_bytes_report` is the canonical verification operation for rich
+integrations. It performs one rights parse plus one hidden-marker search and
+returns `VerificationReport`:
 
-let report = verify_image_bytes(&output_bytes, &[]);
-println!("{:?}", report);
+```rust
+use stegoeggo::verify_image_bytes_report;
+
+let report = verify_image_bytes_report(&output_bytes, &[]);
+println!("{:?}", report.hidden_marker().status());
 ```
+
+`verify_image_bytes` (`VerificationStatus`), `verify_image_bytes_detailed`
+(`VerificationResult`), and `verify_legal_notice` (`NoticeVerification`) are
+compatibility projections derived from the same canonical facts.
+`VerificationStatus` remains stable and is not deprecated: it reports
+hidden-marker integrity only (`Verified`/`Invalid`/`NotFound`), while
+`VerificationReport::summary_status` upgrades metadata-only evidence to
+`Verified` for overall assessment.
 
 The report distinguishes metadata-only notices, best-effort steganographic evidence, and HMAC-authenticated provenance when a matching key is supplied.
 

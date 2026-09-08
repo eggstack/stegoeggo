@@ -1,11 +1,10 @@
-use crate::protected::steganography::SteganographyProtector;
 use crate::resource_limits::ResourceLimits;
 use crate::types::{
-    classify_plus_data_mining_value, DmiValue, EvidenceChannel, EvidenceStrength,
-    NoticeVerification, ParsedDmiRepresentation, RightsSignalKind, VerificationStatus,
+    classify_plus_data_mining_value, DmiValue, EvidenceChannel, ParsedDmiRepresentation,
+    RightsSignalKind,
 };
 
-type NoticeFields = (
+pub(crate) type NoticeFields = (
     Option<String>,
     Option<String>,
     Option<String>,
@@ -23,386 +22,13 @@ type NoticeFields = (
     Option<String>,
 );
 
-pub(crate) fn verify_notice_metadata(img_bytes: &[u8], mac_key: &[u8]) -> NoticeVerification {
-    if img_bytes.len() < 8 {
-        return empty_report();
-    }
-
-    let format = detect_format(img_bytes);
-
-    let mut channels = Vec::new();
-    let mut seed: Option<u64> = None;
-    let mut dmi: Option<DmiValue> = None;
-    let mut tdm_reserved: Option<bool> = None;
-    let mut canonical_dmi: Option<DmiValue> = None;
-    let mut legacy_dmi: Option<DmiValue> = None;
-    let mut detected_rights_signal: Option<RightsSignalKind> = None;
-
-    let (
-        copyright_holder,
-        creator,
-        contact,
-        rights_url,
-        usage_terms,
-        ai_constraints,
-        license_url,
-        web_statement_of_rights,
-        credit_line,
-        copyright_owner,
-        licensor_name,
-        licensor_email,
-        licensor_url,
-        metadata_date,
-        notice_applied_at,
-    ) = match format {
-        Some(Format::Png) => {
-            let result = extract_png_notice(img_bytes, &mut channels, &mut seed);
-            extract_xmp_dmi_from_png(
-                img_bytes,
-                &mut dmi,
-                &mut tdm_reserved,
-                &mut canonical_dmi,
-                &mut legacy_dmi,
-                &mut detected_rights_signal,
-            );
-            result
-        }
-        Some(Format::Jpeg) => {
-            let result = extract_jpeg_notice(img_bytes, &mut channels, &mut seed);
-            extract_xmp_dmi_from_jpeg(
-                img_bytes,
-                &mut dmi,
-                &mut tdm_reserved,
-                &mut canonical_dmi,
-                &mut legacy_dmi,
-                &mut detected_rights_signal,
-            );
-            result
-        }
-        Some(Format::WebP) => {
-            let result = extract_webp_notice(img_bytes, &mut channels, &mut seed);
-            extract_xmp_dmi_from_webp(
-                img_bytes,
-                &mut dmi,
-                &mut tdm_reserved,
-                &mut canonical_dmi,
-                &mut legacy_dmi,
-                &mut detected_rights_signal,
-            );
-            result
-        }
-        None => return empty_report(),
-    };
-
-    let has_notice = copyright_holder.is_some()
-        || creator.is_some()
-        || contact.is_some()
-        || rights_url.is_some()
-        || usage_terms.is_some()
-        || ai_constraints.is_some()
-        || dmi.is_some()
-        || license_url.is_some()
-        || web_statement_of_rights.is_some()
-        || credit_line.is_some()
-        || copyright_owner.is_some()
-        || licensor_name.is_some()
-        || licensor_email.is_some()
-        || licensor_url.is_some()
-        || metadata_date.is_some()
-        || notice_applied_at.is_some();
-
-    let stego_status;
-    let stego_payload;
-    let authenticated;
-
-    let stego = SteganographyProtector::new();
-
-    let is_jpeg = img_bytes.starts_with(&[0xFF, 0xD8]);
-
-    if !mac_key.is_empty() {
-        let result = stego.verify_payload_from_bytes_with_key(img_bytes, mac_key);
-        match result {
-            VerificationStatus::Verified => {
-                stego_status = VerificationStatus::Verified;
-                authenticated = true;
-                let payload = stego.extract_payload_from_bytes_with_key(img_bytes, mac_key);
-                stego_payload = payload;
-                if stego_payload.is_some() {
-                    if is_jpeg {
-                        channels.push(EvidenceChannel::DctPayload);
-                    } else {
-                        channels.push(EvidenceChannel::LsbPayload);
-                    }
-                }
-            }
-            VerificationStatus::Invalid => {
-                stego_status = VerificationStatus::Invalid;
-                authenticated = false;
-                stego_payload = None;
-            }
-            VerificationStatus::NotFound => {
-                stego_status = VerificationStatus::NotFound;
-                authenticated = false;
-                stego_payload = None;
-            }
-        }
-    } else {
-        let result = stego.verify_payload_from_bytes_with_key(img_bytes, &[]);
-        stego_status = result;
-        authenticated = false;
-        stego_payload = None;
-        if result == VerificationStatus::Verified {
-            if is_jpeg {
-                channels.push(EvidenceChannel::DctPayload);
-            } else {
-                channels.push(EvidenceChannel::LsbPayload);
-            }
-        }
-    }
-
-    let evidence_strength = compute_evidence_strength(has_notice, authenticated, &channels);
-
-    let rights_signal_kind = detected_rights_signal.unwrap_or(RightsSignalKind::Unknown);
-
-    NoticeVerification::builder()
-        .copyright_holder(copyright_holder)
-        .creator(creator)
-        .contact(contact)
-        .rights_url(rights_url)
-        .usage_terms(usage_terms)
-        .ai_constraints(ai_constraints)
-        .dmi(dmi)
-        .tdm_reserved(tdm_reserved)
-        .rights_signal_kind(rights_signal_kind)
-        .canonical_dmi(canonical_dmi)
-        .legacy_dmi(legacy_dmi)
-        .protection_seed(seed)
-        .stego_status(stego_status)
-        .stego_payload(stego_payload)
-        .authenticated(authenticated)
-        .evidence_strength(evidence_strength)
-        .channels(channels)
-        .license_url(license_url)
-        .web_statement_of_rights(web_statement_of_rights)
-        .credit_line(credit_line)
-        .copyright_owner(copyright_owner)
-        .licensor_name(licensor_name)
-        .licensor_email(licensor_email)
-        .licensor_url(licensor_url)
-        .metadata_date(metadata_date)
-        .notice_applied_at(notice_applied_at)
-        .build()
-}
-
-pub(crate) fn verify_notice_metadata_with_limits(
-    img_bytes: &[u8],
-    mac_key: &[u8],
-    limits: &ResourceLimits,
-) -> NoticeVerification {
-    if img_bytes.len() < 8 {
-        return empty_report();
-    }
-
-    let format = detect_format(img_bytes);
-
-    let mut channels = Vec::new();
-    let mut seed: Option<u64> = None;
-    let mut dmi: Option<DmiValue> = None;
-    let mut tdm_reserved: Option<bool> = None;
-    let mut canonical_dmi: Option<DmiValue> = None;
-    let mut legacy_dmi: Option<DmiValue> = None;
-    let mut detected_rights_signal: Option<RightsSignalKind> = None;
-
-    let (
-        copyright_holder,
-        creator,
-        contact,
-        rights_url,
-        usage_terms,
-        ai_constraints,
-        license_url,
-        web_statement_of_rights,
-        credit_line,
-        copyright_owner,
-        licensor_name,
-        licensor_email,
-        licensor_url,
-        metadata_date,
-        notice_applied_at,
-    ) = match format {
-        Some(Format::Png) => {
-            let result = extract_png_notice(img_bytes, &mut channels, &mut seed);
-            extract_xmp_dmi_from_png_with_limits(
-                img_bytes,
-                &mut dmi,
-                &mut tdm_reserved,
-                &mut canonical_dmi,
-                &mut legacy_dmi,
-                &mut detected_rights_signal,
-                limits,
-            );
-            result
-        }
-        Some(Format::Jpeg) => {
-            let result = extract_jpeg_notice(img_bytes, &mut channels, &mut seed);
-            extract_xmp_dmi_from_jpeg_with_limits(
-                img_bytes,
-                &mut dmi,
-                &mut tdm_reserved,
-                &mut canonical_dmi,
-                &mut legacy_dmi,
-                &mut detected_rights_signal,
-                limits,
-            );
-            result
-        }
-        Some(Format::WebP) => {
-            let result = extract_webp_notice(img_bytes, &mut channels, &mut seed);
-            extract_xmp_dmi_from_webp_with_limits(
-                img_bytes,
-                &mut dmi,
-                &mut tdm_reserved,
-                &mut canonical_dmi,
-                &mut legacy_dmi,
-                &mut detected_rights_signal,
-                limits,
-            );
-            result
-        }
-        None => return empty_report(),
-    };
-
-    let has_notice = copyright_holder.is_some()
-        || creator.is_some()
-        || contact.is_some()
-        || rights_url.is_some()
-        || usage_terms.is_some()
-        || ai_constraints.is_some()
-        || dmi.is_some()
-        || license_url.is_some()
-        || web_statement_of_rights.is_some()
-        || credit_line.is_some()
-        || copyright_owner.is_some()
-        || licensor_name.is_some()
-        || licensor_email.is_some()
-        || licensor_url.is_some()
-        || metadata_date.is_some()
-        || notice_applied_at.is_some();
-
-    let stego_status;
-    let stego_payload;
-    let authenticated;
-
-    let stego = SteganographyProtector::with_resource_limits(limits.clone());
-
-    let is_jpeg = img_bytes.starts_with(&[0xFF, 0xD8]);
-
-    if !mac_key.is_empty() {
-        let result = stego.verify_payload_from_bytes_with_key(img_bytes, mac_key);
-        match result {
-            VerificationStatus::Verified => {
-                stego_status = VerificationStatus::Verified;
-                authenticated = true;
-                let payload = stego.extract_payload_from_bytes_with_key(img_bytes, mac_key);
-                stego_payload = payload;
-                if stego_payload.is_some() {
-                    if is_jpeg {
-                        channels.push(EvidenceChannel::DctPayload);
-                    } else {
-                        channels.push(EvidenceChannel::LsbPayload);
-                    }
-                }
-            }
-            VerificationStatus::Invalid => {
-                stego_status = VerificationStatus::Invalid;
-                authenticated = false;
-                stego_payload = None;
-            }
-            VerificationStatus::NotFound => {
-                stego_status = VerificationStatus::NotFound;
-                authenticated = false;
-                stego_payload = None;
-            }
-        }
-    } else {
-        let result = stego.verify_payload_from_bytes_with_key(img_bytes, &[]);
-        stego_status = result;
-        authenticated = false;
-        stego_payload = None;
-        if result == VerificationStatus::Verified {
-            if is_jpeg {
-                channels.push(EvidenceChannel::DctPayload);
-            } else {
-                channels.push(EvidenceChannel::LsbPayload);
-            }
-        }
-    }
-
-    let evidence_strength = compute_evidence_strength(has_notice, authenticated, &channels);
-
-    let rights_signal_kind = detected_rights_signal.unwrap_or(RightsSignalKind::Unknown);
-
-    NoticeVerification::builder()
-        .copyright_holder(copyright_holder)
-        .creator(creator)
-        .contact(contact)
-        .rights_url(rights_url)
-        .usage_terms(usage_terms)
-        .ai_constraints(ai_constraints)
-        .dmi(dmi)
-        .tdm_reserved(tdm_reserved)
-        .rights_signal_kind(rights_signal_kind)
-        .canonical_dmi(canonical_dmi)
-        .legacy_dmi(legacy_dmi)
-        .protection_seed(seed)
-        .stego_status(stego_status)
-        .stego_payload(stego_payload)
-        .authenticated(authenticated)
-        .evidence_strength(evidence_strength)
-        .channels(channels)
-        .license_url(license_url)
-        .web_statement_of_rights(web_statement_of_rights)
-        .credit_line(credit_line)
-        .copyright_owner(copyright_owner)
-        .licensor_name(licensor_name)
-        .licensor_email(licensor_email)
-        .licensor_url(licensor_url)
-        .metadata_date(metadata_date)
-        .notice_applied_at(notice_applied_at)
-        .build()
-}
-
-fn empty_report() -> NoticeVerification {
-    NoticeVerification::builder().build()
-}
-
-fn compute_evidence_strength(
-    has_notice: bool,
-    authenticated: bool,
-    channels: &[EvidenceChannel],
-) -> EvidenceStrength {
-    let has_stego = channels
-        .iter()
-        .any(|c| matches!(c, EvidenceChannel::LsbPayload | EvidenceChannel::DctPayload));
-
-    if has_notice && authenticated && has_stego {
-        EvidenceStrength::MetadataNoticeAndAuthenticatedProvenance
-    } else if has_notice && has_stego {
-        EvidenceStrength::MetadataNoticeAndBestEffortStego
-    } else if has_notice {
-        EvidenceStrength::MetadataNoticeOnly
-    } else {
-        EvidenceStrength::NoNoticeFound
-    }
-}
-
-enum Format {
+pub(crate) enum Format {
     Png,
     Jpeg,
     WebP,
 }
 
-fn detect_format(bytes: &[u8]) -> Option<Format> {
+pub(crate) fn detect_format(bytes: &[u8]) -> Option<Format> {
     if bytes.len() < 4 {
         return None;
     }
@@ -417,7 +43,7 @@ fn detect_format(bytes: &[u8]) -> Option<Format> {
     }
 }
 
-fn extract_png_notice(
+pub(crate) fn extract_png_notice(
     png_data: &[u8],
     channels: &mut Vec<EvidenceChannel>,
     seed: &mut Option<u64>,
@@ -579,59 +205,7 @@ fn extract_png_notice(
     )
 }
 
-fn extract_xmp_dmi_from_png(
-    png_data: &[u8],
-    dmi: &mut Option<DmiValue>,
-    tdm_reserved: &mut Option<bool>,
-    canonical_dmi: &mut Option<DmiValue>,
-    legacy_dmi: &mut Option<DmiValue>,
-    rights_signal_kind: &mut Option<RightsSignalKind>,
-) {
-    let mut pos = 8;
-    while pos + 12 <= png_data.len() {
-        let chunk_len = u32::from_be_bytes([
-            png_data[pos],
-            png_data[pos + 1],
-            png_data[pos + 2],
-            png_data[pos + 3],
-        ]) as usize;
-        let chunk_type = &png_data[pos + 4..pos + 8];
-
-        if chunk_type == b"IEND" {
-            break;
-        }
-
-        if chunk_type == b"iTXt" {
-            let data_start = pos + 8;
-            let data_end = (data_start + chunk_len).min(png_data.len());
-            let data = &png_data[data_start..data_end];
-
-            if let Some(null_pos) = data.iter().position(|&b| b == 0) {
-                let key = &data[..null_pos];
-                if key == b"XML:com.adobe.xmp" {
-                    let value_raw = &data[null_pos + 1..];
-                    if value_raw.len() >= 3 {
-                        let value = &value_raw[3..]; // skip compression flag + method + null
-                        if let Ok(xmp_str) = std::str::from_utf8(value) {
-                            parse_xmp_for_dmi(
-                                xmp_str,
-                                dmi,
-                                tdm_reserved,
-                                canonical_dmi,
-                                legacy_dmi,
-                                rights_signal_kind,
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
-        pos += 12 + chunk_len;
-    }
-}
-
-fn extract_xmp_dmi_from_png_with_limits(
+pub(crate) fn extract_xmp_dmi_from_png_with_limits(
     png_data: &[u8],
     dmi: &mut Option<DmiValue>,
     tdm_reserved: &mut Option<bool>,
@@ -690,7 +264,7 @@ fn extract_xmp_dmi_from_png_with_limits(
     }
 }
 
-fn extract_jpeg_notice(
+pub(crate) fn extract_jpeg_notice(
     jpeg_data: &[u8],
     channels: &mut Vec<EvidenceChannel>,
     seed: &mut Option<u64>,
@@ -893,66 +467,7 @@ fn extract_jpeg_notice(
     )
 }
 
-fn extract_xmp_dmi_from_jpeg(
-    jpeg_data: &[u8],
-    dmi: &mut Option<DmiValue>,
-    tdm_reserved: &mut Option<bool>,
-    canonical_dmi: &mut Option<DmiValue>,
-    legacy_dmi: &mut Option<DmiValue>,
-    rights_signal_kind: &mut Option<RightsSignalKind>,
-) {
-    let mut pos = 2;
-    while pos + 2 <= jpeg_data.len() {
-        if jpeg_data[pos] != 0xFF {
-            pos += 1;
-            continue;
-        }
-
-        let marker = jpeg_data[pos + 1];
-
-        if marker == 0xD9 || marker == 0xDA {
-            break;
-        }
-
-        if marker == 0x00 {
-            pos += 1;
-            continue;
-        }
-
-        if pos + 4 > jpeg_data.len() {
-            break;
-        }
-
-        let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
-        let segment_end = pos + 2 + segment_len;
-        if segment_end > jpeg_data.len() {
-            break;
-        }
-
-        if marker == 0xE1 && segment_end > pos + 4 {
-            let segment_data = &jpeg_data[pos + 4..segment_end];
-            if segment_data
-                .windows(28)
-                .any(|w| w == b"http://ns.adobe.com/xap/1.0/")
-            {
-                if let Ok(xmp_str) = std::str::from_utf8(segment_data) {
-                    parse_xmp_for_dmi(
-                        xmp_str,
-                        dmi,
-                        tdm_reserved,
-                        canonical_dmi,
-                        legacy_dmi,
-                        rights_signal_kind,
-                    );
-                }
-            }
-        }
-
-        pos = segment_end;
-    }
-}
-
-fn extract_xmp_dmi_from_jpeg_with_limits(
+pub(crate) fn extract_xmp_dmi_from_jpeg_with_limits(
     jpeg_data: &[u8],
     dmi: &mut Option<DmiValue>,
     tdm_reserved: &mut Option<bool>,
@@ -1102,7 +617,7 @@ fn extract_xmp_alt_property(xmp: &str, tag: &str) -> Option<String> {
     }
 }
 
-fn extract_webp_notice(
+pub(crate) fn extract_webp_notice(
     webp_data: &[u8],
     channels: &mut Vec<EvidenceChannel>,
     seed: &mut Option<u64>,
@@ -1227,49 +742,7 @@ fn extract_webp_notice(
     )
 }
 
-fn extract_xmp_dmi_from_webp(
-    webp_data: &[u8],
-    dmi: &mut Option<DmiValue>,
-    tdm_reserved: &mut Option<bool>,
-    canonical_dmi: &mut Option<DmiValue>,
-    legacy_dmi: &mut Option<DmiValue>,
-    rights_signal_kind: &mut Option<RightsSignalKind>,
-) {
-    let mut pos = 12;
-    while pos + 8 <= webp_data.len() {
-        let chunk_type = &webp_data[pos..pos + 4];
-        let chunk_size = u32::from_le_bytes([
-            webp_data[pos + 4],
-            webp_data[pos + 5],
-            webp_data[pos + 6],
-            webp_data[pos + 7],
-        ]) as usize;
-
-        let data_start = pos + 8;
-        let data_end = (data_start + chunk_size).min(webp_data.len());
-
-        if chunk_type == b"XMP " && data_end > data_start {
-            let data = &webp_data[data_start..data_end];
-            if let Ok(xmp_str) = std::str::from_utf8(data) {
-                parse_xmp_for_dmi(
-                    xmp_str,
-                    dmi,
-                    tdm_reserved,
-                    canonical_dmi,
-                    legacy_dmi,
-                    rights_signal_kind,
-                );
-            }
-        }
-
-        pos = data_start + chunk_size;
-        if !chunk_size.is_multiple_of(2) {
-            pos += 1;
-        }
-    }
-}
-
-fn extract_xmp_dmi_from_webp_with_limits(
+pub(crate) fn extract_xmp_dmi_from_webp_with_limits(
     webp_data: &[u8],
     dmi: &mut Option<DmiValue>,
     tdm_reserved: &mut Option<bool>,
@@ -1413,116 +886,6 @@ fn find_prefix_for_namespace(xmp_str: &str, namespace_url: &str) -> Option<Strin
         }
     }
     None
-}
-
-fn parse_xmp_for_dmi(
-    xmp_str: &str,
-    dmi: &mut Option<DmiValue>,
-    tdm_reserved: &mut Option<bool>,
-    canonical_dmi: &mut Option<DmiValue>,
-    legacy_dmi: &mut Option<DmiValue>,
-    rights_signal_kind: &mut Option<RightsSignalKind>,
-) {
-    if canonical_dmi.is_none() {
-        let raw_val = if let Some(val) = extract_xmp_attr(xmp_str, "plus:DataMining") {
-            Some(val)
-        } else if let Some(prefix) =
-            find_prefix_for_namespace(xmp_str, crate::types::PLUS_NAMESPACE)
-        {
-            let tag = format!("{}:DataMining", prefix);
-            extract_xmp_element(xmp_str, &tag)
-        } else {
-            None
-        };
-        if let Some(val) = raw_val {
-            match classify_plus_data_mining_value(&val) {
-                ParsedDmiRepresentation::CanonicalUri(v) => {
-                    *canonical_dmi = Some(v);
-                    if rights_signal_kind.is_none() {
-                        *rights_signal_kind = Some(RightsSignalKind::CanonicalPlusDataMining);
-                    }
-                }
-                ParsedDmiRepresentation::LegacyBareKey(v) => {
-                    if rights_signal_kind.is_none() {
-                        *rights_signal_kind = Some(RightsSignalKind::LegacyBarePlusVocabularyKey);
-                    }
-                    if legacy_dmi.is_none() {
-                        *legacy_dmi = Some(v);
-                    }
-                    if dmi.is_none() {
-                        *dmi = Some(v);
-                    }
-                }
-                ParsedDmiRepresentation::Unknown => {}
-            }
-        }
-    }
-
-    if dmi.is_none() && canonical_dmi.is_some() {
-        *dmi = *canonical_dmi;
-    }
-
-    if legacy_dmi.is_none() {
-        if let Some(val) = extract_xmp_attr(xmp_str, "Iptc4xmpExt:DataMiningAttribute") {
-            if let Some(v) = parse_dmi_value(&val) {
-                *legacy_dmi = Some(v);
-                if dmi.is_none() {
-                    *dmi = Some(v);
-                }
-                if rights_signal_kind.is_none() {
-                    *rights_signal_kind = Some(RightsSignalKind::LegacyStegoEggoDmi);
-                }
-            }
-        }
-    }
-    if legacy_dmi.is_none() {
-        if let Some(val) = extract_xmp_attr(xmp_str, "Iptc4xmpExt:DMI-Prohibited") {
-            if let Some(v) = parse_dmi_value(&val) {
-                *legacy_dmi = Some(v);
-                if dmi.is_none() {
-                    *dmi = Some(v);
-                }
-                if rights_signal_kind.is_none() {
-                    *rights_signal_kind = Some(RightsSignalKind::LegacyStegoEggoDmi);
-                }
-            }
-        }
-    }
-    if legacy_dmi.is_none() {
-        if let Some(val) = extract_xmp_attr(xmp_str, "Iptc4xmpExt:DMI-Allowed") {
-            if let Some(v) = parse_dmi_value(&val) {
-                *legacy_dmi = Some(v);
-                if dmi.is_none() {
-                    *dmi = Some(v);
-                }
-                if rights_signal_kind.is_none() {
-                    *rights_signal_kind = Some(RightsSignalKind::LegacyStegoEggoDmi);
-                }
-            }
-        }
-    }
-    if legacy_dmi.is_none() {
-        if let Some(val) = extract_xmp_attr(xmp_str, "Iptc4xmpExt:DMI") {
-            if let Some(v) = parse_dmi_value(&val) {
-                *legacy_dmi = Some(v);
-                if dmi.is_none() {
-                    *dmi = Some(v);
-                }
-                if rights_signal_kind.is_none() {
-                    *rights_signal_kind = Some(RightsSignalKind::LegacyStegoEggoDmi);
-                }
-            }
-        }
-    }
-
-    if tdm_reserved.is_none() {
-        if let Some(val) = extract_xmp_attr(xmp_str, "tdm:reserve_tdm") {
-            *tdm_reserved = Some(val == "1");
-            if rights_signal_kind.is_none() {
-                *rights_signal_kind = Some(RightsSignalKind::LegacyTdmReservation);
-            }
-        }
-    }
 }
 
 fn check_xml_depth(xmp_str: &str, max_depth: usize) -> bool {
@@ -1750,6 +1113,7 @@ fn parse_dmi_value(val: &str) -> Option<DmiValue> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{EvidenceStrength, NoticeVerification, VerificationStatus};
 
     fn helper_parse_dmi(xmp_str: &str) -> (Option<DmiValue>, Option<DmiValue>, RightsSignalKind) {
         let mut dmi = None;
@@ -1757,13 +1121,14 @@ mod tests {
         let mut canonical_dmi = None;
         let mut legacy_dmi = None;
         let mut rights_signal_kind = None;
-        parse_xmp_for_dmi(
+        parse_xmp_for_dmi_with_limits(
             xmp_str,
             &mut dmi,
             &mut tdm_reserved,
             &mut canonical_dmi,
             &mut legacy_dmi,
             &mut rights_signal_kind,
+            &crate::resource_limits::ResourceLimits::default(),
         );
         (
             canonical_dmi,

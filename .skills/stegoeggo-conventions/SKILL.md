@@ -110,9 +110,10 @@ fn process_request_bytes_parallel(images: &[Vec<u8>], request: &ProtectionReques
 fn process_request_bytes_with_warnings_parallel(images: &[Vec<u8>], request: &ProtectionRequest) -> Result<Vec<(Vec<u8>, Vec<ProtectionWarning>)>>  // feature: parallel
 fn process_request_bytes_with_report_parallel(images: &[Vec<u8>], request: &ProtectionRequest) -> Result<Vec<(Vec<u8>, ExecutionReport)>>  // feature: parallel
 fn process_image_bytes(img_bytes: &[u8], level: ProtectionLevel, ctx: &ProtectionContext) -> Result<Vec<u8>>
-fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus  // NOT Result
-fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> VerificationResult  // enum, src/types.rs:2200
-fn verify_legal_notice(img_bytes: &[u8], mac_key: &[u8]) -> NoticeVerification  // struct, src/types.rs:2496
+fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus  // NOT Result; centralized projection, NOT deprecated
+fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> VerificationResult  // centralized projection
+fn verify_image_bytes_report(img_bytes: &[u8], mac_key: &[u8]) -> VerificationReport  // canonical rich operation
+fn verify_legal_notice(img_bytes: &[u8], mac_key: &[u8]) -> NoticeVerification  // centralized projection; build with NoticeVerification::builder()
 ```
 
 ### Async entry points (in `src/async_api.rs`, feature: `async`)
@@ -131,14 +132,14 @@ fn process_request_bytes_with_report_async(img_bytes: Vec<u8>, request: Protecti
 
 ### Verification type surface
 
-Four distinct verification types — pick the right one:
+Canonical operation is `verify_image_bytes_report` (`src/verification/canonical.rs` performs one rights parse plus one hidden-marker search, building `VerificationReport` once). The other types are centralized projections from the same facts — do not add independent searches:
 
 | Type | Location | Use |
 |------|----------|-----|
-| `VerificationStatus` | `src/types.rs:2288` | Coarse result of `verify_image_bytes`; live, NOT deprecated |
-| `VerificationResult` | `src/types.rs:2200` (enum) | Detailed payload verification via `verify_image_bytes_detailed` |
-| `NoticeVerification` | `src/types.rs:2496` | Legal-notice evidence via `verify_legal_notice`; build with `NoticeVerification::builder()` |
-| `VerificationReport` | `src/verification/report.rs:1003` | Full structured report (`TrustEvaluation`, `EvidenceStrength`) via `VerificationReportBuilder` |
+| `VerificationReport` | `src/verification/report.rs` | Canonical rich result via `verify_image_bytes_report`; `VerificationReportBuilder` computes evidence strength |
+| `VerificationStatus` | `src/types.rs` | Coarse stego-only projection of `verify_image_bytes`; live, NOT deprecated (`summary_status` rights fallback is separate) |
+| `VerificationResult` | `src/types.rs` (enum) | Detailed projection via `verify_image_bytes_detailed` (`Verified`/`Corrupted`/`MetadataOnly`/`NotFound`) |
+| `NoticeVerification` | `src/types.rs` | Legal-notice projection via `verify_legal_notice`; build with `NoticeVerification::builder()` |
 
 ### Legacy compatibility (deprecated but functional)
 ```rust

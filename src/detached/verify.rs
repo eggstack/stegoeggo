@@ -606,19 +606,16 @@ fn verify_detached_manifest_inner(
         Some(reference) => {
             let extractor = crate::protected::steganography::SteganographyProtector::new();
             let mac_key = payload_mac_key.unwrap_or(&[]);
-
-            // Use verify_and_extract_raw_from_bytes to get both the status and raw
-            // payload bytes. This allows us to inspect the v3 header to distinguish
-            // between missing and wrong HMAC keys.
             let (status, raw_bytes) =
-                extractor.verify_and_extract_raw_from_bytes(image_bytes, mac_key);
+                extractor.verify_and_extract_raw_for_detailed(image_bytes, mac_key);
 
             match status {
                 crate::VerificationStatus::Verified => {
-                    // Payload verified. Extract to check version and digest.
-                    if let Some(payload) =
-                        extractor.extract_payload_from_bytes_with_key(image_bytes, mac_key)
-                    {
+                    if let Some(payload) = raw_bytes.as_ref().and_then(|raw| {
+                        crate::protected::steganography::SteganographyProtector::parse_verified_payload(
+                            raw,
+                        )
+                    }) {
                         if payload.version() != reference.payload_version {
                             return ManifestVerification {
                                 report,

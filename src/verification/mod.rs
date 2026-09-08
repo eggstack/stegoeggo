@@ -1,5 +1,6 @@
 /// Verification report builder with fluent API.
 pub mod builder;
+pub(crate) mod canonical;
 /// Verification report types: rights, stego, authentication, binding, trust, and diagnostics.
 pub mod report;
 

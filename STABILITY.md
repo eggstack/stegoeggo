@@ -12,9 +12,11 @@ The following API surfaces are stable and follow semantic versioning guarantees.
 | `process_request_bytes` | `stegoeggo` |
 | `process_request_bytes_with_warnings` | `stegoeggo` |
 | `process_request_bytes_with_report` | `stegoeggo` |
-| `verify_legal_notice` | `stegoeggo::protected` |
 | `verify_image_bytes` | `stegoeggo` |
-| `compute_content_identifiers` | `stegoeggo::util` |
+| `verify_image_bytes_detailed` | `stegoeggo` |
+| `verify_image_bytes_report` | `stegoeggo` |
+| `verify_legal_notice` | `stegoeggo` |
+| `compute_content_identifiers` | `stegoeggo` (`iscc` feature) |
 
 ### Core Types
 
@@ -24,7 +26,9 @@ The following API surfaces are stable and follow semantic versioning guarantees.
 | `RightsPolicy` | `stegoeggo::types` |
 | `RightsNotice` | `stegoeggo::types` |
 | `LegalMetadata` | `stegoeggo::types` |
-| `VerificationReport` | `stegoeggo::types` |
+| `VerificationReport` | `stegoeggo::verification` |
+| `VerificationStatus` | `stegoeggo::types` |
+| `VerificationResult` | `stegoeggo::types` |
 | `NoticeVerification` | `stegoeggo::types` |
 | `ProtectionContext` | `stegoeggo::types` |
 | `StegoPayload` | `stegoeggo::types` |
@@ -113,7 +117,29 @@ The following output formats are stable and can be consumed by tooling.
 | Schema | Description |
 |--------|-------------|
 | Conformance JSON report | Produced by `stegoeggo-conformance --json` |
-| `VerificationReport` JSON | Produced by `verify_image_bytes` or CLI `--json` |
+| `VerificationReport` JSON | Produced by `verify_image_bytes_report` or CLI `--verify --json` (compatibility projection) |
+
+## Verification model
+
+`verify_image_bytes_report` is the canonical verification operation for rich
+integrations. It performs one rights parse plus one hidden-marker search and
+returns `VerificationReport`. `verify_image_bytes`, `verify_image_bytes_detailed`,
+and `verify_legal_notice` are compatibility projections derived from the same
+canonical facts. `VerificationStatus` remains stable and is not deprecated.
+
+- Authentication: `attempted` means an HMAC payload was found; `hmac_status`
+  distinguishes verified, failed, and missing-key cases; `key_matched` is true
+  only when the supplied key verified the tag; `authenticated` requires all three.
+- Binding: embedded verification reports default (empty) bindings; detached
+  manifest verification reports instance-digest, format, dimensions, and file-size
+  binding.
+- Trust: embedded verification is untrusted by default (`caller-owned` model
+  without a caller key); detached trust comes solely from the caller `TrustPolicy`.
+- Marker validity: `Verified` means integrity passed; `Invalid` covers corruption,
+  malformed v3, unsupported version, missing/failed auth, and resource-limit
+  exhaustion (see report diagnostics for which); `NotFound` means no marker found.
+  `summary_status` upgrades metadata-only `NotFound` to `Verified` for overall
+  evidence; the coarse `VerificationStatus` projection stays stego-only.
 
 ## Internal Implementation Details
 

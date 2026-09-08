@@ -1782,10 +1782,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
             if notice.authenticated() {
                 println!("Authenticated provenance: Verified");
-            } else if args.key.is_some() {
-                println!(
-                    "Authenticated provenance: Not verified (key provided but HMAC check failed)"
-                );
+            } else if notice.stego_status() == stegoeggo::VerificationStatus::Invalid {
+                println!("Authenticated provenance: Not verified (integrity check failed)");
             } else {
                 println!("Authenticated provenance: Not configured");
             }

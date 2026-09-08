@@ -1,8 +1,8 @@
 # Verification Report
 
-**Source:** `src/verification/`
+**Source:** `src/verification/` (canonical core: `canonical.rs`; types: `report.rs`; builder: `builder.rs`)
 
-Provides a structured, machine-readable verification report with per-channel sub-results. Used by the CLI `--verify` flag and programmatic verification APIs.
+Provides a structured, machine-readable verification report with per-channel sub-results. `verify_image_bytes_report` is the canonical operation for rich integrations: one rights parse plus one hidden-marker search produces `CanonicalFacts`, converted to `VerificationReport` exactly once. `verify_image_bytes`, `verify_image_bytes_detailed`, and `verify_legal_notice` are centralized compatibility projections from the same facts. CLI `--verify` consumes the canonical-backed `NoticeVerification` projection and derives auth presentation from its `authenticated`/`stego_status` fields.
 
 ## Module Structure
 
@@ -175,6 +175,17 @@ let report = VerificationReportBuilder::new()
 }
 ```
 
+## Canonical core and projections
+
+`src/verification/canonical.rs` owns verification semantics. `verify_canonical_with_limits` extracts rights metadata via `src/protected/notice_verification.rs` helpers (format-specific notice plus `*_with_limits` XMP/DMI parsers) and runs one `SteganographyProtector::verify_payload_from_bytes_outcome` search, preserving `Valid`, `Invalid`, `MalformedV3`, `UnsupportedVersion`, `AuthenticationKeyMissing`, `AuthenticationFailed`, `ResourceLimitExceeded`, and `NotFound`. It builds `VerificationReport` once, with diagnostics for malformed, unsupported, missing/failed auth, corruption, resource exhaustion, and metadata-only cases.
+
+Centralized projections, named and tested in `tests/verification_convergence.rs`:
+
+- `project_status_from_canonical` -> `VerificationStatus` (stego-only; `summary_status` rights fallback is separate)
+- `project_result_from_canonical` -> `VerificationResult` (`Verified`/`Corrupted`/`MetadataOnly`/`NotFound`)
+- `project_notice_from_canonical` -> `NoticeVerification` (full legal fields)
+- `project_report_from_canonical` -> `VerificationReport` clone
+
 ## Relationship to NoticeVerification
 
-`NoticeVerification` (`src/protected/notice_verification.rs`) is the internal extraction engine. It parses image bytes and extracts rights metadata, DMI values, and stego seeds. The `VerificationReport` is the structured, public-facing output that wraps extraction results with per-channel sub-results and evidence strength rating.
+`NoticeVerification` (`src/types.rs`) is a compatibility projection carrying full legal-notice fields (license URL, web statement, credit line, copyright owner, licensor fields, metadata date, notice-applied-at, TDM reservation, rights-signal kind, canonical/legacy DMI, protection seed, full `StegoPayload`) not present in `RightsVerification`. Both projections come from the same `CanonicalFacts`; there are not two independent searches. Detached-manifest embedded-reference checks reuse the single-outcome raw-plus-parse path; full detached signature/binding/trust reporting remains manifest-aware by necessity (documented exception).

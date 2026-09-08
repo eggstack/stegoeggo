@@ -66,7 +66,7 @@ impl SteganographyProtector {
         }
     }
 
-    fn verify_payload_from_bytes_outcome(
+    pub(crate) fn verify_payload_from_bytes_outcome(
         &self,
         img_bytes: &[u8],
         mac_key: &[u8],

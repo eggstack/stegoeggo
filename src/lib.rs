@@ -1479,13 +1479,16 @@ fn execute_seed_only_and_metadata(
 
 /// Verify that image bytes contain a protection payload whose integrity can be proved.
 ///
-/// Checks metadata seeds, DCT stego integrity (for JPEG), and LSB stego (for PNG/WebP).
+/// Compatibility projection of the canonical [`VerificationReport`] (see
+/// [`verify_image_bytes_report`]). Reports hidden-marker integrity only;
+/// use `summary_status` on the report for rights-fallback semantics.
+/// Stable and not deprecated.
 ///
 /// # Returns
 ///
 /// - [`VerificationStatus::Verified`] — protection data found and verification passed
 /// - [`VerificationStatus::Invalid`] — protection data found but verification failed
-///   (corrupted or wrong key)
+///   (corrupted, malformed, unsupported version, missing/failed auth, or resource exhaustion)
 /// - [`VerificationStatus::NotFound`] — no protection data found in the image
 ///
 /// # Arguments
@@ -1505,8 +1508,8 @@ fn execute_seed_only_and_metadata(
 /// }
 /// ```
 pub fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus {
-    let stego = SteganographyProtector::new();
-    stego.verify_payload_from_bytes_with_key(img_bytes, mac_key)
+    let facts = crate::verification::canonical::verify_canonical(img_bytes, mac_key);
+    crate::verification::canonical::project_status_from_canonical(&facts)
 }
 
 /// Verify protection with custom resource limits.
@@ -1519,8 +1522,9 @@ pub fn verify_image_bytes_with_limits(
     mac_key: &[u8],
     limits: &ResourceLimits,
 ) -> VerificationStatus {
-    let stego = SteganographyProtector::with_resource_limits(limits.clone());
-    stego.verify_payload_from_bytes_with_key(img_bytes, mac_key)
+    let facts =
+        crate::verification::canonical::verify_canonical_with_limits(img_bytes, mac_key, limits);
+    crate::verification::canonical::project_status_from_canonical(&facts)
 }
 
 /// Verify protection with detailed results.
@@ -1546,29 +1550,8 @@ pub fn verify_image_bytes_with_limits(
 /// }
 /// ```
 pub fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> VerificationResult {
-    let stego = SteganographyProtector::new();
-
-    let (status, raw_payload) = stego.verify_and_extract_raw_for_detailed(img_bytes, mac_key);
-    match (status, raw_payload) {
-        (VerificationStatus::Verified, Some(raw)) => {
-            if let Some(payload) = SteganographyProtector::parse_verified_payload(&raw) {
-                return VerificationResult::Verified { payload };
-            }
-            return VerificationResult::NotFound;
-        }
-        (VerificationStatus::Invalid, Some(raw)) => {
-            if let Some(payload) = SteganographyProtector::parse_verified_payload(&raw) {
-                return VerificationResult::Corrupted { payload };
-            }
-        }
-        _ => {}
-    }
-
-    if let Some(seed) = RightsMetadataProtector::extract_seed_from_image(img_bytes) {
-        return VerificationResult::MetadataOnly { seed };
-    }
-
-    VerificationResult::NotFound
+    let facts = crate::verification::canonical::verify_canonical(img_bytes, mac_key);
+    crate::verification::canonical::project_result_from_canonical(&facts)
 }
 
 /// Verify protection with detailed results and custom resource limits.
@@ -1580,29 +1563,9 @@ pub fn verify_image_bytes_detailed_with_limits(
     mac_key: &[u8],
     limits: &ResourceLimits,
 ) -> VerificationResult {
-    let stego = SteganographyProtector::with_resource_limits(limits.clone());
-
-    let (status, raw_payload) = stego.verify_and_extract_raw_for_detailed(img_bytes, mac_key);
-    match (status, raw_payload) {
-        (VerificationStatus::Verified, Some(raw)) => {
-            if let Some(payload) = SteganographyProtector::parse_verified_payload(&raw) {
-                return VerificationResult::Verified { payload };
-            }
-            return VerificationResult::NotFound;
-        }
-        (VerificationStatus::Invalid, Some(raw)) => {
-            if let Some(payload) = SteganographyProtector::parse_verified_payload(&raw) {
-                return VerificationResult::Corrupted { payload };
-            }
-        }
-        _ => {}
-    }
-
-    if let Some(seed) = RightsMetadataProtector::extract_seed_from_image(img_bytes) {
-        return VerificationResult::MetadataOnly { seed };
-    }
-
-    VerificationResult::NotFound
+    let facts =
+        crate::verification::canonical::verify_canonical_with_limits(img_bytes, mac_key, limits);
+    crate::verification::canonical::project_result_from_canonical(&facts)
 }
 
 /// Verify legal-notice metadata and steganographic status in a protected image.
@@ -1634,7 +1597,8 @@ pub fn verify_image_bytes_detailed_with_limits(
 /// println!("Evidence strength: {}", report.evidence_strength());
 /// ```
 pub fn verify_legal_notice(img_bytes: &[u8], mac_key: &[u8]) -> NoticeVerification {
-    protected::notice_verification::verify_notice_metadata(img_bytes, mac_key)
+    let facts = crate::verification::canonical::verify_canonical(img_bytes, mac_key);
+    crate::verification::canonical::project_notice_from_canonical(&facts)
 }
 
 /// Verify legal-notice metadata with custom resource limits.
@@ -1647,7 +1611,41 @@ pub fn verify_legal_notice_with_limits(
     mac_key: &[u8],
     limits: &ResourceLimits,
 ) -> NoticeVerification {
-    protected::notice_verification::verify_notice_metadata_with_limits(img_bytes, mac_key, limits)
+    let facts =
+        crate::verification::canonical::verify_canonical_with_limits(img_bytes, mac_key, limits);
+    crate::verification::canonical::project_notice_from_canonical(&facts)
+}
+
+/// Verify image bytes and return the canonical structured [`VerificationReport`].
+///
+/// This is the canonical verification operation for rich integrations. It performs
+/// the single expensive rights-parse plus hidden-marker search once, then builds
+/// the report. [`verify_image_bytes`], [`verify_image_bytes_detailed`], and
+/// [`verify_legal_notice`] are compatibility projections derived from the same
+/// canonical facts.
+///
+/// [`VerificationStatus`] remains stable and is not deprecated; it is the coarse
+/// hidden-marker integrity projection of this report.
+pub fn verify_image_bytes_report(
+    img_bytes: &[u8],
+    mac_key: &[u8],
+) -> crate::verification::VerificationReport {
+    let facts = crate::verification::canonical::verify_canonical(img_bytes, mac_key);
+    crate::verification::canonical::project_report_from_canonical(&facts)
+}
+
+/// Verify image bytes with custom resource limits, returning the canonical report.
+///
+/// Like [`verify_image_bytes_report`], but enforces the provided [`ResourceLimits`]
+/// during extraction.
+pub fn verify_image_bytes_report_with_limits(
+    img_bytes: &[u8],
+    mac_key: &[u8],
+    limits: &ResourceLimits,
+) -> crate::verification::VerificationReport {
+    let facts =
+        crate::verification::canonical::verify_canonical_with_limits(img_bytes, mac_key, limits);
+    crate::verification::canonical::project_report_from_canonical(&facts)
 }
 
 #[cfg(test)]
