@@ -64,6 +64,11 @@ pub enum ImageOutputFormat {
 
 Release 4 separates rights policy from processing mechanics. The canonical API entry point is `ProtectionRequest`, which combines a rights notice, policy, channel configuration, and processing options. `resolve_request()` validates all inputs and produces an immutable `ResolvedProtectionPlan` consumed by pipeline stages.
 
+No-new-legacy-features invariant: new processing features must be expressed
+in `ProtectionRequest` / `ProcessingOptions` / `ProtectionChannels` first.
+Legacy `ProtectionContext` builders may only translate into those fields via
+`request_from_legacy()` when compatibility requires it.
+
 ### RightsPolicy
 
 Explicit data-mining policy enum. Maps 1:1 to `DmiValue`:
@@ -473,7 +478,7 @@ Extracted stego data (returned from `SteganographyProtector::extract_payload`):
 
 ## ProtectionWarning
 
-Enum with 8 variants emitted by `process_image_bytes_with_warnings`:
+Enum with 8 variants emitted by `process_request_bytes_with_warnings` (canonical) and `process_image_bytes_with_warnings` (legacy adapter, which adds only `MissingMacKey`, `ContradictoryLegalClaims`, `JpegReencodeFragile` beyond the canonical set):
 
 | Variant | Category | Description |
 |---------|----------|-------------|

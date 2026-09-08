@@ -71,6 +71,19 @@ let iscc = compute_content_identifiers(&img);
 
 The CLI now always routes through `ProtectionRequest` — there are no dual legacy/request code paths.
 
+## Legacy Auxiliary APIs (Plan 082)
+
+The level/context async and parallel wrappers remain functional but are compatibility adapters. New code must use the request-based forms:
+
+| Legacy API | Canonical replacement |
+|------------|-----------------------|
+| `process_image_async`, `process_image_bytes_async`, `process_image_bytes_with_warnings_async` | `process_request_bytes_async`, `process_request_bytes_with_warnings_async`, `process_request_bytes_with_report_async` (`async` feature) |
+| `process_images_parallel`, `process_images_bytes_parallel` | `process_request_bytes_parallel`, `process_request_bytes_with_warnings_parallel`, `process_request_bytes_with_report_parallel` (`parallel` feature) |
+| `process_images_parallel_async`, `process_images_bytes_parallel_async` | `process_request_bytes_parallel_async`, `process_request_bytes_with_warnings_parallel_async`, `process_request_bytes_with_report_parallel_async` (`async` + `parallel`) |
+| `process_image_bytes_with_warnings` | `process_request_bytes_with_warnings` (legacy adds only `MissingMacKey`, `ContradictoryLegalClaims`, `JpegReencodeFragile` presentation warnings) |
+
+Legacy helpers translate once via `request_from_legacy()` into `ProtectionRequest` and delegate to the canonical path. New processing features must be expressed in `ProtectionRequest` / `ProcessingOptions` / `ProtectionChannels` first.
+
 ## Policy
 
 - Deprecated APIs are still functional and tested

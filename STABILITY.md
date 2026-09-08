@@ -10,6 +10,8 @@ The following API surfaces are stable and follow semantic versioning guarantees.
 |----------|--------|
 | `process_image_bytes` | `stegoeggo` |
 | `process_request_bytes` | `stegoeggo` |
+| `process_request_bytes_with_warnings` | `stegoeggo` |
+| `process_request_bytes_with_report` | `stegoeggo` |
 | `verify_legal_notice` | `stegoeggo::protected` |
 | `verify_image_bytes` | `stegoeggo` |
 | `compute_content_identifiers` | `stegoeggo::util` |
@@ -69,7 +71,8 @@ The following modules are experimental. API surfaces within them may change with
 | `stegoeggo::detached` | `detached-manifest` | Signed sidecar manifests for distributing provenance outside the image. |
 | `stegoeggo::iscc` | `iscc` | ISCC-like content-identifier computation (`compute_content_identifiers`). Requires `iscc-lib`, `blake3`, `xxhash`. |
 | `stegoeggo::conformance` | `conformance` | Machine-readable conformance reporting types. Requires `toml`, `unicode-normalization`. |
-| `stegoeggo` (parallel) | `parallel` | Rayon-based parallel batch processing (`process_images_parallel`, `process_images_bytes_parallel`). Requires `rayon`. |
+| `stegoeggo` (async) | `async` | Tokio `spawn_blocking` wrappers. Canonical: `process_request_bytes_async`, `process_request_bytes_with_warnings_async`, `process_request_bytes_with_report_async` (plus `parallel` batch variants). Legacy level/context wrappers remain as compatibility adapters. Requires `tokio`. |
+| `stegoeggo` (parallel) | `parallel` | Rayon-based parallel batch processing. Canonical: `process_request_bytes_parallel`, `process_request_bytes_with_warnings_parallel`, `process_request_bytes_with_report_parallel` (one shared request, order-preserving). Legacy `process_images_parallel` / `process_images_bytes_parallel` remain as compatibility adapters. Requires `rayon`. |
 
 ## CLI Stable Commands and Flags
 

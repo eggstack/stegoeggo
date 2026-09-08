@@ -38,7 +38,46 @@ let request = ProtectionRequest::with_hidden_marker(
 );
 ```
 
-The older `ProtectionContext`, `ProtectionLevel`, `EvidenceProfile`, `with_dmi()`, and related APIs remain functional compatibility surfaces but are deprecated for new code. See [DEPRECATIONS.md](../DEPRECATIONS.md) and [migration-v0.3.md](migration-v0.3.md).
+For warnings and full execution detail, use `process_request_bytes_with_warnings` and `process_request_bytes_with_report`.
+
+New processing features must be expressed in `ProtectionRequest` / `ProcessingOptions` / `ProtectionChannels` first. Legacy `ProtectionContext` builders may only translate into those fields when compatibility requires it.
+
+## Async API (`async` feature)
+
+Use the request-based async wrappers. Each calls its synchronous canonical counterpart inside one `spawn_blocking` closure:
+
+```rust
+use stegoeggo::{process_request_bytes_async, ProtectionRequest, RightsNotice, RightsPolicy};
+
+async fn protect(input: Vec<u8>) -> Result<Vec<u8>, stegoeggo::Error> {
+    let request = ProtectionRequest::with_hidden_marker(
+        RightsNotice::new(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_seed(42);
+    process_request_bytes_async(input, request).await
+}
+```
+
+`process_request_bytes_with_warnings_async` and `process_request_bytes_with_report_async` are the warnings/report equivalents. The `parallel` batch variants (`process_request_bytes_parallel_async`, `..._with_warnings_parallel_async`, `..._with_report_parallel_async`) run the whole batch on one blocking thread via the synchronous Rayon batch.
+
+## Parallel batch API (`parallel` feature)
+
+One shared request applied to many byte buffers, preserving input order. There is no second batch executor and no per-item request form:
+
+```rust
+use stegoeggo::{process_request_bytes_parallel, ProtectionRequest, RightsNotice, RightsPolicy};
+
+let images: Vec<Vec<u8>> = vec![std::fs::read("a.png")?, std::fs::read("b.png")?];
+let request = ProtectionRequest::with_hidden_marker(
+    RightsNotice::new(),
+    RightsPolicy::ProhibitedAiMlTraining,
+)
+.with_seed(42);
+let outputs = process_request_bytes_parallel(&images, &request)?;
+```
+
+`process_request_bytes_with_warnings_parallel` and `process_request_bytes_with_report_parallel` are the warnings/report equivalents.
 
 ## Byte APIs versus `DynamicImage`
 
@@ -62,6 +101,10 @@ println!("{:?}", report);
 The report distinguishes metadata-only notices, best-effort steganographic evidence, and HMAC-authenticated provenance when a matching key is supplied.
 
 Verification should be interpreted as evidence about what is present in the file, not as a legal conclusion. Metadata can be copied or forged; an HMAC proves knowledge of a secret key, not ownership of the underlying work.
+
+## Compatibility surface
+
+The older `ProtectionContext`, `ProtectionLevel`, `EvidenceProfile`, `with_dmi()`, and related level/context sync, async, and parallel wrappers remain functional compatibility adapters but are deprecated for new code. They translate once into `ProtectionRequest` and delegate to the canonical path, adding only compatibility presentation warnings (`MissingMacKey`, `ContradictoryLegalClaims`, `JpegReencodeFragile`) where applicable. See [DEPRECATIONS.md](../DEPRECATIONS.md) and [migration-v0.3.md](migration-v0.3.md).
 
 ## Examples
 

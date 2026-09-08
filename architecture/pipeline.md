@@ -67,18 +67,35 @@ The JPEG fast path (`execute_full_marker_and_metadata()` JPEG→JPEG branch) cal
 
 When both input and output are JPEG, `execute_full_marker_and_metadata()` skips pixel decode/encode entirely and only applies DCT steganography + metadata injection. This preserves original quality and avoids lossy re-encoding artifacts.
 
-## Convenience Functions
+## Canonical Functions
 
-Free functions that delegate to the canonical request/plan execution path via `request_from_legacy()` and `process_request_bytes()`:
+- `process_request_bytes(bytes, &request) -> Result<Vec<u8>>` — Canonical single-image byte path.
+- `process_request_bytes_with_warnings(bytes, &request)` — Canonical byte path with warnings.
+- `process_request_bytes_with_report(bytes, &request)` — Canonical byte path with full `ExecutionReport`.
+- `process_request_bytes_parallel(images, &request)` — Canonical Rayon batch (one shared request, order-preserving, no second executor).
+- `process_request_bytes_with_warnings_parallel(images, &request)` — Canonical batch with warnings.
+- `process_request_bytes_with_report_parallel(images, &request)` — Canonical batch with reports.
 
-- `process_image(img, level, &ctx) -> Result<DynamicImage>` — Single image, pixel path. Takes owned `DynamicImage`.
-- `process_image_bytes(bytes, level, &ctx) -> Result<Vec<u8>>` — Single image, byte path. Auto-detects input format from magic bytes and sets `input_format` on context if not already set.
-- `process_images_parallel(images, level, &ctx)` — Rayon parallel batch
-- `process_images_bytes_parallel(images, level, &ctx)` — Parallel batch, byte path
-- `process_image_bytes_with_info(bytes, level, &ctx) -> Result<(Vec<u8>, Option<ProtectionWarning>)>` — Convenience wrapper returning the first warning.
-- `process_image_bytes_with_warnings(bytes, level, &ctx) -> Result<(Vec<u8>, Vec<ProtectionWarning>)>` — Recommended reverse-proxy API. Keeps processing byte-oriented and returns advisory/degradation warnings for proxy policy/logging.
+## Compatibility Functions
+
+Legacy free functions translate once via `request_from_legacy()` into
+`ProtectionRequest` and delegate to the canonical path:
+
+- `process_image(img, level, &ctx) -> Result<DynamicImage>` — Pixel path. Resolves the translated request and dispatches on `plan.channels().hidden_marker`; no independent policy or marker selection.
+- `process_image_bytes(bytes, level, &ctx) -> Result<Vec<u8>>` — Delegates directly to `process_request_bytes`.
+- `process_images_parallel(images, level, &ctx)` — Rayon parallel batch over `process_image`.
+- `process_images_bytes_parallel(images, level, &ctx)` — Rayon parallel batch over `process_image_bytes`.
+- `process_image_bytes_with_info(bytes, level, &ctx) -> Result<(Vec<u8>, Option<ProtectionWarning>)>` — Returns the first warning.
+- `process_image_bytes_with_warnings(bytes, level, &ctx) -> Result<(Vec<u8>, Vec<ProtectionWarning>)>` — Delegates to `process_request_bytes_with_warnings`, then adds only compatibility presentation warnings (`MissingMacKey` for legacy authenticated profiles, `ContradictoryLegalClaims`, `JpegReencodeFragile`). `MetadataInjectionDisabled` and capacity/runtime warnings come from the canonical path and are not duplicated.
 - `verify_image_bytes(bytes, mac_key) -> VerificationStatus` — Free function (not a pipeline method). Checks DCT stego first, then metadata seed extraction, then falls back to LSB stego payload extraction for non-JPEG formats. Returns `VerificationStatus` (`Verified`, `Invalid`, `NotFound`).
 - `verify_image_bytes_detailed(bytes, mac_key) -> VerificationResult` — Distinguishes verified payloads from metadata-only evidence.
+
+## No-new-legacy-features invariant
+
+New processing features must be expressed in `ProtectionRequest` /
+`ProcessingOptions` / `ProtectionChannels` first. Legacy `ProtectionContext`
+builders may only translate into those fields when compatibility requires it;
+they must not gain independent policy, routing, or warning behavior.
 
 ## Dimension Validation
 
@@ -89,8 +106,8 @@ Free functions that delegate to the canonical request/plan execution path via `r
 For tight reverse-proxy serving, prefer:
 
 1. Cache lookup in the proxy before calling stegoeggo.
-2. `process_image_bytes_with_warnings()` on cache misses.
-3. A `ProtectionContext` with `with_mac_key()`, `with_max_dimension()`, explicit `with_format()`, and bounded `with_stego_redundancy()`.
+2. `process_request_bytes_with_warnings()` on cache misses.
+3. A `ProtectionRequest` with `with_mac_key()`, `with_max_dimension()`, explicit `with_output_format()`, and bounded `with_stego_redundancy()`.
 4. Policy/logging based on `ProtectionWarning`.
 
 The library intentionally does not own proxy-level cache policy, concurrency limits, request body limits, or timeout/cancellation behavior.

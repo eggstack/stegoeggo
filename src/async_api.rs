@@ -3,21 +3,32 @@
 //! Uses `tokio::task::spawn_blocking` to run CPU-bound image protection
 //! on the blocking thread pool, keeping the async runtime responsive.
 //!
-//! All functions take owned data (`Vec<u8>`, `DynamicImage`) rather than
-//! borrows to satisfy `spawn_blocking`'s `Send + 'static` requirement.
+//! The canonical surface is request-based (`process_request_bytes_async`,
+//! `process_request_bytes_with_warnings_async`,
+//! `process_request_bytes_with_report_async`, plus the `parallel` batch
+//! variants). Each calls its synchronous canonical counterpart inside one
+//! `spawn_blocking` closure with no policy, routing, or warning duplication.
+//! Level/context async wrappers remain as compatibility adapters.
+//!
+//! All functions take owned data (`Vec<u8>`, `DynamicImage`, `ProtectionRequest`)
+//! rather than borrows to satisfy `spawn_blocking`'s `Send + 'static` requirement.
 //!
 //! # Usage
 //!
 //! ## Single image processing (WAF hot path)
 //!
 //! ```no_run
-//! use stegoeggo::{process_image_bytes_with_warnings_async, ProtectionContext, ProtectionLevel};
+//! use stegoeggo::{process_request_bytes_with_warnings_async, ProtectionRequest, RightsNotice, RightsPolicy};
 //!
 //! # #[tokio::main] async fn main() -> Result<(), stegoeggo::Error> {
-//! let ctx = ProtectionContext::new(0.5, 42);
+//! let request = ProtectionRequest::with_hidden_marker(
+//!     RightsNotice::new(),
+//!     RightsPolicy::ProhibitedAiMlTraining,
+//! )
+//! .with_seed(42);
 //! let bytes: Vec<u8> = std::fs::read("input.png")?;
 //! let (protected, warnings) =
-//!     process_image_bytes_with_warnings_async(bytes, ProtectionLevel::Standard, ctx).await?;
+//!     process_request_bytes_with_warnings_async(bytes, request).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -25,16 +36,16 @@
 //! ## Parallel batch processing (CDN origin)
 //!
 //! ```no_run
-//! use stegoeggo::{process_images_bytes_parallel_async, ProtectionContext, ProtectionLevel};
+//! use stegoeggo::{process_request_bytes_parallel_async, ProtectionRequest, RightsNotice, RightsPolicy};
 //!
 //! # #[tokio::main] async fn main() -> Result<(), stegoeggo::Error> {
-//! let ctx = ProtectionContext::new(0.5, 42);
+//! let request = ProtectionRequest::with_hidden_marker(
+//!     RightsNotice::new(),
+//!     RightsPolicy::ProhibitedAiMlTraining,
+//! )
+//! .with_seed(42);
 //! let images: Vec<Vec<u8>> = vec![std::fs::read("a.png")?, std::fs::read("b.png")?];
-//! let protected = process_images_bytes_parallel_async(
-//!     images,
-//!     ProtectionLevel::Standard,
-//!     ctx,
-//! ).await?;
+//! let protected = process_request_bytes_parallel_async(images, request).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -57,7 +68,10 @@
 //! ```
 
 use crate::error::{Error, Result};
-use crate::types::{ProtectionContext, ProtectionLevel, ProtectionWarning, VerificationStatus};
+use crate::types::{
+    ExecutionReport, ProtectionContext, ProtectionLevel, ProtectionRequest, ProtectionWarning,
+    VerificationStatus,
+};
 use image::DynamicImage;
 
 fn join_err(e: tokio::task::JoinError) -> Error {
@@ -117,12 +131,60 @@ pub async fn process_image_bytes_with_warnings_async(
     .map_err(join_err)?
 }
 
+/// Process image bytes asynchronously using a [`ProtectionRequest`].
+///
+/// Canonical request-based async API. Calls [`crate::process_request_bytes`]
+/// inside one `spawn_blocking` closure with no policy, routing, or warning
+/// duplication.
+#[must_use = "the protected image bytes should be saved or used"]
+pub async fn process_request_bytes_async(
+    img_bytes: Vec<u8>,
+    request: ProtectionRequest,
+) -> Result<Vec<u8>> {
+    tokio::task::spawn_blocking(move || crate::process_request_bytes(&img_bytes, &request))
+        .await
+        .map_err(join_err)?
+}
+
+/// Process image bytes asynchronously using a [`ProtectionRequest`], returning warnings.
+///
+/// Canonical request-based async API. Calls
+/// [`crate::process_request_bytes_with_warnings`] inside one `spawn_blocking`
+/// closure with no policy, routing, or warning duplication.
+#[must_use = "the protected image bytes and warnings should be used"]
+pub async fn process_request_bytes_with_warnings_async(
+    img_bytes: Vec<u8>,
+    request: ProtectionRequest,
+) -> Result<(Vec<u8>, Vec<ProtectionWarning>)> {
+    tokio::task::spawn_blocking(move || {
+        crate::process_request_bytes_with_warnings(&img_bytes, &request)
+    })
+    .await
+    .map_err(join_err)?
+}
+
+/// Process image bytes asynchronously using a [`ProtectionRequest`], returning a report.
+///
+/// Canonical request-based async API. Calls
+/// [`crate::process_request_bytes_with_report`] inside one `spawn_blocking`
+/// closure with no policy, routing, or warning duplication.
+#[must_use = "the protected image bytes and report should be used"]
+pub async fn process_request_bytes_with_report_async(
+    img_bytes: Vec<u8>,
+    request: ProtectionRequest,
+) -> Result<(Vec<u8>, ExecutionReport)> {
+    tokio::task::spawn_blocking(move || {
+        crate::process_request_bytes_with_report(&img_bytes, &request)
+    })
+    .await
+    .map_err(join_err)?
+}
+
 /// Process multiple images asynchronously and in parallel.
 ///
-/// Runs the entire batch on a single blocking thread. The synchronous
-/// `process_images_parallel` uses rayon internally for per-image
-/// parallelism, avoiding per-image `spawn_blocking` calls that would
-/// cause thread pool overlap and contention.
+/// Compatibility adapter over the legacy level/context API. Runs the entire
+/// batch on a single blocking thread. New code should prefer
+/// [`process_request_bytes_parallel_async`].
 #[cfg(feature = "parallel")]
 #[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
 #[must_use = "the protected images should be saved or used"]
@@ -138,10 +200,9 @@ pub async fn process_images_parallel_async(
 
 /// Process multiple image bytes asynchronously and in parallel.
 ///
-/// Runs the entire batch on a single blocking thread. The synchronous
-/// `process_images_bytes_parallel` uses rayon internally for per-image
-/// parallelism, avoiding per-image `spawn_blocking` calls that would
-/// cause thread pool overlap and contention.
+/// Compatibility adapter over the legacy level/context API. Runs the entire
+/// batch on a single blocking thread. New code should prefer
+/// [`process_request_bytes_parallel_async`].
 #[cfg(feature = "parallel")]
 #[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
 #[must_use = "the protected image bytes should be saved or used"]
@@ -153,6 +214,61 @@ pub async fn process_images_bytes_parallel_async(
     tokio::task::spawn_blocking(move || crate::process_images_bytes_parallel(&images, level, &ctx))
         .await
         .map_err(join_err)?
+}
+
+/// Process multiple image byte buffers asynchronously using one shared [`ProtectionRequest`].
+///
+/// Canonical request-based async batch API. Runs the entire batch on a single
+/// `spawn_blocking` closure that delegates to the synchronous Rayon batch
+/// [`crate::process_request_bytes_parallel`], preserving input order.
+#[cfg(feature = "parallel")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
+#[must_use = "the protected image bytes should be saved or used"]
+pub async fn process_request_bytes_parallel_async(
+    images: Vec<Vec<u8>>,
+    request: ProtectionRequest,
+) -> Result<Vec<Vec<u8>>> {
+    tokio::task::spawn_blocking(move || crate::process_request_bytes_parallel(&images, &request))
+        .await
+        .map_err(join_err)?
+}
+
+/// Process multiple image byte buffers asynchronously using one shared request, with warnings.
+///
+/// Canonical request-based async batch API. Delegates to
+/// [`crate::process_request_bytes_with_warnings_parallel`] on a single
+/// blocking thread, preserving input order.
+#[cfg(feature = "parallel")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
+#[must_use = "the protected image bytes and warnings should be used"]
+pub async fn process_request_bytes_with_warnings_parallel_async(
+    images: Vec<Vec<u8>>,
+    request: ProtectionRequest,
+) -> Result<Vec<(Vec<u8>, Vec<ProtectionWarning>)>> {
+    tokio::task::spawn_blocking(move || {
+        crate::process_request_bytes_with_warnings_parallel(&images, &request)
+    })
+    .await
+    .map_err(join_err)?
+}
+
+/// Process multiple image byte buffers asynchronously using one shared request, with reports.
+///
+/// Canonical request-based async batch API. Delegates to
+/// [`crate::process_request_bytes_with_report_parallel`] on a single blocking
+/// thread, preserving input order.
+#[cfg(feature = "parallel")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
+#[must_use = "the protected image bytes and reports should be used"]
+pub async fn process_request_bytes_with_report_parallel_async(
+    images: Vec<Vec<u8>>,
+    request: ProtectionRequest,
+) -> Result<Vec<(Vec<u8>, ExecutionReport)>> {
+    tokio::task::spawn_blocking(move || {
+        crate::process_request_bytes_with_report_parallel(&images, &request)
+    })
+    .await
+    .map_err(join_err)?
 }
 
 /// Verify image bytes asynchronously.

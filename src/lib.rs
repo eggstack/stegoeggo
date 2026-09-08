@@ -110,14 +110,19 @@
 //!
 //! | Feature | Description |
 //! |---------|-------------|
-//! | `async` | Enables Tokio-based async wrappers (`process_image_async`, etc.) for WAF/CDN integration |
+//! | `async` | Enables Tokio-based async wrappers. Canonical: `process_request_bytes_async`, `process_request_bytes_with_warnings_async`, `process_request_bytes_with_report_async`; legacy level/context wrappers remain as compatibility adapters |
 //! | `signatures` | Enables Ed25519 signing via `ed25519-dalek` for provenance claims and detached manifests |
 //! | `detached-manifest` | Enables signed sidecar manifest support |
 //! | `iscc` | Enables ISCC content identifier computation (`compute_content_identifiers`, etc.) |
 //! | `conformance` | Enables the conformance harness binary and manifest parsing (TOML) |
-//! | `parallel` | Enables Rayon-based parallel batch processing (`process_images_parallel`, etc.) |
+//! | `parallel` | Enables Rayon-based parallel batch processing. Canonical: `process_request_bytes_parallel`, `process_request_bytes_with_warnings_parallel`, `process_request_bytes_with_report_parallel`; legacy level/context batch functions remain as compatibility adapters |
 //! | `test-seeds` | Enables fallback seed guessing during verification (tries common test/dev seeds). Used by the CLI; not recommended for library consumers |
 //! | `fuzz` | Enables bounded JPEG dimension inspection for fuzz harnesses. It does not expose parser or coefficient types |
+//!
+//! New processing features must be expressed in `ProtectionRequest` /
+//! `ProcessingOptions` / `ProtectionChannels` first. Legacy
+//! `ProtectionContext` builders may only translate into those fields when
+//! compatibility requires it.
 //!
 //! # Tiled Steganography
 //!
@@ -139,48 +144,63 @@
 //!
 //! # Async API
 //!
-//! For Tokio-based services (WAFs, CDN edge workers), use the async variants:
+//! For Tokio-based services (WAFs, CDN edge workers), use the request-based
+//! async variants. Each calls its synchronous canonical counterpart inside one
+//! `spawn_blocking` closure:
 //!
 //! ```no_run
-//! use stegoeggo::{process_image_bytes_async, ProtectionContext, ProtectionLevel};
+//! use stegoeggo::{process_request_bytes_async, ProtectionRequest, RightsNotice, RightsPolicy};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! # let img_bytes = std::fs::read("image.png")?;
-//! let ctx = ProtectionContext::new(0.5, 42);
-//! let protected = process_image_bytes_async(img_bytes, ProtectionLevel::Standard, ctx).await?;
+//! let request = ProtectionRequest::with_hidden_marker(
+//!     RightsNotice::new(),
+//!     RightsPolicy::ProhibitedAiMlTraining,
+//! )
+//! .with_seed(42);
+//! let protected = process_request_bytes_async(img_bytes, request).await?;
 //! # Ok(())
 //! # }
 //! ```
 //!
 //! # Parallel Batch Processing
 //!
-//! Process multiple images concurrently using Rayon:
+//! Process multiple byte buffers concurrently using Rayon with one shared
+//! request. Output order matches input order:
 //!
 //! ```no_run
-//! use stegoeggo::{process_images_parallel, ProtectionContext, ProtectionLevel};
+//! use stegoeggo::{process_request_bytes_parallel, ProtectionRequest, RightsNotice, RightsPolicy};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let images: Vec<image::DynamicImage> = vec![ /* ... */ ];
-//! let ctx = ProtectionContext::default();
-//! let results = process_images_parallel(&images, ProtectionLevel::Standard, &ctx)?;
+//! let images: Vec<Vec<u8>> = vec![std::fs::read("a.png")?, std::fs::read("b.png")?];
+//! let request = ProtectionRequest::with_hidden_marker(
+//!     RightsNotice::new(),
+//!     RightsPolicy::ProhibitedAiMlTraining,
+//! )
+//! .with_seed(42);
+//! let results = process_request_bytes_parallel(&images, &request)?;
 //! # Ok(())
 //! # }
 //! ```
 //!
 //! # Warnings API
 //!
-//! `process_image_bytes_with_warnings` returns both the protected bytes and
+//! `process_request_bytes_with_warnings` returns both the protected bytes and
 //! any warnings about the protection process (e.g., progressive JPEG fallback,
 //! insufficient DCT capacity):
 //!
 //! ```no_run
-//! use stegoeggo::{process_image_bytes_with_warnings, ProtectionContext, ProtectionLevel};
+//! use stegoeggo::{process_request_bytes_with_warnings, ProtectionRequest, RightsNotice, RightsPolicy};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # let img_bytes = std::fs::read("image.png")?;
-//! let ctx = ProtectionContext::new(0.5, 42);
+//! let request = ProtectionRequest::with_hidden_marker(
+//!     RightsNotice::new(),
+//!     RightsPolicy::ProhibitedAiMlTraining,
+//! )
+//! .with_seed(42);
 //! let (protected, warnings) =
-//!     process_image_bytes_with_warnings(&img_bytes, ProtectionLevel::Standard, &ctx)?;
+//!     process_request_bytes_with_warnings(&img_bytes, &request)?;
 //!
 //! for w in &warnings {
 //!     eprintln!("Warning: {w}");
@@ -301,11 +321,16 @@ pub use util::seed::generate_random_seed;
 #[cfg(feature = "async")]
 pub use async_api::{
     process_image_async, process_image_bytes_async, process_image_bytes_with_warnings_async,
-    verify_image_bytes_async,
+    process_request_bytes_async, process_request_bytes_with_report_async,
+    process_request_bytes_with_warnings_async, verify_image_bytes_async,
 };
 
 #[cfg(all(feature = "async", feature = "parallel"))]
-pub use async_api::{process_images_bytes_parallel_async, process_images_parallel_async};
+pub use async_api::{
+    process_images_bytes_parallel_async, process_images_parallel_async,
+    process_request_bytes_parallel_async, process_request_bytes_with_report_parallel_async,
+    process_request_bytes_with_warnings_parallel_async,
+};
 
 use image::DynamicImage;
 use image::GenericImageView;
@@ -425,33 +450,79 @@ fn process_image_ref(
 ) -> Result<DynamicImage> {
     ctx.validate()?;
     ProtectionPipeline::validate_dimensions(img, ctx.max_dimension())?;
+    if level == ProtectionLevel::Disabled {
+        return Ok(img.clone());
+    }
+    let request = request_from_legacy(level, ctx);
     let format = ctx
         .output_format()
         .or_else(|| ctx.input_format())
         .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT);
+    let plan = resolve_request(&request, format)?;
     let steganography = SteganographyProtector::new();
 
-    if level == ProtectionLevel::Light {
-        if format == crate::types::ImageOutputFormat::Jpeg {
-            let jpeg_bytes = crate::util::image::encode_image_with_options(
-                img,
-                Some(format),
-                ctx.progressive_jpeg(),
-                ctx.jpeg_quality(),
-            )?;
-            let with_seed = steganography.apply_qtable_seed_bytes(&jpeg_bytes, ctx.seed())?;
-            return image::load_from_memory(&with_seed)
-                .map_err(|e| Error::ImageDecode(e.to_string()));
+    match plan.channels().hidden_marker {
+        HiddenMarkerMode::Disabled => Ok(img.clone()),
+        HiddenMarkerMode::SeedOnly => {
+            if plan.output_format() == crate::types::ImageOutputFormat::Jpeg {
+                let jpeg_bytes = crate::util::image::encode_image_with_options(
+                    img,
+                    Some(plan.output_format()),
+                    plan.processing().progressive_jpeg,
+                    plan.processing().jpeg_quality,
+                )?;
+                let with_seed = steganography.apply_qtable_seed_bytes(&jpeg_bytes, plan.seed())?;
+                return image::load_from_memory(&with_seed)
+                    .map_err(|e| Error::ImageDecode(e.to_string()));
+            }
+
+            let mut rgba = img.to_rgba8();
+            SteganographyProtector::embed_seed_lsb_fallback_pub(&mut rgba, plan.seed());
+            Ok(DynamicImage::ImageRgba8(rgba))
         }
-
-        let mut rgba = img.to_rgba8();
-        SteganographyProtector::embed_seed_lsb_fallback_pub(&mut rgba, ctx.seed());
-        return Ok(DynamicImage::ImageRgba8(rgba));
+        HiddenMarkerMode::BestEffort => {
+            if plan.output_format() == crate::types::ImageOutputFormat::Jpeg {
+                let jpeg_bytes = crate::util::image::encode_image_with_options(
+                    img,
+                    Some(plan.output_format()),
+                    plan.processing().progressive_jpeg,
+                    plan.processing().jpeg_quality,
+                )?;
+                let with_stego =
+                    steganography.apply_dct_stego_bytes_from_plan(&jpeg_bytes, &plan, None)?;
+                let (output, _) = with_stego.into_parts();
+                return image::load_from_memory(&output)
+                    .map_err(|e| Error::ImageDecode(e.to_string()));
+            }
+            let (processed, _summary) =
+                steganography.apply_lsb_to_image_with_summary_from_plan(img, &plan, None)?;
+            Ok(processed)
+        }
+        HiddenMarkerMode::Tiled { tile_size } => {
+            if plan.output_format() == crate::types::ImageOutputFormat::Jpeg {
+                let jpeg_bytes = crate::util::image::encode_image_with_options(
+                    img,
+                    Some(plan.output_format()),
+                    plan.processing().progressive_jpeg,
+                    plan.processing().jpeg_quality,
+                )?;
+                let with_stego = steganography.apply_dct_stego_bytes_from_plan(
+                    &jpeg_bytes,
+                    &plan,
+                    Some(tile_size),
+                )?;
+                let (output, _) = with_stego.into_parts();
+                return image::load_from_memory(&output)
+                    .map_err(|e| Error::ImageDecode(e.to_string()));
+            }
+            let (processed, _summary) = steganography.apply_lsb_to_image_with_summary_from_plan(
+                img,
+                &plan,
+                Some(tile_size),
+            )?;
+            Ok(processed)
+        }
     }
-
-    let stego_ctx = ctx.clone().with_input_format(format);
-    let (processed, _summary) = steganography.apply_to_image_with_summary(img, &stego_ctx)?;
-    Ok(processed)
 }
 
 /// Process multiple images in parallel.
@@ -493,6 +564,9 @@ pub fn process_images_parallel(
 
 /// Process multiple images in parallel (bytes variant).
 ///
+/// Compatibility adapter over the legacy level/context API. New code should
+/// prefer [`process_request_bytes_parallel`].
+///
 /// Takes a slice of image bytes and returns a vector of processed image bytes.
 ///
 /// # Examples
@@ -523,6 +597,93 @@ pub fn process_images_bytes_parallel(
     images
         .par_iter()
         .map(|img_bytes| process_image_bytes(img_bytes, level, ctx))
+        .collect()
+}
+
+/// Process multiple image byte buffers in parallel using one shared [`ProtectionRequest`].
+///
+/// Canonical request-based batch API. Reuses [`process_request_bytes`] through
+/// Rayon and preserves input order in the output. This is the narrowest useful
+/// batch contract: one request applied to many inputs. There is no second batch
+/// executor and no per-item request form.
+///
+/// # Examples
+///
+/// ```no_run
+/// use stegoeggo::{process_request_bytes_parallel, ProtectionRequest, RightsNotice, RightsPolicy};
+///
+/// let images: Vec<Vec<u8>> = vec![
+///     std::fs::read("image1.png").unwrap(),
+///     std::fs::read("image2.png").unwrap(),
+/// ];
+/// let request = ProtectionRequest::with_hidden_marker(
+///     RightsNotice::new(),
+///     RightsPolicy::ProhibitedAiMlTraining,
+/// )
+/// .with_seed(42);
+/// let protected = process_request_bytes_parallel(&images, &request).unwrap();
+/// ```
+///
+/// # Errors
+///
+/// Returns the first error encountered from any image processing call.
+#[cfg(feature = "parallel")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
+#[must_use = "the protected image bytes should be saved or used"]
+pub fn process_request_bytes_parallel(
+    images: &[Vec<u8>],
+    request: &ProtectionRequest,
+) -> Result<Vec<Vec<u8>>> {
+    use rayon::prelude::*;
+    images
+        .par_iter()
+        .map(|img_bytes| process_request_bytes(img_bytes, request))
+        .collect()
+}
+
+/// Process multiple image byte buffers in parallel using one shared request, with warnings.
+///
+/// Canonical request-based batch API. Reuses
+/// [`process_request_bytes_with_warnings`] through Rayon and preserves input
+/// order.
+///
+/// # Errors
+///
+/// Returns the first error encountered from any image processing call.
+#[cfg(feature = "parallel")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
+#[must_use = "the protected image bytes and warnings should be used"]
+pub fn process_request_bytes_with_warnings_parallel(
+    images: &[Vec<u8>],
+    request: &ProtectionRequest,
+) -> Result<Vec<(Vec<u8>, Vec<ProtectionWarning>)>> {
+    use rayon::prelude::*;
+    images
+        .par_iter()
+        .map(|img_bytes| process_request_bytes_with_warnings(img_bytes, request))
+        .collect()
+}
+
+/// Process multiple image byte buffers in parallel using one shared request, with reports.
+///
+/// Canonical request-based batch API. Reuses
+/// [`process_request_bytes_with_report`] through Rayon and preserves input
+/// order.
+///
+/// # Errors
+///
+/// Returns the first error encountered from any image processing call.
+#[cfg(feature = "parallel")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
+#[must_use = "the protected image bytes and reports should be used"]
+pub fn process_request_bytes_with_report_parallel(
+    images: &[Vec<u8>],
+    request: &ProtectionRequest,
+) -> Result<Vec<(Vec<u8>, ExecutionReport)>> {
+    use rayon::prelude::*;
+    images
+        .par_iter()
+        .map(|img_bytes| process_request_bytes_with_report(img_bytes, request))
         .collect()
 }
 
@@ -733,14 +894,29 @@ pub fn process_image_bytes_with_info(
 
 /// Process image bytes with protection level and return all protection warnings.
 ///
-/// This is the recommended API for reverse-proxy integrations. It keeps the
-/// hot path byte-oriented, while giving the caller enough information to make
-/// policy decisions about serving, logging, or falling back when the actual
-/// emitted evidence is weaker than requested.
+/// Compatibility adapter over the legacy level/context API. Translates once
+/// via `request_from_legacy()` into [`ProtectionRequest`] and delegates to the
+/// canonical [`process_request_bytes_with_warnings`]. Canonical resolution,
+/// routing, capacity handling, and runtime warnings are owned by the request
+/// path; only compatibility-only presentation warnings are added here (see
+/// below). New code should prefer `process_request_bytes_with_warnings`.
 ///
-/// The library owns steganographic and metadata injection mechanics; the proxy
-/// should still enforce request byte limits, concurrency limits, timeouts, and
-/// cache policy outside this function.
+/// Compatibility-only warnings retained for 0.x callers:
+/// - `MissingMacKey` when a legacy authenticated profile was selected without
+///   a MAC key (the canonical request model reports this as `Error::Config`
+///   for HMAC channels instead of a profile-driven warning).
+/// - `ContradictoryLegalClaims` when `inject_legal_claims(false)` is combined
+///   with non-empty legal metadata (the canonical request has no disable flag;
+///   presence of legal metadata means include). The CLI rejects the same
+///   combination as `EXIT_CONFIG` 2.
+/// - `JpegReencodeFragile` for non-`Disabled` JPEG output (advisory fragility
+///   note; the canonical path reports only resolution and runtime warnings).
+///
+/// `MetadataInjectionDisabled` and capacity warnings (`LsbCapacitySkipped`,
+/// `DctCapacityInsufficient`, `ProgressiveJpegFallback`) come from the
+/// canonical path and are not duplicated here. Compatibility warnings are
+/// prepended before canonical warnings to preserve 0.x
+/// `process_image_bytes_with_info` first-warning ordering.
 ///
 /// # Errors
 ///
@@ -763,92 +939,34 @@ pub fn process_image_bytes_with_warnings(
     }
 
     let request = request_from_legacy(level, ctx);
-    ctx.resource_limits().check_input_size(img_bytes.len())?;
-    let input_format = ImageOutputFormat::from_magic_bytes(img_bytes)
-        .ok_or_else(|| Error::InvalidFormat("Unrecognized image format".to_string()))?;
-    let plan = resolve_request(&request, input_format)?;
+    let (bytes, canonical_warnings) = process_request_bytes_with_warnings(img_bytes, &request)?;
 
-    let mut warnings = Vec::new();
-
-    if level != ProtectionLevel::Disabled
-        && ctx.mac_key().is_none()
+    let mut compat = Vec::new();
+    if ctx.mac_key().is_none()
         && matches!(
             ctx.evidence_profile(),
             EvidenceProfile::AuthenticatedProvenance | EvidenceProfile::Maximal
         )
-        && matches!(plan.channels().authentication, AuthenticationMode::None)
     {
-        warnings.push(ProtectionWarning::MissingMacKey);
-    }
-    if matches!(ctx.inject_metadata(), Some(false)) {
-        warnings.push(ProtectionWarning::MetadataInjectionDisabled);
+        compat.push(ProtectionWarning::MissingMacKey);
     }
     if matches!(ctx.inject_legal_claims(), Some(false))
         && ctx.legal_metadata().is_some_and(|m| m.has_content())
     {
-        warnings.push(ProtectionWarning::ContradictoryLegalClaims);
+        compat.push(ProtectionWarning::ContradictoryLegalClaims);
     }
-    // Note: `ContradictoryLegalClaims` is a warning in the library for
-    // backward compatibility, while the CLI rejects the same combination
-    // (`--metadata false` + legal flags) as `EXIT_CONFIG` 2. Callers that
-    // ignore warnings will silently lose legal metadata because
-    // `generate_rights_metadata_from_notice` no-ops when
-    // `should_inject_metadata == false`.
-
-    let output_format = plan.output_format();
-
-    if level != ProtectionLevel::Disabled && output_format == ImageOutputFormat::Jpeg {
-        warnings.push(ProtectionWarning::JpegReencodeFragile);
+    if ImageOutputFormat::is_jpeg(&bytes) {
+        compat.push(ProtectionWarning::JpegReencodeFragile);
     }
 
-    if level == ProtectionLevel::Standard
-        && matches!(
-            output_format,
-            ImageOutputFormat::Png | ImageOutputFormat::WebP
-        )
-    {
-        if let Ok(reader) = image::ImageReader::new(Cursor::new(img_bytes)).with_guessed_format() {
-            if let Ok((w, h)) = reader.into_dimensions() {
-                let capacity = (w as usize)
-                    .checked_mul(h as usize)
-                    .and_then(|v| v.checked_mul(3));
-                let slots_needed = SteganographyProtector::lsb_pixels_needed(ctx);
-                if capacity.is_none_or(|total_slots| total_slots < slots_needed) {
-                    warnings.push(ProtectionWarning::LsbCapacitySkipped);
-                }
-            }
+    let mut warnings = Vec::with_capacity(compat.len() + canonical_warnings.len());
+    for w in compat.into_iter().chain(canonical_warnings) {
+        if !warnings.contains(&w) {
+            warnings.push(w);
         }
     }
 
-    let mut unique_warnings = Vec::with_capacity(warnings.len());
-    for warning in warnings {
-        if !unique_warnings.contains(&warning) {
-            unique_warnings.push(warning);
-        }
-    }
-
-    let mut all_warnings = unique_warnings;
-
-    let mut budget =
-        crate::resource_limits::OperationObserver::new(plan.resource_limits(), img_bytes.len());
-    let pipeline_result = process_plan_bytes(img_bytes, &plan, &mut budget)?;
-
-    for w in plan.warnings() {
-        if !all_warnings.contains(w) {
-            all_warnings.push(w.clone());
-        }
-    }
-
-    if let Some(ref summary) = pipeline_result.embed_summary {
-        let runtime = warnings_from_embed_outcome(summary);
-        for w in runtime {
-            if !all_warnings.contains(&w) {
-                all_warnings.push(w);
-            }
-        }
-    }
-
-    Ok((pipeline_result.bytes, all_warnings))
+    Ok((bytes, warnings))
 }
 
 /// Process image bytes using a [`ProtectionRequest`].

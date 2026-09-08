@@ -106,11 +106,28 @@ pub enum HiddenMarkerMode {
 fn process_request_bytes(img_bytes: &[u8], request: &ProtectionRequest) -> Result<Vec<u8>>
 fn process_request_bytes_with_warnings(img_bytes: &[u8], request: &ProtectionRequest) -> Result<(Vec<u8>, Vec<ProtectionWarning>)>
 fn process_request_bytes_with_report(img_bytes: &[u8], request: &ProtectionRequest) -> Result<(Vec<u8>, ExecutionReport)>
+fn process_request_bytes_parallel(images: &[Vec<u8>], request: &ProtectionRequest) -> Result<Vec<Vec<u8>>>  // feature: parallel
+fn process_request_bytes_with_warnings_parallel(images: &[Vec<u8>], request: &ProtectionRequest) -> Result<Vec<(Vec<u8>, Vec<ProtectionWarning>)>>  // feature: parallel
+fn process_request_bytes_with_report_parallel(images: &[Vec<u8>], request: &ProtectionRequest) -> Result<Vec<(Vec<u8>, ExecutionReport)>>  // feature: parallel
 fn process_image_bytes(img_bytes: &[u8], level: ProtectionLevel, ctx: &ProtectionContext) -> Result<Vec<u8>>
 fn verify_image_bytes(img_bytes: &[u8], mac_key: &[u8]) -> VerificationStatus  // NOT Result
 fn verify_image_bytes_detailed(img_bytes: &[u8], mac_key: &[u8]) -> VerificationResult  // enum, src/types.rs:2200
 fn verify_legal_notice(img_bytes: &[u8], mac_key: &[u8]) -> NoticeVerification  // struct, src/types.rs:2496
 ```
+
+### Async entry points (in `src/async_api.rs`, feature: `async`)
+```rust
+fn process_request_bytes_async(img_bytes: Vec<u8>, request: ProtectionRequest) -> Result<Vec<u8>>
+fn process_request_bytes_with_warnings_async(img_bytes: Vec<u8>, request: ProtectionRequest) -> Result<(Vec<u8>, Vec<ProtectionWarning>)>
+fn process_request_bytes_with_report_async(img_bytes: Vec<u8>, request: ProtectionRequest) -> Result<(Vec<u8>, ExecutionReport)>
+// + parallel batch async variants when `parallel` is also enabled
+```
+
+### No-new-legacy-features invariant
+- New processing features must be expressed in `ProtectionRequest` / `ProcessingOptions` / `ProtectionChannels` first
+- Legacy `ProtectionContext` builders may only translate into those fields via `request_from_legacy()`; no independent policy, routing, or warning behavior
+- `async_api.rs` request functions call canonical sync functions inside one `spawn_blocking` with no duplication
+- Parallel batch reuses `process_request_bytes*` through Rayon, preserves order, no second executor
 
 ### Verification type surface
 
@@ -127,6 +144,7 @@ Four distinct verification types — pick the right one:
 ```rust
 fn process_image(img: DynamicImage, level: ProtectionLevel, ctx: &ProtectionContext) -> Result<DynamicImage>
 fn process_images_parallel(images: &[DynamicImage], level: ProtectionLevel, ctx: &ProtectionContext) -> Result<Vec<DynamicImage>>  // feature: parallel
+fn process_image_bytes_with_warnings(img_bytes: &[u8], level: ProtectionLevel, ctx: &ProtectionContext) -> Result<(Vec<u8>, Vec<ProtectionWarning>)>  // adds only MissingMacKey, ContradictoryLegalClaims, JpegReencodeFragile
 ```
 
 ### Generic carrier API (`stegoeggo::stego`)

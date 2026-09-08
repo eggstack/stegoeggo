@@ -67,9 +67,9 @@ Every component below links to a dedicated deep-dive in `architecture/`. Use thi
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        PUBLIC API LAYER                                  │
-│  process_image() | process_image_bytes() | process_request_bytes()      │
-│  process_images_parallel() | process_images_bytes_parallel()            │
-│  verify_image_bytes() | verify_legal_notice()                           │
+│  process_request_bytes*() (canonical, incl. parallel/async batch)       │
+│  process_image*() legacy adapters | verify_image_bytes()                │
+│  verify_legal_notice() | stego::embed/extract/inspect (generic carrier)  │
 │  stego::embed/extract/inspect (generic carrier re-exports)              │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  │

@@ -118,11 +118,11 @@ For byte APIs vs `DynamicImage`, verification, and the deprecated compatibility 
 
 | Feature | Purpose |
 |---|---|
-| `async` | Tokio-based async wrappers |
+| `async` | Tokio-based async wrappers (canonical: `process_request_bytes_async`, `..._with_warnings_async`, `..._with_report_async`) |
 | `signatures` | Ed25519 signing support |
 | `detached-manifest` | Detached signed-manifest support |
 | `iscc` | Content identifier helpers |
-| `parallel` | Rayon-based parallel processing |
+| `parallel` | Rayon-based parallel processing (canonical: `process_request_bytes_parallel`, `..._with_warnings_parallel`, `..._with_report_parallel`; one shared request, order-preserving) |
 | `conformance` | Conformance harness and manifest parsing |
 
 No optional feature is enabled by default. See [SUPPORT.md](SUPPORT.md) for the full feature matrix.

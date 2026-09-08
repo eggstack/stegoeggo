@@ -3,14 +3,6 @@
 use super::*;
 
 impl SteganographyProtector {
-    pub(crate) fn payload_bits_for_context(ctx: &ProtectionContext) -> usize {
-        if ctx.mac_key().is_some() {
-            V3_HMAC_PAYLOAD_BITS
-        } else {
-            V3_CRC_PAYLOAD_BITS
-        }
-    }
-
     /// Generates the steganography payload containing protection metadata.
     ///
     /// The payload uses the v3 wire format with a TLV header:

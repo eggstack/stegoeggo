@@ -83,12 +83,12 @@ Rust **1.87** (declared in `Cargo.toml` and `stegoeggo-stego/Cargo.toml`). Toolc
 
 | Feature | Description | Default |
 |---------|-------------|---------|
-| `async` | Tokio-based async API wrappers | No |
+| `async` | Tokio-based async API wrappers (canonical: `process_request_bytes_async`, `..._with_warnings_async`, `..._with_report_async`) | No |
 | `signatures` | Ed25519 signing via `ed25519-dalek` | No |
 | `detached-manifest` | Detached signed manifest sidecar | No |
 | `iscc` | ISCC content identifier computation | No |
 | `conformance` | Conformance harness binary and manifest parsing (TOML) | No |
-| `parallel` | Rayon-based parallel batch processing | No |
+| `parallel` | Rayon-based parallel batch processing (canonical: `process_request_bytes_parallel`, `..._with_warnings_parallel`, `..._with_report_parallel`; one shared request, order-preserving) | No |
 | `test-seeds` | Test infrastructure only — never in production binary | No |
 | `fuzz` | Fuzzing support — never in production binary | No |
 
@@ -109,7 +109,7 @@ These still work but will be removed in the next major version. See `DEPRECATION
 
 Not deprecated (do not migrate away): `VerificationStatus` — still the return type of `verify_image_bytes`. The structured reports (`VerificationReport`, `VerificationResult`, `NoticeVerification`) are richer alternatives, not replacements for a removed API.
 
-**Policy-first architecture (Release 4+):** `ProtectionRequest` and `RightsPolicy` are the canonical API. `ProtectionLevel` and `EvidenceProfile` are deprecated compatibility adapters.
+**Policy-first architecture (Release 4+):** `ProtectionRequest` and `RightsPolicy` are the canonical API. `ProtectionLevel` and `EvidenceProfile` are deprecated compatibility adapters. New processing features must be expressed in `ProtectionRequest`/`ProcessingOptions`/`ProtectionChannels` first; legacy builders only translate via `request_from_legacy()`.
 
 ## Gotchas
 
@@ -227,7 +227,7 @@ Master index with repo layout, module maps, and data-flow diagrams: `architectur
 | `util-image.md` | `PixelSelectionRng`, encoding, format detection, hashing |
 | `util-iscc.md` | ISCC via `iscc-lib` delegation (`iscc` feature) |
 | `util-seed.md` | CSPRNG seed via `getrandom`, splitmix64 fallback |
-| `async-api.md` | Tokio `spawn_blocking` wrappers (`async` feature) |
+| `async-api.md` | Request-based Tokio `spawn_blocking` wrappers plus legacy adapters (`async` feature) |
 | `resource-limits.md` | Parser hardening, configurable limits, structured errors |
 | `legal-metadata-field-mapping.md` | Legal field mapping across PNG/JPEG/WebP, round-trip caveats |
 | `conformance.md` | Conformance harness, fixtures, strict mode, exit codes |

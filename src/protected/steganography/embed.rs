@@ -59,11 +59,6 @@ impl SteganographyProtector {
         }
     }
 
-    pub(crate) fn lsb_pixels_needed(ctx: &ProtectionContext) -> usize {
-        let payload_bits = Self::payload_bits_for_context(ctx);
-        carrier_support::legacy_lsb_required_slots(payload_bits)
-    }
-
     /// Embed only the seed in JPEG quantization tables (no DCT coefficient modification).
     /// Used for Light level JPEG protection — the seed is recoverable when the
     /// quantization tables themselves are preserved.

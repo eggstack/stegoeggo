@@ -44,8 +44,14 @@ pub fn resolve_request(
 5. **Output format** — Uses explicit format from request, or matches input format
 
 6. **Warning collection** — Collects warnings during resolution:
-   - `MissingMacKey` — HMAC requested but no MAC key provided
    - `MetadataInjectionDisabled` — `rights_metadata` is false
+   - `MissingRightsConstraints` — `ProhibitedSeeConstraints` without `ai_constraints` or `web_statement_of_rights`
+
+   HMAC without a MAC key, HMAC with a disabled marker, and non-`Unspecified`
+   policy with `rights_metadata` disabled are `Error::Config`, not warnings.
+   `MissingMacKey`, `ContradictoryLegalClaims`, and `JpegReencodeFragile` are
+   legacy compatibility presentation warnings added only by
+   `process_image_bytes_with_warnings`, never by resolution.
 
 ### Returns
 
@@ -84,3 +90,11 @@ Separating resolution from execution ensures:
 - `process_request_bytes()` — Resolves then processes
 - `process_request_bytes_with_warnings()` — Resolves, processes, and collects runtime warnings
 - `process_request_bytes_with_report()` — Full execution report with resource usage
+- `process_request_bytes_parallel*` — Rayon batch reusing the three variants above
+- `process_request_bytes_async*` — `spawn_blocking` wrappers over the sync variants
+
+## No-new-legacy-features invariant
+
+New processing features must be expressed in `ProtectionRequest` /
+`ProcessingOptions` / `ProtectionChannels` first. Legacy `ProtectionContext`
+builders may only translate into those fields via `request_from_legacy()`.
