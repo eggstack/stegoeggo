@@ -53,7 +53,7 @@ stegoeggo/                          Workspace root (4 crates)
 ├── benches/                        Criterion benchmarks
 ├── scripts/                        7 validation scripts
 ├── architecture/                   31 deep-dive docs (this directory)
-└── .github/workflows/              CI (3 workflows)
+└── .github/workflows/              CI (4 workflows: required check + scheduled assurance)
 ```
 
 **Crate dependency direction:** `cli → root → carrier`. The carrier crate knows nothing about rights-protection. The root crate re-exports the carrier's public API through `stegoeggo::stego`.
@@ -408,9 +408,15 @@ stegoeggo-stego/src/
 | `provenance_canonicalize` | Provenance claim canonical JSON |
 | `verification_report` | Verification report building |
 
+Fuzzing never runs on pull requests. `fuzz.yml` accepts a manual single-target
+dispatch and additionally runs a weekly scheduled smoke job: a rotating
+3-target subset (week-of-year based, full rotation every four weeks), 120s per
+target, with crash artifacts uploaded. Scheduled fuzz failures are
+informational signal only.
+
 ## Integration Test Coverage
 
-30 test files in `tests/`:
+35 test files in `tests/`:
 
 | File | Coverage Area |
 |------|---------------|
@@ -454,8 +460,18 @@ stegoeggo-stego/src/
 | `scripts/verify_metadata_conformance.sh` | External tool conformance (exiftool, xmllint) |
 | `scripts/validate-docs-rs.sh` | Docs.rs-equivalent rustdoc validation (nightly) |
 | `scripts/validate-msrv-package.sh` | Fresh MSRV consumer resolution (Rust 1.87) |
-| `scripts/check_fuzz_sync.sh` | Verify fuzz target parity with CI workflow |
+| `scripts/check_fuzz_sync.sh` | Verify dispatch target parity between `fuzz/Cargo.toml` and `fuzz.yml` (the scheduled smoke rotation derives its list at runtime from `cargo fuzz list` and cannot drift) |
 | `scripts/measure_binary_size.sh` | Binary size measurement |
+
+### Continuous assurance
+
+Required PR CI is the single `Check` job (`ci.yml`: stable Rust, Linux
+x86_64, `./scripts/check.sh`). `assurance.yml` (weekly schedule plus manual
+dispatch) proves the MSRV 1.87 matrix and stable compile+tests on Linux
+aarch64, macOS aarch64, and Windows x86_64. `external-verification.yml` runs
+monthly; `fuzz.yml` adds a weekly rotating smoke subset. Scheduled workflows
+are informational signal only: they never gate merges, publish crates, or
+react to tags. See `SUPPORT.md` for the exact evidence matrix.
 
 ## Key Design Decisions
 

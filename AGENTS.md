@@ -62,9 +62,12 @@ GitHub Actions (`.github/workflows/ci.yml`) runs one job on pushes and pull requ
 3. `cargo check -p stegoeggo --no-default-features`
 4. `cargo test --workspace --exclude stegoeggo-fuzz --all-features`
 
-Specialist verification (external tools, conformance, fuzzing, MSRV, docs.rs, packaging, semver, benchmarks) is available as manual-dispatch workflows:
-- `.github/workflows/external-verification.yml` — external integration tests + conformance harness
-- `.github/workflows/fuzz.yml` — single-target fuzz execution (workflow_dispatch with target/seconds inputs)
+Scheduled assurance (non-blocking, never required for merge, never publishes):
+- `.github/workflows/assurance.yml` (weekly + `workflow_dispatch`) — `MSRV 1.87` job (carrier/root/CLI checks incl. `--no-default-features`/`--all-features`, carrier + root-lib tests, all `--locked`) plus `Platform` jobs for macOS aarch64, Windows x86_64, and Linux aarch64 (minimal-feature check + all-feature workspace tests on stable)
+- `.github/workflows/external-verification.yml` (monthly + `workflow_dispatch`) — external integration tests + conformance harness
+- `.github/workflows/fuzz.yml` — single-target fuzz execution (`workflow_dispatch` with target/seconds inputs) plus a weekly scheduled smoke job rotating 3 of the 12 targets (120s each, crash artifacts uploaded)
+
+Specialist verification (docs.rs, packaging, semver, benchmarks, license/advisory scans) remains manual local invocation; see `RELEASING.md` and `SUPPORT.md` for the blocking-vs-scheduled evidence matrix.
 
 ## Code Conventions
 
@@ -275,6 +278,7 @@ See `RELEASING.md` for the complete procedure.
 - No tag-triggered release workflows.
 - No CI publication.
 - No crates.io token in GitHub Actions.
+- Scheduled/non-required workflows are informational only: never required in branch protection, never publish, never react to tags.
 - Do not add specialist checks to `scripts/check.sh`.
 - Preserve specialist tests, but invoke them deliberately.
 - Any increase to required CI surface requires an explicit maintainer decision.
@@ -293,7 +297,7 @@ See `RELEASING.md` for the complete procedure.
 - `SUPPORT.md` — Support matrix
 - `STABILITY.md` — Stability tiers
 - `RELEASING.md` — Manual publication procedure
-- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why. Next plan number: 081+
+- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why. Next plan number: 088+
 - `examples/` — Four runnable examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) referenced by `docs/rust-api.md`; keep them compiling when changing public APIs
 - `docs/` — User-facing guides: `cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`
 - `architecture/` — 30 architecture documents, verified against source; indexed in the table above and in `architecture/overview.md`

@@ -1,0 +1,103 @@
+name: Assurance
+
+# Non-blocking toolchain and platform evidence. This workflow never gates
+# merges, publishes crates, or creates releases: branch protection requires
+# only the `Check` job in `ci.yml`. It runs on a weekly schedule plus manual
+# dispatch so documented MSRV/platform claims stay evidence-backed without
+# burdening every pull request.
+#
+# Local equivalents (run from the repository root):
+#   rustc +1.87.0 --version
+#   cargo +1.87.0 check -p stegoeggo-stego --locked
+#   cargo +1.87.0 check -p stegoeggo --locked
+#   cargo +1.87.0 check -p stegoeggo --locked --no-default-features
+#   cargo +1.87.0 check -p stegoeggo --locked --all-features
+#   cargo +1.87.0 check -p stegoeggo-cli --locked
+#   cargo +1.87.0 check -p stegoeggo-cli --locked --all-features
+#   cargo +1.87.0 test -p stegoeggo-stego --locked
+#   cargo +1.87.0 test -p stegoeggo --lib --locked --all-features
+#   cargo check -p stegoeggo --no-default-features
+#   cargo test --workspace --exclude stegoeggo-fuzz --all-features
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  msrv:
+    name: MSRV 1.87 (ubuntu x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.87
+      - uses: Swatinem/rust-cache@v2
+      - name: Record toolchain evidence
+        run: rustc --version && cargo --version
+      - name: Carrier default features
+        run: cargo check -p stegoeggo-stego --locked
+      - name: Library default features
+        run: cargo check -p stegoeggo --locked
+      - name: Library minimal features
+        run: cargo check -p stegoeggo --locked --no-default-features
+      - name: Library all features
+        run: cargo check -p stegoeggo --locked --all-features
+      - name: CLI default features
+        run: cargo check -p stegoeggo-cli --locked
+      - name: CLI all features
+        run: cargo check -p stegoeggo-cli --locked --all-features
+      - name: Carrier tests
+        run: cargo test -p stegoeggo-stego --locked
+      - name: Library unit tests (all features)
+        run: cargo test -p stegoeggo --lib --locked --all-features
+
+  platform-macos:
+    name: Platform macOS aarch64
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Record toolchain evidence
+        run: rustc -vV && uname -a
+      - name: Minimal-feature compilation
+        run: cargo check -p stegoeggo --no-default-features
+      - name: Workspace tests (all features)
+        run: cargo test --workspace --exclude stegoeggo-fuzz --all-features
+
+  platform-windows:
+    name: Platform Windows x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Record toolchain evidence
+        run: rustc -vV
+      - name: Minimal-feature compilation
+        run: cargo check -p stegoeggo --no-default-features
+      - name: Workspace tests (all features)
+        run: cargo test --workspace --exclude stegoeggo-fuzz --all-features
+
+  platform-linux-aarch64:
+    name: Platform Linux aarch64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Record toolchain evidence
+        run: rustc -vV && uname -a
+      - name: Minimal-feature compilation
+        run: cargo check -p stegoeggo --no-default-features
+      - name: Workspace tests (all features)
+        run: cargo test --workspace --exclude stegoeggo-fuzz --all-features

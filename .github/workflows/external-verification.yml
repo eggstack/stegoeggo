@@ -1,6 +1,15 @@
 name: External Verification
 
+# Manual dispatch plus a low-frequency monthly schedule. Scheduled runs are
+# informational signal only: failure never blocks merges or triggers a
+# release. Branch protection requires only the `Check` job in `ci.yml`.
+#
+# Local equivalent (requires exiftool, xmllint, imagemagick, libvips):
+#   scripts/verify_metadata_conformance.sh --strict
+
 on:
+  schedule:
+    - cron: "0 6 1 * *"
   workflow_dispatch:
 
 permissions:

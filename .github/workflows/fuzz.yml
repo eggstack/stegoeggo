@@ -1,6 +1,21 @@
 name: Fuzz
 
+# Single-target manual dispatch plus a bounded weekly smoke rotation over all
+# targets. The smoke job runs a rotating 3-target subset (week-of-year based,
+# full rotation every four weeks) for 120s each and uploads crash artifacts.
+# Scheduled runs are informational signal only: failure never blocks merges
+# or triggers a release. No fuzzing runs on pull requests.
+#
+# Local equivalent (requires nightly + cargo-fuzz):
+#   cargo +nightly fuzz run <target> -- -max_total_time=60
+#
+# The dispatch `target` options below are the canonical target list verified
+# by `scripts/check_fuzz_sync.sh`. The smoke rotation derives its list at
+# runtime from `cargo fuzz list`, so it cannot drift from `fuzz/Cargo.toml`.
+
 on:
+  schedule:
+    - cron: "0 6 * * 3"
   workflow_dispatch:
     inputs:
       target:
@@ -31,6 +46,7 @@ permissions:
 jobs:
   fuzz:
     name: Fuzz (${{ inputs.target }})
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,4 +84,52 @@ jobs:
         with:
           name: fuzz-corpus-${{ inputs.target }}
           path: fuzz/corpus/${{ inputs.target }}/
+          retention-days: 30
+
+  smoke:
+    name: Fuzz smoke (rotating subset)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Select rotating smoke subset
+        id: select
+        run: |
+          WEEK="$(date +%V)"
+          mapfile -t ALL < <(cargo fuzz list | sort)
+          COUNT="${#ALL[@]}"
+          SIZE=3
+          START="$(( (10#$WEEK * SIZE) % COUNT ))"
+          TARGETS=()
+          for (( i=0; i<SIZE; i++ )); do
+            TARGETS+=("${ALL[$(( (START + i) % COUNT ))]}")
+          done
+          echo "week=$WEEK count=$COUNT start=$START targets=${TARGETS[*]}"
+          echo "targets=${TARGETS[*]}" >> "$GITHUB_OUTPUT"
+
+      - name: Run fuzz smoke (120s per target)
+        env:
+          RUSTUP_TOOLCHAIN: nightly
+        run: |
+          for TARGET in ${{ steps.select.outputs.targets }}; do
+            echo "=== fuzz smoke: $TARGET ==="
+            cargo fuzz run "$TARGET" -- \
+              -max_total_time=120 \
+              -max_len=4096 \
+              -timeout=10
+          done
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-smoke-artifacts
+          path: fuzz/artifacts/
+          if-no-files-found: warn
           retention-days: 30

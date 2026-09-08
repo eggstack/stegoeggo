@@ -19,7 +19,7 @@ are compiled only when this feature is enabled.
 | Fixture manifest | `tests/fixtures/conformance/manifest.toml` | Machine-readable fixture metadata with SHA-256 digests |
 | Shell wrapper | `scripts/verify_metadata_conformance.sh` | Operator-friendly wrapper around harness |
 | Pre-release check | `scripts/release-check.sh` | Local pre-release verification (includes package dry-runs) |
-| CI workflow | `.github/workflows/external-verification.yml` (manual dispatch) | Manual gate, not automatic on PRs |
+| CI workflow | `.github/workflows/external-verification.yml` (monthly schedule + manual dispatch) | Informational signal, never blocks PRs |
 
 ## Conformance Flow
 
@@ -129,7 +129,9 @@ Exit codes are stable and should not change without a version bump.
 
 ## External Tools
 
-External tools are installed in `.github/workflows/external-verification.yml` (manual dispatch) and locally for `scripts/verify_metadata_conformance.sh`.
+External tools are installed in `.github/workflows/external-verification.yml`
+(monthly schedule plus manual dispatch; informational signal only, never a PR
+gate) and locally for `scripts/verify_metadata_conformance.sh`.
 The CI workflow installs all tools in a single `apt-get` step. The
 workflow does not use `continue-on-error` for conformance checks.
 
@@ -169,7 +171,7 @@ internal/external extractions, check results, and conflicts.
 
 External tool tests in `tests/external_tools.rs` use `#[ignore = "requires external tools: exiftool, xmllint, imagemagick, libvips"]`
 and are run explicitly with `cargo test --test external_tools -- --ignored`.
-The `.github/workflows/external-verification.yml` manual workflow executes these tests.
+The `.github/workflows/external-verification.yml` scheduled/manual workflow executes these tests.
 
 ### Local Validation
 

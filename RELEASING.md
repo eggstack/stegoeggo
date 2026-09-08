@@ -46,6 +46,25 @@ The conformance binary requires the `conformance` feature:
 cargo build --release --bin stegoeggo-conformance --features conformance
 ```
 
+## CI Evidence: Blocking vs Scheduled
+
+Only one CI signal blocks development: the required `Check` job in
+`.github/workflows/ci.yml` (stable Rust, Linux x86_64, `./scripts/check.sh`).
+Everything else is non-blocking signal for the maintainer's judgment:
+
+- `Assurance` (weekly + manual dispatch): MSRV 1.87 matrix and stable
+  compile+tests on Linux aarch64, macOS aarch64, and Windows x86_64.
+- `External Verification` (monthly + manual dispatch): ExifTool/xmllint
+  conformance signal.
+- `Fuzz` smoke (weekly rotating subset + manual single-target dispatch):
+  parser robustness signal with crash-artifact upload.
+
+Scheduled failures are investigated as signal, never as publication triggers.
+Release readiness is established by the local checks in Pre-Release
+Preparation below, not by green scheduled runs. See `SUPPORT.md` for the exact
+evidence matrix. Manual release policy is unchanged: no workflow publishes
+crates, creates releases, or reacts to version tags.
+
 ## Pre-Release Preparation
 
 1. Confirm a clean working tree (`git status` shows no uncommitted changes).

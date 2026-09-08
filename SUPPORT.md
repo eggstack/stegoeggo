@@ -5,17 +5,46 @@
 | Item | Value |
 |------|-------|
 | MSRV | 1.87 (stable channel) |
-| Tested stable | 1.87+ |
+| Required CI toolchain | stable (currently 1.9x; runs `./scripts/check.sh` on every push/PR to `main`) |
+| MSRV evidence | Weekly scheduled `Assurance` workflow pins Rust 1.87 and runs the MSRV matrix below |
+
+The MSRV matrix (`Assurance` → `MSRV 1.87` job, Ubuntu x86_64, `--locked`) verifies:
+
+- `cargo check -p stegoeggo-stego` (carrier, default features);
+- `cargo check -p stegoeggo` (default, minimal `--no-default-features`, and `--all-features`);
+- `cargo check -p stegoeggo-cli` (default and `--all-features`);
+- `cargo test -p stegoeggo-stego` and `cargo test -p stegoeggo --lib --all-features`.
+
+A dependency that breaks compilation or tests on Rust 1.87 is treated as an
+explicit semver/toolchain decision: either pin a compatible dependency or
+raise the declared MSRV, never a silent break.
 
 ## Supported Platforms
 
-| OS | Architecture | CI Tested | Notes |
-|----|-------------|-----------|-------|
-| Linux | x86_64 | Yes | Primary development platform |
-| Linux | aarch64 | No | May work, untested in CI |
-| macOS | x86_64 | No | May work, untested in CI |
-| macOS | aarch64 | No | May work, untested in CI |
-| Windows | x86_64 | No | May work, untested in CI |
+Evidence levels: **PR** = tested on every push/PR to `main` (required `Check`
+job); **Scheduled** = tested by a recurring non-blocking workflow (failure
+never blocks merges); **Expected** = believed to work but with no CI evidence.
+
+| OS | Architecture | PR | Scheduled assurance | Notes |
+|----|-------------|----|---------------------|-------|
+| Linux | x86_64 | Yes | Yes (weekly) | Primary development platform; required gate runs fmt, clippy, minimal-feature check, and all-feature workspace tests |
+| Linux | aarch64 | No | Yes (weekly, native `ubuntu-24.04-arm` runner) | Minimal-feature check + all-feature workspace tests |
+| macOS | aarch64 | No | Yes (weekly, `macos-latest`) | Minimal-feature check + all-feature workspace tests |
+| macOS | x86_64 | No | No (expected) | `macos-latest` runners are aarch64; Intel macOS is untested in CI |
+| Windows | x86_64 | No | Yes (weekly, `windows-latest`) | Minimal-feature check + all-feature workspace tests |
+
+Scheduled platform jobs replay the required gate's compile-and-test evidence
+(minus fmt/clippy, which are platform-independent) on stable Rust. See
+`.github/workflows/assurance.yml` for the exact commands.
+
+## Assurance Cadence
+
+| Workflow | Trigger | Blocking | Proves |
+|----------|---------|----------|--------|
+| `CI` (`ci.yml`, `Check` job) | Every push/PR to `main` | Yes (sole required check) | Stable compile, lint, format, and tests on Linux x86_64 |
+| `Assurance` (`assurance.yml`) | Weekly + manual dispatch | No | MSRV 1.87 matrix; stable compile+tests on Linux aarch64, macOS aarch64, Windows x86_64 |
+| `External Verification` (`external-verification.yml`) | Monthly + manual dispatch | No | ExifTool/xmllint/ImageMagick/libvips conformance signal |
+| `Fuzz` (`fuzz.yml`) | Manual dispatch (single target) + weekly scheduled smoke (rotating 3-target subset, 120s each) | No | Parser robustness signal with crash-artifact upload |
 
 ## Supported Image Formats
 
