@@ -120,13 +120,23 @@ Scheduled failure is signal only (documented in workflow header,
 
 ## CI run evidence (post-push)
 
-- Required `CI / Check` on the push commit: <record URL + result>.
-- `Assurance` manual dispatch validating all four jobs (incl. Windows and
-  Linux aarch64, which have no local runner): <record URL + result>.
+- Required `CI / Check` on push commit `4ef3eee`:
+  https://github.com/eggstack/stegoeggo/actions/runs/34279995398 —
+  success (`Check`, ~4m, stable Linux x86_64).
+- `Assurance` manual dispatch on `main` (`4ef3eee`):
+  https://github.com/eggstack/stegoeggo/actions/runs/34280005440 —
+  success, all four jobs green: `MSRV 1.87 (ubuntu x86_64)`,
+  `Platform macOS aarch64`, `Platform Windows x86_64`,
+  `Platform Linux aarch64`. This is the first continuous evidence for the
+  MSRV matrix and for all three non-primary platforms; no local runner
+  exists for Windows or Linux aarch64, so the dispatched run is the
+  authoritative validation there.
 
 ## Notes
 
-- Final commit SHA: <record after push>.
+- Implementation commit: `4ef3eee` — plan 086: msrv, platform, and scheduled
+  assurance. (This ledger's CI-evidence fill is recorded in the follow-up
+  commit; see `git log --oneline -3`.)
 - No separate local-gate correctness issue was found, so `check.sh` was left
   unchanged per the plan.
 - Non-goals respected: no release automation, no tag triggers, no benchmark
