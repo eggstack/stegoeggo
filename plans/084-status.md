@@ -108,3 +108,6 @@ no payload/frame/carrier byte changes, no metadata serialization changes, no
 warning severity changes, no new dependencies. CLI untouched (Plan 087 owns
 it). Status ledger is the authoritative record; final commit SHA recorded at
 merge time.
+
+Final commit: `6b469f8` on `main`, pushed to `stegoeggo/main`, CI green
+(3m29s).
