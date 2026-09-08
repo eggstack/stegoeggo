@@ -27,11 +27,23 @@ impl super::RightsMetadataProtector {
                 let comment_len =
                     u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
                 if comment_len < 2 {
-                    pos += 2 + comment_len;
+                    let Some(next) = pos.checked_add(2).and_then(|p| p.checked_add(comment_len))
+                    else {
+                        break;
+                    };
+                    pos = next;
                     continue;
                 }
-                let comment_start = pos + 4;
-                let comment_end = (comment_start + comment_len - 2).min(jpeg_data.len());
+                let Some(comment_start) = pos.checked_add(4) else {
+                    break;
+                };
+                let Some(raw_end) = comment_start.checked_add(comment_len.saturating_sub(2)) else {
+                    break;
+                };
+                let comment_end = raw_end.min(jpeg_data.len());
+                if comment_start > comment_end {
+                    break;
+                }
                 let comment = &jpeg_data[comment_start..comment_end];
                 if comment.starts_with(Self::STRUCTURED_COM_MAGIC) {
                     return true;
@@ -59,14 +71,19 @@ impl super::RightsMetadataProtector {
                         return true;
                     }
                 }
-                pos += 2 + comment_len;
+                pos = match pos.checked_add(2).and_then(|p| p.checked_add(comment_len)) {
+                    Some(next) => next,
+                    None => break,
+                };
                 continue;
             }
             if pos + 4 > jpeg_data.len() {
                 return false;
             }
             let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
-            let seg_end = pos + 2 + segment_len;
+            let Some(seg_end) = pos.checked_add(2).and_then(|p| p.checked_add(segment_len)) else {
+                break;
+            };
             if seg_end > jpeg_data.len() {
                 break;
             }
@@ -99,9 +116,16 @@ impl super::RightsMetadataProtector {
                     break;
                 }
                 let pascal_len = scan[2] as usize;
-                let name_field_len = pascal_len + 1 + ((pascal_len + 1) & 1);
-                let header_len = 2 + name_field_len;
-                if header_len + 4 > scan.len() {
+                let Some(name_field_len) = pascal_len
+                    .checked_add(1)
+                    .and_then(|p| p.checked_add((pascal_len + 1) & 1))
+                else {
+                    break;
+                };
+                let Some(header_len) = 2usize.checked_add(name_field_len) else {
+                    break;
+                };
+                if header_len.checked_add(4).is_none_or(|e| e > scan.len()) {
                     break;
                 }
                 let data_size = u32::from_be_bytes([
@@ -110,8 +134,12 @@ impl super::RightsMetadataProtector {
                     scan[header_len + 2],
                     scan[header_len + 3],
                 ]) as usize;
-                let data_start = header_len + 4;
-                let data_end = data_start + data_size;
+                let Some(data_start) = header_len.checked_add(4) else {
+                    break;
+                };
+                let Some(data_end) = data_start.checked_add(data_size) else {
+                    break;
+                };
                 if data_end > scan.len() {
                     break;
                 }
@@ -119,8 +147,15 @@ impl super::RightsMetadataProtector {
                 if Self::iptc_has_stego_properties(iptc) {
                     return true;
                 }
-                let aligned = data_size + (data_size & 1);
-                let next = header_len + 4 + aligned;
+                let Some(aligned) = data_size.checked_add(data_size & 1) else {
+                    break;
+                };
+                let Some(next) = header_len
+                    .checked_add(4)
+                    .and_then(|p| p.checked_add(aligned))
+                else {
+                    break;
+                };
                 if next >= scan.len() {
                     break;
                 }
@@ -143,7 +178,14 @@ impl super::RightsMetadataProtector {
             if record == 2 && matches!(tag, 0x05 | 0x78 | 0x7A | 0x7C | 0x7D) {
                 return true;
             }
-            pos += 6 + val_len;
+            let Some(next) = pos.checked_add(6).and_then(|p| p.checked_add(val_len)) else {
+                break;
+            };
+            // Guard against non-advancing cursors on degenerate inputs.
+            if next <= pos {
+                break;
+            }
+            pos = next;
         }
         false
     }
@@ -198,7 +240,9 @@ impl super::RightsMetadataProtector {
                     break;
                 }
                 let sl = u16::from_be_bytes([jpeg_data[p + 2], jpeg_data[p + 3]]) as usize;
-                let se = p + 2 + sl;
+                let Some(se) = p.checked_add(2).and_then(|v| v.checked_add(sl)) else {
+                    break;
+                };
                 if se > jpeg_data.len() {
                     break;
                 }
@@ -480,11 +524,18 @@ impl super::RightsMetadataProtector {
                 let comment_len =
                     u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
                 if comment_len < 2 {
-                    pos += 2 + comment_len;
+                    let next = pos
+                        .checked_add(2)
+                        .and_then(|p| p.checked_add(comment_len))?;
+                    pos = next;
                     continue;
                 }
-                let comment_start = pos + 4;
-                let comment_end = (comment_start + comment_len - 2).min(jpeg_data.len());
+                let comment_start = pos.checked_add(4)?;
+                let raw_end = comment_start.checked_add(comment_len.saturating_sub(2))?;
+                let comment_end = raw_end.min(jpeg_data.len());
+                if comment_start > comment_end {
+                    return None;
+                }
                 let comment = &jpeg_data[comment_start..comment_end];
 
                 if comment.starts_with(Self::STRUCTURED_COM_MAGIC) {
@@ -500,7 +551,10 @@ impl super::RightsMetadataProtector {
                         return seed_part.trim().parse().ok();
                     }
                 }
-                pos += 2 + comment_len;
+                let next = pos
+                    .checked_add(2)
+                    .and_then(|p| p.checked_add(comment_len))?;
+                pos = next;
                 continue;
             }
 
@@ -516,15 +570,24 @@ impl super::RightsMetadataProtector {
             }
 
             if marker == 0xED && segment_len >= 2 {
-                let seg_start = pos + 4;
-                let seg_end = (pos + 2 + segment_len).min(jpeg_data.len());
+                let seg_start = pos.checked_add(4)?;
+                let raw_end = pos
+                    .checked_add(2)
+                    .and_then(|p| p.checked_add(segment_len))?;
+                let seg_end = raw_end.min(jpeg_data.len());
+                if seg_start > seg_end {
+                    return None;
+                }
                 let seg_data = &jpeg_data[seg_start..seg_end];
                 if let Some(seed) = Self::extract_seed_from_iptc(seg_data) {
                     return Some(seed);
                 }
             }
 
-            pos += 2 + segment_len;
+            let next = pos
+                .checked_add(2)
+                .and_then(|p| p.checked_add(segment_len))?;
+            pos = next;
         }
         None
     }
@@ -545,8 +608,16 @@ impl super::RightsMetadataProtector {
             }
             let tag = iptc_data[i + 2];
             let data_len = u16::from_be_bytes([iptc_data[i + 3], iptc_data[i + 4]]) as usize;
-            let data_start = i + 5;
-            let data_end = (data_start + data_len).min(iptc_data.len());
+            let Some(data_start) = i.checked_add(5) else {
+                break;
+            };
+            let Some(raw_end) = data_start.checked_add(data_len) else {
+                break;
+            };
+            let data_end = raw_end.min(iptc_data.len());
+            if data_start > data_end {
+                break;
+            }
             if tag == 0x05 {
                 let data = &iptc_data[data_start..data_end];
                 if let Ok(s) = std::str::from_utf8(data) {
@@ -609,9 +680,16 @@ impl super::RightsMetadataProtector {
                     break;
                 }
                 let pascal_len = scan[2] as usize;
-                let name_field_len = pascal_len + 1 + ((pascal_len + 1) & 1);
-                let header_len = 2 + name_field_len;
-                if header_len + 4 > scan.len() {
+                let Some(name_field_len) = pascal_len
+                    .checked_add(1)
+                    .and_then(|p| p.checked_add((pascal_len + 1) & 1))
+                else {
+                    break;
+                };
+                let Some(header_len) = 2usize.checked_add(name_field_len) else {
+                    break;
+                };
+                if header_len.checked_add(4).is_none_or(|e| e > scan.len()) {
                     break;
                 }
                 let data_size = u32::from_be_bytes([
@@ -620,8 +698,12 @@ impl super::RightsMetadataProtector {
                     scan[header_len + 2],
                     scan[header_len + 3],
                 ]) as usize;
-                let data_start = header_len + 4;
-                let data_end = data_start + data_size;
+                let Some(data_start) = header_len.checked_add(4) else {
+                    break;
+                };
+                let Some(data_end) = data_start.checked_add(data_size) else {
+                    break;
+                };
                 if data_end > scan.len() {
                     break;
                 }
@@ -629,8 +711,15 @@ impl super::RightsMetadataProtector {
                 if Self::iptc_has_stego_properties(iptc) {
                     return true;
                 }
-                let aligned = data_size + (data_size & 1);
-                let next = header_len + 4 + aligned;
+                let Some(aligned) = data_size.checked_add(data_size & 1) else {
+                    break;
+                };
+                let Some(next) = header_len
+                    .checked_add(4)
+                    .and_then(|p| p.checked_add(aligned))
+                else {
+                    break;
+                };
                 if next >= scan.len() {
                     break;
                 }
@@ -724,7 +813,9 @@ impl super::RightsMetadataProtector {
                 break;
             }
             let seg_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
-            let seg_end = pos + 2 + seg_len;
+            let Some(seg_end) = pos.checked_add(2).and_then(|p| p.checked_add(seg_len)) else {
+                break;
+            };
             if seg_end > jpeg_data.len() {
                 break;
             }

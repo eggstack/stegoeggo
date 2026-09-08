@@ -109,7 +109,9 @@ impl super::RightsMetadataProtector {
                     has_iend = true;
                     break;
                 }
-                let end = p + 12 + cl;
+                let Some(end) = p.checked_add(12).and_then(|v| v.checked_add(cl)) else {
+                    break;
+                };
                 if end > png_data.len() {
                     break;
                 }
@@ -273,8 +275,16 @@ impl super::RightsMetadataProtector {
             }
 
             if chunk_type == b"tEXt" || chunk_type == b"iTXt" {
-                let data_start = pos + 8;
-                let data_end = (data_start + chunk_len).min(png_data.len());
+                let Some(data_start) = pos.checked_add(8) else {
+                    break;
+                };
+                let Some(raw_end) = data_start.checked_add(chunk_len) else {
+                    break;
+                };
+                let data_end = raw_end.min(png_data.len());
+                if data_start > data_end {
+                    break;
+                }
                 let data = &png_data[data_start..data_end];
 
                 if let Some(null_pos) = data.iter().position(|&b| b == 0) {
@@ -302,7 +312,10 @@ impl super::RightsMetadataProtector {
                 }
             }
 
-            pos += 12 + chunk_len;
+            let Some(next_pos) = pos.checked_add(12).and_then(|p| p.checked_add(chunk_len)) else {
+                break;
+            };
+            pos = next_pos;
         }
         None
     }

@@ -251,6 +251,7 @@ pub mod stego {
         DEFAULT_TILE_SIZE, MAX_TILED_ORIGINS,
     };
 }
+pub(crate) mod container_walk;
 pub(crate) mod util;
 pub(crate) mod webp_container;
 
@@ -1108,108 +1109,6 @@ pub fn process_request_bytes_with_report(
     };
 
     Ok((result, report))
-}
-
-fn observe_metadata_work(
-    img_bytes: &[u8],
-    format: crate::types::ImageOutputFormat,
-    budget: &mut crate::resource_limits::OperationObserver,
-) -> Result<()> {
-    match format {
-        crate::types::ImageOutputFormat::Png => {
-            if img_bytes.len() < 8 || &img_bytes[0..8] != b"\x89PNG\r\n\x1a\n" {
-                return Ok(());
-            }
-            let mut pos = 8;
-            while pos + 12 <= img_bytes.len() {
-                let chunk_len = u32::from_be_bytes([
-                    img_bytes[pos],
-                    img_bytes[pos + 1],
-                    img_bytes[pos + 2],
-                    img_bytes[pos + 3],
-                ]) as usize;
-                let chunk_type = &img_bytes[pos + 4..pos + 8];
-                if chunk_type == b"IEND" {
-                    break;
-                }
-                let Some(chunk_total) = chunk_len.checked_add(12) else {
-                    break;
-                };
-                budget.observe_png_chunk(chunk_total);
-                let data_start = pos + 8;
-                let data_end = data_start
-                    .checked_add(chunk_len)
-                    .unwrap_or(img_bytes.len())
-                    .min(img_bytes.len());
-                if (chunk_type == b"tEXt" || chunk_type == b"iTXt") && data_end > data_start {
-                    budget.observe_metadata_field(data_end - data_start);
-                }
-                pos = match pos.checked_add(chunk_total) {
-                    Some(next) => next,
-                    None => break,
-                };
-                if pos > img_bytes.len() {
-                    break;
-                }
-            }
-        }
-        crate::types::ImageOutputFormat::Jpeg => {
-            if img_bytes.len() < 2 || img_bytes[0] != 0xFF || img_bytes[1] != 0xD8 {
-                return Ok(());
-            }
-            let mut pos = 2;
-            while pos + 2 <= img_bytes.len() {
-                if img_bytes[pos] != 0xFF {
-                    pos += 1;
-                    continue;
-                }
-                let marker = img_bytes[pos + 1];
-                if marker == 0xD9 || marker == 0xDA {
-                    break;
-                }
-                if marker == 0x00 {
-                    pos += 1;
-                    continue;
-                }
-                if pos + 4 > img_bytes.len() {
-                    break;
-                }
-                let seg_len = u16::from_be_bytes([img_bytes[pos + 2], img_bytes[pos + 3]]) as usize;
-                let seg_end = pos + 2 + seg_len;
-                if seg_end > img_bytes.len() {
-                    break;
-                }
-                budget.observe_jpeg_segment(seg_end - pos);
-                if matches!(marker, 0xE1 | 0xED | 0xFE) {
-                    budget.observe_metadata_field(seg_len.saturating_sub(2));
-                }
-                pos = seg_end;
-            }
-        }
-        crate::types::ImageOutputFormat::WebP => {
-            if img_bytes.len() < 12 || &img_bytes[0..4] != b"RIFF" || &img_bytes[8..12] != b"WEBP" {
-                return Ok(());
-            }
-            let mut pos = 12;
-            while pos + 8 <= img_bytes.len() {
-                let chunk_size = u32::from_le_bytes([
-                    img_bytes[pos + 4],
-                    img_bytes[pos + 5],
-                    img_bytes[pos + 6],
-                    img_bytes[pos + 7],
-                ]) as usize;
-                let padded = chunk_size.saturating_add(chunk_size & 1);
-                let chunk_end = pos.saturating_add(8).saturating_add(padded);
-                if chunk_end > img_bytes.len() {
-                    budget.observe_webp_chunk(img_bytes.len() - pos);
-                    break;
-                }
-                budget.observe_webp_chunk(chunk_end - pos);
-                pos = chunk_end;
-            }
-        }
-    }
-    budget.check_limits()
 }
 
 /// Verify that image bytes contain a protection payload whose integrity can be proved.

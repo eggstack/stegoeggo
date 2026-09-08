@@ -62,7 +62,7 @@ Limits violations produce structured errors:
 
 ## `OperationObserver`
 
-`pub(crate)` struct that observes resource usage for a single processing operation:
+`pub(crate)` struct that observes resource usage for a single processing operation, fed by the canonical bounded container traversal in `src/container_walk.rs`:
 
 ```rust
 pub(crate) struct OperationObserver {
@@ -72,6 +72,12 @@ pub(crate) struct OperationObserver {
 ```
 
 Constructed via `OperationObserver::new(_limits, input_bytes)` at the start of `process_plan_bytes()`. Consumed via `finish(self, output_bytes) -> ResourceUsage` at the end. Tracks resource consumption through `observe_*` methods (`observe_png_chunk`, `observe_jpeg_segment`, `observe_webp_chunk`, `observe_metadata_field`, `observe_alloc`). The returned `ResourceUsage` contains 10 tracked counters: `input_bytes`, `png_chunks_scanned`, `jpeg_segments_scanned`, `webp_riff_chunks_scanned`, `xmp_bytes_parsed`, `metadata_fields_extracted`, `metadata_bytes_copied`, `tile_origins_checked`, `verification_seeds_tried`, `peak_allocations_bytes`.
+
+## Container traversal ownership (Plan 085)
+
+`src/container_walk.rs` owns the single bounded structural walk used for resource accounting (`observe_container_work()` dispatched per `ImageOutputFormat` from `src/pipeline.rs`). It is streaming and index-based over slices, uses `checked_add` throughout, never allocates, and is lenient on malformed input (breaks and reports partial counts, then `check_limits()` surfaces only limit violations). `src/lib.rs` contains no container parser.
+
+Intentional separate traversals remain for genuinely different parsing domains: strict metadata injection (`inject_text_chunks_png/jpeg`, `parse_webp` + `validate_webp_output`), ownership detection (`*_has_stego_metadata`, `collect_stego_owned_*_keys`), seed/notice extraction (`extract_seed_from_*`, `notice_verification`), and carrier DCT parsing (`JpegHeader::parse_with_limits`, `analyze_structure_checked`). Those walkers share the same checked-arithmetic discipline but differ in error disposition (strict `Err` vs lenient `None`/`false`) and content interpretation, so they are not unified with the accounting walk.
 
 ## Integration with ProtectionRequest
 

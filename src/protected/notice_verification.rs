@@ -80,8 +80,16 @@ pub(crate) fn extract_png_notice(
         }
 
         if chunk_type == b"tEXt" || chunk_type == b"iTXt" {
-            let data_start = pos + 8;
-            let data_end = (data_start + chunk_len).min(png_data.len());
+            let Some(data_start) = pos.checked_add(8) else {
+                break;
+            };
+            let Some(raw_end) = data_start.checked_add(chunk_len) else {
+                break;
+            };
+            let data_end = raw_end.min(png_data.len());
+            if data_start > data_end {
+                break;
+            }
             let data = &png_data[data_start..data_end];
 
             if let Some(null_pos) = data.iter().position(|&b| b == 0) {
@@ -169,17 +177,31 @@ pub(crate) fn extract_png_notice(
             }
 
             if chunk_type == b"iTXt" && !found_text {
-                let data_start = pos + 8;
-                let data_end = (data_start + chunk_len).min(png_data.len());
-                if &png_data[data_start..data_start + 18.min(data_end - data_start)]
-                    == b"XML:com.adobe.xmp"
-                {
-                    channels.push(EvidenceChannel::PngXmp);
+                let Some(inner_start) = pos.checked_add(8) else {
+                    break;
+                };
+                let Some(inner_raw) = inner_start.checked_add(chunk_len) else {
+                    break;
+                };
+                let inner_end = inner_raw.min(png_data.len());
+                if inner_start <= inner_end {
+                    let prefix_len = 18.min(inner_end - inner_start);
+                    let Some(prefix_end) = inner_start.checked_add(prefix_len) else {
+                        break;
+                    };
+                    if prefix_end <= inner_end
+                        && &png_data[inner_start..prefix_end] == b"XML:com.adobe.xmp"
+                    {
+                        channels.push(EvidenceChannel::PngXmp);
+                    }
                 }
             }
         }
 
-        pos += 12 + chunk_len;
+        let Some(next_pos) = pos.checked_add(12).and_then(|p| p.checked_add(chunk_len)) else {
+            break;
+        };
+        pos = next_pos;
     }
 
     if found_text {
@@ -229,12 +251,24 @@ pub(crate) fn extract_xmp_dmi_from_png_with_limits(
         }
 
         if chunk_type == b"iTXt" {
-            let data_start = pos + 8;
-            let data_end = (data_start + chunk_len).min(png_data.len());
+            let Some(data_start) = pos.checked_add(8) else {
+                break;
+            };
+            let Some(raw_end) = data_start.checked_add(chunk_len) else {
+                break;
+            };
+            let data_end = raw_end.min(png_data.len());
+            if data_start > data_end {
+                break;
+            }
             let data = &png_data[data_start..data_end];
 
             if chunk_len > limits.max_xmp_bytes() {
-                pos += 12 + chunk_len;
+                let Some(next_pos) = pos.checked_add(12).and_then(|p| p.checked_add(chunk_len))
+                else {
+                    break;
+                };
+                pos = next_pos;
                 continue;
             }
 
@@ -260,7 +294,10 @@ pub(crate) fn extract_xmp_dmi_from_png_with_limits(
             }
         }
 
-        pos += 12 + chunk_len;
+        let Some(next_pos) = pos.checked_add(12).and_then(|p| p.checked_add(chunk_len)) else {
+            break;
+        };
+        pos = next_pos;
     }
 }
 
@@ -313,11 +350,22 @@ pub(crate) fn extract_jpeg_notice(
             }
             let comment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
             if comment_len < 2 {
-                pos += 2 + comment_len;
+                let Some(next) = pos.checked_add(2).and_then(|p| p.checked_add(comment_len)) else {
+                    break;
+                };
+                pos = next;
                 continue;
             }
-            let comment_start = pos + 4;
-            let comment_end = (comment_start + comment_len - 2).min(jpeg_data.len());
+            let Some(comment_start) = pos.checked_add(4) else {
+                break;
+            };
+            let Some(raw_end) = comment_start.checked_add(comment_len.saturating_sub(2)) else {
+                break;
+            };
+            let comment_end = raw_end.min(jpeg_data.len());
+            if comment_start > comment_end {
+                break;
+            }
             let comment = &jpeg_data[comment_start..comment_end];
 
             if comment.starts_with(b"cloakrs:v1:") {
@@ -400,7 +448,10 @@ pub(crate) fn extract_jpeg_notice(
                 }
             }
 
-            pos += 2 + comment_len;
+            let Some(next_pos) = pos.checked_add(2).and_then(|p| p.checked_add(comment_len)) else {
+                break;
+            };
+            pos = next_pos;
             continue;
         }
 
@@ -409,15 +460,20 @@ pub(crate) fn extract_jpeg_notice(
         }
 
         let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
-        let segment_end = pos + 2 + segment_len;
+        let Some(segment_end) = pos.checked_add(2).and_then(|p| p.checked_add(segment_len)) else {
+            break;
+        };
         if segment_end > jpeg_data.len() {
             break;
         }
 
-        if segment_end > pos + 4 {
+        let Some(seg_data_start) = pos.checked_add(4) else {
+            break;
+        };
+        if segment_end > seg_data_start {
             if marker == 0xED {
                 // IPTC APP13
-                let segment_data = &jpeg_data[pos + 4..segment_end];
+                let segment_data = &jpeg_data[seg_data_start..segment_end];
                 if segment_data.windows(13).any(|w| w == b"Photoshop 3.0\0") {
                     found_iptc = true;
                 }
@@ -425,7 +481,7 @@ pub(crate) fn extract_jpeg_notice(
 
             if marker == 0xE1 {
                 // APP1 — could be XMP
-                let segment_data = &jpeg_data[pos + 4..segment_end];
+                let segment_data = &jpeg_data[seg_data_start..segment_end];
                 if segment_data
                     .windows(28)
                     .any(|w| w == b"http://ns.adobe.com/xap/1.0/")
@@ -499,13 +555,18 @@ pub(crate) fn extract_xmp_dmi_from_jpeg_with_limits(
         }
 
         let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
-        let segment_end = pos + 2 + segment_len;
+        let Some(segment_end) = pos.checked_add(2).and_then(|p| p.checked_add(segment_len)) else {
+            break;
+        };
         if segment_end > jpeg_data.len() {
             break;
         }
 
-        if marker == 0xE1 && segment_end > pos + 4 {
-            let segment_data = &jpeg_data[pos + 4..segment_end];
+        let Some(seg_data_start) = pos.checked_add(4) else {
+            break;
+        };
+        if marker == 0xE1 && segment_end > seg_data_start {
+            let segment_data = &jpeg_data[seg_data_start..segment_end];
             if segment_data.len() > limits.max_xmp_bytes() {
                 pos = segment_end;
                 continue;
@@ -648,8 +709,16 @@ pub(crate) fn extract_webp_notice(
             webp_data[pos + 7],
         ]) as usize;
 
-        let data_start = pos + 8;
-        let data_end = (data_start + chunk_size).min(webp_data.len());
+        let Some(data_start) = pos.checked_add(8) else {
+            break;
+        };
+        let Some(raw_end) = data_start.checked_add(chunk_size) else {
+            break;
+        };
+        let data_end = raw_end.min(webp_data.len());
+        if data_start > data_end {
+            break;
+        }
 
         if chunk_type == b"XMP " && data_end > data_start {
             let data = &webp_data[data_start..data_end];
@@ -714,10 +783,13 @@ pub(crate) fn extract_webp_notice(
             }
         }
 
-        pos = data_start + chunk_size;
-        if !chunk_size.is_multiple_of(2) {
-            pos += 1;
-        }
+        let Some(next_pos) = data_start
+            .checked_add(chunk_size)
+            .and_then(|p| p.checked_add(chunk_size & 1))
+        else {
+            break;
+        };
+        pos = next_pos;
     }
 
     // WebP legal fields are extracted from the XMP chunk.
@@ -761,16 +833,27 @@ pub(crate) fn extract_xmp_dmi_from_webp_with_limits(
             webp_data[pos + 7],
         ]) as usize;
 
-        let data_start = pos + 8;
-        let data_end = (data_start + chunk_size).min(webp_data.len());
+        let Some(data_start) = pos.checked_add(8) else {
+            break;
+        };
+        let Some(raw_end) = data_start.checked_add(chunk_size) else {
+            break;
+        };
+        let data_end = raw_end.min(webp_data.len());
+        if data_start > data_end {
+            break;
+        }
 
         if chunk_type == b"XMP " && data_end > data_start {
             let data = &webp_data[data_start..data_end];
             if data.len() > limits.max_xmp_bytes() {
-                pos = data_start + chunk_size;
-                if !chunk_size.is_multiple_of(2) {
-                    pos += 1;
-                }
+                let Some(next_pos) = data_start
+                    .checked_add(chunk_size)
+                    .and_then(|p| p.checked_add(chunk_size & 1))
+                else {
+                    break;
+                };
+                pos = next_pos;
                 continue;
             }
             if let Ok(xmp_str) = std::str::from_utf8(data) {
@@ -786,10 +869,13 @@ pub(crate) fn extract_xmp_dmi_from_webp_with_limits(
             }
         }
 
-        pos = data_start + chunk_size;
-        if !chunk_size.is_multiple_of(2) {
-            pos += 1;
-        }
+        let Some(next_pos) = data_start
+            .checked_add(chunk_size)
+            .and_then(|p| p.checked_add(chunk_size & 1))
+        else {
+            break;
+        };
+        pos = next_pos;
     }
 }
 

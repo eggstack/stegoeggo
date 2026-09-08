@@ -12,7 +12,7 @@ description: Use when writing, modifying, or reviewing Rust code in the stegoegg
 ## Code Style
 - No comments in code unless explicitly asked by user
 - `#[must_use]` on all builder methods
-- `pub(crate)` for internal modules (`protected`, `util`, `webp_container`, `xmp`)
+- `pub(crate)` for internal modules (`protected`, `util`, `webp_container`, `container_walk`, `xmp`, `pipeline`)
 - `LazyLock` for static singletons (e.g., `DEFAULT_PIPELINE`)
 - `Arc<ProtectionConfig>` for shared heavy config fields
 - Private fields with getter methods on public types
@@ -92,7 +92,7 @@ pub enum HiddenMarkerMode {
 ### Root crate (`src/`)
 - **Public**: `conformance` (feature: conformance), `error`, `payload_v3`, `provenance`, `resource_limits`, `traits`, `types`, `verification`
 - **Public (feature-gated)**: `stego` (inline re-export of `stegoeggo_stego`), `async_api` (feature: async), `signing` (feature: signatures), `detached` (feature: detached-manifest)
-- **`pub(crate)`**: `protected`, `util`, `webp_container`, `xmp`
+- **`pub(crate)`**: `protected`, `util`, `webp_container`, `container_walk`, `xmp`, `pipeline`
 
 ### Carrier crate (`stegoeggo-stego/src/`)
 - **Public**: `constants`, `error`, `frame`, `jpeg`, `lsb`, `types`
@@ -245,6 +245,7 @@ frame::decode_prefix(data) -> Result<(FrameHeader, usize)>
 18. **Tiled LSB has one in-place core** — `lsb_internal::embed_lsb_tiled_in_place` is the shared algorithm; the cloning `embed_lsb_tiled` delegates to it and the parent raster path mutates its owned RGBA directly. Insufficient capacity leaves the caller's buffer unchanged.
 19. **Raster preflight is header-only** — non-JPEG dimension gating uses `into_dimensions()` only; the executor owns the single full decode and re-checks dimensions defensively. Same-format metadata-only performs zero pixel decodes.
 15. **Benchmark equivalence** — The `lsb_clone_vs_in_place` benchmark uses Criterion batching so each in-place iteration starts from a pristine source image and the preparation clone remains outside the timed operation.
+20. **Container accounting has one owner** — `src/container_walk.rs::observe_container_work` is the only bounded PNG/JPEG/WebP walk for `OperationObserver`. Do not add hand-written chunk/marker loops in `lib.rs` or `pipeline.rs`; strict injection/detection walkers live in their format modules with different error dispositions. All container arithmetic uses `checked_add` with lenient break on overflow.
 16. **`verify_image_bytes` returns directly** — Returns `VerificationStatus`, not `Result<VerificationStatus>`. Use `verify_image_bytes_detailed` for full `VerificationResult`.
 17. **Output-domain carrier routing** — Carrier family is selected from the final output format (`output_format == JPEG ? DCT : LSB`); input format controls fast-path reuse only. `execute_full_marker_and_metadata()` in `src/pipeline.rs` is the sole current-carrier router; `apply_lsb_to_image_with_summary_from_plan()` in `src/protected/steganography/embed.rs` is explicitly raster-domain and must never branch on `plan.input_format()`. JPEG→PNG/WebP is one pixel decode plus LSB, never a transient DCT step. `EmbedPath` follows the operation actually executed (`Lsb`/`LsbTiled` for raster output, `DctF5`/`DctF5Tiled` for JPEG output).
 
@@ -258,7 +259,7 @@ cargo fmt --all -- --check              # Format check
 
 ## Testing Patterns
 - Unit tests live in each source file as `#[cfg(test)] mod tests`
-- Integration tests in `tests/` directory (30 test files)
+- Integration tests in `tests/` directory (35 test files, including `container_accounting.rs` for Plan 085 resource-accounting regression)
 - Test with `ProtectionContext::new(intensity, seed)` for deterministic results
 - `ProtectionContext::default()` uses CSPRNG-backed seed (via `getrandom`) — safe for production; use `ProtectionContext::new(intensity, seed)` for reproducibility
 - Feature-gated tests: `tests/async_integration.rs` requires `async` feature

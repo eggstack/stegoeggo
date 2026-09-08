@@ -169,7 +169,9 @@ impl super::RightsMetadataProtector {
                 webp_data[pos + 6],
                 webp_data[pos + 7],
             ]) as usize;
-            let padded_size = chunk_size + (chunk_size & 1);
+            let Some(padded_size) = chunk_size.checked_add(chunk_size & 1) else {
+                break;
+            };
             let Some(data_start) = pos.checked_add(8) else {
                 break;
             };
@@ -334,8 +336,13 @@ impl super::RightsMetadataProtector {
                 }
             }
 
-            let data_start = pos + 8;
-            let data_end = (data_start + chunk_size).min(webp_data.len());
+            let Some(data_start) = pos.checked_add(8) else {
+                break;
+            };
+            let Some(raw_end) = data_start.checked_add(chunk_size) else {
+                break;
+            };
+            let data_end = raw_end.min(webp_data.len());
 
             if chunk_type == b"XMP " && data_end > data_start {
                 let data = &webp_data[data_start..data_end];
@@ -370,10 +377,13 @@ impl super::RightsMetadataProtector {
                 }
             }
 
-            pos = data_start + chunk_size;
-            if !chunk_size.is_multiple_of(2) {
-                pos += 1;
-            }
+            let Some(next) = data_start
+                .checked_add(chunk_size)
+                .and_then(|p| p.checked_add(chunk_size & 1))
+            else {
+                break;
+            };
+            pos = next;
         }
 
         None
@@ -400,9 +410,15 @@ impl super::RightsMetadataProtector {
                 webp_data[pos + 6],
                 webp_data[pos + 7],
             ]) as usize;
-            let padded_size = chunk_size + (chunk_size & 1);
-            let data_start = pos + 8;
-            let data_end = data_start + chunk_size;
+            let Some(padded_size) = chunk_size.checked_add(chunk_size & 1) else {
+                return Err(Error::Metadata("RIFF chunk alignment overflow".to_string()));
+            };
+            let Some(data_start) = pos.checked_add(8) else {
+                return Err(Error::Metadata("RIFF chunk offset overflow".to_string()));
+            };
+            let Some(data_end) = data_start.checked_add(chunk_size) else {
+                return Err(Error::Metadata("RIFF chunk size overflow".to_string()));
+            };
 
             if data_end <= webp_data.len() {
                 let is_legacy_exif_seed = chunk_id == b"EXIF"
@@ -419,7 +435,10 @@ impl super::RightsMetadataProtector {
                 }
             }
 
-            pos += 8 + padded_size;
+            let Some(next_pos) = pos.checked_add(8).and_then(|p| p.checked_add(padded_size)) else {
+                return Err(Error::Metadata("RIFF chunk alignment overflow".to_string()));
+            };
+            pos = next_pos;
         }
 
         if removed_exif && output.len() >= 20 && &output[12..16] == b"VP8X" {
@@ -454,7 +473,9 @@ impl super::RightsMetadataProtector {
                 webp_data[pos + 6],
                 webp_data[pos + 7],
             ]) as usize;
-            let padded_size = chunk_size + (chunk_size & 1);
+            let Some(padded_size) = chunk_size.checked_add(chunk_size & 1) else {
+                break;
+            };
             let Some(data_start) = pos.checked_add(8) else {
                 break;
             };

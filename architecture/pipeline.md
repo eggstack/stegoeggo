@@ -12,7 +12,7 @@ The canonical execution path for `process_request_bytes*` functions:
 ProtectionRequest → resolve_request() → ResolvedProtectionPlan → execute_plan_bytes()
 ```
 
-Three crate-private functions in `src/pipeline.rs` perform the actual work (the container-accounting walker `observe_metadata_work()` stays in `src/lib.rs` for Plan 085):
+Three crate-private functions in `src/pipeline.rs` perform the actual work. Container resource accounting is owned by `src/container_walk.rs` (`observe_container_work()`), which the executors call after each metadata-injection step:
 
 - `execute_metadata_only()` — Same-format and cross-format metadata injection using plan fields directly (no `ProtectionContext` reconstruction)
 - `execute_full_marker_and_metadata()` — BestEffort and Tiled hidden markers with one carrier router (`tile_size: None` vs `Some`); DCT/LSB stego + metadata injection

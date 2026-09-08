@@ -16,6 +16,7 @@ stegoeggo/                          Workspace root (4 crates)
 ├── src/                            Root library crate (stegoeggo)
 │   ├── lib.rs                      Public API + plan orchestration
 │   ├── pipeline.rs                 Canonical plan executors (private)
+│   ├── container_walk.rs           Bounded container traversal for accounting (private)
 │   ├── types.rs                    Core-type facade (re-exports `types/`)
 │   ├── types/                      Core types by domain (rights, compat, legal,
 │   │                               context, verification, warnings, request)
@@ -47,11 +48,11 @@ stegoeggo/                          Workspace root (4 crates)
 │   └── main.rs                     Clap-based CLI, ~2490 lines
 │
 ├── fuzz/                           12 fuzz targets (libfuzzer-sys)
-├── tests/                          30 integration test files
+├── tests/                          35 integration test files
 ├── examples/                       4 usage examples
 ├── benches/                        Criterion benchmarks
 ├── scripts/                        7 validation scripts
-├── architecture/                   30 deep-dive docs (this directory)
+├── architecture/                   31 deep-dive docs (this directory)
 └── .github/workflows/              CI (3 workflows)
 ```
 
@@ -307,6 +308,7 @@ src/
 ├── async_api.rs               Tokio spawn_blocking wrappers (feature: async)
 ├── conformance.rs             Conformance reporting types (feature: conformance)
 ├── resource_limits.rs         ResourceLimits for parser hardening (DoS prevention)
+├── container_walk.rs          Bounded PNG/JPEG/WebP traversal for accounting (pub(crate))
 ├── xmp.rs                     XMP parsing, namespace-aware filtering (pub(crate))
 ├── webp_container.rs          WebP RIFF parsing, VP8X/VP8/VP8L/ANMF (pub(crate))
 │

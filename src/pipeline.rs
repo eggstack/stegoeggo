@@ -1,4 +1,4 @@
-use super::observe_metadata_work;
+use super::container_walk::observe_container_work as observe_metadata_work;
 use super::stego;
 use super::{load_image_from_bytes, RightsMetadataProtector, SteganographyProtector};
 use crate::error::{Error, Result};
