@@ -1,8 +1,8 @@
 # Metadata Trap Protector
 
-**Source:** `src/protected/metadata_trap.rs` (~4084 lines)
+**Source:** `src/protected/metadata_trap.rs` (facade) + `src/protected/metadata_trap/` (`common.rs` date helpers, `notice.rs` shared notice rendering, `png.rs` / `jpeg.rs` / `webp.rs` format operations)
 
-The largest module. Injects metadata into image files. Operates at the byte level — the `DynamicImage` API cannot preserve injected text chunks through encode/decode cycles. Estimated latency: 2ms.
+The metadata facade, split by format behind `RightsMetadataProtector`. Injects metadata into image files. Operates at the byte level — the `DynamicImage` API cannot preserve injected text chunks through encode/decode cycles. Estimated latency: 2ms.
 
 ## Key Behavior
 
@@ -184,7 +184,7 @@ so external RDF parsers (e.g. `exiftool`) can read the legal fields:
 
 ## Module Interactions
 
-- **lib.rs**: Selected for `Light` and `Standard` levels (always runs)
-- **types.rs**: Uses `DmiValue`, `ProtectionLevel`, `LegalMetadata`
+- **pipeline.rs** (`execute_*`) and **lib.rs**: Selected for `Light` and `Standard` levels (always runs)
+- **types/**: Uses `DmiValue`, `ProtectionLevel`, `LegalMetadata` (via stable `stegoeggo::types::*` re-exports)
 - **traits.rs**: Implements `Protector` trait
 - **protected/constants.rs**: Uses `STEGO_OFFSET_SEED_1` for seed embedding

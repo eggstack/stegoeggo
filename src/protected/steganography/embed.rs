@@ -3,6 +3,117 @@
 use super::*;
 
 impl SteganographyProtector {
+    fn outcome_from_report<T>(
+        report: crate::stego::EmbedReport<T>,
+        path: crate::stego::EmbedPath,
+    ) -> crate::stego::EmbedOutcome<T> {
+        if report.embedded {
+            crate::stego::EmbedOutcome::Embedded {
+                output: report.output,
+                payload_bytes: report.payload_bytes,
+                required_capacity: report.required_capacity,
+                available_capacity: report.available_capacity,
+                path,
+            }
+        } else {
+            crate::stego::EmbedOutcome::SkippedCapacity {
+                output: report.output,
+                payload_bytes: report.payload_bytes,
+                required_capacity: report.required_capacity,
+                available_capacity: report.available_capacity,
+                path,
+            }
+        }
+    }
+
+    fn progressive_fallback(
+        jpeg_bytes: &[u8],
+        seed: u64,
+    ) -> Result<crate::stego::EmbedOutcome<Vec<u8>>> {
+        Ok(crate::stego::EmbedOutcome::UnsupportedProgressive {
+            output: carrier_jpeg::embed_seed_hint(jpeg_bytes, seed)?,
+        })
+    }
+
+    fn embed_dct_payload(
+        jpeg_bytes: &[u8],
+        payload: &[u8],
+        seed: u64,
+        redundancy: usize,
+    ) -> Result<crate::stego::EmbedOutcome<Vec<u8>>> {
+        let config = carrier_jpeg::JpegConfig::try_new(seed, redundancy)?;
+        match carrier_jpeg::embed(jpeg_bytes, payload, &config) {
+            Ok(report) => Ok(Self::outcome_from_report(
+                report,
+                crate::stego::EmbedPath::DctF5,
+            )),
+            Err(crate::stego::StegoError::UnsupportedJpeg(_)) => {
+                Self::progressive_fallback(jpeg_bytes, seed)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn embed_dct_tiled_payload(
+        jpeg_bytes: &[u8],
+        payload: &[u8],
+        seed: u64,
+        tile_size: u32,
+    ) -> Result<crate::stego::EmbedOutcome<Vec<u8>>> {
+        let config = crate::stego::TileConfig::try_new(seed, tile_size)?;
+        match carrier_jpeg::embed_tiled(jpeg_bytes, payload, &config) {
+            Ok(report) => Ok(Self::outcome_from_report(
+                report,
+                crate::stego::EmbedPath::DctF5Tiled,
+            )),
+            Err(crate::stego::StegoError::UnsupportedJpeg(_)) => {
+                Self::progressive_fallback(jpeg_bytes, seed)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn inplace_summary(
+        report: crate::stego::InPlaceEmbedReport,
+        path: crate::stego::EmbedPath,
+    ) -> crate::stego::EmbedOutcomeSummary {
+        crate::stego::EmbedOutcomeSummary {
+            status: if report.embedded {
+                crate::stego::EmbedStatus::Embedded
+            } else {
+                crate::stego::EmbedStatus::SkippedCapacity
+            },
+            path,
+            payload_bytes: report.payload_bytes,
+            required_capacity: report.required_capacity,
+            available_capacity: report.available_capacity,
+        }
+    }
+
+    fn embed_raster_with_seed_fallback(
+        &self,
+        rgba: &mut RgbaImage,
+        payload: &[u8],
+        seed: u64,
+        redundancy: usize,
+        tile_size: Option<u32>,
+    ) -> Result<crate::stego::EmbedOutcomeSummary> {
+        let summary = match tile_size.filter(|&s| s > 0) {
+            Some(ts) => {
+                let report = self.embed_lsb_tiled_in_place(rgba, payload, seed, ts)?;
+                Self::inplace_summary(report, crate::stego::EmbedPath::LsbTiled)
+            }
+            None => {
+                let report = self.embed_lsb_v2_in_place(rgba, payload, seed, redundancy)?;
+                Self::inplace_summary(report, crate::stego::EmbedPath::Lsb)
+            }
+        };
+        if summary.is_embedded() {
+            Self::embed_seed_lsb_fallback(rgba, seed);
+        }
+        Ok(summary)
+    }
+
     /// Apply DCT-based steganography to JPEG bytes.
     ///
     /// For baseline JPEGs, performs full F5 embedding in DCT coefficients and stores
@@ -31,32 +142,7 @@ impl SteganographyProtector {
             ),
             ctx,
         );
-        let config = carrier_jpeg::JpegConfig::try_new(ctx.seed(), ctx.effective_redundancy())?;
-        match carrier_jpeg::embed(jpeg_bytes, &payload, &config) {
-            Ok(report) => Ok(if report.embedded {
-                crate::stego::EmbedOutcome::Embedded {
-                    output: report.output,
-                    payload_bytes: report.payload_bytes,
-                    required_capacity: report.required_capacity,
-                    available_capacity: report.available_capacity,
-                    path: crate::stego::EmbedPath::DctF5,
-                }
-            } else {
-                crate::stego::EmbedOutcome::SkippedCapacity {
-                    output: report.output,
-                    payload_bytes: report.payload_bytes,
-                    required_capacity: report.required_capacity,
-                    available_capacity: report.available_capacity,
-                    path: crate::stego::EmbedPath::DctF5,
-                }
-            }),
-            Err(crate::stego::StegoError::UnsupportedJpeg(_)) => {
-                Ok(crate::stego::EmbedOutcome::UnsupportedProgressive {
-                    output: carrier_jpeg::embed_seed_hint(jpeg_bytes, ctx.seed())?,
-                })
-            }
-            Err(error) => Err(error.into()),
-        }
+        Self::embed_dct_payload(jpeg_bytes, &payload, ctx.seed(), ctx.effective_redundancy())
     }
 
     /// Embed only the seed in JPEG quantization tables (no DCT coefficient modification).
@@ -94,32 +180,7 @@ impl SteganographyProtector {
             ),
             ctx,
         );
-        let config = crate::stego::TileConfig::try_new(ctx.seed(), tile_size)?;
-        match carrier_jpeg::embed_tiled(jpeg_bytes, &payload, &config) {
-            Ok(report) => Ok(if report.embedded {
-                crate::stego::EmbedOutcome::Embedded {
-                    output: report.output,
-                    payload_bytes: report.payload_bytes,
-                    required_capacity: report.required_capacity,
-                    available_capacity: report.available_capacity,
-                    path: crate::stego::EmbedPath::DctF5Tiled,
-                }
-            } else {
-                crate::stego::EmbedOutcome::SkippedCapacity {
-                    output: report.output,
-                    payload_bytes: report.payload_bytes,
-                    required_capacity: report.required_capacity,
-                    available_capacity: report.available_capacity,
-                    path: crate::stego::EmbedPath::DctF5Tiled,
-                }
-            }),
-            Err(crate::stego::StegoError::UnsupportedJpeg(_)) => {
-                Ok(crate::stego::EmbedOutcome::UnsupportedProgressive {
-                    output: carrier_jpeg::embed_seed_hint(jpeg_bytes, ctx.seed())?,
-                })
-            }
-            Err(error) => Err(error.into()),
-        }
+        Self::embed_dct_tiled_payload(jpeg_bytes, &payload, ctx.seed(), tile_size)
     }
 
     pub(crate) fn effective_redundancy_for_plan(
@@ -164,63 +225,14 @@ impl SteganographyProtector {
         };
         let emission = PayloadEmissionContext::from_plan(plan, path);
         let payload = self.generate_payload_for_plan(&emission, plan);
-        let outcome = match tile_size.filter(|&size| size > 0) {
-            Some(size) => {
-                let config = crate::stego::TileConfig::try_new(plan.seed(), size)?;
-                carrier_jpeg::embed_tiled(jpeg_bytes, &payload, &config).map(|report| {
-                    if report.embedded {
-                        crate::stego::EmbedOutcome::Embedded {
-                            output: report.output,
-                            payload_bytes: report.payload_bytes,
-                            required_capacity: report.required_capacity,
-                            available_capacity: report.available_capacity,
-                            path: crate::stego::EmbedPath::DctF5Tiled,
-                        }
-                    } else {
-                        crate::stego::EmbedOutcome::SkippedCapacity {
-                            output: report.output,
-                            payload_bytes: report.payload_bytes,
-                            required_capacity: report.required_capacity,
-                            available_capacity: report.available_capacity,
-                            path: crate::stego::EmbedPath::DctF5Tiled,
-                        }
-                    }
-                })
-            }
-            None => {
-                let config = carrier_jpeg::JpegConfig::try_new(
-                    plan.seed(),
-                    Self::effective_redundancy_for_plan(plan),
-                )?;
-                carrier_jpeg::embed(jpeg_bytes, &payload, &config).map(|report| {
-                    if report.embedded {
-                        crate::stego::EmbedOutcome::Embedded {
-                            output: report.output,
-                            payload_bytes: report.payload_bytes,
-                            required_capacity: report.required_capacity,
-                            available_capacity: report.available_capacity,
-                            path: crate::stego::EmbedPath::DctF5,
-                        }
-                    } else {
-                        crate::stego::EmbedOutcome::SkippedCapacity {
-                            output: report.output,
-                            payload_bytes: report.payload_bytes,
-                            required_capacity: report.required_capacity,
-                            available_capacity: report.available_capacity,
-                            path: crate::stego::EmbedPath::DctF5,
-                        }
-                    }
-                })
-            }
-        };
-        match outcome {
-            Ok(outcome) => Ok(outcome),
-            Err(crate::stego::StegoError::UnsupportedJpeg(_)) => {
-                Ok(crate::stego::EmbedOutcome::UnsupportedProgressive {
-                    output: carrier_jpeg::embed_seed_hint(jpeg_bytes, plan.seed())?,
-                })
-            }
-            Err(error) => Err(error.into()),
+        match tile_size.filter(|&size| size > 0) {
+            Some(size) => Self::embed_dct_tiled_payload(jpeg_bytes, &payload, plan.seed(), size),
+            None => Self::embed_dct_payload(
+                jpeg_bytes,
+                &payload,
+                plan.seed(),
+                Self::effective_redundancy_for_plan(plan),
+            ),
         }
     }
 
@@ -240,24 +252,14 @@ impl SteganographyProtector {
         let emission = PayloadEmissionContext::from_plan(plan, embed_path);
         let payload = self.generate_payload_for_plan(&emission, plan);
         let mut rgba = img.to_rgba8();
-        let seed = plan.seed();
-        let redundancy = Self::effective_redundancy_for_plan(plan);
-
-        if let Some(ts) = tile_size.filter(|&s| s > 0) {
-            let report = self.embed_lsb_tiled_in_place(&mut rgba, &payload, seed, ts)?;
-            let summary = Self::lsb_tiled_in_place_summary(report);
-            if summary.is_embedded() {
-                Self::embed_seed_lsb_fallback(&mut rgba, seed);
-            }
-            Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
-        } else {
-            let report = self.embed_lsb_v2_in_place(&mut rgba, &payload, seed, redundancy)?;
-            let summary = Self::lsb_in_place_summary(report);
-            if report.embedded {
-                Self::embed_seed_lsb_fallback(&mut rgba, seed);
-            }
-            Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
-        }
+        let summary = self.embed_raster_with_seed_fallback(
+            &mut rgba,
+            &payload,
+            plan.seed(),
+            Self::effective_redundancy_for_plan(plan),
+            tile_size,
+        )?;
+        Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
     }
 
     /// Embed payload using the corrected V2 carrier scheme.
@@ -291,25 +293,7 @@ impl SteganographyProtector {
             }
         };
         match carrier_lsb::embed(img, payload, &config) {
-            Ok(report) => {
-                if report.embedded {
-                    crate::stego::EmbedOutcome::Embedded {
-                        output: report.output,
-                        payload_bytes: report.payload_bytes,
-                        required_capacity: report.required_capacity,
-                        available_capacity: report.available_capacity,
-                        path: crate::stego::EmbedPath::Lsb,
-                    }
-                } else {
-                    crate::stego::EmbedOutcome::SkippedCapacity {
-                        output: report.output,
-                        payload_bytes: report.payload_bytes,
-                        required_capacity: report.required_capacity,
-                        available_capacity: report.available_capacity,
-                        path: crate::stego::EmbedPath::Lsb,
-                    }
-                }
-            }
+            Ok(report) => Self::outcome_from_report(report, crate::stego::EmbedPath::Lsb),
             Err(_) => crate::stego::EmbedOutcome::SkippedCapacity {
                 output: img.clone(),
                 payload_bytes: payload.len(),
@@ -331,28 +315,12 @@ impl SteganographyProtector {
         carrier_lsb::embed_in_place(img, payload, &config).map_err(Into::into)
     }
 
-    fn lsb_in_place_summary(
-        report: crate::stego::InPlaceEmbedReport,
-    ) -> crate::stego::EmbedOutcomeSummary {
-        crate::stego::EmbedOutcomeSummary {
-            status: if report.embedded {
-                crate::stego::EmbedStatus::Embedded
-            } else {
-                crate::stego::EmbedStatus::SkippedCapacity
-            },
-            path: crate::stego::EmbedPath::Lsb,
-            payload_bytes: report.payload_bytes,
-            required_capacity: report.required_capacity,
-            available_capacity: report.available_capacity,
-        }
-    }
-
     pub(crate) fn embed_seed_lsb_fallback(img: &mut RgbaImage, seed: u64) {
         carrier_support::seed_fallback_embed(img, seed);
     }
 
     pub(crate) fn embed_seed_lsb_fallback_pub(img: &mut RgbaImage, seed: u64) {
-        carrier_support::seed_fallback_embed(img, seed);
+        Self::embed_seed_lsb_fallback(img, seed);
     }
 
     /// Embed the full payload once per tile for crop resistance.
@@ -378,22 +346,6 @@ impl SteganographyProtector {
     ) -> Result<crate::stego::InPlaceEmbedReport> {
         let config = crate::stego::TileConfig::try_new(master_seed, tile_size)?;
         carrier_lsb::embed_tiled_in_place(img, payload, &config).map_err(Into::into)
-    }
-
-    fn lsb_tiled_in_place_summary(
-        report: crate::stego::InPlaceEmbedReport,
-    ) -> crate::stego::EmbedOutcomeSummary {
-        crate::stego::EmbedOutcomeSummary {
-            status: if report.embedded {
-                crate::stego::EmbedStatus::Embedded
-            } else {
-                crate::stego::EmbedStatus::SkippedCapacity
-            },
-            path: crate::stego::EmbedPath::LsbTiled,
-            payload_bytes: report.payload_bytes,
-            required_capacity: report.required_capacity,
-            available_capacity: report.available_capacity,
-        }
     }
 
     pub(crate) fn apply_to_image_owned(
@@ -439,25 +391,6 @@ impl SteganographyProtector {
         let redundancy = ctx.effective_redundancy();
 
         match format {
-            crate::types::ImageOutputFormat::Png => {
-                if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
-                    let report =
-                        self.embed_lsb_tiled_in_place(&mut rgba, &payload, ctx.seed(), tile_size)?;
-                    let summary = Self::lsb_tiled_in_place_summary(report);
-                    if summary.is_embedded() {
-                        Self::embed_seed_lsb_fallback(&mut rgba, ctx.seed());
-                    }
-                    Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
-                } else {
-                    let report =
-                        self.embed_lsb_v2_in_place(&mut rgba, &payload, ctx.seed(), redundancy)?;
-                    let summary = Self::lsb_in_place_summary(report);
-                    if summary.is_embedded() {
-                        Self::embed_seed_lsb_fallback(&mut rgba, ctx.seed());
-                    }
-                    Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
-                }
-            }
             crate::types::ImageOutputFormat::Jpeg => {
                 let jpeg_bytes = crate::util::image::encode_image_with_options(
                     img,
@@ -469,25 +402,114 @@ impl SteganographyProtector {
                 let (output, summary) = with_stego.into_parts();
                 Ok((image::load_from_memory(&output)?, Some(summary)))
             }
-            crate::types::ImageOutputFormat::WebP => {
-                if let Some(tile_size) = ctx.tile_size().filter(|&s| s > 0) {
-                    let report =
-                        self.embed_lsb_tiled_in_place(&mut rgba, &payload, ctx.seed(), tile_size)?;
-                    let summary = Self::lsb_tiled_in_place_summary(report);
-                    if summary.is_embedded() {
-                        Self::embed_seed_lsb_fallback(&mut rgba, ctx.seed());
-                    }
-                    Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
-                } else {
-                    let report =
-                        self.embed_lsb_v2_in_place(&mut rgba, &payload, ctx.seed(), redundancy)?;
-                    let summary = Self::lsb_in_place_summary(report);
-                    if summary.is_embedded() {
-                        Self::embed_seed_lsb_fallback(&mut rgba, ctx.seed());
-                    }
-                    Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
-                }
+            _ => {
+                let summary = self.embed_raster_with_seed_fallback(
+                    &mut rgba,
+                    &payload,
+                    ctx.seed(),
+                    redundancy,
+                    ctx.tile_size(),
+                )?;
+                Ok((DynamicImage::ImageRgba8(rgba), Some(summary)))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod embed_helper_tests {
+    use super::*;
+
+    #[test]
+    fn outcome_from_report_maps_embedded_and_skipped() {
+        let embedded = crate::stego::EmbedReport {
+            embedded: true,
+            output: vec![1u8, 2, 3],
+            payload_bytes: 3,
+            required_capacity: 10,
+            available_capacity: 20,
+            actual_redundancy: 2,
+        };
+        let (output, summary) =
+            SteganographyProtector::outcome_from_report(embedded, crate::stego::EmbedPath::Lsb)
+                .into_parts();
+        assert_eq!(output, vec![1u8, 2, 3]);
+        assert!(summary.is_embedded());
+        assert_eq!(summary.path, crate::stego::EmbedPath::Lsb);
+        assert_eq!(summary.payload_bytes, 3);
+
+        let skipped = crate::stego::EmbedReport {
+            embedded: false,
+            output: vec![9u8],
+            payload_bytes: 1,
+            required_capacity: 100,
+            available_capacity: 5,
+            actual_redundancy: 0,
+        };
+        let (output, summary) =
+            SteganographyProtector::outcome_from_report(skipped, crate::stego::EmbedPath::DctF5)
+                .into_parts();
+        assert_eq!(output, vec![9u8]);
+        assert!(!summary.is_embedded());
+        assert_eq!(summary.path, crate::stego::EmbedPath::DctF5);
+        assert_eq!(summary.required_capacity, 100);
+    }
+
+    #[test]
+    fn inplace_summary_maps_status_and_path() {
+        let report = crate::stego::InPlaceEmbedReport {
+            embedded: true,
+            payload_bytes: 36,
+            required_capacity: 1440,
+            available_capacity: 12288,
+            actual_redundancy: 1,
+        };
+        let summary =
+            SteganographyProtector::inplace_summary(report, crate::stego::EmbedPath::LsbTiled);
+        assert!(summary.is_embedded());
+        assert_eq!(summary.path, crate::stego::EmbedPath::LsbTiled);
+
+        let report = crate::stego::InPlaceEmbedReport {
+            embedded: false,
+            payload_bytes: 36,
+            required_capacity: 99999,
+            available_capacity: 10,
+            actual_redundancy: 0,
+        };
+        let summary = SteganographyProtector::inplace_summary(report, crate::stego::EmbedPath::Lsb);
+        assert!(!summary.is_embedded());
+        assert_eq!(summary.path, crate::stego::EmbedPath::Lsb);
+    }
+
+    #[test]
+    fn raster_helper_embeds_plain_and_tiled_paths() {
+        let protector = SteganographyProtector::new();
+        let payload = vec![0xA5u8; 36];
+        let mut plain = RgbaImage::from_fn(64, 64, |x, y| {
+            image::Rgba([
+                (x as u8).wrapping_mul(3),
+                (y as u8).wrapping_mul(5),
+                128,
+                255,
+            ])
+        });
+        let summary = protector
+            .embed_raster_with_seed_fallback(&mut plain, &payload, 42, 1, None)
+            .unwrap();
+        assert!(summary.is_embedded());
+        assert_eq!(summary.path, crate::stego::EmbedPath::Lsb);
+
+        let mut tiled = RgbaImage::from_fn(64, 64, |x, y| {
+            image::Rgba([
+                (x as u8).wrapping_mul(3),
+                (y as u8).wrapping_mul(5),
+                128,
+                255,
+            ])
+        });
+        let summary = protector
+            .embed_raster_with_seed_fallback(&mut tiled, &payload, 42, 1, Some(32))
+            .unwrap();
+        assert_eq!(summary.path, crate::stego::EmbedPath::LsbTiled);
     }
 }

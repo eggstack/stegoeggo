@@ -1,6 +1,6 @@
 # Core Types
 
-**Source:** `src/types.rs` (~5100 lines)
+**Source:** `src/types.rs` (facade with stable `stegoeggo::types::*` re-exports) + `src/types/` (`rights.rs` DMI vocabulary, `compat.rs` level/format/policy compat, `legal.rs` notice and legal metadata, `context.rs` config and context, `verification.rs` verification compat, `warnings.rs` warnings, `request.rs` policy/request/plan/preset/report)
 
 Defines all core data structures used across the codebase. Uses builder pattern with `#[must_use]` on builder methods.
 

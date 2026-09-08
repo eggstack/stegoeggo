@@ -14,8 +14,11 @@ This is the top-level index. It gives you a bird's-eye view of every module, its
 stegoeggo/                          Workspace root (4 crates)
 │
 ├── src/                            Root library crate (stegoeggo)
-│   ├── lib.rs                      Pipeline orchestration + public API
-│   ├── types.rs                    Core types (~5100 lines)
+│   ├── lib.rs                      Public API + plan orchestration
+│   ├── pipeline.rs                 Canonical plan executors (private)
+│   ├── types.rs                    Core-type facade (re-exports `types/`)
+│   ├── types/                      Core types by domain (rights, compat, legal,
+│   │                               context, verification, warnings, request)
 │   ├── traits.rs                   Protector trait
 │   ├── error.rs                    Error enum (19 variants)
 │   ├── protected/                  Protection strategies (all implement Protector)
@@ -75,8 +78,8 @@ Every component below links to a dedicated deep-dive in `architecture/`. Use thi
                                  │
                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│              ProtectionRequest → ResolvedProtectionPlan                  │
-│                    src/lib.rs (orchestration)                            │
+│  ProtectionRequest → ResolvedProtectionPlan                  │
+│         src/lib.rs (orchestration) + src/pipeline.rs (executors)   │
 │                                                                         │
 │  resolve_request() validates input, builds immutable plan.              │
 │  Legacy ProtectionContext/level APIs are adapters into this path.       │
@@ -100,9 +103,9 @@ Every component below links to a dedicated deep-dive in `architecture/`. Use thi
                                  │
                                  ▼
                     ┌──────────────────────┐
-                    │  Types & Traits      │
-                    │  types.rs, traits.rs │
-                    └──────────────────────┘
+                     │  Types & Traits      │
+                     │  types/, traits.rs   │
+                     └──────────────────────┘
 ```
 
 ## Feature Flags
@@ -288,9 +291,17 @@ preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 
 ```
 src/
-├── lib.rs                     Pipeline orchestration, public API
-├── types.rs                   ProtectionLevel, ProtectionContext, ProtectionRequest,
-│                              RightsPolicy, LegalMetadata, ExecutionReport, etc.
+├── lib.rs                     Public API + plan orchestration
+├── pipeline.rs                Canonical plan executors (private)
+├── types.rs                   Core-type facade (stable re-exports)
+├── types/                     Core types by domain
+│   ├── rights.rs              DmiValue, PLUS vocabulary
+│   ├── compat.rs              EvidenceProfile, ProtectionLevel, formats
+│   ├── legal.rs               LocalizedText, RightsNotice, LegalMetadata
+│   ├── context.rs             ProtectionConfig, ProtectionContext
+│   ├── verification.rs        VerificationResult/Status, NoticeVerification
+│   ├── warnings.rs            ProtectionWarning + categories
+│   └── request.rs             RightsPolicy, channels, request/plan/preset/report
 ├── traits.rs                  Protector trait (apply/apply_bytes)
 ├── error.rs                   Error enum (19 variants), Result type
 ├── async_api.rs               Tokio spawn_blocking wrappers (feature: async)
@@ -301,11 +312,17 @@ src/
 │
 ├── protected/                 Protection strategies (all implement Protector)
 │   ├── passthrough.rs         No-op for Disabled level
-│   ├── metadata_trap.rs       Metadata injection (tEXt/COM/XMP, plus:DataMining)
+│   ├── metadata_trap.rs       Facade: RightsMetadataProtector re-exports
+│   ├── metadata_trap/         Format-split metadata operations
+│   │   ├── notice.rs          Shared notice rendering + markers
+│   │   ├── png.rs             PNG tEXt/iTXt operations
+│   │   ├── jpeg.rs            JPEG COM/XMP/EXIF/IPTC operations
+│   │   ├── webp.rs            WebP XMP/EXIF operations
+│   │   └── common.rs          Date helpers, timestamp
 │   ├── steganography/         Rights-aware hidden-marker application adapter
 │   │   ├── mod.rs             Facade, shared contracts, public entry points
 │   │   ├── marker.rs          Current V3 marker construction
-│   │   ├── embed.rs           Carrier selection and embedding dispatch
+│   │   ├── embed.rs           Plan-based embed dispatch + shared helpers
 │   │   ├── extract.rs         Seed discovery and bounded extraction search
 │   │   ├── verify.rs          Payload integrity/authentication classification
 │   │   └── legacy.rs          V1/V2 and compatibility-only decoding

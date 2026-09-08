@@ -5,7 +5,7 @@
 The rights-aware hidden-marker adapter is split into five responsibility modules behind the `SteganographyProtector` facade:
 
 - `marker.rs` constructs current V3 application payload bytes from the resolved plan or compatibility context.
-- `embed.rs` provides the raster-domain LSB helper (`apply_lsb_to_image_with_summary_from_plan`), the encoded-byte JPEG DCT helper (`apply_dct_stego_bytes_from_plan`), and seed-only helpers; it does not select carrier family from input format.
+- `embed.rs` provides the plan-based raster-domain LSB helper (`apply_lsb_to_image_with_summary_from_plan`), the plan-based encoded-byte JPEG DCT helper (`apply_dct_stego_bytes_from_plan`), context-based compatibility wrappers that delegate to shared private helpers, and seed-only helpers; it does not select carrier family from input format. Shared private helpers centralize `EmbedReport → EmbedOutcome` conversion, in-place summary mapping, DCT payload/tiled embedding with progressive fallback, and raster embedding with seed fallback, so PNG/WebP arms share one code path.
 - `extract.rs` discovers seeds, performs bounded non-tiled/tiled searches, and reuses one carrier-owned tiled JPEG search per operation.
 - `verify.rs` parses payloads and classifies CRC/HMAC/signature, malformed, unsupported, and authentication failures.
 - `legacy.rs` contains compatibility-only V1/V2 decoding and ECC adapters.
@@ -84,7 +84,7 @@ Getter methods: `protection_level()`, `seed()`, `intensity()`, `version()`.
 
 ### Output-Domain Carrier Invariant
 
-Carrier family is selected from the final output format; input format controls fast-path reuse only (`output_format == JPEG ? DCT : LSB`). The top-level executor `execute_full_marker_and_metadata()` in `src/lib.rs` is the sole current-carrier router. `apply_lsb_to_image_with_summary_from_plan()` is explicitly raster-domain and cannot choose JPEG DCT; JPEG DCT remains in `apply_dct_stego_bytes_from_plan()`. JPEG→PNG/WebP is one pixel decode followed by raster LSB with no transient JPEG DCT step. `EmbedPath` (`Lsb`/`LsbTiled` for raster output, `DctF5`/`DctF5Tiled` for JPEG output) is derived from the operation actually executed.
+Carrier family is selected from the final output format; input format controls fast-path reuse only (`output_format == JPEG ? DCT : LSB`). The top-level executor `execute_full_marker_and_metadata()` in `src/pipeline.rs` is the sole current-carrier router. `apply_lsb_to_image_with_summary_from_plan()` is explicitly raster-domain and cannot choose JPEG DCT; JPEG DCT remains in `apply_dct_stego_bytes_from_plan()`. JPEG→PNG/WebP is one pixel decode followed by raster LSB with no transient JPEG DCT step. `EmbedPath` (`Lsb`/`LsbTiled` for raster output, `DctF5`/`DctF5Tiled` for JPEG output) is derived from the operation actually executed.
 
 ### LSB Embedding (PNG/WebP)
 
@@ -209,7 +209,7 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 
 ## Module Interactions
 
-- **lib.rs**: Applied in Standard pipeline
+- **pipeline.rs**: Applied in Standard pipeline
 - **stegoeggo-stego/src/lsb.rs**: Public LSB API surface (`embed`, `embed_in_place`, `extract`, `embed_framed`, `extract_framed`, `embed_tiled`, `embed_tiled_in_place`, `extract_tiled`, `embed_tiled_framed`, `extract_tiled_framed`, `capacity`, `LsbConfig`, `TileConfig`, `InPlaceEmbedReport`, `DEFAULT_TILE_SIZE`). Raw operations are backed by `lsb_internal`; framed operations compose the public frame module with those raw calls. `LsbConfig` exposes fallible `try_new` and `try_with_redundancy` for untrusted input; the panicking `with_redundancy` is retained for compile-time-constant values. `TileConfig::try_new` is the sole tiled constructor (fallible, `tile_size > 0`).
 - **stegoeggo-stego/src/application_support.rs**: Hidden compatibility/search layer (legacy V1/V2, seed fallback, `tile_seed` for application candidate classification, `TiledJpegSearch`/`TiledJpegCandidateKey`, opaque `JpegSearchContext`); optional `application-support` feature, `#[doc(hidden)]`
 - **stegoeggo-stego/src/lsb_internal.rs**: Generic LSB carrier mechanics (permutations, embed/extract, crop, seed fallback). Private; no application-type imports.
@@ -219,7 +219,7 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 - **util/image.rs**: `XorShiftRng` for LSB pixel selection
 - **protected/constants.rs**: `STEGO_OFFSET_SEED_1`, `XORSHIFT_SEED_OFFSET`
 - **stegoeggo-stego/src/constants.rs**: `STEGO_SPREAD_FACTOR`, `STEGO_OFFSET_SEED_1`, `SPLITMIX64_SEED`, `MIN_REDUNDANCY`, `MAX_REDUNDANCY`
-- **types.rs**: Uses `ProtectionLevel`, `StegoPayload`
+- **types/**: Uses `ProtectionLevel`, `StegoPayload` (via stable `stegoeggo::types::*` re-exports)
 
 ## Tiled Embedding (Crop Resistance)
 

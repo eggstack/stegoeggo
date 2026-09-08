@@ -48,12 +48,14 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 
 ### 4. Key source files to always check
 
-- `src/types.rs` — All core type definitions, constructors, getters (~5100 lines)
+- `src/types/` — Core type definitions by domain behind `src/types.rs` re-exports: `rights.rs`, `compat.rs`, `legal.rs`, `context.rs`, `verification.rs`, `warnings.rs`, `request.rs`
 - `src/traits.rs` — Protector trait
-- `src/lib.rs` — Pipeline orchestration, public API, module declarations (~2260 lines)
+- `src/lib.rs` — Public API, module declarations, container-accounting walker (canonical executors live in `src/pipeline.rs`)
 - `src/error.rs` — Error variants (19 total: 18 always-available + 1 async-only `Task`)
 - `src/verification/report.rs` — `VerificationReport`, `TrustEvaluation`, sub-verification types
 - `src/protected/steganography/mod.rs` — Facade + shared types; algorithm modules are `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs`
+- `src/protected/metadata_trap.rs` — Facade; format modules are `metadata_trap/notice.rs`, `png.rs`, `jpeg.rs`, `webp.rs`, `common.rs`
+- `src/pipeline.rs` — Canonical plan executors (`process_plan_bytes`, `execute_*`, `warnings_from_embed_outcome`)
 - `stegoeggo-stego/src/jpeg_transcoder/` — JPEG DCT internals (private to carrier)
 - `src/payload_v3/types.rs` — V3 payload constants and types
 - `stegoeggo-stego/src/constants.rs` — Carrier-level tuning constants (`STEGO_SPREAD_FACTOR`, `STEGO_OFFSET_SEED_1`, `SPLITMIX64_SEED`, `MIN_REDUNDANCY`, `MAX_REDUNDANCY`)
@@ -104,7 +106,7 @@ These have been fixed in documentation — if the code hasn't changed, these are
 - **V3 is current** — `V3_PAYLOAD_VERSION = 3` is the default; V2/V1 are extraction-only legacy
 - **`CURRENT_PAYLOAD_VERSION`** does not exist — the constant is `V3_PAYLOAD_VERSION` in `src/payload_v3/types.rs`
 - **`EvidenceStrength`** has 4 variants: `NoNoticeFound`, `MetadataNoticeOnly`, `MetadataNoticeAndBestEffortStego`, `MetadataNoticeAndAuthenticatedProvenance`
-- **Verification types are all real** — do not flag these as fabricated: `NoticeVerification` (`src/types.rs:2496`, notice-level evidence), `VerificationResult` (`src/types.rs:2200`, enum), `VerificationReport` + `TrustEvaluation` + `TrustEvaluationBuilder` (`src/verification/report.rs:1003/:838/:874`). `architecture/verification.md` documents them correctly
+- **Verification types are all real** — do not flag these as fabricated: `NoticeVerification` (`src/types/verification.rs`, notice-level evidence), `VerificationResult` (`src/types/verification.rs`, enum), `VerificationReport` + `TrustEvaluation` + `TrustEvaluationBuilder` (`src/verification/report.rs`). `architecture/verification.md` documents them correctly
 - **`VerificationStatus` is live** — not deprecated; it is the return type of `verify_image_bytes`. Do not mark it deprecated or suggest migrating away from it
 - **Steganography adapter** is split into 5 modules: `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs` behind `SteganographyProtector` facade
 - **Generic carrier crate** public API: `lsb`, `jpeg`, `frame`, `error`, `types` modules; `jpeg_transcoder` and `lsb_internal` are `pub(crate)`

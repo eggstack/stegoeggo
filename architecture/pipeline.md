@@ -1,6 +1,6 @@
 # Pipeline & Public API
 
-**Source:** `src/lib.rs` (~2260 lines)
+**Source:** `src/lib.rs` (public orchestration) + `src/pipeline.rs` (canonical executors)
 
 The pipeline is the central orchestration layer. It provides two execution paths: the canonical request-based path (via direct plan executor) and the legacy level-based compatibility path (via a stateless `ProtectionPipeline`). Both paths share the same carrier operations and metadata injection. Parallel batch processing functions require the `parallel` feature.
 
@@ -12,7 +12,7 @@ The canonical execution path for `process_request_bytes*` functions:
 ProtectionRequest → resolve_request() → ResolvedProtectionPlan → execute_plan_bytes()
 ```
 
-Three crate-private functions perform the actual work:
+Three crate-private functions in `src/pipeline.rs` perform the actual work (the container-accounting walker `observe_metadata_work()` stays in `src/lib.rs` for Plan 085):
 
 - `execute_metadata_only()` — Same-format and cross-format metadata injection using plan fields directly (no `ProtectionContext` reconstruction)
 - `execute_full_marker_and_metadata()` — BestEffort and Tiled hidden markers with one carrier router (`tile_size: None` vs `Some`); DCT/LSB stego + metadata injection
@@ -49,7 +49,7 @@ pub struct ProtectionPipeline {
 
 ### Pipeline Flow (Standard)
 
-`execute_full_marker_and_metadata()` is the single current full-marker router:
+`execute_full_marker_and_metadata()` (in `src/pipeline.rs`) is the single current full-marker router:
 
 ```
 1. If JPEG input + JPEG output: reuse original bytes → DCT stego → inject metadata
@@ -122,10 +122,10 @@ The library intentionally does not own proxy-level cache policy, concurrency lim
 
 ## Module Interactions
 
-- **types.rs**: Uses `ProtectionLevel`, `ProtectionContext`, `ImageOutputFormat`, `ProtectionRequest`, `ResolvedProtectionPlan`
+- **types/**: Uses `ProtectionLevel`, `ProtectionContext`, `ImageOutputFormat`, `ProtectionRequest`, `ResolvedProtectionPlan` (via stable `stegoeggo::types::*` re-exports)
 - **traits.rs**: Calls `Protector::apply()` and `Protector::apply_bytes()`
 - **protected/*.rs**: Delegates to specific protector implementations
-- **protected/steganography/**: Decomposed application stego adapter. `mod.rs` is the facade; `marker.rs` builds V3 application payloads, `embed.rs` dispatches embedding operations (LSB, tiled LSB, JPEG DCT/F5, seed-only), `extract.rs` owns seed discovery and bounded search, `verify.rs` classifies payload integrity and authentication, `legacy.rs` isolates V1/V2 compatibility-only decoding
+- **protected/steganography/**: Decomposed application stego adapter. `mod.rs` is the facade; `marker.rs` builds V3 application payloads, `embed.rs` dispatches embedding operations (plan-based LSB, tiled LSB, JPEG DCT/F5, seed-only via shared private report/outcome and raster helpers), `extract.rs` owns seed discovery and bounded search, `verify.rs` classifies payload integrity and authentication, `legacy.rs` isolates V1/V2 compatibility-only decoding
 - **stegoeggo-stego/src/jpeg.rs**: Public encoded-byte JPEG carrier operations used by the application adapter; `jpeg_transcoder/` remains private.
 - **stegoeggo-stego/src/lsb.rs**: Public generic LSB operations (raw, in-place, framed, tiled) plus shared `TileConfig`. `lsb_internal.rs` remains private.
 - **stegoeggo-stego/src/application_support.rs**: Narrow hidden compatibility/search layer (legacy V1/V2, seed fallback, tile-seed derivation, `TiledJpegSearch`/`JpegSearchContext`) behind the optional `application-support` feature. Ordinary current embedding uses the stable facades, not this module.
