@@ -54,3 +54,15 @@ Test helpers (not production): `src/bin/stegoeggo-conformance.rs`
 ## Final commit
 
 `621769247c9ae5193afe6f117e25c4fa603ec245` — plan 085: container observer and resource-accounting reuse.
+
+## Verification notes
+
+- `./scripts/check.sh` passes locally; remote CI passed on rerun.
+- First CI run hit a pre-existing flake unrelated to this plan:
+  `tests/request_aux_convergence.rs::sync_variants_agree_jpeg` compares
+  `process_request_bytes` vs `process_request_bytes_with_warnings` byte-for-byte,
+  but `generate_structured_com_marker` (`src/protected/metadata_trap/notice.rs`)
+  embeds `SystemTime::now()` seconds, so back-to-back calls straddling a second
+  boundary differ. Reproduces on demand by looping the single test
+  (failed on iteration 5 locally). No file touched by this plan generates that
+  marker; left as a known issue for a future plan.
