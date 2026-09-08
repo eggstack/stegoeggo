@@ -53,4 +53,4 @@ Test helpers (not production): `src/bin/stegoeggo-conformance.rs`
 
 ## Final commit
 
-Recorded on push (see git log for plan 085 commit SHA).
+`621769247c9ae5193afe6f117e25c4fa603ec245` — plan 085: container observer and resource-accounting reuse.
