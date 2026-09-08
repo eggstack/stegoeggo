@@ -1908,3 +1908,316 @@ fn test_batch_duplicate_stems_with_file_output_exits_config() {
         String::from_utf8_lossy(&result.stderr)
     );
 }
+
+#[test]
+fn test_batch_parallel_jobs_produce_same_outputs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input_dir = tmp.path().join("input");
+    let out_seq = tmp.path().join("out_seq");
+    let out_par = tmp.path().join("out_par");
+    fs::create_dir(&input_dir).unwrap();
+
+    for i in 0..3 {
+        create_test_png(&input_dir.join(format!("img_{}.png", i)));
+    }
+
+    let seq = Command::new(cli_bin())
+        .arg(&input_dir)
+        .arg("-o")
+        .arg(&out_seq)
+        .arg("-s")
+        .arg("42")
+        .arg("-j")
+        .arg("1")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        seq.status.success(),
+        "Sequential batch should succeed: {}",
+        String::from_utf8_lossy(&seq.stderr)
+    );
+
+    let par = Command::new(cli_bin())
+        .arg(&input_dir)
+        .arg("-o")
+        .arg(&out_par)
+        .arg("-s")
+        .arg("42")
+        .arg("-j")
+        .arg("4")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        par.status.success(),
+        "Parallel batch should succeed: {}",
+        String::from_utf8_lossy(&par.stderr)
+    );
+
+    let seq_count = fs::read_dir(&out_seq).unwrap().count();
+    let par_count = fs::read_dir(&out_par).unwrap().count();
+    assert_eq!(seq_count, 3, "Sequential should produce 3 files");
+    assert_eq!(par_count, 3, "Parallel should produce 3 files");
+
+    for i in 0..3 {
+        let seq_bytes = fs::read(out_seq.join(format!("img_{}_protected.png", i))).unwrap();
+        let par_bytes = fs::read(out_par.join(format!("img_{}_protected.png", i))).unwrap();
+        assert_eq!(
+            seq_bytes, par_bytes,
+            "Same seed must produce identical bytes for img_{} across job counts",
+            i
+        );
+    }
+}
+
+#[test]
+fn test_verify_json_schema() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output_dir = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let protect = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output_dir)
+        .arg("-s")
+        .arg("42")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(protect.status.success());
+
+    let protected = output_dir.join("input_protected.png");
+    let verify = Command::new(cli_bin())
+        .arg(&protected)
+        .arg("--verify")
+        .arg("--json")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(verify.status.success());
+    let stdout = String::from_utf8_lossy(&verify.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(json.get("schema_version").unwrap(), 1);
+    assert_eq!(json.get("status").unwrap(), "ok");
+    assert!(json.get("stego_status").is_some(), "Must have stego_status");
+    assert!(
+        json.get("evidence_strength").is_some(),
+        "Must have evidence_strength"
+    );
+}
+
+#[test]
+fn test_explicit_hidden_marker_best_effort_with_policy() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--rights-policy")
+        .arg("prohibited-ai-ml-training")
+        .arg("--hidden-marker")
+        .arg("best-effort")
+        .arg("--json")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        result.status.success(),
+        "Explicit hidden-marker + policy should succeed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let report = json.get("report").expect("Should have report");
+    assert_eq!(
+        report.get("stego_attempted").unwrap(),
+        true,
+        "best-effort must attempt stego"
+    );
+}
+
+#[test]
+fn test_hidden_marker_with_level_explicit_is_config_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--level")
+        .arg("light")
+        .arg("--hidden-marker")
+        .arg("best-effort")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        !result.status.success(),
+        "Combining --level and --hidden-marker should fail"
+    );
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "Must exit 2 (config), got {:?}",
+        result.status.code()
+    );
+}
+
+#[test]
+fn test_metadata_false_with_preset_is_config_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("legal-notice")
+        .arg("--metadata")
+        .arg("false")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        !result.status.success(),
+        "--metadata false with --preset legal-notice should fail"
+    );
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "Must exit 2 (config), got {:?}",
+        result.status.code()
+    );
+}
+
+#[test]
+fn test_key_from_env_var() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let protected = tmp.path().join("protected.png");
+
+    create_test_png(&input);
+
+    let key = "deadbeef01234567deadbeef01234567";
+    let protect = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&protected)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("authenticated-provenance")
+        .env("STEGOEGGO_KEY", key)
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        protect.status.success(),
+        "Protect with env key should succeed: {}",
+        String::from_utf8_lossy(&protect.stderr)
+    );
+
+    let verify = Command::new(cli_bin())
+        .arg(&protected)
+        .arg("--verify")
+        .env("STEGOEGGO_KEY", key)
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(verify.status.success());
+}
+
+#[test]
+fn test_key_from_stdin() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let mut child = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--key")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn CLI");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"deadbeef01234567deadbeef01234567\n")
+        .unwrap();
+    let out = child.wait_with_output().expect("Failed to wait");
+    assert!(
+        out.status.success(),
+        "Stdin key should succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn test_authenticated_preset_with_key_reports_hmac() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out");
+
+    create_test_png(&input);
+
+    let key = "deadbeef01234567deadbeef01234567";
+    let result = Command::new(cli_bin())
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("-s")
+        .arg("42")
+        .arg("--preset")
+        .arg("authenticated-provenance")
+        .arg("--key")
+        .arg(key)
+        .arg("--json")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        result.status.success(),
+        "Authenticated preset with key should succeed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let report = json.get("report").expect("Should have report");
+    assert_eq!(
+        report.get("stego_attempted").unwrap(),
+        true,
+        "Authenticated preset must attempt stego"
+    );
+    assert_eq!(
+        report.get("stego_succeeded").unwrap(),
+        true,
+        "Authenticated preset must succeed stego on 64x64"
+    );
+}

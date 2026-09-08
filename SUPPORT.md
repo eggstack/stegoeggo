@@ -87,6 +87,11 @@ The default feature set is empty (`default = []`).
 
 ## CLI Installation
 
+The shipped CLI uses default features only (no `iscc`/`conformance`/`parallel`
+root features, no direct `image` dependency). The `signatures` feature adds
+`stegoeggo/signatures` + `stegoeggo/detached-manifest` for `keygen`/`sign`/
+`verify-manifest`.
+
 ### From crates.io
 
 ```

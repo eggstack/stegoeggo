@@ -94,6 +94,29 @@ The legacy `--dmi` and `--tdm-reserved` options are also retained for compatibil
 
 The CLI also accepts convenience flags such as `--no-ai-training` and `--no-genai-training`, but `--rights-policy` is the clearest interface for new scripts. Contradictory policy options are rejected rather than silently choosing one.
 
+## Precedence contract
+
+All protect modes (single-file, batch, dry-run, JSON) share one canonical
+`ProtectionRequest` builder. Legacy flags are translation syntax.
+
+1. Explicit modern flags win when they directly specify a field.
+2. Legacy flags translate only when the equivalent modern field was not explicitly supplied.
+3. Contradictory explicit combinations fail with exit code 2.
+4. Defaults apply once, after explicitness is known.
+
+| Field | Modern (wins) | Legacy (translates when modern absent) |
+|---|---|---|
+| Policy | `--rights-policy` | `--dmi`, `--no-ai-training`, `--no-genai-training`, `--tdm-reserved` |
+| Channels | `--preset` or `--hidden-marker` + `--authentication` | `--level`, `--profile` |
+
+Conflicting combinations exit 2: `--preset` with `--level`/`--profile`;
+`--preset` with `--hidden-marker`/`--authentication`;
+`--hidden-marker`/`--authentication` with explicit `--level`/`--profile`;
+contradictory `--rights-policy`/`--dmi`/shorthands; `--metadata false` with legal
+fields or a metadata-injecting preset; HMAC without a key; HMAC with
+`--hidden-marker disabled`. Omitted `--dmi` and `--dmi auto` are equivalent;
+explicit `--dmi unspecified` is distinct from the `standard` default.
+
 ## Evidence presets
 
 A policy says **what use is allowed or prohibited**. A preset says **which technical evidence channels to use**. They are intentionally separate.
@@ -129,3 +152,27 @@ Without a MAC key, hidden-payload integrity uses non-cryptographic checks intend
 | 5 | `EXIT_INTERNAL` | Internal or unexpected error |
 
 The `--verify` flag always exits 0; use output text to determine protection state, not the process exit code.
+
+## v1 removal inventory
+
+No 0.x flag is removed. Candidates for removal at v1.0.0:
+
+Deprecated syntax with exact modern replacement:
+
+| Legacy flag | Modern replacement |
+|---|---|
+| `--level disabled` / `light` / `standard` | `--preset` + `--hidden-marker` (Disabled / BestEffort; `light` SeedOnly has no modern CLI equivalent) |
+| `--profile legal-notice` / `legal-notice-stego` / `authenticated-provenance` / `maximal` | `--preset` with the same value |
+| `--dmi ...` | `--rights-policy ...` |
+| `--no-ai-training` | `--rights-policy prohibited-ai-ml-training` |
+| `--no-genai-training` | `--rights-policy prohibited-generative-ai-training` |
+| `--tdm-reserved` | `--rights-policy prohibited-see-constraints` (already deprecated) |
+| `--metadata`, `--legal-claims` | `ProtectionChannels` in `ProtectionRequest` |
+
+Compatibility behavior that must remain for reading old images: legacy DMI/TDM
+metadata parsing, payload v1/v2 extraction, `--verify` output fields.
+
+Stable current syntax that carries forward: `--rights-policy`, `--preset`,
+`--hidden-marker`, `--authentication`, `--dry-run`, `--json`, `--key`
+(hex/`@file`/`-`/env), `--jobs`, `--strict`, `keygen`/`sign`/`verify-manifest`
+under `signatures`.

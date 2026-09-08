@@ -84,6 +84,33 @@ The level/context async and parallel wrappers remain functional but are compatib
 
 Legacy helpers translate once via `request_from_legacy()` into `ProtectionRequest` and delegate to the canonical path. New processing features must be expressed in `ProtectionRequest` / `ProcessingOptions` / `ProtectionChannels` first.
 
+## CLI v1 removal inventory (Plan 087)
+
+No 0.x CLI flag is removed. Candidates for removal at v1.0.0:
+
+Deprecated syntax with exact modern replacement:
+
+| Legacy CLI flag | Modern replacement |
+|-----------------|-------------------|
+| `--level` | `--preset` + `--hidden-marker` |
+| `--profile` | `--preset` |
+| `--dmi` | `--rights-policy` |
+| `--no-ai-training` | `--rights-policy prohibited-ai-ml-training` |
+| `--no-genai-training` | `--rights-policy prohibited-generative-ai-training` |
+| `--tdm-reserved` | `--rights-policy prohibited-see-constraints` (already deprecated) |
+| `--metadata`, `--legal-claims` | `ProtectionChannels` via `ProtectionRequest` |
+
+Compatibility behavior that must remain for reading old protected images (not
+removal candidates): legacy DMI/TDM metadata parsing, payload v1/v2 extraction,
+`--verify` human/JSON output fields.
+
+Stable current syntax that carries forward: `--rights-policy`, `--preset`,
+`--hidden-marker`, `--authentication`, `--dry-run`, `--json`, `--key`
+(hex/`@file`/`-`/env `STEGOEGGO_KEY`), `--jobs`, `--strict`, and the
+`signatures`-gated `keygen`/`sign`/`verify-manifest` subcommands.
+
+See `docs/cli-usage.md` for the precedence contract.
+
 ## Policy
 
 - Deprecated APIs are still functional and tested

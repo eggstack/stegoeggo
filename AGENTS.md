@@ -9,7 +9,7 @@
 Four workspace members:
 - `.` — Main library crate (`stegoeggo`) + conformance harness binary (`stegoeggo-conformance`)
 - `stegoeggo-stego/` — Generic carrier crate (`stegoeggo-stego`) with application-neutral LSB and JPEG DCT mechanics
-- `stegoeggo-cli/` — CLI binary (`stegoeggo` binary name), entry point at `stegoeggo-cli/src/main.rs`
+- `stegoeggo-cli/` — CLI binary (`stegoeggo` binary name), orchestration at `stegoeggo-cli/src/main.rs` plus private modules `args`, `request`, `protect`, `verify`, `output`, `keys`, `manifest`
 - `fuzz/` — Fuzz harnesses (12 targets, requires `cargo-fuzz` + nightly)
 
 ## Build & Test Commands
@@ -97,7 +97,7 @@ Rust **1.87** (declared in `Cargo.toml` and `stegoeggo-stego/Cargo.toml`). Toolc
 
 Feature-gated tests: `tests/async_integration.rs` requires `async`.
 The conformance binary (`stegoeggo-conformance`) requires the `conformance` feature.
-The CLI binary enables `iscc`, `conformance`, and `parallel` via its exact-version `stegoeggo` dependency, even though none are default features of the library.
+The CLI binary uses `stegoeggo` default features only; its `signatures` feature enables `stegoeggo/signatures` + `stegoeggo/detached-manifest`. It does not enable root `iscc`/`conformance`/`parallel` and has no direct `image` dependency (see `architecture/cli.md` for the audited dependency table).
 
 ## Deprecated API Surfaces
 
@@ -127,9 +127,9 @@ Not deprecated (do not migrate away): `VerificationStatus` — still the return 
 - **Application JPEG verification is single-decode per operation** — standard probing plus tiled fallback share one hidden `JpegSearchContext` (private fields, no coefficient types in signatures); never reintroduce per-redundancy `jpeg_extract` calls in `dct_candidates`. Tiled JPEG embed self-checks against in-memory mutated coefficients (1 decode + 1 encode), never by re-decoding output
 - **Raster preflight is header-only** — non-JPEG dimension gating uses `into_dimensions()` only; the executor owns the single full decode. Same-format metadata-only performs zero pixel decodes
 - **`#[serde(skip)]` on `config` field** — MAC keys and legal metadata are lost in serde roundtrips
-- **CLI unified path** — The CLI always routes through `ProtectionRequest`. `--dmi auto` and omitted `--dmi` are equivalent. Mixed conflicting policy options are configuration errors (exit code 2)
+- **CLI unified path** — The CLI always routes through `ProtectionRequest` via one builder (`request::build_protection_request_with_explicit_options`) shared by single/batch/dry-run/JSON. `--dmi auto` and omitted `--dmi` are equivalent. Mixed conflicting policy options are configuration errors (exit code 2)
 - **CLI exit codes** — General commands use `0`=ok, `1`=error, `2`=config, `3`=integrity, `5`=internal. `verify-manifest` additionally uses `4` for a cryptographically verified but untrusted manifest. `--verify` always exits 0; use output text to determine protection state, not exit code
-- **CLI new-style flags** — `--rights-policy`, `--preset`, `--hidden-marker`, `--authentication` route through canonical `ProtectionRequest`. `--preset` cannot combine with `--level`/`--profile`. `--rights-policy` replaces `--dmi`. `--dry-run` prints the resolved plan without processing
+- **CLI new-style flags** — `--rights-policy`, `--preset`, `--hidden-marker`, `--authentication` route through canonical `ProtectionRequest`. `--preset` cannot combine with `--level`/`--profile`. `--hidden-marker`/`--authentication` cannot combine with explicit `--level`/`--profile`. `--metadata false` cannot combine with legal fields or metadata-injecting presets. `--rights-policy` replaces `--dmi`. `--dry-run` prints the resolved plan without processing
 - **CLI subcommands (feature: `signatures`)** — `keygen`, `sign`, `verify-manifest` are feature-gated. `verify-manifest` accepts `--payload-key` for HMAC verification. `--json` enables machine-readable output
 - **No `test-seeds` in production CLI** — `test-seeds` is test infrastructure only, never in production binary
 - **F5 seed Q-table edge case** — `embed_seed_in_quantization_tables()` fails if any quantization value in the first 2 tables is < 2

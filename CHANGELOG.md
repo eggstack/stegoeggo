@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `strip_stego_owned_webp` RIFF size rewrite uses `u32::try_from` and returns `Error::Metadata` on overflow (was silent truncation via `as u32`)
 
 ### Changed
+- CLI contract consolidation (Plan 087): `stegoeggo-cli/src/main.rs` decomposed into private modules (`args`, `request`, `protect`, `verify`, `output`, `keys`, `manifest`); single/batch/dry-run/JSON share one canonical `ProtectionRequest` builder with a documented modern-vs-legacy precedence table; explicit `--hidden-marker`/`--authentication` with explicit `--level`/`--profile` and `--metadata false` with metadata-injecting presets now fail with exit code 2 instead of silently weakening protection
+- CLI dependency trim: default build no longer enables root `iscc`/`conformance`/`parallel` features and drops the direct `image` dependency (verbose-only); production deps are `clap`, `stegoeggo` (default features), `rayon` (error-tolerant batch), `hex`, `serde`/`serde_json`, `tempfile`
 - Documentation audit pass: all 30 `architecture/` deep-dives re-verified against source (24 corrected); `AGENTS.md` now carries a complete architecture doc index; agent skills refreshed (verification type surface, plan numbering, stale discrepancy claims removed)
 - `docs/cli-usage.md`: removed nonexistent exit code 4 (`EXIT_TRUST`) — the CLI defines exit codes 0, 1, 2, 3, and 5 only
 - `DEPRECATIONS.md`: removed incorrect `VerificationStatus` deprecation row (it remains a live API) and the nonexistent `compute_iscc_detailed()`; added rows for `with_legal_claims()`, `compute_iscc_with_metadata()`, and `compute_iscc_from_bytes()`

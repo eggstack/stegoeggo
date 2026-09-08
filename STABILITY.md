@@ -110,6 +110,12 @@ The `verify-manifest` subcommand returns structured `ManifestVerification` resul
 
 Both `sign` and `verify-manifest` use `DetachedManifest::from_json_with_limits` with `ResourceLimits::default()` instead of raw `serde_json::from_slice`, enforcing bounded parsing of manifest JSON.
 
+### CLI Request Contract
+
+All protect modes share one canonical `ProtectionRequest` builder with explicit
+modern-vs-legacy precedence (modern wins, legacy translates only when modern
+absent, contradictions exit 2). See `docs/cli-usage.md` and `architecture/cli.md`.
+
 ## Machine-Readable Schemas
 
 The following output formats are stable and can be consumed by tooling.
