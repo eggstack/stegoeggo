@@ -40,7 +40,7 @@ impl JpegTranscoder {
 Two paths:
 
 - **`assemble_jpeg`** (when `original_jpeg` is `None`): Rebuilds JPEG from parsed header fields. Preserves APP0, APP1, COM markers from header. Drops unknown segments (APP2, APP13, APP14, DRI, etc.). Used only for non-original round-trip canonicalization.
-- **`encode_coefficients_preserving`** (when `original_jpeg` is `Some`): Walks the original byte stream, replacing only DQT markers and SOS scan data. All other segments preserved verbatim in original order. Used for all DCT embedding output (success path and capacity-downgrade fallback).
+- **`encode_coefficients_preserving`** (when `original_jpeg` is `Some`): Walks the original byte stream, replacing only DQT markers and SOS scan data. All other segments preserved verbatim in original order. Used for all DCT embedding output: the strict success path, and the best-effort path (redundancy-downgraded payload or seed-hint-only carrier with `embedded == false`). Strict insufficient capacity emits no output.
 
 The DCT success path always uses `encode_coefficients_preserving` (the `Some(original_jpeg)` path) for both roundtrip verification and final output. `assemble_jpeg` is never reachable from the normal original-JPEG DCT success path.
 
@@ -145,8 +145,13 @@ pub enum TranscoderError {
     HuffmanEncode(String),
     Io(std::io::Error),
     EmbeddingFailed(String),
+    InsufficientHintCapacity { required: usize, available: usize },
 }
 ```
+
+`InsufficientHintCapacity` is returned in hint-bit units by the transactional Q-table
+seed-hint preflight before any table is mutated; the public `jpeg::embed_seed_hint`
+maps it to `StegoError::InsufficientCapacity`.
 
 ## Canonical Huffman Construction
 

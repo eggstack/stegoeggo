@@ -307,7 +307,7 @@ See `RELEASING.md` for the complete procedure.
 - `SUPPORT.md` — Support matrix
 - `STABILITY.md` — Stability tiers
 - `RELEASING.md` — Manual publication procedure
-- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why. Next plan number: 090+
+- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why. Next plan number: 098+
 - `examples/` — Four runnable examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) referenced by `docs/rust-api.md`; keep them compiling when changing public APIs
 - `docs/` — User-facing guides: `cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`
 - `architecture/` — 31 architecture documents, verified against source; indexed in the table above and in `architecture/overview.md`

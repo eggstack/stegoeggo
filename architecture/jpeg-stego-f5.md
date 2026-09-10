@@ -1,8 +1,13 @@
 # F5 DCT Steganography
 
-**Source:** `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs` (~1020 lines)
+**Source:** `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs` (~1350 lines)
 
 F5-style steganographic embedding in JPEG DCT coefficients. The most sophisticated protection layer.
+
+This is an F5-inspired no-zero-coefficient StegoEggo variant, not an implementation of
+conventional F5; no interoperability with other F5 implementations is claimed.
+Carrier capacity is eligible AC coefficients with `|coef| >= 2` after canonicalization,
+not all non-zero AC coefficients.
 
 ## DctStegoF5
 
@@ -25,7 +30,19 @@ Embeds 12 bytes in quantization table LSBs when the tables are preserved:
 
 ### Q-Table Edge Case
 
-Clears quantization table LSBs with `&= 0xFE`. A quantization value of 1 would become 0 (invalid in JPEG), so those positions are skipped instead. Seed embedding can still fail to recover every bit if too many values are 1 and there are not enough usable positions.
+Clears quantization table LSBs with `&= 0xFE`. Positions holding values below 2 are
+skipped: setting the LSB of a value of 1 would change it to 0 (invalid in JPEG), and a
+position holding 0 could flip to 1, both corrupting the Q-table.
+
+The write is transactional. `qtable_hint_capacity` counts exactly the eligible positions
+(values `>= 2` across tables 0..2, in the same order the extractor reads) before any
+table is mutated, and fewer than `SEED_HINT_BITS` (96: 32 bits of `SEED` magic plus 64
+seed bits) returns `TranscoderError::InsufficientHintCapacity { required: 96, available }`
+without mutating the header. A successful return implies the paired extractor recovers
+the seed from the mutated header. The public `jpeg::embed_seed_hint` maps the hint error
+to `StegoError::InsufficientCapacity` in hint-bit units; payload embedding paths attempt
+the hint on a best-effort basis via `try_write_seed_hint` so a short table never fails an
+otherwise successful payload embed and no unrecoverable partial hint is written.
 
 **Recommendation:** Use quantization values >= 2 for reliable seed embedding.
 
@@ -40,19 +57,27 @@ pub fn extract_f5(&self, coefficients: &Coefficients, expected_bits: usize, seed
 
 ### F5 Algorithm
 
-1. Use `DctCoefficientRng` (private tuple struct, distinct from `PixelSelectionRng` in the root crate) to generate a permutation of coefficient positions
-2. For each payload bit:
-   - Find next non-zero coefficient
-   - Modify LSB to match payload bit
-   - Handle shrinkage (when modification creates zero)
+1. Canonicalize AC coefficients into the encoder's representable range (±1023), skipping DC (position 0)
+2. Collect eligible carrier positions — AC coefficients with `|coef| >= 2` — in deterministic component/block order, then shuffle with `DctCoefficientRng` (private tuple struct, distinct from `PixelSelectionRng` in the root crate)
+3. For each payload bit (repeated `redundancy` times):
+   - If LSB matches target, keep the coefficient
+   - If LSB mismatches, flip it without creating zero (see no-zero variant below)
 
 ### No-Zero Variant
 
-When |coef| ≤ 2 and LSB mismatches (to avoid creating zeros or near-zero values):
-- **Standard F5:** Would decrement to 0 (shrinkage — detectable pattern)
-- **No-zero variant:** For |coef| ≤ 2, sets to ±3; for larger values, decrements absolute value
+When |coef| == 2 and LSB mismatches (to avoid creating zeros or near-zero values):
+- **Standard F5:** Would decrement to 0 or ±1 (shrinkage — detectable pattern)
+- **No-zero variant:** For |coef| <= 2, sets to ±3; for larger values, decrements absolute value
 
-This avoids detectable zero creation. The embed/extract position alignment is preserved because no coefficient is ever zeroed out.
+This avoids detectable zero creation and keeps the carrier set stable after embedding,
+since no selected coefficient drops below magnitude 2. The embed/extract position
+alignment is preserved because no coefficient is ever zeroed out.
+
+### Strict vs Best-Effort (Public Boundary)
+
+The F5 mechanics above are shared by both public contracts in `stegoeggo-stego/src/jpeg.rs`:
+- **Strict** (`embed_strict`/`embed_framed_strict`) — the requested redundancy must fit exactly; insufficient capacity returns `StegoError::InsufficientCapacity` with no carrier output, no redundancy reduction, and no seed-only degradation. Empty payloads are rejected with `InvalidConfig`.
+- **Best-effort** (`embed`/`embed_framed`) — compatibility behavior that selects the largest feasible redundancy up to the configured value and emits a quantization-table seed-hint carrier with `embedded == false` when no payload fits. This is the established StegoEggo application policy, explicitly owned by the parent.
 
 ### Redundancy and Majority Voting
 
@@ -118,5 +143,7 @@ the tile grid itself is the redundancy.
   `TiledJpegSearch` context, decodes coefficients once, and evaluates all
   bounded candidates against its retained private state; the root crate never
   receives JPEG headers, coefficient maps, or F5 state.
-- Tiled embedding records a successful tile, encodes once, then decodes the
-  encoded output and verifies that tile's payload before reporting `Embedded`.
+- Tiled embedding records a successful tile, encodes once, then self-checks that tile's
+  payload against the already-mutated in-memory coefficients (one decode + one encode,
+  never a re-decode of the output) before reporting `Embedded`. Tiled embedding is
+  exact: fixed redundancy 1, no redundancy reduction, no seed-only fallback.
