@@ -6,10 +6,12 @@ Baseline: `2bb496e1af8c75495b1ae630522c3afd48adfb45`
 
 Additional closure dependency: Plan 089 (`plans/089-fuzz-assurance-corrective-closure.md`) must be complete with green fuzz workflow evidence before Roadmap 081 can be marked complete.
 
-Plan 089 is being tracked in `plans/089-status.md`; manual run `34504708983`
-is green, while scheduled-equivalent run `34504712007` found a fuzz
-regression now under correction. Its green recheck and required-CI run IDs
-must be mirrored here before this plan or Roadmap 081 is closed.
+Plan 089 is tracked and complete in `plans/089-status.md`: manual run
+`34506783317`, scheduled-equivalent recheck `34506785941`, and required
+`CI / Check` `34506386814` are green on `6cf2d93`. The earlier
+scheduled-equivalent run `34504712007` found the malformed-JPEG regression
+that was fixed. This plan and Roadmap 081 remain open for their independent
+closure work.
 
 ## Required evidence
 

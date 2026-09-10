@@ -1,6 +1,6 @@
 # Plan 089 Status: Fuzz Assurance Corrective Closure
 
-Status: IN PROGRESS — FUZZ REGRESSION FIXED; REMOTE RECHECK PENDING
+Status: COMPLETE
 
 Baseline: `f7c397eceda4ec6922ce7444ff0e4559e6114497`
 
@@ -22,7 +22,7 @@ Failed assurance evidence: GitHub Actions Fuzz run `34340957485` (scheduled), `m
 - [x] `metadata_merge` executes a short smoke successfully
 - [x] parser/pipeline representative smokes execute successfully
 - [x] manual-dispatch fuzz workflow evidence is green
-- [ ] scheduled-equivalent 3-target smoke workflow evidence is green
+- [x] scheduled-equivalent 3-target smoke workflow evidence is green
 - [x] required push/PR CI remains unchanged
 - [x] `./scripts/check.sh` passes
 - [x] `plans/086-status.md` receives concise corrective evidence
@@ -71,17 +71,22 @@ Record here:
   `CARGO_PROFILE_RELEASE_LTO=false`; `metadata_merge`,
   `payload_v3_parser`, and `pipeline_bytes` each completed a one-run
   libFuzzer smoke. `./scripts/check.sh` passed.
-- Manual workflow run ID/result: `34504708983` — green on `7c5d149` after the
-  toolchain-action correction; `metadata_merge` built and completed the
-  bounded run.
-- Scheduled-equivalent smoke run ID/result: `34504712007` — reached execution
-  on `7c5d149` but failed on the newly discovered `pipeline_bytes` panic;
-  artifact downloaded and reproduced locally, then fixed. A green recheck is
-  required before closure.
-- Required CI run/result after the correction: pending final push.
-- Implementation commit SHA: pending final merge to `main`.
-- Plan 086 and Plan 088 ledger reconciliation: recorded locally; final remote
-  run IDs will be mirrored into both ledgers before this plan is closed.
+- Manual workflow run ID/result: `34506783317` — green on `6cf2d93`;
+  `metadata_merge` built and completed the bounded run.
+- Initial scheduled-equivalent smoke run ID/result: `34504712007` — reached
+  execution on `7c5d149` but failed on the newly discovered `pipeline_bytes`
+  panic; artifact downloaded and reproduced locally, then fixed.
+- Scheduled-equivalent smoke recheck ID/result: `34506785941` — green on
+  `6cf2d93`; the rotating subset was `metadata_merge`, `payload_v3_parser`,
+  and `pipeline_bytes`, with 120 seconds per target and no crash artifacts.
+- Required CI run/result after the correction: `34506386814` — success on
+  `6cf2d93` (`CI / Check`).
+- Implementation commit SHA: `6cf2d93` (final merge on `main`; this ledger
+  closure is the follow-up commit).
+- Plan 086 and Plan 088 ledger reconciliation: both record the failed
+  discovery run, regression fix, and final green manual, scheduled-equivalent,
+  and required-CI run IDs. Roadmap 081 remains open; Plan 088's independent
+  timestamp and architecture closure work is still incomplete.
 
 ## Closure rule
 
