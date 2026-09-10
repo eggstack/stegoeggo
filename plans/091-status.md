@@ -99,4 +99,5 @@ Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this
 
 - Source re-audited against all acceptance criteria: transactional 96-bit hint preflight (`qtable_hint_capacity` + `InsufficientHintCapacity` before mutation), strict `embed_strict`/`embed_framed_strict` (exact redundancy, no output on shortage, no seed fallback), best-effort `embed`/`embed_framed` retained as the explicit parent compatibility path, tiled exactness (redundancy 1, in-memory self-check), `|coef| >= 2` capacity units, F5-variant non-interop wording, progressive/multiscan rejection stability.
 - Doc corrections: `architecture/jpeg-stego-f5.md` (transactional hint section, `|coef| >= 2` carrier set, strict/best-effort boundary, in-memory tiled self-check, line count); `architecture/jpeg-transcoder.md` (`InsufficientHintCapacity` error, strict vs best-effort encode outputs). README, AGENTS.md, skills, `docs/carrier-crate.md`, and `architecture/protected-steganography.md` already stated the 091 contract; no changes needed there.
-- `./scripts/check.sh` re-run during this pass; result recorded in the closing commit message.
+- `./scripts/check.sh` re-run during this pass (exit 0).
+- Remote CI (`CI` / `Check`, run `34537183564`): success on `c168500` (2026-09-10).
