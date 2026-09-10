@@ -760,6 +760,12 @@ impl super::RightsMetadataProtector {
                 )));
             }
             let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
+            if segment_len < 2 {
+                return Err(Error::ImageTruncated(format!(
+                    "JPEG segment at byte {} has invalid length {}",
+                    pos, segment_len
+                )));
+            }
             let segment_end = pos
                 .checked_add(2)
                 .and_then(|v| v.checked_add(segment_len))
