@@ -1,6 +1,6 @@
 # Plan 097 Status
 
-Status: IMPLEMENTED (pending final integrated verification)
+Status: COMPLETE
 
 Baseline: `27bdd3d429d663948021de43d3e6f818fa613319`
 Depends on: Plans 091-096.
@@ -111,3 +111,5 @@ Depends on: Plans 091-096.
 
 Record final `./scripts/check.sh` result and implementation commit SHA here
 during closure. No crates.io publish is authorized by this plan alone.
+
+Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this ledger closure is the follow-up commit).

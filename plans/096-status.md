@@ -1,6 +1,6 @@
 # Plan 096 Status
 
-Status: IMPLEMENTED (pending final integrated verification)
+Status: COMPLETE
 
 Baseline: `27bdd3d429d663948021de43d3e6f818fa613319`
 Depends on: Plans 091-095 as applicable.
@@ -92,3 +92,5 @@ Depends on: Plans 091-095 as applicable.
 
 Record final `./scripts/check.sh` result and implementation commit SHA here
 during closure.
+
+Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this ledger closure is the follow-up commit).

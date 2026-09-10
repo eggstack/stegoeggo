@@ -1,6 +1,6 @@
 # Roadmap 090 Status
 
-Status: IMPLEMENTED (pending final integrated verification)
+Status: COMPLETE
 
 Audited baseline: `27bdd3d429d663948021de43d3e6f818fa613319`
 
@@ -37,3 +37,5 @@ metadata bytes (Plan 096). No branch-protection change made (docs made
 truthful instead). No crates.io publish performed.
 
 Update this file from child status ledgers and integrated source/test evidence. Do not mark the roadmap complete from plan text or agent reports alone.
+
+Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this ledger closure is the follow-up commit).

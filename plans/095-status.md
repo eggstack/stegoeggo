@@ -1,6 +1,6 @@
 # Plan 095 Status
 
-Status: IMPLEMENTED (pending final integrated verification)
+Status: COMPLETE
 
 Baseline: `27bdd3d429d663948021de43d3e6f818fa613319`
 Depends on: Plans 092 and 093.
@@ -70,3 +70,5 @@ Depends on: Plans 092 and 093.
 Record exact invalid-geometry cases, equivalence fixtures, measured
 allocation disposition, final `./scripts/check.sh`, and implementation
 commit SHA here during closure.
+
+Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this ledger closure is the follow-up commit).
