@@ -105,3 +105,4 @@ Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this
   plus v1 getter direction). README, AGENTS.md, skills, and
   `DEPRECATIONS.md` already stated the 092 contract; no changes needed there.
 - `./scripts/check.sh` re-run during this pass (exit 0).
+- Remote CI (`CI` / `Check`, run `34539617952`): success on `c2638ac` (2026-09-10).
