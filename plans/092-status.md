@@ -74,3 +74,34 @@ Record final `./scripts/check.sh` result and implementation commit SHA here
 during closure.
 
 Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this ledger closure is the follow-up commit).
+
+## Re-verification (2026-09-10)
+
+- Source re-audited against all acceptance criteria: validated `Redundancy`
+  primitive (`MIN`/`MAX`, `new`/`from_usize`, `Copy`, no `Deref`) as the
+  recommended config primitive; `from_redundancy`/`with_redundancy_value`/
+  `redundancy_value` on both configs; infallible `with_redundancy` retains
+  exact legacy debug-assert/release-clamp behavior as a documented
+  constant-only compatibility builder (no `#[deprecated]` attribute: first-
+  party tests/benches/examples/docs use it with validated constants only,
+  and attribute deprecation would fail `-D warnings`); parent production
+  paths use `try_new` (verified by workspace grep); `TileConfig` keeps its
+  fallible private-field shape with JPEG multiple-of-8/minimum-8 validation
+  at the operation boundary; distinct-method strict/best-effort split from
+  Plan 091 is the explicit JPEG capacity policy (no policy enum or boolean
+  needed); `EmbedReport` + `StegoError` is the recommended 0.x generic
+  result (public fields frozen through 0.x, private-fields-plus-getters at
+  the v1 boundary) with `into_output`/`into_parts`/`capacity` helpers and
+  `InPlaceEmbedReport` vocabulary parity; `EmbedOutcome` family retained as
+  documented parent-owned application vocabulary; capacity units exact
+  (`|coef| >= 2`, RGB slots, 96 hint-bit positions); zero seeds valid with
+  round-trip tests on both carriers; no generic `Carrier` trait added.
+- Doc corrections in this pass: carrier README double-`?` typo in the
+  `from_redundancy` example; `EmbedReport` rustdoc (frozen-public-fields
+  through 0.x, v1 getter direction); `architecture/protected-steganography.md`
+  (`with_redundancy` compatibility-builder wording, `EmbedReport` freeze
+  note); `docs/carrier-crate.md` (debug-assert/release-clamp adapter
+  wording); `STABILITY.md` (`EmbedReport`/`InPlaceEmbedReport` field-freeze
+  plus v1 getter direction). README, AGENTS.md, skills, and
+  `DEPRECATIONS.md` already stated the 092 contract; no changes needed there.
+- `./scripts/check.sh` re-run during this pass (exit 0).

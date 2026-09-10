@@ -103,10 +103,11 @@ impl CapacityReport {
 /// placed in the carrier; for framed operations it includes the frame
 /// header and CRC32 overhead.
 ///
-/// This is the recommended generic result surface: private-state evolution
-/// happens through additive constructors and helpers rather than new
-/// public fields, and failures are reported with [`StegoError`] instead of
-/// sentinel reports.
+/// This is the recommended generic result surface for 0.x: public fields are
+/// frozen through 0.x (no new public fields will be added), evolution happens
+/// through additive helpers, and failures are reported with [`StegoError`]
+/// instead of sentinel reports. At the v1 boundary the fields become private
+/// behind getters for semver-safe evolution.
 #[derive(Debug, Clone)]
 pub struct EmbedReport<T = Vec<u8>> {
     /// Whether the payload was embedded.

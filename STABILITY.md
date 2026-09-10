@@ -46,10 +46,13 @@ framed (`embed_framed`/`extract_framed`), prepared JPEG reuse
 `extract_tiled`, `embed_tiled_framed`, `extract_tiled_framed`) operations
 over LSB and JPEG carriers, with `Redundancy`, `LsbConfig`, `JpegConfig`,
 `TileConfig`, `MAX_TILED_ORIGINS`, `StegoError`, and the capacity/embed
-report types. `jpeg::embed`/`embed_framed` remain best-effort
-compatibility operations (redundancy reduction plus seed-hint
-degradation); `EmbedOutcome`/`EmbedStatus`/`EmbedPath` are parent-owned
-application vocabulary retained through 0.x.
+ report types. `jpeg::embed`/`embed_framed` remain best-effort
+ compatibility operations (redundancy reduction plus seed-hint
+ degradation); `EmbedOutcome`/`EmbedStatus`/`EmbedPath` are parent-owned
+ application vocabulary retained through 0.x. `EmbedReport` and
+ `InPlaceEmbedReport` public fields are frozen through 0.x (no new public
+ fields will be added); the v1 boundary moves them to private fields plus
+ getters for semver-safe evolution.
 
 | Item | Module |
 |------|--------|

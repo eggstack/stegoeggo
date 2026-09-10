@@ -52,7 +52,7 @@ for seed hints.
 `Redundancy` is the recommended validated redundancy primitive with
 identical semantics in every build profile; `LsbConfig`/`JpegConfig` gain
 `from_redundancy`, `with_redundancy_value`, and `redundancy_value` over
-it. For untrusted configuration values, `LsbConfig::try_new`, `LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and `JpegConfig::try_with_redundancy` return `StegoError::InvalidConfig` instead of panicking on out-of-range redundancy. The original `with_redundancy` builder is retained for compile-time-constant values. Zero seeds are valid.
+it. For untrusted configuration values, `LsbConfig::try_new`, `LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and `JpegConfig::try_with_redundancy` return `StegoError::InvalidConfig` instead of panicking on out-of-range redundancy. The original `with_redundancy` builder is a debug-assert/release-clamp compatibility adapter retained for compile-time-constant values only; runtime values must use the fallible or `Redundancy`-based APIs. Zero seeds are valid.
 
 The frame CRC32 detects accidental corruption; it is not adversarial authentication.
 

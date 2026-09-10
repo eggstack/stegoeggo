@@ -245,7 +245,7 @@ use stegoeggo_stego::Redundancy;
 use stegoeggo_stego::lsb::LsbConfig;
 
 let user_redundancy: usize = 3;
-let config = LsbConfig::from_redundancy(42, Redundancy::from_usize(user_redundancy)?)?;
+let config = LsbConfig::from_redundancy(42, Redundancy::from_usize(user_redundancy)?);
 ```
 
 Invalid redundancy values (`0`, `11`, `usize::MAX`) return
