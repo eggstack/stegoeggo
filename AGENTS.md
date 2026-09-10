@@ -46,7 +46,7 @@ scripts/validate-docs-rs.sh              # nightly Rust required
 scripts/verify_metadata_conformance.sh --strict  # exiftool, xmllint, imagemagick, libvips required
 scripts/validate-msrv-package.sh         # Rust 1.87+ required
 scripts/check_fuzz_sync.sh               # after adding/removing fuzz targets
-cargo +nightly fuzz run <target> -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run <target> -- -max_total_time=60
 cargo semver-checks check-release
 cargo deny check licenses
 cargo deny check advisories
@@ -65,7 +65,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs one job on pushes and pull requ
 Scheduled assurance (non-blocking, never required for merge, never publishes):
 - `.github/workflows/assurance.yml` (weekly + `workflow_dispatch`) — `MSRV 1.87` job (carrier/root/CLI checks incl. `--no-default-features`/`--all-features`, carrier + root-lib tests, all `--locked`) plus `Platform` jobs for macOS aarch64, Windows x86_64, and Linux aarch64 (minimal-feature check + all-feature workspace tests on stable)
 - `.github/workflows/external-verification.yml` (monthly + `workflow_dispatch`) — external integration tests + conformance harness
-- `.github/workflows/fuzz.yml` — single-target fuzz execution (`workflow_dispatch` with target/seconds inputs) plus a weekly scheduled smoke job rotating 3 of the 12 targets (120s each, crash artifacts uploaded)
+- `.github/workflows/fuzz.yml` — single-target fuzz execution (`workflow_dispatch` with target/seconds inputs), a scheduled-equivalent `smoke=true` dispatch, plus a weekly smoke job rotating 3 of the 12 targets (120s each, crash artifacts uploaded)
 
 Specialist verification (docs.rs, packaging, semver, benchmarks, license/advisory scans) remains manual local invocation; see `RELEASING.md` and `SUPPORT.md` for the blocking-vs-scheduled evidence matrix.
 
@@ -259,7 +259,12 @@ External integration tests in `tests/external_tools.rs` are `#[ignore]` — run 
 
 ## Fuzzing
 
-12 targets in `fuzz/fuzz_targets/`. Run with: `cargo +nightly fuzz run <target> -- -max_total_time=60`. Add regression tests in `tests/robustness.rs` for findings.
+12 targets in `fuzz/fuzz_targets/`. The reproducible assurance tuple is Rust
+`nightly-2026-09-07` plus `cargo-fuzz 0.13.2`; set
+`CARGO_PROFILE_RELEASE_LTO=false` because the product release profile's LTO
+setting is incompatible with cargo-fuzz sanitizer-coverage linking on Linux.
+This only changes fuzz builds and does not suppress failures or sanitizer
+coverage. Add regression tests in `tests/robustness.rs` for findings.
 
 ## Release Policy
 
@@ -297,7 +302,7 @@ See `RELEASING.md` for the complete procedure.
 - `SUPPORT.md` — Support matrix
 - `STABILITY.md` — Stability tiers
 - `RELEASING.md` — Manual publication procedure
-- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why. Next plan number: 088+
+- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why. Next plan number: 089+
 - `examples/` — Four runnable examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) referenced by `docs/rust-api.md`; keep them compiling when changing public APIs
 - `docs/` — User-facing guides: `cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`
-- `architecture/` — 30 architecture documents, verified against source; indexed in the table above and in `architecture/overview.md`
+- `architecture/` — 31 architecture documents, verified against source; indexed in the table above and in `architecture/overview.md`

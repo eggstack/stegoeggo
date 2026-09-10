@@ -269,4 +269,5 @@ cargo fmt --all -- --check              # Format check
 - User-facing guides: `docs/` (`cli-usage.md`, `rust-api.md`, `formats.md`, `carrier-crate.md`, `legal_notice_model.md`, `migration-v0.3.md`)
 - Architecture deep-dives: `architecture/` (31 files), indexed by `architecture/overview.md`
 - Agent conventions: this file plus `AGENTS.md` gotchas (CLI flags, exit codes, container correctness)
+- Fuzz assurance: `fuzz/README.md` (pinned nightly/cargo-fuzz tuple, LTO compatibility boundary, and update policy)
 - Runnable examples: `examples/` (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) — keep these compiling when changing public APIs

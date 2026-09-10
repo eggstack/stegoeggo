@@ -134,6 +134,17 @@ Scheduled failure is signal only (documented in workflow header,
 
 ## Notes
 
+### Plan 089 corrective follow-up
+
+The failed scheduled fuzz run `34340957485` used floating nightly rustc
+`1.100.0-nightly (4aa1fbcf4 2026-09-08)` and cargo-fuzz `0.13.2`; Linux
+sanitizer-coverage linking failed on unresolved `__sancov_gen_*` symbols while
+the repository release profile had `lto = true`. Plan 089 pins the fuzz jobs
+to `nightly-2026-09-07` / cargo-fuzz `0.13.2` and sets
+`CARGO_PROFILE_RELEASE_LTO=false` only for fuzz builds. Local clean all-target
+builds and representative smokes pass; the final manual, scheduled-equivalent,
+and required-CI run IDs will be added after the corrected workflow is pushed.
+
 - Implementation commit: `4ef3eee` — plan 086: msrv, platform, and scheduled
   assurance. (This ledger's CI-evidence fill is recorded in the follow-up
   commit; see `git log --oneline -3`.)

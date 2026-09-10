@@ -21,22 +21,47 @@
 
 ## Running
 
-Requires `cargo-fuzz` and nightly toolchain:
+The supported assurance tuple is Rust `nightly-2026-09-07` with
+`cargo-fuzz 0.13.2`. The repository release profile enables LTO for product
+builds, but cargo-fuzz's sanitizer-coverage instrumentation cannot be linked
+with that LTO setting on the Linux runner. `CARGO_PROFILE_RELEASE_LTO=false`
+changes only the fuzz build; AddressSanitizer and libFuzzer coverage remain
+enabled.
+
+Use the same explicit environment locally and in CI:
 
 ```bash
-cargo +nightly fuzz run pipeline_bytes -- -max_total_time=60
-cargo +nightly fuzz run tiled_round_trip -- -max_total_time=60
-cargo +nightly fuzz run jpeg_parser -- -max_total_time=60
-cargo +nightly fuzz run payload_v3_parser -- -max_total_time=60
-cargo +nightly fuzz run png_metadata -- -max_total_time=60
-cargo +nightly fuzz run webp_riff_parser -- -max_total_time=60
-cargo +nightly fuzz run xmp_extract -- -max_total_time=60
-cargo +nightly fuzz run metadata_merge -- -max_total_time=60
-cargo +nightly fuzz run detached_manifest_parse -- -max_total_time=60
-cargo +nightly fuzz run detached_manifest_verify -- -max_total_time=60
-cargo +nightly fuzz run provenance_canonicalize -- -max_total_time=60
-cargo +nightly fuzz run verification_report -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run pipeline_bytes -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run tiled_round_trip -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run jpeg_parser -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run payload_v3_parser -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run png_metadata -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run webp_riff_parser -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run xmp_extract -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run metadata_merge -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run detached_manifest_parse -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run detached_manifest_verify -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run provenance_canonicalize -- -max_total_time=60
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run verification_report -- -max_total_time=60
 ```
+
+Replace `pipeline_bytes` with any target listed above. To enumerate or build
+all targets, use the same environment:
+
+```bash
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz list
+RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz build
+```
+
+The pinned tuple is updated manually after a bounded compatibility probe:
+clean-build all 12 targets, run representative parser and pipeline smokes,
+then verify both manual-dispatch and scheduled-equivalent workflow paths.
+Do not float the nightly or cargo-fuzz version in the assurance workflow.
+
+The workflow's normal manual dispatch runs the selected target. For remote
+scheduled-equivalent evidence, dispatch it with `smoke=true`; this uses the
+same rotating three-target job as the weekly schedule (the required `target`
+input is ignored in that mode).
 
 For an overnight run, drop the `-max_total_time` flag. The fuzzer will explore
 the input space and report any crash, hang, or sanitizer hit.
@@ -51,7 +76,7 @@ artifacts — add them to `.gitignore` or delete them after triage.
 ## Sanitizers
 
 The default profile uses AddressSanitizer. For undefined-behavior coverage
-(integer overflow, alignment), switch the libfuzzer profile in `fuzz/Cargo.toml`
-or pass `--sanitizer=undefined` to `cargo fuzz run`. The library is
+(integer overflow, alignment), pass `--sanitizer=undefined` to
+`cargo fuzz run`. The library is
 `#![forbid(unsafe_code)]` so the UB surface is limited to upstream dependencies
 and the standard library.

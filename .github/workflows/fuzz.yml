@@ -6,10 +6,13 @@ name: Fuzz
 # Scheduled runs are informational signal only: failure never blocks merges
 # or triggers a release. No fuzzing runs on pull requests.
 #
-# Local equivalent (requires nightly + cargo-fuzz):
-#   cargo +nightly fuzz run <target> -- -max_total_time=60
+# Local equivalent (requires the pinned nightly + cargo-fuzz):
+#   RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false \
+#     cargo fuzz run <target> -- -max_total_time=60
 #
-# The dispatch `target` options below are the canonical target list verified
+# A manual dispatch with `smoke=true` exercises the same rotating smoke path as
+# the schedule; its required `target` value is ignored. The dispatch `target`
+# options below are the canonical target list verified
 # by `scripts/check_fuzz_sync.sh`. The smoke rotation derives its list at
 # runtime from `cargo fuzz list`, so it cannot drift from `fuzz/Cargo.toml`.
 
@@ -39,6 +42,11 @@ on:
         description: "Maximum run duration"
         required: false
         default: "60"
+      smoke:
+        description: "Run the scheduled rotating smoke path"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -46,15 +54,25 @@ permissions:
 jobs:
   fuzz:
     name: Fuzz (${{ inputs.target }})
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.smoke == false
     runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: nightly-2026-09-07
+      CARGO_PROFILE_RELEASE_LTO: "false"
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@nightly-2026-09-07
       - uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
+
+      - name: Verify fuzz toolchain
+        run: |
+          rustc --version --verbose
+          cargo --version
+          cargo fuzz --version
+          echo "CARGO_PROFILE_RELEASE_LTO=${CARGO_PROFILE_RELEASE_LTO}"
 
       - name: Validate inputs
         run: |
@@ -70,8 +88,6 @@ jobs:
           fi
 
       - name: Run fuzz (${{ inputs.target }})
-        env:
-          RUSTUP_TOOLCHAIN: nightly
         run: |
           cargo fuzz run "${{ inputs.target }}" -- \
             -max_total_time="${{ inputs.seconds }}" \
@@ -88,15 +104,25 @@ jobs:
 
   smoke:
     name: Fuzz smoke (rotating subset)
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.smoke == true)
     runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: nightly-2026-09-07
+      CARGO_PROFILE_RELEASE_LTO: "false"
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@nightly-2026-09-07
       - uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
+
+      - name: Verify fuzz toolchain
+        run: |
+          rustc --version --verbose
+          cargo --version
+          cargo fuzz --version
+          echo "CARGO_PROFILE_RELEASE_LTO=${CARGO_PROFILE_RELEASE_LTO}"
 
       - name: Select rotating smoke subset
         id: select
@@ -114,8 +140,6 @@ jobs:
           echo "targets=${TARGETS[*]}" >> "$GITHUB_OUTPUT"
 
       - name: Run fuzz smoke (120s per target)
-        env:
-          RUSTUP_TOOLCHAIN: nightly
         run: |
           for TARGET in ${{ steps.select.outputs.targets }}; do
             echo "=== fuzz smoke: $TARGET ==="

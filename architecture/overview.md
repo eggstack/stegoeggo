@@ -391,7 +391,12 @@ stegoeggo-stego/src/
 
 ## Fuzz Targets
 
-12 targets in `fuzz/fuzz_targets/`, built on `libfuzzer-sys`. Run with: `cargo +nightly fuzz run <target> -- -max_total_time=60`.
+12 targets in `fuzz/fuzz_targets/`, built on `libfuzzer-sys`. The reproducible
+assurance tuple is Rust `nightly-2026-09-07` and `cargo-fuzz 0.13.2`, with
+`CARGO_PROFILE_RELEASE_LTO=false` for fuzz builds. The root release profile's
+LTO is retained for product artifacts, but must be disabled for sanitizer
+coverage linking. See [fuzz/README.md](../fuzz/README.md) for the compatibility
+probe and update policy.
 
 | Target | What It Fuzzes |
 |--------|----------------|
@@ -408,11 +413,11 @@ stegoeggo-stego/src/
 | `provenance_canonicalize` | Provenance claim canonical JSON |
 | `verification_report` | Verification report building |
 
-Fuzzing never runs on pull requests. `fuzz.yml` accepts a manual single-target
-dispatch and additionally runs a weekly scheduled smoke job: a rotating
-3-target subset (week-of-year based, full rotation every four weeks), 120s per
-target, with crash artifacts uploaded. Scheduled fuzz failures are
-informational signal only.
+Fuzzing never runs on pull requests. `fuzz.yml` explicitly pins the tuple and
+accepts a manual single-target dispatch. A `smoke=true` dispatch exercises the
+same rotating three-target path as the weekly scheduled job: a week-of-year
+based subset (full rotation every four weeks), 120s per target, with crash
+artifacts uploaded. Scheduled fuzz failures are informational signal only.
 
 ## Integration Test Coverage
 
@@ -567,5 +572,3 @@ When extracting from JPEG, check in order:
 2. Quantization table seed — detection only when the tables are preserved
 3. DCT coefficient extraction — fragile
 4. Pixel-based LSB — not applicable to JPEG
-
-

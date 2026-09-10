@@ -37,7 +37,9 @@ stegoeggo = "0.4"
 The minimum supported Rust version is **1.87**. Required CI runs stable Rust on
 Linux x86_64; MSRV 1.87 and Linux aarch64, macOS aarch64, and Windows x86_64
 are covered by scheduled non-blocking assurance. See [SUPPORT.md](SUPPORT.md)
-for the maintained platform and feature matrix.
+for the maintained platform and feature matrix. The non-blocking fuzz
+assurance uses a pinned nightly/cargo-fuzz tuple; see [fuzz/README.md](fuzz/README.md)
+for the local command and compatibility policy.
 
 ## Quick start
 

@@ -9,7 +9,7 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 
 ## Quick Reference
 
-- Architecture docs live in `architecture/` (30 files)
+- Architecture docs live in `architecture/` (31 files)
 - Review outputs go to `plans/`
 - Source code is in `src/` (root crate) and `stegoeggo-stego/src/` (carrier crate)
 - Use `rg` (ripgrep) for fast content search, `glob` for file patterns
