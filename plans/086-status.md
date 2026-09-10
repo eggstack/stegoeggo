@@ -142,11 +142,11 @@ sanitizer-coverage linking failed on unresolved `__sancov_gen_*` symbols while
 the repository release profile had `lto = true`. Plan 089 pins the fuzz jobs
 to `nightly-2026-09-07` / cargo-fuzz `0.13.2` and sets
 `CARGO_PROFILE_RELEASE_LTO=false` only for fuzz builds. Local clean all-target
-builds and representative smokes pass. Manual run `34504708983` is green;
-scheduled-equivalent run `34504712007` reached execution but found and
-uploaded a malformed-JPEG `pipeline_bytes` reproducer, which Plan 089 now
-regresses and fixes. The green recheck and final required-CI run IDs remain
-pending.
+builds and representative smokes pass. Manual run `34506783317` and
+scheduled-equivalent recheck `34506785941` are green on `6cf2d93`; the earlier
+run `34504712007` found and uploaded a malformed-JPEG `pipeline_bytes`
+reproducer, which Plan 089 regressed and fixed. Required `CI / Check`
+`34506386814` is also green.
 
 - Implementation commit: `4ef3eee` — plan 086: msrv, platform, and scheduled
   assurance. (This ledger's CI-evidence fill is recorded in the follow-up
