@@ -1,6 +1,6 @@
 # Plan 089 Status: Fuzz Assurance Corrective Closure
 
-Status: IN PROGRESS — LOCAL CORRECTION COMPLETE; REMOTE EVIDENCE PENDING
+Status: IN PROGRESS — FUZZ REGRESSION FIXED; REMOTE RECHECK PENDING
 
 Baseline: `f7c397eceda4ec6922ce7444ff0e4559e6114497`
 
@@ -21,7 +21,7 @@ Failed assurance evidence: GitHub Actions Fuzz run `34340957485` (scheduled), `m
 - [x] all 12 fuzz targets build/enumerate under the selected tuple
 - [x] `metadata_merge` executes a short smoke successfully
 - [x] parser/pipeline representative smokes execute successfully
-- [ ] manual-dispatch fuzz workflow evidence is green
+- [x] manual-dispatch fuzz workflow evidence is green
 - [ ] scheduled-equivalent 3-target smoke workflow evidence is green
 - [x] required push/PR CI remains unchanged
 - [x] `./scripts/check.sh` passes
@@ -48,6 +48,14 @@ Record here:
   selected workflow version remains 0.13.2 because it is the current known-
   good version in the failing-run environment and the workflow is now
   explicitly pinned.
+- The first corrected scheduled-equivalent run (`34504712007`) reached all
+  three targets and exposed a separate `pipeline_bytes` panic in
+  `strip_stego_owned_jpeg`: a malformed JPEG segment with declared length 0
+  made the `pos + 4..segment_end` slice reverse its bounds. The minimized
+  reproducer was 355 bytes. `strip_stego_owned_jpeg` now rejects segment
+  lengths below the JPEG minimum of 2 with `ImageTruncated`, and
+  `tests/robustness.rs` contains the regression. The reproducer now exits 0
+  under the local ASan/libFuzzer harness.
 - The corrected tuple is Rust `nightly-2026-09-07` plus cargo-fuzz `0.13.2`,
   with job-level `RUSTUP_TOOLCHAIN` and
   `CARGO_PROFILE_RELEASE_LTO=false` in `.github/workflows/fuzz.yml`. LTO is
@@ -63,9 +71,13 @@ Record here:
   `CARGO_PROFILE_RELEASE_LTO=false`; `metadata_merge`,
   `payload_v3_parser`, and `pipeline_bytes` each completed a one-run
   libFuzzer smoke. `./scripts/check.sh` passed.
-- Manual workflow run ID/result: pending push of the corrected workflow.
-- Scheduled-equivalent smoke run ID/result: pending push of the corrected
-  workflow.
+- Manual workflow run ID/result: `34504708983` — green on `7c5d149` after the
+  toolchain-action correction; `metadata_merge` built and completed the
+  bounded run.
+- Scheduled-equivalent smoke run ID/result: `34504712007` — reached execution
+  on `7c5d149` but failed on the newly discovered `pipeline_bytes` panic;
+  artifact downloaded and reproduced locally, then fixed. A green recheck is
+  required before closure.
 - Required CI run/result after the correction: pending final push.
 - Implementation commit SHA: pending final merge to `main`.
 - Plan 086 and Plan 088 ledger reconciliation: recorded locally; final remote
