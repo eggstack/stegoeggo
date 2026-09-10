@@ -39,3 +39,4 @@ truthful instead). No crates.io publish performed.
 Update this file from child status ledgers and integrated source/test evidence. Do not mark the roadmap complete from plan text or agent reports alone.
 
 Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this ledger closure is the follow-up commit).
+Remote CI (`CI` / `Check`, run `34535528838`): success on `494397b` (4m20s, 2026-09-10).
