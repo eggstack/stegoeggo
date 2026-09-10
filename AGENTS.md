@@ -264,7 +264,8 @@ External integration tests in `tests/external_tools.rs` are `#[ignore]` — run 
 `CARGO_PROFILE_RELEASE_LTO=false` because the product release profile's LTO
 setting is incompatible with cargo-fuzz sanitizer-coverage linking on Linux.
 This only changes fuzz builds and does not suppress failures or sanitizer
-coverage. Add regression tests in `tests/robustness.rs` for findings.
+coverage. Add regression tests in `tests/robustness.rs` for findings; the
+malformed-JPEG zero-length-segment regression from Plan 089 is an example.
 
 ## Release Policy
 
