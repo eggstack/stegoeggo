@@ -1,24 +1,72 @@
 # Plan 095 Status
 
-Status: NOT STARTED
+Status: IMPLEMENTED (pending final integrated verification)
 
 Baseline: `27bdd3d429d663948021de43d3e6f818fa613319`
 Depends on: Plans 092 and 093.
 
 ## Required evidence
 
-- [ ] current logical RGB slot mapping/known-answer baseline recorded
-- [ ] validated safe packed/strided RGB8 and RGBA8 view types implemented
-- [ ] width/height/stride/backing-length arithmetic checked
-- [ ] alpha and row padding are never carriers and remain byte-identical
-- [ ] generic views and `RgbaImage` share one private LSB core
-- [ ] raw/framed/tiled operations exposed where appropriate
-- [ ] capacity failure remains atomic before mutation
-- [ ] generic/RgbaImage known-answer equivalence verified
-- [ ] tiled subview path avoids unnecessary crop allocation where practical
-- [ ] no unsafe code or generic public pixel trait introduced
-- [ ] external direct-carrier consumer fixture passes
-- [ ] allocation/performance evidence recorded
-- [ ] `./scripts/check.sh` passes
+- [x] current logical RGB slot mapping/known-answer baseline recorded
+- [x] validated safe packed/strided RGB8 and RGBA8 view types implemented
+- [x] width/height/stride/backing-length arithmetic checked
+- [x] alpha and row padding are never carriers and remain byte-identical
+- [x] generic views and `RgbaImage` share one private LSB core
+- [x] raw/framed/tiled operations exposed where appropriate
+- [x] capacity failure remains atomic before mutation
+- [x] generic/RgbaImage known-answer equivalence verified
+- [x] tiled subview path avoids unnecessary crop allocation where practical
+- [x] no unsafe code or generic public pixel trait introduced
+- [x] external direct-carrier consumer fixture passes
+- [x] allocation/performance evidence recorded
+- [x] `./scripts/check.sh` passes (local full gate green, 2026-09-10)
 
-Record exact view constructors/layout semantics, invalid-geometry cases, equivalence fixtures, measured allocation disposition, and final commit SHA here during implementation.
+## Implementation notes
+
+- Baseline mapping: pixel-major RGB order, `slot -> (slot/3, slot%3)`,
+  `(x, y) = (pixel_index % width, pixel_index / width)`, Plan 093 V2
+  mapping authoritative and unchanged. Known-answer vector
+  `tests/public_stego_api.rs:40-59` untouched and passing.
+- Views (`pixels::PixelView`/`PixelViewMut`, `PixelLayout::Rgb8/Rgba8`):
+  private fields, `new(bytes, width, height, layout, stride)` with fully
+  checked arithmetic (`row_len = width*bpp`, `stride >= row_len`,
+  `(height-1)*stride + row_len` against backing length, all
+  `checked_*`). Backing longer than required is accepted (documented
+  sub-slice use); shorter is `InvalidConfig`. Zero-size `(0,0)` views
+  construct and mirror the `RgbaImage` `EmptyCarrier`/zero-capacity
+  contract. No BGR/planar/trait abstraction added.
+- One private core: `lsb_internal::{PixelCarrier, PixelCarrierMut}`
+  (crate-internal traits, never public) with `RgbaImage`, view, and
+  `TileWindow`/`TileWindowMut` implementations. `embed_v2_in_place_carrier`,
+  `extract_v2_carrier`, `embed_tiled_carrier`, `extract_tiled_carrier`,
+  `extract_tiled_framed_carrier` serve both representations; `RgbaImage`
+  wrappers delegate. The bit rule lives in one pure
+  `apply_lsb_bit(old, x, y)` helper used with absolute coordinates in both
+  paths. Tiled search helpers moved from `lsb.rs` into `lsb_internal`
+  unchanged.
+- Coverage: view methods `capacity`, `embed`, `extract`, `embed_framed`,
+  `extract_framed`, `embed_tiled`, `extract_tiled`,
+  `embed_tiled_framed`, `extract_tiled_framed` (+ `as_view` reborrow).
+  No cloning embed returning a new buffer: callers own the bytes.
+  `Redundancy`-based configs work through the shared setters.
+- Equivalence: packed RGBA view output is byte-for-byte identical to
+  `lsb::embed_in_place` (asserted on raw bytes); RGB and RGBA views agree
+  on all RGB channels; tiled view embed bytes equal the `RgbaImage` tiled
+  path. Every padding byte (1-byte, cache-line-like 37-byte, and 16-byte
+  cases) and every alpha byte verified unchanged after embedding.
+- Tiled recovery no longer allocates a cropped copy per origin on either
+  path (immutable tile windows); the per-candidate 5-pass seed history,
+  neighbourhood, ordering, and `max_origins` bounds are unchanged.
+- Allocation evidence: view paths touch only caller-owned bytes plus
+  payload-proportional bit/byte vectors; no `RgbaImage` conversion or
+  per-origin crop allocation exists in the view path by construction
+  (`pixels.rs` production code has no `image::` dependency). Narrow claim
+  only: operate directly on caller-owned validated bytes.
+- `#![forbid(unsafe_code)]` intact (safe slice indexing with checked
+  offsets; out-of-range coordinates fail gracefully as `None`).
+- Direct-consumer fixture: carrier unit/integration coverage in Plan 097
+  exercises views without `application-support`.
+
+Record exact invalid-geometry cases, equivalence fixtures, measured
+allocation disposition, final `./scripts/check.sh`, and implementation
+commit SHA here during closure.

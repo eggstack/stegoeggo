@@ -21,19 +21,20 @@ raise the declared MSRV, never a silent break.
 
 ## Supported Platforms
 
-Evidence levels: **PR** = tested on every push/PR to `main` (required `Check`
-job); **Scheduled** = tested by a recurring non-blocking workflow (failure
+Evidence levels: **PR** = tested on every push/PR to `main` (standard `Check`
+gate; not currently GitHub-enforced as a required status check — `main` is
+unprotected, verified 2026-09-10); **Scheduled** = tested by a recurring non-blocking workflow (failure
 never blocks merges); **Expected** = believed to work but with no CI evidence.
 
 | OS | Architecture | PR | Scheduled assurance | Notes |
 |----|-------------|----|---------------------|-------|
-| Linux | x86_64 | Yes | Yes (weekly) | Primary development platform; required gate runs fmt, clippy, minimal-feature check, and all-feature workspace tests |
+| Linux | x86_64 | Yes | Yes (weekly) | Primary development platform; standard gate runs fmt, clippy, minimal-feature check, and all-feature workspace tests |
 | Linux | aarch64 | No | Yes (weekly, native `ubuntu-24.04-arm` runner) | Minimal-feature check + all-feature workspace tests |
 | macOS | aarch64 | No | Yes (weekly, `macos-latest`) | Minimal-feature check + all-feature workspace tests |
 | macOS | x86_64 | No | No (expected) | `macos-latest` runners are aarch64; Intel macOS is untested in CI |
 | Windows | x86_64 | No | Yes (weekly, `windows-latest`) | Minimal-feature check + all-feature workspace tests |
 
-Scheduled platform jobs replay the required gate's compile-and-test evidence
+Scheduled platform jobs replay the standard gate's compile-and-test evidence
 (minus fmt/clippy, which are platform-independent) on stable Rust. See
 `.github/workflows/assurance.yml` for the exact commands.
 
@@ -41,7 +42,7 @@ Scheduled platform jobs replay the required gate's compile-and-test evidence
 
 | Workflow | Trigger | Blocking | Proves |
 |----------|---------|----------|--------|
-| `CI` (`ci.yml`, `Check` job) | Every push/PR to `main` | Yes (sole required check) | Stable compile, lint, format, and tests on Linux x86_64 |
+| `CI` (`ci.yml`, `Check` job) | Every push/PR to `main` | Yes (standard gate; not currently GitHub-enforced as a required status check) | Stable compile, lint, format, and tests on Linux x86_64 |
 | `Assurance` (`assurance.yml`) | Weekly + manual dispatch | No | MSRV 1.87 matrix; stable compile+tests on Linux aarch64, macOS aarch64, Windows x86_64 |
 | `External Verification` (`external-verification.yml`) | Monthly + manual dispatch | No | ExifTool/xmllint/ImageMagick/libvips conformance signal |
 | `Fuzz` (`fuzz.yml`) | Manual dispatch (single target) + weekly scheduled smoke (rotating 3-target subset, 120s each) | No | Parser robustness signal with crash-artifact upload |

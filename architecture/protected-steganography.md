@@ -117,9 +117,12 @@ pub(crate) fn extract_lsb_v2(
 **Corrected V2 carrier model (current default):**
 
 - Carrier domain: `width * height * 3` RGB slots (alpha never a carrier)
-- Permutation: cycle-walking bijective LCG (`stego_permutation_v2`) over `[0, slot_count)`
+- Mapping: byte-frozen V2 cycle-walking mapping (`stego_permutation_v2`)
+  over `[0, slot_count)`; full-domain injectivity is verified for
+  documented small/medium domains (max observed walk depth 30 against the
+  256-step bound, zero fallback hits), not proven over the full domain
 - Each payload bit occupies `STEGO_SPREAD_FACTOR * redundancy` consecutive logical
-  indices through one permutation — no inter-replica collisions
+  indices through one mapping — no inter-replica collisions in tested domains
 - Capacity formula: `payload_bits * STEGO_SPREAD_FACTOR * redundancy` slots exact
 - Embed uses raw seed directly (no `STEGO_OFFSET_SEED_1` offset) for non-tiled V2.
   Tiled V2 embed uses `local_seed * STEGO_OFFSET_SEED_1` to match extraction probing.
@@ -308,16 +311,19 @@ for arbitrary payload bytes, independent of the rights-protection pipeline.
 stegoeggo::stego
 ├── error       — StegoError, JpegUnsupportedReason
 ├── lsb         — LsbConfig, TileConfig, capacity, embed, embed_in_place, extract, embed_framed, extract_framed, embed_tiled, embed_tiled_in_place, extract_tiled, embed_tiled_framed, extract_tiled_framed
-├── jpeg        — JpegConfig, TileConfig, JpegSupport, probe_support, capacity, embed, extract, embed_framed, extract_framed, embed_tiled, extract_tiled, embed_tiled_framed, extract_tiled_framed, embed_seed_hint, extract_seed_hint
+├── pixels      — PixelLayout, PixelView, PixelViewMut (borrowed packed/strided views sharing the LSB core)
+├── jpeg        — JpegConfig, TileConfig, JpegSupport, probe_support, capacity, embed, embed_strict, extract, embed_framed, embed_framed_strict, extract_framed, embed_tiled, extract_tiled, embed_tiled_framed, extract_tiled_framed, embed_seed_hint, extract_seed_hint
+├── prepared    — PreparedJpeg (one decode across repeated operations)
 └── frame       — FrameHeader, encode, decode, decode_prefix
 ```
 
 ### Types
 
-- `StegoError` — Structured error for generic carrier ops (InsufficientCapacity, UnsupportedJpeg, FrameNotFound, MalformedFrame, FrameChecksumMismatch, etc.)
-- `CapacityReport` — `{ required, available }` in carrier units (RGB slots for LSB, non-zero AC coefficients for DCT)
-- `EmbedReport` — `{ embedded, output, payload_bytes, required_capacity, available_capacity, actual_redundancy }`
+- `StegoError` — Structured error for generic carrier ops (InsufficientCapacity, UnsupportedJpeg, FrameNotFound, MalformedFrame, FrameChecksumMismatch, etc.). `InvalidConfig` docs no longer cite zero seed; zero seeds are valid
+- `CapacityReport` — `{ required, available }` in carrier units (RGB slots for LSB, eligible AC coefficients with `|coef| >= 2` for DCT, 96 hint-bit positions for seed hints)
+- `EmbedReport` — `{ embedded, output, payload_bytes, required_capacity, available_capacity, actual_redundancy }`, plus `into_output`/`into_parts`/`capacity` decomposition helpers
 - `InPlaceEmbedReport` — `{ embedded, payload_bytes, required_capacity, available_capacity, actual_redundancy }`; returned by `lsb::embed_in_place` without an output image
+- `Redundancy` — validated shared redundancy primitive (`MIN`/`MAX`, `new`/`from_usize`, `Copy`); `LsbConfig`/`JpegConfig` gain `from_redundancy`/`with_redundancy_value`/`redundancy_value` over it
 - `LsbConfig` — seed + redundancy (1–10, default 2)
 - `JpegConfig` — seed + redundancy (1–10, default 3)
 - `TileConfig` — master seed + tile size (`try_new` fallible, `tile_size > 0`; JPEG tiled additionally requires `>= 8` and multiple of 8); shared by LSB and JPEG tiled operations
@@ -337,11 +343,12 @@ stegoeggo::stego
 8. **Frame composition** — Framed operations call the existing `frame::encode`, `frame::decode_prefix`, and `frame::decode`; they do not create a second carrier format or import application rights state.
 9. **JPEG framed extraction reuse** — One `jpeg::extract_framed` operation validates the supported structure, decodes the coefficient container once, and reuses the retained private coefficient state for every prefix/full-frame candidate. Capacity-only failures do not override a failure from a candidate that reached prefix or full-frame validation; a complete frame with a valid CRC always wins.
 10. **CRC limitation** — The frame CRC32 detects accidental corruption but is not adversarial authentication.
-11. **Fallible configuration** — Both `LsbConfig` and `JpegConfig` expose `try_new(seed, redundancy)` and `try_with_redundancy(value)` returning `StegoError::InvalidConfig` for out-of-range values. The original `with_redundancy` is retained for compatibility with callers that pass validated constants; it still panics on invalid values. JPEG public payload-bit and required-capacity calculations are checked, and raw `jpeg::extract` rejects `actual_redundancy` outside `1..=10`.
-12. **Capacity units are documented per carrier** — `CapacityReport` and `EmbedReport` explicitly state that LSB uses RGB carrier slots and JPEG uses non-zero AC coefficients. `InPlaceEmbedReport` is RGB carrier slots only.
+11. **Fallible configuration** — Both `LsbConfig` and `JpegConfig` expose `try_new(seed, redundancy)` and `try_with_redundancy(value)` returning `StegoError::InvalidConfig` for out-of-range values, plus `from_redundancy`/`with_redundancy_value`/`redundancy_value` over the validated `Redundancy` primitive (identical semantics in every build profile). The original `with_redundancy` is retained for compatibility with callers that pass validated constants; its invalid-input behavior differs by build profile (debug assert vs release clamp), so runtime values must use the fallible or `Redundancy`-based APIs. JPEG public payload-bit and required-capacity calculations are checked, and raw `jpeg::extract` rejects `actual_redundancy` outside `1..=10`.
+12. **Capacity units are documented per carrier** — `CapacityReport` and `EmbedReport` explicitly state that LSB uses RGB carrier slots, JPEG uses eligible AC coefficients with `|coef| >= 2`, and seed hints use 96 hint-bit positions. `InPlaceEmbedReport` is RGB carrier slots only.
 13. **CRC vs authentication scope** — The `frame` module-level docs lead with "CRC32 is corruption detection, not authentication". Report units are spelled out in `CapacityReport`/`EmbedReport`/`InPlaceEmbedReport` field docs.
-14. **Single-decode targets (Plan 078)** — Normal execution performs one pixel decode per raster operation (zero for same-format metadata-only container rewrites and JPEG→JPEG DCT fast paths), one coefficient decode per JPEG embed, and one coefficient decode per application JPEG verification operation including tiled fallback. Reuse state stays private or hidden (`DecodedJpegCarrier`, `JpegSearchContext`); the recorded evidence disposition for a public prepared-JPEG API is `PRIVATE-REUSE-SUFFICIENT` (see `plans/078-status.md`), and Plan 079 records `NO-PROMOTION`: no public prepared type exists.
-15. **Tiled taxonomy** — Raw tiled (`extract_tiled`, caller-known length) returns the first candidate in scan order and cannot authenticate correctness; framed tiled (`extract_tiled_framed`) validates CRC32 per candidate with the declared length checked against frame bounds and per-tile capacity before full extraction. JPEG tiled uses redundancy 1 per tile and rejects non-multiple-of-8 sizes rather than truncating. Crop survival is claimed only for intact-tile/carrier conditions (LSB stride search, JPEG no-re-encode).
+14. **Single-decode targets (Plan 078, superseded in part by Plan 094)** — Normal execution performs one pixel decode per raster operation (zero for same-format metadata-only container rewrites and JPEG→JPEG DCT fast paths), one coefficient decode per JPEG embed, and one coefficient decode per application JPEG verification operation including tiled fallback. Reuse state stays private or hidden (`DecodedJpegCarrier`, `JpegSearchContext`). The former `PRIVATE-REUSE-SUFFICIENT` disposition is superseded: public `prepared::PreparedJpeg` now offers the reusable capability generically while `JpegSearchContext` retains only application candidate classification (see `plans/094-status.md`).
+15. **Tiled taxonomy** — Raw tiled (`extract_tiled`, caller-known length) returns the first candidate in scan order and cannot authenticate correctness; framed tiled (`extract_tiled_framed`) validates CRC32 per candidate with the declared length checked against frame bounds and per-tile capacity before full extraction. JPEG tiled uses redundancy 1 per tile and rejects non-multiple-of-8 sizes rather than truncating. Tiled extraction reads tile windows in place without per-origin crop allocation. Crop survival is claimed only for intact-tile/carrier conditions (LSB stride search, JPEG no-re-encode).
+16. **Strict vs best-effort JPEG (Plan 091)** — `jpeg::embed`/`embed_framed` are best-effort compatibility operations (redundancy reduction plus seed-hint degradation, the established StegoEggo application behavior now explicitly owned by the parent). `jpeg::embed_strict`/`embed_framed_strict` embed at exactly the requested redundancy or return `InsufficientCapacity` without output. Seed hints are transactional (96-bit preflight). `EmbedOutcome`/`EmbedStatus`/`EmbedPath` remain as parent-owned application vocabulary; new generic code uses `EmbedReport` + `StegoError`.
 
 ### Frame Wire Format
 
@@ -376,10 +383,12 @@ stegoeggo-stego/src/
 ├── error.rs               StegoError, JpegUnsupportedReason, StegoResult
 ├── frame.rs               Generic framed payload (magic, version, length, CRC32)
 ├── lsb.rs                 V2 LSB facade (raw, in-place, framed, and tiled operations + TileConfig re-export)
-├── jpeg.rs                Encoded-JPEG facade (raw/framed/tiled operations, seed hint, TileConfig re-export)
+├── pixels.rs              Borrowed packed/strided RGB/RGBA views sharing the LSB core
+├── jpeg.rs                Encoded-JPEG facade (raw/strict/framed/tiled operations, seed hint, TileConfig re-export)
+├── prepared.rs            Opaque PreparedJpeg (one decode across repeated operations)
 ├── application_support.rs Hidden compatibility/search layer: legacy V1/V2, seed fallback, tile_seed, TiledJpegSearch/Key, JpegSearchContext (optional feature)
 ├── jpeg_transcoder/       Private JPEG DCT decode/encode/Huffman/F5 primitives
-└── types.rs               EmbedOutcome, EmbedPath, EmbedStatus, EmbedOutcomeSummary, InPlaceEmbedReport, TileConfig, MAX_TILED_ORIGINS
+└── types.rs               Redundancy, EmbedOutcome, EmbedPath, EmbedStatus, EmbedOutcomeSummary, InPlaceEmbedReport, TileConfig, MAX_TILED_ORIGINS
 ```
 
 The crate has no rights-policy/legal/provenance type dependencies. The root

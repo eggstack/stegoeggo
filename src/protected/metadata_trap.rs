@@ -269,7 +269,11 @@ impl RightsMetadataProtector {
         let format = plan.output_format();
         let policy = plan.processing().metadata_update_policy;
 
-        // Build a minimal context with resource limits for internal format methods.
+        // Translation adapter: the plan-based path carries intensity, seed,
+        // and resource limits, while the shared JPEG injection internals
+        // (including the structured-COM renderer) still read those three
+        // fields through the legacy context shape. No level/policy is set
+        // here, so rendering matches the established plan-path bytes exactly.
         let limits_ctx = {
             let mut ctx = ProtectionContext::new(plan.intensity(), plan.seed());
             ctx = ctx.with_resource_limits(plan.resource_limits().clone());

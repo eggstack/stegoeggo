@@ -7,11 +7,30 @@
 //!
 //! # Capacity units
 //!
-//! Capacity is reported in **eligible non-zero AC coefficients** across
-//! all components. The DC coefficient and zero-valued AC coefficients are
-//! not carriers. Embedding auto-selects the largest feasible redundancy
-//! (capped by the configured redundancy) via one pass; failed embeds
-//! still emit a seed-only carrier via quantization-table LSBs.
+//! Capacity is reported in **eligible AC coefficients with `|coef| >= 2`
+//! after canonicalization** across all components. The DC coefficient,
+//! zero-valued AC coefficients, and AC coefficients with `|coef| == 1`
+//! are not carriers.
+//!
+//! # Strict vs best-effort embedding
+//!
+//! - **Strict** ([`embed_strict`], [`embed_framed_strict`]) — the requested
+//!   redundancy must fit exactly. Insufficient capacity returns
+//!   [`StegoError::InsufficientCapacity`] without emitting carrier output,
+//!   lowering redundancy, or degrading to a seed hint.
+//! - **Best-effort** ([`embed`], [`embed_framed`]) — compatibility behavior:
+//!   automatically selects the largest feasible redundancy up to the
+//!   configured value, and emits a quantization-table seed-hint carrier
+//!   with `embedded == false` when no payload fits. Prefer the strict
+//!   operations for new callers; the best-effort operations preserve the
+//!   established StegoEggo application behavior.
+//!
+//! Seed hints ([`embed_seed_hint`]) are transactional: success implies the
+//! complete 96-bit hint is recoverable by [`extract_seed_hint`], and short
+//! quantization tables return [`StegoError::InsufficientCapacity`] instead
+//! of an unrecoverable partial hint. Payload embedding paths attempt the
+//! seed hint on a best-effort basis and never fail an otherwise successful
+//! payload embed when the hint does not fit.
 //!
 //! # Raw vs framed vs tiled
 //!
@@ -45,7 +64,7 @@
 //! byte-for-byte.
 
 use crate::error::{JpegUnsupportedReason, StegoError};
-use crate::jpeg_transcoder::{DctStegoF5, JpegHeader, JpegTranscoder};
+use crate::jpeg_transcoder::{DctStegoF5, JpegHeader, JpegTranscoder, TranscoderError};
 
 #[cfg(test)]
 use std::cell::Cell;
@@ -159,7 +178,7 @@ fn checked_payload_bits(payload_len: usize) -> std::result::Result<usize, StegoE
     })
 }
 
-fn checked_required_capacity(
+pub(crate) fn checked_required_capacity(
     payload_len: usize,
     redundancy: usize,
 ) -> std::result::Result<usize, StegoError> {
@@ -200,7 +219,7 @@ pub(crate) fn decode_supported_carrier(
     })
 }
 
-fn capacity_from_decoded(
+pub(crate) fn capacity_from_decoded(
     decoded: &DecodedJpegCarrier,
     payload_len: usize,
     redundancy: usize,
@@ -214,7 +233,7 @@ fn capacity_from_decoded(
     })
 }
 
-fn extract_from_decoded(
+pub(crate) fn extract_from_decoded(
     decoded: &DecodedJpegCarrier,
     payload_len: usize,
     seed: u64,
@@ -288,6 +307,30 @@ impl FramedFailure {
     }
 }
 
+fn map_seed_hint_error(error: TranscoderError) -> StegoError {
+    match error {
+        TranscoderError::InsufficientHintCapacity {
+            required,
+            available,
+        } => StegoError::InsufficientCapacity {
+            required,
+            available,
+        },
+        other => StegoError::MalformedInput(other.to_string()),
+    }
+}
+
+pub(crate) fn try_write_seed_hint(
+    header: &mut JpegHeader,
+    seed: u64,
+) -> std::result::Result<bool, StegoError> {
+    match DctStegoF5::new().embed_seed_in_quantization_tables(header, seed) {
+        Ok(()) => Ok(true),
+        Err(TranscoderError::InsufficientHintCapacity { .. }) => Ok(false),
+        Err(other) => Err(StegoError::MalformedInput(other.to_string())),
+    }
+}
+
 fn embed_seed_hint_internal(
     jpeg_bytes: &[u8],
     seed: u64,
@@ -299,7 +342,7 @@ fn embed_seed_hint_internal(
         JpegHeader::parse(jpeg_bytes).map_err(|e| StegoError::MalformedInput(e.to_string()))?;
     DctStegoF5::new()
         .embed_seed_in_quantization_tables(&mut header, seed)
-        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+        .map_err(map_seed_hint_error)?;
     reassemble_jpeg_with_qtables(jpeg_bytes, &header)
 }
 
@@ -447,14 +490,40 @@ impl JpegConfig {
         Ok(Self { seed, redundancy })
     }
 
+    /// Infallible constructor from a validated [`Redundancy`](crate::Redundancy).
+    ///
+    /// This is the recommended configuration primitive for runtime values:
+    /// validation happens once in [`Redundancy::from_usize`](crate::Redundancy::from_usize)
+    /// with identical semantics in every build profile.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use stegoeggo_stego::jpeg::JpegConfig;
+    /// use stegoeggo_stego::Redundancy;
+    ///
+    /// let config = JpegConfig::from_redundancy(42, Redundancy::new(3)?);
+    /// assert_eq!(config.redundancy(), 3);
+    /// # Ok::<_, stegoeggo_stego::StegoError>(())
+    /// ```
+    #[must_use]
+    pub fn from_redundancy(seed: u64, redundancy: crate::Redundancy) -> Self {
+        Self {
+            seed,
+            redundancy: redundancy.get_usize(),
+        }
+    }
+
     /// Set the redundancy level (1–10). Higher redundancy increases
     /// robustness at the cost of reduced capacity.
     ///
-    /// In debug builds, panics if `redundancy` is 0 or greater than 10. In
+    /// Compatibility builder for compile-time-constant values. In debug
+    /// builds, panics if `redundancy` is 0 or greater than 10. In
     /// release builds with `panic=abort`, an out-of-range value is clamped to
     /// `1..=10` to avoid aborting the process; prefer
-    /// [`JpegConfig::try_with_redundancy`](Self::try_with_redundancy) when
-    /// the value is not statically known to be in `1..=10` (for example
+    /// [`JpegConfig::try_with_redundancy`](Self::try_with_redundancy) or
+    /// [`JpegConfig::with_redundancy_value`](Self::with_redundancy_value)
+    /// when the value is not statically known to be in `1..=10` (for example
     /// values from configuration files, CLI flags, or network payloads,
     /// which must not abort the process on invalid input).
     #[must_use]
@@ -491,6 +560,33 @@ impl JpegConfig {
         crate::constants::validate_redundancy(redundancy)?;
         self.redundancy = redundancy;
         Ok(self)
+    }
+
+    /// Infallible setter from a validated [`Redundancy`](crate::Redundancy).
+    ///
+    /// Recommended over [`with_redundancy`](Self::with_redundancy) for
+    /// runtime values: the contract is identical in every build profile.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use stegoeggo_stego::jpeg::JpegConfig;
+    /// use stegoeggo_stego::Redundancy;
+    ///
+    /// let config = JpegConfig::new(42).with_redundancy_value(Redundancy::MIN);
+    /// assert_eq!(config.redundancy(), 1);
+    /// ```
+    #[must_use]
+    pub fn with_redundancy_value(mut self, redundancy: crate::Redundancy) -> Self {
+        self.redundancy = redundancy.get_usize();
+        self
+    }
+
+    /// The redundancy level as a validated [`Redundancy`](crate::Redundancy).
+    #[must_use]
+    pub fn redundancy_value(&self) -> crate::Redundancy {
+        crate::Redundancy::from_usize(self.redundancy)
+            .expect("JpegConfig invariant: redundancy is always validated")
     }
 
     /// The seed used for DCT coefficient selection.
@@ -595,8 +691,9 @@ fn map_unsupported_reason(
 ///
 /// Returns a [`CapacityReport`](super::CapacityReport) indicating how many
 /// payload bytes can be embedded with the given configuration. Capacity is
-/// measured in non-zero AC coefficients (available) and the required number
-/// for the given payload at the configured redundancy (required).
+/// measured in eligible AC coefficients with `|coef| >= 2` after
+/// canonicalization (available) and the required number for the given
+/// payload at the configured redundancy (required).
 ///
 /// # Arguments
 ///
@@ -633,6 +730,14 @@ pub fn capacity(
 
 /// Embed arbitrary bytes into a JPEG using F5-style DCT coefficient
 /// modification.
+///
+/// Best-effort compatibility behavior: automatically selects the largest
+/// feasible redundancy up to the configured value, and emits a
+/// quantization-table seed-hint carrier with `embedded == false` when no
+/// payload fits. The seed hint is attempted on a best-effort basis and a
+/// short quantization table never fails an otherwise successful payload
+/// embed. Prefer [`embed_strict`] when the requested redundancy must hold
+/// exactly.
 ///
 /// Returns an [`EmbedReport`](super::EmbedReport) with the output JPEG
 /// bytes and capacity information. Uses the container-preserving encoding
@@ -696,9 +801,7 @@ pub fn embed(
             .is_ok()
         {
             let mut header = header;
-            DctStegoF5::new()
-                .embed_seed_in_quantization_tables(&mut header, config.seed())
-                .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+            let _ = try_write_seed_hint(&mut header, config.seed())?;
 
             let output = JpegTranscoder::encode_coefficients(
                 &header,
@@ -719,9 +822,7 @@ pub fn embed(
     }
 
     let mut header = header;
-    DctStegoF5::new()
-        .embed_seed_in_quantization_tables(&mut header, config.seed())
-        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+    let _ = try_write_seed_hint(&mut header, config.seed())?;
 
     let output = JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))
         .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
@@ -733,6 +834,101 @@ pub fn embed(
         required_capacity: required,
         available_capacity: available,
         actual_redundancy: 0,
+    })
+}
+
+/// Embed arbitrary bytes into a JPEG at exactly the requested redundancy.
+///
+/// Strict carrier semantics: either the payload is embedded at the
+/// configured redundancy, or [`StegoError::InsufficientCapacity`] is
+/// returned without emitting carrier output. Redundancy is never lowered
+/// silently and no seed-only degradation is applied. An empty payload is
+/// rejected with [`StegoError::InvalidConfig`].
+///
+/// A successful payload embed still stores the quantization-table seed
+/// hint used by seed discovery, attempted on a best-effort basis: a short
+/// quantization table never fails an otherwise successful strict embed.
+///
+/// # Errors
+///
+/// Returns [`StegoError::MalformedInput`] if the JPEG cannot be parsed.
+/// Returns [`StegoError::UnsupportedJpeg`] if DCT embedding is not possible.
+/// Returns [`StegoError::InsufficientCapacity`] when the payload does not
+/// fit at the requested redundancy.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// let jpeg_bytes = std::fs::read("photo.jpg").unwrap();
+/// let config = stegoeggo_stego::jpeg::JpegConfig::new(42);
+/// match stegoeggo_stego::jpeg::embed_strict(&jpeg_bytes, b"secret", &config) {
+///     Ok(report) => std::fs::write("output.jpg", &report.output).unwrap(),
+///     Err(stegoeggo_stego::StegoError::InsufficientCapacity { required, available }) => {
+///         println!("need {required}, have {available}");
+///     }
+///     Err(other) => panic!("{other}"),
+/// }
+/// ```
+pub fn embed_strict(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &JpegConfig,
+) -> std::result::Result<super::EmbedReport, StegoError> {
+    crate::constants::validate_redundancy(config.redundancy())?;
+    if payload.is_empty() {
+        return Err(StegoError::InvalidConfig(
+            "strict JPEG embedding requires a non-empty payload".to_string(),
+        ));
+    }
+    checked_required_capacity(payload.len(), config.redundancy())?;
+    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    embed_strict_from_decoded(&decoded, jpeg_bytes, payload, config)
+}
+
+pub(crate) fn embed_strict_from_decoded(
+    decoded: &DecodedJpegCarrier,
+    source: &[u8],
+    payload: &[u8],
+    config: &JpegConfig,
+) -> std::result::Result<super::EmbedReport, StegoError> {
+    crate::constants::validate_redundancy(config.redundancy())?;
+    if payload.is_empty() {
+        return Err(StegoError::InvalidConfig(
+            "strict JPEG embedding requires a non-empty payload".to_string(),
+        ));
+    }
+    let required = checked_required_capacity(payload.len(), config.redundancy())?;
+    let available = decoded.available_capacity;
+    if required > available {
+        return Err(StegoError::InsufficientCapacity {
+            required,
+            available,
+        });
+    }
+
+    let mut embedded_coefficients = decoded.coefficients.clone();
+    DctStegoF5::with_redundancy(config.redundancy())
+        .embed_f5(&mut embedded_coefficients, payload, config.seed())
+        .map_err(|error| match error {
+            TranscoderError::EmbeddingFailed(_) => StegoError::InsufficientCapacity {
+                required,
+                available,
+            },
+            other => StegoError::MalformedInput(other.to_string()),
+        })?;
+
+    let mut header = decoded.header().clone();
+    let _ = try_write_seed_hint(&mut header, config.seed())?;
+    let output = JpegTranscoder::encode_coefficients(&header, &embedded_coefficients, Some(source))
+        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+
+    Ok(super::EmbedReport {
+        embedded: true,
+        output,
+        payload_bytes: payload.len(),
+        required_capacity: required,
+        available_capacity: available,
+        actual_redundancy: config.redundancy(),
     })
 }
 
@@ -758,6 +954,22 @@ pub fn embed_framed(
 ) -> std::result::Result<super::EmbedReport, StegoError> {
     let framed = crate::frame::encode(payload)?;
     embed(jpeg_bytes, &framed, config)
+}
+
+/// Embed a self-describing framed payload into a supported JPEG at exactly
+/// the requested redundancy.
+///
+/// Strict counterpart to [`embed_framed`]: insufficient capacity returns
+/// [`StegoError::InsufficientCapacity`] without emitting carrier output.
+/// The returned report's `payload_bytes` includes the frame header and CRC
+/// overhead because those bytes are placed in the carrier.
+pub fn embed_framed_strict(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &JpegConfig,
+) -> std::result::Result<super::EmbedReport, StegoError> {
+    let framed = crate::frame::encode(payload)?;
+    embed_strict(jpeg_bytes, &framed, config)
 }
 
 /// Extract arbitrary bytes from a JPEG using F5-style DCT coefficient
@@ -827,18 +1039,26 @@ pub fn extract_framed(
 ) -> std::result::Result<Vec<u8>, StegoError> {
     crate::constants::validate_redundancy(config.redundancy())?;
     let decoded = decode_supported_carrier(jpeg_bytes)?;
+    extract_framed_from_decoded(&decoded, config)
+}
+
+pub(crate) fn extract_framed_from_decoded(
+    decoded: &DecodedJpegCarrier,
+    config: &JpegConfig,
+) -> std::result::Result<Vec<u8>, StegoError> {
+    crate::constants::validate_redundancy(config.redundancy())?;
     let mut failures = FramedFailure::default();
 
     for redundancy in (1..=config.redundancy()).rev() {
         let prefix_capacity =
-            capacity_from_decoded(&decoded, crate::frame::FRAME_HEADER_SIZE, redundancy)?;
+            capacity_from_decoded(decoded, crate::frame::FRAME_HEADER_SIZE, redundancy)?;
         if !prefix_capacity.is_sufficient() {
             failures.record_capacity(prefix_capacity);
             continue;
         }
 
         let prefix = match extract_from_decoded(
-            &decoded,
+            decoded,
             crate::frame::FRAME_HEADER_SIZE,
             config.seed(),
             redundancy,
@@ -858,13 +1078,13 @@ pub fn extract_framed(
             }
         };
 
-        let frame_capacity = capacity_from_decoded(&decoded, total_len, redundancy)?;
+        let frame_capacity = capacity_from_decoded(decoded, total_len, redundancy)?;
         if !frame_capacity.is_sufficient() {
             failures.record_capacity(frame_capacity);
             continue;
         }
 
-        let framed = match extract_from_decoded(&decoded, total_len, config.seed(), redundancy) {
+        let framed = match extract_from_decoded(decoded, total_len, config.seed(), redundancy) {
             Ok(framed) => framed,
             Err(error) => {
                 failures.record_full_frame(error);
@@ -887,9 +1107,16 @@ pub fn extract_framed(
 /// fragile under requantization/re-encoding and does not prove a payload
 /// exists or authenticate the image.
 ///
+/// The write is transactional: success implies the complete 96-bit hint
+/// (`SEED` magic plus seed) is recoverable by [`extract_seed_hint`].
+/// JPEGs whose first two quantization tables yield fewer than 96 eligible
+/// positions (values `>= 2`) return [`StegoError::InsufficientCapacity`]
+/// with the hint-bit units instead of an unrecoverable partial hint.
+///
 /// # Errors
 ///
-/// Returns an error if the JPEG is malformed or embedding fails.
+/// Returns [`StegoError::MalformedInput`] if the JPEG cannot be parsed.
+/// Returns [`StegoError::InsufficientCapacity`] if the hint does not fit.
 ///
 /// # Examples
 ///
@@ -989,10 +1216,13 @@ fn jpeg_tiled_payload_matches_decoded(
 ///
 /// Each tile's DCT blocks embed the full payload with redundancy 1 using a
 /// deterministic tile-local seed (`tile_seed(master, tx, ty)`); the tile
-/// grid itself is the redundancy. Uses the same supported-JPEG subset and
-/// container-preserving encode as [`embed`]. The production self-check
-/// extracts the first successful tile from the already-mutated in-memory
-/// coefficients (one decode + one encode, no re-decode of the output).
+/// grid itself is the redundancy. Tiled embedding is exact: it never lowers
+/// redundancy and never applies a seed-only fallback for the payload.
+/// The quantization-table seed hint is attempted on a best-effort basis.
+/// Uses the same supported-JPEG subset and container-preserving encode as
+/// [`embed`]. The production self-check extracts the first successful tile
+/// from the already-mutated in-memory coefficients (one decode + one
+/// encode, no re-decode of the output).
 ///
 /// # Errors
 ///
@@ -1035,9 +1265,7 @@ pub fn embed_tiled(
             return Err(StegoError::UnsupportedJpeg(map_unsupported_reason(reason)));
         }
     };
-    DctStegoF5::new()
-        .embed_seed_in_quantization_tables(&mut header, seed)
-        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+    let _ = try_write_seed_hint(&mut header, seed)?;
 
     let max_h = header
         .components
@@ -1144,11 +1372,20 @@ pub fn extract_tiled(
     config: &TileConfig,
     max_origins: u32,
 ) -> std::result::Result<Vec<u8>, StegoError> {
+    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    extract_tiled_from_decoded(&decoded, payload_len, config, max_origins)
+}
+
+pub(crate) fn extract_tiled_from_decoded(
+    decoded: &DecodedJpegCarrier,
+    payload_len: usize,
+    config: &TileConfig,
+    max_origins: u32,
+) -> std::result::Result<Vec<u8>, StegoError> {
     validate_jpeg_tile_size(config.tile_size())?;
     crate::types::validate_max_origins(max_origins)?;
     checked_payload_bits(payload_len)?;
     let tile_size = config.tile_size();
-    let decoded = decode_supported_carrier(jpeg_bytes)?;
     let Some((tiles_x, tiles_y)) = jpeg_tile_geometry(&decoded.header, tile_size) else {
         return Err(StegoError::InvalidConfig(format!(
             "JPEG tile size {tile_size} does not map to DCT blocks"
@@ -1237,10 +1474,18 @@ pub fn extract_tiled_framed(
     config: &TileConfig,
     max_origins: u32,
 ) -> std::result::Result<Vec<u8>, StegoError> {
+    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    extract_tiled_framed_from_decoded(&decoded, config, max_origins)
+}
+
+pub(crate) fn extract_tiled_framed_from_decoded(
+    decoded: &DecodedJpegCarrier,
+    config: &TileConfig,
+    max_origins: u32,
+) -> std::result::Result<Vec<u8>, StegoError> {
     validate_jpeg_tile_size(config.tile_size())?;
     crate::types::validate_max_origins(max_origins)?;
     let tile_size = config.tile_size();
-    let decoded = decode_supported_carrier(jpeg_bytes)?;
     let Some((tiles_x, tiles_y)) = jpeg_tile_geometry(&decoded.header, tile_size) else {
         return Err(StegoError::InvalidConfig(format!(
             "JPEG tile size {tile_size} does not map to DCT blocks"
@@ -1689,5 +1934,166 @@ mod tests {
         reset_decode_count();
         assert!(extract_tiled_framed(&report.output, &config, 64).is_ok());
         assert_eq!(decode_count(), 1);
+    }
+
+    #[test]
+    fn strict_embed_keeps_requested_redundancy_when_it_fits() {
+        let jpeg_bytes = make_test_jpeg(256, 256);
+        let payload = b"strict payload fits";
+        let config = JpegConfig::new(42);
+        let report = embed_strict(&jpeg_bytes, payload, &config).unwrap();
+        assert!(report.embedded);
+        assert_eq!(report.actual_redundancy, config.redundancy());
+        let recovered = extract(
+            &report.output,
+            payload.len(),
+            &config,
+            report.actual_redundancy,
+        )
+        .unwrap();
+        assert_eq!(&recovered, payload);
+    }
+
+    #[test]
+    fn jpeg_validated_config_matches_legacy_carrier_bytes() {
+        let jpeg_bytes = make_test_jpeg(128, 128);
+        let payload = b"validated jpeg equivalence";
+        for redundancy in [1u8, 2, 3, 5, 10] {
+            let legacy = JpegConfig::new(99).with_redundancy(redundancy as usize);
+            let validated =
+                JpegConfig::from_redundancy(99, crate::Redundancy::new(redundancy).unwrap());
+            assert_eq!(validated.redundancy(), legacy.redundancy());
+            assert_eq!(validated.redundancy_value().get(), redundancy);
+            let legacy_report = embed(&jpeg_bytes, payload, &legacy).unwrap();
+            let validated_report = embed(&jpeg_bytes, payload, &validated).unwrap();
+            assert_eq!(legacy_report.embedded, validated_report.embedded);
+            assert_eq!(legacy_report.output, validated_report.output);
+            assert_eq!(
+                legacy_report.actual_redundancy,
+                validated_report.actual_redundancy
+            );
+            let strict_report = embed_strict(&jpeg_bytes, payload, &validated).unwrap();
+            assert_eq!(strict_report.actual_redundancy, redundancy as usize);
+        }
+        let zero_seed = JpegConfig::try_new(0, 2).unwrap();
+        let report = embed_strict(&jpeg_bytes, b"zero seed", &zero_seed).unwrap();
+        assert!(report.embedded);
+    }
+
+    #[test]
+    fn strict_embed_never_downgrades_redundancy() {
+        let jpeg_bytes = make_test_jpeg(256, 256);
+        let probe = JpegConfig::new(42);
+        let available = capacity(&jpeg_bytes, 1, &probe).unwrap().available;
+        assert!(available >= 16);
+        let payload = vec![0xA5; available / 8];
+        let requested = JpegConfig::new(42).try_with_redundancy(3).unwrap();
+        let strict_result = embed_strict(&jpeg_bytes, &payload, &requested);
+        assert!(
+            matches!(strict_result, Err(StegoError::InsufficientCapacity { .. })),
+            "strict embed must report insufficient capacity instead of downgrading"
+        );
+        let best_effort = embed(&jpeg_bytes, &payload, &requested).unwrap();
+        assert!(best_effort.embedded);
+        assert!(best_effort.actual_redundancy < requested.redundancy());
+        let recovered = extract(
+            &best_effort.output,
+            payload.len(),
+            &requested,
+            best_effort.actual_redundancy,
+        )
+        .unwrap();
+        assert_eq!(recovered, payload);
+    }
+
+    #[test]
+    fn strict_insufficient_capacity_emits_no_output() {
+        let jpeg_bytes = make_test_jpeg(256, 256);
+        let probe = JpegConfig::new(42);
+        let available = capacity(&jpeg_bytes, 1, &probe).unwrap().available;
+        let payload = vec![0xA5; available + 64];
+        let config = JpegConfig::new(42);
+        assert!(matches!(
+            embed_strict(&jpeg_bytes, &payload, &config),
+            Err(StegoError::InsufficientCapacity { .. })
+        ));
+        let fallback = embed(&jpeg_bytes, &payload, &config).unwrap();
+        assert!(!fallback.embedded);
+        assert_eq!(fallback.actual_redundancy, 0);
+    }
+
+    #[test]
+    fn strict_embed_rejects_empty_payload() {
+        let jpeg_bytes = make_test_jpeg(64, 64);
+        let config = JpegConfig::new(42);
+        assert!(matches!(
+            embed_strict(&jpeg_bytes, &[], &config),
+            Err(StegoError::InvalidConfig(_))
+        ));
+    }
+
+    #[test]
+    fn strict_framed_roundtrip_matches_policy() {
+        let jpeg_bytes = make_test_jpeg(256, 256);
+        let config = JpegConfig::new(42);
+        let report = embed_framed_strict(&jpeg_bytes, b"framed strict", &config).unwrap();
+        assert!(report.embedded);
+        assert_eq!(report.actual_redundancy, config.redundancy());
+        assert_eq!(
+            extract_framed(&report.output, &config).unwrap(),
+            b"framed strict"
+        );
+        let probe = JpegConfig::new(42);
+        let available = capacity(&jpeg_bytes, 1, &probe).unwrap().available;
+        let oversized = vec![0xA5; available + 64];
+        assert!(matches!(
+            embed_framed_strict(&jpeg_bytes, &oversized, &config),
+            Err(StegoError::InsufficientCapacity { .. })
+        ));
+    }
+
+    #[test]
+    fn strict_embed_rejects_unsupported_jpeg_without_seed_fallback() {
+        use jpeg_encoder::Encoder as JpegEnc;
+        let img = image::DynamicImage::new_rgb8(64, 64);
+        let rgb = img.to_rgb8();
+        let mut progressive_buf = Vec::new();
+        {
+            let mut enc = JpegEnc::new(&mut progressive_buf, 90);
+            enc.set_progressive(true);
+            enc.encode(rgb.as_raw(), 64, 64, jpeg_encoder::ColorType::Rgb)
+                .unwrap();
+        }
+        let config = JpegConfig::new(42);
+        assert!(matches!(
+            embed_strict(&progressive_buf, b"payload", &config),
+            Err(StegoError::UnsupportedJpeg(_)) | Err(StegoError::MalformedInput(_))
+        ));
+        assert!(matches!(
+            embed_seed_hint(&progressive_buf, 42),
+            Ok(_) | Err(StegoError::InsufficientCapacity { .. })
+        ));
+    }
+
+    #[test]
+    fn seed_hint_round_trip_covers_seed_boundaries() {
+        let jpeg_bytes = make_test_jpeg(128, 128);
+        for seed in [0u64, 1, 42, u64::MAX] {
+            match embed_seed_hint(&jpeg_bytes, seed) {
+                Ok(output) => {
+                    assert_eq!(extract_seed_hint(&output).unwrap(), Some(seed));
+                }
+                Err(StegoError::InsufficientCapacity { .. }) => {}
+                Err(other) => panic!("unexpected seed hint error: {other}"),
+            }
+        }
+        assert!(matches!(
+            embed_seed_hint(b"not a jpeg", 42),
+            Err(StegoError::MalformedInput(_))
+        ));
+        assert!(matches!(
+            embed_strict(b"not a jpeg", b"payload", &JpegConfig::new(42)),
+            Err(StegoError::MalformedInput(_))
+        ));
     }
 }

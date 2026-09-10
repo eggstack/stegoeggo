@@ -27,9 +27,15 @@
 //!   repetition: the full payload is embedded in each `tile_size × tile_size`
 //!   region with a deterministic tile-local seed, so recovery survives crops
 //!   that leave at least one intact tile. Tiled extraction is explicitly
-//!   bounded by `max_origins`.
+//!   bounded by `max_origins` and reads tile windows in place without
+//!   allocating cropped copies.
 //!
 //! All paths share the same corrected V2 carrier model.
+//!
+//! Callers with packed or strided RGB/RGBA bytes (camera, video, GUI, FFI
+//! buffers) should use the borrowed [`crate::pixels::PixelView`] and
+//! [`crate::pixels::PixelViewMut`] views instead of converting into an
+//! `RgbaImage`; equivalent pixels use the identical logical carrier mapping.
 
 pub use crate::lsb_internal::{capacity, embed, extract, LsbConfig, DEFAULT_TILE_SIZE};
 pub use crate::types::{InPlaceEmbedReport, TileConfig};
@@ -116,54 +122,6 @@ pub fn extract_framed(
     let framed = extract(img, total_len, config)?;
     let (_, payload) = crate::frame::decode(&framed)?;
     Ok(payload)
-}
-
-/// Maximum tile-grid coordinate probed per axis during tiled recovery.
-///
-/// Matches the application tiled search domain so generic framed recovery
-/// remains compatible with payloads embedded by the current tiled path.
-const TILED_MAX_GRID: u32 = 16;
-
-/// Enumerate bounded crop-origin candidates for tiled recovery.
-///
-/// Origins step by `tile_size / 2` (minimum 1) in row-major order until
-/// `max_origins` is reached. Uses saturating arithmetic so untrusted tile
-/// sizes cannot overflow the scan.
-fn tiled_origins(width: u32, height: u32, tile_size: u32, max_origins: u32) -> Vec<(u32, u32)> {
-    let stride = (tile_size / 2).max(1);
-    let mut origins = Vec::new();
-    let mut y = 0u32;
-    while y.saturating_add(tile_size) <= height {
-        let mut x = 0u32;
-        while x.saturating_add(tile_size) <= width {
-            origins.push((x, y));
-            if origins.len() as u32 >= max_origins {
-                return origins;
-            }
-            x = x.saturating_add(stride);
-            if x == u32::MAX {
-                break;
-            }
-        }
-        if origins.len() as u32 >= max_origins {
-            break;
-        }
-        y = y.saturating_add(stride);
-        if y == u32::MAX {
-            break;
-        }
-    }
-    origins
-}
-
-/// Derive the carrier seed for one tiled candidate.
-///
-/// Mirrors the tiled embed seed derivation (`tile_seed` mixed per tile
-/// coordinate, then multiplied by the offset constant with a 5-pass history
-/// for compatibility with payloads embedded by the current path).
-fn tiled_candidate_seed(master_seed: u64, tile_x: u32, tile_y: u32, pass: u32) -> u64 {
-    let local = crate::lsb_internal::tile_seed(master_seed, tile_x, tile_y);
-    local.wrapping_mul(crate::constants::STEGO_OFFSET_SEED_1.wrapping_add(pass as u64))
 }
 
 /// Embed arbitrary bytes once per tile for crop resistance.
@@ -303,58 +261,13 @@ pub fn extract_tiled(
     config: &TileConfig,
     max_origins: u32,
 ) -> Result<Vec<u8>, super::StegoError> {
-    crate::types::validate_max_origins(max_origins)?;
-    let payload_bits = payload_len.checked_mul(8).ok_or_else(|| {
-        super::StegoError::ResourceLimitExceeded("payload length overflow".to_string())
-    })?;
-    let tile_size = config.tile_size();
-    let (width, height) = img.dimensions();
-    if width < tile_size || height < tile_size {
-        let required = crate::lsb_internal::lsb_required_capacity_v2(payload_bits, 1);
-        return Err(super::StegoError::InsufficientCapacity {
-            required,
-            available: 0,
-        });
-    }
-    let origins = tiled_origins(width, height, tile_size, max_origins);
-    if origins.is_empty() {
-        let required = crate::lsb_internal::lsb_required_capacity_v2(payload_bits, 1);
-        return Err(super::StegoError::InsufficientCapacity {
-            required,
-            available: 0,
-        });
-    }
-    for (x0, y0) in origins {
-        let sub = crate::lsb_internal::crop_rgba(img, x0, y0, tile_size, tile_size);
-        let base_x = x0 / tile_size;
-        let base_y = y0 / tile_size;
-        for dy in 0..=2u32 {
-            if base_y.saturating_add(dy) >= TILED_MAX_GRID {
-                break;
-            }
-            for dx in 0..=2u32 {
-                if base_x.saturating_add(dx) >= TILED_MAX_GRID {
-                    break;
-                }
-                for pass in 0..5u32 {
-                    let seed = tiled_candidate_seed(config.seed(), base_x + dx, base_y + dy, pass);
-                    if let Some(bytes) =
-                        crate::lsb_internal::extract_lsb_v2(&sub, payload_bits, seed, 1)
-                    {
-                        if bytes.len() >= payload_len {
-                            return Ok(bytes);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let required = crate::lsb_internal::lsb_required_capacity_v2(payload_bits, 1);
-    let available = crate::lsb_internal::lsb_available_slots(tile_size, tile_size).unwrap_or(0);
-    Err(super::StegoError::InsufficientCapacity {
-        required,
-        available,
-    })
+    crate::lsb_internal::extract_tiled_carrier(
+        img,
+        payload_len,
+        config.seed(),
+        config.tile_size(),
+        max_origins,
+    )
 }
 
 /// Embed a self-describing framed payload once per tile.
@@ -390,73 +303,12 @@ pub fn extract_tiled_framed(
     config: &TileConfig,
     max_origins: u32,
 ) -> Result<Vec<u8>, super::StegoError> {
-    crate::types::validate_max_origins(max_origins)?;
-    let tile_size = config.tile_size();
-    let (width, height) = img.dimensions();
-    let header_bits = crate::frame::FRAME_HEADER_SIZE
-        .checked_mul(8)
-        .ok_or_else(|| {
-            super::StegoError::ResourceLimitExceeded("frame header size overflow".to_string())
-        })?;
-    let header_required = crate::lsb_internal::lsb_required_capacity_v2(header_bits, 1);
-    if width < tile_size || height < tile_size {
-        return Err(super::StegoError::InsufficientCapacity {
-            required: header_required,
-            available: 0,
-        });
-    }
-    let origins = tiled_origins(width, height, tile_size, max_origins);
-    if origins.is_empty() {
-        return Err(super::StegoError::InsufficientCapacity {
-            required: header_required,
-            available: 0,
-        });
-    }
-    let tile_available =
-        crate::lsb_internal::lsb_available_slots(tile_size, tile_size).unwrap_or(0);
-    for (x0, y0) in origins {
-        let sub = crate::lsb_internal::crop_rgba(img, x0, y0, tile_size, tile_size);
-        let base_x = x0 / tile_size;
-        let base_y = y0 / tile_size;
-        for dy in 0..=2u32 {
-            if base_y.saturating_add(dy) >= TILED_MAX_GRID {
-                break;
-            }
-            for dx in 0..=2u32 {
-                if base_x.saturating_add(dx) >= TILED_MAX_GRID {
-                    break;
-                }
-                for pass in 0..5u32 {
-                    let seed = tiled_candidate_seed(config.seed(), base_x + dx, base_y + dy, pass);
-                    let Some(prefix) =
-                        crate::lsb_internal::extract_lsb_v2(&sub, header_bits, seed, 1)
-                    else {
-                        continue;
-                    };
-                    let Ok((_, total_len)) = crate::frame::decode_prefix(&prefix) else {
-                        continue;
-                    };
-                    let Some(total_bits) = total_len.checked_mul(8) else {
-                        continue;
-                    };
-                    let full_required =
-                        crate::lsb_internal::lsb_required_capacity_v2(total_bits, 1);
-                    if full_required > tile_available {
-                        continue;
-                    }
-                    let Some(framed) =
-                        crate::lsb_internal::extract_lsb_v2(&sub, total_bits, seed, 1)
-                    else {
-                        continue;
-                    };
-                    if let Ok((_, payload)) = crate::frame::decode(&framed) {
-                        return Ok(payload);
-                    }
-                }
-            }
-        }
-    }
-    Err(super::StegoError::FrameNotFound)
+    crate::lsb_internal::extract_tiled_framed_carrier(
+        img,
+        config.seed(),
+        config.tile_size(),
+        max_origins,
+    )
 }
 
 #[cfg(test)]

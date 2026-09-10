@@ -12,13 +12,19 @@
 //!
 //! - [`lsb`] — pixel-domain LSB capacity, raw embed/extract, in-place embed,
 //!   framed convenience, and tiled crop-oriented operations.
+//! - [`pixels`] — borrowed packed/strided RGB/RGBA views ([`pixels::PixelView`],
+//!   [`pixels::PixelViewMut`]) sharing the LSB carrier core without an
+//!   `RgbaImage` conversion.
 //! - [`jpeg`] — encoded-JPEG DCT capacity, raw embed/extract, framed
 //!   convenience, tiled crop-oriented operations, support probing, and seed
 //!   hints.
+//! - [`prepared`] — opaque borrowed [`prepared::PreparedJpeg`] retaining one
+//!   coefficient decode across repeated generic JPEG operations.
 //! - [`frame`] — self-describing framed payload with CRC32.
 //! - [`error`] — [`StegoError`] and [`JpegUnsupportedReason`].
-//! - [`CapacityReport`], [`EmbedReport`], [`InPlaceEmbedReport`] — structured
-//!   reports describing capacity and embed outcomes.
+//! - [`CapacityReport`], [`EmbedReport`], [`InPlaceEmbedReport`],
+//!   [`Redundancy`] — structured reports and the validated redundancy
+//!   primitive.
 //!
 //! # What is intentionally NOT public
 //!
@@ -44,6 +50,8 @@ pub mod jpeg;
 pub(crate) mod jpeg_transcoder;
 pub mod lsb;
 pub(crate) mod lsb_internal;
+pub mod pixels;
+pub mod prepared;
 pub mod types;
 
 #[cfg(feature = "application-support")]
@@ -53,16 +61,18 @@ pub mod application_support;
 pub use error::{JpegUnsupportedReason, StegoError, StegoResult};
 pub use jpeg::is_progressive_jpeg;
 pub use lsb::DEFAULT_TILE_SIZE;
+pub use pixels::{PixelLayout, PixelView, PixelViewMut};
+pub use prepared::PreparedJpeg;
 pub use types::{
-    EmbedOutcome, EmbedOutcomeSummary, EmbedPath, EmbedStatus, InPlaceEmbedReport, TileConfig,
-    MAX_TILED_ORIGINS,
+    EmbedOutcome, EmbedOutcomeSummary, EmbedPath, EmbedStatus, InPlaceEmbedReport, Redundancy,
+    TileConfig, MAX_TILED_ORIGINS,
 };
 
 /// Capacity report for a carrier query.
 ///
 /// Both fields are in **carrier units** that depend on the carrier family:
 /// - LSB: RGB carrier slots (one slot per non-alpha channel byte).
-/// - JPEG: eligible non-zero AC coefficients across all components.
+/// - JPEG: eligible AC coefficients with `|coef| >= 2` after canonicalization.
 ///
 /// The same unit applies to both `required` and `available` for a given
 /// use, so [`CapacityReport::is_sufficient`] is a direct comparison.
@@ -92,6 +102,11 @@ impl CapacityReport {
 /// [`CapacityReport`]. `payload_bytes` is the raw payload size in bytes
 /// placed in the carrier; for framed operations it includes the frame
 /// header and CRC32 overhead.
+///
+/// This is the recommended generic result surface: private-state evolution
+/// happens through additive constructors and helpers rather than new
+/// public fields, and failures are reported with [`StegoError`] instead of
+/// sentinel reports.
 #[derive(Debug, Clone)]
 pub struct EmbedReport<T = Vec<u8>> {
     /// Whether the payload was embedded.
@@ -109,4 +124,31 @@ pub struct EmbedReport<T = Vec<u8>> {
     /// the requested level if capacity was insufficient). Zero when
     /// nothing was embedded.
     pub actual_redundancy: usize,
+}
+
+impl<T> EmbedReport<T> {
+    /// Consume the report and return the carrier output.
+    #[must_use]
+    pub fn into_output(self) -> T {
+        self.output
+    }
+
+    /// Decompose the report into the carrier output and its capacity facts.
+    #[must_use]
+    pub fn into_parts(self) -> (T, CapacityReport) {
+        let capacity = CapacityReport {
+            required: self.required_capacity,
+            available: self.available_capacity,
+        };
+        (self.output, capacity)
+    }
+
+    /// The capacity facts behind this report, in carrier units.
+    #[must_use]
+    pub fn capacity(&self) -> CapacityReport {
+        CapacityReport {
+            required: self.required_capacity,
+            available: self.available_capacity,
+        }
+    }
 }

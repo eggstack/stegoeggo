@@ -26,15 +26,37 @@ impl SteganographyProtector {
         }
     }
 
+    /// Application seed-only fallback for unsupported JPEG structures.
+    ///
+    /// Stores the seed hint when the tables hold it. When even the hint
+    /// does not fit (short or missing quantization tables), degrades
+    /// truthfully to an unmodified passthrough: the outcome still reports
+    /// `UnsupportedProgressive` (no DCT payload) with the existing
+    /// `ProgressiveJpegFallback` warning, and the pipeline continues with
+    /// metadata injection. Other errors (malformed input) still fail.
     fn progressive_fallback(
         jpeg_bytes: &[u8],
         seed: u64,
     ) -> Result<crate::stego::EmbedOutcome<Vec<u8>>> {
-        Ok(crate::stego::EmbedOutcome::UnsupportedProgressive {
-            output: carrier_jpeg::embed_seed_hint(jpeg_bytes, seed)?,
-        })
+        match carrier_jpeg::embed_seed_hint(jpeg_bytes, seed) {
+            Ok(output) => Ok(crate::stego::EmbedOutcome::UnsupportedProgressive { output }),
+            Err(crate::stego::StegoError::InsufficientCapacity { .. }) => {
+                Ok(crate::stego::EmbedOutcome::UnsupportedProgressive {
+                    output: jpeg_bytes.to_vec(),
+                })
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
+    /// Application best-effort DCT embedding.
+    ///
+    /// StegoEggo application policy, owned by this layer: uses the generic
+    /// best-effort carrier (`carrier_jpeg::embed`, which may lower redundancy
+    /// and degrade to a seed hint) and maps unsupported structures to the
+    /// explicit seed-only fallback above. A short quantization table now
+    /// propagates as an error instead of an unrecoverable partial hint.
+    /// Callers needing exact redundancy must use `carrier_jpeg::embed_strict`.
     fn embed_dct_payload(
         jpeg_bytes: &[u8],
         payload: &[u8],
@@ -148,6 +170,10 @@ impl SteganographyProtector {
     /// Embed only the seed in JPEG quantization tables (no DCT coefficient modification).
     /// Used for Light level JPEG protection — the seed is recoverable when the
     /// quantization tables themselves are preserved.
+    ///
+    /// Unlike the best-effort progressive fallback, a short table fails here:
+    /// the seed hint is Light's only channel, so an unstoreable hint must not
+    /// silently become no protection.
     pub(crate) fn apply_qtable_seed_bytes(&self, jpeg_bytes: &[u8], seed: u64) -> Result<Vec<u8>> {
         if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
             return Err(Error::Steganography("Not a valid JPEG".to_string()));
@@ -266,12 +292,14 @@ impl SteganographyProtector {
     ///
     /// The V2 scheme operates over `width * height * 3` RGB carrier slots.
     /// Each payload bit is spread across `STEGO_SPREAD_FACTOR * redundancy`
-    /// distinct slots selected by a single true bijection permutation.
-    /// All replicas of the same bit use consecutive logical indices through
-    /// one permutation, guaranteeing no inter-replica collisions:
+    /// slots selected by the byte-frozen V2 cycle-walking mapping. Full-domain
+    /// injectivity is verified by carrier tests for the documented small and
+    /// medium domains; outside those domains distinct slots are an operational
+    /// assumption, not a proven invariant:
     /// - Exact capacity model: `required = payload_bits * STEGO_SPREAD_FACTOR * redundancy`
-    /// - No slot collisions within one embedding
-    /// - True bijection for arbitrary (including non-power-of-two) slot counts
+    /// - No slot collisions observed within one embedding in tested domains
+    /// - V2 mapping is byte-stable for compatibility and is not claimed to be
+    ///   a proven bijection over the full domain
     #[allow(dead_code)]
     pub(crate) fn embed_lsb_v2(
         &self,

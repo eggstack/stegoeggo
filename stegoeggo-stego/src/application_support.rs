@@ -18,10 +18,12 @@
 //!   candidate search for V3/legacy classification. Generic tiled extraction
 //!   uses its own private bounded search without exposing candidate keys.
 //! - `JpegSearchContext`: single-decode application verification reuse
-//!   (standard probing plus tiled fallback share one decode). Plan 078
-//!   evidence disposition is `PRIVATE-REUSE-SUFFICIENT`, so no public
-//!   prepared type exists; this context stays hidden with all codec types
-//!   private.
+//!   (standard probing plus tiled fallback share one decode). Standard
+//!   probing delegates to the same decoded-state helpers as the public
+//!   [`crate::prepared::PreparedJpeg`]; the tiled candidate classification
+//!   across redundancies and legacy payload versions is
+//!   StegoEggo-specific and stays hidden. Generic consumers must use
+//!   [`crate::prepared::PreparedJpeg`], never this context.
 //!
 //! Ordinary current LSB/JPEG/tiled embedding uses the stable `lsb`/`jpeg`
 //! APIs directly. No hidden wrapper duplicates those paths.

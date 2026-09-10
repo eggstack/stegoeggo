@@ -1,4 +1,110 @@
+/// Validated redundancy level shared by the LSB and JPEG carriers.
+///
+/// A redundancy of `r` spreads each payload bit across `r` times the
+/// carrier-specific base multiplicity. Construction is fallible with
+/// identical semantics in every build profile; the legacy infallible
+/// `with_redundancy` builders are compatibility adapters for
+/// compile-time-constant values only.
+///
+/// # Examples
+///
+/// ```rust
+/// use stegoeggo_stego::types::Redundancy;
+///
+/// let redundancy = Redundancy::new(3)?;
+/// assert_eq!(redundancy.get(), 3);
+/// assert!(Redundancy::new(0).is_err());
+/// assert!(Redundancy::new(11).is_err());
+/// # Ok::<_, stegoeggo_stego::StegoError>(())
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct Redundancy(u8);
+
+impl Redundancy {
+    /// Smallest valid redundancy.
+    pub const MIN: Self = Self(1);
+    /// Largest valid redundancy.
+    pub const MAX: Self = Self(10);
+
+    /// Validate a redundancy value.
+    ///
+    /// Returns [`crate::StegoError::InvalidConfig`] unless `value` is in
+    /// `1..=10`.
+    pub fn new(value: u8) -> Result<Self, crate::StegoError> {
+        if (1..=10).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(crate::StegoError::InvalidConfig(format!(
+                "redundancy must be in 1..=10, got {value}"
+            )))
+        }
+    }
+
+    /// Validate a `usize` redundancy from runtime configuration.
+    ///
+    /// Returns [`crate::StegoError::InvalidConfig`] unless `value` is in
+    /// `1..=10`.
+    pub fn from_usize(value: usize) -> Result<Self, crate::StegoError> {
+        let byte: u8 = value.try_into().map_err(|_| {
+            crate::StegoError::InvalidConfig(format!("redundancy must be in 1..=10, got {value}"))
+        })?;
+        Self::new(byte)
+    }
+
+    /// The validated redundancy value.
+    #[must_use]
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+
+    /// The validated redundancy value widened to `usize`.
+    #[must_use]
+    pub const fn get_usize(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl TryFrom<u8> for Redundancy {
+    type Error = crate::StegoError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<usize> for Redundancy {
+    type Error = crate::StegoError;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        Self::from_usize(value)
+    }
+}
+
+impl From<Redundancy> for u8 {
+    fn from(value: Redundancy) -> Self {
+        value.get()
+    }
+}
+
+impl From<Redundancy> for usize {
+    fn from(value: Redundancy) -> Self {
+        value.get_usize()
+    }
+}
+
+impl std::fmt::Display for Redundancy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// The embedding path used for steganographic payload insertion.
+///
+/// Application-compatibility surface: these paths include StegoEggo
+/// application degradation states (`QTableSeedOnly`). The parent
+/// rights-protection layer owns that policy; new generic carrier code
+/// should describe outcomes with [`crate::EmbedReport`] and
+/// [`crate::StegoError`] instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmbedPath {
     /// Non-tiled LSB pixel embedding (PNG/WebP).
@@ -15,10 +121,12 @@ pub enum EmbedPath {
 
 /// Structured outcome from steganographic embedding.
 ///
-/// Returned by embedding helpers to report whether the payload was
-/// actually embedded, skipped due to capacity, or degraded to a
-/// seed-only path. Propagated through the pipeline to warnings,
-/// reports, and strict CLI behavior.
+/// Application-compatibility surface retained for the parent
+/// rights-protection pipeline (warnings, reports, strict CLI behavior).
+/// New generic carrier code should use [`crate::EmbedReport`] for success
+/// reports and [`crate::StegoError`] (including
+/// [`crate::StegoError::InsufficientCapacity`]) for failures instead of
+/// these application-shaped outcomes.
 #[derive(Debug, Clone)]
 pub enum EmbedOutcome<T> {
     /// Payload was successfully embedded.
@@ -192,6 +300,9 @@ impl<T> EmbedOutcome<T> {
 }
 
 /// Status of a steganographic embedding attempt.
+///
+/// Application-compatibility surface; see [`EmbedOutcome`]. Prefer
+/// [`crate::EmbedReport`] plus [`crate::StegoError`] for new code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmbedStatus {
     /// Payload was successfully embedded.
@@ -244,8 +355,8 @@ pub struct EmbedOutcomeSummary {
     pub path: EmbedPath,
     /// Payload size in bytes.
     pub payload_bytes: usize,
-    /// Required capacity for the carrier (RGB slots for LSB paths, non-zero AC
-    /// coefficients for DCT paths).
+    /// Required capacity for the carrier (RGB slots for LSB paths, eligible
+    /// AC coefficients with `|coef| >= 2` for DCT paths).
     pub required_capacity: usize,
     /// Available capacity in the carrier (same units as `required_capacity`).
     pub available_capacity: usize,
@@ -332,4 +443,76 @@ pub(crate) fn validate_max_origins(max_origins: u32) -> Result<(), crate::StegoE
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redundancy_accepts_full_valid_range() {
+        for value in 1..=10u8 {
+            let redundancy = Redundancy::new(value).unwrap();
+            assert_eq!(redundancy.get(), value);
+            assert_eq!(redundancy.get_usize(), value as usize);
+            assert_eq!(Redundancy::from_usize(value as usize).unwrap(), redundancy);
+            assert_eq!(Redundancy::try_from(value).unwrap(), redundancy);
+            assert_eq!(Redundancy::try_from(value as usize).unwrap(), redundancy);
+            assert_eq!(u8::from(redundancy), value);
+            assert_eq!(usize::from(redundancy), value as usize);
+            assert_eq!(redundancy.to_string(), value.to_string());
+        }
+        assert_eq!(Redundancy::MIN.get(), 1);
+        assert_eq!(Redundancy::MAX.get(), 10);
+        assert!(Redundancy::MIN < Redundancy::MAX);
+    }
+
+    #[test]
+    fn redundancy_rejects_invalid_values_deterministically() {
+        for value in [0u8, 11, 12, 100, u8::MAX] {
+            assert!(
+                Redundancy::new(value).is_err(),
+                "u8 value {value} must be rejected"
+            );
+        }
+        for value in [0usize, 11, 12, 100, 256, 1_000_000, usize::MAX] {
+            assert!(
+                Redundancy::from_usize(value).is_err(),
+                "usize value {value} must be rejected"
+            );
+            assert!(
+                Redundancy::try_from(value).is_err(),
+                "TryFrom<usize> value {value} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn embed_report_helpers_preserve_output_and_capacity() {
+        let report = crate::EmbedReport {
+            embedded: true,
+            output: vec![7u8, 8, 9],
+            payload_bytes: 3,
+            required_capacity: 120,
+            available_capacity: 400,
+            actual_redundancy: 2,
+        };
+        let capacity = report.capacity();
+        assert_eq!(capacity.required, 120);
+        assert_eq!(capacity.available, 400);
+        assert!(capacity.is_sufficient());
+        let (output, capacity) = report.into_parts();
+        assert_eq!(output, vec![7u8, 8, 9]);
+        assert_eq!(capacity.required, 120);
+        let report = crate::EmbedReport {
+            embedded: false,
+            output: vec![1u8],
+            payload_bytes: 1,
+            required_capacity: 10,
+            available_capacity: 2,
+            actual_redundancy: 0,
+        };
+        assert!(!report.capacity().is_sufficient());
+        assert_eq!(report.into_output(), vec![1u8]);
+    }
 }

@@ -7,10 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Strict JPEG carrier operations in `stegoeggo-stego` (also via `stegoeggo::stego`): `jpeg::embed_strict` / `embed_framed_strict` embed at exactly the requested redundancy or return `InsufficientCapacity` without emitting output, lowering redundancy, or degrading to a seed hint
+- Validated `Redundancy` carrier primitive (`new`/`from_usize`, `Copy`, identical debug/release semantics) with `from_redundancy` / `with_redundancy_value` / `redundancy_value` on `LsbConfig`/`JpegConfig`; `EmbedReport` gains `into_output` / `into_parts` / `capacity` decomposition helpers
+- Opaque `prepared::PreparedJpeg`: borrows encoded JPEG bytes and reuses one coefficient decode across repeated capacity/extraction/strict-embed operations with byte-identical results to the one-shot API; codec internals stay private
+- Borrowed `pixels::PixelView` / `PixelViewMut`: packed/strided RGB8/RGBA8 LSB operations sharing one private carrier core with the `RgbaImage` path (byte-identical channels); alpha and row padding are never carriers and never mutated; tiled extraction no longer allocates per-origin cropped copies on either path
 - Public tiled carrier operations in `stegoeggo-stego` (also via `stegoeggo::stego`): `lsb::embed_tiled` / `embed_tiled_in_place` / `extract_tiled` / `embed_tiled_framed` / `extract_tiled_framed` and the `jpeg::` counterparts, sharing one fallible `TileConfig { seed, tile_size }`. Tiled extraction is bounded by an explicit `max_origins` (`1..=MAX_TILED_ORIGINS`); framed tiled recovery validates CRC32 and needs no caller-known length
 - Standalone-carrier consumer proof: the generic `lsb`/`jpeg`/`frame` APIs round-trip from an external crate on default features (no `application-support`), and the root `stegoeggo::stego` facade re-exports the full carrier surface
 
 ### Fixed
+- JPEG seed hints are transactional: `embed_seed_in_quantization_tables` preflights eligible Q-table positions and returns `InsufficientHintCapacity` (mapped to `StegoError::InsufficientCapacity` in hint-bit units) instead of an unrecoverable partial hint; short tables no longer fail otherwise-successful payload embeds
 - PNG `ReplaceStegoOwned` no longer duplicates legal-notice `tEXt` chunks (`Copyright`, `Creator`, etc.) on metadata-only re-processing — `strip_stego_owned_png`, `collect_stego_owned_png_keys`, and `png_has_stego_metadata` now share a single `STEGO_OWNED_PNG_KEYS` constant covering all 18 stego-owned keywords instead of only the 2 seed-related ones
 - PNG XMP `iTXt` (`XML:com.adobe.xmp`) is now recognised as stego-owned across `png_has_stego_metadata`, `strip_stego_owned_png`, and `collect_stego_owned_png_keys`; `ReplaceStegoOwned` strips existing XMP chunks before re-injection so a second round no longer appends a duplicate
 - `PayloadBuilder::key_id` is no longer fallible-by-panic — length validation now happens in `build()` and surfaces as `PayloadV3ParseError::Oversized`; internal `assert_eq!` invariants demoted to `debug_assert_eq!`
@@ -18,6 +23,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `strip_stego_owned_webp` RIFF size rewrite uses `u32::try_from` and returns `Error::Metadata` on overflow (was silent truncation via `as u32`)
 
 ### Changed
+- JPEG capacity units documented as eligible AC coefficients with `|coef| >= 2` (not all non-zero AC coefficients); the DCT carrier is documented as an F5-style/no-zero-coefficient StegoEggo variant with no conventional-F5 interoperability claim and no progressive DCT support
+- V2 LSB mapping claims corrected: byte-frozen for compatibility with full-domain injectivity verified for documented small/medium domains (max observed walk depth 30, zero fallback hits), not a proven full-domain bijection
+- `SUPPORT.md` no longer claims GitHub-required-check enforcement: the `Check` job is the standard push/PR gate but `main` is unprotected (verified 2026-09-10)
 - CLI contract consolidation (Plan 087): `stegoeggo-cli/src/main.rs` decomposed into private modules (`args`, `request`, `protect`, `verify`, `output`, `keys`, `manifest`); single/batch/dry-run/JSON share one canonical `ProtectionRequest` builder with a documented modern-vs-legacy precedence table; explicit `--hidden-marker`/`--authentication` with explicit `--level`/`--profile` and `--metadata false` with metadata-injecting presets now fail with exit code 2 instead of silently weakening protection
 - CLI dependency trim: default build no longer enables root `iscc`/`conformance`/`parallel` features and drops the direct `image` dependency (verbose-only); production deps are `clap`, `stegoeggo` (default features), `rayon` (error-tolerant batch), `hex`, `serde`/`serde_json`, `tempfile`
 - Documentation audit pass: all 30 `architecture/` deep-dives re-verified against source (24 corrected); `AGENTS.md` now carries a complete architecture doc index; agent skills refreshed (verification type surface, plan numbering, stale discrepancy claims removed)

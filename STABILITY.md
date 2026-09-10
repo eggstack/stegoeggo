@@ -38,19 +38,23 @@ The following API surfaces are stable and follow semantic versioning guarantees.
 
 ### Generic Carrier API
 
-The standalone carrier surface is stable: raw (`embed`/`extract`), in-place
-(`lsb::embed_in_place`), framed (`embed_framed`/`extract_framed`), and tiled
-(`embed_tiled`, `embed_tiled_in_place`, `extract_tiled`,
-`embed_tiled_framed`, `extract_tiled_framed`) operations over LSB and JPEG
-carriers, with `LsbConfig`, `JpegConfig`, `TileConfig`, `MAX_TILED_ORIGINS`,
-`StegoError`, and the capacity/embed report types. There is no public
-prepared/reusable JPEG type; repeated verification search reuses a private
-single-decode context.
+The standalone carrier surface is stable: raw (`embed`/`extract`), strict
+JPEG (`embed_strict`/`embed_framed_strict`), in-place
+(`lsb::embed_in_place`), borrowed views (`PixelView`/`PixelViewMut`),
+framed (`embed_framed`/`extract_framed`), prepared JPEG reuse
+(`PreparedJpeg`), and tiled (`embed_tiled`, `embed_tiled_in_place`,
+`extract_tiled`, `embed_tiled_framed`, `extract_tiled_framed`) operations
+over LSB and JPEG carriers, with `Redundancy`, `LsbConfig`, `JpegConfig`,
+`TileConfig`, `MAX_TILED_ORIGINS`, `StegoError`, and the capacity/embed
+report types. `jpeg::embed`/`embed_framed` remain best-effort
+compatibility operations (redundancy reduction plus seed-hint
+degradation); `EmbedOutcome`/`EmbedStatus`/`EmbedPath` are parent-owned
+application vocabulary retained through 0.x.
 
 | Item | Module |
 |------|--------|
-| `lsb`, `jpeg`, `frame`, `error`, `types` carrier modules | `stegoeggo::stego` / `stegoeggo-stego` |
-| `TileConfig`, `MAX_TILED_ORIGINS` | `stegoeggo::stego` / `stegoeggo-stego` |
+| `lsb`, `jpeg`, `frame`, `error`, `types`, `pixels`, `prepared` carrier modules | `stegoeggo::stego` / `stegoeggo-stego` |
+| `TileConfig`, `MAX_TILED_ORIGINS`, `Redundancy`, `PreparedJpeg`, `PixelView`, `PixelViewMut`, `PixelLayout` | `stegoeggo::stego` / `stegoeggo-stego` |
 
 ## Deprecated Compatibility API
 

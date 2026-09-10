@@ -41,8 +41,8 @@ bytes that can be recovered later. Four operation styles are supported:
 
 | Carrier | Domain | Capacity unit | Limitations |
 |---|---|---|---|
-| `lsb` | Pixel (R, G, B channels of `RgbaImage`) | RGB carrier slots (`width * height * 3`) | Fragile under lossy re-encoding; survives lossless WebP and PNG only |
-| `jpeg` | DCT coefficients (F5-style) | Non-zero AC coefficients across all components | Bounded supported subset: 8-bit, sequential, single-scan, Huffman, ≤4 components, ≤4 sampling factor, no restart intervals |
+| `lsb` | Pixel (R, G, B channels of `RgbaImage`, or borrowed RGB/RGBA views) | RGB carrier slots (`width * height * 3`) | Fragile under lossy re-encoding; survives lossless WebP and PNG only. The V2 slot mapping is byte-frozen for compatibility; full-domain injectivity is verified for documented small/medium domains only |
+| `jpeg` | DCT coefficients (F5-style variant, not conventional F5) | Eligible AC coefficients with `\|coef\| >= 2` after canonicalization | Bounded supported subset: 8-bit, sequential, single-scan, Huffman, ≤4 components, ≤4 sampling factor, no restart intervals. No interoperability with other F5 implementations is claimed |
 
 The alpha channel is never a carrier. The JPEG DCT path operates on the
 encoded JPEG byte stream directly — pixels are not decoded.
@@ -91,6 +91,65 @@ if jpeg::probe_support(&jpeg_bytes)? == jpeg::JpegSupport::Supported {
         report.actual_redundancy,
     )?;
 }
+```
+
+## Strict vs best-effort JPEG embedding
+
+`jpeg::embed` is best-effort compatibility behavior: it lowers the
+requested redundancy to the largest value that fits and emits a
+seed-hint carrier with `embedded == false` when no payload fits. New
+callers that need exact semantics should use `jpeg::embed_strict` (and
+`jpeg::embed_framed_strict`), which embed at exactly the requested
+redundancy or return `InsufficientCapacity` without emitting output:
+
+```rust
+use stegoeggo_stego::jpeg::{self, JpegConfig};
+
+let config = JpegConfig::new(42);
+let report = jpeg::embed_strict(&jpeg_bytes, payload, &config)?;
+assert_eq!(report.actual_redundancy, config.redundancy());
+```
+
+Seed hints (`jpeg::embed_seed_hint`) are transactional: success implies
+the complete 96-bit hint is recoverable by `extract_seed_hint`, and
+short quantization tables return `InsufficientCapacity` in hint-bit
+units instead of an unrecoverable partial hint.
+
+## Prepared JPEG (repeated operations)
+
+`prepared::PreparedJpeg` borrows encoded JPEG bytes and retains one
+coefficient decode across repeated capacity, extraction, and
+strict-embedding operations. Results agree exactly with the one-shot
+API. Codec internals (headers, coefficient maps, Huffman/F5 state) stay
+private:
+
+```rust
+use stegoeggo_stego::jpeg::JpegConfig;
+use stegoeggo_stego::prepared::PreparedJpeg;
+
+let prepared = PreparedJpeg::new(&jpeg_bytes)?;
+let config = JpegConfig::new(42);
+let report = prepared.capacity(100, &config)?;
+if report.is_sufficient() {
+    let payload = prepared.extract_framed(&config)?;
+}
+```
+
+## Borrowed pixel buffers (no `RgbaImage` conversion)
+
+`pixels::PixelView` and `pixels::PixelViewMut` operate directly on
+caller-owned packed or strided RGB/RGBA bytes with the identical logical
+carrier mapping as the `RgbaImage` path. Alpha bytes and row padding are
+never carriers and are never mutated:
+
+```rust
+use stegoeggo_stego::lsb::LsbConfig;
+use stegoeggo_stego::pixels::{PixelLayout, PixelViewMut};
+
+let mut bytes = vec![0x7Fu8; 64 * 64 * 3];
+let mut view = PixelViewMut::new(&mut bytes, 64, 64, PixelLayout::Rgb8, 64 * 3)?;
+let report = view.embed(b"payload", &LsbConfig::new(42))?;
+assert!(report.embedded);
 ```
 
 ## Framed convenience API
@@ -168,7 +227,8 @@ coefficients once per operation and reuses that state across candidates.
 Capacity is reported in carrier-specific units:
 
 - LSB: RGB carrier slots (`width * height * 3`).
-- JPEG: eligible non-zero AC coefficients across all components.
+- JPEG: eligible AC coefficients with `|coef| >= 2` after canonicalization.
+- Seed hints: 96 hint-bit positions across the first two quantization tables.
 
 The same unit applies to both `required` and `available` in a
 `CapacityReport`, so `is_sufficient()` is a direct comparison. Each
@@ -176,18 +236,24 @@ embedded LSB payload bit occupies `STEGO_SPREAD_FACTOR * redundancy`
 slots, and each JPEG payload bit occupies `redundancy` AC coefficients.
 
 Redundancy is configurable in the range `1..=10`. Higher redundancy
-increases robustness at the cost of reduced capacity. Use `try_new`
-or `try_with_redundancy` for runtime-validated values:
+increases robustness at the cost of reduced capacity. `Redundancy` is the
+recommended validated primitive with identical semantics in every build
+profile; `try_new` and `try_with_redundancy` validate runtime values:
 
 ```rust
+use stegoeggo_stego::Redundancy;
 use stegoeggo_stego::lsb::LsbConfig;
 
 let user_redundancy: usize = 3;
-let config = LsbConfig::try_new(42, user_redundancy)?;
+let config = LsbConfig::from_redundancy(42, Redundancy::from_usize(user_redundancy)?)?;
 ```
 
 Invalid redundancy values (`0`, `11`, `usize::MAX`) return
-`StegoError::InvalidConfig` instead of panicking.
+`StegoError::InvalidConfig` instead of panicking. The infallible
+`with_redundancy` builders are compatibility adapters for
+compile-time-constant values only; their invalid-input behavior differs
+by build profile (debug assert vs release clamp), so runtime values must
+use the fallible or `Redundancy`-based APIs. Zero seeds are valid.
 
 ## JPEG support probing
 
@@ -274,21 +340,25 @@ stegoeggo_stego::lsb                          → LsbConfig, TileConfig, capacit
                                                 extract, embed_framed, extract_framed,
                                                 embed_tiled, embed_tiled_in_place, extract_tiled,
                                                 embed_tiled_framed, extract_tiled_framed
+stegoeggo_stego::pixels                       → PixelLayout, PixelView, PixelViewMut (borrowed
+                                                packed/strided RGB/RGBA views sharing the LSB core)
 stegoeggo_stego::jpeg                         → JpegConfig, TileConfig, JpegSupport, probe_support,
-                                                capacity, embed, extract, embed_framed,
+                                                capacity, embed, embed_strict, extract,
+                                                embed_framed, embed_framed_strict,
                                                 extract_framed, embed_tiled, extract_tiled,
                                                 embed_tiled_framed, extract_tiled_framed,
                                                 inspect, is_progressive_jpeg,
                                                 embed_seed_hint, extract_seed_hint
+stegoeggo_stego::prepared                     → PreparedJpeg (one decode across repeated operations)
 stegoeggo_stego::frame                        → FRAMED_MAGIC, FRAME_VERSION, MAX_FRAME_PAYLOAD,
                                                 FRAME_HEADER_SIZE, FrameHeader, encode, decode,
                                                 decode_prefix
 stegoeggo_stego::error                        → StegoError, StegoResult, JpegUnsupportedReason
-stegoeggo_stego::{CapacityReport,             → structured reports + TileConfig, MAX_TILED_ORIGINS
-                 EmbedReport, InPlaceEmbedReport,
-                 EmbedOutcome, EmbedOutcomeSummary,
-                 EmbedPath, EmbedStatus,
-                 DEFAULT_TILE_SIZE}
+stegoeggo_stego::{CapacityReport,             → structured reports, validated Redundancy, TileConfig,
+                  EmbedReport, InPlaceEmbedReport,  MAX_TILED_ORIGINS, PreparedJpeg, pixel views
+                  EmbedOutcome, EmbedOutcomeSummary,
+                  EmbedPath, EmbedStatus,
+                  Redundancy, DEFAULT_TILE_SIZE}
 ```
 
 JPEG header parsing, DCT coefficient processing, Huffman state, F5

@@ -44,19 +44,24 @@ pub fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize 
 /// of two `m`, then walks the cycle until the value falls inside
 /// `0..slot_count`. The walk is bounded at 256 steps; beyond that the
 /// construction falls back to `splitmix64(x) % slot_count`. The fallback
-/// is not proven bijective for arbitrary `a,b,m` but guarantees termination
-/// and empirically covers the codomain (see `stego_permutation_v2_*` tests).
-/// Distribution uniformity is not formally proven; the 256-step cutoff
-/// introduces a discontinuity at the tail. Chi-squared uniformity is
-/// checked in tests for several `(seed, slot_count)` pairs.
+/// is not proven bijective for arbitrary `a,b,m` but guarantees termination.
+/// Exhaustive injectivity is verified by tests for the documented small and
+/// medium domains only; the mapping is byte-frozen (V2) for compatibility
+/// and must not be assumed bijective outside the tested domains. Chi-squared
+/// uniformity is checked in tests for several `(seed, slot_count)` pairs.
 #[inline(always)]
 pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> Option<usize> {
+    permutation_v2_core(index, slot_count, seed).map(|(slot, _, _)| slot)
+}
+
+#[inline(always)]
+fn permutation_v2_core(index: usize, slot_count: usize, seed: u64) -> Option<(usize, usize, bool)> {
     if slot_count <= 1 {
         if slot_count == 0 {
             return None;
         }
         if index == 0 {
-            return Some(0);
+            return Some((0, 0, false));
         }
         return None;
     }
@@ -72,10 +77,19 @@ pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> Optio
         x = (a.wrapping_mul(x).wrapping_add(b)) % (m as u64);
         attempts += 1;
         if attempts >= 256 {
-            return Some((splitmix64(x) % slot_count as u64) as usize);
+            return Some(((splitmix64(x) % slot_count as u64) as usize, attempts, true));
         }
     }
-    Some(x as usize)
+    Some((x as usize, attempts, false))
+}
+
+#[cfg(test)]
+pub(crate) fn stego_permutation_v2_debug(
+    index: usize,
+    slot_count: usize,
+    seed: u64,
+) -> Option<(usize, usize, bool)> {
+    permutation_v2_core(index, slot_count, seed)
 }
 
 #[inline(always)]
@@ -103,7 +117,10 @@ pub fn lsb_available_slots(width: u32, height: u32) -> Option<usize> {
         .and_then(|p| p.checked_mul(3))
 }
 
-fn checked_lsb_available_slots(width: u32, height: u32) -> Result<usize, super::StegoError> {
+pub(crate) fn checked_lsb_available_slots(
+    width: u32,
+    height: u32,
+) -> Result<usize, super::StegoError> {
     lsb_available_slots(width, height).ok_or_else(|| {
         super::StegoError::ResourceLimitExceeded("carrier dimensions overflow".into())
     })
@@ -173,7 +190,12 @@ pub fn embed_bit_in_pixel(output: &mut RgbaImage, x: u32, y: u32, channel: usize
         return;
     }
 
-    let new_val = if old_val == 0 {
+    output.get_pixel_mut(x, y)[channel] = apply_lsb_bit(old_val, x, y);
+}
+
+#[inline]
+pub(crate) fn apply_lsb_bit(old_val: u8, x: u32, y: u32) -> u8 {
+    if old_val == 0 {
         1
     } else if old_val == 255 {
         254
@@ -184,9 +206,131 @@ pub fn embed_bit_in_pixel(output: &mut RgbaImage, x: u32, y: u32, channel: usize
         } else {
             old_val - 1
         }
-    };
+    }
+}
 
-    output.get_pixel_mut(x, y)[channel] = new_val;
+/// Private carrier access for the shared LSB V2 mutation/extraction core.
+///
+/// Implemented by `RgbaImage`, borrowed pixel views, and tile windows.
+/// Coordinates are logical carrier coordinates; implementations map them
+/// to physical storage. Out-of-range coordinates return `None` and fail
+/// the operation gracefully instead of panicking.
+pub(crate) trait PixelCarrier {
+    fn carrier_width(&self) -> u32;
+    fn carrier_height(&self) -> u32;
+    fn read_channel(&self, x: u32, y: u32, channel: usize) -> Option<u8>;
+}
+
+/// Private mutable carrier access for the shared LSB V2 mutation core.
+pub(crate) trait PixelCarrierMut: PixelCarrier {
+    fn write_channel_bit(&mut self, x: u32, y: u32, channel: usize, bit: u8) -> Option<()>;
+}
+
+impl PixelCarrier for RgbaImage {
+    fn carrier_width(&self) -> u32 {
+        self.width()
+    }
+
+    fn carrier_height(&self) -> u32 {
+        self.height()
+    }
+
+    fn read_channel(&self, x: u32, y: u32, channel: usize) -> Option<u8> {
+        if x >= self.width() || y >= self.height() || channel >= 3 {
+            return None;
+        }
+        Some(self.get_pixel(x, y)[channel])
+    }
+}
+
+impl PixelCarrierMut for RgbaImage {
+    fn write_channel_bit(&mut self, x: u32, y: u32, channel: usize, bit: u8) -> Option<()> {
+        if x >= self.width() || y >= self.height() || channel >= 3 {
+            return None;
+        }
+        let old_val = self.get_pixel(x, y)[channel];
+        if (old_val & 1) != bit {
+            self.get_pixel_mut(x, y)[channel] = apply_lsb_bit(old_val, x, y);
+        }
+        Some(())
+    }
+}
+
+/// Private immutable tile window over a carrier, avoiding tile-copy allocation.
+pub(crate) struct TileWindow<'a, C: PixelCarrier + ?Sized> {
+    inner: &'a C,
+    x0: u32,
+    y0: u32,
+    width: u32,
+    height: u32,
+}
+
+impl<'a, C: PixelCarrier + ?Sized> TileWindow<'a, C> {
+    pub(crate) fn new(inner: &'a C, x0: u32, y0: u32, width: u32, height: u32) -> Self {
+        Self {
+            inner,
+            x0,
+            y0,
+            width,
+            height,
+        }
+    }
+}
+
+impl<C: PixelCarrier + ?Sized> PixelCarrier for TileWindow<'_, C> {
+    fn carrier_width(&self) -> u32 {
+        self.width
+    }
+
+    fn carrier_height(&self) -> u32 {
+        self.height
+    }
+
+    fn read_channel(&self, x: u32, y: u32, channel: usize) -> Option<u8> {
+        self.inner.read_channel(self.x0 + x, self.y0 + y, channel)
+    }
+}
+
+/// Private mutable tile window over a carrier, avoiding tile-copy allocation.
+pub(crate) struct TileWindowMut<'a, C: PixelCarrierMut + ?Sized> {
+    inner: &'a mut C,
+    x0: u32,
+    y0: u32,
+    width: u32,
+    height: u32,
+}
+
+impl<'a, C: PixelCarrierMut + ?Sized> TileWindowMut<'a, C> {
+    pub(crate) fn new(inner: &'a mut C, x0: u32, y0: u32, width: u32, height: u32) -> Self {
+        Self {
+            inner,
+            x0,
+            y0,
+            width,
+            height,
+        }
+    }
+}
+
+impl<C: PixelCarrierMut + ?Sized> PixelCarrier for TileWindowMut<'_, C> {
+    fn carrier_width(&self) -> u32 {
+        self.width
+    }
+
+    fn carrier_height(&self) -> u32 {
+        self.height
+    }
+
+    fn read_channel(&self, x: u32, y: u32, channel: usize) -> Option<u8> {
+        self.inner.read_channel(self.x0 + x, self.y0 + y, channel)
+    }
+}
+
+impl<C: PixelCarrierMut + ?Sized> PixelCarrierMut for TileWindowMut<'_, C> {
+    fn write_channel_bit(&mut self, x: u32, y: u32, channel: usize, bit: u8) -> Option<()> {
+        self.inner
+            .write_channel_bit(self.x0 + x, self.y0 + y, channel, bit)
+    }
 }
 
 #[allow(dead_code)]
@@ -344,8 +488,17 @@ pub fn embed_lsb_v2_in_place(
     seed: u64,
     redundancy: usize,
 ) -> InPlaceEmbedReport {
+    embed_v2_in_place_carrier(image, payload, seed, redundancy)
+}
+
+pub(crate) fn embed_v2_in_place_carrier<C: PixelCarrierMut>(
+    carrier: &mut C,
+    payload: &[u8],
+    seed: u64,
+    redundancy: usize,
+) -> InPlaceEmbedReport {
     if !(1..=10).contains(&redundancy) {
-        let (width, height) = image.dimensions();
+        let (width, height) = (carrier.carrier_width(), carrier.carrier_height());
         return InPlaceEmbedReport {
             embedded: false,
             payload_bytes: payload.len(),
@@ -354,7 +507,7 @@ pub fn embed_lsb_v2_in_place(
             actual_redundancy: redundancy,
         };
     }
-    let (width, height) = image.dimensions();
+    let (width, height) = (carrier.carrier_width(), carrier.carrier_height());
     let Some(available) = lsb_available_slots(width, height) else {
         return InPlaceEmbedReport {
             embedded: false,
@@ -403,18 +556,10 @@ pub fn embed_lsb_v2_in_place(
                 .and_then(|v| v.checked_add(replica))
                 .is_some());
             let logical = bit_index * replicas_per_bit + replica;
-            let Some(slot) = stego_permutation_v2(logical, available, seed) else {
-                return InPlaceEmbedReport {
-                    embedded: false,
-                    payload_bytes: payload.len(),
-                    required_capacity: required,
-                    available_capacity: available,
-                    actual_redundancy: redundancy,
-                };
-            };
-            let Some((pixel_index, slot_channel)) =
-                carrier_v2_slot_to_pixel_channel(slot, width, height)
-            else {
+            let slot = stego_permutation_v2(logical, available, seed);
+            let pixel_channel =
+                slot.and_then(|slot| carrier_v2_slot_to_pixel_channel(slot, width, height));
+            let Some((pixel_index, slot_channel)) = pixel_channel else {
                 return InPlaceEmbedReport {
                     embedded: false,
                     payload_bytes: payload.len(),
@@ -425,7 +570,15 @@ pub fn embed_lsb_v2_in_place(
             };
             let x = pixel_index as u32 % width;
             let y = pixel_index as u32 / width;
-            embed_bit_in_pixel(image, x, y, slot_channel, bit);
+            if carrier.write_channel_bit(x, y, slot_channel, bit).is_none() {
+                return InPlaceEmbedReport {
+                    embedded: false,
+                    payload_bytes: payload.len(),
+                    required_capacity: required,
+                    available_capacity: available,
+                    actual_redundancy: redundancy,
+                };
+            }
         }
     }
 
@@ -458,7 +611,16 @@ pub fn extract_lsb_v2(
     seed: u64,
     redundancy: usize,
 ) -> Option<Vec<u8>> {
-    let (width, height) = img.dimensions();
+    extract_v2_carrier(img, expected_bits, seed, redundancy)
+}
+
+pub(crate) fn extract_v2_carrier<C: PixelCarrier>(
+    carrier: &C,
+    expected_bits: usize,
+    seed: u64,
+    redundancy: usize,
+) -> Option<Vec<u8>> {
+    let (width, height) = (carrier.carrier_width(), carrier.carrier_height());
     let available = lsb_available_slots(width, height)?;
     let replicas_per_bit = STEGO_SPREAD_FACTOR.checked_mul(redundancy)?;
 
@@ -484,10 +646,7 @@ pub fn extract_lsb_v2(
                 carrier_v2_slot_to_pixel_channel(slot, width, height)?;
             let x = pixel_index as u32 % width;
             let y = pixel_index as u32 / width;
-            let pixel = img.get_pixel(x, y);
-
-            let bit = pixel[slot_channel] & 1;
-            ones += bit as u32;
+            ones += u32::from(carrier.read_channel(x, y, slot_channel)? & 1);
         }
 
         if ones * 2 == replicas_per_bit as u32 {
@@ -549,8 +708,17 @@ pub fn embed_lsb_tiled_in_place(
     master_seed: u64,
     tile_size: u32,
 ) -> InPlaceEmbedReport {
+    embed_tiled_carrier(image, payload, master_seed, tile_size)
+}
+
+pub(crate) fn embed_tiled_carrier<C: PixelCarrierMut>(
+    carrier: &mut C,
+    payload: &[u8],
+    master_seed: u64,
+    tile_size: u32,
+) -> InPlaceEmbedReport {
     const TILED_REDUNDANCY: usize = 1;
-    let (width, height) = image.dimensions();
+    let (width, height) = (carrier.carrier_width(), carrier.carrier_height());
     if tile_size == 0 || width < tile_size || height < tile_size {
         return InPlaceEmbedReport {
             embedded: false,
@@ -644,35 +812,20 @@ pub fn embed_lsb_tiled_in_place(
         let Some(plan) = &scan.embed else {
             continue;
         };
+        let mut window = TileWindowMut::new(carrier, plan.x0, plan.y0, plan.sub_w, plan.sub_h);
         for i in 0..bit_len {
             let bit = payload_bit(payload, i);
             for s in 0..replicas_per_bit {
-                let Some(logical) = i
+                let logical = i
                     .checked_mul(replicas_per_bit)
-                    .and_then(|v| v.checked_add(s))
-                else {
-                    return InPlaceEmbedReport {
-                        embedded: false,
-                        payload_bytes: payload.len(),
-                        required_capacity: run_required,
-                        available_capacity: run_available,
-                        actual_redundancy: TILED_REDUNDANCY,
-                    };
-                };
-                let Some(slot) =
+                    .and_then(|v| v.checked_add(s));
+                let slot = logical.and_then(|logical| {
                     stego_permutation_v2(logical, plan.tile_available, plan.seed_for_embed)
-                else {
-                    return InPlaceEmbedReport {
-                        embedded: false,
-                        payload_bytes: payload.len(),
-                        required_capacity: run_required,
-                        available_capacity: run_available,
-                        actual_redundancy: TILED_REDUNDANCY,
-                    };
-                };
-                let Some((pixel_index, slot_channel)) =
+                });
+                let pixel_channel = slot.and_then(|slot| {
                     carrier_v2_slot_to_pixel_channel(slot, plan.sub_w, plan.sub_h)
-                else {
+                });
+                let Some((pixel_index, slot_channel)) = pixel_channel else {
                     return InPlaceEmbedReport {
                         embedded: false,
                         payload_bytes: payload.len(),
@@ -683,10 +836,17 @@ pub fn embed_lsb_tiled_in_place(
                 };
                 let lx = pixel_index as u32 % plan.sub_w;
                 let ly = pixel_index as u32 / plan.sub_w;
-                let fx = plan.x0 + lx;
-                let fy = plan.y0 + ly;
-                if fx < width && fy < height {
-                    embed_bit_in_pixel(image, fx, fy, slot_channel, bit);
+                if window
+                    .write_channel_bit(lx, ly, slot_channel, bit)
+                    .is_none()
+                {
+                    return InPlaceEmbedReport {
+                        embedded: false,
+                        payload_bytes: payload.len(),
+                        required_capacity: run_required,
+                        available_capacity: run_available,
+                        actual_redundancy: TILED_REDUNDANCY,
+                    };
                 }
             }
         }
@@ -701,6 +861,200 @@ pub fn embed_lsb_tiled_in_place(
     }
 }
 
+/// Maximum tile-grid coordinate probed per axis during tiled recovery.
+///
+/// Matches the application tiled search domain so generic framed recovery
+/// remains compatible with payloads embedded by the current tiled path.
+pub(crate) const TILED_MAX_GRID: u32 = 16;
+
+/// Enumerate bounded crop-origin candidates for tiled recovery.
+///
+/// Origins step by `tile_size / 2` (minimum 1) in row-major order until
+/// `max_origins` is reached. Uses saturating arithmetic so untrusted tile
+/// sizes cannot overflow the scan.
+pub(crate) fn tiled_origins(
+    width: u32,
+    height: u32,
+    tile_size: u32,
+    max_origins: u32,
+) -> Vec<(u32, u32)> {
+    let stride = (tile_size / 2).max(1);
+    let mut origins = Vec::new();
+    let mut y = 0u32;
+    while y.saturating_add(tile_size) <= height {
+        let mut x = 0u32;
+        while x.saturating_add(tile_size) <= width {
+            origins.push((x, y));
+            if origins.len() as u32 >= max_origins {
+                return origins;
+            }
+            x = x.saturating_add(stride);
+            if x == u32::MAX {
+                break;
+            }
+        }
+        if origins.len() as u32 >= max_origins {
+            break;
+        }
+        y = y.saturating_add(stride);
+        if y == u32::MAX {
+            break;
+        }
+    }
+    origins
+}
+
+/// Derive the carrier seed for one tiled candidate.
+///
+/// Mirrors the tiled embed seed derivation (`tile_seed` mixed per tile
+/// coordinate, then multiplied by the offset constant with a 5-pass history
+/// for compatibility with payloads embedded by the current path).
+pub(crate) fn tiled_candidate_seed(master_seed: u64, tile_x: u32, tile_y: u32, pass: u32) -> u64 {
+    let local = tile_seed(master_seed, tile_x, tile_y);
+    local.wrapping_mul(crate::constants::STEGO_OFFSET_SEED_1.wrapping_add(pass as u64))
+}
+
+/// Shared bounded tiled raw-extraction core over any pixel carrier.
+///
+/// Reads tile windows in place without allocating cropped copies. Returns
+/// the first candidate in deterministic scan order.
+pub(crate) fn extract_tiled_carrier<C: PixelCarrier>(
+    carrier: &C,
+    payload_len: usize,
+    seed: u64,
+    tile_size: u32,
+    max_origins: u32,
+) -> Result<Vec<u8>, super::StegoError> {
+    crate::types::validate_max_origins(max_origins)?;
+    let payload_bits = payload_len.checked_mul(8).ok_or_else(|| {
+        super::StegoError::ResourceLimitExceeded("payload length overflow".to_string())
+    })?;
+    let (width, height) = (carrier.carrier_width(), carrier.carrier_height());
+    if width < tile_size || height < tile_size {
+        let required = lsb_required_capacity_v2(payload_bits, 1);
+        return Err(super::StegoError::InsufficientCapacity {
+            required,
+            available: 0,
+        });
+    }
+    let origins = tiled_origins(width, height, tile_size, max_origins);
+    if origins.is_empty() {
+        let required = lsb_required_capacity_v2(payload_bits, 1);
+        return Err(super::StegoError::InsufficientCapacity {
+            required,
+            available: 0,
+        });
+    }
+    for (x0, y0) in origins {
+        let window = TileWindow::new(carrier, x0, y0, tile_size, tile_size);
+        let base_x = x0 / tile_size;
+        let base_y = y0 / tile_size;
+        for dy in 0..=2u32 {
+            if base_y.saturating_add(dy) >= TILED_MAX_GRID {
+                break;
+            }
+            for dx in 0..=2u32 {
+                if base_x.saturating_add(dx) >= TILED_MAX_GRID {
+                    break;
+                }
+                for pass in 0..5u32 {
+                    let candidate_seed = tiled_candidate_seed(seed, base_x + dx, base_y + dy, pass);
+                    if let Some(bytes) =
+                        extract_v2_carrier(&window, payload_bits, candidate_seed, 1)
+                    {
+                        if bytes.len() >= payload_len {
+                            return Ok(bytes);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let required = lsb_required_capacity_v2(payload_bits, 1);
+    let available = lsb_available_slots(tile_size, tile_size).unwrap_or(0);
+    Err(super::StegoError::InsufficientCapacity {
+        required,
+        available,
+    })
+}
+
+/// Shared bounded tiled framed-extraction core over any pixel carrier.
+///
+/// Recovers the frame header with bounded search, validates the declared
+/// length against frame bounds and per-tile carrier capacity before full
+/// extraction, then recovers the full frame from the same candidate identity
+/// (origin, tile-grid seed, pass) and validates CRC32.
+pub(crate) fn extract_tiled_framed_carrier<C: PixelCarrier>(
+    carrier: &C,
+    seed: u64,
+    tile_size: u32,
+    max_origins: u32,
+) -> Result<Vec<u8>, super::StegoError> {
+    crate::types::validate_max_origins(max_origins)?;
+    let (width, height) = (carrier.carrier_width(), carrier.carrier_height());
+    let header_bits = crate::frame::FRAME_HEADER_SIZE
+        .checked_mul(8)
+        .ok_or_else(|| {
+            super::StegoError::ResourceLimitExceeded("frame header size overflow".to_string())
+        })?;
+    let header_required = lsb_required_capacity_v2(header_bits, 1);
+    if width < tile_size || height < tile_size {
+        return Err(super::StegoError::InsufficientCapacity {
+            required: header_required,
+            available: 0,
+        });
+    }
+    let origins = tiled_origins(width, height, tile_size, max_origins);
+    if origins.is_empty() {
+        return Err(super::StegoError::InsufficientCapacity {
+            required: header_required,
+            available: 0,
+        });
+    }
+    let tile_available = lsb_available_slots(tile_size, tile_size).unwrap_or(0);
+    for (x0, y0) in origins {
+        let window = TileWindow::new(carrier, x0, y0, tile_size, tile_size);
+        let base_x = x0 / tile_size;
+        let base_y = y0 / tile_size;
+        for dy in 0..=2u32 {
+            if base_y.saturating_add(dy) >= TILED_MAX_GRID {
+                break;
+            }
+            for dx in 0..=2u32 {
+                if base_x.saturating_add(dx) >= TILED_MAX_GRID {
+                    break;
+                }
+                for pass in 0..5u32 {
+                    let candidate_seed = tiled_candidate_seed(seed, base_x + dx, base_y + dy, pass);
+                    let Some(prefix) = extract_v2_carrier(&window, header_bits, candidate_seed, 1)
+                    else {
+                        continue;
+                    };
+                    let Ok((_, total_len)) = crate::frame::decode_prefix(&prefix) else {
+                        continue;
+                    };
+                    let Some(total_bits) = total_len.checked_mul(8) else {
+                        continue;
+                    };
+                    let full_required = lsb_required_capacity_v2(total_bits, 1);
+                    if full_required > tile_available {
+                        continue;
+                    }
+                    let Some(framed) = extract_v2_carrier(&window, total_bits, candidate_seed, 1)
+                    else {
+                        continue;
+                    };
+                    if let Ok((_, payload)) = crate::frame::decode(&framed) {
+                        return Ok(payload);
+                    }
+                }
+            }
+        }
+    }
+    Err(super::StegoError::FrameNotFound)
+}
+
+#[allow(dead_code)]
 pub fn crop_rgba(src: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> RgbaImage {
     let mut out = RgbaImage::new(w, h);
     let (width, height) = src.dimensions();
@@ -861,13 +1215,39 @@ impl LsbConfig {
         Ok(Self { seed, redundancy })
     }
 
+    /// Infallible constructor from a validated [`Redundancy`](crate::Redundancy).
+    ///
+    /// This is the recommended configuration primitive for runtime values:
+    /// validation happens once in [`Redundancy::from_usize`] with identical
+    /// semantics in every build profile.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use stegoeggo_stego::lsb::LsbConfig;
+    /// use stegoeggo_stego::Redundancy;
+    ///
+    /// let config = LsbConfig::from_redundancy(42, Redundancy::new(3)?);
+    /// assert_eq!(config.redundancy(), 3);
+    /// # Ok::<_, stegoeggo_stego::StegoError>(())
+    /// ```
+    #[must_use]
+    pub fn from_redundancy(seed: u64, redundancy: crate::Redundancy) -> Self {
+        Self {
+            seed,
+            redundancy: redundancy.get_usize(),
+        }
+    }
+
     /// Set the redundancy level (1–10). Higher redundancy increases
     /// robustness at the cost of reduced capacity.
     ///
-    /// In debug builds, panics if `redundancy` is 0 or greater than 10. In
+    /// Compatibility builder for compile-time-constant values. In debug
+    /// builds, panics if `redundancy` is 0 or greater than 10. In
     /// release builds with `panic=abort`, an out-of-range value is clamped to
     /// `1..=10` to avoid aborting the process; prefer
-    /// [`LsbConfig::try_with_redundancy`](Self::try_with_redundancy) when
+    /// [`LsbConfig::try_with_redundancy`](Self::try_with_redundancy) or
+    /// [`LsbConfig::with_redundancy_value`](Self::with_redundancy_value) when
     /// the value is not statically known to be in `1..=10` (for example
     /// values from configuration files, CLI flags, or network payloads,
     /// which must not abort the process on invalid input).
@@ -905,6 +1285,33 @@ impl LsbConfig {
         crate::constants::validate_redundancy(redundancy)?;
         self.redundancy = redundancy;
         Ok(self)
+    }
+
+    /// Infallible setter from a validated [`Redundancy`](crate::Redundancy).
+    ///
+    /// Recommended over [`with_redundancy`](Self::with_redundancy) for
+    /// runtime values: the contract is identical in every build profile.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use stegoeggo_stego::lsb::LsbConfig;
+    /// use stegoeggo_stego::Redundancy;
+    ///
+    /// let config = LsbConfig::new(42).with_redundancy_value(Redundancy::MAX);
+    /// assert_eq!(config.redundancy(), 10);
+    /// ```
+    #[must_use]
+    pub fn with_redundancy_value(mut self, redundancy: crate::Redundancy) -> Self {
+        self.redundancy = redundancy.get_usize();
+        self
+    }
+
+    /// The redundancy level as a validated [`Redundancy`](crate::Redundancy).
+    #[must_use]
+    pub fn redundancy_value(&self) -> crate::Redundancy {
+        crate::Redundancy::from_usize(self.redundancy)
+            .expect("LsbConfig invariant: redundancy is always validated")
     }
 
     /// The seed used for the carrier permutation.
@@ -1302,7 +1709,7 @@ mod tests {
                 let threshold = slot_count as f64 * 1000.0;
                 assert!(
                     chi2 < threshold,
-                    "chi-squared {chi2:.2} exceeds threshold {threshold:.2} (non-uniform tail cutoff; 64-step fallback documented) for slot_count {slot_count} seed {seed} counts {counts:?}"
+                    "chi-squared {chi2:.2} exceeds threshold {threshold:.2} (non-uniform tail cutoff; 256-step fallback documented) for slot_count {slot_count} seed {seed} counts {counts:?}"
                 );
                 for &c in &counts {
                     assert!(
@@ -1312,11 +1719,125 @@ mod tests {
                     let ratio = c as f64 / expected;
                     assert!(
                         (0.2..=5.0).contains(&ratio),
-                        "bucket ratio {ratio:.2} outside 0.2..5.0 for slot_count {slot_count} seed {seed} (documented 64-step cutoff discontinuity)"
+                        "bucket ratio {ratio:.2} outside 0.2..5.0 for slot_count {slot_count} seed {seed} (documented 256-step cutoff discontinuity)"
                     );
                 }
             }
         }
+    }
+
+    fn assert_full_domain_injective(slot_count: usize, seeds: &[u64]) -> (usize, usize) {
+        let mut max_depth = 0usize;
+        let mut fallback_hits = 0usize;
+        for &seed in seeds {
+            let mut seen = vec![false; slot_count];
+            for index in 0..slot_count {
+                let (slot, depth, used_fallback) =
+                    stego_permutation_v2_debug(index, slot_count, seed).unwrap_or_else(|| {
+                        panic!("slot_count {slot_count} seed {seed} index {index} has no image")
+                    });
+                assert!(
+                    slot < slot_count,
+                    "slot_count {slot_count} seed {seed} index {index} mapped out of range to {slot}"
+                );
+                assert!(
+                    !seen[slot],
+                    "slot_count {slot_count} seed {seed}: logical indices collide at slot {slot}"
+                );
+                seen[slot] = true;
+                max_depth = max_depth.max(depth);
+                fallback_hits += usize::from(used_fallback);
+            }
+            assert!(
+                seen.iter().all(|&hit| hit),
+                "slot_count {slot_count} seed {seed}: full-domain image misses slots"
+            );
+        }
+        (max_depth, fallback_hits)
+    }
+
+    #[test]
+    fn stego_permutation_v2_injective_over_documented_domains() {
+        const SEEDS: &[u64] = &[
+            0,
+            1,
+            42,
+            12345,
+            0x0123_4567_89AB_CDEF,
+            0xDEAD_BEEF,
+            u64::MAX,
+        ];
+        let mut global_max_depth = 0usize;
+        let mut global_fallback_hits = 0usize;
+        let mut domains = Vec::new();
+        domains.extend(2..=64usize);
+        domains.extend(
+            [
+                65usize, 100, 127, 128, 129, 255, 256, 257, 511, 512, 513, 1000, 1023, 1024, 1025,
+                2048, 2049, 4095, 4096, 4097, 8191, 8192, 8193, 12288, 16383, 16384, 16385,
+            ]
+            .iter()
+            .copied(),
+        );
+        for slot_count in domains {
+            let (max_depth, fallback_hits) = assert_full_domain_injective(slot_count, SEEDS);
+            global_max_depth = global_max_depth.max(max_depth);
+            global_fallback_hits += fallback_hits;
+        }
+        for slot_count in [65535usize, 65536, 65537, 100_000] {
+            let (max_depth, fallback_hits) =
+                assert_full_domain_injective(slot_count, &[42, u64::MAX]);
+            global_max_depth = global_max_depth.max(max_depth);
+            global_fallback_hits += fallback_hits;
+        }
+        assert_eq!(
+            global_fallback_hits, 0,
+            "256-step fallback reached {global_fallback_hits} times in documented domains; record disposition before freezing the mapping"
+        );
+        assert!(
+            global_max_depth < 256,
+            "observed walk depth {global_max_depth} must stay below the 256-step bound"
+        );
+    }
+
+    #[test]
+    fn stego_permutation_v2_pathological_domains_are_injective() {
+        let mut seeds: Vec<u64> = (0..512u64).collect();
+        seeds.extend([u64::MAX - 1, u64::MAX]);
+        for slot_count in [2usize, 3, 5, 6, 7, 9, 17, 31, 33] {
+            assert_full_domain_injective(slot_count, &seeds);
+        }
+    }
+
+    #[test]
+    fn stego_permutation_v2_large_dimensions_terminate_in_range() {
+        for slot_count in [u32::MAX as usize, (u32::MAX as usize).saturating_mul(3)] {
+            match stego_permutation_v2_debug(0, slot_count, 42) {
+                Some((slot, _, _)) => assert!(slot < slot_count),
+                None => assert_eq!(slot_count, usize::MAX),
+            }
+        }
+        assert_eq!(lsb_available_slots(u32::MAX, u32::MAX), None);
+        assert_eq!(
+            lsb_available_slots(u32::MAX, 1),
+            Some(u32::MAX as usize * 3)
+        );
+    }
+
+    #[test]
+    fn stego_permutation_v2_exact_capacity_round_trip() {
+        let (width, height) = (512u32, 512u32);
+        let available = lsb_available_slots(width, height).unwrap();
+        let payload_bits = available / STEGO_SPREAD_FACTOR / 8 * 8;
+        let payload_len = payload_bits / 8;
+        assert!(payload_len > 0);
+        let payload: Vec<u8> = (0..payload_len).map(|i| (i % 251) as u8).collect();
+        let mut img = uniform_image(width, height, 0x7F);
+        let report = embed_lsb_v2_in_place(&mut img, &payload, 0x0123_4567_89AB_CDEF, 1);
+        assert!(report.embedded);
+        let recovered = extract_lsb_v2(&img, payload_bits, 0x0123_4567_89AB_CDEF, 1)
+            .expect("exact-capacity embed must extract");
+        assert_eq!(recovered, payload);
     }
 
     #[test]
@@ -1508,6 +2029,43 @@ mod tests {
         assert!(LsbConfig::new(42).try_with_redundancy(0).is_err());
         assert!(LsbConfig::new(42).try_with_redundancy(11).is_err());
         assert!(LsbConfig::new(42).try_with_redundancy(usize::MAX).is_err());
+    }
+
+    #[test]
+    fn lsb_validated_config_matches_legacy_carrier_bytes() {
+        let payload = b"validated!";
+        for redundancy in 1..=10u8 {
+            let legacy = LsbConfig::new(99).with_redundancy(redundancy as usize);
+            let validated =
+                LsbConfig::from_redundancy(99, crate::Redundancy::new(redundancy).unwrap());
+            assert_eq!(validated.redundancy(), legacy.redundancy());
+            assert_eq!(validated.redundancy_value().get(), redundancy);
+            let mut legacy_img = uniform_image(64, 64, 0x7F);
+            let legacy_report =
+                embed_lsb_v2_in_place(&mut legacy_img, payload, 99, redundancy as usize);
+            let validated_report = embed(&uniform_image(64, 64, 0x7F), payload, &validated)
+                .expect("validated config embeds");
+            assert!(legacy_report.embedded);
+            assert!(validated_report.embedded);
+            let mut validated_in_place = uniform_image(64, 64, 0x7F);
+            let in_place_report =
+                embed_lsb_v2_in_place(&mut validated_in_place, payload, 99, redundancy as usize);
+            assert!(in_place_report.embedded);
+            assert_eq!(validated_report.output, validated_in_place);
+            assert_eq!(legacy_img, validated_in_place);
+        }
+    }
+
+    #[test]
+    fn lsb_zero_seed_is_valid_carrier_config() {
+        let payload = b"zero seed stays valid";
+        let config = LsbConfig::try_new(0, 2).unwrap();
+        let report =
+            embed(&uniform_image(48, 48, 0x7F), payload, &config).expect("zero seed embeds");
+        assert!(report.embedded);
+        let recovered =
+            extract(&report.output, payload.len(), &config).expect("zero seed extracts");
+        assert_eq!(&recovered, payload);
     }
 
     #[test]

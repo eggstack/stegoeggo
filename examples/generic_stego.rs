@@ -1,12 +1,16 @@
 /// Generic carrier API example: embed and extract arbitrary bytes.
 ///
 /// Demonstrates raw, in-place, framed, and tiled round-trips for both LSB
-/// (pixel-domain) and JPEG (DCT-domain) carriers using `stegoeggo::stego`.
+/// (pixel-domain) and JPEG (DCT-domain) carriers using `stegoeggo_stego`
+/// directly. The `stegoeggo::stego` facade re-exports the same surface for
+/// callers already depending on the application crate.
 use image::{ImageBuffer, Rgb, RgbaImage};
-use stegoeggo::stego::{
+use stegoeggo_stego::{
     jpeg::{self, JpegConfig},
     lsb::{self, LsbConfig},
-    TileConfig,
+    pixels::{PixelLayout, PixelViewMut},
+    prepared::PreparedJpeg,
+    Redundancy, TileConfig,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -48,10 +52,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- LSB config from untrusted runtime value ---
     let runtime_redundancy: usize = 3;
-    let trusted_config = LsbConfig::try_new(seed, runtime_redundancy)?;
+    let trusted_config =
+        LsbConfig::from_redundancy(seed, Redundancy::from_usize(runtime_redundancy)?);
     println!(
         "LSB config from runtime: redundancy {}",
         trusted_config.redundancy()
+    );
+
+    // --- Borrowed packed RGB buffer (no RgbaImage conversion) ---
+    let mut rgb_bytes = vec![0x7Fu8; 128 * 128 * 3];
+    let mut rgb_view = PixelViewMut::new(&mut rgb_bytes, 128, 128, PixelLayout::Rgb8, 128 * 3)?;
+    let view_report = rgb_view.embed_framed(secret, &trusted_config)?;
+    println!("RGB view framed embedded: {}", view_report.embedded);
+    let view_recovered = rgb_view.as_view().extract_framed(&trusted_config)?;
+    println!(
+        "RGB view extracted: {:?}",
+        String::from_utf8_lossy(&view_recovered)
     );
 
     // --- JPEG (DCT-domain) raw round-trip ---
@@ -60,6 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match jpeg::probe_support(&jpeg_bytes)? {
         jpeg::JpegSupport::Supported => {
+            // Explicit best-effort choice: may lower redundancy and report it.
             let report = jpeg::embed(&jpeg_bytes, secret, &jpeg_config)?;
             println!(
                 "JPEG embedded: {} (actual redundancy: {})",
@@ -100,6 +117,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Framed JPEG extracted: {:?}",
             String::from_utf8_lossy(&recovered)
         );
+
+        // --- Strict JPEG embed plus prepared repeated reads ---
+        match jpeg::embed_strict(&jpeg_framed, secret, &jpeg_framed_config) {
+            Ok(strict) => {
+                println!(
+                    "Strict JPEG embedded at redundancy {}",
+                    strict.actual_redundancy
+                );
+                let prepared = PreparedJpeg::new(&strict.output)?;
+                let capacity = prepared.capacity(secret.len(), &jpeg_framed_config)?;
+                println!(
+                    "Prepared capacity: {} available, {} required",
+                    capacity.available, capacity.required
+                );
+                let reread = prepared.extract(
+                    secret.len(),
+                    &jpeg_framed_config,
+                    strict.actual_redundancy,
+                )?;
+                println!(
+                    "Prepared JPEG extracted: {:?}",
+                    String::from_utf8_lossy(&reread)
+                );
+            }
+            Err(stegoeggo_stego::StegoError::InsufficientCapacity {
+                required,
+                available,
+            }) => {
+                println!("Strict JPEG skipped: need {required}, have {available}");
+            }
+            Err(other) => return Err(other.into()),
+        }
     }
 
     // --- Tiled LSB round-trips (crop-oriented, bounded recovery) ---

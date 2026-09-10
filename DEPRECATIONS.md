@@ -27,6 +27,18 @@ who need per-channel detail, not replacements for a removed API.
 |----------------|-------------|------------|------------------|
 | `EmbeddedReferenceStatus::Present` | `EmbeddedReferenceStatus::PresentValid` | v0.3.0 | v1.0.0 |
 
+## Compatibility Surfaces (not attribute-deprecated, superseded for new code)
+
+These remain fully supported through 0.x with unchanged behavior. New code
+should use the replacements; removal or redesign happens only at an
+explicit v1/breaking-version boundary (see `plans/096-status.md`).
+
+| Compatibility API | Replacement for new code | Notes |
+|-------------------|--------------------------|-------|
+| `LsbConfig::with_redundancy(usize)` / `JpegConfig::with_redundancy(usize)` | `Redundancy` + `from_redundancy` / `with_redundancy_value`, or `try_*` constructors | Invalid-input behavior differs by build profile (debug assert vs release clamp); runtime values must not use these |
+| Carrier `EmbedOutcome` / `EmbedStatus` / `EmbedPath` / `EmbedOutcomeSummary` | `EmbedReport` + `StegoError` for generic code | Parent-owned application vocabulary (warnings, `ExecutionReport`); retained through 0.x |
+| Best-effort `jpeg::embed` / `jpeg::embed_framed` semantics | `jpeg::embed_strict` / `jpeg::embed_framed_strict` for exact redundancy | Best-effort behavior itself is unchanged and remains the parent application policy |
+
 ## Migration Examples
 
 ### ProtectionLevel → ProtectionRequest

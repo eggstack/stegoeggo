@@ -1,6 +1,6 @@
 # Roadmap 090 Status
 
-Status: NOT STARTED
+Status: IMPLEMENTED (pending final integrated verification)
 
 Audited baseline: `27bdd3d429d663948021de43d3e6f818fa613319`
 
@@ -8,24 +8,32 @@ Audited baseline: `27bdd3d429d663948021de43d3e6f818fa613319`
 
 | Plan | Scope | Status |
 |---|---|---|
-| 091 | Transactional JPEG carrier semantics and seed-hint correctness | NOT STARTED |
-| 092 | Validated carrier configuration and result contracts | NOT STARTED |
-| 093 | LSB V2 permutation invariant proof and compatibility | NOT STARTED |
-| 094 | Opaque prepared JPEG carrier API | NOT STARTED |
-| 095 | Generic strided pixel-buffer LSB API | NOT STARTED |
-| 096 | Parent/carrier boundary and v1 API cleanup | NOT STARTED |
-| 097 | Carrier v1 packaging, documentation, and evidence closure | NOT STARTED |
+| 091 | Transactional JPEG carrier semantics and seed-hint correctness | IMPLEMENTED |
+| 092 | Validated carrier configuration and result contracts | IMPLEMENTED |
+| 093 | LSB V2 permutation invariant proof and compatibility | IMPLEMENTED |
+| 094 | Opaque prepared JPEG carrier API | IMPLEMENTED |
+| 095 | Generic strided pixel-buffer LSB API | IMPLEMENTED |
+| 096 | Parent/carrier boundary and v1 API cleanup | IMPLEMENTED |
+| 097 | Carrier v1 packaging, documentation, and evidence closure | IMPLEMENTED |
 
 ## Closure ledger
 
-- [ ] Plan 091 complete with correctness/compatibility evidence
-- [ ] Plan 092 complete with public API/semver evidence
-- [ ] Plan 093 complete with permutation disposition and known-answer evidence
-- [ ] Plan 094 complete with single-decode reuse evidence
-- [ ] Plan 095 complete with strided-buffer equivalence evidence
-- [ ] Plan 096 complete with parent behavior and v1 API disposition
-- [ ] Plan 097 complete with package/external-consumer/MSRV/CI evidence
-- [ ] final integrated `./scripts/check.sh` passes
-- [ ] no deferred algorithm/media/provenance work accidentally pulled into scope
+- [x] Plan 091 complete with correctness/compatibility evidence
+- [x] Plan 092 complete with public API/semver evidence
+- [x] Plan 093 complete with permutation disposition and known-answer evidence
+- [x] Plan 094 complete with single-decode reuse evidence
+- [x] Plan 095 complete with strided-buffer equivalence evidence
+- [x] Plan 096 complete with parent behavior and v1 API disposition
+- [x] Plan 097 complete with package/external-consumer/MSRV/CI evidence
+- [x] final integrated `./scripts/check.sh` passes (local full gate green, 2026-09-10)
+- [x] no deferred algorithm/media/provenance work accidentally pulled into scope
+
+Deferred items honoring roadmap constraints: progressive/multiscan JPEG
+support, new carriers, watermarking, FPE/crypto adoption, C2PA, plugin
+framework, and auto-dispatch facade untouched. Successor V2 mapping design
+explicitly deferred (Plan 093 disposition C). Internal JPEG-context
+signature threading deferred to the v1 boundary to protect canonical
+metadata bytes (Plan 096). No branch-protection change made (docs made
+truthful instead). No crates.io publish performed.
 
 Update this file from child status ledgers and integrated source/test evidence. Do not mark the roadmap complete from plan text or agent reports alone.

@@ -1,11 +1,15 @@
 //! DCT-based Steganography
 //!
-//! Production-ready steganography for JPEG images using F5-style DCT coefficient embedding.
+//! Production-ready steganography for JPEG images using an F5-style DCT
+//! coefficient embedding variant.
 //! Features:
 //! - F5-style embedding with shrinkage handling
 //! - Configurable redundancy for robustness
 //! - Seed embedded in quantization tables when those tables are preserved
-//! - Progressive JPEG support
+//!
+//! Progressive, multi-scan, and restart-interval JPEGs are not supported
+//! carriers for DCT payload embedding; only the quantization-table seed
+//! hint may be stored in those inputs.
 //!
 //! ## Variant: No-zero-coefficient F5
 //!
@@ -18,12 +22,20 @@
 //! coefficient magnitude changes for reduced statistical detectability via shrinkage
 //! analysis. Position alignment between embed and extract is preserved because no
 //! coefficient is ever zeroed out.
+//!
+//! Only AC coefficients with `|coef| >= 2` after canonicalization are
+//! carriers. This is an F5-inspired StegoEggo variant, not an
+//! implementation of conventional F5, and no interoperability with other
+//! F5 implementations is claimed.
 
 use super::{JpegHeader, Result, TranscoderError};
 use std::collections::{HashMap, HashSet};
 
 /// Seed embedding magic (stored in quantization tables)
 const SEED_MAGIC: &[u8] = b"SEED";
+
+/// Seed-hint payload size in bits: 32 bits of `SEED` magic plus 64 seed bits.
+pub(crate) const SEED_HINT_BITS: usize = 96;
 
 /// DCT coefficient shuffling PRNG for F5 steganography.
 /// Uses a different algorithm than the general-purpose `PixelSelectionRng` in `util/image.rs`.
@@ -91,16 +103,25 @@ impl DctStegoF5 {
     ///
     /// Positions where the quantization value is less than 2 are skipped:
     /// setting the LSB of a value of 1 would change it to 0, and a position
-    /// holding 0 could flip to 1, both corrupting the Q-table. This means
-    /// fewer bits are embedded than intended. Extraction skips the same
-    /// positions; if fewer than 96 carrier positions remain across both
-    /// tables, the seed cannot be recovered and the caller falls back to
-    /// other extraction methods.
+    /// holding 0 could flip to 1, both corrupting the Q-table.
+    ///
+    /// The write is transactional: eligible positions are counted before any
+    /// table is mutated, and fewer than [`SEED_HINT_BITS`] eligible positions
+    /// returns [`TranscoderError::InsufficientHintCapacity`] without mutating
+    /// the header. A successful return implies the paired extractor recovers
+    /// the seed from the mutated header.
     pub fn embed_seed_in_quantization_tables(
         &self,
         header: &mut JpegHeader,
         seed: u64,
     ) -> Result<()> {
+        let available = self.qtable_hint_capacity(header);
+        if available < SEED_HINT_BITS {
+            return Err(TranscoderError::InsufficientHintCapacity {
+                required: SEED_HINT_BITS,
+                available,
+            });
+        }
         let mut payload = Vec::new();
         payload.extend_from_slice(SEED_MAGIC);
 
@@ -110,6 +131,7 @@ impl DctStegoF5 {
             .iter()
             .flat_map(|&b| (0..8).map(move |i| (b >> i) & 1))
             .collect();
+        debug_assert_eq!(bits.len(), SEED_HINT_BITS);
 
         let mut bit_idx = 0;
         for table_idx in 0..2 {
@@ -130,8 +152,28 @@ impl DctStegoF5 {
                 }
             }
         }
+        debug_assert_eq!(bit_idx, SEED_HINT_BITS);
 
         Ok(())
+    }
+
+    /// Count eligible quantization-table hint positions.
+    ///
+    /// Uses exactly the positions [`extract_seed_from_quantization_tables`]
+    /// reads, in the same table order, so a successful embed is always
+    /// recoverable by the paired extractor.
+    pub fn qtable_hint_capacity(&self, header: &JpegHeader) -> usize {
+        let mut eligible = 0usize;
+        for table_idx in 0..2 {
+            if let Some(ref quant) = header.quantization_tables[table_idx] {
+                for pos in 0..64 {
+                    if quant.values[pos] >= 2 {
+                        eligible += 1;
+                    }
+                }
+            }
+        }
+        eligible
     }
 
     /// Extract seed from quantization tables
@@ -974,8 +1016,16 @@ mod tests {
         }
 
         let stego = DctStegoF5::new();
+        let before = qtable_values_snapshot(&header);
         let result = stego.embed_seed_in_quantization_tables(&mut header, 0xCAFEBABEu64);
-        assert!(result.is_ok());
+        assert!(matches!(
+            result,
+            Err(TranscoderError::InsufficientHintCapacity {
+                required: 96,
+                available: 0
+            })
+        ));
+        assert_eq!(qtable_values_snapshot(&header), before);
 
         let extracted = stego.extract_seed_from_quantization_tables(&header);
         assert!(
@@ -1110,6 +1160,85 @@ mod tests {
             stego.extract_seed_from_quantization_tables(&header),
             Some(seed)
         );
+    }
+
+    fn header_with_hint_eligible_tables(eligible: usize) -> JpegHeader {
+        let mut header = JpegHeader::default();
+        let mut remaining = eligible;
+        for i in 0..2 {
+            let mut values = [1u16; 64];
+            for val in values.iter_mut() {
+                if remaining == 0 {
+                    break;
+                }
+                *val = 16;
+                remaining -= 1;
+            }
+            header.quantization_tables[i] =
+                Some(crate::jpeg_transcoder::header::QuantizationTable {
+                    table_id: i as u8,
+                    precision: 8,
+                    values,
+                });
+        }
+        header
+    }
+
+    fn qtable_values_snapshot(header: &JpegHeader) -> [[u16; 64]; 2] {
+        [
+            header.quantization_tables[0]
+                .map(|t| t.values)
+                .unwrap_or([0; 64]),
+            header.quantization_tables[1]
+                .map(|t| t.values)
+                .unwrap_or([0; 64]),
+        ]
+    }
+
+    #[test]
+    fn seed_hint_with_exactly_enough_positions_round_trips() {
+        let stego = DctStegoF5::new();
+        for seed in [0u64, 42, u64::MAX, 0x12345678DEADBEEF] {
+            let mut header = header_with_hint_eligible_tables(super::SEED_HINT_BITS);
+            assert_eq!(stego.qtable_hint_capacity(&header), super::SEED_HINT_BITS);
+            stego
+                .embed_seed_in_quantization_tables(&mut header, seed)
+                .unwrap();
+            assert_eq!(
+                stego.extract_seed_from_quantization_tables(&header),
+                Some(seed)
+            );
+        }
+    }
+
+    #[test]
+    fn seed_hint_with_too_few_positions_fails_without_mutation() {
+        let stego = DctStegoF5::new();
+        let mut header = header_with_hint_eligible_tables(super::SEED_HINT_BITS - 1);
+        assert_eq!(
+            stego.qtable_hint_capacity(&header),
+            super::SEED_HINT_BITS - 1
+        );
+        let before = qtable_values_snapshot(&header);
+        let result = stego.embed_seed_in_quantization_tables(&mut header, 42);
+        assert!(matches!(
+            result,
+            Err(TranscoderError::InsufficientHintCapacity {
+                required: 96,
+                available: 95
+            })
+        ));
+        assert_eq!(qtable_values_snapshot(&header), before);
+        assert_eq!(stego.extract_seed_from_quantization_tables(&header), None);
+    }
+
+    #[test]
+    fn seed_hint_capacity_counts_extraction_positions() {
+        let stego = DctStegoF5::new();
+        let header = header_with_hint_eligible_tables(100);
+        assert_eq!(stego.qtable_hint_capacity(&header), 100);
+        let empty = JpegHeader::default();
+        assert_eq!(stego.qtable_hint_capacity(&empty), 0);
     }
 
     #[test]

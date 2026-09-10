@@ -40,6 +40,9 @@ pub enum TranscoderError {
 
     #[error("Embedding failed: {0}")]
     EmbeddingFailed(String),
+
+    #[error("Insufficient quantization-table hint capacity: need {required} hint bits, have {available}")]
+    InsufficientHintCapacity { required: usize, available: usize },
 }
 
 pub type Result<T> = std::result::Result<T, TranscoderError>;

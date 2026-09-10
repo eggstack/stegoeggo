@@ -20,11 +20,39 @@ It exposes four operation styles on the same corrected carrier model:
 
 ### Tiled (crop-oriented)
 
-`lsb::embed_tiled`/`embed_tiled_in_place`/`extract_tiled`/`embed_tiled_framed`/`extract_tiled_framed` and the `jpeg::` counterparts embed the full payload per tile with a shared `TileConfig { seed, tile_size }`. JPEG tiles require `>= 8` and a multiple of 8 with redundancy 1 per tile. Recovery is bounded by an explicit `max_origins` (`1..=MAX_TILED_ORIGINS`); framed tiled recovery validates CRC32 per candidate and needs no caller-known length. Raw tiled recovery returns the first candidate and cannot authenticate correctness.
+`lsb::embed_tiled`/`embed_tiled_in_place`/`extract_tiled`/`embed_tiled_framed`/`extract_tiled_framed` and the `jpeg::` counterparts embed the full payload per tile with a shared `TileConfig { seed, tile_size }`. JPEG tiles require `>= 8` and a multiple of 8 with redundancy 1 per tile. Recovery is bounded by an explicit `max_origins` (`1..=MAX_TILED_ORIGINS`); framed tiled recovery validates CRC32 per candidate and needs no caller-known length. Raw tiled recovery returns the first candidate and cannot authenticate correctness. Tiled extraction reads tile windows in place without allocating cropped copies.
+
+### Strict JPEG embedding
+
+`jpeg::embed` is best-effort compatibility behavior (lowers redundancy to
+fit; seed-hint carrier when nothing fits). `jpeg::embed_strict` and
+`jpeg::embed_framed_strict` embed at exactly the requested redundancy or
+return `InsufficientCapacity` without emitting output. Seed hints
+(`jpeg::embed_seed_hint`) are transactional: success implies the complete
+96-bit hint is recoverable.
+
+### Prepared JPEG (repeated operations)
+
+`prepared::PreparedJpeg` borrows encoded JPEG bytes and retains one
+coefficient decode across repeated capacity, extraction, and
+strict-embedding operations, with results identical to the one-shot API.
+Codec internals stay private.
+
+### Borrowed pixel buffers
+
+`pixels::PixelView`/`PixelViewMut` operate directly on caller-owned
+packed or strided RGB/RGBA bytes with the identical carrier mapping as
+the `RgbaImage` path. Alpha bytes and row padding are never carriers and
+are never mutated. Capacity units are RGB slots for LSB, eligible AC
+coefficients with `|coef| >= 2` for JPEG DCT, and 96 hint-bit positions
+for seed hints.
 
 ## Configuration
 
-For untrusted configuration values, `LsbConfig::try_new`, `LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and `JpegConfig::try_with_redundancy` return `StegoError::InvalidConfig` instead of panicking on out-of-range redundancy. The original `with_redundancy` builder is retained for compile-time-constant values.
+`Redundancy` is the recommended validated redundancy primitive with
+identical semantics in every build profile; `LsbConfig`/`JpegConfig` gain
+`from_redundancy`, `with_redundancy_value`, and `redundancy_value` over
+it. For untrusted configuration values, `LsbConfig::try_new`, `LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and `JpegConfig::try_with_redundancy` return `StegoError::InvalidConfig` instead of panicking on out-of-range redundancy. The original `with_redundancy` builder is retained for compile-time-constant values. Zero seeds are valid.
 
 The frame CRC32 detects accidental corruption; it is not adversarial authentication.
 

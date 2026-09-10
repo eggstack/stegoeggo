@@ -9,13 +9,15 @@ use std::fmt;
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum StegoError {
-    /// Invalid configuration (e.g., zero seed, redundancy out of range).
+    /// Invalid configuration (e.g., redundancy out of range, invalid tile
+    /// geometry, malformed pixel-view dimensions). Zero seeds are valid.
     InvalidConfig(String),
 
     /// Insufficient carrier capacity for the requested payload.
     InsufficientCapacity {
-        /// Required capacity in carrier units (RGB slots for LSB, non-zero AC
-        /// coefficients for DCT).
+        /// Required capacity in carrier units (RGB slots for LSB, eligible
+        /// AC coefficients with `|coef| >= 2` for DCT payloads, hint-bit
+        /// positions for seed-hint operations).
         required: usize,
         /// Available capacity in the same units.
         available: usize,
