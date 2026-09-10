@@ -1,6 +1,6 @@
 # Plan 088 Status: Roadmap 081 Corrective Closure
 
-Status: IMPLEMENTED
+Status: COMPLETE
 
 Baseline: `2bb496e1af8c75495b1ae630522c3afd48adfb45`
 
@@ -30,7 +30,7 @@ closure work.
 - [x] `plans/081-status.md` reconciled and closure checklist updated
 - [x] integrated fmt/clippy/check/test gate passes
 - [x] `./scripts/check.sh` passes
-- [ ] required push/PR CI is green after all corrective changes
+- [x] required push/PR CI is green after all corrective changes
 - [x] no deferred Roadmap 081 item accidentally enters scope
 
 ## Implementation notes
@@ -65,9 +65,10 @@ Record here:
 - Integrated verification: `./scripts/check.sh` passed with fmt, clippy
   `-D warnings`, minimal-feature check, all-feature workspace tests, carrier
   tests, CLI tests, soak tests, focused convergence suites, and doc tests.
-- Implementation commit SHA: to be recorded after commit.
-- Final Roadmap 081 status: `COMPLETE`, pending the required post-push CI
-  result for this corrective commit.
+- Implementation commit SHA: `6a0cb19` — `fix: close roadmap 081 determinism gap`.
+- Required post-push CI: [run 34513562069](https://github.com/eggstack/stegoeggo/actions/runs/34513562069)
+  — `CI / Check` passed in 4m7s on `6a0cb19`.
+- Final Roadmap 081 status: `COMPLETE`.
 
 ## Closure rule
 

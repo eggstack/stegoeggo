@@ -4,8 +4,8 @@ Status: COMPLETE
 
 Baseline: `07bd05304a6942a843a76c28013a5bc0f08179cc`
 
-Closure implementation: Plan 088 on the corrected main tree; the timestamp
-provenance regression was fixed in the current closure commit.
+Closure implementation: Plan 088, commit `6a0cb19`, on the corrected main
+tree; the timestamp provenance regression was fixed in that closure commit.
 
 ## Child plans
 
@@ -45,5 +45,8 @@ provenance regression was fixed in the current closure commit.
 - No deferred items were pulled into scope: no carrier/payload changes, v1
   removals, C2PA work, new CLI surface, release automation, or CI policy
   expansion.
+- Required post-push CI passed on the corrected tree:
+  [CI run 34513562069](https://github.com/eggstack/stegoeggo/actions/runs/34513562069)
+  (`CI / Check`, green).
 
 Update this file only after verifying child-plan status ledgers and integrated source/tests. Do not mark roadmap complete from agent reports alone.
