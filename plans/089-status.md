@@ -79,8 +79,8 @@ Record here:
 - Scheduled-equivalent smoke recheck ID/result: `34506785941` — green on
   `6cf2d93`; the rotating subset was `metadata_merge`, `payload_v3_parser`,
   and `pipeline_bytes`, with 120 seconds per target and no crash artifacts.
-- Required CI run/result after the correction: `34506386814` — success on
-  `6cf2d93` (`CI / Check`).
+- Required CI run/result after the correction: `34507697595` — success on
+  `40b274e` (`CI / Check`).
 - Implementation commit SHA: `6cf2d93` (final merge on `main`; this ledger
   closure is the follow-up commit).
 - Plan 086 and Plan 088 ledger reconciliation: both record the failed

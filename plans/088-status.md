@@ -8,7 +8,8 @@ Additional closure dependency: Plan 089 (`plans/089-fuzz-assurance-corrective-cl
 
 Plan 089 is tracked and complete in `plans/089-status.md`: manual run
 `34506783317`, scheduled-equivalent recheck `34506785941`, and required
-`CI / Check` `34506386814` are green on `6cf2d93`. The earlier
+`CI / Check` `34507697595` are green on final implementation tree `40b274e`.
+The earlier
 scheduled-equivalent run `34504712007` found the malformed-JPEG regression
 that was fixed. This plan and Roadmap 081 remain open for their independent
 closure work.

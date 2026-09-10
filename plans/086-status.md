@@ -146,7 +146,7 @@ builds and representative smokes pass. Manual run `34506783317` and
 scheduled-equivalent recheck `34506785941` are green on `6cf2d93`; the earlier
 run `34504712007` found and uploaded a malformed-JPEG `pipeline_bytes`
 reproducer, which Plan 089 regressed and fixed. Required `CI / Check`
-`34506386814` is also green.
+`34507697595` is also green on final implementation tree `40b274e`.
 
 - Implementation commit: `4ef3eee` — plan 086: msrv, platform, and scheduled
   assurance. (This ledger's CI-evidence fill is recorded in the follow-up
