@@ -194,12 +194,13 @@ impl RightsMetadataProtector {
                             notice.seed(),
                             Some(&ctx.resource_limits()),
                         ),
-                        ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg(
+                        ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg_with_timestamp(
                             img_bytes,
                             &metadata,
                             notice.dmi(),
                             notice.seed(),
                             Some(ctx),
+                            notice.notice_applied_at(),
                         ),
                         ImageOutputFormat::WebP => {
                             self.inject_text_chunks_webp_from_notice(img_bytes, &notice)
@@ -224,12 +225,13 @@ impl RightsMetadataProtector {
                 notice.seed(),
                 Some(&ctx.resource_limits()),
             )?,
-            ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg(
+            ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg_with_timestamp(
                 &stripped,
                 &metadata,
                 notice.dmi(),
                 notice.seed(),
                 Some(ctx),
+                notice.notice_applied_at(),
             )?,
             ImageOutputFormat::WebP => {
                 self.inject_text_chunks_webp_from_notice(&stripped, &notice)?
@@ -306,12 +308,13 @@ impl RightsMetadataProtector {
                             notice.seed(),
                             Some(plan.resource_limits()),
                         ),
-                        ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg(
+                        ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg_with_timestamp(
                             img_bytes,
                             &metadata,
                             effective_dmi,
                             notice.seed(),
                             Some(&limits_ctx),
+                            notice.notice_applied_at(),
                         ),
                         ImageOutputFormat::WebP => {
                             self.inject_text_chunks_webp_from_notice(img_bytes, notice)
@@ -336,12 +339,13 @@ impl RightsMetadataProtector {
                 notice.seed(),
                 Some(plan.resource_limits()),
             )?,
-            ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg(
+            ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg_with_timestamp(
                 &stripped,
                 &metadata,
                 effective_dmi,
                 notice.seed(),
                 Some(&limits_ctx),
+                notice.notice_applied_at(),
             )?,
             ImageOutputFormat::WebP => {
                 self.inject_text_chunks_webp_from_notice(&stripped, notice)?

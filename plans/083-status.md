@@ -1,9 +1,9 @@
 # Plan 083 Status
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 Baseline: `07bd05304a6942a843a76c28013a5bc0f08179cc`
-Working HEAD at start: `88fe30d`
+Implementation commit: `e6a4f85` — verification model convergence.
 
 ## 1. Audit: verification call graph (pre-change)
 
@@ -136,3 +136,25 @@ Working HEAD at start: `88fe30d`
   recovery tests. Green locally (3 tests).
 - Existing suites green via `./scripts/check.sh` (fmt, clippy `-D warnings`,
   no-default-features check, workspace all-features tests).
+
+## Current-main revalidation
+
+Revalidated after Plans 084-089 on current `main`:
+
+- `src/verification/canonical.rs` remains the semantic owner. The public
+  status, detailed result, legal-notice, and rich-report APIs all call the
+  named canonical projections from one `CanonicalFacts` result.
+- `stegoeggo-cli/src/verify.rs` consumes the canonical-backed
+  `verify_legal_notice` projection and presents authentication from
+  `NoticeVerification::authenticated()` / `stego_status()`; it does not
+  independently verify or reclassify the marker.
+- `src/detached/verify.rs` uses
+  `verify_and_extract_raw_for_detailed` followed by
+  `parse_verified_payload` for the embedded reference, preserving the
+  single-search path. Its separate manifest-aware report remains required
+  for digest, binding, signature, and trust decisions.
+- `cargo test --all-features --test verification_convergence` passes all 3
+  table-driven integration tests. The compatibility and convergence matrix
+  remains green in the integrated gate recorded by Plan 088.
+
+No discrepancy was found that would require reopening this plan.

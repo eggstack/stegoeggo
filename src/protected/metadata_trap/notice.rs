@@ -532,10 +532,19 @@ impl super::RightsMetadataProtector {
 
     pub(super) const STRUCTURED_COM_MAGIC: &'static [u8] = b"cloakrs:v1:";
 
+    #[cfg(test)]
     pub(super) fn generate_structured_com_marker(
         dmi: Option<DmiValue>,
         _seed: Option<u64>,
         ctx: &ProtectionContext,
+    ) -> Vec<u8> {
+        Self::generate_structured_com_marker_with_timestamp(dmi, ctx, None)
+    }
+
+    pub(super) fn generate_structured_com_marker_with_timestamp(
+        dmi: Option<DmiValue>,
+        ctx: &ProtectionContext,
+        timestamp: Option<&str>,
     ) -> Vec<u8> {
         let mut payload = Vec::with_capacity(48);
         payload.extend_from_slice(Self::STRUCTURED_COM_MAGIC);
@@ -550,11 +559,10 @@ impl super::RightsMetadataProtector {
         let intensity_val = (ctx.intensity() * 100.0) as u16;
         payload.extend_from_slice(&intensity_val.to_le_bytes());
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        payload.extend_from_slice(&now.to_le_bytes());
+        let timestamp_secs = timestamp
+            .and_then(super::common::unix_seconds_from_timestamp)
+            .unwrap_or_else(super::common::current_unix_seconds);
+        payload.extend_from_slice(&timestamp_secs.to_le_bytes());
 
         let dmi_byte = dmi
             .map(|d| match d {

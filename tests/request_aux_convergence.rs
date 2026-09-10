@@ -1,6 +1,7 @@
 #![allow(deprecated)]
 
 use image::ImageEncoder;
+use std::time::Duration;
 use stegoeggo::{
     process_image_bytes, process_image_bytes_with_warnings, process_request_bytes,
     process_request_bytes_with_report, process_request_bytes_with_warnings, AuthenticationMode,
@@ -112,6 +113,14 @@ fn sync_variants_equal(input: &[u8], request: &ProtectionRequest) {
     assert_eq!(warnings, *report.warnings());
 }
 
+fn sync_variant_outputs(input: &[u8], request: &ProtectionRequest) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    let plain = process_request_bytes(input, request).unwrap();
+    let (with_warnings, warnings) = process_request_bytes_with_warnings(input, request).unwrap();
+    let (with_report, report) = process_request_bytes_with_report(input, request).unwrap();
+    assert_eq!(warnings, *report.warnings());
+    (plain, with_warnings, with_report)
+}
+
 #[test]
 fn sync_variants_agree_png() {
     let input = png_bytes(64);
@@ -129,6 +138,22 @@ fn sync_variants_agree_jpeg() {
     sync_variants_equal(&input, &seed_only_request());
     sync_variants_equal(&input, &best_effort_request());
     sync_variants_equal(&input, &authenticated_request());
+}
+
+#[test]
+fn jpeg_deterministic_equivalence_survives_wall_clock_second_boundary() {
+    let input = jpeg_bytes(128);
+    let request = best_effort_request();
+    let before = sync_variant_outputs(&input, &request);
+
+    std::thread::sleep(Duration::from_millis(1100));
+
+    let after = sync_variant_outputs(&input, &request);
+    assert_eq!(before.0, before.1);
+    assert_eq!(before.0, before.2);
+    assert_eq!(after.0, after.1);
+    assert_eq!(after.0, after.2);
+    assert_eq!(before, after);
 }
 
 #[test]

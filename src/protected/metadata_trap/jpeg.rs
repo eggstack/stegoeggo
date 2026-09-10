@@ -203,6 +203,7 @@ impl super::RightsMetadataProtector {
         false
     }
 
+    #[cfg(test)]
     pub(super) fn inject_text_chunks_jpeg(
         &self,
         jpeg_data: &[u8],
@@ -210,6 +211,18 @@ impl super::RightsMetadataProtector {
         dmi: Option<DmiValue>,
         seed: Option<u64>,
         ctx: Option<&ProtectionContext>,
+    ) -> Result<Vec<u8>> {
+        self.inject_text_chunks_jpeg_with_timestamp(jpeg_data, metadata, dmi, seed, ctx, None)
+    }
+
+    pub(super) fn inject_text_chunks_jpeg_with_timestamp(
+        &self,
+        jpeg_data: &[u8],
+        metadata: &[(Vec<u8>, Vec<u8>)],
+        dmi: Option<DmiValue>,
+        seed: Option<u64>,
+        ctx: Option<&ProtectionContext>,
+        timestamp: Option<&str>,
     ) -> Result<Vec<u8>> {
         if metadata.is_empty() && dmi.is_none() {
             return Ok(jpeg_data.to_vec());
@@ -269,7 +282,7 @@ impl super::RightsMetadataProtector {
 
             if marker == 0xD9 {
                 if !inserted {
-                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx)?;
+                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx, timestamp)?;
                     inserted = true;
                 }
                 output.extend_from_slice(&jpeg_data[pos..]);
@@ -278,7 +291,7 @@ impl super::RightsMetadataProtector {
 
             if marker == 0xDA {
                 if !inserted {
-                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx)?;
+                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx, timestamp)?;
                     inserted = true;
                 }
                 output.extend_from_slice(&jpeg_data[pos..]);
@@ -323,7 +336,7 @@ impl super::RightsMetadataProtector {
         }
 
         if !inserted {
-            self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx)?;
+            self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx, timestamp)?;
         }
 
         Ok(output)
@@ -338,6 +351,7 @@ impl super::RightsMetadataProtector {
         metadata: &[(Vec<u8>, Vec<u8>)],
         seed: Option<u64>,
         ctx: Option<&ProtectionContext>,
+        timestamp: Option<&str>,
     ) -> Result<()> {
         let default_limits = crate::ResourceLimits::default();
         let limits = ctx.map(|c| c.resource_limits());
@@ -366,7 +380,8 @@ impl super::RightsMetadataProtector {
         }
 
         if let Some(context) = ctx {
-            let structured_com = Self::generate_structured_com_marker(dmi, seed, context);
+            let structured_com =
+                Self::generate_structured_com_marker_with_timestamp(dmi, context, timestamp);
             output.extend_from_slice(&structured_com);
         }
         Ok(())

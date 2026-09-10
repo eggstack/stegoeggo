@@ -3,7 +3,7 @@
 Status: IMPLEMENTED
 
 Baseline: `07bd05304a6942a843a76c28013a5bc0f08179cc`.
-Head: `60cc150 plans: add pre-v1 consolidation and maintainability roadmap` plus working tree below.
+Implementation commit: `88fe30d` — canonical request auxiliary API convergence.
 
 ## Exact API names
 

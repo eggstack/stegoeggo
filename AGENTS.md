@@ -159,6 +159,7 @@ Not deprecated (do not migrate away): `VerificationStatus` — still the return 
 - **Pixel-only paths drop file-level metadata** — `process_image`/`process_images_parallel` (`DynamicImage` in/out) embed stego markers only; PNG tEXt, JPEG COM/XMP, and WebP XMP do not survive. Use byte-path APIs (`process_request_bytes`, `process_image_bytes`) when metadata injection matters
 - **`inject_metadata` / `inject_legal_claims` are `Option<bool>`** — Default `None` (use level default) vs explicit `false` (disable). `with_metadata_injection(false)` ≠ not calling it at all
 - **`inject_legal_claims` auto-enables when `LegalMetadata` present** — No need to call `with_legal_claims(true)`
+- **Deterministic request timestamps** — Canonical JPEG structured COM markers use the resolved `RightsNotice::notice_applied_at`; explicit `ProtectionRequest::with_timestamp_override(...)` must reach metadata injection. Calls without an explicit timestamp retain wall-clock defaults.
 - **`has_notice()` includes DMI** — Returns true when any legal field OR `dmi.is_some()` is found. `DmiValue::Allowed` and `DmiValue::Unspecified` make `has_notice()` true — this means "legal metadata was found" not "restrictions were imposed"
 - **`LegalMetadata::MAX_FIELD_LEN`** — 8192 bytes. `validate()` checks all 16 fields, returns `Error::Config` on violation
 - **Verification returns `VerificationStatus`** — Not `Option<bool>`. Use `== VerificationStatus::Verified` in assertions
@@ -303,7 +304,7 @@ See `RELEASING.md` for the complete procedure.
 - `SUPPORT.md` — Support matrix
 - `STABILITY.md` — Stability tiers
 - `RELEASING.md` — Manual publication procedure
-- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why. Next plan number: 089+
+- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why. Next plan number: 090+
 - `examples/` — Four runnable examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) referenced by `docs/rust-api.md`; keep them compiling when changing public APIs
 - `docs/` — User-facing guides: `cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`
 - `architecture/` — 31 architecture documents, verified against source; indexed in the table above and in `architecture/overview.md`

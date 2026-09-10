@@ -48,11 +48,95 @@ pub(super) fn date_parts_from_secs(now: u64) -> (i32, usize, u64, u64) {
 }
 
 pub(super) fn current_date_parts() -> (i32, usize, u64, u64) {
-    let now = std::time::SystemTime::now()
+    let now = current_unix_seconds();
+    date_parts_from_secs(now)
+}
+
+pub(super) fn current_unix_seconds() -> u64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0);
-    date_parts_from_secs(now)
+        .unwrap_or(0)
+}
+
+pub(super) fn unix_seconds_from_timestamp(value: &str) -> Option<u64> {
+    let (year, month, day, hour, minute, second, offset_seconds) = match value.len() {
+        10 if value.as_bytes().get(4) == Some(&b'-') && value.as_bytes().get(7) == Some(&b'-') => (
+            value[0..4].parse::<i64>().ok()?,
+            value[5..7].parse::<i64>().ok()?,
+            value[8..10].parse::<i64>().ok()?,
+            0,
+            0,
+            0,
+            0,
+        ),
+        20 if value.as_bytes().get(4) == Some(&b'-')
+            && value.as_bytes().get(7) == Some(&b'-')
+            && value.as_bytes().get(10) == Some(&b'T')
+            && value.as_bytes().get(13) == Some(&b':')
+            && value.as_bytes().get(16) == Some(&b':')
+            && value.as_bytes().get(19) == Some(&b'Z') =>
+        {
+            (
+                value[0..4].parse::<i64>().ok()?,
+                value[5..7].parse::<i64>().ok()?,
+                value[8..10].parse::<i64>().ok()?,
+                value[11..13].parse::<i64>().ok()?,
+                value[14..16].parse::<i64>().ok()?,
+                value[17..19].parse::<i64>().ok()?,
+                0,
+            )
+        }
+        25 if value.as_bytes().get(4) == Some(&b'-')
+            && value.as_bytes().get(7) == Some(&b'-')
+            && value.as_bytes().get(10) == Some(&b'T')
+            && value.as_bytes().get(13) == Some(&b':')
+            && value.as_bytes().get(16) == Some(&b':')
+            && value
+                .as_bytes()
+                .get(19)
+                .is_some_and(|b| *b == b'+' || *b == b'-')
+            && value.as_bytes().get(22) == Some(&b':') =>
+        {
+            let sign = if value.as_bytes()[19] == b'+' { 1 } else { -1 };
+            let offset_hour = value[20..22].parse::<i64>().ok()?;
+            let offset_minute = value[23..25].parse::<i64>().ok()?;
+            (
+                value[0..4].parse::<i64>().ok()?,
+                value[5..7].parse::<i64>().ok()?,
+                value[8..10].parse::<i64>().ok()?,
+                value[11..13].parse::<i64>().ok()?,
+                value[14..16].parse::<i64>().ok()?,
+                value[17..19].parse::<i64>().ok()?,
+                sign * (offset_hour * 3600 + offset_minute * 60),
+            )
+        }
+        _ => return None,
+    };
+
+    if !(1..=9999).contains(&year)
+        || !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 59
+    {
+        return None;
+    }
+
+    let adjusted_year = year - i64::from(month <= 2);
+    let era = if adjusted_year >= 0 {
+        adjusted_year / 400
+    } else {
+        (adjusted_year - 399) / 400
+    };
+    let year_of_era = adjusted_year - era * 400;
+    let month_prime = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * month_prime + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days_since_epoch = era * 146097 + day_of_era - 719468;
+    let seconds = days_since_epoch * 86400 + hour * 3600 + minute * 60 + second - offset_seconds;
+    Some(seconds.max(0) as u64)
 }
 
 #[cfg(test)]
@@ -83,4 +167,23 @@ pub(crate) fn current_timestamp_iso8601() -> String {
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
         year, month, day, hours, minutes, seconds
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unix_seconds_from_timestamp;
+
+    #[test]
+    fn unix_timestamp_conversion_matches_supported_notice_formats() {
+        assert_eq!(unix_seconds_from_timestamp("1970-01-01"), Some(0));
+        assert_eq!(
+            unix_seconds_from_timestamp("2025-01-01T00:00:00Z"),
+            Some(1_735_689_600)
+        );
+        assert_eq!(
+            unix_seconds_from_timestamp("2025-01-01T05:30:00+05:30"),
+            Some(1_735_689_600)
+        );
+        assert_eq!(unix_seconds_from_timestamp("not-a-timestamp"), None);
+    }
 }

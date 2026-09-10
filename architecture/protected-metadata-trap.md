@@ -66,7 +66,7 @@ Injects four marker types:
 1. **EXIF (APP1)** — Basic EXIF orientation
 2. **IPTC-IIM (APP13)** — Photoshop 3.0 identifier + IPTC dataset records
 3. **XMP (APP1)** — Full XMP packet with canonical `plus:DataMining` rights signals and legal metadata
-4. **COM** — Human-readable key-value pairs (Copyright, Creator, Contact, CreditLine, CopyrightOwner, LicensorName, LicensorEmail, LicensorURL, MetadataDate, NoticeAppliedAt, UsageTerms, AIConstraints) + structured binary COM (`cloakrs:v1:`)
+4. **COM** — Human-readable key-value pairs (Copyright, Creator, Contact, CreditLine, CopyrightOwner, LicensorName, LicensorEmail, LicensorURL, MetadataDate, NoticeAppliedAt, UsageTerms, AIConstraints) + structured binary COM (`cloakrs:v1:`). The structured marker's Unix-seconds field is derived from the same resolved `notice_applied_at` timestamp as the text metadata when one exists.
 
 **Container preservation**: `inject_text_chunks_jpeg` walks the raw JPEG byte stream, copying all pre-SOS segments verbatim and inserting StegoEggo metadata before the SOS marker. The SOS scan data and all segments after it (including EOI) are copied byte-for-byte. This ensures that unrelated APP0, APP1, APP2, APP13, APP14, COM, DRI, and unknown segments survive metadata injection unchanged.
 
@@ -97,7 +97,7 @@ When an already-protected image is re-processed, the pipeline applies a `Metadat
 
 ### Normalization Model
 
-All format writers (PNG tEXt, JPEG COM, WebP XMP) consume the same `RightsNotice` struct, which is produced once per processing invocation by `ProtectionContext::normalize_rights_notice()`. This ensures semantically equivalent metadata regardless of output format. The normalization resolves DMI defaults, applies auto-computed timestamps, and merges `LegalMetadata` fields with context-level overrides.
+All format writers (PNG tEXt, JPEG COM, WebP XMP) consume the same `RightsNotice` struct, which is produced once per processing invocation by `ProtectionContext::normalize_rights_notice()` or canonical plan resolution. This ensures semantically equivalent metadata regardless of output format. The normalization resolves DMI defaults, applies auto-computed timestamps, and merges `LegalMetadata` fields with context-level overrides. Canonical JPEG injection passes the resolved `notice_applied_at` into structured COM rendering, so an explicit `ProtectionRequest::with_timestamp_override(...)` controls every timestamp-bearing field.
 
 ### Policies
 
@@ -180,6 +180,7 @@ so external RDF parsers (e.g. `exiftool`) can read the legal fields:
 
 - `current_date_iso()` — Manual ISO date computation (test-only, no chrono dependency)
 - `current_timestamp_iso8601()` — pub(crate) runtime timestamp for notice_applied_at auto-computation
+- `unix_seconds_from_timestamp()` — Converts validated notice timestamps to the structured JPEG COM Unix-seconds field
 - CRC32 computation for PNG chunk checksums
 
 ## Module Interactions

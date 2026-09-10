@@ -117,6 +117,10 @@ let request = ProtectionRequest::metadata_only(
 let output = process_request_bytes(&input, &request)?;
 ```
 
+For byte-identical output across repeated canonical calls, provide both an explicit seed and
+`with_timestamp_override(...)`; this controls timestamp-bearing rights metadata, including the
+structured JPEG COM marker.
+
 For byte APIs vs `DynamicImage`, verification, and the deprecated compatibility surface, see [docs/rust-api.md](docs/rust-api.md).
 
 ## Feature flags
