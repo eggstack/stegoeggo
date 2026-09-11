@@ -1,313 +1,60 @@
 # AGENTS.md
 
-## Project Overview
+`stegoeggo` is a Rust library + CLI that writes rights-reservation metadata (primary channel) and optional steganographic markers (best-effort redundant channel) into PNG, JPEG, and WebP images. It is not DRM or proof of training.
 
-`stegoeggo` is a Rust library and CLI for protecting images from unauthorized AI use through rights-reservation metadata and steganographic markers.
+## Commands
 
-## Workspace Structure
-
-Four workspace members:
-- `.` — Main library crate (`stegoeggo`) + conformance harness binary (`stegoeggo-conformance`)
-- `stegoeggo-stego/` — Generic carrier crate (`stegoeggo-stego`) with application-neutral LSB and JPEG DCT mechanics
-- `stegoeggo-cli/` — CLI binary (`stegoeggo` binary name), orchestration at `stegoeggo-cli/src/main.rs` plus private modules `args`, `request`, `protect`, `verify`, `output`, `keys`, `manifest`
-- `fuzz/` — Fuzz harnesses (12 targets, requires `cargo-fuzz` + nightly)
-
-## Build & Test Commands
-
-**Fast local check (mirrors required CI):**
+Fast check (mirrors required CI — run this before committing):
 ```bash
 ./scripts/check.sh
 ```
+Individual steps: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo check -p stegoeggo --no-default-features`, `cargo test --workspace --exclude stegoeggo-fuzz --all-features`.
 
-This runs formatting, strict clippy, minimal-feature compilation, and all-feature workspace tests. It contains only fast deterministic checks and does not publish, require external tools, or generate artifacts.
+- Single test: `cargo test --workspace --exclude stegoeggo-fuzz --all-features -- <name>`
+- Pre-release (local only, never publishes): `./scripts/release-check.sh [--allow-dirty] [--stage=pre|root|cli]`
+- Specialist checks are manual, never part of `check.sh`: `scripts/verify_metadata_conformance.sh --strict` (needs exiftool, xmllint, imagemagick, libvips), `scripts/validate-docs-rs.sh` (nightly), `scripts/validate-msrv-package.sh` (Rust 1.87), `scripts/check_fuzz_sync.sh` (after adding/removing fuzz targets), `cargo deny check licenses|advisories`, `cargo semver-checks check-release`.
+- Fuzz: `RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run <target> -- -max_total_time=60` (12 targets in `fuzz/fuzz_targets/`; release-profile LTO must be off or sanitizer linking fails). Add regression tests to `tests/robustness.rs`.
 
-**Individual commands:**
-```bash
-cargo fmt --all -- --check               # Format check (4-space indent, max width 100)
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo check -p stegoeggo --no-default-features
-cargo test --workspace --exclude stegoeggo-fuzz --all-features
-```
+CI (`.github/workflows/ci.yml`): one required job on push/PR to `main` that runs `scripts/check.sh`. Everything else (`assurance.yml` MSRV/platform matrix, `external-verification.yml`, `fuzz.yml`) is scheduled/manual, non-blocking, never publishes. Do not add specialist checks to `check.sh` or expand required CI without a maintainer decision.
 
-**Single test:** `cargo test --workspace --exclude stegoeggo-fuzz --all-features -- <test_name>`
+## Workspace
 
-**Pre-release check (local only, never publishes):**
-```bash
-./scripts/release-check.sh
-# staged package checks when the carrier/root/CLI release order matters:
-./scripts/release-check.sh --allow-dirty --stage=pre
-./scripts/release-check.sh --allow-dirty --stage=root
-./scripts/release-check.sh --allow-dirty --stage=cli
-```
+- `.` — library crate `stegoeggo`; canonical entry points are `process_request_bytes*` in `src/lib.rs`, plan executors in `src/pipeline.rs`. Conformance binary `stegoeggo-conformance` (`src/bin/`, needs `conformance` feature).
+- `stegoeggo-stego/` — generic carrier crate for arbitrary-payload LSB/JPEG-DCT stego. Depend on it directly for generic use; `stegoeggo::stego` is a convenience re-export of the same surface.
+- `stegoeggo-cli/` — binary `stegoeggo` at `stegoeggo-cli/src/main.rs` (modules `args`, `request`, `protect`, `verify`, `output`, `keys`, `manifest`). Uses `stegoeggo` default features only; its `signatures` feature enables `stegoeggo/signatures` + `stegoeggo/detached-manifest`.
+- `fuzz/` — 12 harnesses, `cargo-fuzz` + nightly only, excluded from workspace tests.
 
-**Specialist verification (manual, targeted, not run on every push):**
-```bash
-scripts/validate-docs-rs.sh              # nightly Rust required
-scripts/verify_metadata_conformance.sh --strict  # exiftool, xmllint, imagemagick, libvips required
-scripts/validate-msrv-package.sh         # Rust 1.87+ required
-scripts/check_fuzz_sync.sh               # after adding/removing fuzz targets
-RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run <target> -- -max_total_time=60
-cargo semver-checks check-release
-cargo deny check licenses
-cargo deny check advisories
-```
+Toolchain is stable, MSRV 1.87 (`rust-toolchain.toml`, `rust-version` in root + carrier manifests). Rustfmt: 4-space indent, max width 100. `#![forbid(unsafe_code)]` in both crates. No code comments unless asked. `#[must_use]` on builders.
 
-Conformance exit codes: 0=pass, 1=fail, 2=config, 3=digest mismatch, 4=coverage violation, 5=internal.
+## Canonical API
 
-## CI Pipeline
+`ProtectionRequest` + `RightsPolicy` are canonical (Release 4+). `ProtectionLevel`/`EvidenceProfile`/`ProtectionContext` are deprecated compatibility adapters that translate via `request_from_legacy()` — see `DEPRECATIONS.md` (removal at v1.0.0, never in 0.x). New processing features go in `ProtectionRequest`/`ProcessingOptions`/`ProtectionChannels` first; never extend legacy builders independently. `VerificationStatus` is **not** deprecated: `verify_image_bytes` returns it directly (not `Result`, not `bool`); `verify_image_bytes_report` is the canonical rich operation, other verification types are projections of the same facts (`src/verification/canonical.rs`).
 
-GitHub Actions (`.github/workflows/ci.yml`) runs one job on pushes and pull requests to `main`:
-1. `cargo fmt --all -- --check`
-2. `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-3. `cargo check -p stegoeggo --no-default-features`
-4. `cargo test --workspace --exclude stegoeggo-fuzz --all-features`
+Byte paths vs pixel paths (top footgun): `process_image`/`process_images_parallel` (`DynamicImage` in/out) embed stego only — PNG tEXt, JPEG COM/XMP, WebP XMP do not survive. Use byte APIs (`process_request_bytes`, `process_image_bytes`) when metadata matters. Reproducible output needs both an explicit seed (`ProtectionContext::new(intensity, seed)` — `default()` uses CSPRNG) and `with_timestamp_override(...)`.
 
-Scheduled assurance (non-blocking, never required for merge, never publishes):
-- `.github/workflows/assurance.yml` (weekly + `workflow_dispatch`) — `MSRV 1.87` job (carrier/root/CLI checks incl. `--no-default-features`/`--all-features`, carrier + root-lib tests, all `--locked`) plus `Platform` jobs for macOS aarch64, Windows x86_64, and Linux aarch64 (minimal-feature check + all-feature workspace tests on stable)
-- `.github/workflows/external-verification.yml` (monthly + `workflow_dispatch`) — external integration tests + conformance harness
-- `.github/workflows/fuzz.yml` — single-target fuzz execution (`workflow_dispatch` with target/seconds inputs), a scheduled-equivalent `smoke=true` dispatch, plus a weekly smoke job rotating 3 of the 12 targets (120s each, crash artifacts uploaded)
+Other traps: `inject_metadata`/`inject_legal_claims` are `Option<bool>` (`None` = level default; explicit `false` ≠ unset, and `false` with legal metadata emits `ContradictoryLegalClaims`); `#[serde(skip)]` on config drops MAC keys/legal metadata in roundtrips; `has_notice()` is true for any DMI value including `Allowed`/`Unspecified`; `MIN_PAYLOAD_SIZE` (28) is a parsing threshold, not an output size (V3 = 36 non-MAC / 48 MAC bytes); `LegalMetadata::MAX_FIELD_LEN` is 8192 over 16 validated fields.
 
-Specialist verification (docs.rs, packaging, semver, benchmarks, license/advisory scans) remains manual local invocation; see `RELEASING.md` and `SUPPORT.md` for the blocking-vs-scheduled evidence matrix.
+## Carrier essentials
 
-## Code Conventions
+- Public `stego` module uses `StegoError`, not crate `Error` (convert via `From`).
+- Carrier follows the **output** format (`JPEG ? DCT : LSB`); JPEG→JPEG uses a byte-only fast path (no pixel decode). JPEG→PNG/WebP is one pixel decode + raster LSB, never transient DCT.
+- `jpeg::embed`/`embed_framed` are best-effort (auto-downgrade redundancy, seed-only fallback — application policy); `*_strict` variants embed at exactly the requested redundancy or return `InsufficientCapacity`. Capacity units are AC coefficients with `|coef| >= 2`. Pass `report.actual_redundancy` to `extract`.
+- Use validated `Redundancy` + `from_redundancy`/`with_redundancy_value` for runtime values; legacy `with_redundancy` is constants-only (debug-assert vs release-clamp). Zero seeds are valid. Max redundancy 10. V3 payloads are written; V1/V2 extract-only.
+- Two unrelated XorShiftRngs: `PixelSelectionRng` (`src/util/image.rs`) vs `DctCoefficientRng` (`stegoeggo-stego/.../stego_f5.rs`) — do not interchange.
+- Container/format edge cases (Q-table hints, VP8X flags, XMP shape, preserving JPEG encoding) live in `architecture/jpeg-*.md` and `architecture/protected-*.md` — read those before touching those paths.
 
-- Rustfmt: 4-space indentation, max width 100 (`rustfmt.toml`)
-- `#![forbid(unsafe_code)]` throughout both crates — no unsafe blocks in the library or carrier crate
-- No comments in code unless explicitly asked
-- `#[must_use]` on builder methods
-- `pub(crate)` for internal modules (e.g., `jpeg_transcoder` in `stegoeggo-stego`)
-- Private fields with getter methods on `ProtectionContext`, `StegoPayload`, `LegalMetadata`
+## CLI essentials
 
-## MSRV
-
-Rust **1.87** (declared in `Cargo.toml` and `stegoeggo-stego/Cargo.toml`). Toolchain is stable (`rust-toolchain.toml`).
+One path: everything routes through `ProtectionRequest` via `request::build_protection_request_with_explicit_options`. New flags are `--rights-policy`, `--preset`, `--hidden-marker`, `--authentication` (replace `--dmi`/`--level`/`--profile`; `--preset` can't combine with `--level`/`--profile`; `--metadata false` can't combine with legal fields). `--dry-run` prints the plan. `keygen`/`sign`/`verify-manifest` need the `signatures` feature. Exit codes: 0 ok, 1 error, 2 config, 3 integrity, 4 verified-but-untrusted manifest (`verify-manifest` only), 5 internal. `--verify` always exits 0 — read the output text. Full contract: `docs/cli-usage.md`.
 
 ## Features
 
-| Feature | Description | Default |
-|---------|-------------|---------|
-| `async` | Tokio-based async API wrappers (canonical: `process_request_bytes_async`, `..._with_warnings_async`, `..._with_report_async`) | No |
-| `signatures` | Ed25519 signing via `ed25519-dalek` | No |
-| `detached-manifest` | Detached signed manifest sidecar | No |
-| `iscc` | ISCC content identifier computation | No |
-| `conformance` | Conformance harness binary and manifest parsing (TOML) | No |
-| `parallel` | Rayon-based parallel batch processing (canonical: `process_request_bytes_parallel`, `..._with_warnings_parallel`, `..._with_report_parallel`; one shared request, order-preserving) | No |
-| `test-seeds` | Test infrastructure only — never in production binary | No |
-| `fuzz` | Fuzzing support — never in production binary | No |
+All default-off: `async` (canonical `process_request_bytes_async*`), `parallel` (canonical `process_request_bytes_parallel*`, one shared request, order-preserving), `signatures`, `detached-manifest`, `iscc`, `conformance`. `test-seeds`/`fuzz` are test-only, never in production binaries. `tests/async_integration.rs` needs `async`; `tests/external_tools.rs` is `#[ignore]` (run with `--ignored`); conformance harness exit codes are 0 pass / 1 fail / 2 config / 3 digest / 4 coverage / 5 internal.
 
-Feature-gated tests: `tests/async_integration.rs` requires `async`.
-The conformance binary (`stegoeggo-conformance`) requires the `conformance` feature.
-The CLI binary uses `stegoeggo` default features only; its `signatures` feature enables `stegoeggo/signatures` + `stegoeggo/detached-manifest`. It does not enable root `iscc`/`conformance`/`parallel` and has no direct `image` dependency (see `architecture/cli.md` for the audited dependency table).
+## Releases
 
-## Deprecated API Surfaces
+Manual only: no CI publication, no tag-triggered workflows, no crates.io token in Actions. All three crates share one version with exact `=X.Y.Z` deps; publish in order carrier → library → CLI. See `RELEASING.md`.
 
-These still work but will be removed in the next major version. See `DEPRECATIONS.md` for full inventory.
+## Where things live
 
-- `EvidenceProfile` — use `ProtectionPreset` instead
-- `with_dmi()` — use `RightsPolicy` in `ProtectionRequest`
-- `with_legal_claims()` — auto-enabled when `LegalMetadata` present; explicit `false` emits `ContradictoryLegalClaims`
-- `with_metadata_injection()` — use `ProtectionChannels`
-- `compute_iscc()` / `compute_iscc_with_metadata()` / `compute_iscc_from_bytes()` — use the `compute_content_identifiers*()` equivalents
-- `NoticeVerification::new()` positional constructor — use `NoticeVerification::builder()`
-
-Not deprecated (do not migrate away): `VerificationStatus` — still the return type of `verify_image_bytes`. `verify_image_bytes_report` is the canonical rich operation returning `VerificationReport`; `VerificationStatus`, `VerificationResult`, and `NoticeVerification` are centralized projections from the same canonical facts (`src/verification/canonical.rs`), not independent searches.
-
-**Policy-first architecture (Release 4+):** `ProtectionRequest` and `RightsPolicy` are the canonical API. `ProtectionLevel` and `EvidenceProfile` are deprecated compatibility adapters. New processing features must be expressed in `ProtectionRequest`/`ProcessingOptions`/`ProtectionChannels` first; legacy builders only translate via `request_from_legacy()`.
-
-## Gotchas
-
-- **`MIN_PAYLOAD_SIZE` is 28, not the output size** — V3 non-MAC payloads are 36 bytes, V3 MAC payloads are 48 bytes; legacy V1 non-MAC payloads are 76 bytes and legacy V1 MAC payloads are 32 bytes. The constant is a parsing threshold
-- **Two separate XorShiftRng implementations** — `PixelSelectionRng` in `src/util/image.rs` and `DctCoefficientRng` in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs`. Different algorithms, different sequences for same seed. Do NOT interchange them
-- **`ProtectionContext::default()` uses CSPRNG seed** — For reproducible results, use `ProtectionContext::new(intensity, seed)` with an explicit seed
-- **Pipeline flow order** — JPEG output: encode → DCT stego → metadata. Non-JPEG: pixel stego → encode → metadata. JPEG→JPEG fast path bypasses pixel decode entirely
-- **Output-domain carrier routing** — Carrier family follows the final output format (`output_format == JPEG ? DCT : LSB`); input format controls fast-path reuse only. JPEG→PNG/WebP is one pixel decode plus raster LSB, never a transient DCT step
-- **Generic stego API uses `StegoError`** — The public `stego` module uses its own `StegoError` type, not the crate root `Error`. Convert via `From<StegoError> for Error`
-- **JPEG `extract` requires `actual_redundancy`** — The JPEG embed auto-downgrades redundancy when capacity is insufficient. Pass `report.actual_redundancy` to `extract` to match what was embedded
-- **JPEG framed extraction reuses one decode** — `jpeg::extract_framed()` validates support, decodes the coefficient container once, and reuses private retained state across the configured redundancy search
-- **Application JPEG verification is single-decode per operation** — standard probing plus tiled fallback share one hidden `JpegSearchContext` (private fields, no coefficient types in signatures); never reintroduce per-redundancy `jpeg_extract` calls in `dct_candidates`. Tiled JPEG embed self-checks against in-memory mutated coefficients (1 decode + 1 encode), never by re-decoding output
-- **Raster preflight is header-only** — non-JPEG dimension gating uses `into_dimensions()` only; the executor owns the single full decode. Same-format metadata-only performs zero pixel decodes
-- **`#[serde(skip)]` on `config` field** — MAC keys and legal metadata are lost in serde roundtrips
-- **CLI unified path** — The CLI always routes through `ProtectionRequest` via one builder (`request::build_protection_request_with_explicit_options`) shared by single/batch/dry-run/JSON. `--dmi auto` and omitted `--dmi` are equivalent. Mixed conflicting policy options are configuration errors (exit code 2)
-- **CLI exit codes** — General commands use `0`=ok, `1`=error, `2`=config, `3`=integrity, `5`=internal. `verify-manifest` additionally uses `4` for a cryptographically verified but untrusted manifest. `--verify` always exits 0; use output text to determine protection state, not exit code
-- **CLI new-style flags** — `--rights-policy`, `--preset`, `--hidden-marker`, `--authentication` route through canonical `ProtectionRequest`. `--preset` cannot combine with `--level`/`--profile`. `--hidden-marker`/`--authentication` cannot combine with explicit `--level`/`--profile`. `--metadata false` cannot combine with legal fields or metadata-injecting presets. `--rights-policy` replaces `--dmi`. `--dry-run` prints the resolved plan without processing
-- **CLI subcommands (feature: `signatures`)** — `keygen`, `sign`, `verify-manifest` are feature-gated. `verify-manifest` accepts `--payload-key` for HMAC verification. `--json` enables machine-readable output
-- **No `test-seeds` in production CLI** — `test-seeds` is test infrastructure only, never in production binary
-- **F5 seed Q-table edge case** — `embed_seed_in_quantization_tables()` returns `InsufficientHintCapacity` unless the first 2 tables yield all 96 hint positions (values >= 2); the public `embed_seed_hint` maps this to `StegoError::InsufficientCapacity` in hint-bit units instead of an unrecoverable partial hint
-- **`--tdm-reserved` is deprecated** — TDMRep deployment deferred; sets DMI to `ProhibitedSeeConstraints`
-- **CLI binary location** — `stegoeggo-cli/src/main.rs`, not `src/bin/`
-- **`--require-complete` is removed** — `--strict` is the single complete-validation mode
-
-**JPEG DCT and container correctness:**
-
-- **JPEG DCT subset** — DCT embedding supports only: 8-bit precision, sequential Huffman DCT, single scan, 1-4 components with supported sampling factors, no restart intervals, valid terminal EOI. Unsupported inputs receive Q-table seed only via `probe_dct_support_full()` gating, with full metadata injection
-- **`encode_coefficients` uses preserving encoding** — All successful DCT embedding attempts walk the original byte stream replacing only DQT and SOS scan data. APP2, APP13, APP14, COM, and other unrelated segments survive byte-for-byte
-- **`probe_dct_support_full` checks scan structure** — Walks the complete JPEG byte stream to count scans (must be exactly 1), verify EOI, and reject trailing post-scan segments
-- **`parse_sos` rejects malformed table IDs** — SOS table IDs > 3 return `InvalidFormat` error instead of clamping
-- **Metadata-only JPEG is byte-safe** — `inject_text_chunks_jpeg` walks the raw byte stream, preserving all pre-SOS segments verbatim
-
-**WebP container correctness:**
-
-- **VP8X dimensions are 3-byte LE** — The `image-webp` decoder reads canvas width/height as 3-byte little-endian values, not 4-byte
-- **VP8X flags bit positions** — ICC=0x20, Alpha=0x10, EXIF=0x08, XMP=0x04, Animation=0x02. The reserved mask is 0xC1. The EXIF bit (0x08) must NOT be set when no EXIF chunk is present, or `image-webp` returns `ChunkMissing`
-- **EXIF seed emission retired** — No new EXIF seed chunks are emitted. Seed is stored in XMP via `stegoeggo:ProtectionSeed`. Historical EXIF seed data is still parsed for backward compatibility
-- **One effective XMP chunk** — Output loop skips original XMP chunks; `merge_or_replace_webp_xmp` prepares the replacement
-- **`xmp` module is `pub(crate)`** — The XMP parser and helpers are internal; integration tests exercise XMP behavior through the public injection API
-
-**Metadata and API traps:**
-
-- **No synthetic defaults** — When no `LegalMetadata` is provided, no copyright text, no usage terms, no `DateCreated` are emitted
-- **Pixel-only paths drop file-level metadata** — `process_image`/`process_images_parallel` (`DynamicImage` in/out) embed stego markers only; PNG tEXt, JPEG COM/XMP, and WebP XMP do not survive. Use byte-path APIs (`process_request_bytes`, `process_image_bytes`) when metadata injection matters
-- **`inject_metadata` / `inject_legal_claims` are `Option<bool>`** — Default `None` (use level default) vs explicit `false` (disable). `with_metadata_injection(false)` ≠ not calling it at all
-- **`inject_legal_claims` auto-enables when `LegalMetadata` present** — No need to call `with_legal_claims(true)`
-- **Deterministic request timestamps** — Canonical JPEG structured COM markers use the resolved `RightsNotice::notice_applied_at`; explicit `ProtectionRequest::with_timestamp_override(...)` must reach metadata injection. Calls without an explicit timestamp retain wall-clock defaults.
-- **`has_notice()` includes DMI** — Returns true when any legal field OR `dmi.is_some()` is found. `DmiValue::Allowed` and `DmiValue::Unspecified` make `has_notice()` true — this means "legal metadata was found" not "restrictions were imposed"
-- **`LegalMetadata::MAX_FIELD_LEN`** — 8192 bytes. `validate()` checks all 16 fields, returns `Error::Config` on violation
-- **Verification returns `VerificationStatus`** — Not `Option<bool>`. Use `== VerificationStatus::Verified` in assertions
-
-**Steganography details:**
-
-- **Three seed storage locations** — (1) Q-table LSBs in JPEG, (2) metadata markers (strippable), (3) fixed-position LSB in first 64 pixel channels. Extraction chain: metadata → LSB fallback → `FALLBACK_SEEDS`
-- **Spread spectrum LSB** — Each payload bit embedded across `STEGO_SPREAD_FACTOR * redundancy` (=5×r) RGB carrier slots via majority voting. The byte-frozen V2 mapping over `width * height * 3` slots has proven injectivity for documented small/medium domains only (max observed walk depth 30, zero fallback hits) — never claim a full-domain bijection
-- **Generic carrier core** — `stegoeggo-stego/src/lsb.rs`, `stegoeggo-stego/src/pixels.rs`, `stegoeggo-stego/src/jpeg.rs`, `stegoeggo-stego/src/prepared.rs`, and `stegoeggo-stego/src/frame.rs` are the stable generic carrier API (raw/in-place/framed/tiled + shared `TileConfig` + borrowed views + opaque prepared JPEG). Low-level mechanics in `lsb_internal` and `jpeg_transcoder` are private implementation details. Hidden `application_support` (feature-gated) holds only legacy/seed-fallback/search compat, never ordinary current embed/extract
-- **Strict vs best-effort JPEG** — `jpeg::embed`/`embed_framed` are best-effort compatibility ops (auto-downgrade + seed-only fallback, the parent's explicit application policy). `jpeg::embed_strict`/`embed_framed_strict` embed at exactly the requested redundancy or return `InsufficientCapacity` with no output. JPEG capacity units are eligible AC coefficients with `|coef| >= 2`, not all non-zero AC coefficients
-- **Validated `Redundancy`** — `stegoeggo_stego::Redundancy` (`new`/`from_usize`, `Copy`) is the recommended config primitive with identical debug/release semantics; `from_redundancy`/`with_redundancy_value`/`redundancy_value` on both configs. Legacy `with_redundancy` keeps debug-assert/release-clamp behavior for constants only — never pass runtime values through it. Zero seeds are valid
-- **Borrowed views and prepared JPEG** — `PixelView`/`PixelViewMut` (packed/strided RGB8/RGBA8, checked geometry, alpha/padding never carriers) share one private LSB core with the `RgbaImage` path. `PreparedJpeg<'a>` borrows encoded bytes and reuses one coefficient decode across capacity/extract/strict-embed; failed embeds never poison it. Neither exposes codec internals
-- **`stego_redundancy` is `Option<usize>`** — Default `None` derives from intensity via `effective_redundancy()` (<0.3→1, 0.3-0.7→2, >=0.7→3). Valid range 1-10
-- **F5 redundancy cap** — Max redundancy is 10. Extraction tries all 10 values
-- **Payload version 3 is current** — V1/V2 still supported for extraction only, never written. V3 adds TLV extensions with domain-separated authentication. V3 extraction paths tried first before V2/V1 fallback
-- **Tiled steganography** (`with_tile_size(n)`) — Crop-resistant mode, full payload per tile. `tile_seed(master_seed, tile_x, tile_y)` uses splitmix64. Tiling is a Standard/canonical hidden-marker mode; legacy `Light` always resolves to `SeedOnly` regardless of tile size. Tiled LSB has one shared in-place core (`embed_lsb_tiled_in_place`); the cloning `embed_lsb_tiled` delegates to it and the parent mutates its owned RGBA directly. Generic tiled API uses shared `TileConfig::try_new(seed, tile_size)` (`tile_size > 0`; JPEG tiled needs `>= 8` and multiple of 8) with explicit `max_origins` in `1..=MAX_TILED_ORIGINS` (4096); raw tiled returns first candidate (no auth), framed tiled validates CRC32
-- **F5 tiled block set** — MCU-interleaved: `block_idx = (mcu_y * mcus_per_row + mcu_x) * h * v + sub_y * h + sub_x`. Do NOT assume row-major ordering
-- **JPEG DCT one-pass embed** — Supported DCT embedding computes max feasible redundancy from capacity, then embeds+encodes once. No retry loop, no roundtrip decode/extract self-test
-
-**Canonical metadata format:**
-
-- XMP writer emits `plus:DataMining` with full PLUS LDF URIs (e.g., `http://ns.useplus.org/ldf/vocab/DMI-PROHIBITED-AIMLTRAINING`). Legacy bare keys are parsed for backward compatibility but not emitted
-- Private `noai`/`noindex` and `DMI-PROHIBITED` tEXt/COM markers are no longer emitted in new output
-- WebP legal fields live in XMP inside `<rdf:Description>`. `dc:rights` and `xmpRights:UsageTerms` use `<rdf:Alt><rdf:li>` containers. `dc:creator` uses `<rdf:Seq>`
-- WebP exiftool: `exiftool -Copyright` does not resolve `dc:rights` — use `exiftool -XMP-dc:Rights`
-
-**Warning system:**
-
-- `ProtectionWarning` has 8 variants: `MissingMacKey`, `MetadataInjectionDisabled`, `ProgressiveJpegFallback`, `JpegReencodeFragile`, `LsbCapacitySkipped`, `DctCapacityInsufficient`, `ContradictoryLegalClaims`, `MissingRightsConstraints`
-- `MissingRightsConstraints` is profile-dependent: only emitted for `ProhibitedSeeConstraints` without `ai_constraints` or `web_statement_of_rights`
-- `severity_for_profile(profile)` classifies warnings as `Info`, `Warning`, or `Error`
-
-## Architecture
-
-- **Strategy pattern** via `Protector` trait (`src/traits.rs`) with three levels: Disabled, Light, Standard — see `architecture/traits.md`. v1 disposition (remove legacy-context trait, no mechanical rename): `plans/096-status.md`, `DEPRECATIONS.md`
-- **Pipeline** (`src/lib.rs` orchestration + `src/pipeline.rs` canonical executors): canonical `ProtectionRequest` execution is plan-driven; stateless `ProtectionPipeline` methods are compatibility adapters for legacy APIs — see `architecture/pipeline.md`. v1 disposition (remove empty wrapper, keep free functions): `plans/096-status.md`, `DEPRECATIONS.md`
-- **Direct plan executor** (`src/pipeline.rs`): `execute_metadata_only()`, `execute_full_marker_and_metadata()`, `execute_seed_only_and_metadata()` — canonical execution from `ResolvedProtectionPlan`. Container resource accounting is owned by `src/container_walk.rs` (`observe_container_work()`).
-- **Core types** (`src/types/`): split by domain behind stable `stegoeggo::types::*` re-exports — `rights.rs`, `compat.rs`, `legal.rs`, `context.rs`, `verification.rs`, `warnings.rs`, `request.rs`; `src/types.rs` is the facade — see `architecture/types.md`
-- **Metadata facade** (`src/protected/metadata_trap/`): split by format behind `RightsMetadataProtector` — `notice.rs`, `png.rs`, `jpeg.rs`, `webp.rs`, `common.rs`; `src/protected/metadata_trap.rs` is the facade — see `architecture/protected-metadata-trap.md`
-- **Application stego adapter** (`src/protected/steganography/`): decomposed into five modules behind `SteganographyProtector` — `marker.rs` (V3 payload construction), `embed.rs` (plan-based raster LSB + encoded-byte JPEG DCT via shared private report/outcome and raster helpers, no input-format carrier dispatch), `extract.rs` (seed discovery and bounded search over one shared `JpegSearchContext` per JPEG verification), `verify.rs` (integrity and authentication classification), `legacy.rs` (V1/V2 compatibility); `mod.rs` is the facade — see `architecture/protected-steganography.md`
-- **Generic carrier core** (`stegoeggo-stego/src/`): Application-neutral LSB and JPEG DCT carrier mechanics — see `architecture/protected-steganography.md`
-- **Public generic stego API** (`stegoeggo::stego`): Carrier-level embedding/extraction for arbitrary payload bytes, independent of the rights-protection pipeline — see `architecture/protected-steganography.md`. For generic-only use, depend on `stegoeggo-stego` directly; the facade is a convenience subset (v1 disposition: keep facade, prefer direct crate — `plans/096-status.md`)
-- **JPEG fast path**: When input/output are both JPEG, the application adapter calls the carrier's public encoded-byte operations, bypassing pixel decode/encode — see `architecture/jpeg-transcoder.md`
-- **Policy-first API**: `ProtectionRequest` + `RightsPolicy` are the canonical API — see `architecture/types.md`
-- **`#![forbid(unsafe_code)]`** throughout the library crate and `stegoeggo-stego`
-- **Standalone carrier package wording** — `stegoeggo-stego` has its own package and public API surface, but current release checks enforce version lockstep across carrier/root/CLI
-
-### Architecture Docs Index
-
-Master index with repo layout, module maps, and data-flow diagrams: `architecture/overview.md`. Deep dives:
-
-| Doc | Topic |
-|-----|-------|
-| `pipeline.md` | `ProtectionPipeline` orchestration, format routing, legacy adapters |
-| `resolve.md` | `resolve_request()` single validation point → immutable `ResolvedProtectionPlan` |
-| `types.md` | `RightsPolicy`, `ProtectionRequest`, `ProtectionPreset`, `ProtectionChannels`, `ExecutionReport` |
-| `traits.md` | `Protector` trait contract + implementation table |
-| `error.md` | `Error` enum (19 variants incl. structured resource-limit errors) |
-| `constants.md` | Tuning constants in both crates (`STEGO_SPREAD_FACTOR`, seeds, payload sizes) |
-| `protected-metadata-trap.md` | Metadata injection: canonical `plus:DataMining`, per-format writers, merge policies |
-| `protected-steganography.md` | Application adapter (5 modules) + public generic carrier API (`stegoeggo::stego`) |
-| `protected-passthrough.md` | No-op strategy for `Disabled` |
-| `jpeg-header.md` | `JpegHeader` parser, checked scan-structure analysis |
-| `jpeg-entropy.md` | Huffman codec (`CoefficientDecoder`/`CoefficientEncoder`) |
-| `jpeg-stego-f5.md` | F5 DCT stego, Q-table seed, `DctCoefficientRng`, tiled F5 block order |
-| `jpeg-transcoder.md` | Decode/encode flow, `DctSupport` probe, preserving encoding |
-| `payload-v3.md` | V3 TLV wire format, domain-separated auth, ECC, multi-version parsing |
-| `provenance.md` | `ProvenanceClaim` builder, canonical JSON, `TypedDigest` |
-| `provenance-claim.md` | 15-field claim schema, binary encoding, test vectors |
-| `signing.md` | Ed25519 signing (`signatures` feature), zeroize |
-| `detached.md` | Detached manifest flow, `TrustPolicy` |
-| `detached-manifest.md` | Manifest JSON schema and signing protocol spec |
-| `verification.md` | `VerificationReport`, per-channel sub-results, `TrustEvaluation`, `EvidenceStrength` |
-| `util-image.md` | `PixelSelectionRng`, encoding, format detection, hashing |
-| `util-iscc.md` | ISCC via `iscc-lib` delegation (`iscc` feature) |
-| `util-seed.md` | CSPRNG seed via `getrandom`, splitmix64 fallback |
-| `async-api.md` | Request-based Tokio `spawn_blocking` wrappers plus legacy adapters (`async` feature) |
-| `resource-limits.md` | Parser hardening, configurable limits, structured errors |
-| `legal-metadata-field-mapping.md` | Legal field mapping across PNG/JPEG/WebP, round-trip caveats |
-| `conformance.md` | Conformance harness, fixtures, strict mode, exit codes |
-| `cli.md` | CLI flags, subcommands, exit codes, batch behavior |
-| `adr-c2pa.md` | ADR: C2PA integration deferred |
-
-## Validation Scripts
-
-- `scripts/check.sh` — Fast deterministic checks used by local development and required CI (fmt, clippy, no-default-features, tests)
-- `scripts/release-check.sh` — Bounded local pre-release readiness (runs check.sh + staged carrier/root/CLI package dry-runs + version lockstep verification). Use `--stage=pre|root|cli`; it never publishes
-- `scripts/validate-docs-rs.sh` — Docs.rs-equivalent rustdoc validation (nightly, DOCS_RS=1, cfg(docsrs), workspace + packaged crate)
-- `scripts/validate-msrv-package.sh` — Fresh MSRV consumer resolution (packages crate, creates clean consumers, tests minimal and all-feature combos on declared MSRV)
-- `scripts/verify_metadata_conformance.sh` — Shell wrapper for conformance checks (delegates to Rust conformance harness)
-- `scripts/check_fuzz_sync.sh` — Verifies fuzz harness parity between fuzz/Cargo.toml and fuzz.yml workflow
-- `scripts/measure_binary_size.sh` — Measures compiled binary size for regression tracking
-
-## Conformance Suite
-
-The conformance harness (`src/bin/stegoeggo-conformance.rs`) validates metadata interoperability against ExifTool and xmllint. It produces JSON reports and is a mandatory pre-release check for metadata-affecting changes.
-
-Key files: `src/conformance.rs` (report types), `tests/fixtures/conformance/manifest.toml` (fixture manifest with SHA-256 digests).
-
-External integration tests in `tests/external_tools.rs` are `#[ignore]` — run with `--ignored`.
-
-## Fuzzing
-
-12 targets in `fuzz/fuzz_targets/`. The reproducible assurance tuple is Rust
-`nightly-2026-09-07` plus `cargo-fuzz 0.13.2`; set
-`CARGO_PROFILE_RELEASE_LTO=false` because the product release profile's LTO
-setting is incompatible with cargo-fuzz sanitizer-coverage linking on Linux.
-This only changes fuzz builds and does not suppress failures or sanitizer
-coverage. Add regression tests in `tests/robustness.rs` for findings; the
-malformed-JPEG zero-length-segment regression from Plan 089 is an example.
-
-## Release Policy
-
-Releases are manual. GitHub Actions must not publish crates or create releases.
-Use direct Cargo/crates.io publication after local validation.
-Do not push a version tag as a publication mechanism.
-Published crates.io versions are immutable and cannot be reused.
-Publication follows dependency order: carrier (`stegoeggo-stego`) first, then library, then CLI. All three crates share one version, wired with exact `=X.Y.Z` dependencies.
-See `RELEASING.md` for the complete procedure.
-
-## CI Complexity Guardrails
-
-- Required push/PR workflows: one.
-- Required jobs per push/PR: one.
-- No required job matrix.
-- No tag-triggered release workflows.
-- No CI publication.
-- No crates.io token in GitHub Actions.
-- Scheduled/non-required workflows are informational only: never required in branch protection, never publish, never react to tags.
-- Do not add specialist checks to `scripts/check.sh`.
-- Preserve specialist tests, but invoke them deliberately.
-- Any increase to required CI surface requires an explicit maintainer decision.
-
-## Repo-Local Agent Skills
-
-`.skills/` contains agent skills with triggers (loaded on demand):
-- `.skills/stegoeggo-conventions/SKILL.md` — code conventions, public API signatures, constants, common pitfalls
-- `.skills/architecture-review/SKILL.md` — workflow for verifying `architecture/` docs against source, including known discrepancy patterns
-- `.skills/plan-execution/SKILL.md` — multi-task execution from `plans/` via git worktrees + parallel agents
-
-## Other Reference Files
-
-- `CHANGELOG.md` — Keep-a-Changelog release notes (cut a version section when bumping versions)
-- `DEPRECATIONS.md` — Deprecated API inventory (removal targeted at v1.0.0, never in 0.x)
-- `SUPPORT.md` — Support matrix
-- `STABILITY.md` — Stability tiers
-- `RELEASING.md` — Manual publication procedure
-- `plans/` — Numbered implementation plans (`NNN-name.md`) with `-status.md` companions; the authoritative record of what changed and why. Next plan number: 098+
-- `examples/` — Four runnable examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) referenced by `docs/rust-api.md`; keep them compiling when changing public APIs
-- `docs/` — User-facing guides: `cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`
-- `architecture/` — 31 architecture documents, verified against source; indexed in the table above and in `architecture/overview.md`
+- Load `.skills/stegoeggo-conventions/SKILL.md` before writing Rust (signatures, constants, pitfalls). Architecture index: `architecture/overview.md`. User guides: `docs/` (`cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`). Examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) must keep compiling. Plans: `plans/` (highest so far 097; next is 098+).
