@@ -131,3 +131,5 @@ Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this
   `docs/carrier-crate.md` (direct-crate canonical note, example imports
   prefer `stegoeggo_stego`).
 - `./scripts/check.sh` passes locally (exit 0, 2026-09-11).
+- Remote CI (`CI` / `Check`, run `34559683668`): success on `1855659`
+  (3m45s, 2026-09-11).
