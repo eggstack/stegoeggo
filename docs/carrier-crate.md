@@ -4,7 +4,7 @@ The workspace contains [`stegoeggo-stego`](https://crates.io/crates/stegoeggo-st
 
 ## Operation styles
 
-It exposes four operation styles on the same corrected carrier model:
+It exposes the following operation styles on the same corrected carrier model:
 
 ### Raw
 

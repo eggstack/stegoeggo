@@ -377,11 +377,14 @@ stegoeggo-stego/src/
 ├── lib.rs                     Public API surface, carrier reports
 ├── constants.rs               Carrier-level tuning constants
 ├── error.rs                   StegoError, JpegUnsupportedReason
-├── types.rs                   EmbedOutcome, EmbedPath, EmbedStatus, in-place report
+├── types.rs                   Redundancy, TileConfig, MAX_TILED_ORIGINS, EmbedOutcome,
+│                              EmbedPath, EmbedStatus, in-place report
 ├── frame.rs                   Self-describing frame (magic, version, CRC32)
 ├── lsb.rs                     LSB carrier (raw, in-place, framed, and tiled operations)
+├── pixels.rs                  Borrowed packed/strided views sharing the LSB core (public)
+├── jpeg.rs                    JPEG carrier: raw/strict/framed/tiled DCT operations, seed hint
+├── prepared.rs                Opaque PreparedJpeg (one decode across repeated ops, public)
 ├── lsb_internal.rs            Permutations, V2 carrier, slot mapping (private)
-├── jpeg.rs                    JPEG carrier: raw/framed/tiled DCT operations, seed hint
 ├── application_support.rs     Parent-crate operation layer (feature: application-support)
 └── jpeg_transcoder/           JPEG DCT internals (private)
     ├── header.rs              JpegHeader, HuffmanTable parsing

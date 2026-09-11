@@ -20,7 +20,7 @@ boundary does not imply an independent release cadence.
 
 A small, focused library that exposes two image steganography carriers —
 pixel-domain LSB and JPEG DCT — for callers that want to embed arbitrary
-bytes that can be recovered later. Four operation styles are supported:
+bytes that can be recovered later. The following operation styles are supported:
 
 - **Raw** — caller knows the payload length and (for JPEG) the actual
   redundancy returned by the embed report. Lowest overhead.

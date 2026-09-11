@@ -75,7 +75,10 @@ Depends on: Plans 091 and 092.
   `application-support` dependency; direct-consumer fixture expanded in
   Plan 097.
 
-Record final `./scripts/check.sh` result and implementation commit SHA here
-during closure.
-
 Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this ledger closure is the follow-up commit).
+
+## Re-verification (2026-09-11)
+
+- Source re-audited against all acceptance criteria: borrowing `PreparedJpeg<'a>` with private fields and manual `Debug`; one decode across repeated reads; one-shot `capacity`/`extract`/`extract_framed`/`extract_tiled`/`extract_tiled_framed`/`embed_strict` delegate to the shared `*_from_decoded` helpers while best-effort `embed` keeps its direct decode path so existing decode-count tests are unaffected; no `JpegHeader`/`Coefficients`/Huffman/F5 type in any public signature; borrowing constructor copies no encoded bytes (pointer-identity test) with preserving re-encode against the borrowed source; strict embeds take `&self` and clone only coefficient structures so failures leave prepared state reusable; unsupported-but-well-formed inputs construct with `JpegSupport::Unsupported` and coefficient ops return `UnsupportedJpeg` while header-only `seed_hint` stays available; no `Clone`, no async wrapper; `Send + Sync` asserted at compile time; `JpegSearchContext` retained for application candidate classification spanning redundancies and legacy versions with no per-operation double-decode; standalone `direct_consumer` fixture compiles on default features without `application-support`.
+- Doc corrections: `architecture/overview.md` carrier module map now lists `prepared.rs`/`pixels.rs` and corrects `types.rs` (`Redundancy`, `TileConfig`) and `jpeg.rs` (strict) descriptions; pruned stale operation-style counts (`stegoeggo-stego/README.md`, `docs/carrier-crate.md`, `architecture/protected-steganography.md` no longer claim three/four styles). Root README, AGENTS.md, skills, `docs/carrier-crate.md` prepared section, `architecture/protected-steganography.md` prepared entries, and `STABILITY.md` already stated the 094 contract; no changes needed there.
+- `./scripts/check.sh` re-run during this pass; result recorded in the closing commit message.
