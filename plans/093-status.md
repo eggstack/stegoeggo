@@ -18,7 +18,7 @@ Baseline: `27bdd3d429d663948021de43d3e6f818fa613319`
 - [x] capacity/no-collision claims reconciled with disposition
 - [ ] if a successor mapping is needed, explicit compatibility/versioning design recorded before implementation
 - [x] no unsupported cryptographic/FPE claim introduced
-- [x] `./scripts/check.sh` passes (local full gate green, 2026-09-10)
+- [x] `./scripts/check.sh` passes (local full gate green, 2026-09-10; re-verified 2026-09-11)
 
 ## Implementation notes
 
@@ -61,8 +61,19 @@ Baseline: `27bdd3d429d663948021de43d3e6f818fa613319`
   rustdoc, architecture/AGENTS/skill wording reconciled in Plans 093+097.
 - NIST SP 800-38G is not cited as an implementation claim; no FPE or
   cryptographic-security claim added. No production dependency added.
+- Re-verification 2026-09-11: removed `FPE` from the V2 rustdoc title,
+  recorded the exact accepted domain and NIST/FPE disclaimer in
+  `stego_permutation_v2` rustdoc, and documented
+  `lsb_required_capacity_v2` exactness as verified-for-documented-domains.
+  `README.md`, `AGENTS.md`, `.skills/stegoeggo-conventions/SKILL.md`,
+  `architecture/protected-steganography.md`, carrier `README.md`/rustdoc,
+  and `src/protected/steganography/embed.rs` audited: no `true bijection`,
+  `distinct slots` invariant, `64-step`, or FPE/crypto claim remains outside
+  the deferred historical `CHANGELOG.md` 0.3.3 entry (corrected by the
+  Unreleased section).
 
 Record final `./scripts/check.sh` result and implementation commit SHA here
 during closure.
 
 Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this ledger closure is the follow-up commit).
+Re-verification commit: recorded on push (see remote CI).

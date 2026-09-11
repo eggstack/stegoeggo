@@ -38,7 +38,7 @@ pub fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize 
     a.wrapping_mul(index as u64).wrapping_add(b) as usize % total_pixels
 }
 
-/// Cycle-walking FPE permutation over `0..slot_count`.
+/// Cycle-walking permutation over `0..slot_count`.
 ///
 /// Maps `index` through a linear congruential step modulo the next power
 /// of two `m`, then walks the cycle until the value falls inside
@@ -49,6 +49,12 @@ pub fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize 
 /// medium domains only; the mapping is byte-frozen (V2) for compatibility
 /// and must not be assumed bijective outside the tested domains. Chi-squared
 /// uniformity is checked in tests for several `(seed, slot_count)` pairs.
+/// Accepted domain is exactly the carrier domain: `slot_count` always comes
+/// from checked `lsb_available_slots` over `u32` dimensions (`None` on
+/// overflow), and this function additionally returns `None` when
+/// `checked_next_power_of_two` overflows. No larger abstract domain is
+/// claimed. This construction is not NIST SP 800-38G FPE and makes no
+/// cryptographic-security claim.
 #[inline(always)]
 pub fn stego_permutation_v2(index: usize, slot_count: usize, seed: u64) -> Option<usize> {
     permutation_v2_core(index, slot_count, seed).map(|(slot, _, _)| slot)
@@ -126,6 +132,13 @@ pub(crate) fn checked_lsb_available_slots(
     })
 }
 
+/// Required carrier slots for a V2 payload under the exact capacity model.
+///
+/// Each payload bit consumes `STEGO_SPREAD_FACTOR * redundancy` logical
+/// slots. Exactness (no inter-replica collision) is verified for the
+/// documented small/medium domains; outside those domains it is an
+/// operational assumption, not a proven invariant. The mapping itself is
+/// byte-frozen for compatibility.
 #[inline(always)]
 pub fn lsb_required_capacity_v2(payload_bits: usize, redundancy: usize) -> usize {
     payload_bits
