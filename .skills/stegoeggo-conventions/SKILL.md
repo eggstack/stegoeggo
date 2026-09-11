@@ -170,6 +170,8 @@ view.extract_tiled(len, &tile, max_origins) / view.extract_tiled_framed(&tile, m
 PixelViewMut::new(bytes, w, h, layout, stride) -> Result<PixelViewMut>
 view.embed(payload, &config) / view.embed_framed(payload, &config)  // -> InPlaceEmbedReport
 view.embed_tiled(payload, &tile) / view.embed_tiled_framed(payload, &tile)
+view.extract(len, &config) / view.extract_framed(&config)  // convenience via as_view
+view.extract_tiled(len, &tile, max_origins) / view.extract_tiled_framed(&tile, max_origins)
 view.as_view() -> PixelView  // reborrow for extraction
 
 // JPEG (DCT-domain)

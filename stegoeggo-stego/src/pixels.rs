@@ -397,6 +397,26 @@ impl<'a> PixelViewMut<'a> {
     pub fn extract_framed(&self, config: &LsbConfig) -> Result<Vec<u8>, StegoError> {
         self.as_view().extract_framed(config)
     }
+
+    /// Extract tiled raw bytes, matching `lsb::extract_tiled`.
+    pub fn extract_tiled(
+        &self,
+        payload_len: usize,
+        config: &TileConfig,
+        max_origins: u32,
+    ) -> Result<Vec<u8>, StegoError> {
+        self.as_view()
+            .extract_tiled(payload_len, config, max_origins)
+    }
+
+    /// Extract a framed tiled payload, matching `lsb::extract_tiled_framed`.
+    pub fn extract_tiled_framed(
+        &self,
+        config: &TileConfig,
+        max_origins: u32,
+    ) -> Result<Vec<u8>, StegoError> {
+        self.as_view().extract_tiled_framed(config, max_origins)
+    }
 }
 
 impl std::fmt::Debug for PixelViewMut<'_> {
@@ -812,5 +832,200 @@ mod tests {
             assert!(report.embedded);
             assert_eq!(report.actual_redundancy, redundancy as usize);
         }
+    }
+
+    #[test]
+    fn one_byte_and_large_padding_are_preserved() {
+        let (width, height) = (64u32, 48u32);
+        for padding in [1usize, 1024usize] {
+            let stride = (width as usize) * 3 + padding;
+            let mut bytes = pattern_rgb(width, height, stride);
+            let config = LsbConfig::new(2026);
+            let payload = b"padding edge cases";
+            let recovered = {
+                let mut view =
+                    PixelViewMut::new(&mut bytes, width, height, PixelLayout::Rgb8, stride)
+                        .unwrap();
+                assert!(view.embed(payload, &config).unwrap().embedded);
+                view.as_view().extract(payload.len(), &config).unwrap()
+            };
+            assert_eq!(&recovered, payload);
+            assert!(bytes
+                .chunks(stride)
+                .all(|row| row[(width as usize) * 3..].iter().all(|&b| b == 0xCC)));
+        }
+    }
+
+    #[test]
+    fn exact_capacity_boundary_is_atomic() {
+        let (width, height) = (64u32, 64u32);
+        let config = LsbConfig::new(77);
+        let available = PixelView::new(
+            &vec![0u8; (width as usize) * (height as usize) * 3],
+            width,
+            height,
+            PixelLayout::Rgb8,
+            (width as usize) * 3,
+        )
+        .unwrap()
+        .capacity(1, &config)
+        .unwrap()
+        .available;
+        let max_len = available / (8 * crate::constants::STEGO_SPREAD_FACTOR * config.redundancy());
+        assert!(max_len > 2);
+        let mut fitting = pattern_rgb(width, height, (width as usize) * 3);
+        let payload = vec![0x5Au8; max_len];
+        let mut view = PixelViewMut::new(
+            &mut fitting,
+            width,
+            height,
+            PixelLayout::Rgb8,
+            (width as usize) * 3,
+        )
+        .unwrap();
+        assert!(view.capacity(max_len, &config).unwrap().is_sufficient());
+        assert!(view.embed(&payload, &config).unwrap().embedded);
+        assert_eq!(view.as_view().extract(max_len, &config).unwrap(), payload);
+
+        let mut oversized = pattern_rgb(width, height, (width as usize) * 3);
+        let before = oversized.clone();
+        let too_large = vec![0xA5u8; max_len + 1];
+        let mut view = PixelViewMut::new(
+            &mut oversized,
+            width,
+            height,
+            PixelLayout::Rgb8,
+            (width as usize) * 3,
+        )
+        .unwrap();
+        assert!(!view.capacity(max_len + 1, &config).unwrap().is_sufficient());
+        let report = view.embed(&too_large, &config).unwrap();
+        assert!(!report.embedded);
+        assert_eq!(oversized, before);
+    }
+
+    #[test]
+    fn zero_and_max_seeds_round_trip_on_both_layouts() {
+        for seed in [0u64, u64::MAX] {
+            let config = LsbConfig::new(seed);
+            let (width, height) = (48u32, 32u32);
+            let mut rgb = pattern_rgb(width, height, (width as usize) * 3);
+            let mut view = PixelViewMut::new(
+                &mut rgb,
+                width,
+                height,
+                PixelLayout::Rgb8,
+                (width as usize) * 3,
+            )
+            .unwrap();
+            assert!(view.embed(b"seed edges", &config).unwrap().embedded);
+            assert_eq!(view.as_view().extract(10, &config).unwrap(), b"seed edges");
+
+            let mut rgba = pattern_rgba(width, height);
+            let mut view = PixelViewMut::new(
+                &mut rgba,
+                width,
+                height,
+                PixelLayout::Rgba8,
+                (width as usize) * 4,
+            )
+            .unwrap();
+            assert!(view.embed_framed(b"seed edges", &config).unwrap().embedded);
+            assert_eq!(
+                view.as_view().extract_framed(&config).unwrap(),
+                b"seed edges"
+            );
+            assert!(rgba.chunks_exact(4).all(|pixel| pixel[3] == 0xA0));
+        }
+    }
+
+    #[test]
+    fn rgb_framed_round_trip_matches_rgba_channels() {
+        let (width, height) = (64u32, 64u32);
+        let config = LsbConfig::new(31337);
+        let mut rgb = pattern_rgb(width, height, (width as usize) * 3);
+        let mut view = PixelViewMut::new(
+            &mut rgb,
+            width,
+            height,
+            PixelLayout::Rgb8,
+            (width as usize) * 3,
+        )
+        .unwrap();
+        assert!(view.embed_framed(b"rgb framed", &config).unwrap().embedded);
+        assert_eq!(
+            view.as_view().extract_framed(&config).unwrap(),
+            b"rgb framed"
+        );
+    }
+
+    #[test]
+    fn tiled_framed_view_survives_aligned_crop() {
+        let (width, height) = (128u32, 128u32);
+        let tile = TileConfig::try_new(4242, 64).unwrap();
+        let mut bytes = pattern_rgba(width, height);
+        {
+            let mut view = PixelViewMut::new(
+                &mut bytes,
+                width,
+                height,
+                PixelLayout::Rgba8,
+                (width as usize) * 4,
+            )
+            .unwrap();
+            assert!(view.embed_tiled_framed(b"crop me", &tile).unwrap().embedded);
+        }
+        let row_len = 64usize * 4;
+        let mut cropped = vec![0u8; 64 * row_len];
+        for row in 0..64 {
+            let src_base = ((64 + row) as usize) * (width as usize) * 4 + 64 * 4;
+            let dst_base = (row as usize) * row_len;
+            cropped[dst_base..dst_base + row_len]
+                .copy_from_slice(&bytes[src_base..src_base + row_len]);
+        }
+        let view = PixelView::new(&cropped, 64, 64, PixelLayout::Rgba8, row_len).unwrap();
+        assert_eq!(view.extract_tiled_framed(&tile, 64).unwrap(), b"crop me");
+    }
+
+    #[test]
+    fn mutable_view_tiled_extract_matches_immutable_view() {
+        let (width, height) = (128u32, 128u32);
+        let tile = TileConfig::try_new(99, 64).unwrap();
+        let payload = vec![0x77u8; 16];
+        let mut bytes = pattern_rgb(width, height, (width as usize) * 3);
+        let mut view = PixelViewMut::new(
+            &mut bytes,
+            width,
+            height,
+            PixelLayout::Rgb8,
+            (width as usize) * 3,
+        )
+        .unwrap();
+        assert!(view.embed_tiled(&payload, &tile).unwrap().embedded);
+        assert_eq!(
+            view.extract_tiled(payload.len(), &tile, 64).unwrap(),
+            view.as_view()
+                .extract_tiled(payload.len(), &tile, 64)
+                .unwrap()
+        );
+        let mut framed_bytes = pattern_rgb(width, height, (width as usize) * 3);
+        let mut framed_view = PixelViewMut::new(
+            &mut framed_bytes,
+            width,
+            height,
+            PixelLayout::Rgb8,
+            (width as usize) * 3,
+        )
+        .unwrap();
+        assert!(
+            framed_view
+                .embed_tiled_framed(b"mut extract", &tile)
+                .unwrap()
+                .embedded
+        );
+        assert_eq!(
+            framed_view.extract_tiled_framed(&tile, 64).unwrap(),
+            b"mut extract"
+        );
     }
 }

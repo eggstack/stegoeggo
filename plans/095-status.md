@@ -19,7 +19,28 @@ Depends on: Plans 092 and 093.
 - [x] no unsafe code or generic public pixel trait introduced
 - [x] external direct-carrier consumer fixture passes
 - [x] allocation/performance evidence recorded
-- [x] `./scripts/check.sh` passes (local full gate green, 2026-09-10)
+- [x] `./scripts/check.sh` passes (local full gate green, 2026-09-10; re-verified 2026-09-11 after follow-up below)
+
+## Follow-up re-verification (2026-09-11)
+
+- Added `PixelViewMut::extract_tiled`/`extract_tiled_framed` conveniences
+  (delegate to `as_view()`), so both views expose the full
+  capacity/raw/framed/tiled surface symmetrically. Additive only; no
+  signature or mapping change.
+- Added six view tests in `stegoeggo-stego/src/pixels.rs`: 1-byte and
+  1024-byte padding preservation, exact-capacity success plus `max_len+1`
+  atomic failure, zero/`u64::MAX` seeds on both layouts, RGB framed
+  round-trip, aligned-crop tiled-framed recovery via views, and
+  mutable/immutable tiled-extract parity.
+- Docs pruning: `architecture/protected-steganography.md` now lists
+  `pixels.rs` in module interactions and names borrowed views in
+  operation styles; `architecture/overview.md` steganography row names
+  the full operation-style set; `docs/carrier-crate.md` records the
+  constructor contract and per-view method split;
+  `.skills/stegoeggo-conventions/SKILL.md` records the new mutable-view
+  tiled-extract conveniences. `README.md`/`AGENTS.md` left unchanged
+  (carrier detail stays in `docs/carrier-crate.md`).
+- `./scripts/check.sh` passes locally (exit 0, 2026-09-11).
 
 ## Implementation notes
 

@@ -42,8 +42,14 @@ Codec internals stay private.
 
 `pixels::PixelView`/`PixelViewMut` operate directly on caller-owned
 packed or strided RGB/RGBA bytes with the identical carrier mapping as
-the `RgbaImage` path. Alpha bytes and row padding are never carriers and
-are never mutated. Capacity units are RGB slots for LSB, eligible AC
+the `RgbaImage` path. Construct with `PixelView::new(bytes, width,
+height, layout, stride)` (`PixelLayout::Rgb8`/`Rgba8`, `stride >= width
+* bytes_per_pixel`, all geometry checked, over-long backing accepted as
+a sub-slice). Alpha bytes and row padding are never carriers and are
+never mutated; capacity failure is atomic before the first mutation.
+Both views expose capacity/raw/framed/tiled extraction; the mutable
+view adds in-place raw/framed/tiled embedding (`as_view()` reborrows
+for extraction). Capacity units are RGB slots for LSB, eligible AC
 coefficients with `|coef| >= 2` for JPEG DCT, and 96 hint-bit positions
 for seed hints.
 

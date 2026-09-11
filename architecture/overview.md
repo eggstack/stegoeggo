@@ -237,7 +237,7 @@ preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 | Component | Deep Dive | What It Covers |
 |-----------|-----------|----------------|
 | **Metadata Trap** | [protected-metadata-trap.md](protected-metadata-trap.md) | Canonical `plus:DataMining` XMP injection, seed embedding, legal metadata fields, format-specific injection (PNG tEXt, JPEG COM/APP, WebP XMP), metadata merge policies, idempotency |
-| **Steganography** | [protected-steganography.md](protected-steganography.md) | Decomposed application adapter (`marker.rs`/`embed.rs`/`extract.rs`/`verify.rs`/`legacy.rs`) wrapping LSB (PNG/WebP) + DCT F5 (JPEG); v3/v2/v1 payload generation/verification, majority voting, redundancy, tiled crop-resistant embedding. Also documents the public generic carrier API (`stegoeggo::stego`): raw, in-place, and framed operation styles for arbitrary payload bytes |
+| **Steganography** | [protected-steganography.md](protected-steganography.md) | Decomposed application adapter (`marker.rs`/`embed.rs`/`extract.rs`/`verify.rs`/`legacy.rs`) wrapping LSB (PNG/WebP) + DCT F5 (JPEG); v3/v2/v1 payload generation/verification, majority voting, redundancy, tiled crop-resistant embedding. Also documents the public generic carrier API (`stegoeggo::stego`): raw, in-place, borrowed-view, prepared-JPEG, strict-JPEG, framed, and tiled operation styles for arbitrary payload bytes |
 | **Passthrough** | [protected-passthrough.md](protected-passthrough.md) | No-op for Disabled level, zero-allocation `Cow::Borrowed` return |
 
 ### JPEG DCT Subsystem
