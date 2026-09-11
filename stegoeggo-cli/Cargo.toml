@@ -1,6 +1,6 @@
 [package]
 name = "stegoeggo-cli"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 rust-version = "1.87"
 description = "Command-line interface for the stegoeggo image protection library"
@@ -21,7 +21,7 @@ default = ["signatures"]
 signatures = ["stegoeggo/signatures", "stegoeggo/detached-manifest"]
 
 [dependencies]
-stegoeggo = { path = "..", version = "=0.4.0" }
+stegoeggo = { path = "..", version = "=0.4.1" }
 clap = { version = "4", features = ["derive"] }
 rayon = "1.10"
 hex = "0.4"

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-11
+
 ### Added
 - Manual GitHub Release binary workflow for five CLI targets, stable
   versionless asset names, SHA-256 sidecars, and Unix/Windows bootstrap
@@ -271,7 +273,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Initial release.
 
-[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/eggstack/stegoeggo/compare/v0.3.3...v0.4.1
+[0.3.3]: https://github.com/eggstack/stegoeggo/compare/v0.3.1...v0.3.3
 [0.3.1]: https://github.com/eggstack/stegoeggo/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/eggstack/stegoeggo/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/eggstack/stegoeggo/compare/v0.2.1...v0.2.2
