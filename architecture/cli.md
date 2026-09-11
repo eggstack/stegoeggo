@@ -163,7 +163,7 @@ When multiple inputs are provided:
    - Extracts legal fields from metadata (PNG tEXt, JPEG COM, WebP)
    - Verifies steganographic payload integrity (DCT for JPEG, LSB for PNG/WebP)
    - Computes `EvidenceStrength` rating
-3. Print legal fields (copyright, creator, contact, usage terms, AI constraints, DMI)
+3. Print all legal metadata fields (copyright, creator, contact, usage terms, AI constraints, DMI including canonical/legacy/conflict detail, TDM reservation, credit line, copyright owner, licensor name/email/URL, metadata date, notice-applied-at, protection seed)
 4. Print stego status and authentication status
 5. Print evidence strength and channels
 

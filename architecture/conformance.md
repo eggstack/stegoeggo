@@ -112,7 +112,7 @@ Before processing fixtures, the harness validates manifest structure via
 - Unsupported sources (only `generated`, `external`, `historical`, `generated-negative`, `current-generated`)
 - Empty or invalid SHA-256 digests (must be 64 hex characters)
 
-Validation failures produce `EXIT_CONFIG` (2) before any fixtures are processed.
+Manifest content validation failures return `EXIT_DIGEST` (3) in strict mode before any fixtures are processed (missing/unparseable manifest, missing tools, or missing fixtures return `EXIT_CONFIG` (2)). In non-strict mode validation records errors and continues.
 
 ## Exit Codes
 
@@ -120,8 +120,8 @@ Validation failures produce `EXIT_CONFIG` (2) before any fixtures are processed.
 |------|----------|---------|
 | 0 | `EXIT_PASS` | All checks passed |
 | 1 | `EXIT_FAIL` | One or more checks failed |
-| 2 | `EXIT_CONFIG` | Configuration error (missing manifest, invalid manifest, missing tools in strict mode) |
-| 3 | `EXIT_DIGEST` | Digest mismatch between manifest and fixture file |
+| 2 | `EXIT_CONFIG` | Configuration error (missing/unparseable manifest, missing tools in strict mode) |
+| 3 | `EXIT_DIGEST` | Digest mismatch between manifest and fixture file, or manifest content validation failure |
 | 4 | `EXIT_COVERAGE` | Coverage minimums not met |
 | 5 | `EXIT_INTERNAL` | Internal harness error |
 

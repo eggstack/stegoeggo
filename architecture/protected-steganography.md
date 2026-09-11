@@ -179,6 +179,9 @@ calling the carrier operation.
 
 ```rust
 pub fn extract_payload(&self, img: &DynamicImage) -> Option<StegoPayload>
+pub fn extract_payload_with_seed(&self, img: &DynamicImage, seed: u64) -> Option<StegoPayload>
+pub fn extract_payload_with_seed_and_key(&self, img: &DynamicImage, seed: u64, mac_key: &[u8]) -> Option<StegoPayload>
+pub fn extract_payload_from_bytes_with_key(&self, img_bytes: &[u8], mac_key: &[u8]) -> Option<StegoPayload>
 pub fn verify_payload(&self, img: &DynamicImage) -> bool
 pub fn verify_payload_with_key(&self, img: &DynamicImage, mac_key: &[u8]) -> VerificationStatus
 pub fn verify_payload_from_bytes(&self, img_bytes: &[u8], seed: u64) -> bool

@@ -24,7 +24,7 @@ Namespaces:
 ## Operations
 
 - **Strip owned fields** — walks `rdf:Description` elements (nested and attribute form), drops owned properties/attributes, keeps unrelated third-party descriptions byte-stable via `PreservedDescription { xml, has_unrelated }`.
-- **Merge** — `MetadataUpdatePolicy` (`Replace` / `PreserveExisting` / `FailOnConflict`) decides per-field whether an incoming owned value overwrites, is skipped, or errors. Namespace conflicts (same local name, different URI) are detected before merging.
+- **Merge** — `MetadataUpdatePolicy` (`src/types/compat.rs`: `ReplaceStegoOwned` / `PreserveExisting` / `FailOnConflict`) decides per-field whether an incoming owned value overwrites, is skipped, or errors. Namespace conflicts (same local name, different URI) are detected before merging.
 - **Escape** — `escape_metadata_value()` XML-escapes `& < > " '` for attribute/element emission; shared by PNG/JPEG/WebP writers.
 - **Errors** — `quick-xml` and attribute failures map to `Error::Metadata("XMP ...")`; internal state violations map to `Error::Metadata("XMP internal state error: ...")`, never panics.
 

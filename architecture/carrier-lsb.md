@@ -27,7 +27,7 @@ lsb tiled/framed ────────┘
 - One in-place core: `embed_lsb_tiled_in_place` is the shared algorithm; cloning `embed_lsb_tiled` delegates to it. Insufficient capacity leaves the caller's buffer unchanged.
 - V2 slot mapping is byte-frozen; injectivity is verified for documented domains only — never claim a full-domain bijection.
 - Permutation seeds derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)` internally; embed and extract must use the same seed.
-- Two unrelated RNGs: `PixelSelectionRng` (`src/util/image.rs`, pixel selection) vs `DctCoefficientRng` (`jpeg_transcoder/stego_f5.rs`, DCT shuffle). Do not interchange.
+- Two unrelated RNGs: `PixelSelectionRng` (root crate `src/util/image.rs`, pixel selection) vs `DctCoefficientRng` (`jpeg_transcoder/stego_f5.rs`, DCT shuffle). Do not interchange.
 
 ## Operation styles
 

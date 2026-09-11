@@ -8,19 +8,19 @@ Encoded-JPEG DCT carrier with container-preserving encode. Operates on baseline 
 
 | Group | Functions |
 |-------|-----------|
-| Probe | `inspect(bytes, min_dim, max_dim)`, `probe_support(bytes) -> JpegSupport::{Supported, Unsupported(reason)}`, `is_progressive_jpeg(bytes)` |
+| Probe | `inspect(bytes, max_segments, max_segment_bytes) -> JpegInfo { width, height }`, `probe_support(bytes) -> JpegSupport::{Supported, Unsupported(reason)}`, `is_progressive_jpeg(bytes)` |
 | Capacity | `capacity(bytes, payload_len, &JpegConfig) -> CapacityReport` — units are eligible AC coefficients with `\|coef\| >= 2` after canonicalization |
 | Raw | `embed` (best-effort: auto-downgrade redundancy, seed-only fallback) / `extract(bytes, len, &config, actual_redundancy)` — pass `report.actual_redundancy` to `extract` |
 | Strict | `embed_strict` / `embed_framed_strict` — exact requested redundancy or `InsufficientCapacity`, no output |
 | Framed | `embed_framed` / `extract_framed` — `frame::{encode,decode}` wrapper; length self-describing |
-| Tiled | `embed_tiled` / `extract_tiled` / `embed_tiled_framed` / `extract_tiled_framed` — redundancy 1 per tile; tile size must be ≥ 8 and a multiple of 8 |
+| Tiled | `embed_tiled(bytes, payload, &TileConfig)` / `extract_tiled(bytes, len, &TileConfig, max_origins)` / `embed_tiled_framed(bytes, payload, &TileConfig)` / `extract_tiled_framed(bytes, &TileConfig, max_origins)` — redundancy 1 per tile; tile size must be ≥ 8 and a multiple of 8 |
 | Seed hint | `embed_seed_hint(bytes, seed)` (transactional: full 96-bit hint or `InsufficientCapacity`) / `extract_seed_hint(bytes) -> Option<u64>` |
 
-`JpegConfig { seed, redundancy }` mirrors `LsbConfig`: `from_redundancy` / `with_redundancy_value` for runtime values (default redundancy 3); `with_redundancy` is constants-only. Zero seeds valid.
+`JpegConfig { seed, redundancy }` mirrors `LsbConfig`: `try_new(seed, redundancy)` / `try_with_redundancy(r)` / `from_redundancy` / `with_redundancy_value` for runtime values (default redundancy 3); `with_redundancy` is constants-only. Zero seeds valid.
 
 ## Best-effort vs strict
 
-Best-effort `embed` is the parent rights crate's application policy (downgrade, then seed-only fallback), not generic carrier semantics. Generic callers that need exactness use `*_strict`, which embed at exactly the requested redundancy in one pass — no retry loop — computing max feasible redundancy from capacity first, then embedding and encoding once.
+Best-effort `embed` is the parent rights crate's application policy (downgrade, then seed-only fallback), not generic carrier semantics: it computes `max_feasible = available / payload_bits` from capacity first, selects `min(requested, max_feasible)`, then embeds and encodes once. Generic callers that need exactness use `*_strict`, which embed at exactly the requested redundancy in one pass — no retry loop, no capacity downgrade.
 
 ## Prepared reuse (`prepared::`)
 

@@ -531,6 +531,8 @@ pub enum WarningSeverity {
 | JpegReencodeFragile | Warning | Warning | Warning | Warning |
 | LsbCapacitySkipped | Info | Warning | Warning | Warning |
 | DctCapacityInsufficient | Info | Warning | Warning | Warning |
+| ContradictoryLegalClaims | Warning | Warning | Warning | Warning |
+| MissingRightsConstraints | Error | Error | Error | Error |
 
 ## CoverageMinimums
 

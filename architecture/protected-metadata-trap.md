@@ -30,12 +30,9 @@ Seven variants mapped to canonical PLUS LDF vocabulary keys. Legacy `Iptc4xmpExt
 
 Note: These are bare `plus_vocab_key()` values. XMP `plus:DataMining` attributes emit the full URI form (`http://ns.useplus.org/ldf/vocab/{key}`).
 
-### DMI Auto-Mapping
+### DMI Defaults (legacy level mapping)
 
-When no explicit DMI value is set, the protector auto-maps from `ProtectionLevel`:
-
-- Light → `Prohibited`
-- Standard → `ProhibitedAiMlTraining`
+The protector itself does not map `ProtectionLevel` to DMI. DMI arrives via the resolved `RightsPolicy`/`RightsNotice`: `request_from_legacy()` maps through `ProtectionLevel::default_policy()` (`src/types/compat.rs`) — `Disabled`/`Light` → `Unspecified` (no `plus:DataMining` emitted), `Standard` → `ProhibitedAiMlTraining`. `Light` therefore emits no DMI property; intensity never silently creates a legal restriction.
 
 ### Legal Metadata
 
@@ -137,7 +134,7 @@ Extracts the `X-Protection-Seed` value from:
 - PNG tEXt chunks
 - JPEG COM markers
 - WebP XMP chunks (via `stegoeggo:ProtectionSeed` attribute)
-- WebP EXIF chunks (historical compatibility, byte search for `Protection seed:`)
+- WebP EXIF chunks (historical compatibility, byte search for `Protection seed: ` with trailing space)
 
 Used by the verification pipeline to recover the seed for stego extraction.
 

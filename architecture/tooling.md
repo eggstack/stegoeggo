@@ -31,4 +31,4 @@ No workflow publishes crates or reacts to tags. Releases are manual: carrier →
 
 ## Benchmarks
 
-`benches/bench.rs` (Criterion, `harness = false`): protect, verify, extract, XMP parse, payload build. The `lsb_clone_vs_in_place` bench uses Criterion batching so each in-place iteration starts from a pristine source and the preparation clone stays outside the timed section.
+`benches/bench.rs` (Criterion, `harness = false`): pipeline sizes, protection levels, byte processing, large images, format preservation, allocations, memory usage, JPEG fast path, tiled embed/extract, LSB clone-vs-in-place, metadata-only, request-vs-legacy, JPEG verify, tiled LSB request. The `lsb_clone_vs_in_place` bench uses Criterion batching so each in-place iteration starts from a pristine source and the preparation clone stays outside the timed section.

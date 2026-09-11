@@ -15,7 +15,7 @@ extraction probing. The two copies are byte-identical.
 | `STEGO_OFFSET_SEED_1` | `0x517cc1b727220a95` | `protected/constants.rs`, `stegoeggo-stego/src/constants.rs` | Multiplicative offset for stego pixel selection (legacy) |
 | `STEGO_SPREAD_FACTOR` | `5` | `stegoeggo-stego/src/constants.rs` | Replicas per payload bit per redundancy level in the V2 carrier (total replicas = `STEGO_SPREAD_FACTOR * redundancy`) |
 | `XORSHIFT_SEED_OFFSET` | `0x123456789ABCDEF0` | `protected/constants.rs` | XOR offset for XorShiftRng initialization (legacy `PixelSelectionRng`) |
-| `SPLITMIX64_SEED` | `0x9e3779b97f4a7c15` | `stegoeggo-stego/src/constants.rs`, `util/seed.rs` | Splitmix64 mixing constant |
+| `SPLITMIX64_SEED` | `0x9e3779b97f4a7c15` | `stegoeggo-stego/src/constants.rs`, `src/protected/steganography/mod.rs` (test-helper const; `src/util/seed.rs` uses the same literal inline) | Splitmix64 mixing constant |
 | `DEFAULT_TILE_SIZE` | `64` | `stegoeggo-stego/src/lsb_internal.rs` (re-exported via `lsb.rs`) | Default crop-resistant tile size |
 | `MIN_REDUNDANCY`/`MAX_REDUNDANCY` | `1`/`10` | `stegoeggo-stego/src/constants.rs` | Shared validity bounds for `LsbConfig` and `JpegConfig` redundancy; `validate_redundancy` rejects out-of-range values |
 | `MIN_PAYLOAD_SIZE` | `28` | `protected/steganography/mod.rs` | Parsing threshold (not output size) |

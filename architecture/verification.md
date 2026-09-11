@@ -9,6 +9,7 @@ Provides a structured, machine-readable verification report with per-channel sub
 ```
 src/verification/
 ├── mod.rs        Re-exports
+├── canonical.rs  Canonical facts orchestrator (`pub(crate)`)
 ├── report.rs     VerificationReport and all sub-verification types
 └── builder.rs    VerificationReportBuilder (fluent API)
 ```

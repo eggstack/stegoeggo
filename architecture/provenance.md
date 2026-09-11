@@ -41,26 +41,23 @@ pub struct ProvenanceClaim {
 ### Builder Pattern
 
 ```rust
-let claim = ProvenanceClaim::builder()
-    .with_creator("Jane Artist")
-    .with_copyright("© 2025 Jane Artist")
+let claim = ProvenanceClaim::new(policy_discriminant)
     .with_content_code("iscc:abc123")
     .with_instance_digest(image_bytes)
     .with_source_facts("png", 1920, 1080, 1024000)
     .with_issuer_id(key_id_bytes)
     .with_notice_digest(rights_text)
     .with_statement_uri("https://example.com/license")
-    .with_parent_claim(parent_claim_id)
-    .build();
+    .with_parent_claim(parent_claim_id);
 ```
 
 ### Key Methods
 
-- `builder()` — Start building a claim
+- `new(rights_policy: u8)` — Create a claim with a random ID; chain `with_*` methods
 - `with_instance_digest(&[u8])` — Compute SHA-256 of image bytes
 - `with_source_facts(format, width, height, file_size)` — Set image metadata
 - `canonical_bytes() -> Vec<u8>` — Deterministic JSON for signing/hashing
-- `claim_digest() -> String` — SHA-256 hex of canonical bytes
+- `digest() -> [u8; 32]` — SHA-256 of canonical bytes (raw bytes, not hex)
 
 ## Canonical JSON
 
