@@ -150,3 +150,4 @@ Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this
   public stego API (52), verification convergence (3), legacy compat
   (10), carrier prepared/tiled/pixels filters, direct consumer (8).
 - `./scripts/check.sh` passes locally (exit 0, 2026-09-11).
+- Remote CI (`CI` / `Check`, run `34560943235`): success on `4dbcfbd` (3m33s, 2026-09-11).
