@@ -45,7 +45,7 @@ For the Rust library:
 
 ```toml
 [dependencies]
-stegoeggo = "0.3"
+stegoeggo = "0.4"
 ```
 
 The minimum supported Rust version is **1.87**. Required CI runs stable Rust on

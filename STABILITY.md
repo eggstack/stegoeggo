@@ -110,6 +110,26 @@ syntax remains a 0.x compatibility alias for `protect`.
 | `stegoeggo verify-manifest --manifest <path> --image <path>` | `signatures` | Verify a detached manifest against an image |
 | `stegoeggo-conformance --json` | `conformance` | Run metadata conformance checks against ExifTool and xmllint |
 
+### CLI distribution contracts
+
+The stable Unix bootstrap URL is
+`https://github.com/eggstack/stegoeggo/releases/latest/download/install.sh`;
+the Windows counterpart is the matching `install.ps1` asset. Release
+executables use the versionless names in `scripts/release-targets.txt`, each
+with a `<asset>.sha256` sidecar. The supported binary targets are Linux
+x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64.
+
+The first line of `stegoeggo version` is stable and parseable as
+`stegoeggo X.Y.Z`; the command is offline. `stegoeggo update` is a stable
+verified-update path: it uses the latest stable crates.io CLI version as
+authority, requires the matching release asset and checksum, and leaves the
+current executable untouched when validation fails. Cargo fallback is
+best-effort and limited to unsupported targets or an exact asset HTTP 404.
+
+During 0.x, `protect`, `inspect`, `verify`, `version`, and `update` are the
+canonical commands. The old positional root protection syntax and `--verify`
+remain compatibility aliases; their removal is tracked in `DEPRECATIONS.md`.
+
 ### CLI Exit Codes
 
 | Code | Constant | Meaning |

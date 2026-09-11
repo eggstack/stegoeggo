@@ -1,6 +1,6 @@
 # Tooling (Scripts, CI, Benchmarks)
 
-**Sources:** `scripts/` (10 scripts) · `packaging/` (2 installers) · `.github/workflows/` (5 workflows) · `benches/bench.rs` (592 lines, Criterion).
+**Sources:** `scripts/` (12 executable scripts) · `packaging/` (2 installers) · `.github/workflows/` (5 workflows) · `benches/bench.rs` (592 lines, Criterion).
 
 Specialist checks are manual and never part of `check.sh` or required CI without a maintainer decision.
 
@@ -13,6 +13,8 @@ Specialist checks are manual and never part of `check.sh` or required CI without
 | `release-binary-preflight.sh --tag=vX.Y.Z` | Validates binary-release tag/version lockstep, target manifest, updater mapping, and canonical CLI feature set; optional `--asset-dir` audits built assets | stable Rust, Python |
 | `release-check-assets.sh --dir=DIR` | Verifies every target executable and SHA-256 sidecar; optional version/native smoke checks | `sha256sum` or `shasum` |
 | `test-release-installers.sh` | Local fixture/server tests for installer mapping, URLs, checksums, identity, fallback, and destinations | Bash, Python, curl |
+| `test-release-updater.sh` | Local fixture/server rehearsal for current/no-op, verified old→new update, and validation-failure preservation | Bash, Python, curl, built CLI |
+| `check-docs-contract.sh` | Fast deterministic check for installer URLs, canonical commands, target names, and release-policy wording | Bash, Python |
 | `check_fuzz_sync.sh` | Verifies dispatch-target parity between `fuzz/Cargo.toml` and `fuzz.yml` (the scheduled smoke rotation derives its list at runtime from `cargo fuzz list`) | — |
 | `verify_metadata_conformance.sh [--strict]` | External metadata conformance via the Rust harness + ExifTool/xmllint diff | exiftool, xmllint, imagemagick, libvips |
 | `validate-docs-rs.sh` | Docs.rs-equivalent rustdoc validation | nightly |

@@ -4,6 +4,7 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 0.4.x   | :white_check_mark: |
 | 0.3.x   | :white_check_mark: |
 | 0.2.x   | :white_check_mark: |
 | < 0.2   | :x:                |
@@ -24,15 +25,17 @@ Please include:
 
 ### Prebuilt CLI binaries
 
-Release binaries are currently unsigned. The installers verify the SHA-256
-sidecar fetched from the same GitHub Release before executing or installing a
-candidate, then verify that its `version` output matches the requested release
-(or is a valid StegoEggo version for an unpinned latest install). This protects
-against accidental corruption and mismatched assets, but the checksum and
-binary remain inside the GitHub Release trust boundary; it is not a substitute
-for independent signature verification or a separately trusted distribution
-channel. The installers never fall back to Cargo after a checksum, identity,
-or network failure.
+Release binaries are currently unsigned. The installers use HTTPS GitHub
+Releases as the transport and source boundary, verify the SHA-256 sidecar
+fetched from that same release before executing or installing a candidate, and
+verify that its `version` output matches the requested release (or is a valid
+StegoEggo version for an unpinned latest install). This protects against
+accidental corruption and mismatched assets, but the checksum and binary
+remain inside the GitHub Release trust boundary; it is not publisher
+authentication or a substitute for an independent signature or separately
+trusted distribution channel. macOS and Windows artifacts may therefore prompt
+for local unsigned-binary handling. The installers never fall back to Cargo
+after a checksum, identity, or network failure.
 
 The `update` command follows the same binary contract. It first resolves the
 latest non-yanked, stable `stegoeggo-cli` version from crates.io, then fetches
@@ -42,6 +45,11 @@ is an integrity check, not a digital signature: the crates.io response, GitHub
 Release, sidecar, and executable remain within their respective registry or
 repository trust boundaries. The updater never invokes `sudo`, and it does not
 fall back to Cargo for checksum, candidate, or generic network failures.
+
+On unsupported targets, or when the exact target asset returns HTTP 404, the
+installer/updater may build through Cargo instead. That fallback changes the
+trust path to the Rust toolchain, crates.io, and resolved source dependencies;
+it is not equivalent to running a release binary.
 
 ### Without a MAC key
 Steganographic payload verification uses a non-cryptographic CRC32 checksum. An attacker who can read the image bytes can forge valid-looking payloads. For production deployments (e.g., CDN protection against malicious scrapers), **always set a MAC key** via `.with_mac_key()`.

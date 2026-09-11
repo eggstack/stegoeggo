@@ -19,12 +19,16 @@ A dependency that breaks compilation or tests on Rust 1.87 is treated as an
 explicit semver/toolchain decision: either pin a compatible dependency or
 raise the declared MSRV, never a silent break.
 
-## Supported Platforms
+## Supported Platforms and distribution
 
 Evidence levels: **PR** = tested on every push/PR to `main` (standard `Check`
 gate; not currently GitHub-enforced as a required status check — `main` is
 unprotected, verified 2026-09-11); **Scheduled** = tested by a recurring non-blocking workflow (failure
 never blocks merges); **Expected** = believed to work but with no CI evidence.
+
+These are separate contracts. Compile/test assurance describes where CI runs;
+prebuilt distribution describes where GitHub Release assets are attached; a
+source-only target has no release asset but may still work through Cargo.
 
 | OS | Architecture | PR | Scheduled assurance | Notes |
 |----|-------------|----|---------------------|-------|
@@ -37,6 +41,18 @@ never blocks merges); **Expected** = believed to work but with no CI evidence.
 Scheduled platform jobs replay the standard gate's compile-and-test evidence
 (minus fmt/clippy, which are platform-independent) on stable Rust. See
 `.github/workflows/assurance.yml` for the exact commands.
+
+### Contract summary
+
+| Contract | Targets |
+|---|---|
+| Compile/test assurance | Linux x86_64 on every PR; Linux aarch64, macOS arm64, and Windows x86_64 weekly; Rust 1.87 weekly on the MSRV matrix |
+| Prebuilt binary distribution | Linux x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64 |
+| Source-only distribution | Other platforms and architectures, subject to Cargo/Rust and dependency support |
+
+The macOS x86_64 binary is distributed even though it is an expected rather
+than scheduled assurance target. No platform outside the binary matrix should
+be assumed to have a downloadable asset.
 
 ## Assurance Cadence
 

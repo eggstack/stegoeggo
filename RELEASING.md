@@ -16,10 +16,12 @@ independent carrier releases are made for rights/CLI-only changes.
 
 - Release cadence is a maintainer decision.
 - Releases are performed manually using direct Cargo/crates.io commands.
-- GitHub Actions do not publish crates or create releases automatically.
+- GitHub Actions do not publish crates or create releases automatically, and
+  Actions has no crates.io publication credentials.
 - Version tags do not publish crates.
-- GitHub releases are optional and manual. The manually dispatched binary
-  workflow attaches CLI assets to an existing release for the requested tag.
+- GitHub binary releases are manual but are a supported CLI distribution
+  contract. The manually dispatched binary workflow attaches the complete
+  target matrix, checksums, and installers to an existing release.
 - CI success is useful development evidence but not a publication trigger.
 
 The CLI updater uses the stable `stegoeggo-cli` crates.io version as its sole
@@ -145,7 +147,7 @@ Do not prescribe a fixed sleep between publications. Registry propagation should
 
 **Package verification stages:** `./scripts/release-check.sh --stage=pre` requires full carrier verification and structurally lists the unpublished root and CLI packages (their exact crates.io dependencies cannot be resolved locally before publication). After the carrier is published, `--stage=root` performs full root verification. After the root is published, `--stage=cli` performs full CLI verification. The script never publishes crates.
 
-## Optional Tag and GitHub Release
+## GitHub Release and binary assets
 
 After successful crates.io publication:
 
@@ -154,8 +156,8 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-- Tagging is optional but recommended for repository history.
-- The tag must point to the published source commit.
+- A binary release requires an exact `vX.Y.Z` tag pointing to the published
+  source commit and an existing GitHub Release for that tag.
 - Do not force-move the tag after publication.
 - Create the GitHub release manually from the tag, then dispatch
   `.github/workflows/release-binaries.yml` with the exact `vX.Y.Z` tag. The
@@ -169,7 +171,11 @@ git push origin vX.Y.Z
   a completed release.
 - Verify that `stegoeggo X.Y.Z` from every attached executable matches the tag;
   the updater performs the same candidate identity/version check.
-- Source releases and crates.io publication do not require an automated binary artifact.
+- A CLI release is not updater-ready until all five executable assets, their
+  `.sha256` sidecars, `install.sh`, and `install.ps1` are attached. This is the
+  contract behind the stable `releases/latest/download/install.sh` URL.
+- A crates-only/library release may omit binary assets, but it must not be
+  presented as a binary CLI release or as an updater target.
 
 ## Partial Failure Handling
 

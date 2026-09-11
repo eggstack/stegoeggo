@@ -14,3 +14,4 @@ run cargo fmt --all -- --check
 run cargo clippy --workspace --all-targets --all-features -- -D warnings
 run cargo check -p stegoeggo --no-default-features
 run cargo test --workspace --exclude stegoeggo-fuzz --all-features
+run ./scripts/check-docs-contract.sh

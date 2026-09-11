@@ -281,7 +281,13 @@ frame::decode_prefix(data) -> Result<(FrameHeader, usize)>
 cargo test --workspace --exclude stegoeggo-fuzz --all-features  # All tests
 cargo clippy --workspace --all-targets --all-features -- -D warnings  # Lint
 cargo fmt --all -- --check              # Format check
+./scripts/test-release-installers.sh    # Installer fixture/server rehearsal
+./scripts/test-release-updater.sh       # Updater fixture/server rehearsal
 ```
+
+The required check also runs `scripts/check-docs-contract.sh`, which keeps the
+preferred installer URL, canonical CLI command names, release target names,
+and binary-release policy wording aligned across the user and maintainer docs.
 
 ## Testing Patterns
 - Unit tests live in each source file as `#[cfg(test)] mod tests`

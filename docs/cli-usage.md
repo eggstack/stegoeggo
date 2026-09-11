@@ -45,12 +45,6 @@ stegoeggo version
 stegoeggo update
 ```
 
-`version` prints the stable parseable line `stegoeggo X.Y.Z` and does not access
-the network or configuration. `update` resolves the latest stable CLI version
-from crates.io and updates from the matching verified GitHub Release asset;
-see [the installation guide](installation.md) for its fallback and permission
-rules. Update progress is written to stderr and its final result to stdout.
-
 Feature-gated signing commands remain flat:
 
 ```text
@@ -63,6 +57,14 @@ They require the `signatures` feature.
 
 The published CLI package enables `signatures` by default, so these commands
 are also present in Cargo-installed and prebuilt binaries.
+
+## Version and updates
+
+`version` prints exactly `stegoeggo X.Y.Z` on its first line and does not access
+the network or configuration. `update` resolves the latest stable CLI version
+from crates.io and updates from the matching verified GitHub Release asset;
+see [the installation guide](installation.md) for its fallback and permission
+rules. Update progress is written to stderr and its final result to stdout.
 
 ## Protecting images
 
@@ -151,6 +153,26 @@ the supplied secret. It does not prove copyright ownership or authorship.
 Canonical channel flags are `--hidden-marker disabled|best-effort` and
 `--authentication none|hmac`. HMAC requires `--key` (hex, `@file`, stdin `-`,
 or `STEGOEGGO_KEY`).
+
+## Rights metadata fields
+
+The common rights fields are supplied directly to `protect`:
+
+| Flag | Purpose |
+|---|---|
+| `--copyright-notice` | Copyright notice text |
+| `--creator` | Creator or author name |
+| `--contact` | Rights contact email or URL |
+| `--rights-url` | URL to full terms or license text |
+| `--usage-terms` | Short usage-terms summary |
+| `--ai-constraints` | AI-specific constraints |
+| `--credit-line` | Required attribution line |
+| `--copyright-owner` | Copyright owner name |
+| `--licensor-name`, `--licensor-email`, `--licensor-url` | Structured licensor details |
+| `--content-created-at` | ISO 8601 content creation date |
+
+Only provide claims you are entitled to assert. `--legal-claims` is a legacy
+compatibility flag; supplying canonical rights fields is the recommended path.
 
 ## Compatibility syntax and precedence
 

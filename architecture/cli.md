@@ -48,6 +48,28 @@ replacement subprocesses are bounded and use argument arrays; no shell command
 strings or implicit privilege escalation are used. A staged failure leaves the
 current executable untouched.
 
+### Release and installer contract
+
+The manual `release-binaries.yml` workflow checks out an exact `vX.Y.Z` tag and
+attaches all five CLI assets, their `.sha256` sidecars, `install.sh`, and
+`install.ps1` to an existing GitHub Release. The versionless asset names are:
+
+| Target | Asset |
+|---|---|
+| `x86_64-unknown-linux-gnu` | `stegoeggo-x86_64-unknown-linux-gnu` |
+| `aarch64-unknown-linux-gnu` | `stegoeggo-aarch64-unknown-linux-gnu` |
+| `x86_64-apple-darwin` | `stegoeggo-x86_64-apple-darwin` |
+| `aarch64-apple-darwin` | `stegoeggo-aarch64-apple-darwin` |
+| `x86_64-pc-windows-msvc` | `stegoeggo-x86_64-pc-windows-msvc.exe` |
+
+The stable Unix bootstrap URL is
+`releases/latest/download/install.sh`. Installers and the updater treat
+checksums as corruption detection within the GitHub trust boundary, validate
+the candidate's `stegoeggo X.Y.Z` identity, never elevate privileges, and only
+use Cargo for unsupported targets or an exact binary HTTP 404. The release
+workflow never publishes crates; crates.io publication remains the manual
+carrier → library → CLI sequence in `RELEASING.md`.
+
 ### Compatibility routing
 
 `main::uses_command_parser()` recognizes a command token after leading CLI

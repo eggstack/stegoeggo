@@ -70,7 +70,7 @@ All default-off: `async` (canonical `process_request_bytes_async*`), `parallel` 
 
 ## Releases
 
-Manual only: no crates.io publication, no crates.io token in Actions, and no tag-triggered publication. A manually dispatched `release-binaries.yml` attaches CLI assets to an existing GitHub Release; it never publishes crates. All three crates share one version with exact `=X.Y.Z` deps; publish crates in order carrier → library → CLI. See `RELEASING.md` and `docs/installation.md`.
+Manual only: no crates.io publication, no crates.io token in Actions, and no tag-triggered publication. The preferred Unix installer source is `https://github.com/eggstack/stegoeggo/releases/latest/download/install.sh`. A manually dispatched `release-binaries.yml` attaches the complete CLI asset matrix to an existing GitHub Release; it never publishes crates. All three crates share one version with exact `=X.Y.Z` deps; publish crates in order carrier → library → CLI. See `RELEASING.md` and `docs/installation.md`.
 
 Binary release contract: assets use the versionless names in
 `scripts/release-targets.txt` and every executable has a `.sha256` sidecar.
@@ -91,4 +91,4 @@ binary-managed after successful self-replacement until Cargo installs it again.
 
 ## Where things live
 
-- Skills (load before working): `.skills/stegoeggo-conventions/SKILL.md` (signatures, constants, pitfalls) for any Rust change; `.skills/plan-execution/SKILL.md` when executing a numbered plan in `plans/`; `.skills/architecture-review/SKILL.md` when verifying/editing `architecture/` docs. Architecture index: `architecture/overview.md` (39 deep-dives). User guides: `docs/` (`cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`). Examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) must keep compiling. Plans: `plans/` (highest so far 100; next is 101+; historical plans are immutable except their `-status.md`).
+- Skills (load before working): `.skills/stegoeggo-conventions/SKILL.md` (signatures, constants, pitfalls) for any Rust change; `.skills/plan-execution/SKILL.md` when executing a numbered plan in `plans/`; `.skills/architecture-review/SKILL.md` when verifying/editing `architecture/` docs. Architecture index: `architecture/overview.md` (39 deep-dives). User guides: `docs/` (`cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`). Examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) must keep compiling. Plans: `plans/` (highest so far 101; historical plans are immutable except their `-status.md`).

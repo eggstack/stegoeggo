@@ -10,7 +10,7 @@ Workflow for executing multi-wave parallel tasks in the stegoeggo codebase using
 ## Quick Reference
 
 - Plans live in `plans/` as numbered files (`NNN-name.md`) with `-status.md` companions; the status file is the authoritative record of what is done
-- Plans are sequential — the next new plan takes the lowest unused number (currently 099+; highest so far is 098). Never renumber or edit historical plans except their `-status.md`
+- Plans are sequential — the next new plan takes the lowest unused number (currently 102+; highest so far is 101). Never renumber or edit historical plans except their `-status.md`
 - Worktrees go in a temporary directory outside the workspace (e.g., `/tmp/stegoeggo-wt-taskN`)
 - Each task gets its own branch: `fix/taskN-description`
 - Branch naming: `fix/` prefix for bug fixes, `feat/` for features

@@ -500,6 +500,8 @@ Full script/CI/bench reference: [tooling.md](tooling.md).
 | `scripts/release-binary-preflight.sh` | Manual binary release tag/version/feature preflight |
 | `scripts/release-check-assets.sh` | Executable and checksum sidecar validation |
 | `scripts/test-release-installers.sh` | Local Unix installer behavior tests |
+| `scripts/test-release-updater.sh` | Local updater integration rehearsal with a fixture release server |
+| `scripts/check-docs-contract.sh` | Documentation/install-target contract checks used by required CI |
 
 ### Continuous assurance
 
@@ -510,8 +512,8 @@ aarch64, macOS aarch64, and Windows x86_64. `external-verification.yml` runs
 monthly; `fuzz.yml` adds a weekly rotating smoke subset. Scheduled workflows
 are informational signal only: they never gate merges, publish crates, or
 react automatically to tags. The manual `release-binaries.yml` workflow
-attaches checked CLI assets to an existing GitHub Release; see `SUPPORT.md`
-and `RELEASING.md` for the evidence and release contracts.
+attaches the complete checked CLI asset matrix to an existing GitHub Release;
+see `SUPPORT.md` and `RELEASING.md` for the evidence and release contracts.
 
 ### Examples, benches, user guides
 

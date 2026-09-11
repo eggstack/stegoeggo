@@ -1,5 +1,13 @@
 # CLI Installation
 
+## Choose an installation path
+
+Prebuilt binaries are the preferred path for the five release targets listed
+below. The repository's assurance matrix is broader than its downloadable
+binary matrix: scheduled CI provides compile/test evidence for selected
+platforms, while unsupported targets remain source-only and can use Cargo when
+their Rust toolchain and dependencies support them.
+
 ## Prebuilt binaries
 
 The preferred CLI installation does not require Rust on supported Unix
@@ -26,6 +34,8 @@ irm https://github.com/eggstack/stegoeggo/releases/latest/download/install.ps1 |
 
 The Windows installer uses `%LOCALAPPDATA%\StegoEggo\bin\stegoeggo.exe`, does
 not edit `PATH`, and warns when that directory is not already on `PATH`.
+It installs per-user; a system-wide Windows installation is not provided by
+the bootstrap script.
 
 To pin a PowerShell install without first saving the script, invoke the
 downloaded script block with its `-Version` parameter:
@@ -52,6 +62,10 @@ The distributed feature set is the CLI package default, `signatures`, so
 prebuilt and Cargo-installed binaries include `keygen`, `sign`, and
 `verify-manifest`.
 
+The macOS and Windows artifacts are checksummed but not code-signed or
+notarized. Gatekeeper or SmartScreen may therefore require an explicit user
+override according to local policy.
+
 ## Pinned versions and fallback
 
 Pin a Unix install to an exact release version:
@@ -65,6 +79,30 @@ the GitHub `releases/latest/download` endpoint. For either mode, checksum
 failure, candidate identity failure, and network failure stop the install;
 they never trigger a source fallback. Unsupported platforms and a missing
 binary asset (HTTP 404) may fall back to Cargo when it is installed.
+
+To download an asset manually, select the matching name from the matrix and
+fetch both files from the same release tag. Verify the sidecar before running
+the executable:
+
+```bash
+asset=stegoeggo-x86_64-unknown-linux-gnu
+version=0.4.0
+curl -fL -o "$asset" "https://github.com/eggstack/stegoeggo/releases/download/v$version/$asset"
+curl -fL -o "$asset.sha256" "https://github.com/eggstack/stegoeggo/releases/download/v$version/$asset.sha256"
+expected="$(awk 'NF {print tolower($1); exit}' "$asset.sha256")"
+if command -v sha256sum >/dev/null 2>&1; then
+  actual="$(sha256sum "$asset" | awk '{print tolower($1)}')"
+else
+  actual="$(shasum -a 256 "$asset" | awk '{print tolower($1)}')"
+fi
+test "$actual" = "$expected"
+chmod 0755 "$asset"
+./"$asset" version
+```
+
+On systems without `sha256sum`, use `shasum -a 256 "$asset"` and compare the
+result with the first field in the sidecar. A sidecar fetched from the same
+GitHub Release is an integrity check, not an independent publisher signature.
 
 ## Updating an installation
 
@@ -111,6 +149,19 @@ feature set. Build directly from a checkout with:
 ```bash
 cargo build --locked --release --package stegoeggo-cli --bin stegoeggo
 ```
+
+## Uninstall
+
+Remove the installed executable and, if applicable, remove its directory from
+your shell `PATH`:
+
+```bash
+rm "$HOME/.local/bin/stegoeggo"
+```
+
+For a root Unix install, remove `/usr/local/bin/stegoeggo`. On Windows, remove
+`%LOCALAPPDATA%\StegoEggo\bin\stegoeggo.exe`. These are ordinary files; the
+installer does not register a package-manager uninstall entry.
 
 ## Release verification
 
