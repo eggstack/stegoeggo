@@ -1,6 +1,6 @@
 # target|asset|runner|build
 x86_64-unknown-linux-gnu|stegoeggo-x86_64-unknown-linux-gnu|ubuntu-latest|zig-glibc-2.17
 aarch64-unknown-linux-gnu|stegoeggo-aarch64-unknown-linux-gnu|ubuntu-24.04-arm|zig-glibc-2.17
-x86_64-apple-darwin|stegoeggo-x86_64-apple-darwin|macos-13|native
+x86_64-apple-darwin|stegoeggo-x86_64-apple-darwin|macos-15-intel|native
 aarch64-apple-darwin|stegoeggo-aarch64-apple-darwin|macos-latest|native
 x86_64-pc-windows-msvc|stegoeggo-x86_64-pc-windows-msvc.exe|windows-latest|native

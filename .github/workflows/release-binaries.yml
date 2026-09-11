@@ -52,7 +52,7 @@ jobs:
           - target: x86_64-apple-darwin
             asset: stegoeggo-x86_64-apple-darwin
             binary_name: stegoeggo
-            runner: macos-13
+            runner: macos-15-intel
             zig: false
           - target: aarch64-apple-darwin
             asset: stegoeggo-aarch64-apple-darwin
