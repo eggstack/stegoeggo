@@ -1,12 +1,12 @@
 # Error Types
 
-**Source:** `src/error.rs` (~347 lines)
+**Source:** `src/error.rs` (~411 lines)
 
 Uses `thiserror` for ergonomic error derivation.
 
 ## Error Enum
 
-19 total variants: 19 always-available + 1 async-only (`Task`).
+20 total variants: 19 always-available + 1 async-only (`Task`).
 
 ```rust
 #[non_exhaustive]

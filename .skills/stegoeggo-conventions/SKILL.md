@@ -214,14 +214,14 @@ frame::decode_prefix(data) -> Result<(FrameHeader, usize)>
 
 ## Constants
 
-### Carrier crate (`stegoeggo-stego/src/constants.rs`)
+### Carrier crate (`stegoeggo-stego/src/constants.rs`, all `pub(crate)` — read values, do not import)
 - `STEGO_OFFSET_SEED_1: u64 = 0x517cc1b727220a95`
 - `STEGO_SPREAD_FACTOR: usize = 5`
 - `SPLITMIX64_SEED: u64 = 0x9e3779b97f4a7c15`
 - `MIN_REDUNDANCY: usize = 1`
 - `MAX_REDUNDANCY: usize = 10`
 
-### Application crate (`src/protected/constants.rs`)
+### Application crate (`src/protected/constants.rs`, all `pub(crate)` — read values, do not import)
 - `STEGO_OFFSET_SEED_1: u64 = 0x517cc1b727220a95`
 - `XORSHIFT_SEED_OFFSET: u64 = 0x123456789ABCDEF0`
 
@@ -266,13 +266,14 @@ frame::decode_prefix(data) -> Result<(FrameHeader, usize)>
 12. **Validated configuration** — `Redundancy::new`/`from_usize` (identical debug/release semantics) with `from_redundancy`/`with_redundancy_value`/`redundancy_value` on both configs is the recommended primitive for runtime values. `LsbConfig::try_new`, `LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and `JpegConfig::try_with_redundancy` all return `StegoError::InvalidConfig` for out-of-range redundancy. The infallible `with_redundancy` builder is a compatibility adapter for compile-time constants only (debug-assert/release-clamp); never pass runtime values through it. Zero seeds are valid. JPEG capacity units are eligible AC coefficients with `|coef| >= 2`, not all non-zero AC coefficients. The V2 LSB mapping is byte-frozen with injectivity verified for documented domains only — never claim a full-domain bijection.
 13. **Decomposed application stego adapter** — `src/protected/steganography/` is split into five responsibility modules behind `SteganographyProtector`: `marker.rs` (V3 payload construction), `embed.rs` (plan-based dispatch with shared private helpers — `outcome_from_report`, `embed_dct_payload`/`embed_dct_tiled_payload` with progressive fallback, `inplace_summary`, `embed_raster_with_seed_fallback`; context-based wrappers delegate to the same helpers and PNG/WebP share one raster path), `extract.rs` (seed discovery and bounded search, including hidden `JpegSearchContext` reuse), `verify.rs` (integrity and authentication classification), and `legacy.rs` (V1/V2 compatibility). `mod.rs` is a thin facade + shared types + tests; no carrier algorithm is reimplemented there. Hidden `application_support` holds only legacy/seed-fallback/search compat, never ordinary current embed/extract. `src/types/` (rights/compat/legal/context/verification/warnings/request behind `src/types.rs` re-exports), `src/protected/metadata_trap/` (notice/png/jpeg/webp/common behind `RightsMetadataProtector`), and `src/pipeline.rs` (canonical executors) follow the same facade pattern: stable public paths, private submodules.
 14. **JPEG extraction is single-decode per operation** — `jpeg::extract_framed` retains private decoded coefficients for its bounded redundancy search; application verification shares one hidden `JpegSearchContext` across standard probing and tiled fallback. Do not recompose either from public `capacity`/`extract` calls, add per-redundancy `jpeg_extract` calls in `dct_candidates`, expose coefficient/header types, or reduce the configured search domain.
-18. **Tiled LSB has one in-place core** — `lsb_internal::embed_lsb_tiled_in_place` is the shared algorithm; the cloning `embed_lsb_tiled` delegates to it and the parent raster path mutates its owned RGBA directly. Insufficient capacity leaves the caller's buffer unchanged.
-19. **Raster preflight is header-only** — non-JPEG dimension gating uses `into_dimensions()` only; the executor owns the single full decode and re-checks dimensions defensively. Same-format metadata-only performs zero pixel decodes.
-15. **Benchmark equivalence** — The `lsb_clone_vs_in_place` benchmark uses Criterion batching so each in-place iteration starts from a pristine source image and the preparation clone remains outside the timed operation.
-20. **Container accounting has one owner** — `src/container_walk.rs::observe_container_work` is the only bounded PNG/JPEG/WebP walk for `OperationObserver`. Do not add hand-written chunk/marker loops in `lib.rs` or `pipeline.rs`; strict injection/detection walkers live in their format modules with different error dispositions. All container arithmetic uses `checked_add` with lenient break on overflow.
-16. **`verify_image_bytes` returns directly** — Returns `VerificationStatus`, not `Result<VerificationStatus>`. Use `verify_image_bytes_detailed` for full `VerificationResult`.
-17. **Output-domain carrier routing** — Carrier family is selected from the final output format (`output_format == JPEG ? DCT : LSB`); input format controls fast-path reuse only. `execute_full_marker_and_metadata()` in `src/pipeline.rs` is the sole current-carrier router; `apply_lsb_to_image_with_summary_from_plan()` in `src/protected/steganography/embed.rs` is explicitly raster-domain and must never branch on `plan.input_format()`. JPEG→PNG/WebP is one pixel decode plus LSB, never a transient DCT step. `EmbedPath` follows the operation actually executed (`Lsb`/`LsbTiled` for raster output, `DctF5`/`DctF5Tiled` for JPEG output).
+15. **Tiled LSB has one in-place core** — `lsb_internal::embed_lsb_tiled_in_place` is the shared algorithm; the cloning `embed_lsb_tiled` delegates to it and the parent raster path mutates its owned RGBA directly. Insufficient capacity leaves the caller's buffer unchanged.
+16. **Raster preflight is header-only** — non-JPEG dimension gating uses `into_dimensions()` only; the executor owns the single full decode and re-checks dimensions defensively. Same-format metadata-only performs zero pixel decodes.
+17. **Benchmark equivalence** — The `lsb_clone_vs_in_place` benchmark uses Criterion batching so each in-place iteration starts from a pristine source image and the preparation clone remains outside the timed operation.
+18. **Container accounting has one owner** — `src/container_walk.rs::observe_container_work` is the only bounded PNG/JPEG/WebP walk for `OperationObserver`. Do not add hand-written chunk/marker loops in `lib.rs` or `pipeline.rs`; strict injection/detection walkers live in their format modules with different error dispositions. All container arithmetic uses `checked_add` with lenient break on overflow.
+19. **`verify_image_bytes` returns directly** — Returns `VerificationStatus`, not `Result<VerificationStatus>`. Use `verify_image_bytes_detailed` for full `VerificationResult`.
+20. **Output-domain carrier routing** — Carrier family is selected from the final output format (`output_format == JPEG ? DCT : LSB`); input format controls fast-path reuse only. `execute_full_marker_and_metadata()` in `src/pipeline.rs` is the sole current-carrier router; `apply_lsb_to_image_with_summary_from_plan()` in `src/protected/steganography/embed.rs` is explicitly raster-domain and must never branch on `plan.input_format()`. JPEG→PNG/WebP is one pixel decode plus LSB, never a transient DCT step. `EmbedPath` follows the operation actually executed (`Lsb`/`LsbTiled` for raster output, `DctF5`/`DctF5Tiled` for JPEG output).
 21. **Timestamp provenance** — Canonical metadata writers consume the resolved `RightsNotice`; JPEG structured COM rendering must receive `notice_applied_at` from that same notice. An explicit `ProtectionRequest::with_timestamp_override(...)` must not be replaced by a lower-level `SystemTime::now()` read, while requests without an override retain wall-clock defaults.
+22. **`Error` has 20 variants** — 19 always-available plus async-only `Task` (`#[cfg(feature = "async")]`). Count `InsufficientCapacity` among the 19; docs claiming 17/18/19 total are stale.
 
 ## Build & Test
 ```bash
@@ -292,7 +293,7 @@ cargo fmt --all -- --check              # Format check
 
 ## Where Documentation Lives
 - User-facing guides: `docs/` (`cli-usage.md`, `rust-api.md`, `formats.md`, `carrier-crate.md`, `legal_notice_model.md`, `migration-v0.3.md`)
-- Architecture deep-dives: `architecture/` (31 files), indexed by `architecture/overview.md`
+- Architecture deep-dives: `architecture/` (39 files), indexed by `architecture/overview.md`
 - Agent conventions: this file plus `AGENTS.md` gotchas (CLI flags, exit codes, container correctness)
 - Fuzz assurance: `fuzz/README.md` (pinned nightly/cargo-fuzz tuple, LTO compatibility boundary, and update policy)
 - Runnable examples: `examples/` (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) — keep these compiling when changing public APIs

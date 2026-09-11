@@ -9,7 +9,7 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 
 ## Quick Reference
 
-- Architecture docs live in `architecture/` (31 files)
+- Architecture docs live in `architecture/` (39 files)
 - Review outputs go to `plans/`
 - Source code is in `src/` (root crate) and `stegoeggo-stego/src/` (carrier crate)
 - Use `rg` (ripgrep) for fast content search, `glob` for file patterns
@@ -41,7 +41,7 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 | Wrong enum variants | Actual enum variants | `DmiValue`, `TranscoderError` |
 | `String` fields | `Option<String>` fields | `Iscc.meta` |
 | V2 as current payload | V3 is the default | `protected/steganography/`, `payload_v3/` |
-| 17 Error variants | 19 Error variants (18 always-available + 1 async) | `error.rs` |
+| 17 Error variants | 20 Error variants (19 always-available + 1 async-only `Task`) | `error.rs` |
 | 7 ProtectionWarning variants | 8 ProtectionWarning variants | `types.rs` |
 | `Option<bool>` returns | `VerificationStatus` returns | `verify_payload_from_bytes_with_key` |
 | `src/protected/steganography.rs` | Split into 5 modules under `src/protected/steganography/` | `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs` |
@@ -51,7 +51,7 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 - `src/types/` — Core type definitions by domain behind `src/types.rs` re-exports: `rights.rs`, `compat.rs`, `legal.rs`, `context.rs`, `verification.rs`, `warnings.rs`, `request.rs`
 - `src/traits.rs` — Protector trait
 - `src/lib.rs` — Public API, module declarations, container-accounting walker (canonical executors live in `src/pipeline.rs`)
-- `src/error.rs` — Error variants (19 total: 18 always-available + 1 async-only `Task`)
+- `src/error.rs` — Error variants (20 total: 19 always-available + 1 async-only `Task`)
 - `src/verification/report.rs` — `VerificationReport`, `TrustEvaluation`, sub-verification types
 - `src/protected/steganography/mod.rs` — Facade + shared types; algorithm modules are `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs`
 - `src/protected/metadata_trap.rs` — Facade; format modules are `metadata_trap/notice.rs`, `png.rs`, `jpeg.rs`, `webp.rs`, `common.rs`
@@ -97,7 +97,7 @@ These have been fixed in documentation — if the code hasn't changed, these are
 - **`LegalMetadata`** field is `ai_constraints` (not `ai_training_constraints`)
 - **`ProtectionContext::with_format()`** (not `with_output_format()`)
 - **DmiValue mapping** is via `ProtectionLevel::default_policy()` in `types.rs` — no `impl From<ProtectionLevel> for DmiValue`
-- **Error enum** has 19 variants (18 always-available + 1 async-only `Task`) — 5 structured variants (`InputTooLarge`, `DimensionsExceeded`, `ContainerLimitExceeded`, `MetadataLimitExceeded`, `VerificationBudgetExceeded`) were added for resource limits
+- **Error enum** has 20 variants (19 always-available + 1 async-only `Task`) — 5 structured resource-limit variants (`InputTooLarge`, `DimensionsExceeded`, `ContainerLimitExceeded`, `MetadataLimitExceeded`, `VerificationBudgetExceeded`) plus structured `InsufficientCapacity` were added after the original 14
 - **`ProtectionWarning`** has 8 variants — `ContradictoryLegalClaims` and `MissingRightsConstraints` were added
 - **`ExecutionReport`** has 9 fields — `authentication_performed` does not exist; replaced by `effective_policy`, `effective_dmi`, `stego_attempted`, `format_transcoded`, `resource_usage`, `embed_summary`
 - **`LegalMetadata`** has 16 fields — 8 additional fields: `usage_terms_lang`, `credit_line`, `copyright_owner`, `licensor_name`, `licensor_email`, `licensor_url`, `metadata_date`, `notice_applied_at`

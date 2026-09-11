@@ -66,12 +66,12 @@ The `--copyright-holder` flag is deprecated. Use `--copyright-notice` instead. T
 
 **Before:**
 ```bash
-stegoeggo protect --copyright-holder "Jane Doe" image.png
+stegoeggo image.png --copyright-holder "Jane Doe"
 ```
 
 **After:**
 ```bash
-stegoeggo protect --copyright-notice "Jane Doe" image.png
+stegoeggo image.png --copyright-notice "Jane Doe"
 ```
 
 ### New flags
