@@ -115,7 +115,7 @@ The level/context async and parallel wrappers remain functional but are compatib
 
 Legacy helpers translate once via `request_from_legacy()` into `ProtectionRequest` and delegate to the canonical path. New processing features must be expressed in `ProtectionRequest` / `ProcessingOptions` / `ProtectionChannels` first.
 
-## CLI v1 removal inventory (Plan 087)
+## CLI v1 removal inventory (Plans 087 and 098)
 
 No 0.x CLI flag is removed. Candidates for removal at v1.0.0:
 
@@ -131,14 +131,29 @@ Deprecated syntax with exact modern replacement:
 | `--tdm-reserved` | `--rights-policy prohibited-see-constraints` (already deprecated) |
 | `--metadata`, `--legal-claims` | `ProtectionChannels` via `ProtectionRequest` |
 
+The flag-first root invocation is also compatibility syntax in 0.x:
+
+| Compatibility syntax | Canonical command |
+|----------------------|-------------------|
+| `stegoeggo <input>... [options]` | `stegoeggo protect <input>... [options]` |
+| `stegoeggo <image> --verify` | `stegoeggo inspect <image>` for reporting, or `stegoeggo verify <image>` when process status matters |
+
+The `--verify` compatibility flag remains parseable and always exits 0. The
+new `verify` command exits 3 when protection evidence is missing or fails
+integrity/authentication verification. Exact command-name paths such as a file
+named `verify` require `./verify` or `-- ./verify`.
+
 Compatibility behavior that must remain for reading old protected images (not
 removal candidates): legacy DMI/TDM metadata parsing, payload v1/v2 extraction,
 `--verify` human/JSON output fields.
 
-Stable current syntax that carries forward: `--rights-policy`, `--preset`,
-`--hidden-marker`, `--authentication`, `--dry-run`, `--json`, `--key`
-(hex/`@file`/`-`/env `STEGOEGGO_KEY`), `--jobs`, `--strict`, and the
-`signatures`-gated `keygen`/`sign`/`verify-manifest` subcommands.
+Stable current syntax that carries forward: `protect`, `inspect`, `verify`,
+`version`, `--rights-policy`, `--preset`, `--hidden-marker`,
+`--authentication`, `--dry-run`, `--json`, `--key` (hex/`@file`/`-`/env
+`STEGOEGGO_KEY`), `--jobs`, `--strict`, and the `signatures`-gated
+`keygen`/`sign`/`verify-manifest` subcommands. `authenticated-provenance` and
+`maximal` are functionally equivalent today; consolidation of one name is a
+v1 candidate, but neither is removed in 0.x.
 
 See `docs/cli-usage.md` for the precedence contract.
 

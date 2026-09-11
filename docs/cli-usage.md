@@ -17,14 +17,37 @@ cargo build --release --bin stegoeggo
 ./target/release/stegoeggo --help
 ```
 
-## Protecting images
+## Commands
 
-For new scripts, prefer the policy-first CLI flags and make the rights policy explicit.
+The command-oriented interface is canonical:
+
+```text
+stegoeggo protect <INPUT>...
+stegoeggo inspect <IMAGE>
+stegoeggo verify <IMAGE>
+stegoeggo version
+stegoeggo update
+```
+
+`update` is present in the command surface but is reserved for the updater
+implementation planned for a later release. It currently returns exit code 2.
+
+Feature-gated signing commands remain flat:
+
+```text
+stegoeggo keygen
+stegoeggo sign --manifest <path> --key <path>
+stegoeggo verify-manifest --manifest <path> --image <path>
+```
+
+They require the `signatures` feature.
+
+## Protecting images
 
 Write a metadata-only AI/ML training prohibition:
 
 ```bash
-stegoeggo image.png -o image_protected.png \
+stegoeggo protect image.png -o image_protected.png \
   --rights-policy prohibited-ai-ml-training \
   --preset legal-notice \
   --copyright-notice "© 2026 Example Artist. All rights reserved." \
@@ -33,54 +56,51 @@ stegoeggo image.png -o image_protected.png \
   --usage-terms "No AI/ML training."
 ```
 
-Add the best-effort hidden marker as a redundant channel:
+Add a best-effort hidden marker as a redundant channel:
 
 ```bash
-stegoeggo image.png -o image_protected.png \
+stegoeggo protect image.png -o image_protected.png \
   --rights-policy prohibited-ai-ml-training \
   --preset legal-notice-with-stego
 ```
 
-## Inspecting files
+Input format is detected from the image data. Unless `--format` is supplied,
+the CLI preserves the input format. With no explicit output path, protected
+files use a `_protected` suffix. A directory or multiple inputs enables flat
+batch processing; `-j` controls the worker count.
+
+## Inspecting and verifying files
+
+`inspect` is read-only and exits 0 whenever the image can be parsed, including
+an unprotected image:
+
+```bash
+stegoeggo inspect image_protected.png
+stegoeggo inspect image_protected.png --json
+```
+
+`verify` is for scripts or release checks. It prints the same report but exits
+3 when a marker fails integrity/authentication verification or when no
+protection evidence is found. A valid metadata-only notice is sufficient:
+
+```bash
+stegoeggo verify image_protected.png --key @key.bin
+stegoeggo verify image_protected.png --json
+```
+
+The compatibility root form remains accepted during 0.x:
 
 ```bash
 stegoeggo image_protected.png --verify
 ```
 
-Machine-readable verification output is available with `--json`:
+It keeps the historical always-zero exit behavior. Use `inspect` for the
+interactive replacement and `verify` when process status matters.
 
-```bash
-stegoeggo image_protected.png --verify --json
-```
+## Canonical policy and evidence options
 
-## Batch processing
-
-A directory can be processed as a batch. `-j` controls worker count:
-
-```bash
-stegoeggo ./images -o ./protected \
-  --rights-policy prohibited-ai-ml-training \
-  --preset legal-notice \
-  -j 4
-```
-
-Input format is detected from the image data. Unless `--format` is supplied, the CLI preserves the input format. With no explicit output path, protected files use a `_protected` suffix.
-
-## CLI defaults
-
-The older `--level`/`--profile` interface remains for compatibility. A bare invocation such as:
-
-```bash
-stegoeggo image.png
-```
-
-uses the legacy `standard` default, which resolves to rights metadata, a best-effort hidden marker, and the `ProhibitedAiMlTraining` policy. New automation should use `--rights-policy` plus `--preset` explicitly so the requested legal policy and evidence channels are visible in the command itself.
-
-The legacy `--dmi` and `--tdm-reserved` options are also retained for compatibility. Current output uses the canonical PLUS `plus:DataMining` signal; legacy DMI/TDM representations are read for verification but are not the preferred output interface.
-
-## Rights policies
-
-`--rights-policy` maps directly to the library's `RightsPolicy` enum and, when a policy is specified, to the corresponding PLUS License Data Format controlled-vocabulary value in `plus:DataMining` XMP metadata.
+`--rights-policy` maps directly to the library's `RightsPolicy` enum and, when
+specified, to the corresponding PLUS `plus:DataMining` XMP value.
 
 | CLI value | Meaning |
 |---|---|
@@ -92,34 +112,7 @@ The legacy `--dmi` and `--tdm-reserved` options are also retained for compatibil
 | `prohibited-all-data-mining` | All data mining prohibited |
 | `prohibited-see-constraints` | Prohibited; consult the supplied constraints |
 
-The CLI also accepts convenience flags such as `--no-ai-training` and `--no-genai-training`, but `--rights-policy` is the clearest interface for new scripts. Contradictory policy options are rejected rather than silently choosing one.
-
-## Precedence contract
-
-All protect modes (single-file, batch, dry-run, JSON) share one canonical
-`ProtectionRequest` builder. Legacy flags are translation syntax.
-
-1. Explicit modern flags win when they directly specify a field.
-2. Legacy flags translate only when the equivalent modern field was not explicitly supplied.
-3. Contradictory explicit combinations fail with exit code 2.
-4. Defaults apply once, after explicitness is known.
-
-| Field | Modern (wins) | Legacy (translates when modern absent) |
-|---|---|---|
-| Policy | `--rights-policy` | `--dmi`, `--no-ai-training`, `--no-genai-training`, `--tdm-reserved` |
-| Channels | `--preset` or `--hidden-marker` + `--authentication` | `--level`, `--profile` |
-
-Conflicting combinations exit 2: `--preset` with `--level`/`--profile`;
-`--preset` with `--hidden-marker`/`--authentication`;
-`--hidden-marker`/`--authentication` with explicit `--level`/`--profile`;
-contradictory `--rights-policy`/`--dmi`/shorthands; `--metadata false` with legal
-fields or a metadata-injecting preset; HMAC without a key; HMAC with
-`--hidden-marker disabled`. Omitted `--dmi` and `--dmi auto` are equivalent;
-explicit `--dmi unspecified` is distinct from the `standard` default.
-
-## Evidence presets
-
-A policy says **what use is allowed or prohibited**. A preset says **which technical evidence channels to use**. They are intentionally separate.
+`--preset` selects technical evidence channels independently of policy:
 
 | Preset | Rights metadata | Hidden marker | Authentication |
 |---|---:|---:|---:|
@@ -128,51 +121,48 @@ A policy says **what use is allowed or prohibited**. A preset says **which techn
 | `authenticated-provenance` | Yes | Best effort | HMAC (key required) |
 | `maximal` | Yes | Best effort | HMAC (key required) |
 
-For `authenticated-provenance` and `maximal`, provide a secret key with `--key` or `STEGOEGGO_KEY`. HMAC authentication establishes that the hidden payload was produced by someone holding that secret; it does **not** prove copyright ownership or authorship.
+`authenticated-provenance` and `maximal` currently resolve to the same
+`ProtectionRequest` channel set. Both remain supported in 0.x; consolidation is
+a v1 candidate. HMAC authentication shows that the marker was produced with
+the supplied secret. It does not prove copyright ownership or authorship.
 
-Without a MAC key, hidden-payload integrity uses non-cryptographic checks intended for detection and corruption checking, not adversarial authentication.
+Canonical channel flags are `--hidden-marker disabled|best-effort` and
+`--authentication none|hmac`. HMAC requires `--key` (hex, `@file`, stdin `-`,
+or `STEGOEGGO_KEY`).
 
-## Subcommands (feature: `signatures`)
+## Compatibility syntax and precedence
 
-| Command | Feature Gate | Description |
-|---------|-------------|-------------|
-| `stegoeggo keygen` | `signatures` | Generate an Ed25519 key pair |
-| `stegoeggo sign --manifest <path> --key <path>` | `signatures` | Sign a detached manifest |
-| `stegoeggo verify-manifest --manifest <path> --image <path>` | `signatures` | Verify a detached manifest against an image |
+The old root invocation remains a compatibility alias for `protect`. The
+legacy `--level`, `--profile`, `--dmi`, `--metadata`, `--legal-claims`, and
+AI/TDM shorthand options are still accepted but are not the recommended
+interface. They are translation-only inputs to the same canonical builder.
+
+All protection modes share one `ProtectionRequest` builder:
+
+1. Modern fields win when they explicitly specify the same field.
+2. Legacy flags translate only when the modern field is absent.
+3. Contradictory explicit combinations fail with exit code 2.
+4. Defaults are applied once, after explicitness is known.
+
+Examples of rejected combinations include `--preset` with explicit
+`--level`/`--profile`, `--preset` with explicit channel flags, contradictory
+policy sources, `--metadata false` with legal fields or metadata-injecting
+channels, and HMAC without a key.
+
+The exact command names `protect`, `inspect`, `verify`, `version`, and `update`
+take precedence over a same-named first positional token. Use `./verify` or
+`-- ./verify` for an image path with an ambiguous name.
 
 ## Exit codes
 
-| Code | Constant | Meaning |
-|------|----------|---------|
-| 0 | `EXIT_OK` | Success |
-| 1 | `EXIT_ERROR` | General error (I/O, image decode/encode, etc.) |
-| 2 | `EXIT_CONFIG` | Malformed manifest, config error, or input validation failure |
-| 3 | `EXIT_INTEGRITY` | Digest mismatch, binding failure, or signature/integrity failure |
-| 4 | — | `verify-manifest`: cryptographically verified but untrusted |
-| 5 | `EXIT_INTERNAL` | Internal or unexpected error |
+| Code | Meaning |
+|---:|---|
+| 0 | Success; `inspect` may report no protection |
+| 1 | I/O, image decode/encode, or general runtime error |
+| 2 | Invalid invocation or configuration |
+| 3 | `verify` assertion or payload/authentication failure |
+| 4 | `verify-manifest`: cryptographically verified but untrusted |
+| 5 | Unexpected/internal failure |
 
-The `--verify` flag always exits 0; use output text to determine protection state, not the process exit code.
-
-## v1 removal inventory
-
-No 0.x flag is removed. Candidates for removal at v1.0.0:
-
-Deprecated syntax with exact modern replacement:
-
-| Legacy flag | Modern replacement |
-|---|---|
-| `--level disabled` / `light` / `standard` | `--preset` + `--hidden-marker` (Disabled / BestEffort; `light` SeedOnly has no modern CLI equivalent) |
-| `--profile legal-notice` / `legal-notice-stego` / `authenticated-provenance` / `maximal` | `--preset legal-notice` / `legal-notice-with-stego` / `authenticated-provenance` / `maximal` (note the renamed stego value) |
-| `--dmi ...` | `--rights-policy ...` |
-| `--no-ai-training` | `--rights-policy prohibited-ai-ml-training` |
-| `--no-genai-training` | `--rights-policy prohibited-generative-ai-training` |
-| `--tdm-reserved` | `--rights-policy prohibited-see-constraints` (already deprecated) |
-| `--metadata`, `--legal-claims` | `ProtectionChannels` in `ProtectionRequest` |
-
-Compatibility behavior that must remain for reading old images: legacy DMI/TDM
-metadata parsing, payload v1/v2 extraction, `--verify` output fields.
-
-Stable current syntax that carries forward: `--rights-policy`, `--preset`,
-`--hidden-marker`, `--authentication`, `--dry-run`, `--json`, `--key`
-(hex/`@file`/`-`/env), `--jobs`, `--strict`, `keygen`/`sign`/`verify-manifest`
-under `signatures`.
+The `--verify` compatibility flag always exits 0; read its output to determine
+the reported protection state.

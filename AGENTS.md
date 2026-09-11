@@ -45,7 +45,20 @@ Other traps: `inject_metadata`/`inject_legal_claims` are `Option<bool>` (`None` 
 
 ## CLI essentials
 
-One path: everything routes through `ProtectionRequest` via `request::build_protection_request_with_explicit_options`. New flags are `--rights-policy`, `--preset`, `--hidden-marker`, `--authentication` (replace `--dmi`/`--level`/`--profile`; `--preset` can't combine with `--level`/`--profile`; `--metadata false` can't combine with legal fields). `--dry-run` prints the plan. `keygen`/`sign`/`verify-manifest` need the `signatures` feature. Exit codes: 0 ok, 1 error, 2 config, 3 integrity, 4 verified-but-untrusted manifest (`verify-manifest` only), 5 internal. `--verify` always exits 0 — read the output text. Full contract: `docs/cli-usage.md`.
+Canonical commands are `protect <INPUT>...`, `inspect <IMAGE>`, `verify <IMAGE>`,
+`version`, and the reserved `update` command. The old root protection syntax
+and `--verify` remain accepted during 0.x; exact command-name paths need `./`
+or `--` to disambiguate. All protection routes through
+`request::build_protection_request_with_explicit_options` and then the byte
+processing APIs. Canonical flags are `--rights-policy`, `--preset`,
+`--hidden-marker`, `--authentication`, and `--key`; `--level`/`--profile`/`--dmi`
+and shorthand policy flags are translation-only compatibility syntax.
+`--dry-run` prints the plan. `inspect` is read-only and normally exits 0 even
+for an unprotected image; `verify` exits 3 for missing or invalid protection
+evidence. Exit codes are 0 ok, 1 error, 2 config, 3 integrity, 4
+verified-but-untrusted manifest (`verify-manifest` only), and 5 internal.
+`--verify` always exits 0 — read the output text. Full contract:
+`docs/cli-usage.md` and `architecture/cli.md`.
 
 ## Features
 
@@ -57,4 +70,4 @@ Manual only: no CI publication, no tag-triggered workflows, no crates.io token i
 
 ## Where things live
 
-- Skills (load before working): `.skills/stegoeggo-conventions/SKILL.md` (signatures, constants, pitfalls) for any Rust change; `.skills/plan-execution/SKILL.md` when executing a numbered plan in `plans/`; `.skills/architecture-review/SKILL.md` when verifying/editing `architecture/` docs. Architecture index: `architecture/overview.md` (39 deep-dives). User guides: `docs/` (`cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`). Examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) must keep compiling. Plans: `plans/` (highest so far 097; next is 098+; historical plans are immutable except their `-status.md`).
+- Skills (load before working): `.skills/stegoeggo-conventions/SKILL.md` (signatures, constants, pitfalls) for any Rust change; `.skills/plan-execution/SKILL.md` when executing a numbered plan in `plans/`; `.skills/architecture-review/SKILL.md` when verifying/editing `architecture/` docs. Architecture index: `architecture/overview.md` (39 deep-dives). User guides: `docs/` (`cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`). Examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) must keep compiling. Plans: `plans/` (highest so far 098; next is 099+; historical plans are immutable except their `-status.md`).
