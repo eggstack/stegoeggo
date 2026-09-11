@@ -95,6 +95,10 @@ assert_contains "stegoeggo 1.2.3" "$TEMP_ROOT/good.out"
 current_target=$(bash -c "source '$INSTALLER'; target_for_platform")
 assert_contains "/good/releases/download/v1.2.3/stegoeggo-$current_target" "$LOG_FILE"
 
+cat "$INSTALLER" | HOME="$TEMP_ROOT/home-piped" STEGOEGGO_RELEASES_URL="$BASE_URL" bash -s -- --version 1.2.3 >"$TEMP_ROOT/piped.out"
+[[ -x "$TEMP_ROOT/home-piped/.local/bin/stegoeggo" ]] || fail "piped-stdin install was not created"
+assert_contains "stegoeggo 1.2.3" "$TEMP_ROOT/piped.out"
+
 for platform in "Linux x86_64" "Linux aarch64" "Darwin arm64"; do
     mock_bin="$TEMP_ROOT/mock-$RANDOM"
     mkdir -p "$mock_bin"
