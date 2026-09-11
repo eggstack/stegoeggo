@@ -34,6 +34,15 @@ for independent signature verification or a separately trusted distribution
 channel. The installers never fall back to Cargo after a checksum, identity,
 or network failure.
 
+The `update` command follows the same binary contract. It first resolves the
+latest non-yanked, stable `stegoeggo-cli` version from crates.io, then fetches
+only the matching GitHub Release tag and target asset. It verifies the sidecar,
+candidate program identity, and candidate version before replacement. SHA-256
+is an integrity check, not a digital signature: the crates.io response, GitHub
+Release, sidecar, and executable remain within their respective registry or
+repository trust boundaries. The updater never invokes `sudo`, and it does not
+fall back to Cargo for checksum, candidate, or generic network failures.
+
 ### Without a MAC key
 Steganographic payload verification uses a non-cryptographic CRC32 checksum. An attacker who can read the image bytes can forge valid-looking payloads. For production deployments (e.g., CDN protection against malicious scrapers), **always set a MAC key** via `.with_mac_key()`.
 

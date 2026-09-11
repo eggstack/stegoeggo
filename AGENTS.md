@@ -21,7 +21,7 @@ CI (`.github/workflows/ci.yml`): one required job on push/PR to `main` that runs
 
 - `.` — library crate `stegoeggo`; canonical entry points are `process_request_bytes*` in `src/lib.rs`, plan executors in `src/pipeline.rs`. Conformance binary `stegoeggo-conformance` (`src/bin/`, needs `conformance` feature).
 - `stegoeggo-stego/` — generic carrier crate for arbitrary-payload LSB/JPEG-DCT stego. Depend on it directly for generic use; `stegoeggo::stego` is a convenience re-export of the same surface.
-- `stegoeggo-cli/` — binary `stegoeggo` at `stegoeggo-cli/src/main.rs` (modules `args`, `request`, `protect`, `verify`, `output`, `keys`, `manifest`). Its default package features include `signatures`, enabling `keygen`, `sign`, and `verify-manifest` through `stegoeggo/signatures` + `stegoeggo/detached-manifest`; the CLI still does not enable the library's unrelated `iscc`, `conformance`, or `parallel` features.
+- `stegoeggo-cli/` — binary `stegoeggo` at `stegoeggo-cli/src/main.rs` (modules `args`, `request`, `protect`, `verify`, `update`, `output`, `keys`, `manifest`). Its default package features include `signatures`, enabling `keygen`, `sign`, and `verify-manifest` through `stegoeggo/signatures` + `stegoeggo/detached-manifest`; the CLI still does not enable the library's unrelated `iscc`, `conformance`, or `parallel` features.
 - `fuzz/` — 12 harnesses, `cargo-fuzz` + nightly only, excluded from workspace tests.
 
 Toolchain is stable, MSRV 1.87 (`rust-toolchain.toml`, `rust-version` in root + carrier manifests). Rustfmt: 4-space indent, max width 100. `#![forbid(unsafe_code)]` in both crates. No code comments unless asked. `#[must_use]` on builders.
@@ -46,7 +46,11 @@ Other traps: `inject_metadata`/`inject_legal_claims` are `Option<bool>` (`None` 
 ## CLI essentials
 
 Canonical commands are `protect <INPUT>...`, `inspect <IMAGE>`, `verify <IMAGE>`,
-`version`, and the reserved `update` command. The old root protection syntax
+`version`, and `update`. `version` prints exactly `stegoeggo X.Y.Z` on its first
+line without network/config access. `update` uses the stable crates.io
+`stegoeggo-cli` version as authority, then the matching GitHub Release asset;
+it verifies checksum, candidate identity, and candidate version before
+self-replacement. The old root protection syntax
 and `--verify` remain accepted during 0.x; exact command-name paths need `./`
 or `--` to disambiguate. All protection routes through
 `request::build_protection_request_with_explicit_options` and then the byte
@@ -78,6 +82,13 @@ candidate identity before installation; Cargo fallback is allowed only for an
 unsupported target or a missing (404) binary asset, never for checksum,
 identity, or network failure.
 
+Updater invariants: check the current executable's destination before any
+download; use bounded `curl`/Cargo/candidate subprocesses with argument arrays;
+ignore prereleases; allow Cargo fallback only for unsupported targets or the
+exact asset HTTP 404; never invoke `sudo`; and leave the current executable
+untouched when staging or validation fails. A Cargo-installed path becomes
+binary-managed after successful self-replacement until Cargo installs it again.
+
 ## Where things live
 
-- Skills (load before working): `.skills/stegoeggo-conventions/SKILL.md` (signatures, constants, pitfalls) for any Rust change; `.skills/plan-execution/SKILL.md` when executing a numbered plan in `plans/`; `.skills/architecture-review/SKILL.md` when verifying/editing `architecture/` docs. Architecture index: `architecture/overview.md` (39 deep-dives). User guides: `docs/` (`cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`). Examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) must keep compiling. Plans: `plans/` (highest so far 098; next is 099+; historical plans are immutable except their `-status.md`).
+- Skills (load before working): `.skills/stegoeggo-conventions/SKILL.md` (signatures, constants, pitfalls) for any Rust change; `.skills/plan-execution/SKILL.md` when executing a numbered plan in `plans/`; `.skills/architecture-review/SKILL.md` when verifying/editing `architecture/` docs. Architecture index: `architecture/overview.md` (39 deep-dives). User guides: `docs/` (`cli-usage.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`). Examples (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) must keep compiling. Plans: `plans/` (highest so far 100; next is 101+; historical plans are immutable except their `-status.md`).

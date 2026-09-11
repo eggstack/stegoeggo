@@ -70,6 +70,7 @@ root = pathlib.Path(sys.argv[1])
 targets_file = pathlib.Path(sys.argv[2])
 tag_version = sys.argv[3]
 workflow_text = (root / ".github/workflows/release-binaries.yml").read_text()
+update_text = (root / "stegoeggo-cli/src/update.rs").read_text()
 metadata = json.loads(subprocess.check_output([
     "cargo", "metadata", "--no-deps", "--format-version", "1",
 ], cwd=root))
@@ -110,9 +111,15 @@ for raw in targets_file.read_text().splitlines():
         raise SystemExit(f"ERROR: workflow target matrix drifted for {target}")
     if workflow_text.count(f"asset: {asset}") != 1:
         raise SystemExit(f"ERROR: workflow asset matrix drifted for {asset}")
+    if target not in update_text:
+        raise SystemExit(f"ERROR: updater target mapping is missing {target}")
     rows.append((target, asset))
 if len(rows) != 5 or len({target for target, _ in rows}) != 5 or len({asset for _, asset in rows}) != 5:
     raise SystemExit("ERROR: target manifest must contain five unique targets and assets")
+if 'format!("stegoeggo-{target}.exe")' not in update_text:
+    raise SystemExit("ERROR: updater Windows asset naming drifted")
+if 'format!("stegoeggo-{target}")' not in update_text:
+    raise SystemExit("ERROR: updater Unix asset naming drifted")
 
 print(f"Version lockstep: {carrier['version']}")
 print("CLI distributed features: signatures")

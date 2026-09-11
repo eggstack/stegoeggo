@@ -4,6 +4,7 @@ mod manifest;
 mod output;
 mod protect;
 mod request;
+mod update;
 mod verify;
 
 use args::{Args, Command, RootArgs};
@@ -181,9 +182,7 @@ fn run_command(
             println!("stegoeggo {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        Command::Update => Err(output::config_err(
-            "the update command is reserved for the updater release",
-        )),
+        Command::Update(_) => update::run_update(),
         #[cfg(feature = "signatures")]
         Command::Keygen { output_dir, key_id } => manifest::handle_keygen(&output_dir, &key_id),
         #[cfg(feature = "signatures")]

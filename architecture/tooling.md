@@ -10,7 +10,7 @@ Specialist checks are manual and never part of `check.sh` or required CI without
 |--------|---------|-------|
 | `check.sh` | Fast check, mirrors required CI: `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo check -p stegoeggo --no-default-features`, `cargo test --workspace --exclude stegoeggo-fuzz --all-features` | stable Rust |
 | `release-check.sh [--allow-dirty] [--stage=pre\|root\|cli]` | Local pre-release readiness (staged pre/root/cli); never publishes, tags, or pushes | — |
-| `release-binary-preflight.sh --tag=vX.Y.Z` | Validates binary-release tag/version lockstep, target manifest, and canonical CLI feature set; optional `--asset-dir` audits built assets | stable Rust, Python |
+| `release-binary-preflight.sh --tag=vX.Y.Z` | Validates binary-release tag/version lockstep, target manifest, updater mapping, and canonical CLI feature set; optional `--asset-dir` audits built assets | stable Rust, Python |
 | `release-check-assets.sh --dir=DIR` | Verifies every target executable and SHA-256 sidecar; optional version/native smoke checks | `sha256sum` or `shasum` |
 | `test-release-installers.sh` | Local fixture/server tests for installer mapping, URLs, checksums, identity, fallback, and destinations | Bash, Python, curl |
 | `check_fuzz_sync.sh` | Verifies dispatch-target parity between `fuzz/Cargo.toml` and `fuzz.yml` (the scheduled smoke rotation derives its list at runtime from `cargo fuzz list`) | — |

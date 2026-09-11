@@ -102,7 +102,7 @@ syntax remains a 0.x compatibility alias for `protect`.
 | `stegoeggo inspect <image>` | (default) | Read and report protection status; exits 0 for an inspectable unprotected image |
 | `stegoeggo verify <image>` | (default) | Assert protection evidence; exits 3 for missing or invalid evidence |
 | `stegoeggo version` | (default) | Print the CLI version |
-| `stegoeggo update` | (default) | Reserved updater command; currently exits 2 |
+| `stegoeggo update` | (default) | Updates from a verified matching GitHub Release asset; Cargo fallback is limited to unsupported targets or an asset HTTP 404 |
 | `stegoeggo <input>...` | (default, compatibility) | Implicit `protect` alias retained through 0.x |
 | `stegoeggo <image> --verify` | (default, compatibility) | Legacy inspection report; always exits 0 |
 | `stegoeggo keygen` | `signatures` | Generate an Ed25519 key pair |

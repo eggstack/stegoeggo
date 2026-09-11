@@ -49,7 +49,7 @@ stegoeggo/                          Workspace root (4 crates)
 ├── stegoeggo-cli/                  CLI binary (stegoeggo)
 │   └── src/                        Orchestration (`main.rs`) plus private
 │                                   `args`, `request`, `protect`, `verify`,
-│                                   `output`, `keys`, `manifest` modules
+│                                   `update`, `output`, `keys`, `manifest` modules
 │
 ├── fuzz/                           12 fuzz targets (libfuzzer-sys)
 ├── tests/                          35 integration test files (see testing.md)
@@ -70,7 +70,7 @@ Every component below links to a dedicated deep-dive in `architecture/`. Use thi
 ```
                         ┌─────────────────────┐
                         │   stegoeggo-cli     │  CLI binary: protect/
-                        │                    │  inspect/verify commands,
+                        │                    │  inspect/verify/update commands,
                         │   main.rs           │  command router, 5 exit codes
                         └─────────┬───────────┘
                                   │
@@ -518,7 +518,7 @@ and `RELEASING.md` for the evidence and release contracts.
 - `examples/` (4, must keep compiling): `protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs` — contracts in [testing.md](testing.md).
 - `benches/bench.rs` (Criterion): protect/verify/extract/XMP/payload benches — details in [tooling.md](tooling.md).
 - User guides in `docs/`: `cli-usage.md` (CLI contract), `installation.md` (CLI installers), `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`.
-- CLI binary `stegoeggo` (`stegoeggo-cli/`): orchestration plus `args`/`request`/`protect`/`verify`/`output`/`keys`/`manifest` — see [cli.md](cli.md).
+- CLI binary `stegoeggo` (`stegoeggo-cli/`): orchestration plus `args`/`request`/`protect`/`verify`/`update`/`output`/`keys`/`manifest` — see [cli.md](cli.md).
 
 ## Key Design Decisions
 

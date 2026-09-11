@@ -22,6 +22,12 @@ independent carrier releases are made for rights/CLI-only changes.
   workflow attaches CLI assets to an existing release for the requested tag.
 - CI success is useful development evidence but not a publication trigger.
 
+The CLI updater uses the stable `stegoeggo-cli` crates.io version as its sole
+version authority. A release intended for updates must therefore publish the
+carrier, library, and CLI crates in order before its matching `vX.Y.Z` GitHub
+Release is made available. The binary workflow must attach every target asset
+and its `.sha256` sidecar before that release is considered updater-ready.
+
 ## Immutable Crates.io Versions
 
 Once crates.io accepts a package version, its bytes cannot be replaced. Key implications:
@@ -161,6 +167,8 @@ git push origin vX.Y.Z
 - Run `./scripts/release-binary-preflight.sh --tag=vX.Y.Z` before dispatch and
   `./scripts/release-check-assets.sh --dir=<downloaded-assets>` when auditing
   a completed release.
+- Verify that `stegoeggo X.Y.Z` from every attached executable matches the tag;
+  the updater performs the same candidate identity/version check.
 - Source releases and crates.io publication do not require an automated binary artifact.
 
 ## Partial Failure Handling

@@ -327,8 +327,8 @@ pub(crate) enum Command {
     #[command(about = "Print the stegoeggo version")]
     Version,
 
-    #[command(about = "Update the stegoeggo installation (reserved for the updater release)")]
-    Update,
+    #[command(about = "Update the stegoeggo installation from a verified release asset")]
+    Update(UpdateArgs),
 
     #[cfg(feature = "signatures")]
     #[command(about = "Generate a new Ed25519 key pair")]
@@ -372,6 +372,9 @@ pub(crate) enum Command {
         json: bool,
     },
 }
+
+#[derive(clap::Args, Debug, Clone)]
+pub(crate) struct UpdateArgs {}
 
 #[derive(clap::Args, Debug)]
 pub(crate) struct InspectArgs {

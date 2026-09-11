@@ -66,6 +66,37 @@ failure, candidate identity failure, and network failure stop the install;
 they never trigger a source fallback. Unsupported platforms and a missing
 binary asset (HTTP 404) may fall back to Cargo when it is installed.
 
+## Updating an installation
+
+Check the installed version without network access:
+
+```bash
+stegoeggo version
+```
+
+Update from the latest stable release:
+
+```bash
+stegoeggo update
+```
+
+The updater treats the published `stegoeggo-cli` version on crates.io as the
+release authority. It ignores prereleases, downloads the exact matching
+version-tagged GitHub Release asset for the host target, verifies its SHA-256
+sidecar, and validates `stegoeggo X.Y.Z` before replacing the executable.
+Network, checksum, candidate identity, and server errors are fatal; Cargo is
+used only for an unsupported target or an HTTP 404 for the exact binary asset.
+
+The destination directory must be writable before any download starts. The
+updater never invokes `sudo`; for a root-owned `/usr/local/bin/stegoeggo`, run
+the update with appropriate privileges or use the bootstrap installer.
+
+An update replaces the executable at its current path. If that path came from
+Cargo, it becomes binary-managed until a later `cargo install` replaces it
+again. On unsupported targets or a missing release asset, the Cargo fallback
+installs the exact stable CLI version through Cargo instead of changing Cargo's
+package metadata.
+
 ## Cargo fallback
 
 Cargo is the supported source-install fallback:

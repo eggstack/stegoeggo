@@ -111,7 +111,8 @@ Linux GNU release binaries are built with `cargo-zigbuild` against the glibc
 The installers fall back to Cargo only for an unsupported platform or a 404
 for the binary asset. Checksum, identity, and network failures are fatal.
 See [docs/installation.md](docs/installation.md) for the complete installer
-contract.
+and updater contract. `stegoeggo version` is offline; `stegoeggo update` uses
+the stable crates.io CLI version as authority and never invokes `sudo`.
 
 ### From crates.io
 

@@ -45,8 +45,11 @@ stegoeggo version
 stegoeggo update
 ```
 
-`update` is present in the command surface but is reserved for the updater
-implementation planned for a later release. It currently returns exit code 2.
+`version` prints the stable parseable line `stegoeggo X.Y.Z` and does not access
+the network or configuration. `update` resolves the latest stable CLI version
+from crates.io and updates from the matching verified GitHub Release asset;
+see [the installation guide](installation.md) for its fallback and permission
+rules. Update progress is written to stderr and its final result to stdout.
 
 Feature-gated signing commands remain flat:
 

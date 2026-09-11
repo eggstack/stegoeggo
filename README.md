@@ -90,6 +90,18 @@ For assertion-oriented verification, use `stegoeggo verify image_protected.png`.
 The 0.x-compatible root form and all CLI flags are documented in
 [docs/cli-usage.md](docs/cli-usage.md).
 
+Show the installed version or update a supported installation:
+
+```bash
+stegoeggo version
+stegoeggo update
+```
+
+Updates use the stable `stegoeggo-cli` crates.io version as their authority and
+replace the executable only after verifying the matching GitHub Release asset
+and SHA-256 sidecar. See [docs/installation.md](docs/installation.md) for
+permissions, fallback, and Cargo-managed installation behavior.
+
 ## Rights policies
 
 | CLI value | Meaning |
@@ -172,7 +184,7 @@ No optional feature is enabled by default. See [SUPPORT.md](SUPPORT.md) for the 
 | Document | Description |
 |---|---|
 | [docs/cli-usage.md](docs/cli-usage.md) | CLI flags, batch processing, exit codes |
-| [docs/installation.md](docs/installation.md) | Prebuilt CLI installers, targets, and Cargo fallback |
+| [docs/installation.md](docs/installation.md) | Prebuilt CLI installers, updates, targets, and Cargo fallback |
 | [docs/rust-api.md](docs/rust-api.md) | Rust API examples, byte vs DynamicImage |
 | [docs/formats.md](docs/formats.md) | Format support, steganography details, transformation effects |
 | [docs/carrier-crate.md](docs/carrier-crate.md) | `stegoeggo-stego` generic carrier crate |

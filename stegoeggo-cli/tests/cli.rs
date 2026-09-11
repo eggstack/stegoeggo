@@ -102,6 +102,41 @@ fn test_help_flag() {
 }
 
 #[test]
+fn version_command_matches_package_version() {
+    let output = Command::new(cli_bin())
+        .arg("version")
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("stegoeggo {}\n", env!("CARGO_PKG_VERSION"))
+    );
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn version_first_line_is_stable_and_update_help_is_offline() {
+    let version = Command::new(cli_bin())
+        .arg("--version")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(version.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&version.stdout),
+        format!("stegoeggo {}\n", env!("CARGO_PKG_VERSION"))
+    );
+
+    let update_help = Command::new(cli_bin())
+        .args(["update", "--help"])
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(update_help.status.success());
+    assert!(String::from_utf8_lossy(&update_help.stdout).contains("verified release asset"));
+}
+
+#[test]
 fn root_help_is_command_oriented() {
     let output = Command::new(cli_bin())
         .arg("--help")

@@ -2,8 +2,9 @@
 
 **Source:** `stegoeggo-cli/src/` — `args.rs` (clap topology), `main.rs`
 (routing), `request.rs` (normalization), `protect.rs` (execution), `verify.rs`
-(inspection and assertion), `output.rs` (formatting and exit mapping), `keys.rs`,
-and `manifest.rs` (feature-gated detached-manifest commands).
+(inspection and assertion), `update.rs` (version resolution and self-update),
+`output.rs` (formatting and exit mapping), `keys.rs`, and `manifest.rs`
+(feature-gated detached-manifest commands).
 
 The CLI has a command-oriented surface while retaining the flag-first 0.x
 syntax as an implicit `protect` alias. All image protection requests pass
@@ -20,9 +21,32 @@ stegoeggo update
 ```
 
 The `keygen`, `sign`, and `verify-manifest` commands remain flat and are
-compiled only with the `signatures` feature. `version` is implemented. `update`
-is reserved for the updater work planned separately; it currently reports a
-configuration error rather than pretending to perform an update.
+compiled only with the `signatures` feature. `version` prints the compile-time
+package version as its stable first line and has no network or configuration
+inputs. `update` uses crates.io `stegoeggo-cli` stable versions as its authority
+and the matching GitHub Release as its binary source.
+
+The update flow is:
+
+```text
+crates.io stable version
+        ↓
+current-version comparison ── current is newest → exit 0
+        ↓
+replaceability preflight and host-target mapping
+        ↓
+version-tagged binary + SHA-256 sidecar download
+        ↓
+checksum → executable permissions → candidate version/identity
+        ↓
+self-replace at the running executable path
+```
+
+Only an unsupported target or HTTP 404 for the exact binary asset may invoke
+`cargo install stegoeggo-cli --locked --version =X.Y.Z`. Curl, candidate, and
+replacement subprocesses are bounded and use argument arrays; no shell command
+strings or implicit privilege escalation are used. A staged failure leaves the
+current executable untouched.
 
 ### Compatibility routing
 
@@ -149,10 +173,12 @@ behavior and may read an explicit output file supplied with `--output`.
 | `output.rs` | Human/JSON types and exit-code mapping |
 | `keys.rs` | Hex, `@file`, stdin, and `STEGOEGGO_KEY` resolution |
 | `manifest.rs` | `signatures`-gated detached-manifest operations |
+| `update.rs` | Stable version lookup, release asset verification, Cargo fallback, and self-replacement |
 | `main.rs` | Parser selection, command dispatch, and orchestration |
 
 Production dependencies are clap 4, the `stegoeggo` library, rayon for
-error-tolerant CLI batches, hex, serde/serde_json, and tempfile. The CLI does
+error-tolerant CLI batches, hex, serde/serde_json, sha2, self-replace, and
+tempfile. The CLI does
 not enable the library's `parallel`, `iscc`, or `conformance` features. The
 package's default feature is `signatures`, which adds the detached-manifest
 commands to Cargo-installed and prebuilt binaries. Release asset names,
