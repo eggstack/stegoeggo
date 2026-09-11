@@ -6,7 +6,7 @@
 
 ## What This Document Is
 
-This is the top-level index. It gives you a bird's-eye view of every module, its role in the system, and where to find the deep-dive for each component. All deep-dive docs live in `architecture/`.
+This is the top-level index. It gives you a bird's-eye view of every module, its role in the system, and where to find the deep-dive for each component. All deep-dive docs live in `architecture/`. Treat each row in the Component Index below as a discrete review entry point: read the general overview here, then follow the link for the focused deep dive.
 
 ## Repository Layout
 
@@ -52,11 +52,11 @@ stegoeggo/                          Workspace root (4 crates)
 │                                   `output`, `keys`, `manifest` modules
 │
 ├── fuzz/                           12 fuzz targets (libfuzzer-sys)
-├── tests/                          35 integration test files
-├── examples/                       4 usage examples
-├── benches/                        Criterion benchmarks
-├── scripts/                        7 validation scripts
-├── architecture/                   31 deep-dive docs (this directory)
+├── tests/                          35 integration test files (see testing.md)
+├── examples/                       4 usage examples (see testing.md)
+├── benches/                        Criterion benchmarks (see tooling.md)
+├── scripts/                        7 validation scripts (see tooling.md)
+├── architecture/                   39 deep-dive docs (this directory)
 └── .github/workflows/              CI (4 workflows: required check + scheduled assurance)
 ```
 
@@ -277,7 +277,18 @@ preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 | **Seed Generation** | [util-seed.md](util-seed.md) | CSPRNG via `getrandom`, time-based splitmix64 fallback |
 | **Async API** | [async-api.md](async-api.md) | Tokio `spawn_blocking` wrappers for WAF/CDN integration |
 | **Resource Limits** | [resource-limits.md](resource-limits.md) | Parser hardening, DoS prevention, configurable limits with structured errors |
+| **Container Walk** | [container-walk.md](container-walk.md) | Sole bounded PNG/JPEG/WebP traversal feeding `OperationObserver`; lenient accounting vs strict injection walkers |
+| **XMP Packets** | [xmp.md](xmp.md) | Namespace-aware XMP parse/filter/merge on `quick-xml`; `OWNED_FIELDS`, merge policies, escaping |
+| **WebP Container** | [webp-container.md](webp-container.md) | Strict RIFF parse and re-serializer; VP8X flags, chunk directory, `ANMF` frames |
 | **Legal Metadata Mapping** | [legal-metadata-field-mapping.md](legal-metadata-field-mapping.md) | Field mapping across PNG/JPEG/WebP, round-trip issues |
+
+### Carrier Generic Surface
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **Carrier Surface** | [carrier-surface.md](carrier-surface.md) | Shared `CapacityReport`/`EmbedReport`/`EmbedOutcome`, validated `Redundancy`/`TileConfig`, self-describing `frame`, `StegoError`, hidden `application-support` bridge; operation-style matrix |
+| **Carrier LSB** | [carrier-lsb.md](carrier-lsb.md) | Pixel-domain V2 engine (`lsb_internal`), public `lsb` facade, borrowed `PixelView{,Mut}`, tiled/framed/in-place styles |
+| **Carrier JPEG API** | [carrier-jpeg.md](carrier-jpeg.md) | Public DCT carrier (`jpeg::` probe/capacity/raw/strict/framed/tiled/seed-hint), `PreparedJpeg` single-decode reuse, container preservation |
 
 ### Testing & Operations
 
@@ -285,6 +296,8 @@ preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 |-----------|-----------|----------------|
 | **Conformance** | [conformance.md](conformance.md) | External tool integration (ExifTool, xmllint), fixture manifest, strict mode, exit codes |
 | **CLI** | [cli.md](cli.md) | Command-line interface, all flags, batch processing, verification mode, subcommands |
+| **Tooling** | [tooling.md](tooling.md) | `scripts/` validation suite, CI workflows (`ci`/`assurance`/`external-verification`/`fuzz`), Criterion benchmarks |
+| **Testing** | [testing.md](testing.md) | `tests/` groups (35 files), `fuzz/` targets (12 harnesses), `examples/` contracts, carrier consumer tests |
 
 ### Design Records
 
@@ -398,7 +411,7 @@ stegoeggo-stego/src/
 
 ## Fuzz Targets
 
-12 targets in `fuzz/fuzz_targets/`, built on `libfuzzer-sys`. The reproducible
+12 targets in `fuzz/fuzz_targets/`, built on `libfuzzer-sys`. Full grouped reference with harness table: [testing.md](testing.md). The reproducible
 assurance tuple is Rust `nightly-2026-09-07` and `cargo-fuzz 0.13.2`, with
 `CARGO_PROFILE_RELEASE_LTO=false` for fuzz builds. The root release profile's
 LTO is retained for product artifacts, but must be disabled for sanitizer
@@ -428,7 +441,7 @@ artifacts uploaded. Scheduled fuzz failures are informational signal only.
 
 ## Integration Test Coverage
 
-35 test files in `tests/`:
+35 test files in `tests/` (grouped reference: [testing.md](testing.md)):
 
 | File | Coverage Area |
 |------|---------------|
@@ -470,6 +483,8 @@ artifacts uploaded. Scheduled fuzz failures are informational signal only.
 
 ## Validation Scripts
 
+Full script/CI/bench reference: [tooling.md](tooling.md).
+
 | Script | Purpose |
 |--------|---------|
 | `scripts/check.sh` | Fast CI checks: fmt, clippy, no-default-features, workspace tests |
@@ -489,6 +504,13 @@ aarch64, macOS aarch64, and Windows x86_64. `external-verification.yml` runs
 monthly; `fuzz.yml` adds a weekly rotating smoke subset. Scheduled workflows
 are informational signal only: they never gate merges, publish crates, or
 react to tags. See `SUPPORT.md` for the exact evidence matrix.
+
+### Examples, benches, user guides
+
+- `examples/` (4, must keep compiling): `protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs` — contracts in [testing.md](testing.md).
+- `benches/bench.rs` (Criterion): protect/verify/extract/XMP/payload benches — details in [tooling.md](tooling.md).
+- User guides in `docs/`: `cli-usage.md` (CLI contract), `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`.
+- CLI binary `stegoeggo` (`stegoeggo-cli/`): orchestration plus `args`/`request`/`protect`/`verify`/`output`/`keys`/`manifest` — see [cli.md](cli.md).
 
 ## Key Design Decisions
 
