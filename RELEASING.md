@@ -2,6 +2,15 @@
 
 This document describes the manual release procedure for stegoeggo crates.
 
+## Release Cadence
+
+All three crates share one version and are released in workspace lockstep
+(Plan 097 disposition, retained): atomic parent/carrier compatibility and
+manual-release simplicity outweigh unrelated version bumps. The root depends
+on the carrier via an exact `=X.Y.Z` specifier plus hidden
+`application-support`, whose surface only makes sense in lockstep. No
+independent carrier releases are made for rights/CLI-only changes.
+
 ## Release Ownership
 
 - Release cadence is a maintainer decision.
@@ -34,10 +43,12 @@ panic = "abort"
 opt-level = "s"
 ```
 
-The CLI binary enables three optional library features via its `stegoeggo` dependency:
+The CLI binary uses default library features only (no direct `image`
+dependency). Its `signatures` feature adds `stegoeggo/signatures` +
+`stegoeggo/detached-manifest` for `keygen`/`sign`/`verify-manifest`:
 
 ```toml
-stegoeggo = { path = "..", version = "=X.Y.Z", features = ["iscc", "conformance", "parallel"] }
+stegoeggo = { path = "..", version = "=X.Y.Z" }
 ```
 
 The conformance binary requires the `conformance` feature:

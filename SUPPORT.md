@@ -23,7 +23,7 @@ raise the declared MSRV, never a silent break.
 
 Evidence levels: **PR** = tested on every push/PR to `main` (standard `Check`
 gate; not currently GitHub-enforced as a required status check — `main` is
-unprotected, verified 2026-09-10); **Scheduled** = tested by a recurring non-blocking workflow (failure
+unprotected, verified 2026-09-11); **Scheduled** = tested by a recurring non-blocking workflow (failure
 never blocks merges); **Expected** = believed to work but with no CI evidence.
 
 | OS | Architecture | PR | Scheduled assurance | Notes |

@@ -23,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `strip_stego_owned_webp` RIFF size rewrite uses `u32::try_from` and returns `Error::Metadata` on overflow (was silent truncation via `as u32`)
 
 ### Changed
+- Release cadence disposition (Plan 097): workspace lockstep retained across carrier/library/CLI with exact `=X.Y.Z` dependencies (see `RELEASING.md`); no crates.io publish is performed by this change
+- `image` remains a mandatory `stegoeggo-stego` dependency: the public `RgbaImage` compatibility API stays available through 0.x, and borrowed views decouple the algorithm without bifurcating the public surface
 - JPEG capacity units documented as eligible AC coefficients with `|coef| >= 2` (not all non-zero AC coefficients); the DCT carrier is documented as an F5-style/no-zero-coefficient StegoEggo variant with no conventional-F5 interoperability claim and no progressive DCT support
 - V2 LSB mapping claims corrected: byte-frozen for compatibility with full-domain injectivity verified for documented small/medium domains (max observed walk depth 30, zero fallback hits), not a proven full-domain bijection
 - `SUPPORT.md` no longer claims GitHub-required-check enforcement: the `Check` job is the standard push/PR gate but `main` is unprotected (verified 2026-09-10)

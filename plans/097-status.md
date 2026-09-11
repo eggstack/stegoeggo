@@ -21,7 +21,7 @@ Depends on: Plans 091-096.
 - [x] GitHub required-check/support-documentation discrepancy resolved truthfully
 - [x] `cargo package -p stegoeggo-stego --allow-dirty --list` reviewed
 - [x] final focused public/known-answer/reuse/buffer/parent compatibility suites pass
-- [x] final integrated `./scripts/check.sh` passes (local full gate green, 2026-09-10)
+- [x] final integrated `./scripts/check.sh` passes (local full gate green, 2026-09-10; re-verified green 2026-09-11 after doc-closure pass)
 
 ## Implementation notes
 
@@ -113,3 +113,40 @@ Record final `./scripts/check.sh` result and implementation commit SHA here
 during closure. No crates.io publish is authorized by this plan alone.
 
 Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this ledger closure is the follow-up commit).
+
+## Re-verification (2026-09-11)
+
+- Doc-closure pass over the 097 scope found and fixed live staleness:
+  `RELEASING.md` (stale CLI dependency block claimed root
+  `iscc`/`conformance`/`parallel` features; corrected to default
+  features only plus `signatures`, matching `stegoeggo-cli/Cargo.toml`
+  and `architecture/cli.md`; added explicit lockstep-retention release
+  cadence section per 097 section 6.1);
+  `architecture/overview.md` (CLI layout no longer a single ~2490-line
+  `main.rs` — now decomposed orchestration plus private modules;
+  integration-test table completed to all 35 files);
+  `.skills/architecture-review/SKILL.md` (carrier public-module list now
+  includes `constants`/`pixels`/`prepared`);
+  `SUPPORT.md` (branch-protection re-verified still unprotected via
+  `gh api .../branches/main/protection` 404; date bumped to 2026-09-11);
+  `CHANGELOG.md` (Unreleased Changed records lockstep retention and
+  mandatory-`image` disposition).
+- Semver re-run (`cargo-semver-checks 0.50.0` vs baseline worktree at
+  `27bdd3d`): carrier 0.4.0 -> 0.4.0, 196 pass, 0 fail; root 0.4.0 ->
+  0.4.0, 196 pass, 0 fail. All changes additive plus correctness fixes
+  with no valid-success regression.
+- Dependency audit re-run: `cargo tree -p stegoeggo-stego --edges
+  normal` shows only `image`, `jpeg-encoder`, `crc32fast`,
+  `thiserror` (+ transitive codec libs).
+- Package re-run: `cargo package -p stegoeggo-stego --allow-dirty
+  --list` contains `src/**/*.rs`, `Cargo.toml`, `README.md`,
+  `LICENSE` only (plus cargo-generated metadata) — no workspace-only
+  files.
+- MSRV re-run: `cargo +1.87.0 check -p stegoeggo-stego --locked` clean
+  (same 5 feature-off dead-code warnings as baseline);
+  `cargo +1.87.0 test -p stegoeggo-stego --locked` green (174 lib + 8
+  consumer + 33 doctests).
+- Focused suites green: known-answer (10), JPEG preservation (16),
+  public stego API (52), verification convergence (3), legacy compat
+  (10), carrier prepared/tiled/pixels filters, direct consumer (8).
+- `./scripts/check.sh` passes locally (exit 0, 2026-09-11).

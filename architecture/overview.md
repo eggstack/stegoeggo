@@ -47,7 +47,9 @@ stegoeggo/                          Workspace root (4 crates)
 │   └── jpeg_transcoder/            JPEG DCT internals (private)
 │
 ├── stegoeggo-cli/                  CLI binary (stegoeggo)
-│   └── main.rs                     Clap-based CLI, ~2490 lines
+│   └── src/                        Orchestration (`main.rs`) plus private
+│                                   `args`, `request`, `protect`, `verify`,
+│                                   `output`, `keys`, `manifest` modules
 │
 ├── fuzz/                           12 fuzz targets (libfuzzer-sys)
 ├── tests/                          35 integration test files
@@ -433,6 +435,7 @@ artifacts uploaded. Scheduled fuzz failures are informational signal only.
 | `basic.rs` | Basic protection pipeline |
 | `integration.rs` | Full integration tests |
 | `request_api.rs` | ProtectionRequest canonical API |
+| `request_aux_convergence.rs` | Auxiliary request API convergence |
 | `semantic_correctness.rs` | Semantic correctness of protected output |
 | `preservation.rs` | Metadata preservation across formats |
 | `preservation_idempotence.rs` | Idempotent re-processing |
@@ -440,11 +443,14 @@ artifacts uploaded. Scheduled fuzz failures are informational signal only.
 | `cross_format_closure.rs` | Cross-format output closure |
 | `canonical_rights.rs` | Canonical rights notice handling |
 | `merge_policy.rs` | MetadataUpdatePolicy behavior |
+| `metadata_only_idempotence.rs` | Metadata-only re-processing idempotence |
+| `output_domain_routing.rs` | Output-format carrier routing |
 | `jpeg_container_preservation.rs` | JPEG segment preservation |
 | `public_stego_api.rs` | Public generic stego API |
 | `payload_v3_roundtrip.rs` | V3 payload round-trip |
 | `independent_v3_parser.rs` | Independent V3 parser validation |
 | `known_answer_vectors.rs` | Known-answer test vectors |
+| `verification_convergence.rs` | Verification convergence |
 | `verification_report_tests.rs` | VerificationReport builder |
 | `signing_tests.rs` | Ed25519 signing (feature: signatures) |
 | `detached_manifest_tests.rs` | Detached manifest (feature: detached-manifest) |
@@ -453,6 +459,7 @@ artifacts uploaded. Scheduled fuzz failures are informational signal only.
 | `conformance_negative.rs` | Conformance negative test cases |
 | `conformance_container_tests.rs` | Conformance container validation |
 | `conformance_harness_tests.rs` | Conformance harness (feature: conformance) |
+| `container_accounting.rs` | Container resource-accounting regression |
 | `external_tools.rs` | External tool integration (`#[ignore]`) |
 | `generate_conformance_fixtures.rs` | Fixture generation |
 | `robustness.rs` | Fuzz regression tests |

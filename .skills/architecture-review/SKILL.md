@@ -109,4 +109,4 @@ These have been fixed in documentation — if the code hasn't changed, these are
 - **Verification types are all real** — do not flag these as fabricated: `NoticeVerification` (`src/types/verification.rs`, notice-level evidence), `VerificationResult` (`src/types/verification.rs`, enum), `VerificationReport` + `TrustEvaluation` + `TrustEvaluationBuilder` (`src/verification/report.rs`). `architecture/verification.md` documents them correctly
 - **`VerificationStatus` is live** — not deprecated; it is the return type of `verify_image_bytes`. Do not mark it deprecated or suggest migrating away from it
 - **Steganography adapter** is split into 5 modules: `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs` behind `SteganographyProtector` facade
-- **Generic carrier crate** public API: `lsb`, `jpeg`, `frame`, `error`, `types` modules; `jpeg_transcoder` and `lsb_internal` are `pub(crate)`
+- **Generic carrier crate** public API: `constants`, `error`, `frame`, `jpeg`, `lsb`, `pixels`, `prepared`, `types` modules; `jpeg_transcoder` and `lsb_internal` are `pub(crate)`; `application_support` is `pub` behind the `application-support` feature but `#[doc(hidden)]`
