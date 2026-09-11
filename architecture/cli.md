@@ -144,7 +144,7 @@ The `--profile` flag selects the evidence profile:
 - `authenticated-provenance`: Cryptographic payload verification. MAC key expected via `--key`.
 - `maximal`: All channels. MAC key optional.
 
-Legal metadata flags (`--copyright-notice`, etc.) auto-enable metadata injection. The profile affects which warnings are emitted, not the raw processing pipeline.
+Legal metadata flags (`--copyright-notice`, etc.) auto-enable metadata injection. The profile affects which warnings are emitted, not the raw processing pipeline. Note the spelling split: legacy `--profile` takes `legal-notice-stego`, while modern `--preset` takes `legal-notice-with-stego` (clap kebab-case of `PresetArg`); `ProtectionPreset::as_str()` returns the legacy `legal-notice-stego` spelling.
 
 ## Batch Processing
 

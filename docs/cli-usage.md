@@ -162,7 +162,7 @@ Deprecated syntax with exact modern replacement:
 | Legacy flag | Modern replacement |
 |---|---|
 | `--level disabled` / `light` / `standard` | `--preset` + `--hidden-marker` (Disabled / BestEffort; `light` SeedOnly has no modern CLI equivalent) |
-| `--profile legal-notice` / `legal-notice-stego` / `authenticated-provenance` / `maximal` | `--preset` with the same value |
+| `--profile legal-notice` / `legal-notice-stego` / `authenticated-provenance` / `maximal` | `--preset legal-notice` / `legal-notice-with-stego` / `authenticated-provenance` / `maximal` (note the renamed stego value) |
 | `--dmi ...` | `--rights-policy ...` |
 | `--no-ai-training` | `--rights-policy prohibited-ai-ml-training` |
 | `--no-genai-training` | `--rights-policy prohibited-generative-ai-training` |
