@@ -68,8 +68,9 @@ Every component below links to a dedicated deep-dive in `architecture/`. Use thi
 
 ```
                         ┌─────────────────────┐
-                        │   stegoeggo-cli     │  CLI binary: 30+ flags,
-                        │   main.rs           │  3 subcommands, 5 exit codes
+                        │   stegoeggo-cli     │  CLI binary: protect/
+                        │                    │  inspect/verify commands,
+                        │   main.rs           │  command router, 5 exit codes
                         └─────────┬───────────┘
                                   │
                                   ▼
@@ -295,7 +296,7 @@ preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 | Component | Deep Dive | What It Covers |
 |-----------|-----------|----------------|
 | **Conformance** | [conformance.md](conformance.md) | External tool integration (ExifTool, xmllint), fixture manifest, strict mode, exit codes |
-| **CLI** | [cli.md](cli.md) | Command-line interface, all flags, batch processing, verification mode, subcommands |
+| **CLI** | [cli.md](cli.md) | Command-oriented CLI, compatibility routing, batch processing, inspection and verification |
 | **Tooling** | [tooling.md](tooling.md) | `scripts/` validation suite, CI workflows (`ci`/`assurance`/`external-verification`/`fuzz`), Criterion benchmarks |
 | **Testing** | [testing.md](testing.md) | `tests/` groups (35 files), `fuzz/` targets (12 harnesses), `examples/` contracts, carrier consumer tests |
 

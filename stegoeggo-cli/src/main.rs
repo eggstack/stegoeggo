@@ -6,11 +6,9 @@ mod protect;
 mod request;
 mod verify;
 
-use args::Args;
-#[cfg(feature = "signatures")]
-use args::Command;
+use args::{Args, Command, RootArgs};
 use clap::parser::ValueSource;
-use clap::{CommandFactory, FromArgMatches};
+use clap::{ArgMatches, CommandFactory, FromArgMatches};
 use output::{
     classify_error, embed_path_label, JsonEmbedOutcomeSummary, JsonExecutionReport, JsonOutput,
     JsonResourceUsage, EXIT_CONFIG, EXIT_OK,
@@ -40,36 +38,186 @@ fn main() {
 
 #[allow(deprecated)]
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let matches = Args::command().get_matches();
-    let args = Args::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
-
-    #[cfg(feature = "signatures")]
-    if let Some(ref cmd) = args.command {
-        return match cmd {
-            Command::Keygen { output_dir, key_id } => manifest::handle_keygen(output_dir, key_id),
-            Command::Sign {
-                manifest,
-                key,
-                output,
-            } => manifest::handle_sign(manifest, key, output),
-            Command::VerifyManifest {
-                manifest,
-                image,
-                key,
-                payload_key,
-            } => {
-                let exit_code = manifest::handle_verify_manifest(
-                    manifest,
-                    image,
-                    key,
-                    payload_key.clone(),
-                    args.json,
-                )?;
-                std::process::exit(exit_code);
-            }
-        };
+    let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if uses_command_parser(&argv) {
+        let matches = RootArgs::command().get_matches_from(&argv);
+        let root = RootArgs::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+        return run_command(
+            root.command,
+            root.json,
+            matches.subcommand_matches("protect"),
+        );
     }
 
+    let matches = Args::command().get_matches_from(&argv);
+    let parsed = Args::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+    run_protect(
+        &parsed.protect,
+        matches.value_source("level") == Some(ValueSource::CommandLine),
+        matches.value_source("profile") == Some(ValueSource::CommandLine),
+    )
+}
+
+fn uses_command_parser(argv: &[std::ffi::OsString]) -> bool {
+    let value_options = [
+        "-o",
+        "--output",
+        "-l",
+        "--level",
+        "-p",
+        "--profile",
+        "-i",
+        "--intensity",
+        "-s",
+        "--seed",
+        "-f",
+        "--format",
+        "-d",
+        "--dmi",
+        "--metadata",
+        "--copyright-notice",
+        "--copyright-holder",
+        "--creator",
+        "--contact",
+        "--rights-url",
+        "--usage-terms",
+        "--ai-constraints",
+        "--credit-line",
+        "--copyright-owner",
+        "--licensor-name",
+        "--licensor-email",
+        "--licensor-url",
+        "--content-created-at",
+        "--key",
+        "-j",
+        "--jobs",
+        "--rights-policy",
+        "--preset",
+        "--hidden-marker",
+        "--authentication",
+    ];
+    let commands = [
+        "protect",
+        "inspect",
+        "verify",
+        "version",
+        "update",
+        "keygen",
+        "sign",
+        "verify-manifest",
+    ];
+    let mut expects_value = false;
+    for arg in argv.iter().skip(1) {
+        let Some(value) = arg.to_str() else {
+            return false;
+        };
+        if expects_value {
+            expects_value = false;
+            continue;
+        }
+        if value == "--" {
+            return false;
+        }
+        if value == "--help" || value == "-h" || value == "--version" {
+            return true;
+        }
+        let option = value.split_once('=').map_or(value, |(name, _)| name);
+        if value_options.contains(&option) {
+            if !value.contains('=') {
+                expects_value = true;
+            }
+            continue;
+        }
+        if value.starts_with('-') {
+            continue;
+        }
+        return commands.contains(&value);
+    }
+    false
+}
+
+#[allow(deprecated)]
+fn run_command(
+    command: Option<Command>,
+    root_json: bool,
+    protect_matches: Option<&ArgMatches>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(command) = command else {
+        return Err(output::config_err(
+            "a command is required; use `stegoeggo --help` to see available commands",
+        ));
+    };
+
+    match command {
+        Command::Protect(args) => {
+            let matches = protect_matches.ok_or_else(|| {
+                output::config_err("internal error: missing protect command arguments")
+            })?;
+            let mut args = *args;
+            if root_json {
+                args.json = true;
+            }
+            run_protect(
+                &args,
+                matches.value_source("level") == Some(ValueSource::CommandLine),
+                matches.value_source("profile") == Some(ValueSource::CommandLine),
+            )
+        }
+        Command::Inspect(args) => verify::run_inspect(
+            &args.image,
+            &args.key,
+            root_json || args.json,
+            args.verbose,
+            false,
+        ),
+        Command::Verify(args) => verify::run_inspect(
+            &args.image,
+            &args.key,
+            root_json || args.json,
+            args.verbose,
+            true,
+        ),
+        Command::Version => {
+            println!("stegoeggo {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
+        Command::Update => Err(output::config_err(
+            "the update command is reserved for the updater release",
+        )),
+        #[cfg(feature = "signatures")]
+        Command::Keygen { output_dir, key_id } => manifest::handle_keygen(&output_dir, &key_id),
+        #[cfg(feature = "signatures")]
+        Command::Sign {
+            manifest,
+            key,
+            output,
+        } => manifest::handle_sign(&manifest, &key, &output),
+        #[cfg(feature = "signatures")]
+        Command::VerifyManifest {
+            manifest,
+            image,
+            key,
+            payload_key,
+            json,
+        } => {
+            let exit_code = manifest::handle_verify_manifest(
+                &manifest,
+                &image,
+                &key,
+                payload_key,
+                root_json || json,
+            )?;
+            std::process::exit(exit_code);
+        }
+    }
+}
+
+#[allow(deprecated)]
+fn run_protect(
+    args: &args::ProtectArgs,
+    level_explicit: bool,
+    profile_explicit: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     if args.tdm_reserved {
         eprintln!(
             "Warning: --tdm-reserved is deprecated. TDMRep deployment artifacts (HTTP headers, \
@@ -106,15 +254,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let input_path = &input_files[0];
-        return verify::run_verify(input_path, &args.output, &args.key, args.json, args.verbose);
+        return verify::run_legacy_verify(
+            input_path,
+            &args.output,
+            &args.key,
+            args.json,
+            args.verbose,
+        );
     }
 
-    let level_explicit = matches.value_source("level") == Some(ValueSource::CommandLine);
-    let profile_explicit = matches.value_source("profile") == Some(ValueSource::CommandLine);
     let request =
-        build_protection_request_with_explicit_options(&args, level_explicit, profile_explicit)?;
+        build_protection_request_with_explicit_options(args, level_explicit, profile_explicit)?;
 
-    let evidence_profile = evidence_profile_for_display(&args);
+    let evidence_profile = evidence_profile_for_display(args);
 
     if args.verbose {
         println!(

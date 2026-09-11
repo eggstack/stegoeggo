@@ -93,12 +93,18 @@ The following modules are experimental. API surfaces within them may change with
 
 The following CLI commands and their primary flags are stable.
 
-The CLI uses a single-binary design with positional arguments for the `protect`/`verify` mode and subcommands for signing operations.
+The CLI uses a single-binary command-oriented design. The old positional root
+syntax remains a 0.x compatibility alias for `protect`.
 
 | Command | Feature Gate | Description |
 |---------|-------------|-------------|
-| `stegoeggo <input>...` | (default) | Protect an image with legal metadata and steganography (positional args + flags) |
-| `stegoeggo --verify <input>` | (default) | Verify protection status of an image |
+| `stegoeggo protect <input>...` | (default) | Protect an image with legal metadata and optional steganography |
+| `stegoeggo inspect <image>` | (default) | Read and report protection status; exits 0 for an inspectable unprotected image |
+| `stegoeggo verify <image>` | (default) | Assert protection evidence; exits 3 for missing or invalid evidence |
+| `stegoeggo version` | (default) | Print the CLI version |
+| `stegoeggo update` | (default) | Reserved updater command; currently exits 2 |
+| `stegoeggo <input>...` | (default, compatibility) | Implicit `protect` alias retained through 0.x |
+| `stegoeggo <image> --verify` | (default, compatibility) | Legacy inspection report; always exits 0 |
 | `stegoeggo keygen` | `signatures` | Generate an Ed25519 key pair |
 | `stegoeggo sign --manifest <path> --key <path>` | `signatures` | Sign a detached manifest |
 | `stegoeggo verify-manifest --manifest <path> --image <path>` | `signatures` | Verify a detached manifest against an image |
@@ -134,7 +140,7 @@ The following output formats are stable and can be consumed by tooling.
 | Schema | Description |
 |--------|-------------|
 | Conformance JSON report | Produced by `stegoeggo-conformance --json` |
-| `VerificationReport` JSON | Produced by `verify_image_bytes_report` or CLI `--verify --json` (compatibility projection) |
+| `VerificationReport` JSON | Produced by `verify_image_bytes_report` or CLI `inspect`/`verify --json` (compatibility projection) |
 
 ## Verification model
 

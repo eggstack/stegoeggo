@@ -1,5 +1,6 @@
 use crate::args::{
-    Args, AuthenticationArg, DmiArg, HiddenMarkerArg, PresetArg, ProfileArg, ProtectionLevelArg,
+    AuthenticationArg, DmiArg, HiddenMarkerArg, PresetArg, ProfileArg, ProtectArgs,
+    ProtectionLevelArg,
 };
 use crate::keys::resolve_key_input;
 use crate::output::config_err;
@@ -9,7 +10,7 @@ use stegoeggo::{
 };
 
 pub(crate) fn build_legal_metadata(
-    args: &Args,
+    args: &ProtectArgs,
 ) -> (Option<stegoeggo::LegalMetadata>, Option<DmiValue>) {
     let has_legal_flags = args.copyright_notice.is_some()
         || args.creator.is_some()
@@ -95,7 +96,7 @@ pub(crate) fn build_legal_metadata(
     (Some(meta), dmi_override)
 }
 
-pub(crate) fn has_new_style_flags(args: &Args) -> bool {
+pub(crate) fn has_new_style_flags(args: &ProtectArgs) -> bool {
     args.rights_policy.is_some()
         || args.preset.is_some()
         || args.hidden_marker.is_some()
@@ -105,13 +106,13 @@ pub(crate) fn has_new_style_flags(args: &Args) -> bool {
 #[allow(deprecated)]
 #[cfg(test)]
 pub(crate) fn build_protection_request(
-    args: &Args,
+    args: &ProtectArgs,
 ) -> Result<ProtectionRequest, Box<dyn std::error::Error>> {
     build_protection_request_with_explicit_options(args, false, false)
 }
 
 pub(crate) fn build_protection_request_with_explicit_options(
-    args: &Args,
+    args: &ProtectArgs,
     level_explicit: bool,
     profile_explicit: bool,
 ) -> Result<ProtectionRequest, Box<dyn std::error::Error>> {
@@ -250,7 +251,7 @@ pub(crate) fn build_protection_request_with_explicit_options(
 
 #[allow(deprecated)]
 fn build_new_style_request(
-    args: &Args,
+    args: &ProtectArgs,
     _legal_metadata: &Option<stegoeggo::LegalMetadata>,
     legal_dmi_override: Option<DmiValue>,
 ) -> Result<(RightsPolicy, ProtectionChannels), Box<dyn std::error::Error>> {
@@ -329,7 +330,7 @@ fn build_new_style_request(
     Ok((policy, channels))
 }
 
-fn resolve_legacy_dmi(args: &Args, level: ProtectionLevel) -> Option<DmiValue> {
+fn resolve_legacy_dmi(args: &ProtectArgs, level: ProtectionLevel) -> Option<DmiValue> {
     match args.dmi.as_ref() {
         None => {
             let policy = level.default_policy();
@@ -355,7 +356,7 @@ fn resolve_legacy_dmi(args: &Args, level: ProtectionLevel) -> Option<DmiValue> {
 
 #[allow(deprecated)]
 fn build_legacy_style_request(
-    args: &Args,
+    args: &ProtectArgs,
     _legal_metadata: &Option<stegoeggo::LegalMetadata>,
     legal_dmi_override: Option<DmiValue>,
 ) -> Result<(RightsPolicy, ProtectionChannels), Box<dyn std::error::Error>> {
@@ -404,7 +405,7 @@ fn build_legacy_style_request(
 }
 
 #[allow(deprecated)]
-pub(crate) fn evidence_profile_for_display(args: &Args) -> stegoeggo::EvidenceProfile {
+pub(crate) fn evidence_profile_for_display(args: &ProtectArgs) -> stegoeggo::EvidenceProfile {
     if let Some(preset_arg) = args.preset {
         return match preset_arg {
             PresetArg::LegalNotice => stegoeggo::EvidenceProfile::LegalNotice,
@@ -459,8 +460,8 @@ mod tests {
     use crate::args::{AuthenticationArg, HiddenMarkerArg, PresetArg, RightsPolicyArg};
     use std::path::PathBuf;
 
-    pub(crate) fn default_args() -> Args {
-        Args {
+    pub(crate) fn default_args() -> ProtectArgs {
+        ProtectArgs {
             input: vec![PathBuf::from("test.png")],
             output: None,
             verify: false,
@@ -500,8 +501,6 @@ mod tests {
             hidden_marker: None,
             authentication: None,
             dry_run: false,
-            #[cfg(feature = "signatures")]
-            command: None,
         }
     }
 

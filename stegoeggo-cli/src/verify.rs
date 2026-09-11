@@ -1,8 +1,8 @@
 use crate::keys::resolve_key_input;
 use crate::output::JsonVerifyOutput;
 use std::fs;
-use std::path::PathBuf;
-use stegoeggo::{verify_legal_notice, ProtectionLevel, StegoPayload};
+use std::path::{Path, PathBuf};
+use stegoeggo::{verify_legal_notice, Error, ProtectionLevel, StegoPayload, VerificationStatus};
 
 pub(crate) fn print_payload_info(payload: &StegoPayload) {
     let level_str = ProtectionLevel::from_byte(payload.protection_level())
@@ -14,14 +14,35 @@ pub(crate) fn print_payload_info(payload: &StegoPayload) {
     println!("Version: {}", payload.version());
 }
 
-pub(crate) fn run_verify(
-    input_path: &PathBuf,
+pub(crate) fn run_legacy_verify(
+    input_path: &Path,
     output: &Option<PathBuf>,
     key: &Option<String>,
     json: bool,
     verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let bytes_to_verify = if let Some(ref output_path) = output {
+    run_report(input_path, output.as_deref(), key, json, verbose, false)
+}
+
+pub(crate) fn run_inspect(
+    input_path: &Path,
+    key: &Option<String>,
+    json: bool,
+    verbose: bool,
+    assert_protected: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_report(input_path, None, key, json, verbose, assert_protected)
+}
+
+fn run_report(
+    input_path: &Path,
+    output: Option<&Path>,
+    key: &Option<String>,
+    json: bool,
+    verbose: bool,
+    assert_protected: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let bytes_to_verify = if let Some(output_path) = output {
         if verbose {
             eprintln!("Verifying explicit output file");
         }
@@ -40,7 +61,11 @@ pub(crate) fn run_verify(
     if json {
         let json_output = JsonVerifyOutput {
             schema_version: 1,
-            status: "ok".to_string(),
+            status: if assert_protected && verification_failed(&notice) {
+                "failed".to_string()
+            } else {
+                "ok".to_string()
+            },
             copyright_holder: notice.copyright_holder().map(String::from),
             rights_url: notice.rights_url().map(String::from),
             ai_constraints: notice.ai_constraints().map(String::from),
@@ -145,5 +170,20 @@ pub(crate) fn run_verify(
         }
     }
 
+    if assert_protected && verification_failed(&notice) {
+        return Err(Box::new(Error::PayloadVerification(
+            if notice.stego_status() == VerificationStatus::Invalid {
+                "protection marker integrity or authentication verification failed".to_string()
+            } else {
+                "no protection evidence found".to_string()
+            },
+        )));
+    }
+
     Ok(())
+}
+
+fn verification_failed(notice: &stegoeggo::NoticeVerification) -> bool {
+    notice.stego_status() == VerificationStatus::Invalid
+        || (!notice.has_notice() && notice.stego_status() == VerificationStatus::NotFound)
 }

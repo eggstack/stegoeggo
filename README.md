@@ -46,7 +46,7 @@ for the local command and compatibility policy.
 Write a metadata-only AI/ML training prohibition:
 
 ```bash
-stegoeggo image.png -o image_protected.png \
+stegoeggo protect image.png -o image_protected.png \
   --rights-policy prohibited-ai-ml-training \
   --preset legal-notice \
   --copyright-notice "© 2026 Example Artist. All rights reserved." \
@@ -58,7 +58,7 @@ stegoeggo image.png -o image_protected.png \
 Add the best-effort hidden marker as a redundant channel:
 
 ```bash
-stegoeggo image.png -o image_protected.png \
+stegoeggo protect image.png -o image_protected.png \
   --rights-policy prohibited-ai-ml-training \
   --preset legal-notice-with-stego
 ```
@@ -66,10 +66,12 @@ stegoeggo image.png -o image_protected.png \
 Inspect an existing file:
 
 ```bash
-stegoeggo image_protected.png --verify
+stegoeggo inspect image_protected.png
 ```
 
-For batch processing, subcommands, and all CLI flags, see [docs/cli-usage.md](docs/cli-usage.md).
+For assertion-oriented verification, use `stegoeggo verify image_protected.png`.
+The 0.x-compatible root form and all CLI flags are documented in
+[docs/cli-usage.md](docs/cli-usage.md).
 
 ## Rights policies
 

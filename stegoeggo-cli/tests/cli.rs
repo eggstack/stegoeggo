@@ -102,6 +102,208 @@ fn test_help_flag() {
 }
 
 #[test]
+fn root_help_is_command_oriented() {
+    let output = Command::new(cli_bin())
+        .arg("--help")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("protect"));
+    assert!(stdout.contains("inspect"));
+    assert!(stdout.contains("verify"));
+    assert!(!stdout.contains("--rights-policy"));
+}
+
+#[test]
+fn protect_help_emphasizes_canonical_options_and_deemphasizes_legacy_verify() {
+    let output = Command::new(cli_bin())
+        .args(["protect", "--help"])
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("--rights-policy"));
+    assert!(stdout.contains("--preset"));
+    assert!(stdout.contains("--hidden-marker"));
+    assert!(stdout.contains("--authentication"));
+    assert!(stdout.contains("Compatibility (legacy)"));
+    assert!(!stdout.contains("--verify"));
+}
+
+#[test]
+fn inspection_help_is_read_only_and_verify_documents_exit_status() {
+    let inspect = Command::new(cli_bin())
+        .args(["inspect", "--help"])
+        .output()
+        .expect("Failed to execute CLI");
+    let inspect_stdout = String::from_utf8_lossy(&inspect.stdout);
+    assert!(inspect.status.success());
+    assert!(inspect_stdout.contains("without changing"));
+    assert!(!inspect_stdout.contains("--rights-policy"));
+
+    let verify = Command::new(cli_bin())
+        .args(["verify", "--help"])
+        .output()
+        .expect("Failed to execute CLI");
+    let verify_stdout = String::from_utf8_lossy(&verify.stdout);
+    assert!(verify.status.success());
+    assert!(verify_stdout.contains("exits 3"));
+}
+
+#[test]
+fn explicit_protect_matches_implicit_protect_for_deterministic_png() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let implicit_dir = tmp.path().join("implicit");
+    let explicit_dir = tmp.path().join("explicit");
+    create_test_png(&input);
+
+    let implicit = Command::new(cli_bin())
+        .args([
+            input.to_str().unwrap(),
+            "-o",
+            implicit_dir.to_str().unwrap(),
+            "-s",
+            "42",
+        ])
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(implicit.status.success());
+
+    let explicit = Command::new(cli_bin())
+        .args([
+            "protect",
+            input.to_str().unwrap(),
+            "-o",
+            explicit_dir.to_str().unwrap(),
+            "-s",
+            "42",
+        ])
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(explicit.status.success());
+
+    assert_eq!(
+        fs::read(implicit_dir.join("input_protected.png")).unwrap(),
+        fs::read(explicit_dir.join("input_protected.png")).unwrap()
+    );
+}
+
+#[test]
+fn explicit_and_implicit_protect_match_across_supported_formats() {
+    let tmp = tempfile::tempdir().unwrap();
+    type ImageCreator = fn(&PathBuf);
+    let cases: [(&str, ImageCreator); 3] = [
+        ("input.png", create_test_png),
+        ("input.jpg", |path| create_test_jpeg(path, 90)),
+        ("input.webp", create_test_webp),
+    ];
+
+    for (filename, create) in cases {
+        let input = tmp.path().join(filename);
+        let stem = PathBuf::from(filename)
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let implicit_dir = tmp.path().join(format!("implicit_{stem}"));
+        let explicit_dir = tmp.path().join(format!("explicit_{stem}"));
+        create(&input);
+
+        let implicit = Command::new(cli_bin())
+            .arg(&input)
+            .arg("-o")
+            .arg(&implicit_dir)
+            .arg("-s")
+            .arg("42")
+            .output()
+            .expect("Failed to execute CLI");
+        assert!(implicit.status.success());
+
+        let explicit = Command::new(cli_bin())
+            .arg("protect")
+            .arg(&input)
+            .arg("-o")
+            .arg(&explicit_dir)
+            .arg("-s")
+            .arg("42")
+            .output()
+            .expect("Failed to execute CLI");
+        assert!(explicit.status.success());
+
+        let output_name = format!(
+            "{}_protected.{}",
+            stem,
+            PathBuf::from(filename)
+                .extension()
+                .unwrap()
+                .to_string_lossy()
+        );
+        let implicit_output = implicit_dir.join(&output_name);
+        let explicit_output = explicit_dir.join(&output_name);
+        assert!(implicit_output.exists());
+        assert!(explicit_output.exists());
+
+        let implicit_inspection = Command::new(cli_bin())
+            .args(["inspect", implicit_output.to_str().unwrap()])
+            .output()
+            .expect("Failed to inspect implicit output");
+        let explicit_inspection = Command::new(cli_bin())
+            .args(["inspect", explicit_output.to_str().unwrap()])
+            .output()
+            .expect("Failed to inspect explicit output");
+        assert!(implicit_inspection.status.success());
+        assert!(explicit_inspection.status.success());
+    }
+}
+
+#[test]
+fn inspect_is_read_only_and_verify_returns_integrity_exit_code() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output_dir = tmp.path().join("out");
+    create_test_png(&input);
+
+    let protect = Command::new(cli_bin())
+        .args([
+            "protect",
+            input.to_str().unwrap(),
+            "-o",
+            output_dir.to_str().unwrap(),
+            "-s",
+            "42",
+        ])
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(protect.status.success());
+
+    let protected = output_dir.join("input_protected.png");
+    let before = fs::read(&protected).unwrap();
+    let inspect = Command::new(cli_bin())
+        .args(["inspect", protected.to_str().unwrap()])
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(inspect.status.success());
+    assert_eq!(before, fs::read(&protected).unwrap());
+
+    use image::{GenericImage, GenericImageView};
+    let mut altered = image::open(&protected).unwrap();
+    let pixel = altered.get_pixel(0, 0);
+    altered.put_pixel(
+        0,
+        0,
+        image::Rgba([pixel[0] ^ 0x01, pixel[1], pixel[2], pixel[3]]),
+    );
+    altered.save(&protected).unwrap();
+    let verify = Command::new(cli_bin())
+        .args(["verify", protected.to_str().unwrap()])
+        .output()
+        .expect("Failed to execute CLI");
+    assert_eq!(verify.status.code(), Some(3));
+}
+
+#[test]
 fn test_protect_png_default() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("input.png");
