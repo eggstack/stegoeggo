@@ -1,6 +1,6 @@
 # Tooling (Scripts, CI, Benchmarks)
 
-**Sources:** `scripts/` (7 scripts) · `.github/workflows/` (4 workflows) · `benches/bench.rs` (592 lines, Criterion).
+**Sources:** `scripts/` (10 scripts) · `packaging/` (2 installers) · `.github/workflows/` (5 workflows) · `benches/bench.rs` (592 lines, Criterion).
 
 Specialist checks are manual and never part of `check.sh` or required CI without a maintainer decision.
 
@@ -10,6 +10,9 @@ Specialist checks are manual and never part of `check.sh` or required CI without
 |--------|---------|-------|
 | `check.sh` | Fast check, mirrors required CI: `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo check -p stegoeggo --no-default-features`, `cargo test --workspace --exclude stegoeggo-fuzz --all-features` | stable Rust |
 | `release-check.sh [--allow-dirty] [--stage=pre\|root\|cli]` | Local pre-release readiness (staged pre/root/cli); never publishes, tags, or pushes | — |
+| `release-binary-preflight.sh --tag=vX.Y.Z` | Validates binary-release tag/version lockstep, target manifest, and canonical CLI feature set; optional `--asset-dir` audits built assets | stable Rust, Python |
+| `release-check-assets.sh --dir=DIR` | Verifies every target executable and SHA-256 sidecar; optional version/native smoke checks | `sha256sum` or `shasum` |
+| `test-release-installers.sh` | Local fixture/server tests for installer mapping, URLs, checksums, identity, fallback, and destinations | Bash, Python, curl |
 | `check_fuzz_sync.sh` | Verifies dispatch-target parity between `fuzz/Cargo.toml` and `fuzz.yml` (the scheduled smoke rotation derives its list at runtime from `cargo fuzz list`) | — |
 | `verify_metadata_conformance.sh [--strict]` | External metadata conformance via the Rust harness + ExifTool/xmllint diff | exiftool, xmllint, imagemagick, libvips |
 | `validate-docs-rs.sh` | Docs.rs-equivalent rustdoc validation | nightly |
@@ -26,8 +29,11 @@ Manual-only: `cargo deny check licenses|advisories`, `cargo semver-checks check-
 | `assurance.yml` | weekly + manual | MSRV 1.87 matrix + stable compile+tests on Linux aarch64, macOS aarch64, Windows x86_64. Informational only |
 | `external-verification.yml` | monthly + manual | External-tool conformance. Informational only |
 | `fuzz.yml` | weekly + manual single-target dispatch (+ `smoke=true` rotating 3-target subset, 120 s each, week-of-year rotation, full cycle 4 weeks) | Informational only; crash artifacts uploaded |
+| `release-binaries.yml` | manual dispatch for an existing `vX.Y.Z` release tag | Attaches five CLI binaries, sidecars, and installers; never publishes crates |
 
-No workflow publishes crates or reacts to tags. Releases are manual: carrier → library → CLI, exact `=X.Y.Z` deps (see `RELEASING.md`).
+No workflow publishes crates or reacts automatically to tags. Releases remain
+manual: carrier → library → CLI for crates.io, with the separate binary
+workflow attaching GitHub Release assets (see `RELEASING.md`).
 
 ## Benchmarks
 

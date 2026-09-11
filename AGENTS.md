@@ -21,7 +21,7 @@ CI (`.github/workflows/ci.yml`): one required job on push/PR to `main` that runs
 
 - `.` — library crate `stegoeggo`; canonical entry points are `process_request_bytes*` in `src/lib.rs`, plan executors in `src/pipeline.rs`. Conformance binary `stegoeggo-conformance` (`src/bin/`, needs `conformance` feature).
 - `stegoeggo-stego/` — generic carrier crate for arbitrary-payload LSB/JPEG-DCT stego. Depend on it directly for generic use; `stegoeggo::stego` is a convenience re-export of the same surface.
-- `stegoeggo-cli/` — binary `stegoeggo` at `stegoeggo-cli/src/main.rs` (modules `args`, `request`, `protect`, `verify`, `output`, `keys`, `manifest`). Uses `stegoeggo` default features only; its `signatures` feature enables `stegoeggo/signatures` + `stegoeggo/detached-manifest`.
+- `stegoeggo-cli/` — binary `stegoeggo` at `stegoeggo-cli/src/main.rs` (modules `args`, `request`, `protect`, `verify`, `output`, `keys`, `manifest`). Its default package features include `signatures`, enabling `keygen`, `sign`, and `verify-manifest` through `stegoeggo/signatures` + `stegoeggo/detached-manifest`; the CLI still does not enable the library's unrelated `iscc`, `conformance`, or `parallel` features.
 - `fuzz/` — 12 harnesses, `cargo-fuzz` + nightly only, excluded from workspace tests.
 
 Toolchain is stable, MSRV 1.87 (`rust-toolchain.toml`, `rust-version` in root + carrier manifests). Rustfmt: 4-space indent, max width 100. `#![forbid(unsafe_code)]` in both crates. No code comments unless asked. `#[must_use]` on builders.
@@ -66,7 +66,17 @@ All default-off: `async` (canonical `process_request_bytes_async*`), `parallel` 
 
 ## Releases
 
-Manual only: no CI publication, no tag-triggered workflows, no crates.io token in Actions. All three crates share one version with exact `=X.Y.Z` deps; publish in order carrier → library → CLI. See `RELEASING.md`.
+Manual only: no crates.io publication, no crates.io token in Actions, and no tag-triggered publication. A manually dispatched `release-binaries.yml` attaches CLI assets to an existing GitHub Release; it never publishes crates. All three crates share one version with exact `=X.Y.Z` deps; publish crates in order carrier → library → CLI. See `RELEASING.md` and `docs/installation.md`.
+
+Binary release contract: assets use the versionless names in
+`scripts/release-targets.txt` and every executable has a `.sha256` sidecar.
+The release binary feature set is the CLI package default (`signatures`). Run
+`./scripts/release-binary-preflight.sh --tag=vX.Y.Z` and
+`./scripts/release-check-assets.sh --dir=<asset-directory>` before attaching
+assets. `packaging/install.sh` and `packaging/install.ps1` verify checksums and
+candidate identity before installation; Cargo fallback is allowed only for an
+unsupported target or a missing (404) binary asset, never for checksum,
+identity, or network failure.
 
 ## Where things live
 

@@ -2,10 +2,26 @@
 
 ## Installation
 
-Install from crates.io:
+Install the prebuilt CLI on supported platforms without Rust:
 
 ```bash
-cargo install stegoeggo-cli
+curl -fsSL https://github.com/eggstack/stegoeggo/releases/latest/download/install.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://github.com/eggstack/stegoeggo/releases/latest/download/install.ps1 | iex
+```
+
+For pinned releases, pass `--version X.Y.Z` to the Unix installer. See
+[the installation guide](installation.md) for target coverage and checksum
+details.
+
+Cargo remains a supported fallback:
+
+```bash
+cargo install stegoeggo-cli --locked
 ```
 
 Or build from source:
@@ -41,6 +57,9 @@ stegoeggo verify-manifest --manifest <path> --image <path>
 ```
 
 They require the `signatures` feature.
+
+The published CLI package enables `signatures` by default, so these commands
+are also present in Cargo-installed and prebuilt binaries.
 
 ## Protecting images
 

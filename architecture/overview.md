@@ -55,9 +55,10 @@ stegoeggo/                          Workspace root (4 crates)
 ├── tests/                          35 integration test files (see testing.md)
 ├── examples/                       4 usage examples (see testing.md)
 ├── benches/                        Criterion benchmarks (see tooling.md)
-├── scripts/                        7 validation scripts (see tooling.md)
+├── packaging/                      Unix and Windows bootstrap installers
+├── scripts/                        validation, release, and installer-test scripts
 ├── architecture/                   39 deep-dive docs (this directory)
-└── .github/workflows/              CI (4 workflows: required check + scheduled assurance)
+└── .github/workflows/              CI (5 workflows: check, assurance, and manual release assets)
 ```
 
 **Crate dependency direction:** `cli → root → carrier`. The carrier crate knows nothing about rights-protection. The root crate re-exports the carrier's public API through `stegoeggo::stego`.
@@ -496,6 +497,9 @@ Full script/CI/bench reference: [tooling.md](tooling.md).
 | `scripts/validate-msrv-package.sh` | Fresh MSRV consumer resolution (Rust 1.87) |
 | `scripts/check_fuzz_sync.sh` | Verify dispatch target parity between `fuzz/Cargo.toml` and `fuzz.yml` (the scheduled smoke rotation derives its list at runtime from `cargo fuzz list` and cannot drift) |
 | `scripts/measure_binary_size.sh` | Binary size measurement |
+| `scripts/release-binary-preflight.sh` | Manual binary release tag/version/feature preflight |
+| `scripts/release-check-assets.sh` | Executable and checksum sidecar validation |
+| `scripts/test-release-installers.sh` | Local Unix installer behavior tests |
 
 ### Continuous assurance
 
@@ -505,13 +509,15 @@ dispatch) proves the MSRV 1.87 matrix and stable compile+tests on Linux
 aarch64, macOS aarch64, and Windows x86_64. `external-verification.yml` runs
 monthly; `fuzz.yml` adds a weekly rotating smoke subset. Scheduled workflows
 are informational signal only: they never gate merges, publish crates, or
-react to tags. See `SUPPORT.md` for the exact evidence matrix.
+react automatically to tags. The manual `release-binaries.yml` workflow
+attaches checked CLI assets to an existing GitHub Release; see `SUPPORT.md`
+and `RELEASING.md` for the evidence and release contracts.
 
 ### Examples, benches, user guides
 
 - `examples/` (4, must keep compiling): `protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs` — contracts in [testing.md](testing.md).
 - `benches/bench.rs` (Criterion): protect/verify/extract/XMP/payload benches — details in [tooling.md](tooling.md).
-- User guides in `docs/`: `cli-usage.md` (CLI contract), `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`.
+- User guides in `docs/`: `cli-usage.md` (CLI contract), `installation.md` (CLI installers), `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`.
 - CLI binary `stegoeggo` (`stegoeggo-cli/`): orchestration plus `args`/`request`/`protect`/`verify`/`output`/`keys`/`manifest` — see [cli.md](cli.md).
 
 ## Key Design Decisions

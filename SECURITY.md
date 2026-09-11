@@ -22,6 +22,18 @@ Please include:
 
 ## Security Considerations
 
+### Prebuilt CLI binaries
+
+Release binaries are currently unsigned. The installers verify the SHA-256
+sidecar fetched from the same GitHub Release before executing or installing a
+candidate, then verify that its `version` output matches the requested release
+(or is a valid StegoEggo version for an unpinned latest install). This protects
+against accidental corruption and mismatched assets, but the checksum and
+binary remain inside the GitHub Release trust boundary; it is not a substitute
+for independent signature verification or a separately trusted distribution
+channel. The installers never fall back to Cargo after a checksum, identity,
+or network failure.
+
 ### Without a MAC key
 Steganographic payload verification uses a non-cryptographic CRC32 checksum. An attacker who can read the image bytes can forge valid-looking payloads. For production deployments (e.g., CDN protection against malicious scrapers), **always set a MAC key** via `.with_mac_key()`.
 

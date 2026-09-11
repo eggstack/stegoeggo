@@ -1,0 +1,146 @@
+name: Release binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vX.Y.Z tag and GitHub Release to receive assets
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-binaries-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: ./scripts/release-binary-preflight.sh --tag="${{ inputs.tag }}"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            asset: stegoeggo-x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            zig: true
+          - target: aarch64-unknown-linux-gnu
+            asset: stegoeggo-aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            zig: true
+          - target: x86_64-apple-darwin
+            asset: stegoeggo-x86_64-apple-darwin
+            runner: macos-13
+            zig: false
+          - target: aarch64-apple-darwin
+            asset: stegoeggo-aarch64-apple-darwin
+            runner: macos-latest
+            zig: false
+          - target: x86_64-pc-windows-msvc
+            asset: stegoeggo-x86_64-pc-windows-msvc.exe
+            runner: windows-latest
+            zig: false
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Zig
+        if: matrix.zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+      - name: Install cargo-zigbuild
+        if: matrix.zig
+        uses: taiki-e/install-action@cargo-zigbuild
+      - name: Build release binary
+        run: |
+          if [[ "${{ matrix.zig }}" == "true" ]]; then
+            cargo zigbuild --locked --release --package stegoeggo-cli --bin stegoeggo --no-default-features --features signatures --target '${{ matrix.target }}.2.17'
+          else
+            cargo build --locked --release --package stegoeggo-cli --bin stegoeggo --no-default-features --features signatures --target '${{ matrix.target }}'
+          fi
+          mkdir -p release-assets
+          binary_path="$(find target -type f -path '*/release/${{ matrix.asset }}' -print -quit)"
+          if [[ -z "$binary_path" ]]; then
+            binary_path="$(find target -type f -path '*/release/stegoeggo*' -print -quit)"
+          fi
+          test -n "$binary_path"
+          cp "$binary_path" "release-assets/${{ matrix.asset }}"
+          chmod 0755 "release-assets/${{ matrix.asset }}"
+      - name: Smoke binary
+        run: |
+          tag='${{ inputs.tag }}'
+          test "$(./release-assets/${{ matrix.asset }} version)" = "stegoeggo ${tag#v}"
+          ./release-assets/${{ matrix.asset }} --help >/dev/null
+          mkdir -p smoke
+          ./release-assets/${{ matrix.asset }} protect tests/fixtures/conformance/canonical/canonical_policy_only.png --output smoke/protected.png --rights-policy prohibited-ai-ml-training --preset legal-notice
+          ./release-assets/${{ matrix.asset }} inspect smoke/protected.png >/dev/null
+      - name: Create checksum sidecar
+        run: |
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "release-assets/${{ matrix.asset }}" > "release-assets/${{ matrix.asset }}.sha256"
+          else
+            shasum -a 256 "release-assets/${{ matrix.asset }}" > "release-assets/${{ matrix.asset }}.sha256"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: release-assets/
+          if-no-files-found: error
+
+  attach:
+    name: Attach GitHub Release assets
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-assets
+      - name: Copy installers
+        run: cp packaging/install.sh packaging/install.ps1 release-assets/
+      - name: Validate release assets
+        run: |
+          tag='${{ inputs.tag }}'
+          ./scripts/release-check-assets.sh --dir=release-assets --version="${tag#v}"
+      - name: Verify target GitHub Release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view '${{ inputs.tag }}' >/dev/null
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload '${{ inputs.tag }}' release-assets/* --clobber

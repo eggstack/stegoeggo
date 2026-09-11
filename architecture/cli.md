@@ -153,4 +153,10 @@ behavior and may read an explicit output file supplied with `--output`.
 
 Production dependencies are clap 4, the `stegoeggo` library, rayon for
 error-tolerant CLI batches, hex, serde/serde_json, and tempfile. The CLI does
-not enable the library's `parallel`, `iscc`, or `conformance` features.
+not enable the library's `parallel`, `iscc`, or `conformance` features. The
+package's default feature is `signatures`, which adds the detached-manifest
+commands to Cargo-installed and prebuilt binaries. Release asset names,
+checksum handling, and installer fallback rules are documented in
+[`docs/installation.md`](../docs/installation.md) and
+[`RELEASING.md`](../RELEASING.md); they are not part of the image-processing
+command router.

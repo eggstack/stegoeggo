@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Manual GitHub Release binary workflow for five CLI targets, stable
+  versionless asset names, SHA-256 sidecars, and Unix/Windows bootstrap
+  installers; the CLI package now enables `signatures` by default so Cargo
+  and prebuilt installs expose the same command surface
 - Strict JPEG carrier operations in `stegoeggo-stego` (also via `stegoeggo::stego`): `jpeg::embed_strict` / `embed_framed_strict` embed at exactly the requested redundancy or return `InsufficientCapacity` without emitting output, lowering redundancy, or degrading to a seed hint
 - Validated `Redundancy` carrier primitive (`new`/`from_usize`, `Copy`, identical debug/release semantics) with `from_redundancy` / `with_redundancy_value` / `redundancy_value` on `LsbConfig`/`JpegConfig`; `EmbedReport` gains `into_output` / `into_parts` / `capacity` decomposition helpers
 - Opaque `prepared::PreparedJpeg`: borrows encoded JPEG bytes and reuses one coefficient decode across repeated capacity/extraction/strict-embed operations with byte-identical results to the one-shot API; codec internals stay private

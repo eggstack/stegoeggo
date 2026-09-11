@@ -1,6 +1,7 @@
 # Releasing
 
-This document describes the manual release procedure for stegoeggo crates.
+This document describes the manual release procedure for stegoeggo crates and
+the separate manual workflow for attaching CLI binaries to GitHub Releases.
 
 ## Release Cadence
 
@@ -15,9 +16,10 @@ independent carrier releases are made for rights/CLI-only changes.
 
 - Release cadence is a maintainer decision.
 - Releases are performed manually using direct Cargo/crates.io commands.
-- GitHub Actions do not publish crates or create releases.
+- GitHub Actions do not publish crates or create releases automatically.
 - Version tags do not publish crates.
-- GitHub releases are optional and manual.
+- GitHub releases are optional and manual. The manually dispatched binary
+  workflow attaches CLI assets to an existing release for the requested tag.
 - CI success is useful development evidence but not a publication trigger.
 
 ## Immutable Crates.io Versions
@@ -43,8 +45,8 @@ panic = "abort"
 opt-level = "s"
 ```
 
-The CLI binary uses default library features only (no direct `image`
-dependency). Its `signatures` feature adds `stegoeggo/signatures` +
+The CLI binary enables its `signatures` package feature by default (no direct
+`image` dependency). This adds `stegoeggo/signatures` +
 `stegoeggo/detached-manifest` for `keygen`/`sign`/`verify-manifest`:
 
 ```toml
@@ -59,7 +61,7 @@ cargo build --release --bin stegoeggo-conformance --features conformance
 
 ## CI Evidence: Blocking vs Scheduled
 
-Only one CI signal blocks development: the required `Check` job in
+Only one CI signal blocks development: the standard `Check` job in
 `.github/workflows/ci.yml` (stable Rust, Linux x86_64, `./scripts/check.sh`).
 Everything else is non-blocking signal for the maintainer's judgment:
 
@@ -73,8 +75,7 @@ Everything else is non-blocking signal for the maintainer's judgment:
 Scheduled failures are investigated as signal, never as publication triggers.
 Release readiness is established by the local checks in Pre-Release
 Preparation below, not by green scheduled runs. See `SUPPORT.md` for the exact
-evidence matrix. Manual release policy is unchanged: no workflow publishes
-crates, creates releases, or reacts to version tags.
+evidence matrix. No workflow publishes crates or reacts automatically to tags.
 
 ## Pre-Release Preparation
 
@@ -150,8 +151,16 @@ git push origin vX.Y.Z
 - Tagging is optional but recommended for repository history.
 - The tag must point to the published source commit.
 - Do not force-move the tag after publication.
-- A GitHub release may be created manually from the tag.
-- Do not attach a single Linux binary unless the maintainer intentionally supports it as a distributed artifact.
+- Create the GitHub release manually from the tag, then dispatch
+  `.github/workflows/release-binaries.yml` with the exact `vX.Y.Z` tag. The
+  workflow checks out that tag, builds the five targets in
+  `scripts/release-targets.txt`, smoke-tests each native binary, and attaches
+  the executables, checksums, and installers.
+- Binary attachment does not publish any crate and does not replace the
+  carrier → library → CLI crates.io sequence.
+- Run `./scripts/release-binary-preflight.sh --tag=vX.Y.Z` before dispatch and
+  `./scripts/release-check-assets.sh --dir=<downloaded-assets>` when auditing
+  a completed release.
 - Source releases and crates.io publication do not require an automated binary artifact.
 
 ## Partial Failure Handling

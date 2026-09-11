@@ -88,15 +88,35 @@ The default feature set is empty (`default = []`).
 
 ## CLI Installation
 
-The shipped CLI uses default features only (no `iscc`/`conformance`/`parallel`
-root features, no direct `image` dependency). The `signatures` feature adds
-`stegoeggo/signatures` + `stegoeggo/detached-manifest` for `keygen`/`sign`/
-`verify-manifest`.
+The shipped CLI enables its `signatures` feature by default. It does not enable
+the library's `iscc`, `conformance`, or `parallel` features and has no direct
+`image` dependency. The default feature adds `stegoeggo/signatures` +
+`stegoeggo/detached-manifest` for `keygen`/`sign`/`verify-manifest`.
+
+### Prebuilt binary matrix
+
+GitHub Releases provide these versionless executable asset names. Each asset
+has a matching `<asset>.sha256` sidecar:
+
+| OS | Architecture | Target | Asset |
+|----|--------------|--------|-------|
+| Linux | x86_64 | `x86_64-unknown-linux-gnu` | `stegoeggo-x86_64-unknown-linux-gnu` |
+| Linux | aarch64 | `aarch64-unknown-linux-gnu` | `stegoeggo-aarch64-unknown-linux-gnu` |
+| macOS | x86_64 | `x86_64-apple-darwin` | `stegoeggo-x86_64-apple-darwin` |
+| macOS | arm64 | `aarch64-apple-darwin` | `stegoeggo-aarch64-apple-darwin` |
+| Windows | x86_64 | `x86_64-pc-windows-msvc` | `stegoeggo-x86_64-pc-windows-msvc.exe` |
+
+Linux GNU release binaries are built with `cargo-zigbuild` against the glibc
+2.17 compatibility floor and are smoke-tested on their native release runner.
+The installers fall back to Cargo only for an unsupported platform or a 404
+for the binary asset. Checksum, identity, and network failures are fatal.
+See [docs/installation.md](docs/installation.md) for the complete installer
+contract.
 
 ### From crates.io
 
 ```
-cargo install stegoeggo-cli
+cargo install stegoeggo-cli --locked
 ```
 
 ### From source

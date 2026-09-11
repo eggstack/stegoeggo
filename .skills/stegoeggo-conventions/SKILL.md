@@ -297,3 +297,9 @@ cargo fmt --all -- --check              # Format check
 - Agent conventions: this file plus `AGENTS.md` gotchas (CLI flags, exit codes, container correctness)
 - Fuzz assurance: `fuzz/README.md` (pinned nightly/cargo-fuzz tuple, LTO compatibility boundary, and update policy)
 - Runnable examples: `examples/` (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) — keep these compiling when changing public APIs
+
+## CLI Release Conventions
+- The `stegoeggo-cli` package defaults to `signatures`, so Cargo-installed and prebuilt binaries expose the same `keygen`, `sign`, and `verify-manifest` command surface. The CLI still leaves root `iscc`, `conformance`, and `parallel` features off.
+- Binary assets use the versionless names in `scripts/release-targets.txt`; every executable has a `<asset>.sha256` sidecar. Linux GNU builds use the documented glibc 2.17 cargo-zigbuild target.
+- `packaging/install.sh` and `packaging/install.ps1` verify the sidecar and candidate `version` before installation. Cargo fallback is permitted only for unsupported targets or a binary-asset 404; checksum, identity, and network failures are fatal.
+- Binary releases attach GitHub Release assets only. They never publish crates, and the workflow is manual-dispatch against an existing tag/release.

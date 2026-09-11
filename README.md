@@ -15,8 +15,22 @@ It is not DRM, a forensic watermark, a data-poisoning system, or proof that a pa
 
 ## Installation
 
+Install a prebuilt CLI without Rust on supported Unix platforms:
+
 ```bash
-cargo install stegoeggo-cli
+curl -fsSL https://github.com/eggstack/stegoeggo/releases/latest/download/install.sh | bash
+```
+
+Windows PowerShell users can run:
+
+```powershell
+irm https://github.com/eggstack/stegoeggo/releases/latest/download/install.ps1 | iex
+```
+
+Cargo remains the source-install fallback:
+
+```bash
+cargo install stegoeggo-cli --locked
 ```
 
 Or build from source:
@@ -40,6 +54,9 @@ are covered by scheduled non-blocking assurance. See [SUPPORT.md](SUPPORT.md)
 for the maintained platform and feature matrix. The non-blocking fuzz
 assurance uses a pinned nightly/cargo-fuzz tuple; see [fuzz/README.md](fuzz/README.md)
 for the local command and compatibility policy.
+
+See [docs/installation.md](docs/installation.md) for target coverage, pinned
+versions, checksum behavior, PATH setup, and source-install details.
 
 ## Quick start
 
@@ -155,6 +172,7 @@ No optional feature is enabled by default. See [SUPPORT.md](SUPPORT.md) for the 
 | Document | Description |
 |---|---|
 | [docs/cli-usage.md](docs/cli-usage.md) | CLI flags, batch processing, exit codes |
+| [docs/installation.md](docs/installation.md) | Prebuilt CLI installers, targets, and Cargo fallback |
 | [docs/rust-api.md](docs/rust-api.md) | Rust API examples, byte vs DynamicImage |
 | [docs/formats.md](docs/formats.md) | Format support, steganography details, transformation effects |
 | [docs/carrier-crate.md](docs/carrier-crate.md) | `stegoeggo-stego` generic carrier crate |
