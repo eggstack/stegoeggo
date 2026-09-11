@@ -303,12 +303,20 @@ impl super::RightsMetadataProtector {
         chunk
     }
 
+    #[allow(dead_code)]
     pub(super) fn extract_seed_from_webp(
         webp_data: &[u8],
         limits: Option<&crate::ResourceLimits>,
     ) -> Option<u64> {
+        Self::extract_seed_from_webp_truncated(webp_data, limits).0
+    }
+
+    pub(super) fn extract_seed_from_webp_truncated(
+        webp_data: &[u8],
+        limits: Option<&crate::ResourceLimits>,
+    ) -> (Option<u64>, bool) {
         if webp_data.len() < 20 {
-            return None;
+            return (None, false);
         }
 
         let mut pos = 12;
@@ -318,7 +326,7 @@ impl super::RightsMetadataProtector {
             chunk_count += 1;
             if let Some(lim) = limits {
                 if chunk_count > lim.max_webp_riff_chunks() {
-                    return None;
+                    return (None, true);
                 }
             }
 
@@ -332,7 +340,7 @@ impl super::RightsMetadataProtector {
 
             if let Some(lim) = limits {
                 if chunk_size > lim.max_webp_riff_bytes() {
-                    return None;
+                    return (None, true);
                 }
             }
 
@@ -352,7 +360,7 @@ impl super::RightsMetadataProtector {
                         if let Some(end) = xmp_str[value_start..].find('"') {
                             let value_str = &xmp_str[value_start..value_start + end];
                             if let Ok(seed) = value_str.parse::<u64>() {
-                                return Some(seed);
+                                return (Some(seed), false);
                             }
                         }
                     }
@@ -371,7 +379,7 @@ impl super::RightsMetadataProtector {
                         .unwrap_or(data.len());
                     if let Ok(seed_str) = std::str::from_utf8(&data[start..end]) {
                         if let Ok(seed) = seed_str.trim().parse::<u64>() {
-                            return Some(seed);
+                            return (Some(seed), false);
                         }
                     }
                 }
@@ -386,7 +394,7 @@ impl super::RightsMetadataProtector {
             pos = next;
         }
 
-        None
+        (None, false)
     }
 
     pub(super) fn strip_stego_owned_webp(webp_data: &[u8]) -> Result<Vec<u8>> {

@@ -122,7 +122,12 @@ fn observe_webp_work(
             budget.observe_webp_chunk(img_bytes.len() - pos);
             break;
         }
+        let is_metadata =
+            &img_bytes[pos..pos + 4] == b"XMP " || &img_bytes[pos..pos + 4] == b"EXIF";
         budget.observe_webp_chunk(chunk_end - pos);
+        if is_metadata {
+            budget.observe_metadata_field(chunk_size);
+        }
         pos = chunk_end;
     }
     budget.check_limits()
@@ -391,6 +396,22 @@ mod tests {
         let mut budget = observer(&beyond_limits);
         let err = observe_container_work(&webp, ImageOutputFormat::WebP, &mut budget).unwrap_err();
         assert!(matches!(err, crate::Error::ContainerLimitExceeded { .. }));
+    }
+
+    #[test]
+    fn webp_xmp_and_exif_count_as_metadata_fields() {
+        let webp = webp_file(&[
+            webp_chunk(b"VP8 ", &[1, 2, 3]),
+            webp_chunk(b"XMP ", &[9; 5]),
+            webp_chunk(b"EXIF", &[7; 4]),
+        ]);
+        let limits = ResourceLimits::default();
+        let mut budget = observer(&limits);
+        observe_container_work(&webp, ImageOutputFormat::WebP, &mut budget).unwrap();
+        let usage = budget.finish(webp.len());
+        assert_eq!(usage.webp_riff_chunks_scanned, 3);
+        assert_eq!(usage.metadata_fields_extracted, 2);
+        assert_eq!(usage.metadata_bytes_copied, 9);
     }
 
     #[test]

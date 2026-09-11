@@ -394,6 +394,79 @@ fn jpeg_fail_on_conflict_before_mutation() {
     assert_eq!(first_notice.dmi(), Some(DmiValue::ProhibitedAiMlTraining));
 }
 
+fn jpeg_stego_singleton_counts(jpeg: &[u8]) -> (usize, usize, usize, usize) {
+    let mut structured = 0;
+    let mut xmp = 0;
+    let mut exif = 0;
+    let mut iptc = 0;
+    if jpeg.len() < 2 || jpeg[0] != 0xFF || jpeg[1] != 0xD8 {
+        return (structured, xmp, exif, iptc);
+    }
+    let mut pos = 2;
+    while pos + 2 <= jpeg.len() {
+        if jpeg[pos] != 0xFF {
+            pos += 1;
+            continue;
+        }
+        let marker = jpeg[pos + 1];
+        if marker == 0xD9 || marker == 0xDA {
+            break;
+        }
+        if marker == 0x00 {
+            pos += 1;
+            continue;
+        }
+        if pos + 4 > jpeg.len() {
+            break;
+        }
+        let seg_len = u16::from_be_bytes([jpeg[pos + 2], jpeg[pos + 3]]) as usize;
+        let Some(seg_end) = pos.checked_add(2).and_then(|p| p.checked_add(seg_len)) else {
+            break;
+        };
+        if seg_end > jpeg.len() {
+            break;
+        }
+        let seg_data = &jpeg[pos + 4..seg_end];
+        match marker {
+            0xFE if seg_data.starts_with(b"cloakrs:v1:") => structured += 1,
+            0xE1 if seg_data.starts_with(b"http://ns.adobe.com/xap/1.0/\0") => xmp += 1,
+            0xE1 if seg_data.starts_with(b"Exif\0\0")
+                && seg_data.windows(5).any(|w| w == b"DMI: ") =>
+            {
+                exif += 1
+            }
+            0xED if seg_data.windows(5).any(|w| w == b"DMI: ") => iptc += 1,
+            _ => {}
+        }
+        pos = seg_end;
+    }
+    (structured, xmp, exif, iptc)
+}
+
+#[test]
+fn jpeg_preserve_existing_does_not_duplicate_dmi_singletons() {
+    let base = make_test_image_jpeg(64, 64);
+    let ctx = ProtectionContext::new(0.5, 42)
+        .with_format(ImageOutputFormat::Jpeg)
+        .with_legal_metadata(legal_a())
+        .with_dmi(DmiValue::ProhibitedAiMlTraining)
+        .with_metadata_update_policy(MetadataUpdatePolicy::PreserveExisting);
+
+    let first = process_image_bytes(&base, ProtectionLevel::Standard, &ctx).unwrap();
+    let second = process_image_bytes(&first, ProtectionLevel::Standard, &ctx).unwrap();
+
+    assert_eq!(
+        jpeg_stego_singleton_counts(&first),
+        (1, 1, 1, 1),
+        "first run must emit exactly one of each DMI singleton"
+    );
+    assert_eq!(
+        jpeg_stego_singleton_counts(&second),
+        (1, 1, 1, 1),
+        "PreserveExisting repeat run must not duplicate DMI singletons"
+    );
+}
+
 #[test]
 fn jpeg_preserve_existing_retains_conflicts() {
     let base = make_test_image_jpeg(64, 64);

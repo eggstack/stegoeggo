@@ -1535,4 +1535,40 @@ mod table_c_container_limits {
             "Very small max_jpeg_segment_bytes should prevent verification"
         );
     }
+
+    #[test]
+    fn max_dimensions_enforced_on_jpeg_to_jpeg_fast_path() {
+        let img = create_test_image(64, 64);
+        let jpeg_bytes = image_to_jpeg_bytes(&img, 90);
+        let limits = ResourceLimits::builder()
+            .max_width(32)
+            .max_height(32)
+            .build();
+        let request = ProtectionRequest::with_hidden_marker(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(42)
+            .with_output_format(ImageOutputFormat::Jpeg)
+            .with_resource_limits(limits);
+        let result = process_request_bytes(&jpeg_bytes, &request);
+        assert!(
+            result.is_err(),
+            "JPEG fast path must enforce max_width/max_height from header"
+        );
+    }
+
+    #[test]
+    fn truncated_seed_scan_reports_invalid_not_not_found() {
+        let img = create_test_image(64, 64);
+        let png_bytes = image_to_png_bytes(&img);
+        let request =
+            ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::ProhibitedAiMlTraining)
+                .with_seed(42);
+        let protected = process_request_bytes(&png_bytes, &request).unwrap();
+        let limits = ResourceLimits::builder().max_png_chunks(1).build();
+        let status = stegoeggo::verify_image_bytes_with_limits(&protected, &[], &limits);
+        assert_eq!(
+            status,
+            VerificationStatus::Invalid,
+            "truncated metadata scan must surface Invalid, not NotFound"
+        );
+    }
 }

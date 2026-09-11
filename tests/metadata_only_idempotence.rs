@@ -66,6 +66,91 @@ fn metadata_only_request() -> ProtectionRequest {
     })
 }
 
+fn make_test_image_jpeg(width: u32, height: u32) -> Vec<u8> {
+    let img = image::DynamicImage::new_rgb8(width, height);
+    let mut buf = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
+    buf.into_inner()
+}
+
+fn count_jpeg_dmi_singletons(jpeg: &[u8]) -> (usize, usize, usize, usize) {
+    let mut structured = 0;
+    let mut xmp = 0;
+    let mut exif = 0;
+    let mut iptc = 0;
+    if jpeg.len() < 2 || jpeg[0] != 0xFF || jpeg[1] != 0xD8 {
+        return (structured, xmp, exif, iptc);
+    }
+    let mut pos = 2;
+    while pos + 2 <= jpeg.len() {
+        if jpeg[pos] != 0xFF {
+            pos += 1;
+            continue;
+        }
+        let marker = jpeg[pos + 1];
+        if marker == 0xD9 || marker == 0xDA {
+            break;
+        }
+        if marker == 0x00 {
+            pos += 1;
+            continue;
+        }
+        if pos + 4 > jpeg.len() {
+            break;
+        }
+        let seg_len = u16::from_be_bytes([jpeg[pos + 2], jpeg[pos + 3]]) as usize;
+        let Some(seg_end) = pos.checked_add(2).and_then(|p| p.checked_add(seg_len)) else {
+            break;
+        };
+        if seg_end > jpeg.len() {
+            break;
+        }
+        let seg_data = &jpeg[pos + 4..seg_end];
+        match marker {
+            0xFE if seg_data.starts_with(b"cloakrs:v1:") => structured += 1,
+            0xE1 if seg_data.starts_with(b"http://ns.adobe.com/xap/1.0/\0") => xmp += 1,
+            0xE1 if seg_data.starts_with(b"Exif\0\0")
+                && seg_data.windows(5).any(|w| w == b"DMI: ") =>
+            {
+                exif += 1
+            }
+            0xED if seg_data.windows(5).any(|w| w == b"DMI: ") => iptc += 1,
+            _ => {}
+        }
+        pos = seg_end;
+    }
+    (structured, xmp, exif, iptc)
+}
+
+#[test]
+fn jpeg_preserve_existing_dmi_is_idempotent_on_metadata_only_path() {
+    let base = make_test_image_jpeg(64, 64);
+    let request = ProtectionRequest::metadata_only(
+        RightsNotice::default(),
+        RightsPolicy::ProhibitedAiMlTraining,
+    )
+    .with_seed(42)
+    .with_output_format(ImageOutputFormat::Jpeg)
+    .with_processing(ProcessingOptions {
+        metadata_update_policy: MetadataUpdatePolicy::PreserveExisting,
+        ..ProcessingOptions::default()
+    });
+
+    let out1 = process_request_bytes(&base, &request).unwrap();
+    let out2 = process_request_bytes(&out1, &request).unwrap();
+
+    assert_eq!(
+        count_jpeg_dmi_singletons(&out1),
+        (1, 1, 1, 1),
+        "first run must emit exactly one of each DMI singleton"
+    );
+    assert_eq!(
+        count_jpeg_dmi_singletons(&out2),
+        (1, 1, 1, 1),
+        "PreserveExisting repeat run must not duplicate DMI singletons"
+    );
+}
+
 #[test]
 fn png_replace_stego_owned_idempotent_on_metadata_only_path() {
     let base = make_test_image_png(32, 32);

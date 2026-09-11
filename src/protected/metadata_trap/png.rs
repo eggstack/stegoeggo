@@ -241,17 +241,25 @@ impl super::RightsMetadataProtector {
         Ok(chunk)
     }
 
+    #[allow(dead_code)]
     pub(super) fn extract_seed_from_png(
         png_data: &[u8],
         limits: Option<&crate::ResourceLimits>,
     ) -> Option<u64> {
+        Self::extract_seed_from_png_truncated(png_data, limits).0
+    }
+
+    pub(super) fn extract_seed_from_png_truncated(
+        png_data: &[u8],
+        limits: Option<&crate::ResourceLimits>,
+    ) -> (Option<u64>, bool) {
         let mut pos = 8;
         let mut chunk_count: usize = 0;
         while pos + 12 <= png_data.len() {
             chunk_count += 1;
             if let Some(lim) = limits {
                 if chunk_count > lim.max_png_chunks() {
-                    return None;
+                    return (None, true);
                 }
             }
 
@@ -264,7 +272,7 @@ impl super::RightsMetadataProtector {
 
             if let Some(lim) = limits {
                 if chunk_len > lim.max_png_chunk_bytes() {
-                    return None;
+                    return (None, true);
                 }
             }
 
@@ -298,14 +306,14 @@ impl super::RightsMetadataProtector {
 
                     if key == b"X-Protection-Seed" {
                         if let Ok(seed) = value_str.parse() {
-                            return Some(seed);
+                            return (Some(seed), false);
                         }
                     }
 
                     if key == b"Description" {
                         if let Some(seed_str) = value_str.strip_prefix("Protected image. Seed: ") {
                             if let Ok(seed) = seed_str.trim().parse() {
-                                return Some(seed);
+                                return (Some(seed), false);
                             }
                         }
                     }
@@ -317,7 +325,7 @@ impl super::RightsMetadataProtector {
             };
             pos = next_pos;
         }
-        None
+        (None, false)
     }
 
     pub(super) fn is_stego_owned_text_key(key: &[u8]) -> bool {

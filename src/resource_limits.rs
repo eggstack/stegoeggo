@@ -471,7 +471,34 @@ pub(crate) struct OperationObserver {
     usage: ResourceUsage,
     peak_alloc: usize,
     limits: ResourceLimits,
-    limit_error: Option<crate::Error>,
+    limit_error: Option<ObserverLimitError>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ObserverLimitError {
+    ContainerLimit {
+        kind: &'static str,
+        count: usize,
+        limit: usize,
+    },
+    MetadataLimit {
+        kind: &'static str,
+        size: usize,
+        limit: usize,
+    },
+}
+
+impl ObserverLimitError {
+    fn into_error(self) -> crate::Error {
+        match self {
+            ObserverLimitError::ContainerLimit { kind, count, limit } => {
+                crate::Error::ContainerLimitExceeded { kind, count, limit }
+            }
+            ObserverLimitError::MetadataLimit { kind, size, limit } => {
+                crate::Error::MetadataLimitExceeded { kind, size, limit }
+            }
+        }
+    }
 }
 
 impl OperationObserver {
@@ -495,7 +522,7 @@ impl OperationObserver {
         if self.usage.png_chunks_scanned > self.limits.max_png_chunks()
             && self.limit_error.is_none()
         {
-            self.limit_error = Some(crate::Error::ContainerLimitExceeded {
+            self.limit_error = Some(ObserverLimitError::ContainerLimit {
                 kind: "PNG chunks",
                 count: self.usage.png_chunks_scanned,
                 limit: self.limits.max_png_chunks(),
@@ -509,7 +536,7 @@ impl OperationObserver {
         if self.usage.jpeg_segments_scanned > self.limits.max_jpeg_segments()
             && self.limit_error.is_none()
         {
-            self.limit_error = Some(crate::Error::ContainerLimitExceeded {
+            self.limit_error = Some(ObserverLimitError::ContainerLimit {
                 kind: "JPEG segments",
                 count: self.usage.jpeg_segments_scanned,
                 limit: self.limits.max_jpeg_segments(),
@@ -523,7 +550,7 @@ impl OperationObserver {
         if self.usage.webp_riff_chunks_scanned > self.limits.max_webp_riff_chunks()
             && self.limit_error.is_none()
         {
-            self.limit_error = Some(crate::Error::ContainerLimitExceeded {
+            self.limit_error = Some(ObserverLimitError::ContainerLimit {
                 kind: "WebP RIFF chunks",
                 count: self.usage.webp_riff_chunks_scanned,
                 limit: self.limits.max_webp_riff_chunks(),
@@ -537,14 +564,14 @@ impl OperationObserver {
         if self.usage.metadata_fields_extracted > self.limits.max_metadata_fields()
             && self.limit_error.is_none()
         {
-            self.limit_error = Some(crate::Error::ContainerLimitExceeded {
+            self.limit_error = Some(ObserverLimitError::ContainerLimit {
                 kind: "metadata fields",
                 count: self.usage.metadata_fields_extracted,
                 limit: self.limits.max_metadata_fields(),
             });
         }
         if field_bytes > self.limits.max_metadata_field_bytes() && self.limit_error.is_none() {
-            self.limit_error = Some(crate::Error::MetadataLimitExceeded {
+            self.limit_error = Some(ObserverLimitError::MetadataLimit {
                 kind: "metadata field",
                 size: field_bytes,
                 limit: self.limits.max_metadata_field_bytes(),
@@ -554,28 +581,8 @@ impl OperationObserver {
     }
 
     pub fn check_limits(&self) -> crate::Result<()> {
-        if let Some(err) = &self.limit_error {
-            return Err(match err {
-                crate::Error::ContainerLimitExceeded { kind, count, limit } => {
-                    crate::Error::ContainerLimitExceeded {
-                        kind,
-                        count: *count,
-                        limit: *limit,
-                    }
-                }
-                crate::Error::MetadataLimitExceeded { kind, size, limit } => {
-                    crate::Error::MetadataLimitExceeded {
-                        kind,
-                        size: *size,
-                        limit: *limit,
-                    }
-                }
-                _ => crate::Error::ContainerLimitExceeded {
-                    kind: "observer",
-                    count: 0,
-                    limit: 0,
-                },
-            });
+        if let Some(err) = self.limit_error {
+            return Err(err.into_error());
         }
         Ok(())
     }

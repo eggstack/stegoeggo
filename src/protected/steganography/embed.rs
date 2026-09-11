@@ -414,7 +414,6 @@ impl SteganographyProtector {
 
         let emission = crate::types::PayloadEmissionContext::from_plan_for_context(ctx, embed_path);
         let payload = self.generate_payload(&emission, ctx);
-        let mut rgba = img.to_rgba8();
 
         let redundancy = ctx.effective_redundancy();
 
@@ -431,6 +430,7 @@ impl SteganographyProtector {
                 Ok((image::load_from_memory(&output)?, Some(summary)))
             }
             _ => {
+                let mut rgba = img.to_rgba8();
                 let summary = self.embed_raster_with_seed_fallback(
                     &mut rgba,
                     &payload,

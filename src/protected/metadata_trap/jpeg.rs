@@ -100,6 +100,10 @@ impl super::RightsMetadataProtector {
                     if Self::xmp_has_stego_properties(xmp) {
                         return true;
                     }
+                } else if seg_data.starts_with(b"Exif\0\0")
+                    && Self::jpeg_exif_has_stego_properties(seg_data)
+                {
+                    return true;
                 }
             }
             pos = seg_end;
@@ -203,6 +207,29 @@ impl super::RightsMetadataProtector {
         false
     }
 
+    pub(super) fn jpeg_exif_has_stego_properties(data: &[u8]) -> bool {
+        Self::jpeg_data_has_dmi_caption(data)
+    }
+
+    pub(super) fn jpeg_iptc_has_dmi_caption(data: &[u8]) -> bool {
+        Self::jpeg_data_has_dmi_caption(data)
+    }
+
+    pub(super) fn jpeg_data_has_dmi_caption(data: &[u8]) -> bool {
+        const CAPTIONS: &[&[u8]] = &[
+            b"DMI: Unspecified",
+            b"DMI: Allowed",
+            b"DMI: ProhibitedAiMlTraining",
+            b"DMI: ProhibitedGenAiMlTraining",
+            b"DMI: ProhibitedExceptSearchEngineIndexing",
+            b"DMI: Prohibited",
+            b"DMI: ProhibitedSeeConstraints",
+        ];
+        CAPTIONS
+            .iter()
+            .any(|m| data.windows(m.len()).any(|w| w == *m))
+    }
+
     #[cfg(test)]
     pub(super) fn inject_text_chunks_jpeg(
         &self,
@@ -212,9 +239,10 @@ impl super::RightsMetadataProtector {
         seed: Option<u64>,
         ctx: Option<&ProtectionContext>,
     ) -> Result<Vec<u8>> {
-        self.inject_text_chunks_jpeg_with_timestamp(jpeg_data, metadata, dmi, seed, ctx, None)
+        self.inject_text_chunks_jpeg_with_timestamp(jpeg_data, metadata, dmi, seed, ctx, None, true)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn inject_text_chunks_jpeg_with_timestamp(
         &self,
         jpeg_data: &[u8],
@@ -223,6 +251,7 @@ impl super::RightsMetadataProtector {
         seed: Option<u64>,
         ctx: Option<&ProtectionContext>,
         timestamp: Option<&str>,
+        emit_structured_com: bool,
     ) -> Result<Vec<u8>> {
         if metadata.is_empty() && dmi.is_none() {
             return Ok(jpeg_data.to_vec());
@@ -282,7 +311,15 @@ impl super::RightsMetadataProtector {
 
             if marker == 0xD9 {
                 if !inserted {
-                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx, timestamp)?;
+                    self.inject_all_dmi_markers(
+                        &mut output,
+                        dmi,
+                        metadata,
+                        seed,
+                        ctx,
+                        timestamp,
+                        emit_structured_com,
+                    )?;
                     inserted = true;
                 }
                 output.extend_from_slice(&jpeg_data[pos..]);
@@ -291,7 +328,15 @@ impl super::RightsMetadataProtector {
 
             if marker == 0xDA {
                 if !inserted {
-                    self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx, timestamp)?;
+                    self.inject_all_dmi_markers(
+                        &mut output,
+                        dmi,
+                        metadata,
+                        seed,
+                        ctx,
+                        timestamp,
+                        emit_structured_com,
+                    )?;
                     inserted = true;
                 }
                 output.extend_from_slice(&jpeg_data[pos..]);
@@ -336,7 +381,15 @@ impl super::RightsMetadataProtector {
         }
 
         if !inserted {
-            self.inject_all_dmi_markers(&mut output, dmi, metadata, seed, ctx, timestamp)?;
+            self.inject_all_dmi_markers(
+                &mut output,
+                dmi,
+                metadata,
+                seed,
+                ctx,
+                timestamp,
+                emit_structured_com,
+            )?;
         }
 
         Ok(output)
@@ -344,6 +397,7 @@ impl super::RightsMetadataProtector {
 
     /// Injects all DMI markers: EXIF, IPTC-IIM, XMP, structured COM, and text comments.
     /// This ensures maximum compatibility across different image processing systems.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn inject_all_dmi_markers(
         &self,
         output: &mut Vec<u8>,
@@ -352,6 +406,7 @@ impl super::RightsMetadataProtector {
         seed: Option<u64>,
         ctx: Option<&ProtectionContext>,
         timestamp: Option<&str>,
+        emit_structured_com: bool,
     ) -> Result<()> {
         let default_limits = crate::ResourceLimits::default();
         let limits = ctx.map(|c| c.resource_limits());
@@ -379,7 +434,7 @@ impl super::RightsMetadataProtector {
             output.extend_from_slice(&com_chunk);
         }
 
-        if let Some(context) = ctx {
+        if let Some(context) = ctx.filter(|_| emit_structured_com) {
             let structured_com =
                 Self::generate_structured_com_marker_with_timestamp(dmi, context, timestamp);
             output.extend_from_slice(&structured_com);
@@ -506,6 +561,13 @@ impl super::RightsMetadataProtector {
         jpeg_data: &[u8],
         limits: Option<&crate::ResourceLimits>,
     ) -> Option<u64> {
+        Self::extract_seed_from_jpeg_truncated(jpeg_data, limits).0
+    }
+
+    pub(super) fn extract_seed_from_jpeg_truncated(
+        jpeg_data: &[u8],
+        limits: Option<&crate::ResourceLimits>,
+    ) -> (Option<u64>, bool) {
         let mut pos = 2;
         let mut segment_count: usize = 0;
         while pos + 2 <= jpeg_data.len() {
@@ -528,28 +590,33 @@ impl super::RightsMetadataProtector {
             segment_count += 1;
             if let Some(lim) = limits {
                 if segment_count > lim.max_jpeg_segments() {
-                    return None;
+                    return (None, true);
                 }
             }
 
             if marker == 0xFE {
                 if pos + 4 > jpeg_data.len() {
-                    return None;
+                    return (None, false);
                 }
                 let comment_len =
                     u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
                 if comment_len < 2 {
-                    let next = pos
-                        .checked_add(2)
-                        .and_then(|p| p.checked_add(comment_len))?;
+                    let Some(next) = pos.checked_add(2).and_then(|p| p.checked_add(comment_len))
+                    else {
+                        return (None, false);
+                    };
                     pos = next;
                     continue;
                 }
-                let comment_start = pos.checked_add(4)?;
-                let raw_end = comment_start.checked_add(comment_len.saturating_sub(2))?;
+                let Some(comment_start) = pos.checked_add(4) else {
+                    return (None, false);
+                };
+                let Some(raw_end) = comment_start.checked_add(comment_len.saturating_sub(2)) else {
+                    return (None, false);
+                };
                 let comment_end = raw_end.min(jpeg_data.len());
                 if comment_start > comment_end {
-                    return None;
+                    return (None, false);
                 }
                 let comment = &jpeg_data[comment_start..comment_end];
 
@@ -557,54 +624,57 @@ impl super::RightsMetadataProtector {
                     if let Some((seed, _level, _intensity)) =
                         Self::parse_structured_com_payload(comment)
                     {
-                        return Some(seed);
+                        return (Some(seed), false);
                     }
                 }
 
                 if let Ok(comment_str) = String::from_utf8(comment.to_vec()) {
                     if let Some(seed_part) = comment_str.strip_prefix("X-Protection-Seed: ") {
-                        return seed_part.trim().parse().ok();
+                        return (seed_part.trim().parse().ok(), false);
                     }
                 }
-                let next = pos
-                    .checked_add(2)
-                    .and_then(|p| p.checked_add(comment_len))?;
+                let Some(next) = pos.checked_add(2).and_then(|p| p.checked_add(comment_len)) else {
+                    return (None, false);
+                };
                 pos = next;
                 continue;
             }
 
             if pos + 4 > jpeg_data.len() {
-                return None;
+                return (None, false);
             }
             let segment_len = u16::from_be_bytes([jpeg_data[pos + 2], jpeg_data[pos + 3]]) as usize;
 
             if let Some(lim) = limits {
                 if segment_len > lim.max_jpeg_segment_bytes() {
-                    return None;
+                    return (None, true);
                 }
             }
 
             if marker == 0xED && segment_len >= 2 {
-                let seg_start = pos.checked_add(4)?;
-                let raw_end = pos
-                    .checked_add(2)
-                    .and_then(|p| p.checked_add(segment_len))?;
+                let Some(seg_start) = pos.checked_add(4) else {
+                    return (None, false);
+                };
+                let Some(raw_end) = pos.checked_add(2).and_then(|p| p.checked_add(segment_len))
+                else {
+                    return (None, false);
+                };
                 let seg_end = raw_end.min(jpeg_data.len());
                 if seg_start > seg_end {
-                    return None;
+                    return (None, false);
                 }
                 let seg_data = &jpeg_data[seg_start..seg_end];
                 if let Some(seed) = Self::extract_seed_from_iptc(seg_data) {
-                    return Some(seed);
+                    return (Some(seed), false);
                 }
             }
 
-            let next = pos
-                .checked_add(2)
-                .and_then(|p| p.checked_add(segment_len))?;
+            let Some(next) = pos.checked_add(2).and_then(|p| p.checked_add(segment_len)) else {
+                return (None, false);
+            };
             pos = next;
         }
-        None
+        (None, false)
     }
 
     pub(super) fn extract_seed_from_iptc(iptc_data: &[u8]) -> Option<u64> {
@@ -681,6 +751,9 @@ impl super::RightsMetadataProtector {
             0xED => Self::jpeg_payload_has_stego_properties_static(seg_data),
             0xE1 if seg_data.starts_with(b"http://ns.adobe.com/xap/1.0/\0") => {
                 Self::xmp_has_stego_properties(&seg_data[29..])
+            }
+            0xE1 if seg_data.starts_with(b"Exif\0\0") => {
+                Self::jpeg_exif_has_stego_properties(seg_data)
             }
             _ => false,
         }
@@ -842,6 +915,9 @@ impl super::RightsMetadataProtector {
             }
             if marker == 0xFE {
                 let seg_data = &jpeg_data[pos + 4..seg_end];
+                if seg_data.starts_with(Self::STRUCTURED_COM_MAGIC) {
+                    keys.push(b"__STRUCTURED_COM__".to_vec());
+                }
                 if let Ok(s) = std::str::from_utf8(seg_data) {
                     for prefix in &[
                         "X-Protection-Seed: ",
@@ -869,9 +945,37 @@ impl super::RightsMetadataProtector {
                         }
                     }
                 }
+            } else if marker == 0xE1 {
+                let seg_data = &jpeg_data[pos + 4..seg_end];
+                if seg_data.starts_with(b"http://ns.adobe.com/xap/1.0/\0")
+                    && Self::xmp_has_stego_properties(&seg_data[29..])
+                {
+                    keys.push(b"__XMP__".to_vec());
+                } else if seg_data.starts_with(b"Exif\0\0")
+                    && Self::jpeg_exif_has_stego_properties(seg_data)
+                {
+                    keys.push(b"__EXIF__".to_vec());
+                }
+            } else if marker == 0xED {
+                let seg_data = &jpeg_data[pos + 4..seg_end];
+                if Self::jpeg_iptc_has_dmi_caption(seg_data) {
+                    keys.push(b"__IPTC__".to_vec());
+                }
             }
             pos = seg_end;
         }
         keys
+    }
+
+    pub(super) fn jpeg_preserve_existing_suppression(
+        existing_keys: &[Vec<u8>],
+        dmi: Option<DmiValue>,
+    ) -> (Option<DmiValue>, bool) {
+        let singletons_present = existing_keys
+            .iter()
+            .any(|k| k == b"__XMP__" || k == b"__EXIF__" || k == b"__IPTC__");
+        let structured_present = existing_keys.iter().any(|k| k == b"__STRUCTURED_COM__");
+        let effective_dmi = if singletons_present { None } else { dmi };
+        (effective_dmi, !structured_present)
     }
 }

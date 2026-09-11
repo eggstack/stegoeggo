@@ -117,21 +117,34 @@ impl RightsMetadataProtector {
         img_bytes: &[u8],
         limits: Option<&crate::ResourceLimits>,
     ) -> Option<u64> {
+        Self::extract_seed_from_image_with_limits_truncated(img_bytes, limits).0
+    }
+
+    /// Extract the protection seed from image metadata, reporting limit truncation.
+    ///
+    /// Like [`extract_seed_from_image_with_limits`](Self::extract_seed_from_image_with_limits),
+    /// but also reports whether a resource limit truncated the scan before a
+    /// seed could be found. When `truncated` is true, `None` must not be read
+    /// as "unprotected" — the seed-bearing marker may lie past the limit.
+    pub fn extract_seed_from_image_with_limits_truncated(
+        img_bytes: &[u8],
+        limits: Option<&crate::ResourceLimits>,
+    ) -> (Option<u64>, bool) {
         if img_bytes.len() < 8 {
-            return None;
+            return (None, false);
         }
 
         if img_bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
-            Self::extract_seed_from_png(img_bytes, limits)
+            Self::extract_seed_from_png_truncated(img_bytes, limits)
         } else if img_bytes.starts_with(&[0xFF, 0xD8]) {
-            Self::extract_seed_from_jpeg(img_bytes, limits)
+            Self::extract_seed_from_jpeg_truncated(img_bytes, limits)
         } else if img_bytes.len() >= 12
             && &img_bytes[0..4] == b"RIFF"
             && &img_bytes[8..12] == b"WEBP"
         {
-            Self::extract_seed_from_webp(img_bytes, limits)
+            Self::extract_seed_from_webp_truncated(img_bytes, limits)
         } else {
-            None
+            (None, false)
         }
     }
 }
@@ -194,14 +207,22 @@ impl RightsMetadataProtector {
                             notice.seed(),
                             Some(&ctx.resource_limits()),
                         ),
-                        ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg_with_timestamp(
-                            img_bytes,
-                            &metadata,
-                            notice.dmi(),
-                            notice.seed(),
-                            Some(ctx),
-                            notice.notice_applied_at(),
-                        ),
+                        ImageOutputFormat::Jpeg => {
+                            let (effective_dmi, emit_structured_com) =
+                                Self::jpeg_preserve_existing_suppression(
+                                    &existing_keys,
+                                    notice.dmi(),
+                                );
+                            self.inject_text_chunks_jpeg_with_timestamp(
+                                img_bytes,
+                                &metadata,
+                                effective_dmi,
+                                notice.seed(),
+                                Some(ctx),
+                                notice.notice_applied_at(),
+                                emit_structured_com,
+                            )
+                        }
                         ImageOutputFormat::WebP => {
                             self.inject_text_chunks_webp_from_notice(img_bytes, &notice)
                         }
@@ -232,6 +253,7 @@ impl RightsMetadataProtector {
                 notice.seed(),
                 Some(ctx),
                 notice.notice_applied_at(),
+                true,
             )?,
             ImageOutputFormat::WebP => {
                 self.inject_text_chunks_webp_from_notice(&stripped, &notice)?
@@ -312,14 +334,22 @@ impl RightsMetadataProtector {
                             notice.seed(),
                             Some(plan.resource_limits()),
                         ),
-                        ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg_with_timestamp(
-                            img_bytes,
-                            &metadata,
-                            effective_dmi,
-                            notice.seed(),
-                            Some(&limits_ctx),
-                            notice.notice_applied_at(),
-                        ),
+                        ImageOutputFormat::Jpeg => {
+                            let (preserved_dmi, emit_structured_com) =
+                                Self::jpeg_preserve_existing_suppression(
+                                    &existing_keys,
+                                    effective_dmi,
+                                );
+                            self.inject_text_chunks_jpeg_with_timestamp(
+                                img_bytes,
+                                &metadata,
+                                preserved_dmi,
+                                notice.seed(),
+                                Some(&limits_ctx),
+                                notice.notice_applied_at(),
+                                emit_structured_com,
+                            )
+                        }
                         ImageOutputFormat::WebP => {
                             self.inject_text_chunks_webp_from_notice(img_bytes, notice)
                         }
@@ -350,6 +380,7 @@ impl RightsMetadataProtector {
                 notice.seed(),
                 Some(&limits_ctx),
                 notice.notice_applied_at(),
+                true,
             )?,
             ImageOutputFormat::WebP => {
                 self.inject_text_chunks_webp_from_notice(&stripped, notice)?
@@ -842,6 +873,98 @@ mod tests {
             .unwrap();
         let extracted = RightsMetadataProtector::extract_seed_from_jpeg(&result, None).unwrap();
         assert_eq!(extracted, 54321);
+    }
+
+    #[test]
+    fn jpeg_seed_scan_reports_truncation_past_segment_limit() {
+        fn com_segment(payload: &[u8]) -> Vec<u8> {
+            let mut seg = vec![0xFF, 0xFE];
+            let len = (payload.len() + 2) as u16;
+            seg.extend_from_slice(&len.to_be_bytes());
+            seg.extend_from_slice(payload);
+            seg
+        }
+        let mut jpeg = vec![0xFF, 0xD8];
+        for i in 0..4u8 {
+            jpeg.extend_from_slice(&com_segment(&[b'f', b'i', b'l', b'l', b'0' + i]));
+        }
+        jpeg.extend_from_slice(&com_segment(b"X-Protection-Seed: 777"));
+        jpeg.extend_from_slice(&[0xFF, 0xD9]);
+        let tight = crate::ResourceLimits::builder()
+            .max_jpeg_segments(4)
+            .build();
+        let (seed, truncated) =
+            RightsMetadataProtector::extract_seed_from_jpeg_truncated(&jpeg, Some(&tight));
+        assert_eq!(seed, None);
+        assert!(truncated);
+        let (seed, truncated) =
+            RightsMetadataProtector::extract_seed_from_jpeg_truncated(&jpeg, None);
+        assert_eq!(seed, Some(777));
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn dmi_caption_markers_match_dmi_values() {
+        use crate::types::DmiValue;
+        for value in [
+            DmiValue::Unspecified,
+            DmiValue::Allowed,
+            DmiValue::ProhibitedAiMlTraining,
+            DmiValue::ProhibitedGenAiMlTraining,
+            DmiValue::ProhibitedExceptSearchEngineIndexing,
+            DmiValue::Prohibited,
+            DmiValue::ProhibitedSeeConstraints,
+        ] {
+            let caption = format!("DMI: {}", value.as_str());
+            assert!(
+                RightsMetadataProtector::jpeg_data_has_dmi_caption(caption.as_bytes()),
+                "caption for {:?} must be detected",
+                value
+            );
+        }
+        assert!(!RightsMetadataProtector::jpeg_data_has_dmi_caption(
+            b"Sunset over the harbor"
+        ));
+    }
+
+    #[test]
+    fn legacy_generate_xmp_notice_forwards_all_legal_fields() {
+        use crate::types::LegalMetadata;
+        let legal = LegalMetadata::new()
+            .with_copyright_holder("Holder")
+            .with_creator("Creator")
+            .with_usage_terms("Terms")
+            .with_ai_constraints("No AI")
+            .with_web_statement_of_rights("https://example.com/rights")
+            .with_contact_email("legal@example.com")
+            .with_license_url("https://example.com/license")
+            .with_credit_line("Credit")
+            .with_creation_date("2025-01-01")
+            .with_copyright_owner("Owner")
+            .with_licensor_name("Licensor")
+            .with_licensor_email("lic@example.com")
+            .with_licensor_url("https://example.com/licensor")
+            .with_metadata_date("2025-06-01")
+            .with_notice_applied_at("2025-06-15T12:00:00Z");
+        let xmp = RightsMetadataProtector::generate_xmp_notice(
+            crate::types::DmiValue::ProhibitedAiMlTraining,
+            Some(7),
+            Some(&legal),
+        );
+        let xmp_str = String::from_utf8_lossy(&xmp);
+        for needle in [
+            "stegoeggo:CopyrightOwner",
+            "stegoeggo:LicensorName",
+            "stegoeggo:LicensorEmail",
+            "stegoeggo:LicensorURL",
+            "xmp:MetadataDate",
+            "stegoeggo:NoticeAppliedAt",
+        ] {
+            assert!(
+                xmp_str.contains(needle),
+                "legacy XMP notice must contain {needle}"
+            );
+        }
     }
 
     #[test]

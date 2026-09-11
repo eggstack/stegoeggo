@@ -499,46 +499,6 @@ impl SteganographyProtector {
             CandidateOutcome::NotFound => {}
         }
 
-        if let Ok(encoded) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
-            if let Some(metadata_seed) =
-                RightsMetadataProtector::extract_seed_from_image_with_limits(
-                    &encoded,
-                    Some(&self.limits),
-                )
-            {
-                if metadata_seed != seed {
-                    match self.verify_extract_with_redundancy(&rgba, metadata_seed, mac_key) {
-                        CandidateOutcome::Valid(payload) => {
-                            if Self::verify_embedded_seed_matches(&payload, seed) {
-                                return CandidateOutcome::Valid(payload);
-                            }
-                        }
-                        CandidateOutcome::Invalid(payload) => {
-                            if Self::verify_embedded_seed_matches(&payload, seed) {
-                                return CandidateOutcome::Invalid(payload);
-                            }
-                        }
-                        CandidateOutcome::AuthenticationKeyMissing(payload) => {
-                            if Self::verify_embedded_seed_matches(&payload, seed) {
-                                return CandidateOutcome::AuthenticationKeyMissing(payload);
-                            }
-                        }
-                        CandidateOutcome::AuthenticationFailed(payload) => {
-                            if Self::verify_embedded_seed_matches(&payload, seed) {
-                                return CandidateOutcome::AuthenticationFailed(payload);
-                            }
-                        }
-                        CandidateOutcome::ResourceLimitExceeded => {
-                            return CandidateOutcome::ResourceLimitExceeded;
-                        }
-                        CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
-                        }
-                        CandidateOutcome::NotFound => {}
-                    }
-                }
-            }
-        }
-
         self.verify_tiled_extraction_outcome(
             &rgba,
             seed,
@@ -869,6 +829,7 @@ impl SteganographyProtector {
         seed: u64,
         redundancy: usize,
     ) -> Option<Vec<u8>> {
+        debug_assert!(expected_bits.is_multiple_of(8));
         if !expected_bits.is_multiple_of(8) {
             return None;
         }
@@ -1426,11 +1387,11 @@ impl SteganographyProtector {
             return None;
         }
 
-        // Try metadata seed extraction from bytes (works for PNG, JPEG, WebP)
+        let decoded = image::load_from_memory(img_bytes).ok();
         if let Some(metadata_seed) = metadata_seed {
-            if let Ok(img) = image::load_from_memory(img_bytes) {
+            if let Some(img) = decoded.as_ref() {
                 if let Some(payload) =
-                    self.extract_payload_with_seed_and_key(&img, metadata_seed, mac_key)
+                    self.extract_payload_with_seed_and_key(img, metadata_seed, mac_key)
                 {
                     return Some(payload);
                 }
@@ -1438,11 +1399,11 @@ impl SteganographyProtector {
         }
 
         // LSB fallback seed
-        if let Ok(img) = image::load_from_memory(img_bytes) {
+        if let Some(img) = decoded.as_ref() {
             let rgba = img.to_rgba8();
             if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
                 if let Some(payload) =
-                    self.extract_payload_with_seed_and_key(&img, fallback_seed, mac_key)
+                    self.extract_payload_with_seed_and_key(img, fallback_seed, mac_key)
                 {
                     return Some(payload);
                 }
@@ -1451,7 +1412,7 @@ impl SteganographyProtector {
 
         // Tiled LSB fallback
         #[cfg(feature = "test-seeds")]
-        if let Ok(img) = image::load_from_memory(img_bytes) {
+        if let Some(img) = decoded.as_ref() {
             let rgba = img.to_rgba8();
             for &seed in FALLBACK_SEEDS
                 .iter()

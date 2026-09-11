@@ -3,6 +3,7 @@ target/
 **/.DS_Store
 
 # Test artifacts
+conformance-report.json
 test_input.png
 test_output/
 testfinal/

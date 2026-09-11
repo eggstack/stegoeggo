@@ -412,6 +412,36 @@ impl super::RightsMetadataProtector {
                 } else {
                     notice
                 };
+                let notice = if let Some(v) = l.copyright_owner() {
+                    notice.with_copyright_owner(v)
+                } else {
+                    notice
+                };
+                let notice = if let Some(v) = l.licensor_name() {
+                    notice.with_licensor_name(v)
+                } else {
+                    notice
+                };
+                let notice = if let Some(v) = l.licensor_email() {
+                    notice.with_licensor_email(v)
+                } else {
+                    notice
+                };
+                let notice = if let Some(v) = l.licensor_url() {
+                    notice.with_licensor_url(v)
+                } else {
+                    notice
+                };
+                let notice = if let Some(v) = l.metadata_date() {
+                    notice.with_metadata_date(v)
+                } else {
+                    notice
+                };
+                let notice = if let Some(v) = l.notice_applied_at() {
+                    notice.with_notice_applied_at(v)
+                } else {
+                    notice
+                };
                 Self::build_legal_props_from_notice(&notice)
             }
             None => String::new(),

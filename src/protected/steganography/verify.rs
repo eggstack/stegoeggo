@@ -72,10 +72,18 @@ impl SteganographyProtector {
         mac_key: &[u8],
         _suppress_unstructured_candidates: bool,
     ) -> CandidateOutcome {
-        let metadata_seed = RightsMetadataProtector::extract_seed_from_image_with_limits(
-            img_bytes,
-            Some(&self.limits),
-        );
+        let (metadata_seed, seed_scan_truncated) =
+            RightsMetadataProtector::extract_seed_from_image_with_limits_truncated(
+                img_bytes,
+                Some(&self.limits),
+            );
+        let truncated_outcome = |truncated: bool| {
+            if truncated {
+                CandidateOutcome::ResourceLimitExceeded
+            } else {
+                CandidateOutcome::NotFound
+            }
+        };
 
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
             let outcome = self.verify_extract_verified_dct(img_bytes, mac_key);
@@ -90,7 +98,7 @@ impl SteganographyProtector {
                 }
             }
 
-            return CandidateOutcome::NotFound;
+            return truncated_outcome(seed_scan_truncated);
         }
 
         if let Ok(img) = image::load_from_memory(img_bytes) {
@@ -168,7 +176,7 @@ impl SteganographyProtector {
             }
         }
 
-        CandidateOutcome::NotFound
+        truncated_outcome(seed_scan_truncated)
     }
 
     /// Verify protection and return raw payload bytes for embedded reference checks.
@@ -200,6 +208,7 @@ impl SteganographyProtector {
         }
     }
 
+    #[cfg(feature = "detached-manifest")]
     pub(crate) fn verify_and_extract_raw_for_detailed(
         &self,
         img_bytes: &[u8],
