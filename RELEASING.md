@@ -162,13 +162,17 @@ git push origin vX.Y.Z
 - Create the GitHub release manually from the tag, then dispatch
   `.github/workflows/release-binaries.yml` with the exact `vX.Y.Z` tag. The
   workflow checks out that tag, builds the five targets in
-  `scripts/release-targets.txt`, smoke-tests each native binary, and attaches
-  the executables, checksums, and installers.
+  `scripts/release-targets.txt`, stages the exact Cargo output path for each
+  target, smoke-tests each native binary, and attaches the executables,
+  checksums, and installers.
 - Binary attachment does not publish any crate and does not replace the
   carrier → library → CLI crates.io sequence.
 - Run `./scripts/release-binary-preflight.sh --tag=vX.Y.Z` before dispatch and
   `./scripts/release-check-assets.sh --dir=<downloaded-assets>` when auditing
   a completed release.
+- The asset audit requires exactly the five versionless executables, one
+  correctly named `.sha256` sidecar per executable, and the two installers;
+  it rejects extra or misnamed files.
 - Verify that `stegoeggo X.Y.Z` from every attached executable matches the tag;
   the updater performs the same candidate identity/version check.
 - A CLI release is not updater-ready until all five executable assets, their

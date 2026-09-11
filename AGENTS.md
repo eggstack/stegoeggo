@@ -77,7 +77,9 @@ Binary release contract: assets use the versionless names in
 The release binary feature set is the CLI package default (`signatures`). Run
 `./scripts/release-binary-preflight.sh --tag=vX.Y.Z` and
 `./scripts/release-check-assets.sh --dir=<asset-directory>` before attaching
-assets. `packaging/install.sh` and `packaging/install.ps1` verify checksums and
+assets. The workflow stages `target/<triple>/release/stegoeggo` (or
+`stegoeggo.exe` on Windows) explicitly; it must not discover candidates with
+`find`. `packaging/install.sh` and `packaging/install.ps1` verify checksums and
 candidate identity before installation; Cargo fallback is allowed only for an
 unsupported target or a missing (404) binary asset, never for checksum,
 identity, or network failure.

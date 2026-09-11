@@ -62,6 +62,13 @@ attaches all five CLI assets, their `.sha256` sidecars, `install.sh`, and
 | `aarch64-apple-darwin` | `stegoeggo-aarch64-apple-darwin` |
 | `x86_64-pc-windows-msvc` | `stegoeggo-x86_64-pc-windows-msvc.exe` |
 
+The workflow keeps the Cargo output name separate from the public asset name:
+it stages `target/<triple>/release/stegoeggo` on Unix and
+`target/<triple>/release/stegoeggo.exe` on Windows, failing if that exact path
+is absent. The required documentation-contract check verifies that this
+source-path rule, the five-row workflow matrix, and `release-targets.txt`
+remain aligned; broad filesystem discovery is not permitted.
+
 The stable Unix bootstrap URL is
 `releases/latest/download/install.sh`. Installers and the updater treat
 checksums as corruption detection within the GitHub trust boundary, validate

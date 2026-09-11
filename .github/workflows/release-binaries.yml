@@ -41,22 +41,27 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             asset: stegoeggo-x86_64-unknown-linux-gnu
+            binary_name: stegoeggo
             runner: ubuntu-latest
             zig: true
           - target: aarch64-unknown-linux-gnu
             asset: stegoeggo-aarch64-unknown-linux-gnu
+            binary_name: stegoeggo
             runner: ubuntu-24.04-arm
             zig: true
           - target: x86_64-apple-darwin
             asset: stegoeggo-x86_64-apple-darwin
+            binary_name: stegoeggo
             runner: macos-13
             zig: false
           - target: aarch64-apple-darwin
             asset: stegoeggo-aarch64-apple-darwin
+            binary_name: stegoeggo
             runner: macos-latest
             zig: false
           - target: x86_64-pc-windows-msvc
             asset: stegoeggo-x86_64-pc-windows-msvc.exe
+            binary_name: stegoeggo.exe
             runner: windows-latest
             zig: false
     runs-on: ${{ matrix.runner }}
@@ -87,12 +92,9 @@ jobs:
             cargo build --locked --release --package stegoeggo-cli --bin stegoeggo --no-default-features --features signatures --target '${{ matrix.target }}'
           fi
           mkdir -p release-assets
-          binary_path="$(find target -type f -path '*/release/${{ matrix.asset }}' -print -quit)"
-          if [[ -z "$binary_path" ]]; then
-            binary_path="$(find target -type f -path '*/release/stegoeggo*' -print -quit)"
-          fi
-          test -n "$binary_path"
-          cp "$binary_path" "release-assets/${{ matrix.asset }}"
+          source="target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
+          test -f "$source"
+          cp -p "$source" "release-assets/${{ matrix.asset }}"
           chmod 0755 "release-assets/${{ matrix.asset }}"
       - name: Smoke binary
         run: |

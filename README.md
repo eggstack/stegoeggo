@@ -57,6 +57,8 @@ for the local command and compatibility policy.
 
 See [docs/installation.md](docs/installation.md) for target coverage, pinned
 versions, checksum behavior, PATH setup, and source-install details.
+GitHub binary releases attach the complete five-target CLI matrix to an
+existing release; they do not publish crates automatically.
 
 ## Quick start
 

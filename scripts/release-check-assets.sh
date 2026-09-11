@@ -43,15 +43,19 @@ if [[ -n "$VERSION" && ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 count=0
+assets=()
 while IFS='|' read -r target asset runner build; do
     [[ -z "$target" || "$target" == \#* ]] && continue
     [[ -n "$runner" && -n "$build" ]] || fail "malformed target row for $target"
+    assets+=("$asset")
     binary="$ASSET_DIR/$asset"
     checksum="$binary.sha256"
     [[ -f "$binary" ]] || fail "missing binary asset: $asset"
     [[ -f "$checksum" ]] || fail "missing checksum sidecar: $asset.sha256"
     expected="$(awk 'NF {print tolower($1); exit}' "$checksum")"
+    named_asset="$(awk 'NF {print $2; exit}' "$checksum")"
     [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || fail "invalid checksum sidecar: $asset.sha256"
+    [[ "${named_asset##*/}" == "$asset" ]] || fail "checksum sidecar names '${named_asset:-nothing}', expected '$asset'"
     actual="$(sha256 "$binary")"
     [[ "$actual" == "$expected" ]] || fail "checksum mismatch: $asset"
     if [[ "$NATIVE_SMOKE" == true ]]; then
@@ -68,4 +72,17 @@ done < "$TARGETS_FILE"
 [[ "$count" -eq 5 ]] || fail "expected 5 target assets, found $count"
 [[ -f "$ASSET_DIR/install.sh" ]] || fail "missing install.sh"
 [[ -f "$ASSET_DIR/install.ps1" ]] || fail "missing install.ps1"
+for path in "$ASSET_DIR"/*; do
+    [[ -f "$path" ]] || fail "asset directory contains a non-file entry: ${path##*/}"
+    name="${path##*/}"
+    expected_file=false
+    for asset in "${assets[@]}"; do
+        if [[ "$name" == "$asset" || "$name" == "$asset.sha256" ]]; then
+            expected_file=true
+            break
+        fi
+    done
+    [[ "$name" == "install.sh" || "$name" == "install.ps1" ]] && expected_file=true
+    [[ "$expected_file" == true ]] || fail "unexpected release asset: $name"
+done
 echo "Release assets valid: $count binaries with SHA-256 sidecars"
