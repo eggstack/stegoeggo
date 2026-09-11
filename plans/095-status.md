@@ -41,6 +41,8 @@ Depends on: Plans 092 and 093.
   tiled-extract conveniences. `README.md`/`AGENTS.md` left unchanged
   (carrier detail stays in `docs/carrier-crate.md`).
 - `./scripts/check.sh` passes locally (exit 0, 2026-09-11).
+- Remote CI (`CI` / `Check`, run `34558070742`): success on `d64137d`
+  (4m21s, 2026-09-11).
 
 ## Implementation notes
 
