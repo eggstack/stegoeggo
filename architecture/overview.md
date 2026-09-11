@@ -75,8 +75,8 @@ Every component below links to a dedicated deep-dive in `architecture/`. Use thi
 │                        PUBLIC API LAYER                                  │
 │  process_request_bytes*() (canonical, incl. parallel/async batch)       │
 │  process_image*() legacy adapters | verify_image_bytes()                │
-│  verify_legal_notice() | stego::embed/extract/inspect (generic carrier)  │
-│  stego::embed/extract/inspect (generic carrier re-exports)              │
+│  verify_legal_notice() | stego:: carrier re-exports (prefer direct       │
+│  stegoeggo-stego dependency for generic-only use)                        │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  │
                                  ▼
@@ -385,7 +385,7 @@ stegoeggo-stego/src/
 ├── jpeg.rs                    JPEG carrier: raw/strict/framed/tiled DCT operations, seed hint
 ├── prepared.rs                Opaque PreparedJpeg (one decode across repeated ops, public)
 ├── lsb_internal.rs            Permutations, V2 carrier, slot mapping (private)
-├── application_support.rs     Parent-crate operation layer (feature: application-support)
+├── application_support.rs     Parent-crate operation layer (feature: application-support, hidden, 18 symbols retained per plans/096-status.md)
 └── jpeg_transcoder/           JPEG DCT internals (private)
     ├── header.rs              JpegHeader, HuffmanTable parsing
     ├── entropy.rs             CoefficientDecoder/Encoder (Huffman codec)
@@ -501,7 +501,7 @@ pub trait Protector: Send + Sync {
 }
 ```
 
-The canonical executor resolves a `ProtectionRequest` into a plan and runs the selected operations directly. The legacy `ProtectionPipeline` is a stateless compatibility adapter that preserves the older level-based entry points while delegating to that same request path.
+The canonical executor resolves a `ProtectionRequest` into a plan and runs the selected operations directly. The legacy `ProtectionPipeline` is a stateless compatibility adapter that preserves the older level-based entry points while delegating to that same request path. v1 disposition for `ProtectionPipeline`/`Protector` (remove at boundary, no mechanical rename): `plans/096-status.md`, `DEPRECATIONS.md`.
 
 ### Cow Returns
 

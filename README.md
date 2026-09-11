@@ -123,6 +123,18 @@ structured JPEG COM marker.
 
 For byte APIs vs `DynamicImage`, verification, and the deprecated compatibility surface, see [docs/rust-api.md](docs/rust-api.md).
 
+## Generic carrier (`stegoeggo-stego`)
+
+For arbitrary-payload steganography without the rights/policy layer, depend on
+[`stegoeggo-stego`](https://crates.io/crates/stegoeggo-stego) directly — it is
+the canonical generic package. `stegoeggo::stego` re-exports the same carrier
+surface as a convenience; no generic API exists only through the facade. See
+[docs/carrier-crate.md](docs/carrier-crate.md).
+
+Progressive-JPEG seed-only degradation, best-effort redundancy reduction, and
+hidden-marker warning policy are StegoEggo application decisions owned by this
+crate, not generic carrier semantics.
+
 ## Feature flags
 
 | Feature | Purpose |

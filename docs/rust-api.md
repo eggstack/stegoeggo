@@ -116,7 +116,7 @@ Verification should be interpreted as evidence about what is present in the file
 
 ## Compatibility surface
 
-The older `ProtectionContext`, `ProtectionLevel`, `EvidenceProfile`, `with_dmi()`, and related level/context sync, async, and parallel wrappers remain functional compatibility adapters but are deprecated for new code. They translate once into `ProtectionRequest` and delegate to the canonical path, adding only compatibility presentation warnings (`MissingMacKey`, `ContradictoryLegalClaims`, `JpegReencodeFragile`) where applicable. See [DEPRECATIONS.md](../DEPRECATIONS.md) and [migration-v0.3.md](migration-v0.3.md).
+The older `ProtectionContext`, `ProtectionLevel`, `EvidenceProfile`, `with_dmi()`, and related level/context sync, async, and parallel wrappers remain functional compatibility adapters but are deprecated for new code. They translate once into `ProtectionRequest` and delegate to the canonical path, adding only compatibility presentation warnings (`MissingMacKey`, `ContradictoryLegalClaims`, `JpegReencodeFragile`) where applicable. `ProtectionPipeline` (stateless adapter) and the context/level-based `Protector` trait are likewise retained through 0.x with removal at the v1 boundary (no mechanical rename). See [DEPRECATIONS.md](../DEPRECATIONS.md), [migration-v0.3.md](migration-v0.3.md), and [096-status.md](../plans/096-status.md).
 
 ## Examples
 

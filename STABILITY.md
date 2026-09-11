@@ -36,6 +36,10 @@ The following API surfaces are stable and follow semantic versioning guarantees.
 | `ExecutionReport` | `stegoeggo::types` |
 | `ProtectionWarning` | `stegoeggo::types` |
 
+`ProtectionContext` is a legacy compatibility adapter retained through 0.x;
+new code uses `ProtectionRequest` / `ProcessingOptions` (see `DEPRECATIONS.md`
+and `plans/096-status.md` for the v1 disposition).
+
 ### Generic Carrier API
 
 The standalone carrier surface is stable: raw (`embed`/`extract`), strict

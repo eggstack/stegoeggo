@@ -97,7 +97,7 @@ pub enum HiddenMarkerMode {
 ### Carrier crate (`stegoeggo-stego/src/`)
 - **Public**: `constants`, `error`, `frame`, `jpeg`, `lsb`, `pixels`, `prepared`, `types`
 - **`pub(crate)`**: `jpeg_transcoder`, `lsb_internal`
-- **`pub(crate)` (feature: application-support)**: `application_support` (`#[doc(hidden)]`)
+- **`pub` behind `application-support`, `#[doc(hidden)]`**: `application_support` (parent-only legacy/search compat, never ordinary embed/extract)
 
 ## Function Signatures
 

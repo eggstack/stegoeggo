@@ -64,10 +64,12 @@ The frame CRC32 detects accidental corruption; it is not adversarial authenticat
 
 ## Usage
 
-See [`examples/generic_stego.rs`](https://github.com/eggstack/stegoeggo/blob/main/examples/generic_stego.rs) for raw, in-place, framed, and tiled usage.
+Generic-only consumers should depend on `stegoeggo-stego` directly;
+`stegoeggo::stego` re-exports the same surface as a convenience (no generic
+API exists only through the facade). See [`examples/generic_stego.rs`](https://github.com/eggstack/stegoeggo/blob/main/examples/generic_stego.rs) for raw, in-place, framed, and tiled usage.
 
 ```rust
-use stegoeggo::stego::{
+use stegoeggo_stego::{
     TileConfig,
     jpeg::{self, JpegConfig},
     lsb::{self, LsbConfig},

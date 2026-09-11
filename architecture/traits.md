@@ -36,6 +36,16 @@ pub trait Protector: Send + Sync {
 | `RightsMetadataProtector` | Light | false | 2 |
 | `SteganographyProtector` | Standard | true | 2 |
 
+## v1 Disposition (Plan 096)
+
+`Protector` is a legacy context/level-based contract; canonical processing is
+`ProtectionRequest → resolve_request → ResolvedProtectionPlan → canonical
+execution`. At the explicit v1/breaking-version boundary the trait is removed
+in its current form — it is not mechanically renamed. A new plan/request-
+oriented extension contract is designed only if a third-party protector use
+case is demonstrated. Full disposition table: `plans/096-status.md`
+(`DEPRECATIONS.md`).
+
 ## Module Interactions
 
 - **lib.rs**: Calls `Protector::apply()` and `Protector::apply_bytes()` for each protection level

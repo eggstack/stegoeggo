@@ -39,6 +39,25 @@ explicit v1/breaking-version boundary (see `plans/096-status.md`).
 | Carrier `EmbedOutcome` / `EmbedStatus` / `EmbedPath` / `EmbedOutcomeSummary` | `EmbedReport` + `StegoError` for generic code | Parent-owned application vocabulary (warnings, `ExecutionReport`); retained through 0.x |
 | Best-effort `jpeg::embed` / `jpeg::embed_framed` semantics | `jpeg::embed_strict` / `jpeg::embed_framed_strict` for exact redundancy | Best-effort behavior itself is unchanged and remains the parent application policy |
 
+## v1 Disposition (Plan 096)
+
+No 0.x API is removed. At the explicit v1/breaking-version boundary, the
+disposition recorded in `plans/096-status.md` applies:
+
+| API | 0.x | v1 disposition |
+|-----|-----|----------------|
+| `ProtectionPipeline` (stateless level/context adapter) | Keep | Remove; canonical execution is the `process_request_bytes*` free functions |
+| `Protector` trait (context/level-based) | Keep | Remove in current form; design a request-oriented extension contract only if a third-party use case is demonstrated (no mechanical rename) |
+| `SteganographyProtector` | Keep | Keep only if it exposes coherent standalone ops; else internalize |
+| `RightsMetadataProtector` | Keep | Keep (it is the canonical metadata path) |
+| `MetadataTrapProtector` (deprecated alias) | Keep (deprecated) | Remove |
+| `PassthroughProtector` | Keep | Keep |
+| `ProtectionContext` (legacy config, not attribute-deprecated) | Keep | Remove or internalize; internal JPEG injection signatures take explicit limits/identity params first |
+| `ProtectionLevel` / `EvidenceProfile` | Keep (deprecated) | Remove |
+| Root `stego` facade | Keep | Keep as convenience; `stegoeggo-stego` remains canonical for generic-only use |
+| Carrier `EmbedOutcome` / `EmbedStatus` / `EmbedPath` / `EmbedOutcomeSummary` | Keep | Remove from recommended generic surface; parent keeps its own vocabulary (`EmbedReport` + `StegoError` for generic code) |
+| `application-support` exports | Keep hidden | Keep hidden; promote nothing without a generic use case |
+
 ## Migration Examples
 
 ### ProtectionLevel → ProtectionRequest

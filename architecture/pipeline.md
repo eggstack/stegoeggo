@@ -36,7 +36,6 @@ output_format == JPEG ? DCT/F5 carrier : LSB carrier
 ## ProtectionPipeline (legacy path)
 
 The legacy struct for level-based APIs. It is stateless; its methods adapt the legacy level/context inputs into a `ProtectionRequest` and then use the canonical resolver and plan executor.
-
 ```rust
 pub struct ProtectionPipeline {
 }
@@ -46,6 +45,14 @@ pub struct ProtectionPipeline {
 
 - `process(&img, level, &ctx) -> Result<Cow<DynamicImage>>` — Pixel-level processing (validates dimensions)
 - `process_bytes(&img_bytes, level, &ctx) -> Result<Vec<u8>>` — Byte-level processing (validates dimensions for JPEG via header parse, and for non-JPEG via a header-only dimension gate before the single full decode; the preflight never performs a discarded decode)
+
+### v1 Disposition (Plan 096)
+
+`ProtectionPipeline` is an empty nominal wrapper with no state or value beyond
+the free functions. At the explicit v1/breaking-version boundary it is removed;
+canonical execution stays function-based (`process_request_bytes*`,
+`resolve_request`, `execute_*` in `src/pipeline.rs`). Full table:
+`plans/096-status.md` (`DEPRECATIONS.md`).
 
 ### Pipeline Flow (Standard)
 

@@ -57,8 +57,8 @@ Depends on: Plans 091-095 as applicable.
   structured-COM renderer reads all three fields and any signature change
   risks canonical metadata bytes. Full removal of the legacy context from
   those internals belongs to the explicit v1 boundary (see table).
-- `application-support`: 18 public symbol lines before and after (6
-  compat functions, `tile_seed`, 3 search/candidate types, 8 methods).
+- `application-support`: 18 symbols before and after (6 functions incl.
+  `tile_seed`, 3 search/candidate types, 9 methods).
   Reduction evaluated per symbol: legacy V1 extractors, LSB seed
   fallback, tile-seed derivation, `TiledJpegSearch`/
   `TiledJpegCandidateKey`, and `JpegSearchContext` each serve retained
@@ -77,7 +77,7 @@ Depends on: Plans 091-095 as applicable.
 
 | Item | Current status | Canonical replacement | 0.x | v1 disposition |
 |---|---|---|---|---|
-| `ProtectionPipeline` | Does not exist as a type; canonical execution is free functions in `pipeline.rs` (`execute_*`) | n/a (already function-based) | n/a | Do not introduce an empty wrapper; keep functions |
+| `ProtectionPipeline` (`src/lib.rs:351`, public stateless adapter with `new`/`process`/`process_bytes`) | Public, translates level/context via `request_from_legacy` into canonical request/plan execution | Top-level `process_request_bytes*` + `resolve_request` free functions | Keep | Remove at breaking boundary; do not keep an empty wrapper solely for object-oriented symmetry |
 | `Protector` trait (`traits.rs`, context/level-based) | Public, implemented by all protectors | `ProtectionRequest` + top-level `process_request_bytes*` | Keep | Remove at breaking boundary; do not rename — design a request-oriented extension contract only if a third-party use case is demonstrated |
 | `SteganographyProtector` | Public, `pub(crate)` behavior split across 5 modules | Canonical request functions for ordinary use | Keep | Keep only if it exposes coherent standalone ops; else internalize at boundary |
 | `RightsMetadataProtector` | Public metadata injector | Same (it *is* the canonical metadata path) | Keep | Keep |
@@ -88,9 +88,46 @@ Depends on: Plans 091-095 as applicable.
 | `EvidenceProfile` | Deprecated compat adapter | `ProtectionPreset` | Keep (deprecated) | Remove at boundary |
 | Root `stego` facade | Public convenience re-export | Direct `stegoeggo-stego` dependency | Keep | Keep facade, keep preferring direct crate in docs |
 | Carrier `EmbedOutcome` family | Public, parent-owned semantics | `EmbedReport` + `StegoError` for generic code | Keep | Remove from recommended generic surface at boundary; parent keeps its own vocabulary |
-| `application-support` | Hidden, 18 symbols | Public `prepared`/`pixels`/strict APIs where generic | Keep hidden | Keep hidden; promote nothing without a generic use case |
+| `application-support` | Hidden (`#[doc(hidden)]`, feature-gated), 18 symbols: 6 functions incl. `tile_seed`, 3 search/candidate types, 9 methods | Public `prepared`/`pixels`/strict APIs where generic | Keep hidden | Keep hidden; promote nothing without a generic use case |
 
 Record final `./scripts/check.sh` result and implementation commit SHA here
 during closure.
 
 Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this ledger closure is the follow-up commit).
+
+## Re-verification (2026-09-11)
+
+- Source re-audited against all acceptance criteria: parent owns
+  progressive/seed-only/best-effort policy (`embed_dct_payload`/
+  `embed_dct_tiled_payload` use best-effort `carrier_jpeg::embed` as an
+  explicit application choice with `progressive_fallback` calling
+  `embed_seed_hint` directly; short-table `InsufficientCapacity` degrades
+  truthfully to passthrough `UnsupportedProgressive` or propagates as an
+  error where the hint is the only channel); no new public outcome
+  hierarchy (`EmbedOutcome` family retained as documented parent vocabulary,
+  `EmbedReport` + `StegoError` recommended for generic code);
+  `application-support` 18 symbols audited (6 functions incl. `tile_seed`,
+  3 types, 9 methods) with no exact duplicate of `PreparedJpeg`/pixel
+  views; `JpegSearchContext` retained for application candidate
+  classification spanning redundancies and legacy versions with one decode
+  per verification operation; production paths use `try_new`/`TileConfig`
+  (workspace grep: no runtime `with_redundancy`, no new `ProtectionContext`
+  construction outside legacy adapters/compat modules/tests); root `stego`
+  facade disposition documented (direct `stegoeggo-stego` canonical).
+- Doc corrections in this pass: `plans/096-status.md` disposition table
+  (`ProtectionPipeline` row corrected — the type exists at `src/lib.rs:351`
+  as a public stateless adapter with v1 remove disposition;
+  `application-support` symbol accounting corrected);
+  `DEPRECATIONS.md` (new v1 disposition section);
+  `STABILITY.md` (`ProtectionContext` legacy-adapter note);
+  `README.md` (generic-carrier boundary section);
+  `AGENTS.md` (v1 disposition pointers, facade wording);
+  `.skills/stegoeggo-conventions/SKILL.md` (`application_support`
+  visibility: `pub` behind feature, `#[doc(hidden)]`);
+  `architecture/traits.md` + `architecture/pipeline.md` (v1 disposition
+  sections); `architecture/overview.md` (duplicate carrier line pruned,
+  disposition + symbol-count notes); `docs/rust-api.md`
+  (Pipeline/Protector disposition sentence);
+  `docs/carrier-crate.md` (direct-crate canonical note, example imports
+  prefer `stegoeggo_stego`).
+- `./scripts/check.sh` passes locally (exit 0, 2026-09-11).
