@@ -76,4 +76,5 @@ Record final `./scripts/check.sh` result and implementation commit SHA here
 during closure.
 
 Implementation commit SHA: `d42f8ba` (roadmap 090 implementation on `main`; this ledger closure is the follow-up commit).
-Re-verification commit: recorded on push (see remote CI).
+Re-verification commit: `debff2f1f1daec0c2a350a661388f640bcdf1ee8` (docs re-verify, 2026-09-11).
+Remote CI (`CI` / `Check`, run `34552945002`): success on `debff2f` (3m33s, 2026-09-11).
