@@ -124,6 +124,12 @@ version-tagged GitHub Release asset for the host target, verifies its SHA-256
 sidecar, and validates `stegoeggo X.Y.Z` before replacing the executable.
 Network, checksum, candidate identity, and server errors are fatal; Cargo is
 used only for an unsupported target or an HTTP 404 for the exact binary asset.
+The updater uses the embedded eggfetch Rust transport rather than external
+curl, with a 10-second connect deadline, a 60-second total deadline, strict
+HTTPS-downgrade denial, explicit `HTTP(S)_PROXY`/`ALL_PROXY`/`NO_PROXY` handling,
+TLS verification, and finite response bounds (4 MiB registry JSON, 8 KiB
+sidecar, 64 MiB executable). Bootstrap installers still use curl/PowerShell;
+only the installed `stegoeggo update` path is native.
 
 The destination directory must be writable before any download starts. The
 updater never invokes `sudo`; for a root-owned `/usr/local/bin/stegoeggo`, run

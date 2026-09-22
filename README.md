@@ -5,7 +5,7 @@
 [![Crates.io downloads](https://img.shields.io/crates/d/stegoeggo)](https://crates.io/crates/stegoeggo)
 [![Documentation](https://docs.rs/stegoeggo/badge.svg)](https://docs.rs/stegoeggo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![MSRV](https://img.shields.io/badge/MSRV-1.87-blue.svg)](https://blog.rust-lang.org/)
+[![MSRV](https://img.shields.io/badge/MSRV-1.89-blue.svg)](https://blog.rust-lang.org/)
 
 Embed machine-readable rights-reservation metadata and AI-training restriction notices in images, with optional best-effort steganographic markers for redundant evidence.
 
@@ -48,8 +48,8 @@ For the Rust library:
 stegoeggo = "0.4"
 ```
 
-The minimum supported Rust version is **1.87**. Required CI runs stable Rust on
-Linux x86_64; MSRV 1.87 and Linux aarch64, macOS aarch64, and Windows x86_64
+The minimum supported Rust version is **1.89**. Required CI runs stable Rust on
+Linux x86_64; MSRV 1.89 and Linux aarch64, macOS aarch64, and Windows x86_64
 are covered by scheduled non-blocking assurance. See [SUPPORT.md](SUPPORT.md)
 for the maintained platform and feature matrix. The non-blocking fuzz
 assurance uses a pinned nightly/cargo-fuzz tuple; see [fuzz/README.md](fuzz/README.md)
@@ -101,7 +101,7 @@ stegoeggo update
 
 Updates use the stable `stegoeggo-cli` crates.io version as their authority and
 replace the executable only after verifying the matching GitHub Release asset
-and SHA-256 sidecar. See [docs/installation.md](docs/installation.md) for
+and SHA-256 sidecar through the embedded eggfetch transport. See [docs/installation.md](docs/installation.md) for
 permissions, fallback, and Cargo-managed installation behavior.
 
 ## Rights policies

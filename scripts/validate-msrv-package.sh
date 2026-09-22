@@ -7,7 +7,7 @@
 # Run when changing rust-version, dependencies, default features, optional
 # features, or before a release that includes dependency-resolution changes.
 #
-# Prerequisites: Rust 1.87+ (MSRV), stable toolchain
+# Prerequisites: Rust 1.89+ (MSRV), stable toolchain
 #
 # Exit codes:
 #   0 — all checks passed
@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-MSRV="${MSRV:-1.87}"
+MSRV="${MSRV:-1.89}"
 echo "=== MSRV package validation (rust ${MSRV}) ==="
 echo "Rust version: $(rustc --version)"
 echo ""

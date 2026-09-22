@@ -2,7 +2,7 @@
 
 `stegoeggo` is a Rust library and CLI for protecting images from unauthorized AI model training through rights-reservation metadata and steganographic markers. It applies multiple layers of protection — metadata injection and steganographic embedding — to serve as legal evidence of image ownership.
 
-**Version:** 0.4.0 · **MSRV:** Rust 1.87 · **License:** see root `Cargo.toml`
+**Version:** 0.4.0 · **MSRV:** Rust 1.89 · **License:** see root `Cargo.toml`
 
 ## What This Document Is
 
@@ -494,7 +494,7 @@ Full script/CI/bench reference: [tooling.md](tooling.md).
 | `scripts/release-check.sh` | Pre-release validation (staged: pre, root, cli) |
 | `scripts/verify_metadata_conformance.sh` | External tool conformance (exiftool, xmllint) |
 | `scripts/validate-docs-rs.sh` | Docs.rs-equivalent rustdoc validation (nightly) |
-| `scripts/validate-msrv-package.sh` | Fresh MSRV consumer resolution (Rust 1.87) |
+| `scripts/validate-msrv-package.sh` | Fresh MSRV consumer resolution (Rust 1.89) |
 | `scripts/check_fuzz_sync.sh` | Verify dispatch target parity between `fuzz/Cargo.toml` and `fuzz.yml` (the scheduled smoke rotation derives its list at runtime from `cargo fuzz list` and cannot drift) |
 | `scripts/measure_binary_size.sh` | Binary size measurement |
 | `scripts/release-binary-preflight.sh` | Manual binary release tag/version/feature preflight |
@@ -507,7 +507,7 @@ Full script/CI/bench reference: [tooling.md](tooling.md).
 
 Required PR CI is the single `Check` job (`ci.yml`: stable Rust, Linux
 x86_64, `./scripts/check.sh`). `assurance.yml` (weekly schedule plus manual
-dispatch) proves the MSRV 1.87 matrix and stable compile+tests on Linux
+dispatch) proves the MSRV 1.89 matrix and stable compile+tests on Linux
 aarch64, macOS aarch64, and Windows x86_64. `external-verification.yml` runs
 monthly; `fuzz.yml` adds a weekly rotating smoke subset. Scheduled workflows
 are informational signal only: they never gate merges, publish crates, or

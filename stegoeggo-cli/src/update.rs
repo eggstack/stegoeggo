@@ -9,10 +9,14 @@ use std::time::{Duration, Instant};
 
 const CRATES_API_URL: &str = "https://crates.io/api/v1/crates/stegoeggo-cli";
 const RELEASES_URL: &str = "https://github.com/eggstack/stegoeggo/releases";
-const CURL_CONNECT_TIMEOUT_SECONDS: &str = "10";
-const CURL_MAX_TIME_SECONDS: &str = "60";
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_COMMAND_OUTPUT: usize = 16 * 1024;
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const TOTAL_TIMEOUT: Duration = Duration::from_secs(60);
+const REDIRECT_MAX: usize = 10;
+const REGISTRY_BODY_LIMIT: usize = 4 * 1024 * 1024;
+const SIDECAR_BODY_LIMIT: usize = 8 * 1024;
+const EXECUTABLE_BODY_LIMIT: usize = 64 * 1024 * 1024;
 
 struct TargetSpec {
     os: &'static str,
@@ -53,10 +57,11 @@ enum UpdateError {
     InvalidVersion(String),
     InvalidRegistryResponse(String),
     NoStableRelease,
-    CurlUnavailable,
-    CurlFailed(String),
+    RequestBuild(String),
+    Proxy(String),
+    Transport(String),
     HttpStatus { url: String, status: u16 },
-    InvalidHttpStatus(String),
+    BodyTooLarge { url: String, limit: usize },
     Io(io::Error),
     CommandFailed { command: String, detail: String },
     CommandTimedOut(String),
@@ -76,13 +81,14 @@ impl fmt::Display for UpdateError {
             Self::NoStableRelease => {
                 write!(f, "crates.io reported no stable stegoeggo-cli release")
             }
-            Self::CurlUnavailable => write!(f, "curl is required for updates but was not found"),
-            Self::CurlFailed(detail) => write!(f, "curl failed: {detail}"),
+            Self::RequestBuild(detail) => write!(f, "update request failed: {detail}"),
+            Self::Proxy(detail) => write!(f, "update proxy configuration failed: {detail}"),
+            Self::Transport(detail) => write!(f, "update transport failed: {detail}"),
             Self::HttpStatus { url, status } => {
                 write!(f, "request to {url} returned HTTP {status}")
             }
-            Self::InvalidHttpStatus(value) => {
-                write!(f, "curl returned an invalid HTTP status '{value}'")
+            Self::BodyTooLarge { url, limit } => {
+                write!(f, "response from {url} exceeded {limit} byte limit")
             }
             Self::Io(error) => write!(f, "I/O error: {error}"),
             Self::CommandFailed { command, detail } => write!(f, "{command} failed: {detail}"),
@@ -287,42 +293,84 @@ fn output_detail(output: &Output) -> String {
     }
 }
 
-fn curl_download(url: &str, destination: &Path) -> Result<u16, UpdateError> {
-    let mut command = Command::new("curl");
-    command.args([
-        "--location",
-        "--silent",
-        "--show-error",
-        "--user-agent",
-        concat!("stegoeggo-cli/", env!("CARGO_PKG_VERSION")),
-        "--connect-timeout",
-        CURL_CONNECT_TIMEOUT_SECONDS,
-        "--max-time",
-        CURL_MAX_TIME_SECONDS,
-        "--output",
-    ]);
-    command.arg(destination);
-    command.args(["--write-out", "%{http_code}", url]);
-    let output = match run_bounded(command, "curl") {
-        Ok(output) => output,
-        Err(UpdateError::CommandFailed { detail, .. })
-            if detail.contains("No such file") || detail.contains("not found") =>
-        {
-            return Err(UpdateError::CurlUnavailable);
-        }
-        Err(error) => return Err(error),
-    };
-    let status_text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if !output.status.success() {
-        return Err(UpdateError::CurlFailed(output_detail(&output)));
-    }
-    status_text
-        .parse()
-        .map_err(|_| UpdateError::InvalidHttpStatus(status_text))
+fn build_client() -> Result<eggfetch_core::Client, UpdateError> {
+    build_client_with_env(
+        &eggfetch_core::ProxyEnvironment::from_env(),
+        CONNECT_TIMEOUT,
+        TOTAL_TIMEOUT,
+    )
 }
 
-fn download_required(url: &str, destination: &Path) -> Result<(), UpdateError> {
-    let status = curl_download(url, destination)?;
+fn build_client_with_env(
+    env: &eggfetch_core::ProxyEnvironment,
+    connect: Duration,
+    total: Duration,
+) -> Result<eggfetch_core::Client, UpdateError> {
+    let timeout = eggfetch_core::Timeout::builder()
+        .connect(connect)
+        .total(total)
+        .build();
+    let redirect = eggfetch_core::RedirectPolicy::strict(REDIRECT_MAX);
+    let builder = eggfetch_core::Client::builder()
+        .user_agent(concat!("stegoeggo-cli/", env!("CARGO_PKG_VERSION")))
+        .timeout(timeout)
+        .redirect_policy(redirect)
+        .max_decoded_body_size(EXECUTABLE_BODY_LIMIT)
+        .automatic_decompression(false);
+    let builder = builder
+        .proxy_environment(env)
+        .map_err(|error| UpdateError::Proxy(error.to_string()))?;
+    Ok(builder.build())
+}
+
+fn map_fetch_error(url: &str, error: eggfetch_core::Error, limit: usize) -> UpdateError {
+    match error {
+        eggfetch_core::Error::DecodedBodyTooLarge => UpdateError::BodyTooLarge {
+            url: url.to_string(),
+            limit,
+        },
+        eggfetch_core::Error::InvalidProxyUrl(_) => UpdateError::Proxy(error.to_string()),
+        eggfetch_core::Error::InvalidUrl(_)
+        | eggfetch_core::Error::InvalidMethod(_)
+        | eggfetch_core::Error::InvalidHeaderName(_)
+        | eggfetch_core::Error::InvalidHeaderValue(_)
+        | eggfetch_core::Error::RequestBuild(_) => UpdateError::RequestBuild(error.to_string()),
+        other => UpdateError::Transport(other.to_string()),
+    }
+}
+
+async fn fetch_to_file(
+    client: &eggfetch_core::Client,
+    url: &str,
+    destination: &Path,
+    max_bytes: usize,
+) -> Result<u16, UpdateError> {
+    let mut response = client
+        .get(url)
+        .map_err(|error| UpdateError::RequestBuild(error.to_string()))?
+        .max_decoded_body_size(max_bytes)
+        .send()
+        .await
+        .map_err(|error| map_fetch_error(url, error, max_bytes))?;
+    let status = response.status().as_u16();
+    if !(200..300).contains(&status) {
+        return Ok(status);
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| map_fetch_error(url, error, max_bytes))?;
+    fs::write(destination, &bytes).map_err(UpdateError::Io)?;
+    Ok(status)
+}
+
+async fn download_required(
+    client: &eggfetch_core::Client,
+    url: &str,
+    destination: &Path,
+    max_bytes: usize,
+) -> Result<(), UpdateError> {
+    let status = fetch_to_file(client, url, destination, max_bytes).await?;
     if !(200..300).contains(&status) {
         return Err(UpdateError::HttpStatus {
             url: url.to_string(),
@@ -425,7 +473,11 @@ fn fallback_allowed(status: Option<u16>) -> bool {
     status == Some(404)
 }
 
-fn update_to(current: StableVersion, latest: StableVersion) -> Result<(), UpdateError> {
+async fn update_to(
+    client: &eggfetch_core::Client,
+    current: StableVersion,
+    latest: StableVersion,
+) -> Result<(), UpdateError> {
     if current >= latest {
         println!("stegoeggo {current} is up to date (latest stable {latest}).");
         return Ok(());
@@ -448,7 +500,7 @@ fn update_to(current: StableVersion, latest: StableVersion) -> Result<(), Update
 
     eprintln!("Latest stable: {latest}");
     eprintln!("Downloading verified release asset...");
-    let asset_status = curl_download(&asset_url, &candidate)?;
+    let asset_status = fetch_to_file(client, &asset_url, &candidate, EXECUTABLE_BODY_LIMIT).await?;
     if fallback_allowed(Some(asset_status)) {
         return cargo_fallback(latest);
     }
@@ -458,7 +510,7 @@ fn update_to(current: StableVersion, latest: StableVersion) -> Result<(), Update
             status: asset_status,
         });
     }
-    download_required(&checksum_url, &checksum)?;
+    download_required(client, &checksum_url, &checksum, SIDECAR_BODY_LIMIT).await?;
     verify_checksum(&candidate, &checksum)?;
 
     #[cfg(unix)]
@@ -480,18 +532,142 @@ fn update_to(current: StableVersion, latest: StableVersion) -> Result<(), Update
     Ok(())
 }
 
-pub(crate) fn run_update() -> Result<(), Box<dyn std::error::Error>> {
+async fn run_update_async() -> Result<(), Box<dyn std::error::Error>> {
+    let client = build_client()?;
     let current = parse_stable_version(env!("CARGO_PKG_VERSION"))?;
     let temp_dir = tempfile::tempdir()?;
     let registry = temp_dir.path().join("registry.json");
-    download_required(&registry_url(), &registry)?;
+    download_required(&client, &registry_url(), &registry, REGISTRY_BODY_LIMIT).await?;
     let latest = latest_stable_version_from_json(&fs::read(registry)?)?;
-    update_to(current, latest).map_err(Into::into)
+    update_to(&client, current, latest)
+        .await
+        .map_err(Into::into)
+}
+
+pub(crate) fn run_update() -> Result<(), Box<dyn std::error::Error>> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| {
+            UpdateError::Transport(format!("failed to start update runtime: {error}"))
+        })?;
+    runtime.block_on(run_update_async())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    fn block_on<F>(future: F) -> F::Output
+    where
+        F: std::future::Future,
+    {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime")
+            .block_on(future)
+    }
+
+    fn test_client() -> eggfetch_core::Client {
+        build_client_with_env(
+            &eggfetch_core::ProxyEnvironment::new(),
+            Duration::from_secs(10),
+            Duration::from_secs(60),
+        )
+        .expect("test client")
+    }
+
+    fn http_response(status: u16, reason: &str, extra: &str, body: &[u8]) -> Vec<u8> {
+        let mut out = format!(
+            "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\n{extra}\r\n",
+            body.len()
+        )
+        .into_bytes();
+        out.extend_from_slice(body);
+        out
+    }
+
+    fn read_request(stream: &mut std::net::TcpStream) -> String {
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+        let mut request = Vec::new();
+        let mut chunk = [0_u8; 4096];
+        loop {
+            match stream.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    request.extend_from_slice(&chunk[..n]);
+                    if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        break;
+                    }
+                    if request.len() > 16384 {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        String::from_utf8_lossy(&request).into_owned()
+    }
+
+    fn spawn_single(response: Vec<u8>) -> String {
+        spawn_single_with_delay(response, None)
+    }
+
+    fn spawn_single_with_delay(response: Vec<u8>, delay: Option<Duration>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let addr = listener.local_addr().expect("local addr");
+        std::thread::spawn(move || {
+            for _ in 0..16 {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    break;
+                };
+                let _ = read_request(&mut stream);
+                if let Some(delay) = delay {
+                    std::thread::sleep(delay);
+                }
+                if stream.write_all(&response).is_err() {
+                    break;
+                }
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    fn spawn_redirect_server(final_body: &[u8]) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let addr = listener.local_addr().expect("local addr");
+        let final_body = final_body.to_vec();
+        std::thread::spawn(move || {
+            for _ in 0..2 {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    break;
+                };
+                let request = read_request(&mut stream);
+                let path = request
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/")
+                    .to_string();
+                if path == "/redirect" {
+                    let location = format!("http://{addr}/final");
+                    let response = format!(
+                        "HTTP/1.1 302 Found\r\nContent-Length: 0\r\nConnection: close\r\nLocation: {location}\r\n\r\n"
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                } else {
+                    let response = http_response(200, "OK", "", &final_body);
+                    let _ = stream.write_all(&response);
+                }
+            }
+        });
+        format!("http://{addr}")
+    }
 
     #[test]
     fn stable_version_parser_rejects_prerelease_when_required() {
@@ -603,5 +779,281 @@ mod tests {
         assert!(error
             .to_string()
             .contains(&executable.display().to_string()));
+    }
+
+    #[test]
+    fn native_registry_200_resolves_latest() {
+        let body =
+            br#"{"versions":[{"num":"0.4.0","yanked":false},{"num":"0.4.1","yanked":false}]}"#;
+        let base = spawn_single(http_response(200, "OK", "", body));
+        let client = test_client();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("registry.json");
+        let status = block_on(fetch_to_file(
+            &client,
+            &format!("{base}/api"),
+            &destination,
+            REGISTRY_BODY_LIMIT,
+        ))
+        .unwrap();
+        assert_eq!(status, 200);
+        let latest = latest_stable_version_from_json(&fs::read(&destination).unwrap()).unwrap();
+        assert_eq!(latest.to_string(), "0.4.1");
+    }
+
+    #[test]
+    fn native_asset_200_is_written() {
+        let base = spawn_single(http_response(200, "OK", "", b"asset-bytes"));
+        let client = test_client();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("asset");
+        let status = block_on(fetch_to_file(
+            &client,
+            &format!("{base}/asset"),
+            &destination,
+            EXECUTABLE_BODY_LIMIT,
+        ))
+        .unwrap();
+        assert_eq!(status, 200);
+        assert_eq!(fs::read(&destination).unwrap(), b"asset-bytes");
+    }
+
+    #[test]
+    fn native_sidecar_200_is_written() {
+        let base = spawn_single(http_response(200, "OK", "", b"abcd  asset\n"));
+        let client = test_client();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("asset.sha256");
+        block_on(download_required(
+            &client,
+            &format!("{base}/asset.sha256"),
+            &destination,
+            SIDECAR_BODY_LIMIT,
+        ))
+        .unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"abcd  asset\n");
+    }
+
+    #[test]
+    fn native_asset_404_allows_cargo_fallback() {
+        let base = spawn_single(http_response(404, "Not Found", "", b"missing"));
+        let client = test_client();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("asset");
+        let status = block_on(fetch_to_file(
+            &client,
+            &format!("{base}/asset"),
+            &destination,
+            EXECUTABLE_BODY_LIMIT,
+        ))
+        .unwrap();
+        assert_eq!(status, 404);
+        assert!(fallback_allowed(Some(status)));
+    }
+
+    #[test]
+    fn native_sidecar_404_is_hard_failure() {
+        let base = spawn_single(http_response(404, "Not Found", "", b"missing"));
+        let client = test_client();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("asset.sha256");
+        let error = block_on(download_required(
+            &client,
+            &format!("{base}/asset.sha256"),
+            &destination,
+            SIDECAR_BODY_LIMIT,
+        ))
+        .unwrap_err();
+        match error {
+            UpdateError::HttpStatus { status, .. } => assert_eq!(status, 404),
+            other => panic!("expected HttpStatus, got {other}"),
+        }
+    }
+
+    #[test]
+    fn native_500_is_hard_failure() {
+        let base = spawn_single(http_response(500, "Internal Server Error", "", b"error"));
+        let client = test_client();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("asset");
+        let status = block_on(fetch_to_file(
+            &client,
+            &format!("{base}/asset"),
+            &destination,
+            EXECUTABLE_BODY_LIMIT,
+        ))
+        .unwrap();
+        assert_eq!(status, 500);
+        assert!(!fallback_allowed(Some(status)));
+        let error = block_on(download_required(
+            &client,
+            &format!("{base}/asset"),
+            &destination,
+            EXECUTABLE_BODY_LIMIT,
+        ))
+        .unwrap_err();
+        assert!(matches!(error, UpdateError::HttpStatus { status: 500, .. }));
+    }
+
+    #[test]
+    fn native_timeout_is_hard_failure() {
+        let base = spawn_single_with_delay(
+            http_response(200, "OK", "", b"slow"),
+            Some(Duration::from_millis(500)),
+        );
+        let client = build_client_with_env(
+            &eggfetch_core::ProxyEnvironment::new(),
+            Duration::from_millis(50),
+            Duration::from_millis(100),
+        )
+        .unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("registry.json");
+        let error = block_on(fetch_to_file(
+            &client,
+            &format!("{base}/slow"),
+            &destination,
+            REGISTRY_BODY_LIMIT,
+        ))
+        .unwrap_err();
+        assert!(matches!(error, UpdateError::Transport(_)));
+        assert!(!error.to_string().is_empty());
+    }
+
+    #[test]
+    fn native_oversized_registry_body_is_rejected() {
+        let base = spawn_single(http_response(200, "OK", "", b"0123456789ABCDEF"));
+        let client = test_client();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("registry.json");
+        let error = block_on(fetch_to_file(
+            &client,
+            &format!("{base}/registry"),
+            &destination,
+            8,
+        ))
+        .unwrap_err();
+        assert!(matches!(error, UpdateError::BodyTooLarge { .. }));
+    }
+
+    #[test]
+    fn native_oversized_sidecar_is_rejected() {
+        let base = spawn_single(http_response(200, "OK", "", b"0123456789ABCDEF"));
+        let client = test_client();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("asset.sha256");
+        let error = block_on(download_required(
+            &client,
+            &format!("{base}/asset.sha256"),
+            &destination,
+            4,
+        ))
+        .unwrap_err();
+        assert!(matches!(error, UpdateError::BodyTooLarge { .. }));
+    }
+
+    #[test]
+    fn native_oversized_asset_is_rejected() {
+        let base = spawn_single(http_response(200, "OK", "", b"0123456789ABCDEF"));
+        let client = test_client();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("asset");
+        let error = block_on(fetch_to_file(
+            &client,
+            &format!("{base}/asset"),
+            &destination,
+            4,
+        ))
+        .unwrap_err();
+        assert!(matches!(error, UpdateError::BodyTooLarge { .. }));
+    }
+
+    #[test]
+    fn native_redirect_is_followed() {
+        let base = spawn_redirect_server(b"final-bytes");
+        let client = test_client();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("asset");
+        let status = block_on(fetch_to_file(
+            &client,
+            &format!("{base}/redirect"),
+            &destination,
+            EXECUTABLE_BODY_LIMIT,
+        ))
+        .unwrap();
+        assert_eq!(status, 200);
+        assert_eq!(fs::read(&destination).unwrap(), b"final-bytes");
+    }
+
+    #[test]
+    fn https_to_http_redirect_policy_is_strict() {
+        let policy = eggfetch_core::RedirectPolicy::strict(REDIRECT_MAX);
+        assert!(policy.follow);
+        assert_eq!(policy.max_redirects, REDIRECT_MAX);
+        assert_eq!(
+            policy.downgrade,
+            eggfetch_core::RedirectDowngradePolicy::Deny
+        );
+        let from: url::Url = "https://example.com/a".parse().unwrap();
+        let to: url::Url = "http://example.com/b".parse().unwrap();
+        assert!(eggfetch_core::is_https_downgrade(&from, &to));
+        assert!(eggfetch_core::check_https_downgrade(
+            &from,
+            &to,
+            eggfetch_core::RedirectDowngradePolicy::Deny
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn proxy_environment_is_applied_explicitly() {
+        let env = eggfetch_core::ProxyEnvironment::from_map([(
+            "HTTPS_PROXY",
+            "http://proxy.example:8080",
+        )]);
+        assert!(!env.is_empty());
+        let url: url::Url = "https://example.com/releases".parse().unwrap();
+        let resolved = env.resolve(&url).unwrap();
+        assert!(resolved.is_some());
+        let lower_wins = eggfetch_core::ProxyEnvironment::from_map([
+            ("HTTPS_PROXY", "http://upper.example:8080"),
+            ("https_proxy", "http://lower.example:8080"),
+        ]);
+        let resolved = lower_wins.resolve(&url).unwrap().unwrap();
+        assert!(resolved.uri().as_str().contains("lower.example"));
+        let bypass = eggfetch_core::ProxyEnvironment::from_map([
+            ("HTTPS_PROXY", "http://proxy.example:8080"),
+            ("NO_PROXY", "example.com"),
+        ]);
+        assert!(bypass.resolve(&url).unwrap().is_none());
+        let invalid = eggfetch_core::ProxyEnvironment::from_map([(
+            "HTTPS_PROXY",
+            "http://user:env-secret-9@[::1",
+        )]);
+        let error = match eggfetch_core::Client::builder().proxy_environment(&invalid) {
+            Ok(_) => panic!("expected proxy configuration to fail"),
+            Err(error) => error,
+        };
+        assert!(!error.to_string().contains("env-secret-9"));
+        let empty = eggfetch_core::ProxyEnvironment::new();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn native_network_failure_is_hard_failure() {
+        let client = test_client();
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("registry.json");
+        let error = block_on(fetch_to_file(
+            &client,
+            "http://127.0.0.1:1/unreachable",
+            &destination,
+            REGISTRY_BODY_LIMIT,
+        ))
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            UpdateError::Transport(_) | UpdateError::Proxy(_)
+        ));
     }
 }

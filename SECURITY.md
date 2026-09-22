@@ -39,12 +39,16 @@ after a checksum, identity, or network failure.
 
 The `update` command follows the same binary contract. It first resolves the
 latest non-yanked, stable `stegoeggo-cli` version from crates.io, then fetches
-only the matching GitHub Release tag and target asset. It verifies the sidecar,
+only the matching GitHub Release tag and target asset through the embedded
+eggfetch transport with TLS verification, a 10-second connect deadline, a
+60-second total deadline, strict HTTPS-downgrade denial, explicit proxy
+environment handling, and finite response bounds. It verifies the sidecar,
 candidate program identity, and candidate version before replacement. SHA-256
 is an integrity check, not a digital signature: the crates.io response, GitHub
 Release, sidecar, and executable remain within their respective registry or
-repository trust boundaries. The updater never invokes `sudo`, and it does not
-fall back to Cargo for checksum, candidate, or generic network failures.
+repository trust boundaries. The updater never invokes `sudo`, never invokes
+external curl, and it does not fall back to Cargo for checksum, candidate, or
+generic network failures.
 
 On unsupported targets, or when the exact target asset returns HTTP 404, the
 installer/updater may build through Cargo instead. That fallback changes the

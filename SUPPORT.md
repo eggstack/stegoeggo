@@ -4,18 +4,18 @@
 
 | Item | Value |
 |------|-------|
-| MSRV | 1.87 (stable channel) |
+| MSRV | 1.89 (stable channel) |
 | Required CI toolchain | stable (currently 1.9x; runs `./scripts/check.sh` on every push/PR to `main`) |
-| MSRV evidence | Weekly scheduled `Assurance` workflow pins Rust 1.87 and runs the MSRV matrix below |
+| MSRV evidence | Weekly scheduled `Assurance` workflow pins Rust 1.89 and runs the MSRV matrix below |
 
-The MSRV matrix (`Assurance` → `MSRV 1.87` job, Ubuntu x86_64, `--locked`) verifies:
+The MSRV matrix (`Assurance` → `MSRV 1.89` job, Ubuntu x86_64, `--locked`) verifies:
 
 - `cargo check -p stegoeggo-stego` (carrier, default features);
 - `cargo check -p stegoeggo` (default, minimal `--no-default-features`, and `--all-features`);
 - `cargo check -p stegoeggo-cli` (default and `--all-features`);
 - `cargo test -p stegoeggo-stego` and `cargo test -p stegoeggo --lib --all-features`.
 
-A dependency that breaks compilation or tests on Rust 1.87 is treated as an
+A dependency that breaks compilation or tests on Rust 1.89 is treated as an
 explicit semver/toolchain decision: either pin a compatible dependency or
 raise the declared MSRV, never a silent break.
 
@@ -46,7 +46,7 @@ Scheduled platform jobs replay the standard gate's compile-and-test evidence
 
 | Contract | Targets |
 |---|---|
-| Compile/test assurance | Linux x86_64 on every PR; Linux aarch64, macOS arm64, and Windows x86_64 weekly; Rust 1.87 weekly on the MSRV matrix |
+| Compile/test assurance | Linux x86_64 on every PR; Linux aarch64, macOS arm64, and Windows x86_64 weekly; Rust 1.89 weekly on the MSRV matrix |
 | Prebuilt binary distribution | Linux x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64 |
 | Source-only distribution | Other platforms and architectures, subject to Cargo/Rust and dependency support |
 
@@ -59,7 +59,7 @@ be assumed to have a downloadable asset.
 | Workflow | Trigger | Blocking | Proves |
 |----------|---------|----------|--------|
 | `CI` (`ci.yml`, `Check` job) | Every push/PR to `main` | Yes (standard gate; not currently GitHub-enforced as a required status check) | Stable compile, lint, format, and tests on Linux x86_64 |
-| `Assurance` (`assurance.yml`) | Weekly + manual dispatch | No | MSRV 1.87 matrix; stable compile+tests on Linux aarch64, macOS aarch64, Windows x86_64 |
+| `Assurance` (`assurance.yml`) | Weekly + manual dispatch | No | MSRV 1.89 matrix; stable compile+tests on Linux aarch64, macOS aarch64, Windows x86_64 |
 | `External Verification` (`external-verification.yml`) | Monthly + manual dispatch | No | ExifTool/xmllint/ImageMagick/libvips conformance signal |
 | `Fuzz` (`fuzz.yml`) | Manual dispatch (single target) + weekly scheduled smoke (rotating 3-target subset, 120s each) | No | Parser robustness signal with crash-artifact upload |
 
@@ -128,7 +128,8 @@ The installers fall back to Cargo only for an unsupported platform or a 404
 for the binary asset. Checksum, identity, and network failures are fatal.
 See [docs/installation.md](docs/installation.md) for the complete installer
 and updater contract. `stegoeggo version` is offline; `stegoeggo update` uses
-the stable crates.io CLI version as authority and never invokes `sudo`.
+the stable crates.io CLI version as authority through the embedded eggfetch
+transport and never invokes `sudo`.
 
 ### From crates.io
 

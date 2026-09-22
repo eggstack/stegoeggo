@@ -62,9 +62,10 @@ are also present in Cargo-installed and prebuilt binaries.
 
 `version` prints exactly `stegoeggo X.Y.Z` on its first line and does not access
 the network or configuration. `update` resolves the latest stable CLI version
-from crates.io and updates from the matching verified GitHub Release asset;
-see [the installation guide](installation.md) for its fallback and permission
-rules. Update progress is written to stderr and its final result to stdout.
+from crates.io and updates from the matching verified GitHub Release asset
+through the embedded eggfetch transport; see [the installation guide](installation.md)
+for its fallback, proxy, timeout, redirect, body-limit, and permission rules.
+Update progress is written to stderr and its final result to stdout.
 
 ## Protecting images
 

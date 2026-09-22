@@ -254,7 +254,9 @@ pub(crate) fn extract_from_decoded(
     }
 
     Ok(extracted_bits
-        .chunks_exact(8)
+        .as_chunks::<8>()
+        .0
+        .iter()
         .map(|chunk| {
             chunk
                 .iter()
@@ -1638,7 +1640,9 @@ mod tests {
             42,
         );
         let extracted: Vec<u8> = extracted_bits
-            .chunks_exact(8)
+            .as_chunks::<8>()
+            .0
+            .iter()
             .map(|chunk| {
                 chunk
                     .iter()

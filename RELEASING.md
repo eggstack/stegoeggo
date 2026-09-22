@@ -73,7 +73,7 @@ Only one CI signal blocks development: the standard `Check` job in
 `.github/workflows/ci.yml` (stable Rust, Linux x86_64, `./scripts/check.sh`).
 Everything else is non-blocking signal for the maintainer's judgment:
 
-- `Assurance` (weekly + manual dispatch): MSRV 1.87 matrix and stable
+- `Assurance` (weekly + manual dispatch): MSRV 1.89 matrix and stable
   compile+tests on Linux aarch64, macOS aarch64, and Windows x86_64.
 - `External Verification` (monthly + manual dispatch): ExifTool/xmllint
   conformance signal.

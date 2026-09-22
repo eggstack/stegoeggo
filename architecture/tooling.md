@@ -13,12 +13,12 @@ Specialist checks are manual and never part of `check.sh` or required CI without
 | `release-binary-preflight.sh --tag=vX.Y.Z` | Validates binary-release tag/version lockstep, target manifest, updater mapping, and canonical CLI feature set; optional `--asset-dir` audits built assets | stable Rust, Python |
 | `release-check-assets.sh --dir=DIR` | Verifies the exact five target executables, correctly named SHA-256 sidecars, installers, and absence of extra release files; optional version/native smoke checks | `sha256sum` or `shasum` |
 | `test-release-installers.sh` | Local fixture/server tests for installer mapping, URLs, checksums, identity, fallback, and destinations | Bash, Python, curl |
-| `test-release-updater.sh` | Local fixture/server rehearsal for current/no-op, verified old→new update, and validation-failure preservation | Bash, Python, curl, built CLI |
+| `test-release-updater.sh` | Local fixture/server rehearsal for current/no-op, verified old→new update, and validation-failure preservation through the native eggfetch transport | Bash, Python, built CLI |
 | `check-docs-contract.sh` | Fast deterministic check for installer URLs, canonical commands, target names, release-policy wording, and release-workflow matrix/source-path parity | Bash, Python |
 | `check_fuzz_sync.sh` | Verifies dispatch-target parity between `fuzz/Cargo.toml` and `fuzz.yml` (the scheduled smoke rotation derives its list at runtime from `cargo fuzz list`) | — |
 | `verify_metadata_conformance.sh [--strict]` | External metadata conformance via the Rust harness + ExifTool/xmllint diff | exiftool, xmllint, imagemagick, libvips |
 | `validate-docs-rs.sh` | Docs.rs-equivalent rustdoc validation | nightly |
-| `validate-msrv-package.sh` | Fresh MSRV consumer resolution | Rust 1.87 |
+| `validate-msrv-package.sh` | Fresh MSRV consumer resolution | Rust 1.89 |
 | `measure_binary_size.sh` | Built binary size measurement | — |
 
 Manual-only: `cargo deny check licenses|advisories`, `cargo semver-checks check-release`.
@@ -28,7 +28,7 @@ Manual-only: `cargo deny check licenses|advisories`, `cargo semver-checks check-
 | Workflow | Trigger | Role |
 |----------|---------|------|
 | `ci.yml` | push/PR to `main` | **Required:** single `Check` job, stable Linux x86_64, `./scripts/check.sh` |
-| `assurance.yml` | weekly + manual | MSRV 1.87 matrix + stable compile+tests on Linux aarch64, macOS aarch64, Windows x86_64. Informational only |
+| `assurance.yml` | weekly + manual | MSRV 1.89 matrix + stable compile+tests on Linux aarch64, macOS aarch64, Windows x86_64. Informational only |
 | `external-verification.yml` | monthly + manual | External-tool conformance. Informational only |
 | `fuzz.yml` | weekly + manual single-target dispatch (+ `smoke=true` rotating 3-target subset, 120 s each, week-of-year rotation, full cycle 4 weeks) | Informational only; crash artifacts uploaded |
 | `release-binaries.yml` | manual dispatch for an existing `vX.Y.Z` release tag | Attaches five CLI binaries, sidecars, and installers; never publishes crates |

@@ -546,7 +546,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(view.extract(payload.len(), &config).unwrap(), payload);
-        assert!(view_bytes.chunks_exact(4).all(|pixel| pixel[3] == 0xA0));
+        assert!(view_bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|pixel| pixel[3] == 0xA0));
     }
 
     #[test]
@@ -646,7 +650,9 @@ mod tests {
             rgba_view.as_view().extract(18, &config).unwrap()
         };
         assert!(rgba.chunks(astride).all(|row| {
-            row.chunks_exact(4)
+            row.as_chunks::<4>()
+                .0
+                .iter()
                 .take(aw as usize)
                 .all(|pixel| pixel[3] == 0xA0)
                 && row[(aw as usize) * 4..].iter().all(|&b| b == 0xCC)
@@ -935,7 +941,7 @@ mod tests {
                 view.as_view().extract_framed(&config).unwrap(),
                 b"seed edges"
             );
-            assert!(rgba.chunks_exact(4).all(|pixel| pixel[3] == 0xA0));
+            assert!(rgba.as_chunks::<4>().0.iter().all(|pixel| pixel[3] == 0xA0));
         }
     }
 

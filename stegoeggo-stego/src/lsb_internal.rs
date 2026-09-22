@@ -185,7 +185,7 @@ pub fn bits_to_bytes(bits: &[u8]) -> Vec<u8> {
         return Vec::new();
     }
     let mut bytes = Vec::with_capacity(bits.len() / 8);
-    for chunk in bits.chunks_exact(8) {
+    for chunk in bits.as_chunks::<8>().0 {
         let mut byte = 0u8;
         for (i, &bit) in chunk.iter().enumerate() {
             byte |= bit << i;

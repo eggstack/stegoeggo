@@ -7,15 +7,15 @@ name: Assurance
 # burdening every pull request.
 #
 # Local equivalents (run from the repository root):
-#   rustc +1.87.0 --version
-#   cargo +1.87.0 check -p stegoeggo-stego --locked
-#   cargo +1.87.0 check -p stegoeggo --locked
-#   cargo +1.87.0 check -p stegoeggo --locked --no-default-features
-#   cargo +1.87.0 check -p stegoeggo --locked --all-features
-#   cargo +1.87.0 check -p stegoeggo-cli --locked
-#   cargo +1.87.0 check -p stegoeggo-cli --locked --all-features
-#   cargo +1.87.0 test -p stegoeggo-stego --locked
-#   cargo +1.87.0 test -p stegoeggo --lib --locked --all-features
+#   rustc +1.89.0 --version
+#   cargo +1.89.0 check -p stegoeggo-stego --locked
+#   cargo +1.89.0 check -p stegoeggo --locked
+#   cargo +1.89.0 check -p stegoeggo --locked --no-default-features
+#   cargo +1.89.0 check -p stegoeggo --locked --all-features
+#   cargo +1.89.0 check -p stegoeggo-cli --locked
+#   cargo +1.89.0 check -p stegoeggo-cli --locked --all-features
+#   cargo +1.89.0 test -p stegoeggo-stego --locked
+#   cargo +1.89.0 test -p stegoeggo --lib --locked --all-features
 #   cargo check -p stegoeggo --no-default-features
 #   cargo test --workspace --exclude stegoeggo-fuzz --all-features
 
@@ -33,13 +33,13 @@ permissions:
 
 jobs:
   msrv:
-    name: MSRV 1.87 (ubuntu x86_64)
+    name: MSRV 1.89 (ubuntu x86_64)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.87
+          toolchain: 1.89.0
       - uses: Swatinem/rust-cache@v2
       - name: Record toolchain evidence
         run: rustc --version && cargo --version

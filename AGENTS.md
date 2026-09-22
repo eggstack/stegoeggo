@@ -12,7 +12,7 @@ Individual steps: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-
 
 - Single test: `cargo test --workspace --exclude stegoeggo-fuzz --all-features -- <name>`
 - Pre-release (local only, never publishes): `./scripts/release-check.sh [--allow-dirty] [--stage=pre|root|cli]`
-- Specialist checks are manual, never part of `check.sh`: `scripts/verify_metadata_conformance.sh --strict` (needs exiftool, xmllint, imagemagick, libvips), `scripts/validate-docs-rs.sh` (nightly), `scripts/validate-msrv-package.sh` (Rust 1.87), `scripts/check_fuzz_sync.sh` (after adding/removing fuzz targets), `cargo deny check licenses|advisories`, `cargo semver-checks check-release`.
+- Specialist checks are manual, never part of `check.sh`: `scripts/verify_metadata_conformance.sh --strict` (needs exiftool, xmllint, imagemagick, libvips), `scripts/validate-docs-rs.sh` (nightly), `scripts/validate-msrv-package.sh` (Rust 1.89), `scripts/check_fuzz_sync.sh` (after adding/removing fuzz targets), `cargo deny check licenses|advisories`, `cargo semver-checks check-release`.
 - Fuzz: `RUSTUP_TOOLCHAIN=nightly-2026-09-07 CARGO_PROFILE_RELEASE_LTO=false cargo fuzz run <target> -- -max_total_time=60` (12 targets in `fuzz/fuzz_targets/`; release-profile LTO must be off or sanitizer linking fails). Add regression tests to `tests/robustness.rs`.
 
 CI (`.github/workflows/ci.yml`): one required job on push/PR to `main` that runs `scripts/check.sh`. Everything else (`assurance.yml` MSRV/platform matrix, `external-verification.yml`, `fuzz.yml`) is scheduled/manual, non-blocking, never publishes. Do not add specialist checks to `check.sh` or expand required CI without a maintainer decision.
@@ -24,7 +24,7 @@ CI (`.github/workflows/ci.yml`): one required job on push/PR to `main` that runs
 - `stegoeggo-cli/` — binary `stegoeggo` at `stegoeggo-cli/src/main.rs` (modules `args`, `request`, `protect`, `verify`, `update`, `output`, `keys`, `manifest`). Its default package features include `signatures`, enabling `keygen`, `sign`, and `verify-manifest` through `stegoeggo/signatures` + `stegoeggo/detached-manifest`; the CLI still does not enable the library's unrelated `iscc`, `conformance`, or `parallel` features.
 - `fuzz/` — 12 harnesses, `cargo-fuzz` + nightly only, excluded from workspace tests.
 
-Toolchain is stable, MSRV 1.87 (`rust-toolchain.toml`, `rust-version` in root + carrier manifests). Rustfmt: 4-space indent, max width 100. `#![forbid(unsafe_code)]` in both crates. No code comments unless asked. `#[must_use]` on builders.
+Toolchain is stable, MSRV 1.89 (`rust-toolchain.toml`, `rust-version` in root + carrier + CLI manifests). Rustfmt: 4-space indent, max width 100. `#![forbid(unsafe_code)]` in both crates. No code comments unless asked. `#[must_use]` on builders.
 
 ## Canonical API
 
@@ -85,11 +85,13 @@ unsupported target or a missing (404) binary asset, never for checksum,
 identity, or network failure.
 
 Updater invariants: check the current executable's destination before any
-download; use bounded `curl`/Cargo/candidate subprocesses with argument arrays;
-ignore prereleases; allow Cargo fallback only for unsupported targets or the
-exact asset HTTP 404; never invoke `sudo`; and leave the current executable
-untouched when staging or validation fails. A Cargo-installed path becomes
-binary-managed after successful self-replacement until Cargo installs it again.
+download; use the embedded eggfetch transport with bounded response limits plus
+bounded Cargo/candidate subprocesses with argument arrays; honor conventional
+proxy environment variables explicitly; deny HTTPS-downgrade redirects; ignore
+prereleases; allow Cargo fallback only for unsupported targets or the exact
+asset HTTP 404; never invoke `sudo`; and leave the current executable untouched
+when staging or validation fails. A Cargo-installed path becomes binary-managed
+after successful self-replacement until Cargo installs it again.
 
 ## Where things live
 

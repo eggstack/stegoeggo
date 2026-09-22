@@ -43,9 +43,13 @@ self-replace at the running executable path
 ```
 
 Only an unsupported target or HTTP 404 for the exact binary asset may invoke
-`cargo install stegoeggo-cli --locked --version =X.Y.Z`. Curl, candidate, and
-replacement subprocesses are bounded and use argument arrays; no shell command
-strings or implicit privilege escalation are used. A staged failure leaves the
+`cargo install stegoeggo-cli --locked --version =X.Y.Z`. The updater uses the
+embedded eggfetch-core Rust transport with a 10-second connect deadline, a
+60-second total deadline, strict HTTPS-downgrade denial, explicit conventional
+proxy-environment handling, and finite response bounds (4 MiB registry JSON,
+8 KiB sidecar, 64 MiB executable). Candidate and Cargo subprocesses remain
+bounded and use argument arrays; no shell command strings, no external curl,
+and no implicit privilege escalation are used. A staged failure leaves the
 current executable untouched.
 
 ### Release and installer contract
@@ -206,8 +210,9 @@ behavior and may read an explicit output file supplied with `--output`.
 | `main.rs` | Parser selection, command dispatch, and orchestration |
 
 Production dependencies are clap 4, the `stegoeggo` library, rayon for
-error-tolerant CLI batches, hex, serde/serde_json, sha2, self-replace, and
-tempfile. The CLI does
+error-tolerant CLI batches, hex, serde/serde_json, sha2, self-replace,
+tempfile, eggfetch-core for the embedded updater transport, and tokio for the
+narrow synchronous CLI/async transport boundary. The CLI does
 not enable the library's `parallel`, `iscc`, or `conformance` features. The
 package's default feature is `signatures`, which adds the detached-manifest
 commands to Cargo-installed and prebuilt binaries. Release asset names,
