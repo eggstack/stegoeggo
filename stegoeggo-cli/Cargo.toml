@@ -28,10 +28,13 @@ hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3"
-sha2 = "0.10"
-self-replace = "1.5"
-eggfetch-core = { version = "0.2.0", default-features = false, features = ["http1", "tls-rustls", "tls-native-roots", "proxy"] }
+eggup-acquisition = "0.1.0"
+eggup-core = "0.1.0"
+eggup-eggfetch = "0.1.0"
 tokio = { version = "1", features = ["rt"] }
+
+[target.'cfg(windows)'.dependencies]
+self-replace = "1.5"
 
 [dev-dependencies]
 tempfile = "3"
@@ -40,6 +43,7 @@ base64 = "0.22"
 sha2 = "0.10"
 hex = "0.4"
 url = "2"
+eggfetch-core = { version = "0.2.0", default-features = false, features = ["http1", "tls-rustls", "tls-native-roots", "proxy"] }
 
 [lints.rust]
 unsafe_code = "forbid"
