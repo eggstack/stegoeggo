@@ -153,3 +153,16 @@ uses embedded eggfetch-core. Asset naming, sidecar format, candidate
   the documented Windows path.
 - `cargo bloat` diagnostics: unnecessary; the delta is attributable to
   the TLS/HTTP stack, not investigated further.
+
+
+## Follow-on release closure
+
+The implementation/qualification work in Plan 104 is complete, but two
+release-dependent proofs are intentionally tracked separately:
+
+- Plan 105: first public eggfetch-enabled stable release, real five-target
+  workflow including native Windows, public asset audit, installer smoke, and
+  released updater current-version smoke.
+- Plan 106: first real public eggfetch-to-eggfetch stable self-update A -> B.
+
+These follow-on plans do not reopen the Plan 103 transport migration.
