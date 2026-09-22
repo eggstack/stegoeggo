@@ -1658,7 +1658,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "stegoeggo"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "crc32fast",
  "criterion",
@@ -1687,7 +1687,7 @@ dependencies = [
 
 [[package]]
 name = "stegoeggo-cli"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -1715,7 +1715,7 @@ dependencies = [
 
 [[package]]
 name = "stegoeggo-stego"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "crc32fast",
  "image",

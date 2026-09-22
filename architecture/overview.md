@@ -2,7 +2,7 @@
 
 `stegoeggo` is a Rust library and CLI for protecting images from unauthorized AI model training through rights-reservation metadata and steganographic markers. It applies multiple layers of protection — metadata injection and steganographic embedding — to serve as legal evidence of image ownership.
 
-**Version:** 0.4.0 · **MSRV:** Rust 1.89 · **License:** see root `Cargo.toml`
+**Version:** 0.4.2 · **MSRV:** Rust 1.89 · **License:** see root `Cargo.toml`
 
 ## What This Document Is
 
@@ -585,7 +585,7 @@ Three-state control (`Option<bool>`) for metadata injection:
 
 | Crate | Version | Role | Feature |
 |-------|---------|------|---------|
-| `stegoeggo-stego` | 0.4.0 | Generic carrier core (LSB, JPEG DCT, transcoder) | — |
+| `stegoeggo-stego` | 0.4.2 | Generic carrier core (LSB, JPEG DCT, transcoder) | — |
 | `image` | 0.25 | Image loading, decoding, encoding (PNG, JPEG, WebP) | — |
 | `jpeg-encoder` | 0.7 | Direct JPEG encoding with quality/progressive control | — |
 | `quick-xml` | 0.41 | XMP parsing and serialization | — |

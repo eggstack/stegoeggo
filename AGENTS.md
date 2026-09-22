@@ -84,8 +84,10 @@ candidate identity before installation; Cargo fallback is allowed only for an
 unsupported target or a missing (404) binary asset, never for checksum,
 identity, or network failure.
 
-Updater invariants: check the current executable's destination before any
-download; use the embedded eggfetch transport with bounded response limits plus
+Updater invariants: query the crates.io stable version first, then check the
+current executable's destination before downloading any update artifact (an
+already-current installation reports current without requiring destination
+replaceability); use the embedded eggfetch transport with bounded response limits plus
 bounded Cargo/candidate subprocesses with argument arrays; honor conventional
 proxy environment variables explicitly; deny HTTPS-downgrade redirects; ignore
 prereleases; allow Cargo fallback only for unsupported targets or the exact

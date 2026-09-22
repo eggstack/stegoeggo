@@ -43,7 +43,11 @@ self-replace at the running executable path
 ```
 
 Only an unsupported target or HTTP 404 for the exact binary asset may invoke
-`cargo install stegoeggo-cli --locked --version =X.Y.Z`. The updater uses the
+`cargo install stegoeggo-cli --locked --version =X.Y.Z`. The crates.io lookup
+happens before destination preflight, so an already-current installation
+reports current without requiring writability; preflight runs before
+downloading any update artifact only when a newer stable version exists.
+The updater uses the
 embedded eggfetch-core Rust transport with a 10-second connect deadline, a
 60-second total deadline, strict HTTPS-downgrade denial, explicit conventional
 proxy-environment handling, and finite response bounds (4 MiB registry JSON,

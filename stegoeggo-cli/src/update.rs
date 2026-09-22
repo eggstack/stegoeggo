@@ -715,6 +715,14 @@ mod tests {
     }
 
     #[test]
+    fn already_current_update_needs_no_preflight_or_download() {
+        let client = test_client();
+        let current = parse_stable_version("0.4.1").unwrap();
+        let latest = parse_stable_version("0.4.1").unwrap();
+        block_on(update_to(&client, current, latest)).unwrap();
+    }
+
+    #[test]
     fn newer_stable_resolves_available() {
         let body = br#"{"versions":[{"num":"0.4.1-rc.1","yanked":false},{"num":"0.4.0","yanked":false},{"num":"0.4.2","yanked":true},{"num":"0.4.1","yanked":false}]}"#;
         assert_eq!(

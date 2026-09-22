@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-22
+
+### Changed
+- Self-update transport is now native: `stegoeggo update` uses embedded
+  `eggfetch-core 0.2.0` (`http1`, `tls-rustls`, `tls-native-roots`, `proxy`)
+  instead of an external curl executable; no runtime curl is required after
+  installation. Bootstrap `install.sh` / `install.ps1` still use
+  curl/PowerShell by design.
+- Repository MSRV is Rust 1.89 (`rust-version` in all three manifests,
+  `assurance.yml`, and `validate-msrv-package.sh`); `eggfetch-core 0.2.0`
+  requires Rust 1.89.
+- Updater hardening: strict HTTPS-downgrade denial, explicit
+  `HTTP(S)_PROXY` / `ALL_PROXY` / `NO_PROXY` handling with fail-closed
+  invalid configuration, and bounded response bodies (4 MiB registry JSON,
+  8 KiB sidecar, 64 MiB executable) with 10-second connect and 60-second
+  total deadlines.
+- Updater contract clarification: the crates.io stable-version lookup runs
+  first; an already-current installation reports current without requiring
+  destination replaceability. Destination preflight runs before downloading
+  any update artifact only when a newer stable version exists.
+- SHA-256 sidecars remain integrity checks within the GitHub Release trust
+  boundary, not independent publisher signatures.
+
 ## [0.4.1] - 2026-09-11
 
 ### Added
@@ -273,7 +296,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Initial release.
 
-[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/eggstack/stegoeggo/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/eggstack/stegoeggo/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/eggstack/stegoeggo/compare/v0.3.3...v0.4.1
 [0.3.3]: https://github.com/eggstack/stegoeggo/compare/v0.3.1...v0.3.3
 [0.3.1]: https://github.com/eggstack/stegoeggo/compare/v0.3.0...v0.3.1

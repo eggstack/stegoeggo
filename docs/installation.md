@@ -131,7 +131,11 @@ TLS verification, and finite response bounds (4 MiB registry JSON, 8 KiB
 sidecar, 64 MiB executable). Bootstrap installers still use curl/PowerShell;
 only the installed `stegoeggo update` path is native.
 
-The destination directory must be writable before any download starts. The
+The updater queries crates.io first; when the installed version is already the
+latest stable version it reports current without requiring destination
+writability and without downloading any update artifact. When a newer stable
+version exists, the current executable's destination must be replaceable
+before downloading any update artifact. The
 updater never invokes `sudo`; for a root-owned `/usr/local/bin/stegoeggo`, run
 the update with appropriate privileges or use the bootstrap installer.
 
