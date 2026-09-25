@@ -8,7 +8,7 @@ Fast check (mirrors required CI — run this before committing):
 ```bash
 ./scripts/check.sh
 ```
-Individual steps: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo check -p stegoeggo --no-default-features`, `cargo test --workspace --exclude stegoeggo-fuzz --all-features`.
+Individual steps: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo check -p stegoeggo --no-default-features`, `cargo test --workspace --exclude stegoeggo-fuzz --all-features`, `./scripts/check-docs-contract.sh` (also run by `check.sh`; keeps installer URL, canonical commands, and release-target wording aligned).
 
 - Single test: `cargo test --workspace --exclude stegoeggo-fuzz --all-features -- <name>`
 - Pre-release (local only, never publishes): `./scripts/release-check.sh [--allow-dirty] [--stage=pre|root|cli]`
@@ -87,7 +87,7 @@ identity, or network failure.
 Updater invariants: query the crates.io stable version first, then check the
 current executable's destination before downloading any update artifact (an
 already-current installation reports current without requiring destination
-replaceability); use the embedded eggfetch transport with bounded response limits plus
+replaceability); use the embedded eggup acquisition over eggfetch transport with bounded response limits plus
 bounded Cargo/candidate subprocesses with argument arrays; honor conventional
 proxy environment variables explicitly; deny HTTPS-downgrade redirects; ignore
 prereleases; allow Cargo fallback only for unsupported targets or the exact
