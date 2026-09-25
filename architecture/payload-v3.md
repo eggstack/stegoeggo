@@ -45,15 +45,20 @@ payloads. The parser tries versions in order: v3 → v2 → v1 (see
 +                       Seed (u64 LE, 8 bytes)                  |
 |                                                               |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|        Intensity (u16 LE, scaled)  | Content Hash (4 bytes)   |
+|        Intensity (u16 LE, scaled)  | Content Hash (8 bytes ...)  |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Content Hash (cont, 4 bytes)   | Key ID Len | Key ID (0..32) |
+| Content Hash (cont.)  | Auth Algo (u8) | Auth Tag Len (u8) | Key ID Len (u8) |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|  Auth Algo    |  Auth Tag Len  |  Extension Section (TLV) ... |
+|              Key ID (0..32 bytes) + Extension Section (TLV) ... |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |                 Authentication Tag (variable)                 |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
+
+Wire order after `content_hash` is `auth_algorithm`, `auth_tag_len`,
+`key_id_len` (offsets 29/30/31 in `PayloadV3Header::to_bytes` /
+`from_bytes`, `src/payload_v3/header.rs`), then key ID, then extensions,
+then the auth tag.
 
 ### 2.1. Field Summary
 
@@ -140,8 +145,9 @@ extraction.
 - F5 DCT coefficient shuffling order
 - Per-tile seed when tiled mode is active (`tile_seed(master_seed, tile_x, tile_y)`)
 
-The seed is also stored in metadata channels (XMP `stegoeggo:Seed`, JPEG
-quantization table LSBs) for extraction when stego is damaged.
+The seed is also stored in metadata channels (XMP
+`stegoeggo:ProtectionSeed`, PNG `X-Protection-Seed` tEXt, JPEG COM markers,
+JPEG quantization-table LSBs) for extraction when stego is damaged.
 
 ### 5.3. Content Hash
 
@@ -160,10 +166,12 @@ Length-prefixed field:
   fingerprint.
 
 The key identifier allows extractors to select the correct verification key
-without trial. When `key_id_len = 0`, no key identifier is stored (legacy
-behavior).
+without trial. When `key_id_len = 0`, no key identifier is stored (the only
+shape the protection pipeline emits today).
 
-The `HAS_KEY_ID` flag bit MUST be set when `key_id_len > 0`.
+`PayloadBuilder` sets the `HAS_KEY_ID` flag automatically from
+`!key_id.is_empty()`; the V3 header parser enforces `HAS_EXTENSIONS` ↔
+header-length consistency but does NOT enforce `HAS_KEY_ID` consistency.
 
 ### 5.5. Authentication Algorithm (`auth_algo`)
 
@@ -201,16 +209,22 @@ The minimum v3 payload with no key_id, no extensions, no auth:
 = 32 bytes core
 ```
 
-### 6.2. Typical HMAC Payload
+### 6.2. Typical HMAC Payload (application-emitted)
+
+The rights-protection pipeline (`build_v3_payload`,
+`src/protected/steganography/marker.rs`) currently emits no key ID and no
+extensions (enforced by `debug_assert`/`assert`), so the only emitted sizes
+are the two below (`V3_CRC_PAYLOAD_SIZE = 36`, `V3_HMAC_PAYLOAD_SIZE = 48`
+in `src/protected/steganography/mod.rs`):
 
 ```
-32 bytes core
-+ 16 bytes key_id (SHA-256 truncated)
-+ 1 byte auth_algo=2, 1 byte auth_tag_len=16
-+ 0 bytes extensions
-+ 16 bytes HMAC-SHA256-truncated
-= 64 bytes
+32 bytes core + 16 bytes HMAC-SHA256-truncated = 48 bytes total
+32 bytes core + 4 bytes CRC32 = 36 bytes total
 ```
+
+The generic `PayloadBuilder` (`src/payload_v3/writer.rs`) can additionally
+emit key IDs (0–32 bytes) and TLV extensions, e.g. 32 + 16 key ID + 16 tag =
+64 bytes, but that shape is not produced by the protection pipeline today.
 
 ### 6.3. Maximum Embedded Payload
 
@@ -221,22 +235,22 @@ For steganographic embedding, capacity is limited:
 - **DCT (JPEG):** Depends on image size and quantization. Typical 640×480
   JPEG provides 200–600 bytes.
 
-**MAX_PAYLOAD_SIZE = 256 bytes.** Encoders MUST reject payloads exceeding
+**`V3_MAX_EMBEDDED_SIZE = 256` bytes.** Encoders MUST reject payloads exceeding
 this limit. Encoders SHOULD target ≤ 64 bytes for reliable embedding.
 
-### 6.4. ECC-Encoded Sizes
+### 6.4. Legacy ECC-Encoded Sizes (V1/V2 only)
 
-ECC encoding uses 3× repetition (same as v1/v2):
+ECC 3× replication (`src/protected/ecc.rs`) is legacy-only: `ecc_encode` is
+`#[allow(dead_code)]` extraction-compat and V3 application payloads carry
+their CRC32/HMAC tag inline with no replication. The table below is the V1/V2
+carrier shape, not emitted V3:
 
 | Mode | Core bytes | ECC bytes | + CRC32 | Total |
 |------|-----------|-----------|---------|-------|
-| No key, no ext | 32 | 96 | +4 | 100 |
-| No key, 16-byte ext | 48 | 144 | +4 | 148 |
-| HMAC, no ext | 50 (core+key+algo+taglen) | — | — | 50 + 16 = 66 |
-| HMAC, 16-byte ext | 70 | — | — | 70 + 16 = 86 |
+| V1 (24-byte header) | 24 | 72 | +4 | 76 |
+| V2 (32-byte header) | 32 | 96 | +4 | 100 |
 
-When using ECC encoding (no MAC key), the auth tag is CRC32 over the
-ECC-encoded bytes, same as v1/v2.
+Emitted V3 is always 36 bytes (CRC32) or 48 bytes (HMAC); see §6.2.
 
 ## 7. Extension Section (TLV)
 
@@ -296,15 +310,18 @@ Extensions follow the core header. Each extension is encoded as:
 - **Maximum extensions count:** 32. Decoders MUST skip (not reject)
   payloads with > 32 extensions if the flag is clear.
 
-### 7.5. Encoding Rules
+### 7.5. Encoding Rules (spec SHOULD vs implementation IS)
 
-1. Extensions MUST be sorted by type in ascending order (canonical ordering
-   for signing).
-2. Duplicate extension types MUST be rejected by encoders.
-3. `type = 0xFFFF` is the end-of-extensions sentinel. It has Length = 0 and
-   is optional; decoders SHOULD stop parsing extensions upon encountering it.
-4. All unused bytes in the extension section (between last extension and
-   `auth_tag`) MUST be zeroed.
+1. Extensions SHOULD be sorted by type in ascending order (canonical ordering
+   for signing). `PayloadBuilder::build` (`src/payload_v3/writer.rs`) emits in
+   insertion order and does not sort or reject duplicates at build time.
+2. Duplicate extension types are rejected at parse time (except the
+   `0x0100–0x01FF` private-use range, which never dedups), not at build time.
+3. `type = 0xFFFF` is the end-of-extensions sentinel. Parsers treat trailing
+   `0xFF` bytes as padding/sentinel area; any other trailing byte is
+   `ExtensionsTooLarge`.
+4. Padding/sentinel bytes are `0xFF`, not zeroed: the parser requires every
+   byte past the last extension (and past the 32-extension cap) to be `0xFF`.
 
 ### 7.6. Decoding Rules
 
@@ -332,33 +349,34 @@ DOMAIN_STRING = b"StegoEggo-v3"
 This string is prepended to the authentication input. Implementations MUST
 NOT use the same key for v2 and v3 authentication without domain separation.
 
-### 8.2. CRC32 (auth_algo = 1) — DEPRECATED
+### 8.2. CRC32 (auth_algo = 1)
 
-Input: `[ECC-encoded payload without auth tag]`
-Output: 4-byte CRC32.
+Input: `[core header + key ID + extensions]` (everything except the tag).
+Output: 4-byte CRC32 (little-endian).
 
-This is identical to v1/v2 ECC+CRC32 mode. Kept for backward compatibility
-only. New implementations SHOULD NOT use this mode.
+For emitted V3 this is `CRC32(buf[0..32])` appended as 4 bytes (36 total).
+No ECC replication is applied to V3. Kept alongside HMAC; new
+high-assurance uses SHOULD prefer HMAC.
 
 ### 8.3. HMAC-SHA256-truncated (auth_algo = 2)
 
-**Input (canonical byte string):**
+**Input (canonical byte string, `compute_payload_mac_v3`,
+`src/protected/steganography/verify.rs`):**
 
 ```
-HMAC_input = DOMAIN_STRING || version_byte || auth_algo_byte || header_bytes
+HMAC_input = V3_DOMAIN_STRING || payload_without_tag
 ```
 
 Concretely:
 
 ```
-b"StegoEggo-v3"     (12 bytes)
-|| 0x03             (1 byte, payload version)
-|| 0x02             (1 byte, auth_algo)
-|| <header bytes 0..header_length-9>
+b"StegoEggo-v3"     (12 bytes, V3_DOMAIN_STRING)
+|| <bytes 0..header_length>   (core header + key ID + extensions;
+    version/auth_algo bytes are already inside, not prepended separately)
 ```
 
-Where `header bytes` are the payload from offset 0 through the last
-extension/padding byte (everything except the 16-byte auth tag itself).
+The 32-byte core case is `HMAC(key, DOMAIN || buf[0..32])`, tag = first 16
+bytes of the 32-byte HMAC output (128-bit security).
 
 **Key:** The MAC key (implementation-provided, typically `ProtectionConfig.mac_key`).
 
@@ -387,21 +405,28 @@ b"StegoEggo-v3"     (12 bytes)
 **Output:** 64-byte Ed25519 signature.
 
 **Capacity fallback:** When the payload capacity cannot fit a 64-byte
-signature inline (common for small images), the signature is placed in the
-`ED25519_DETACHED_SIG` extension (type 0x0011) and the `auth_tag` is
-empty (`auth_tag_len = 0`). The detached signature extension is always
-treated as critical.
+signature inline (common for small images), the current plan is to place the
+signature in the `ED25519_DETACHED_SIG` extension (type 0x0011) with the
+`auth_tag` empty (`auth_tag_len = 0`). Note this shape is NOT buildable via
+`PayloadBuilder::build` today (it requires `auth_tag.len() ==
+tag_length(Ed25519) == 64`, else `CorruptTag`) — detached-signature emission
+remains a spec reservation, not an implemented path. `embed_signature`
+(`signatures` feature) always embeds the 64-byte signature inline plus
+duplicates it in the `0x0011` extension.
 
 **Verification:** Extractor reads the Ed25519 public key from the
 `ED25519_PUBLIC_KEY` extension (type 0x0010) or from an external key store
 identified by `key_id`. Verifies the signature over the canonical claim
 bytes (with signature bytes zeroed).
 
-## 9. ECC Encoding (Non-MAC Mode)
+## 9. ECC Encoding (V1/V2 legacy only — NOT applied to V3)
 
-When no MAC key is configured (`auth_algo = 0` or `1`), the entire
-payload (core header + extensions) is ECC-encoded before steganographic
-embedding.
+When no MAC key is configured for legacy payloads (`auth_algo = 0` or `1`
+on V1/V2), the entire payload is ECC-encoded before embedding. V3 never
+takes this path: `build_v3_payload` appends the CRC32/HMAC tag directly
+with no 3× replication (`src/protected/steganography/marker.rs`), and
+`ecc_encode` is retained only for backward-compatible extraction
+(`src/protected/ecc.rs`).
 
 ### 9.1. ECC Replication
 
@@ -423,18 +448,16 @@ ecc_payload = ecc_encoded || crc32(ecc_encoded)
 
 Total embedded size: `N × 3 + 4` bytes.
 
-### 9.3. V3 ECC Payload Sizes
+### 9.3. Legacy ECC Payload Sizes (V1/V2 only)
 
 | Pre-auth bytes (N) | ECC (3N) | + CRC32 | Total embedded |
 |---------------------|----------|---------|----------------|
-| 32 (core, no ext) | 96 | +4 | 100 |
-| 48 (core + 16-byte ext) | 144 | +4 | 148 |
-| 64 (core + 32-byte ext) | 192 | +4 | 196 |
-| 85 (max core-ish) | 255 | +4 | 259 |
+| 24 (V1 header) | 72 | +4 | 76 |
+| 32 (V2 header) | 96 | +4 | 100 |
 
-**Note:** The 256-byte `MAX_PAYLOAD_SIZE` limit means pre-auth payloads
-exceeding ~85 bytes cannot be ECC-encoded without exceeding capacity.
-For payloads this large, HMAC mode (auth_algo = 2) is required.
+**Note:** The 256-byte `V3_MAX_EMBEDDED_SIZE` limit bounds all payloads;
+legacy ECC 3× expansion is why large pre-auth buffers require HMAC-size
+planning on small carriers.
 
 ## 10. Parsing Algorithm
 
@@ -533,13 +556,14 @@ V2 and V1 extractors will fail to parse v3 payloads because:
 This is intentional: v3 payloads are unreadable by v1/v2-only extractors,
 forcing an upgrade.
 
-### 11.3. Migration Path
+### 11.3. Migration Path (completed)
 
-When `V3_PAYLOAD_VERSION` is bumped to 3 in the codebase:
-- `SUPPORTED_PAYLOAD_VERSIONS` becomes `[1, 2, 3]`.
-- `generate_payload()` writes v3 format.
-- `parse_stego_payload()` gains a `parse_stego_payload_v3` arm.
-- ECC and HMAC extraction paths gain v3 size awareness.
+`V3_PAYLOAD_VERSION = 3` (`src/payload_v3/types.rs`):
+- `SUPPORTED_PAYLOAD_VERSIONS` is `[1, 2, 3]` (`src/protected/steganography/mod.rs`).
+- The protection pipeline writes V3 (36 bytes CRC / 48 bytes HMAC, no
+  key ID / extensions).
+- `parse_stego_payload()` / `parse_payload()` accept V1/V2/V3 (V3 dispatched
+  by magic before the legacy version loop).
 
 ## 12. Security Considerations
 
@@ -598,8 +622,8 @@ this flag MUST ensure all consumers understand the extensions in use.
 - [ ] Set `HAS_KEY_ID` flag if `key_id_len > 0`.
 - [ ] Sort extensions by type ascending.
 - [ ] Compute CRC32 or HMAC over canonical bytes.
-- [ ] Validate total ≤ `MAX_PAYLOAD_SIZE` (256).
-- [ ] Apply ECC encoding if non-MAC mode.
+- [ ] Validate total ≤ `V3_MAX_EMBEDDED_SIZE` (256).
+- [ ] CRC/HMAC the header bytes directly; do NOT apply ECC replication to V3.
 
 ### 13.2. Decoder Checklist
 
@@ -618,14 +642,14 @@ this flag MUST ensure all consumers understand the extensions in use.
 | Constant | Value | Description |
 |----------|-------|-------------|
 | `V3_MAGIC` | `[0x53, 0x45]` | Domain separator ("SE") |
-| `V3_VERSION` | `3` | Payload version byte |
+| `V3_PAYLOAD_VERSION` | `3` | Payload version byte |
 | `V3_CORE_SIZE` | `32` | Minimum header size (no key_id, no ext, no auth) |
+| `V3_MAX_EMBEDDED_SIZE` | `256` | Maximum total embedded payload |
 | `V3_MAX_EXTENSION_SIZE` | `128` | Maximum total extension bytes |
 | `V3_MAX_EXTENSION_COUNT` | `32` | Maximum number of extensions |
 | `V3_MAX_KEY_ID_LEN` | `32` | Maximum key identifier length |
 | `V3_DOMAIN_STRING` | `"StegoEggo-v3"` | Authentication domain context |
-| `MAX_PAYLOAD_SIZE` | `256` | Maximum total embedded payload |
-| `V3_HEADER_SIZE` | `32` | Alias for `V3_CORE_SIZE` |
+| `END_OF_EXTENSIONS` | `0xFFFF` | Extension-section sentinel |
 
 ## 14. Formal Grammar
 

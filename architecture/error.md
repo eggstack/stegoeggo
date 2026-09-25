@@ -87,5 +87,4 @@ impl From<StegoError> for Error {
 }
 ```
 
-Similarly, `TranscoderError` from the carrier crate converts into `Error` via
-`From` (see `src/error.rs`).
+Similarly, carrier-internal `TranscoderError` (private `stegoeggo-stego/src/jpeg_transcoder/`) is mapped to `StegoError` inside the carrier crate (`stegoeggo-stego/src/jpeg.rs`), which then converts into `Error` via the `From<StegoError>` impl above. There is no direct `From<TranscoderError> for Error` in `src/error.rs`.

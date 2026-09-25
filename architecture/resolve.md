@@ -13,8 +13,10 @@ ProtectionRequest (user constructs)
 resolve_request(request, input_format) → ResolvedProtectionPlan
         │
         ▼
-process_request_bytes(img_bytes, &plan) → Vec<u8>
+process_plan_bytes(img_bytes, plan, budget) → PipelineResult
 ```
+
+The public entry point is `stegoeggo::resolve_request()` in `src/lib.rs`, which delegates to `crate::protected::resolve::resolve_request()`. Canonical byte processing (`process_request_bytes(img_bytes, &request)`) resolves first, then executes via the crate-private `process_plan_bytes()` router in `src/pipeline.rs`.
 
 ## `resolve_request()`
 
@@ -27,7 +29,7 @@ pub fn resolve_request(
 
 ### Validation Steps
 
-1. **Processing validation** — Rejects out-of-range JPEG quality, stego redundancy, and tiled marker sizes.
+1. **Processing validation** — Rejects out-of-range intensity, JPEG quality, stego redundancy, and tiled marker sizes (tile size must be in `32..=1024`).
 
 2. **Channel validation** — `validate_channels()` checks that:
    - HMAC authentication requires an enabled hidden marker
@@ -35,7 +37,7 @@ pub fn resolve_request(
    - `ProhibitedSeeConstraints` policy requires `ai_constraints` or `web_statement_of_rights`
    - Non-Unspecified rights policy requires `rights_metadata` to be enabled
 
-3. **DMI resolution** — Maps `RightsPolicy` to `DmiValue`:
+3. **DMI resolution** — Maps `RightsPolicy` to `DmiValue` via `DmiValue::from(policy)` (equivalent to `policy.to_dmi_value()`):
    - `Unspecified` → `None`
    - All others → `Some(DmiValue::from(policy))`
 
@@ -49,6 +51,9 @@ pub fn resolve_request(
 
    HMAC without a MAC key, HMAC with a disabled marker, and non-`Unspecified`
    policy with `rights_metadata` disabled are `Error::Config`, not warnings.
+   `request.legal_metadata()` and the merged `effective_notice` are also
+   validated (`LegalMetadata::validate()`, `RightsNotice::validate()`), and
+   failures return `Error::Config`/`Error::Metadata`.
    `MissingMacKey`, `ContradictoryLegalClaims`, and `JpegReencodeFragile` are
    legacy compatibility presentation warnings added only by
    `process_image_bytes_with_warnings`, never by resolution.

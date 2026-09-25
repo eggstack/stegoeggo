@@ -8,7 +8,7 @@ The stable generic surface re-exported as `stegoeggo::stego`. For standalone gen
 
 - `CapacityReport { required, available }` — carrier units per family (LSB: RGB slots; JPEG: eligible AC coefficients `|coef| >= 2`). `is_sufficient()` is a direct comparison.
 - `EmbedReport<T> { embedded, output, payload_bytes, required_capacity, available_capacity, actual_redundancy }` — `output` is `RgbaImage` for LSB, `Vec<u8>` for JPEG. `payload_bytes` includes frame overhead for framed ops. Public fields frozen through 0.x; `into_output()` / `into_parts()` / `capacity()` helpers. Pass `actual_redundancy` to JPEG `extract`.
-- `InPlaceEmbedReport` / `EmbedOutcome<T::{Embedded, SkippedCapacity, UnsupportedProgressive}>` / `EmbedStatus` / `EmbedOutcomeSummary { status, path, payload_bytes, required, available }` / `EmbedPath::{Lsb, LsbTiled, DctF5, DctF5Tiled, QTableSeedOnly}` follow the operation actually executed.
+- `InPlaceEmbedReport` / `EmbedOutcome<T::{Embedded, SkippedCapacity, UnsupportedProgressive}>` / `EmbedStatus` / `EmbedOutcomeSummary { status, path, payload_bytes, required_capacity, available_capacity }` / `EmbedPath::{Lsb, LsbTiled, DctF5, DctF5Tiled, QTableSeedOnly}` follow the operation actually executed.
 
 ## Validated primitives (`types.rs`)
 
@@ -17,7 +17,7 @@ The stable generic surface re-exported as `stegoeggo::stego`. For standalone gen
 
 ## Frame (`frame.rs`)
 
-Self-describing TLV wrapper: `FRAMED_MAGIC [0x53,0x45]`, `FRAME_VERSION`, `FRAME_HEADER_SIZE = 11`, `MAX_FRAME_PAYLOAD = 16 MiB`. `encode(payload)` / `decode(data)` / `decode_prefix(data)`. CRC32 is corruption detection, not authentication. Framed extraction keeps seed/config explicit and validates capacity before full extraction.
+Self-describing TLV wrapper: `FRAMED_MAGIC [0x53,0x47]` ("SG"), `FRAME_VERSION`, `FRAME_HEADER_SIZE = 11`, `MAX_FRAME_PAYLOAD = 16 MiB`. `encode(payload)` / `decode(data)` / `decode_prefix(data)`. CRC32 is corruption detection, not authentication. Framed extraction keeps seed/config explicit and validates capacity before full extraction. (Distinct from the application V3 wire magic `V3_MAGIC [0x53,0x45]` ("SE") in `src/payload_v3/types.rs`.)
 
 ## Errors (`error.rs`)
 

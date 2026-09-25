@@ -462,7 +462,7 @@ When the embedded payload has been stripped from the image but a manifest exists
 1. The image can still be linked to the manifest via `image_digest` (SHA-256 of the image bytes)
 2. Signatures on the claim remain valid (the claim is self-contained)
 3. The verification result must include a note: `embedded_reference_status: "detached-only"` — indicating the only evidence channel is the detached manifest
-4. The `EvidenceChannel::DetachedManifest` variant (new in Release 5) is emitted when verification succeeds via manifest alone
+4. The `FieldSource::DetachedManifest` variant is emitted when verification succeeds via manifest alone (note: `EvidenceChannel` has no `DetachedManifest` variant — the manifest source is tracked via `FieldSource`)
 
 ## Size Bounds
 

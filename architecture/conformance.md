@@ -1,8 +1,10 @@
 # Conformance Architecture
 
 The conformance suite validates that stegoeggo's metadata output is
-interoperable with external parsers. It is a mandatory pre-release check
-for metadata-affecting changes.
+interoperable with external parsers. It is a manual specialist check for
+metadata-affecting changes (never part of `scripts/check.sh` or required CI;
+see `architecture/tooling.md`). Run it via `scripts/verify_metadata_conformance.sh --strict`
+when metadata output changes.
 
 **Requires the `conformance` feature.** The conformance module and harness binary
 are compiled only when this feature is enabled.
@@ -17,8 +19,8 @@ are compiled only when this feature is enabled.
 | External tool tests | `tests/external_tools.rs` | External tool integration tests (`#[ignore]`, run with `--ignored`) |
 | Fixture taxonomy | `tests/fixtures/conformance/` | Test images organized by category |
 | Fixture manifest | `tests/fixtures/conformance/manifest.toml` | Machine-readable fixture metadata with SHA-256 digests |
-| Shell wrapper | `scripts/verify_metadata_conformance.sh` | Operator-friendly wrapper around harness |
-| Pre-release check | `scripts/release-check.sh` | Local pre-release verification (includes package dry-runs) |
+| Shell wrapper | `scripts/verify_metadata_conformance.sh` | Operator-friendly wrapper around harness (the `--strict` path to run manually) |
+| Pre-release check | `scripts/release-check.sh` | Local pre-release verification (staged pre/root/cli package dry-runs; does not run conformance) |
 | CI workflow | `.github/workflows/external-verification.yml` (monthly schedule + manual dispatch) | Informational signal, never blocks PRs |
 
 ## Conformance Flow

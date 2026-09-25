@@ -167,7 +167,7 @@ pub struct ProtectionRequest {
 - `metadata_only(notice, policy)` — Fastest path: same-format output with metadata only
 - `with_hidden_marker(notice, policy)` — Adds best-effort steganography
 - `from_preset(preset, notice, policy)` — Creates from a `ProtectionPreset`
-- Builder methods: `with_seed()`, `with_intensity()`, `with_mac_key()`, `with_legal_metadata()`, `with_processing()`, `with_resource_limits()`, `with_output_format()`, `with_jpeg_quality()`, `with_progressive_jpeg()`, `with_max_dimension()`, `with_metadata_update_policy()`, `with_stego_redundancy()`, `with_content_hash()`, `with_timestamp_override()`
+- Builder methods: `with_seed()`, `with_intensity()`, `with_mac_key()`, `with_legal_metadata()`, `with_processing()`, `with_resource_limits()`, `with_output_format()`, `with_jpeg_quality()`, `with_progressive_jpeg()` (no argument — sets progressive output; the legacy `ProtectionContext::with_progressive_jpeg(bool)` takes a bool), `with_max_dimension()`, `with_metadata_update_policy()`, `with_stego_redundancy()`, `with_content_hash()`, `with_timestamp_override()`
 
 ### ResolvedProtectionPlan
 
@@ -258,7 +258,7 @@ ProtectionContext::new(intensity, seed)  // intensity clamped to [0.0, 1.0]
 | `progressive_jpeg` | `bool` | false | Progressive JPEG encoding |
 | `tile_size` | `Option<u32>` | None | Crop-resistant tile size (32..=1024). None/0 = disabled |
 | `tile_extraction_max_origins` | `u32` | 64 | Max candidate tile origins for extraction |
-| `content_hash` | `Option<[u8; 4]>` | None | Truncated content hash for provenance tracking (v2 payloads) |
+| `content_hash` | `Option<[u8; 4]>` | None | Truncated content hash for provenance tracking (embedded in v3 payloads; legacy v2 payloads also carry it) |
 | `metadata_update_policy` | `Option<MetadataUpdatePolicy>` | None | Policy for updating metadata when re-processing; defaults to `ReplaceStegoOwned` |
 | `evidence_profile` | `Option<EvidenceProfile>` | None | Warning interpretation and evidence posture (defaults to `LegalNotice` when not set) |
 | `config` | `Option<Arc<ProtectionConfig>>` | None | `#[serde(skip)]` — MAC key + legal metadata |
@@ -420,7 +420,7 @@ pub struct NoticeVerification {
 }
 ```
 
-**Construction**: Use `NoticeVerification::builder()` for field-named construction. The 26-argument positional `new()` is deprecated.
+**Construction**: Use `NoticeVerification::builder()` for field-named construction.
 
 ```rust
 let nv = NoticeVerification::builder()
@@ -694,5 +694,5 @@ Validates manifest structure before processing fixtures. Checks for duplicate ID
 
 ## Serialization Notes
 
-- `ProtectionContext.config` is `#[serde(skip)]` — MAC keys and legal metadata are lost in serde roundtrips
+- `ProtectionContext.config` is `#[serde(skip)]` — MAC keys and legal metadata are lost in serde roundtrips (a `_config_dropped_warning` field is emitted instead). `timestamp_override` and `resource_limits` are also `#[serde(skip)]`
 - A test (`test_config_skipped_in_serde_roundtrip`) documents this behavior

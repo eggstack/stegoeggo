@@ -60,6 +60,8 @@ Limits violations produce structured errors:
 - `Error::MetadataLimitExceeded { kind, size, limit }` — Metadata too large
 - `Error::VerificationBudgetExceeded { kind, count, limit }` — Too many candidates
 
+Note the disposition split: `check_metadata_field_count()` reports field-count overflow as `Error::ContainerLimitExceeded { kind: "metadata fields", .. }`, not `MetadataLimitExceeded` — only byte-size overflow yields `MetadataLimitExceeded`. The observer records the first violation stickily (`limit_error`) and surfaces it via `check_limits()`.
+
 ## `OperationObserver`
 
 `pub(crate)` struct that observes resource usage for a single processing operation, fed by the canonical bounded container traversal in `src/container_walk.rs`:
@@ -68,10 +70,12 @@ Limits violations produce structured errors:
 pub(crate) struct OperationObserver {
     usage: ResourceUsage,
     peak_alloc: usize,
+    limits: ResourceLimits,                  // cloned budget enforced by observe_*/check_limits
+    limit_error: Option<ObserverLimitError>, // first sticky violation (ContainerLimit | MetadataLimit)
 }
 ```
 
-Constructed via `OperationObserver::new(_limits, input_bytes)` at the start of `process_plan_bytes()`. Consumed via `finish(self, output_bytes) -> ResourceUsage` at the end. Tracks resource consumption through `observe_*` methods (`observe_png_chunk`, `observe_jpeg_segment`, `observe_webp_chunk`, `observe_metadata_field`, `observe_alloc`). The returned `ResourceUsage` contains 10 tracked counters: `input_bytes`, `png_chunks_scanned`, `jpeg_segments_scanned`, `webp_riff_chunks_scanned`, `xmp_bytes_parsed`, `metadata_fields_extracted`, `metadata_bytes_copied`, `tile_origins_checked`, `verification_seeds_tried`, `peak_allocations_bytes`.
+Constructed via `OperationObserver::new(limits: &ResourceLimits, input_bytes: usize)` at the start of `process_plan_bytes()`. Consumed via `finish(self, output_bytes) -> ResourceUsage` at the end. Tracks resource consumption through `observe_*` methods (`observe_png_chunk`, `observe_jpeg_segment`, `observe_webp_chunk`, `observe_metadata_field`, `observe_alloc`). The returned `ResourceUsage` contains 10 tracked counters: `input_bytes`, `png_chunks_scanned`, `jpeg_segments_scanned`, `webp_riff_chunks_scanned`, `xmp_bytes_parsed`, `metadata_fields_extracted`, `metadata_bytes_copied`, `tile_origins_checked`, `verification_seeds_tried`, `peak_allocations_bytes`.
 
 ## Container traversal ownership (Plan 085)
 

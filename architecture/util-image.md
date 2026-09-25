@@ -1,6 +1,6 @@
 # Image Utilities
 
-**Source:** `src/util/image.rs` (249 lines)
+**Source:** `src/util/image.rs` (328 lines)
 
 Core image processing utilities: PRNG, encoding, hashing, and format detection.
 
@@ -19,10 +19,13 @@ pub struct PixelSelectionRng { state: u64 }
 ## Other Utilities
 
 - `compute_image_hash(img) -> String` — SHA-256 hex hash of RGBA pixel data
-- `detect_image_format(bytes) -> Option<ImageFormat>` — PNG/JPEG/WebP detection
-- `encode_image(img, format) -> Result<Vec<u8>>` — Encode to target format
-- `encode_image_with_options(img, format: Option<ImageOutputFormat>, is_progressive: bool, quality: u8) -> Result<Vec<u8>>` — With JPEG options
-- `load_image_from_bytes(bytes) -> Result<DynamicImage>` — Decode image bytes
+- `detect_image_format(bytes) -> Option<ImageFormat>` — PNG/JPEG/WebP detection via `ImageOutputFormat::from_magic_bytes`
+- `encode_image(img, format) -> Result<Vec<u8>>` — Encode to target format (JPEG at quality 90; PNG/WebP lossless)
+- `encode_image_with_quality(img, format, quality) -> Result<Vec<u8>>` — Core encoder; quality affects JPEG only
+- `encode_image_with_options(img, format: Option<ImageOutputFormat>, is_progressive: bool, quality: u8) -> Result<Vec<u8>>` — With JPEG options; `None` format falls back to `DEFAULT_OUTPUT_FORMAT`
+- `load_image_from_bytes(bytes) -> Result<DynamicImage>` — Decode image bytes via `image::load_from_memory`
+
+JPEG encoding rejects zero or over-`u16::MAX` dimensions with `Error::DimensionsExceeded` (plus the default `ResourceLimits::check_dimensions`), and caps the initial buffer reservation at 8 MiB. Test builds count full decodes via a thread-local counter (`reset_load_decode_count` / `load_decode_count`, `pub(crate)`).
 
 ## Module Interactions
 

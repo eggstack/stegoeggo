@@ -12,6 +12,7 @@ Static methods for JPEG coefficient manipulation:
 pub struct JpegTranscoder;
 
 impl JpegTranscoder {
+    pub fn decode_coefficients_with_probe(jpeg_data: &[u8]) -> Result<CoefficientDecode>
     pub fn decode_coefficients(jpeg_data: &[u8]) -> Result<(JpegHeader, Coefficients)>
     pub fn encode_coefficients(
         header: &JpegHeader,
@@ -23,9 +24,23 @@ impl JpegTranscoder {
         coefficients: &Coefficients,
         original_jpeg: &[u8],
     ) -> Result<Vec<u8>>
-    fn assemble_jpeg(header: &JpegHeader, scan_data: &[u8]) -> Result<Vec<u8>>
+    fn assemble_jpeg(header: &JpegHeader, scan_data: &[u8]) -> Result<Vec<u8>>  // private
+}
+
+pub enum CoefficientDecode {
+    Supported { header: Box<JpegHeader>, coefficients: Coefficients },
+    Unsupported(DctUnsupportedReason),
 }
 ```
+
+`decode_coefficients_with_probe` is the primary decode entry: it parses the
+header, runs the checked structural analysis plus the full DCT support probe,
+and returns `Unsupported(reason)` instead of failing for well-formed but
+non-DCT-embeddable input. `decode_coefficients` is a thin wrapper that maps
+`Unsupported` to `TranscoderError::Unsupported`. The public carrier
+(`stegoeggo-stego/src/jpeg.rs`) converts `Unsupported` to
+`StegoError::UnsupportedJpeg`; only the parent application layer decides the
+fallback (seed-only hint / metadata-only), never this module.
 
 ### Decode Flow
 
@@ -61,21 +76,25 @@ pub fn probe_dct_support_full(header: &JpegHeader, jpeg_data: &[u8]) -> DctSuppo
 ```
 
 `probe_dct_support` checks header-only properties:
-- Progressive mode
+- Progressive mode (both `is_progressive` and `ProgressiveDCT` coding process)
 - Precision (must be 8-bit)
-- Coding process (must be Sequential DCT)
-- Restart intervals (must be 0)
-- Component validity (must have DC+AC Huffman tables)
-- Sampling factors (must be ≤ 4)
+- Coding process (must be Sequential DCT; `Lossless` maps to `LosslessCoding`)
+- Restart intervals (DRI `restart_interval` must be 0)
+- Component validity (non-empty, every component must have DC+AC Huffman tables)
+- Sampling factors (max h/v sampling must be ≤ 4)
 
-`probe_dct_support_full` additionally walks the complete JPEG structure to verify:
+`probe_dct_support_full` runs the header probe first, then the checked
+structural analysis to verify:
 - Exactly one sequential scan (rejects multi-scan)
 - Valid terminal EOI (rejects truncated input)
 - No restart markers, including scans without a DRI marker
 - No post-scan marker segments
 - Checked marker/segment boundaries and exact entropy spans
 
-Unsupported inputs are routed to metadata-only processing.
+`DctUnsupportedReason` declares 10 variants; `ArithmeticCoding` is reserved and
+never constructed by any current path. At the carrier boundary these map 1:1 to
+`StegoError::UnsupportedJpeg(JpegUnsupportedReason)` — the carrier returns the
+error and the parent application layer owns the fallback routing.
 
 ## JpegStructure
 
@@ -133,7 +152,7 @@ Lives inside a private `mod scan_utils` — not a top-level public function. Fin
 fn is_progressive_jpeg(jpeg_data: &[u8]) -> bool  // private fn in mod.rs
 ```
 
-Checks if the JPEG uses progressive coding (SOF2 marker). Used to decide between full F5 stego (baseline) and seed-only stego (progressive). The public re-export lives at `stegoeggo_stego::jpeg::is_progressive_jpeg` / crate root — the fn in `mod.rs` is the private implementation.
+Checks if the JPEG uses progressive coding (SOF2 marker). Used to decide between full F5 stego (baseline) and seed-only stego (progressive). There are two independent implementations: the private `fn` in `mod.rs` (test-only, `#[allow(dead_code)]`) and the public `stegoeggo_stego::jpeg::is_progressive_jpeg` (re-exported at the crate root via `pub use jpeg::is_progressive_jpeg`), which re-parses the header itself rather than delegating.
 
 ## Error Type
 
@@ -170,7 +189,7 @@ Malformed entropy never produces partial successful coefficient maps.
 
 ## Module Interactions
 
-- **stegoeggo-stego/src/jpeg_transcoder/header.rs**: `JpegHeader::parse` for header parsing; `JpegHeader::analyze_structure_checked` for scan structure detection; `parse_sos` returns `Result<()` and rejects malformed table IDs
+- **stegoeggo-stego/src/jpeg_transcoder/header.rs**: `JpegHeader::parse` for header parsing; `JpegHeader::analyze_structure_checked` for scan structure detection; private `parse_sos` returns `Result<()>` and rejects malformed table IDs
 - **stegoeggo-stego/src/jpeg_transcoder/entropy.rs**: `CoefficientDecoder` / `CoefficientEncoder` for Huffman codec; decoder fails closed on truncated/malformed entropy data; canonical code construction advances through zero-count lengths
 - **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: `DctStegoF5` for coefficient manipulation
 - **stegoeggo-stego/src/application_support.rs**: Narrow operation layer that exposes the carrier-owned `jpeg_embed` / `jpeg_extract` / `TiledJpegSearch` to the parent crate without re-exporting parser, coefficient, or F5 types

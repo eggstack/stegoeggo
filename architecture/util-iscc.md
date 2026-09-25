@@ -20,7 +20,7 @@ The `Iscc` type alias is deprecated since 0.4.0 in favor of `ContentIdentifiers`
 
 ## Algorithm
 
-Delegates to the `iscc-lib` crate (dep `iscc-lib 0.4`) for standard ISCC v0 code generation:
+Delegates to the `iscc-lib` crate (dep `iscc-lib 0.4`) for ISCC-like v0 code generation (custom DCT-based perceptual hash, not standard-compliant):
 
 1. **Normalize** image to 32×32 grayscale (Lanczos3 resampling)
 2. **Content code** — `iscc_lib::gen_image_code_v0(&pixels, 256)` produces a 256-bit CONTENT-IMAGE code from the grayscale pixel data
@@ -28,11 +28,11 @@ Delegates to the `iscc-lib` crate (dep `iscc-lib 0.4`) for standard ISCC v0 code
 4. **Meta code** (optional) — `iscc_lib::gen_meta_code_v0(name, description, meta_payload, 256)` produces a 256-bit META code when `LegalMetadata` is provided via `from_image_with_metadata()`
 5. **Full URI** — Components assembled as `ISCC:AA...+EE...+II...` (with meta) or `ISCC:EE...+II...` (without)
 
-The `data` and `instance` fields carry the same value (the instance code). All component codes use standard ISCC type prefixes (AA for META, EE for CONTENT-IMAGE, etc.).
+The `data` and `instance` fields carry the same value (the instance code). Component codes carry ISCC-style type prefixes (AA for META, EE for CONTENT-IMAGE, per the `from_image` tests), but the construction is custom.
 
 ## Standard Compliance
 
-Uses standard ISCC v0 codes via `iscc-lib`. Component codes are interoperable with other ISCC implementations. However, the library's own documentation notes these are "ISCC-like" identifiers intended for in-application deduplication and provenance tracking.
+NOT standard-compliant and NOT interoperable with other ISCC implementations — the `ContentIdentifiers` / deprecated `Iscc` headers state this explicitly ("Not guaranteed to be interoperable with the standard ISCC specification"). These are ISCC-like identifiers for in-application deduplication and provenance tracking only. The meta payload (`build_meta_json`) covers 7 legal fields (`copyrightHolder`, `contactEmail`, `licenseUrl`, `usageTerms`, `creationDate`, `aiConstraints`, `webStatementOfRights`); the holder name defaults to `"Unknown"`, the description is `usage_terms`, and an empty JSON object yields no payload.
 
 ## Functions
 

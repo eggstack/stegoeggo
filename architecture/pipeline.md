@@ -12,13 +12,13 @@ The canonical execution path for `process_request_bytes*` functions:
 ProtectionRequest → resolve_request() → ResolvedProtectionPlan → execute_plan_bytes()
 ```
 
-Three crate-private functions in `src/pipeline.rs` perform the actual work. Container resource accounting is owned by `src/container_walk.rs` (`observe_container_work()`), which the executors call after each metadata-injection step:
+Three crate-private executors in `src/pipeline.rs` perform the actual work, dispatched by a crate-private `process_plan_bytes()` router with a `warnings_from_embed_outcome()` helper. Container resource accounting is owned by `src/container_walk.rs` (`observe_container_work()`), which the executors call after each metadata-injection step:
 
 - `execute_metadata_only()` — Same-format and cross-format metadata injection using plan fields directly (no `ProtectionContext` reconstruction)
 - `execute_full_marker_and_metadata()` — BestEffort and Tiled hidden markers with one carrier router (`tile_size: None` vs `Some`); DCT/LSB stego + metadata injection
 - `execute_seed_only_and_metadata()` — Seed-only marker + metadata injection
 
-These functions use `RightsMetadataProtector::inject_bytes_from_plan()` for metadata injection, which accepts `&ResolvedProtectionPlan` directly. The steganography side exposes `*_from_plan` methods (`SteganographyProtector::apply_dct_stego_bytes_from_plan`, `apply_lsb_to_image_with_summary_from_plan`, `embed_lsb_tiled_in_place`) that consume the plan directly. The `apply_dct_stego_bytes_from_plan` dispatcher lives in `src/protected/steganography/embed.rs`; the plan-driven embed path uses the stable public carrier operations (`lsb::embed_in_place`, `lsb::embed_tiled_in_place`, `jpeg::embed`, `jpeg::embed_tiled`) and never reconstructs a `ProtectionContext` from the plan. There is no `plan_to_context()` adapter: the resolved plan is the only execution state for the canonical path.
+These functions use `RightsMetadataProtector::inject_bytes_from_plan()` for metadata injection, which accepts `&ResolvedProtectionPlan` directly. The steganography side exposes plan-driven entry points (`SteganographyProtector::apply_dct_stego_bytes_from_plan`, `apply_lsb_to_image_with_summary_from_plan`, `lsb_pixels_needed_from_plan`) that consume the plan directly. (`embed_lsb_tiled_in_place` is a non-plan helper used inside the raster path.) The `apply_dct_stego_bytes_from_plan` dispatcher lives in `src/protected/steganography/embed.rs`; the plan-driven embed path uses the stable public carrier operations (`lsb::embed_in_place`, `lsb::embed_tiled_in_place`, `jpeg::embed`, `jpeg::embed_tiled`) and never reconstructs a `ProtectionContext` from the plan. There is no `plan_to_context()` adapter: the resolved plan is the only execution state for the canonical path.
 
 ## Output-Domain Carrier Invariant
 
@@ -35,7 +35,7 @@ output_format == JPEG ? DCT/F5 carrier : LSB carrier
 
 ## ProtectionPipeline (legacy path)
 
-The legacy struct for level-based APIs. It is stateless; its methods adapt the legacy level/context inputs into a `ProtectionRequest` and then use the canonical resolver and plan executor.
+The legacy struct for level-based APIs. It is stateless (also implements `Clone` and `Default`); its methods adapt the legacy level/context inputs into a `ProtectionRequest` and then use the canonical resolver and plan executor.
 ```rust
 pub struct ProtectionPipeline {
 }
@@ -43,8 +43,8 @@ pub struct ProtectionPipeline {
 
 ### Key Methods
 
-- `process(&img, level, &ctx) -> Result<Cow<DynamicImage>>` — Pixel-level processing (validates dimensions)
-- `process_bytes(&img_bytes, level, &ctx) -> Result<Vec<u8>>` — Byte-level processing (validates dimensions for JPEG via header parse, and for non-JPEG via a header-only dimension gate before the single full decode; the preflight never performs a discarded decode)
+- `process(&'a self, &'a img, level, &ctx) -> Result<Cow<'a, DynamicImage>>` — Pixel-level processing (validates dimensions)
+- `process_bytes(&self, &img_bytes, level, &ctx) -> Result<Vec<u8>>` — Byte-level processing (validates dimensions for JPEG via header parse, and for non-JPEG via a header-only dimension gate before the single full decode; the preflight never performs a discarded decode)
 
 ### v1 Disposition (Plan 096)
 
@@ -90,11 +90,11 @@ Legacy free functions translate once via `request_from_legacy()` into
 
 - `process_image(img, level, &ctx) -> Result<DynamicImage>` — Pixel path. Resolves the translated request and dispatches on `plan.channels().hidden_marker`; no independent policy or marker selection.
 - `process_image_bytes(bytes, level, &ctx) -> Result<Vec<u8>>` — Delegates directly to `process_request_bytes`.
-- `process_images_parallel(images, level, &ctx)` — Rayon parallel batch over `process_image`.
-- `process_images_bytes_parallel(images, level, &ctx)` — Rayon parallel batch over `process_image_bytes`.
+- `process_images_parallel(images, level, &ctx)` — Rayon parallel batch over `process_image` (requires the `parallel` feature).
+- `process_images_bytes_parallel(images, level, &ctx)` — Rayon parallel batch over `process_image_bytes` (requires the `parallel` feature).
 - `process_image_bytes_with_info(bytes, level, &ctx) -> Result<(Vec<u8>, Option<ProtectionWarning>)>` — Returns the first warning.
 - `process_image_bytes_with_warnings(bytes, level, &ctx) -> Result<(Vec<u8>, Vec<ProtectionWarning>)>` — Delegates to `process_request_bytes_with_warnings`, then adds only compatibility presentation warnings (`MissingMacKey` for legacy authenticated profiles, `ContradictoryLegalClaims`, `JpegReencodeFragile`). `MetadataInjectionDisabled` and capacity/runtime warnings come from the canonical path and are not duplicated.
-- `verify_image_bytes(bytes, mac_key) -> VerificationStatus` — Free function (not a pipeline method). Checks DCT stego first, then metadata seed extraction, then falls back to LSB stego payload extraction for non-JPEG formats. Returns `VerificationStatus` (`Verified`, `Invalid`, `NotFound`).
+- `verify_image_bytes(bytes, mac_key) -> VerificationStatus` — Free function (not a pipeline method). Runs the single canonical verification (`verify_canonical` in `src/verification/canonical.rs`) and projects the facts to a coarse stego status. Returns `VerificationStatus` (`Verified`, `Invalid`, `NotFound`).
 - `verify_image_bytes_detailed(bytes, mac_key) -> VerificationResult` — Distinguishes verified payloads from metadata-only evidence.
 
 ## No-new-legacy-features invariant

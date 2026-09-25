@@ -13,14 +13,14 @@ Encoded-JPEG DCT carrier with container-preserving encode. Operates on baseline 
 | Raw | `embed` (best-effort: auto-downgrade redundancy, seed-only fallback) / `extract(bytes, len, &config, actual_redundancy)` — pass `report.actual_redundancy` to `extract` |
 | Strict | `embed_strict` / `embed_framed_strict` — exact requested redundancy or `InsufficientCapacity`, no output |
 | Framed | `embed_framed` / `extract_framed` — `frame::{encode,decode}` wrapper; length self-describing |
-| Tiled | `embed_tiled(bytes, payload, &TileConfig)` / `extract_tiled(bytes, len, &TileConfig, max_origins)` / `embed_tiled_framed(bytes, payload, &TileConfig)` / `extract_tiled_framed(bytes, &TileConfig, max_origins)` — redundancy 1 per tile; tile size must be ≥ 8 and a multiple of 8 |
+| Tiled | `embed_tiled(bytes, payload, &TileConfig)` / `extract_tiled(bytes, len, &TileConfig, max_origins)` / `embed_tiled_framed(bytes, payload, &TileConfig)` / `extract_tiled_framed(bytes, &TileConfig, max_origins)` — redundancy 1 per tile; tile size must be ≥ 8 and a multiple of 8; tiled embed encodes once even when no tile fits (`embedded == false` with output, never an error for capacity) |
 | Seed hint | `embed_seed_hint(bytes, seed)` (transactional: full 96-bit hint or `InsufficientCapacity`) / `extract_seed_hint(bytes) -> Option<u64>` |
 
 `JpegConfig { seed, redundancy }` mirrors `LsbConfig`: `try_new(seed, redundancy)` / `try_with_redundancy(r)` / `from_redundancy` / `with_redundancy_value` for runtime values (default redundancy 3); `with_redundancy` is constants-only. Zero seeds valid.
 
 ## Best-effort vs strict
 
-Best-effort `embed` is the parent rights crate's application policy (downgrade, then seed-only fallback), not generic carrier semantics: it computes `max_feasible = available / payload_bits` from capacity first, selects `min(requested, max_feasible)`, then embeds and encodes once. Generic callers that need exactness use `*_strict`, which embed at exactly the requested redundancy in one pass — no retry loop, no capacity downgrade.
+Best-effort `embed` is the parent rights crate's application policy (downgrade, then seed-only fallback), not generic carrier semantics: it computes `max_feasible = available / payload_bits` from capacity first, selects `min(requested, max_feasible)` floored at 1, then embeds and encodes once. An empty payload (or zero feasible bits) skips the payload attempt and falls through to the seed-hint-only carrier with `embedded == false` — it does not error, unlike `*_strict`, which rejects empty payloads with `InvalidConfig`. Generic callers that need exactness use `*_strict`, which embed at exactly the requested redundancy in one pass — no retry loop, no capacity downgrade.
 
 ## Prepared reuse (`prepared::`)
 
@@ -33,7 +33,8 @@ p.extract_framed(&cfg); p.extract_tiled(len, &tile, n);
 p.embed_strict(payload, &cfg); p.embed_framed_strict(payload, &cfg); p.seed_hint();
 ```
 
-`Debug + Send + Sync`. Single-decode-per-operation also holds without `PreparedJpeg`: `extract_framed` retains private decoded coefficients for its bounded redundancy search; the parent's hidden `JpegSearchContext` shares one decode across standard probing and tiled fallback. Do not recompose either from public `capacity`/`extract` calls or add per-redundancy extract calls.
+`Debug + Send + Sync`. `seed_hint()` is header-only, so it works even for
+unsupported structures (progressive, multi-scan, …). Single-decode-per-operation also holds without `PreparedJpeg`: `extract_framed` retains private decoded coefficients for its bounded redundancy search; the parent's hidden `JpegSearchContext` shares one decode across standard probing and tiled fallback. Do not recompose either from public `capacity`/`extract` calls or add per-redundancy extract calls.
 
 ## Container preservation
 

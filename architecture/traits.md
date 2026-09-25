@@ -30,11 +30,11 @@ pub trait Protector: Send + Sync {
 
 ### Implementations
 
-| Protector | Level | modifies_pixels | estimated_latency_ms |
-|-----------|-------|-----------------|---------------------|
-| `PassthroughProtector` | Disabled | false | 0 |
-| `RightsMetadataProtector` | Light | false | 2 |
-| `SteganographyProtector` | Standard | true | 2 |
+| Protector | Level | modifies_pixels | requires_bytes_level | estimated_latency_ms |
+|-----------|-------|-----------------|----------------------|---------------------|
+| `PassthroughProtector` | Disabled | false | false | 0 |
+| `RightsMetadataProtector` | Light | true (default; byte-level work happens in `apply_bytes`) | true | 2 |
+| `SteganographyProtector` | Standard | true | false | 2 |
 
 ## v1 Disposition (Plan 096)
 
@@ -48,6 +48,6 @@ case is demonstrated. Full disposition table: `plans/096-status.md`
 
 ## Module Interactions
 
-- **lib.rs**: Calls `Protector::apply()` and `Protector::apply_bytes()` for each protection level
+- **lib.rs / pipeline.rs**: The canonical request/plan path (`process_request_bytes*` → `process_plan_bytes` → `execute_*`) does not dispatch through `Protector::apply()` per level; the trait is the legacy level/context contract used by `ProtectionPipeline` and the compatibility adapters
 - **protected/*.rs**: Each protector implements the `Protector` trait
 - **stegoeggo-stego/**: `SteganographyProtector` delegates carrier mechanics to `stego::lsb` and `stego::jpeg`

@@ -13,7 +13,7 @@ lsb tiled/framed ────────┘
 ```
 
 - `lsb.rs` — public facade: `capacity`, `embed`, `extract`, `embed_in_place`, `embed_framed`, `extract_framed`, `embed_tiled`, `embed_tiled_in_place`, `extract_tiled`, `embed_tiled_framed`, `extract_tiled_framed`. Re-exports `LsbConfig`, `TileConfig`, `DEFAULT_TILE_SIZE`, `InPlaceEmbedReport`.
-- `lsb_internal.rs` — private engine: `stego_permutation` / `stego_permutation_v2`, `carrier_v2_slot_to_pixel_channel`, `lsb_available_slots`, `PixelCarrier` / `PixelCarrierMut` traits, `TileWindow{,Mut}` zero-copy windows, `crop_rgba` / `blit_rgba`, `embed_lsb` / `extract_lsb`, `embed_lsb_v2_in_place`, `embed_lsb_tiled{,_in_place}`, `extract_tiled_carrier{,_framed}`.
+- `lsb_internal.rs` — private engine: `stego_permutation` / `stego_permutation_v2`, `carrier_v2_slot_to_pixel_channel`, `lsb_available_slots`, `PixelCarrier` / `PixelCarrierMut` traits, `TileWindow{,Mut}` zero-copy windows, `crop_rgba` / `blit_rgba`, `embed_lsb` / `extract_lsb`, `embed_lsb_v2_in_place`, `embed_lsb_tiled{,_in_place}`, `extract_tiled_carrier` / `extract_tiled_framed_carrier`.
 - `pixels.rs` — borrowed packed/strided `RGB8`/`RGBA8` views (`PixelLayout`, `PixelView`, `PixelViewMut`) implementing the same `PixelCarrier` traits. No `RgbaImage` conversion; alpha and padding bytes are never carriers. `as_view()` reborrows mut→const for extract-after-embed.
 
 ## Configuration

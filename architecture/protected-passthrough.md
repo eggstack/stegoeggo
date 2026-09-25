@@ -25,7 +25,8 @@ impl Protector for PassthroughProtector {
 
 - `modifies_pixels()` returns `false` — used by pipeline to decide optimization paths
 - `apply()` returns `Cow::Borrowed` — zero allocation, zero copy
-- `apply_bytes()` uses default implementation (decode → apply → re-encode), but since `apply` is a no-op, the bytes pass through unchanged
+- `apply_bytes()` uses the trait default, which returns the input bytes unchanged
+  without decode/re-encode when `modifies_pixels()` is `false` (`src/traits.rs`)
 
 ## Module Interactions
 

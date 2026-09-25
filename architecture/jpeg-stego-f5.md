@@ -1,6 +1,6 @@
 # F5 DCT Steganography
 
-**Source:** `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs` (~1350 lines)
+**Source:** `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs` (~1354 lines)
 
 F5-style steganographic embedding in JPEG DCT coefficients. The most sophisticated protection layer.
 
@@ -15,7 +15,11 @@ not all non-zero AC coefficients.
 pub struct DctStegoF5 { redundancy: usize }
 ```
 
-Methods for F5 coefficient manipulation, parameterized by redundancy.
+Constructed with `new()` (redundancy 3) or `with_redundancy(r)`, which clamps
+to 1..=10 rather than validating — runtime values must go through the
+validated `Redundancy` / `JpegConfig::try_new` layer instead (see
+`carrier-jpeg.md`). Methods for F5 coefficient manipulation, parameterized by
+redundancy.
 
 ## Seed Embedding in Quantization Tables
 
@@ -55,9 +59,14 @@ pub fn extract_f5(&self, coefficients: &Coefficients, expected_bits: usize, seed
 
 `expected_bits` is the original payload bit count. Redundancy is handled internally by reading `expected_bits * redundancy` bits before majority voting.
 
+An empty payload is a no-op at this layer (`embed_f5` returns `Ok(0)` without
+touching coefficients). The empty-payload rejection (`InvalidConfig`) lives one
+layer up, in the strict `jpeg::embed_strict` / `embed_framed_strict` public
+boundary — not in `DctStegoF5` itself.
+
 ### F5 Algorithm
 
-1. Canonicalize AC coefficients into the encoder's representable range (±1023), skipping DC (position 0)
+1. Canonicalize AC coefficients into the encoder's representable range (±1023), skipping DC (position 0). The canonicalization is embed-side only: extraction collects `|coef| >= 2` positions from the coefficients as decoded, without re-clamping.
 2. Collect eligible carrier positions — AC coefficients with `|coef| >= 2` — in deterministic component/block order, then shuffle with `DctCoefficientRng` (private tuple struct, distinct from `PixelSelectionRng` in the root crate)
 3. For each payload bit (repeated `redundancy` times):
    - If LSB matches target, keep the coefficient
@@ -87,6 +96,17 @@ F5 extraction handles redundancy-based majority voting in a single pass (not mul
 - Robust against noise and perturbation
 
 Note: The 5-pass extraction logic with multiple seed derivations is in `steganography/extract.rs` (`extract_with_redundancy`), not in F5 extraction.
+
+### Even-Redundancy Tie Sentinel
+
+With an even redundancy, a per-bit vote can tie (`ones * 2 == redundancy`). A
+single tied position makes the whole extraction ambiguous and `extract_f5`
+returns an **empty vector** as a fail-closed sentinel — not a zero-length
+payload. Callers must treat `is_empty()` as extraction failure. The public
+carrier helpers normalize this to `StegoError::MalformedInput`
+(`extract_from_decoded` maps empty output there); prefer odd redundancies
+(1, 3, 5, …) or check the empty sentinel explicitly before interpreting the
+result.
 
 ## DctCoefficientRng (private)
 
@@ -133,8 +153,11 @@ the tile grid itself is the redundancy.
 
 ### Integration
 
-- `apply_dct_stego_bytes_tiled`: iterates the tile grid, calls
-  `embed_f5_in_blocks` for each tile with `tile_seed(master, tx, ty)`.
+- `apply_dct_stego_bytes_tiled` (legacy context path) and the canonical
+  `embed_dct_tiled_payload` helper behind `apply_dct_stego_bytes_from_plan`
+  both delegate to the carrier's `jpeg::embed_tiled`, which owns the tile-grid
+  iteration: per tile it calls `embed_f5_in_blocks` with
+  `tile_seed(master, tx, ty)`.
 - `extract_f5_tiled_candidates`: scans tile positions in the cropped JPEG,
   returns an opaque candidate identity for each tile/grid-seed/redundancy
   combination, and reuses that identity for prefix/header/full or legacy

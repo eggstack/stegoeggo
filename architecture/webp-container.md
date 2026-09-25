@@ -17,7 +17,7 @@ Owns the `WEBP` RIFF model that `protected/metadata_trap/webp.rs` mutates and `c
 
 - Requires `RIFF` + `WEBP` magic, LE32 sizes, even-byte padding per chunk.
 - Recognizes `VP8X`, `VP8 `, `VP8L`, `XMP `, `EXIF`, `ICCP`, `ALPH`, `ANIM`, `ANMF`.
-- `VP8X` feature flags are re-derived on write via `derive_features(...).with_xmp(...)` and `encode_vp8x_chunk`, which clears reserved bits `0xC1`. Malformed inputs with those bits set are silently normalized to spec-compliant output — intentional, breaks byte-for-byte idempotence for malformed fixtures (see `overview.md` WebP correctness note).
+- `VP8X` parsing is strict: reserved flag bits `0xC1` and non-zero reserved bytes are rejected with `Error::Metadata`. On write, feature flags are re-derived via `derive_features(...).with_xmp(...)` and emitted with `encode_vp8x_chunk` (which writes the given flags verbatim), so output never carries reserved bits; `validate_webp_output` additionally rejects flags that do not match the derived features. Malformed inputs therefore fail at `parse_webp` instead of being silently normalized (see `overview.md` WebP correctness note).
 - `ANMF` sub-frames are descended for kind/alpha discovery; unknown FourCCs are indexed, never rejected.
 
 ## Write path

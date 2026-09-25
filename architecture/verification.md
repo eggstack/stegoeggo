@@ -169,7 +169,7 @@ let report = VerificationReportBuilder::new()
   "hidden_marker": { "status": "Verified", "payload_version": 3, ... },
   "authentication": { "attempted": true, "hmac_status": "Verified", ... },
   "signatures": [...],
-  "bindings": { "instance_digest_match": true, ... },
+  "bindings": { "instance_digest_present": true, "instance_digest_valid": true, ... },
   "trust": { "trusted": true, "trust_model": "TrustKeys", ... },
   "evidence_strength": "MetadataNoticeAndAuthenticatedProvenance",
   "diagnostics": [...]
@@ -189,4 +189,4 @@ Centralized projections, named and tested in `tests/verification_convergence.rs`
 
 ## Relationship to NoticeVerification
 
-`NoticeVerification` (`src/types.rs`) is a compatibility projection carrying full legal-notice fields (license URL, web statement, credit line, copyright owner, licensor fields, metadata date, notice-applied-at, TDM reservation, rights-signal kind, canonical/legacy DMI, protection seed, full `StegoPayload`) not present in `RightsVerification`. Both projections come from the same `CanonicalFacts`; there are not two independent searches. Detached-manifest embedded-reference checks reuse the single-outcome raw-plus-parse path; full detached signature/binding/trust reporting remains manifest-aware by necessity (documented exception).
+`NoticeVerification` (`src/types/verification.rs`, re-exported via `stegoeggo::types`) is a live, non-deprecated projection carrying full legal-notice fields (license URL, web statement, credit line, copyright owner, licensor fields, metadata date, notice-applied-at, TDM reservation, rights-signal kind, canonical/legacy DMI, protection seed, full `StegoPayload`) not present in `RightsVerification`. Both projections come from the same `CanonicalFacts`; there are not two independent searches. Detached-manifest embedded-reference checks reuse the single-outcome raw-plus-parse path; full detached signature/binding/trust reporting remains manifest-aware by necessity (documented exception).

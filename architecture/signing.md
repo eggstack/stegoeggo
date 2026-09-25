@@ -2,7 +2,7 @@
 
 **Source:** `src/signing/` (feature-gated: `signatures`)
 
-Provides Ed25519 signing and verification for provenance claims and detached manifests. The module is compiled only when the `signatures` feature is enabled.
+Provides Ed25519 signing and verification for provenance claims and detached manifests. The module is compiled only when the `signatures` feature is enabled. Uses `ed25519-dalek` v3.
 
 ## Module Structure
 
@@ -19,17 +19,22 @@ src/signing/
 
 Wraps `ed25519_dalek::SigningKey` with a key identifier. Private key material is zeroized on drop. `Debug` does not reveal key bytes. `Serialize`/`Deserialize` are intentionally not implemented.
 
-- `from_bytes([u8; 32], Vec<u8>) -> Result<Self, Error>` — Create from raw seed + key ID. Returns `Error::Config` if `key_id` exceeds 32 bytes.
-- `generate()` — Random key with 16-byte random key ID
+- `from_bytes([u8; 32], Vec<u8>) -> Result<Self, Error>` — Create from raw seed + key ID. Returns `Error::Config` if `key_id` exceeds `MAX_KEY_ID_LENGTH` (32 bytes).
+- `generate() -> Result<Self, Error>` — Random key with 16-byte random key ID (`getrandom`; `Error::Crypto` on entropy failure)
+- `key_id() -> &[u8]` — Key identifier
+- `public_key_bytes() -> [u8; 32]` — Derived 32-byte public key
+- `to_bytes() -> [u8; 32]` — Export raw secret bytes (copy; caller-owned)
 - `sign(&[u8]) -> Vec<u8>` — Deterministic Ed25519 signature (64 bytes)
 - `verifying_key() -> VerifyingKey` — Derive public key
-- `zeroize()` — Best-effort key erasure
+- `zeroize(&mut self)` — Best-effort key erasure (also runs on `Drop`)
 
 ### `VerifyingKey`
 
 Wraps `ed25519_dalek::VerifyingKey` with a key ID. Implements `Serialize`/`Deserialize` for embedding in metadata.
 
-- `from_bytes([u8; 32], Vec<u8>)` — Create from raw public key + key ID
+- `from_bytes([u8; 32], Vec<u8>) -> Result<Self, Error>` — Create from raw public key + key ID. Returns `Error::Crypto` if the bytes are not a valid Ed25519 public key.
+- `key_id() -> &[u8]` — Key identifier
+- `as_bytes() -> &[u8; 32]` — Raw public key bytes
 - `verify(&[u8], &[u8]) -> SignatureResult` — Verify signature against claim bytes
 
 ### `SignatureResult`
@@ -53,7 +58,15 @@ Bundles signing key, key ID, and placement preference. Does not implement `Seria
 - `key_id() -> &[u8]` — Key identifier
 - `verifying_key() -> VerifyingKey` — Derived public key
 - `placement() -> SignaturePlacement` — Current placement preference
+- `with_placement(SignaturePlacement) -> Self` — Builder-style placement override
 - `check_capacity(available_bytes) -> SignatureCapacity` — Fits or NeedsDetached
+
+### Constants
+
+```rust
+pub const MAX_KEY_ID_LENGTH: usize = 32;
+pub const SIGNATURE_DOMAIN: &[u8] = b"StegoEggo-Sig-v1"; // retained for backward compatibility; not prepended to detached-signature claim bytes
+```
 
 ### `SignaturePlacement`
 

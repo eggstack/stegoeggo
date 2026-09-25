@@ -78,7 +78,8 @@ Offset  Size  Field
 pub struct StegoPayload { /* private fields */ }
 ```
 
-Getter methods: `protection_level()`, `seed()`, `intensity()`, `version()`.
+Getter methods: `protection_level()`, `seed()`, `intensity()`, `version()`,
+`content_hash()`, `dmi_value()`, `raw_payload()`. All fields are private.
 
 ## Embedding Methods
 
@@ -204,14 +205,14 @@ Extraction probes seed variants sequentially. The first successful pass wins; pa
 
 ## Redundancy
 
-- Configurable 1–10 via `ProtectionContext::stego_redundancy`; invalid values return a configuration error when the context is used
+- Configurable 1–10 via `ProtectionContext::with_stego_redundancy()`; out-of-range values are rejected by `validate()` / plan resolution, while the effective getter clamps `1..=10` as defense-in-depth (unset falls back to intensity-derived 1/2/3)
 - Non-tiled DCT: capacity-selected redundancy = `min(requested, available / payload_bits)`, single embed+encode
 - Tiled LSB: redundancy=1 per tile (tile grid provides the redundancy)
 - Extraction probes the raw seed + 5 offset-seed variants (each trying redundancy 1..=10); first successful attempt wins
 
 ## Fallback Seeds
 
-When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` — common test/dev seeds.
+When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` — common test/dev seeds. Available only with the `test-seeds` feature flag; production images with CSPRNG seeds are not recoverable via fallback.
 
 ## Module Interactions
 
@@ -223,7 +224,7 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 - **stegoeggo-stego/src/jpeg.rs**: Generic encoded-byte JPEG carrier facade (DCT capacity, raw/framed/tiled embed/extract, Q-table reassembly, seed hint). Tiled JPEG uses redundancy 1 per tile and rejects `tile_size < 8` / non-multiples of 8. No application-type imports
 - **stegoeggo-stego/src/jpeg_transcoder/**: Private JPEG fast-path implementation used behind `jpeg.rs` and `application_support.rs`
 - **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: Private F5-style DCT manipulation
-- **util/image.rs**: `XorShiftRng` for LSB pixel selection
+- **util/image.rs**: `PixelSelectionRng` for LSB pixel selection (seeded via `seed.wrapping_add(XORSHIFT_SEED_OFFSET)`; do not interchange with `DctCoefficientRng`)
 - **protected/constants.rs**: `STEGO_OFFSET_SEED_1`, `XORSHIFT_SEED_OFFSET`
 - **stegoeggo-stego/src/constants.rs**: `STEGO_SPREAD_FACTOR`, `STEGO_OFFSET_SEED_1`, `SPLITMIX64_SEED`, `MIN_REDUNDANCY`, `MAX_REDUNDANCY`
 - **types/**: Uses `ProtectionLevel`, `StegoPayload` (via stable `stegoeggo::types::*` re-exports)

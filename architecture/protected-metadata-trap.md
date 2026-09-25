@@ -21,8 +21,8 @@ Seven variants mapped to canonical PLUS LDF vocabulary keys. Legacy `Iptc4xmpExt
 | DmiValue | Canonical Key (emitted) |
 |----------|--------------------------------------|
 | `Unspecified` | Not injected — no `plus:DataMining` property emitted |
-| `Allowed` | `DMI-Allowed` |
-| `Prohibited` | `DMI-Prohibited` |
+| `Allowed` | `DMI-ALLOWED` |
+| `Prohibited` | `DMI-PROHIBITED` |
 | `ProhibitedAiMlTraining` | `DMI-PROHIBITED-AIMLTRAINING` |
 | `ProhibitedGenAiMlTraining` | `DMI-PROHIBITED-GENAIMLTRAINING` |
 | `ProhibitedExceptSearchEngineIndexing` | `DMI-PROHIBITED-EXCEPTSEARCHENGINEINDEXING` |
@@ -36,11 +36,16 @@ The protector itself does not map `ProtectionLevel` to DMI. DMI arrives via the 
 
 ### Legal Metadata
 
-When `inject_legal_claims` is enabled (or auto-enabled by the presence of `LegalMetadata`), injects only the fields explicitly provided:
+When `inject_legal_claims` is enabled (or auto-enabled by the presence of `LegalMetadata`), injects only the fields explicitly provided.
+`inject_metadata` / `inject_legal_claims` are `Option<bool>` (`None` = level
+default; explicit `false` with legal metadata present emits a
+`ContradictoryLegalClaims` warning rather than behaving like unset).
+`LegalMetadata` carries 16 validated fields (`MAX_FIELD_LEN = 8192` bytes each):
 - Copyright holder (if set)
 - Contact email (PNG tEXt / JPEG COM only — not mapped to `photoshop:Credit` in XMP)
 - License URL
 - Usage terms (if set)
+- Usage terms language (if set)
 - Creation date (only if caller-supplied — never synthesized from processing time)
 - AI training constraints (if set)
 - Web statement of rights (if set)
@@ -90,7 +95,7 @@ Injects into a valid extended WebP container:
 
 ## Metadata Merge Behavior
 
-When an already-protected image is re-processed, the pipeline applies a `MetadataUpdatePolicy` (defined in `src/types.rs`) to control how existing StegoEggo metadata is handled. The policy is applied at the metadata injection stage.
+When an already-protected image is re-processed, the pipeline applies a `MetadataUpdatePolicy` (defined in `src/types/compat.rs`, re-exported via `stegoeggo::types`) to control how existing StegoEggo metadata is handled. The policy is applied at the metadata injection stage.
 
 ### Normalization Model
 
@@ -185,4 +190,7 @@ so external RDF parsers (e.g. `exiftool`) can read the legal fields:
 - **pipeline.rs** (`execute_*`) and **lib.rs**: Selected for `Light` and `Standard` levels (always runs)
 - **types/**: Uses `DmiValue`, `ProtectionLevel`, `LegalMetadata` (via stable `stegoeggo::types::*` re-exports)
 - **traits.rs**: Implements `Protector` trait
-- **protected/constants.rs**: Uses `STEGO_OFFSET_SEED_1` for seed embedding
+- **Byte-level trap**: `apply()` is pixel-path inert (`Cow::Borrowed`); real
+  injection happens in `inject_bytes()` / `inject_bytes_from_plan()` on encoded
+  bytes. `modifies_pixels()` stays at the trait default (`true`); the pixel
+  path is simply never the metadata route

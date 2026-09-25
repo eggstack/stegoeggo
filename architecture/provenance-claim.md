@@ -60,7 +60,7 @@ Values `0x07`–`0xFF` are reserved for future use. Parsers must reject claims w
 
 Note: These are bare `plus_vocab_key()` values for the provenance byte mapping. XMP `plus:DataMining` attributes use the full URI form (`http://ns.useplus.org/ldf/vocab/{key}`).
 
-This mapping corresponds to the `DmiValue` enum discriminant order in `src/types.rs` (each variant's position in the enum declaration gives its byte value) and the PLUS controlled-vocabulary keys in `DmiValue::plus_vocab_key()`. `RightsPolicy` maps to `DmiValue` via `RightsPolicy::to_dmi_value()` / `RightsPolicy::from_dmi_value()`.
+This mapping corresponds to the `DmiValue` enum discriminant order in `src/types/rights.rs` (each variant's position in the enum declaration gives its byte value) and the PLUS controlled-vocabulary keys in `DmiValue::plus_vocab_key()`. `RightsPolicy` maps to `DmiValue` via `RightsPolicy::to_dmi_value()` / `RightsPolicy::from_dmi_value()` in `src/types/request.rs` (note: `Unspecified` maps to `None` — it emits no `plus:DataMining` property).
 
 ## Digest Encoding
 
@@ -87,8 +87,11 @@ The canonical byte representation of a `ProvenanceClaim` is **canonical JSON**:
 2. **No whitespace** between tokens.
 3. **UTF-8 encoding** (no BOM).
 4. **Null values omitted.** `parent_claim_id` and `statement_uri` are not present in the JSON when null. This ensures two claims with identical non-null fields serialize identically regardless of whether optional fields were explicitly set to null.
-5. **Numbers encoded without quotes.** `schema_version`, `rights_policy`, `width`, `height`, `file_size`, and `created_at` are JSON numbers, not strings.
-6. **Strings are NFC-normalized** before serialization. Unicode normalization is applied to all string values (notice text is already normalized before hashing, but this rule applies to all fields).
+5. **`claim_id` excluded.** The random `claim_id` is never included in the canonical bytes (the implementation omits it in `ProvenanceClaim::canonical_bytes()`), so two claims differing only in instance ID sign identically.
+6. **Numbers encoded without quotes.** `schema_version`, `rights_policy`, `width`, `height`, `file_size`, and `created_at` are JSON numbers, not strings.
+7. **Strings are NFC-normalized** before serialization (spec target). Unicode normalization is applied to all string values (notice text is already normalized before hashing, but this rule applies to all fields).
+
+> **Implementation note:** the current code performs no NFC normalization of string values before serialization; normalization of notice text happens (if at all) before hashing at the call site.
 
 The canonical JSON object is then serialized to a byte string using the above rules. The resulting bytes are what gets signed.
 
@@ -293,11 +296,11 @@ Current stego payloads (v2) carry a 32-byte compact header. The provenance claim
 
 | Version | Format | Signing |
 |---------|--------|---------|
-| v1 (legacy) | 24-byte fixed header | None |
-| v2 (current) | 32-byte header + optional HMAC | HMAC-SHA256 |
-| v3 (planned) | Provenance claim (JSON or binary) | ed25519 or HMAC-SHA256 |
+| v1 (legacy, extract-only) | 24-byte fixed header | None |
+| v2 (legacy, extract-only) | 32-byte header + optional HMAC | HMAC-SHA256 |
+| v3 (current default) | 32-byte core header + TLV extensions (`V3_PAYLOAD_VERSION = 3`) | CRC32, HMAC-SHA256, or Ed25519 (`Ed25519PublicKey`/`Ed25519DetachedSig` extensions) |
 
-v3 payloads embed the binary-encoded claim in the steganographic layer. Extraction reconstructs the claim, verifies the signature, and checks all digests. Backward compatibility is maintained: v3 extractors must also extract v1/v2 payloads.
+V3 is the default embedded payload format; it carries a compact header (not a serialized `ProvenanceClaim` — the binary claim encoding proposed below was never implemented). V1/V2 are extraction-only legacy. Backward compatibility is maintained: v3 extractors must also extract v1/v2 payloads.
 
 ## Open Questions
 

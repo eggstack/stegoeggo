@@ -8,7 +8,7 @@ Specialist checks are manual and never part of `check.sh` or required CI without
 
 | Script | Purpose | Needs |
 |--------|---------|-------|
-| `check.sh` | Fast check, mirrors required CI: `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo check -p stegoeggo --no-default-features`, `cargo test --workspace --exclude stegoeggo-fuzz --all-features` | stable Rust |
+| `check.sh` | Fast check, mirrors required CI: `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo check -p stegoeggo --no-default-features`, `cargo test --workspace --exclude stegoeggo-fuzz --all-features`, `./scripts/check-docs-contract.sh` | stable Rust |
 | `release-check.sh [--allow-dirty] [--stage=pre\|root\|cli]` | Local pre-release readiness (staged pre/root/cli); never publishes, tags, or pushes | — |
 | `release-binary-preflight.sh --tag=vX.Y.Z` | Validates binary-release tag/version lockstep, target manifest, updater mapping, and canonical CLI feature set; optional `--asset-dir` audits built assets | stable Rust, Python |
 | `release-check-assets.sh --dir=DIR` | Verifies the exact five target executables, correctly named SHA-256 sidecars, installers, and absence of extra release files; optional version/native smoke checks | `sha256sum` or `shasum` |

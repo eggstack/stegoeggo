@@ -25,11 +25,17 @@ pub struct JpegHeader {
 }
 ```
 
-### Parse Method
+### Parse Methods
 
 ```rust
 pub fn parse(data: &[u8]) -> Result<JpegHeader>
+pub fn parse_with_limits(data: &[u8], limits: &ParseLimits) -> Result<JpegHeader>
 ```
+
+`parse` uses `ParseLimits::default()` (`max_jpeg_segments: 256`,
+`max_jpeg_segment_bytes: 65535`). `parse_with_limits` enforces the
+caller-provided segment count/size bounds; the bounded `inspect` entry point
+(`stegoeggo_stego::jpeg::inspect`) forwards its limits here.
 
 Header parsing validates the SOI marker, segment lengths, marker-specific payloads,
 Huffman tables, and SOS table references. Structural decisions for the DCT fast path
@@ -52,10 +58,13 @@ are made separately by the checked scan analyzer described below.
 ```rust
 pub struct QuantizationTable {
     pub table_id: u8,
-    pub precision: u8,  // 8 or 16 bits
+    pub precision: u8,  // 0 = 8-bit, 1 = 16-bit
     pub values: [u16; 64],
 }
 ```
+
+Helpers: `get(index) -> u16` (returns 0 out of range) and
+`scaled(scale: f32) -> [u16; 64]` (clamped to a minimum of 1).
 
 ## HuffmanTable
 
@@ -67,6 +76,8 @@ pub struct HuffmanTable {
     pub values: Vec<u8>,
 }
 ```
+
+Helpers: `is_dc()` / `is_ac()` classify on `table_class`.
 
 ## ScanComponent
 
@@ -81,13 +92,35 @@ pub struct ScanComponent {
 }
 ```
 
-## Enums (Spec Reference)
+## Enums
 
-`JpegCodingProcess` (Baseline, Extended, Progressive, Lossless) and `JpegColorSpace` (Grayscale, YCbCr, CMYK, etc.) are defined with `#[allow(dead_code)]` as JPEG spec reference types.
+```rust
+pub enum JpegCodingProcess { SequentialDCT, ProgressiveDCT, Lossless }
+pub enum JpegColorSpace { Grayscale, YCbCr, RGB, CMYK, YCCK }
+```
+
+Both carry `#[allow(dead_code)]` (the module also has a file-level
+`#![allow(dead_code)]`); they classify the parsed frame rather than driving
+decode dispatch. `DctUnsupportedReason::ArithmeticCoding` is declared but never
+constructed — reserved, not produced by any current probe path.
+
+## Header Accessors
+
+```rust
+pub fn get_quantization_table(&self, id: u8) -> Option<&QuantizationTable>
+pub fn get_dc_huffman_table(&self, id: u8) -> Option<&HuffmanTable>
+pub fn get_ac_huffman_table(&self, id: u8) -> Option<&HuffmanTable>
+pub fn scan_count(data: &[u8]) -> usize            // checked analyzer, 0 on malformed
+pub fn has_valid_eoi(data: &[u8]) -> bool          // checked analyzer, false on malformed
+```
+
+The private `parse_sos(&mut self, data) -> Result<()>` rejects SOS table IDs
+above the supported range instead of clamping them.
 
 ## Module Interactions
 
-- **mod.rs**: `JpegHeader::parse` called by `JpegTranscoder::decode_coefficients`
+- **mod.rs**: `JpegHeader::parse` called by `JpegTranscoder::decode_coefficients_with_probe`
+  (`decode_coefficients` delegates to it and maps `Unsupported` to `Err`)
 - **entropy.rs**: Header data used to build Huffman decoders/encoders
 - **stego_f5.rs**: Quantization tables modified for seed embedding
 - **steganography/embed.rs**: Header is accessed only through `stegoeggo_stego::application_support` operations; the root crate never imports `JpegHeader` directly

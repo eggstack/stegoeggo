@@ -62,5 +62,5 @@ Async functions take owned types (`Vec<u8>`, `DynamicImage`, `ProtectionRequest`
 
 ## Module Interactions
 
-- **lib.rs**: Request-based async functions delegate to the synchronous `process_request_bytes`, `process_request_bytes_with_warnings`, `process_request_bytes_with_report`, `process_request_bytes_parallel`, `process_request_bytes_with_warnings_parallel`, `process_request_bytes_with_report_parallel`, and `verify_image_bytes` functions
-- **Error mapping**: `tokio::task::JoinError` is mapped to `Error::Task`
+- **lib.rs**: Request-based async functions delegate to the synchronous `process_request_bytes`, `process_request_bytes_with_warnings`, `process_request_bytes_with_report`, `process_request_bytes_parallel`, `process_request_bytes_with_warnings_parallel`, `process_request_bytes_with_report_parallel`, and `verify_image_bytes` functions. The sync `verify_image_bytes` returns `VerificationStatus` directly (not `Result`); the async wrapper returns `Result<VerificationStatus>` only because the `spawn_blocking` join can fail
+- **Error mapping**: `tokio::task::JoinError` is mapped to `Error::Task` (cancelled/panicked/other distinguished in `join_err`)

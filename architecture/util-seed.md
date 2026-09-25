@@ -1,6 +1,6 @@
 # Seed Generation
 
-**Source:** `src/util/seed.rs` (~43 lines)
+**Source:** `src/util/seed.rs` (45 lines)
 
 CSPRNG-backed random seed generation. Used to derive a fresh `u64` seed for `ProtectionContext::default()` and any other call site that needs an unpredictable per-instance seed.
 
@@ -54,5 +54,6 @@ For **reproducible** protection across runs (e.g. tests, deterministic pipelines
 
 ## Module Interactions
 
-- **types.rs**: Called by `ProtectionContext::default()` to generate the default seed
+- **types/context.rs**: `ProtectionContext::default()` calls `generate_random_seed()` (with silent time fallback)
+- **protected/resolve.rs**: Request-based path calls `try_generate_random_seed()` and propagates entropy failure as an error instead of falling back
 - **lib.rs**: Re-exported as public API for user convenience

@@ -57,7 +57,7 @@ stegoeggo/                          Workspace root (4 crates)
 ├── benches/                        Criterion benchmarks (see tooling.md)
 ├── packaging/                      Unix and Windows bootstrap installers
 ├── scripts/                        validation, release, and installer-test scripts
-├── architecture/                   39 deep-dive docs (this directory)
+├── architecture/                   39 files: this overview + review_plan.md (historical) + 37 component deep-dives
 └── .github/workflows/              CI (5 workflows: check, assurance, and manual release assets)
 ```
 
@@ -215,12 +215,11 @@ Progressive JPEGs fall back to seed-in-Q-tables only (coefficient manipulation u
 ### WebP container correctness
 
 WebP injection rebuilds the RIFF structure and re-encodes the VP8X chunk from
-`derive_features(&parsed).with_xmp(has_metadata)` via `encode_vp8x_chunk`,
-which clears reserved bits `0xC1`. If the source file is malformed (reserved
-bits set), the output is silently normalized to a spec-compliant VP8X header
-rather than preserving the malformed flags. This is intentional — injection
-fixes reserved bits rather than preserving them — and breaks byte-for-byte
-idempotence for preservation fixtures with malformed inputs. JPEG’s
+`derive_features(&parsed).with_xmp(has_metadata)` via `encode_vp8x_chunk`.
+`parse_webp` is strict: VP8X reserved flag bits `0xC1` and non-zero reserved
+bytes are rejected with `Error::Metadata`, so malformed inputs fail at parse
+instead of being silently normalized. Output flags are re-derived from the
+parsed features, so emitted files never carry reserved bits; JPEG's
 preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 
 ## Component Index — Deep Dives
@@ -258,7 +257,7 @@ preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 | Component | Deep Dive | What It Covers |
 |-----------|-----------|----------------|
 | **Payload v3** | [payload-v3.md](payload-v3.md) | TLV wire format, domain-separated authentication, ECC encoding, backward compatibility, parsing algorithm, security model |
-| **Provenance** | [provenance.md](provenance.md) | `ProvenanceClaim` builder, canonical JSON serialization, `TypedDigest`, usage in v3 payloads and detached manifests |
+| **Provenance** | [provenance.md](provenance.md) | `ProvenanceClaim` builder, canonical JSON serialization, `TypedDigest`, detached-manifest-only (V3 payloads use a compact header + TLV extensions, not `ProvenanceClaim`) |
 | **Provenance Claim Spec** | [provenance-claim.md](provenance-claim.md) | 15-field schema, rights policy discriminants, binary encoding, test vectors |
 
 ### Authentication & Signing
@@ -306,6 +305,8 @@ preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 | Component | Deep Dive | What It Covers |
 |-----------|-----------|----------------|
 | **C2PA ADR** | [adr-c2pa.md](adr-c2pa.md) | Architecture Decision Record: deferred C2PA integration |
+
+`review_plan.md` in this directory is a completed historical review plan, not a component deep dive.
 
 ## Root Crate — Module Map
 

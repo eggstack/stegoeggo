@@ -30,14 +30,14 @@ pub struct DetachedManifest {
 ### Builder Methods
 
 - `new(claim)` — Create with schema version 1
-- `with_signature(SignatureRecord) -> Result<Self, Error>` — Add a signature (max 16, deduplicates by algorithm+key_id)
-- `with_public_key(PublicKeyEntry) -> Result<Self, Error>` — Add a public key (max 16, deduplicates by key_id)
-- `with_embedded_reference(EmbeddedReference)` — Link to in-image stego payload
-- `with_trust_metadata(TrustMetadata)` — Add trust chain metadata
+- `with_signature(SignatureRecord) -> Result<Self, Error>` — Add a signature (max 16, silently skips duplicates by algorithm+key_id)
+- `with_public_key(PublicKeyEntry) -> Result<Self, Error>` — Add a public key (max 16, silently skips duplicates by key_id)
+- `with_embedded_reference(EmbeddedReference) -> Self` — Link to in-image stego payload
+- `with_trust_metadata(TrustMetadata) -> Self` — Add trust chain metadata
 
 ### Validation
 
-`validate()` checks:
+`validate() -> Result<(), Vec<String>>` checks:
 - No empty key IDs
 - Valid hex encoding of key bytes and signatures
 - Correct byte lengths (32-byte public keys, 64-byte signatures)
@@ -139,13 +139,31 @@ For caller-owned public key verification (binding key ID to exact key bytes), us
 ### `DetachedVerificationOptions`
 
 ```rust
+#[derive(Debug, Default)]
 pub struct DetachedVerificationOptions<'a> {
-    pub trust_policy: Option<&'a TrustPolicy>,
-    pub caller_verifying_keys: &'a [TrustedVerifyingKey],  // signatures feature
+    pub trust_policy: Option<&'a TrustPolicy>,  // None = TrustNone
+    #[cfg(feature = "signatures")]
+    pub caller_verifying_keys: &'a [TrustedVerifyingKey],
     pub payload_mac_key: Option<&'a [u8]>,
-    pub limits: Option<&'a ResourceLimits>,
+    pub limits: Option<&'a ResourceLimits>,     // None = default limits
 }
 ```
+
+### `ManifestVerification`
+
+Result of verifying a detached manifest against image bytes:
+
+```rust
+pub struct ManifestVerification {
+    pub report: VerificationReport,
+    pub instance_digest_match: bool,
+    pub manifest_valid: bool,
+    pub embedded_reference_status: EmbeddedReferenceStatus,
+}
+```
+
+- `overall_status() -> DetachedOverallStatus` — Priority: `InvalidConfiguration` > `BindingFailure` > `KeyMaterialMismatch` > `SignatureFailure` > `EmbeddedReferenceFailure` > `VerifiedTrusted`/`VerifiedUntrusted` (from caller-policy trust).
+- Trust is derived solely from the caller-supplied `TrustPolicy`/caller keys; the manifest's own `trust_metadata` is informational only and never sets the trust outcome.
 
 ### `DetachedOverallStatus`
 

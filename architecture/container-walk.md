@@ -20,9 +20,9 @@ Called once per byte-path execution before heavy work. Never returns a parse err
 
 | Walker | What it walks | What it observes |
 |--------|---------------|------------------|
-| `observe_png_work` | PNG signature + chunk headers (`len` + `type` + `data` + CRC = `len + 12`), stops at `IEND` | `observe_png_chunk(chunk_total)` per chunk; `observe_metadata_field(data_len)` for `tEXt`/`iTXt` data |
-| `observe_jpeg_work` | SOI (`FFD8`), segment markers, stops at EOI (`FFD9`) or SOS (`FFDA`) | Per-segment cost via the observer; skips stuffing (`FF00`), steps single bytes on non-marker data |
-| `observe_webp_work` | RIFF `WEBP` header + chunk headers (FourCC + LE32 size + padded data) | Per-chunk cost; `observe_metadata_field` for `XMP `/`EXIF` chunk data |
+| `observe_png_work` | PNG signature + chunk headers (`len` + `type` + `data` + CRC = `len + 12`), breaks before observing `IEND` (terminator is not counted) | `observe_png_chunk(chunk_total)` per chunk; `observe_metadata_field(data_len)` for `tEXt`/`iTXt` data |
+| `observe_jpeg_work` | SOI (`FFD8`), segment markers, stops at EOI (`FFD9`) or SOS (`FFDA`) | `observe_jpeg_segment(seg_len)` per segment; skips stuffing (`FF00`), steps single bytes on non-marker data; `observe_metadata_field(seg_len - 2)` only for markers `0xE1`/`0xED`/`0xFE` |
+| `observe_webp_work` | RIFF `WEBP` header + chunk headers (FourCC + LE32 size + padded data) | Per-chunk cost; `observe_metadata_field(chunk_size)` for `XMP `/`EXIF` chunk data; truncated tails observe the partial remainder instead of erroring |
 
 ## Invariants
 

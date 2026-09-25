@@ -48,7 +48,7 @@ happens before destination preflight, so an already-current installation
 reports current without requiring writability; preflight runs before
 downloading any update artifact only when a newer stable version exists.
 The updater uses the
-embedded eggfetch-core Rust transport with a 10-second connect deadline, a
+embedded eggup acquisition over eggfetch transport with a 10-second connect deadline, a
 60-second total deadline, strict HTTPS-downgrade denial, explicit conventional
 proxy-environment handling, and finite response bounds (4 MiB registry JSON,
 8 KiB sidecar, 64 MiB executable). Candidate and Cargo subprocesses remain
@@ -215,7 +215,7 @@ behavior and may read an explicit output file supplied with `--output`.
 
 Production dependencies are clap 4, the `stegoeggo` library, rayon for
 error-tolerant CLI batches, hex, serde/serde_json, sha2, self-replace,
-tempfile, eggfetch-core for the embedded updater transport, and tokio for the
+tempfile, eggup-acquisition/eggup-eggfetch over eggfetch-core for the embedded updater transport, and tokio for the
 narrow synchronous CLI/async transport boundary. The CLI does
 not enable the library's `parallel`, `iscc`, or `conformance` features. The
 package's default feature is `signatures`, which adds the detached-manifest
