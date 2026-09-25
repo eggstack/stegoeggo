@@ -521,6 +521,7 @@ see `SUPPORT.md` and `RELEASING.md` for the evidence and release contracts.
 - `examples/` (4, must keep compiling): `protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs` — contracts in [testing.md](testing.md).
 - `benches/bench.rs` (Criterion): protect/verify/extract/XMP/payload benches — details in [tooling.md](tooling.md).
 - User guides in `docs/`: `cli-usage.md` (CLI contract), `installation.md` (CLI installers), `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`.
+- Agent guidance: `AGENTS.md` (workspace entry) plus `.skills/` — `stegoeggo-conventions` (Rust changes), `planning` (roadmaps, milestone plans, closure records, `registry.md`), `plan-execution` (milestone worktree mechanics), `architecture-review` (verifying/editing these docs). Load the matching skill before starting work.
 - CLI binary `stegoeggo` (`stegoeggo-cli/`): orchestration plus `args`/`request`/`protect`/`verify`/`update`/`output`/`keys`/`manifest` — see [cli.md](cli.md).
 
 ## Key Design Decisions

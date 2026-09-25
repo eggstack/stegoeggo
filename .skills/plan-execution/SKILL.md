@@ -1,6 +1,6 @@
 ---
 name: plan-execution
-description: Use when executing tasks from a numbered implementation plan in plans/ (`NNN-name.md`) or any multi-wave parallel task plan. Triggers on tasks like "execute plan", "work through plan items", "run parallel tasks", or when working from a structured task list with worktrees.
+description: Use when executing a milestone implementation plan in plans/implementation/<subsystem>/ or any multi-wave parallel task plan. Triggers on tasks like "execute plan", "work through plan items", "run parallel tasks", or when working from a structured task list with worktrees.
 ---
 
 # Plan-Based Task Execution
@@ -9,8 +9,8 @@ Workflow for executing multi-wave parallel tasks in the stegoeggo codebase using
 
 ## Quick Reference
 
-- Plans live in `plans/` as numbered files (`NNN-name.md`) with `-status.md` companions; the status file is the authoritative record of what is done
-- Plans are sequential — the next new plan takes the lowest unused number (currently 107+; highest so far is 106). Never renumber or edit historical plans except their `-status.md`
+- Milestone plans live in `plans/implementation/<subsystem>/NNN-*.md` (numbers local to subsystem) with closure records in `plans/closure/<subsystem>/NNN-status.md`; `plans/registry.md` is the control surface. Flat `plans/001`–`107` are immutable predecessor history (only `-status.md` companions record facts) — never edit them, never take a flat number for new work
+- New work takes the next unused subsystem-local number; register it in `registry.md` (`ready` → `active` on start) per `.skills/planning/SKILL.md`
 - Worktrees go in a temporary directory outside the workspace (e.g., `/tmp/stegoeggo-wt-taskN`)
 - Each task gets its own branch: `fix/taskN-description`
 - Branch naming: `fix/` prefix for bug fixes, `feat/` for features
@@ -18,9 +18,11 @@ Workflow for executing multi-wave parallel tasks in the stegoeggo codebase using
 
 ## Workflow
 
-### 1. Read the plan completely
+### 1. Read the milestone plan and registry completely
 
 Understand all tasks, their dependencies, and which are parallelizable.
+Confirm the plan is `ready` in `plans/registry.md` and its subsystem roadmap
+context per `.skills/planning/SKILL.md`.
 
 ### 2. Create worktrees
 
@@ -73,10 +75,10 @@ If conflicts arise:
 ./scripts/check.sh
 ```
 
-### 7. Update documentation
+### 7. Update registry and closure evidence
 
+- Move the plan in `plans/registry.md` (`active` → `closing` → `closed`) and write the closure record at `plans/closure/<subsystem>/NNN-status.md` — a "closed" commit message is not evidence
 - Update AGENTS.md with new conventions/gotchas
-- Update the plan file to mark tasks completed
 - Create/update skills in .skills/ if new patterns emerged
 
 ### 8. Clean up
@@ -91,7 +93,7 @@ git worktree remove /tmp/stegoeggo-wt-taskN
 - **Branch conflicts**: Don't create worktrees from the same branch if tasks touch the same files.
 - **Test before merge**: Always run the full test suite on main after merging all worktrees.
 - **Format after merge**: Merges may introduce formatting inconsistencies - run `cargo fmt` after all merges.
-- **Plan file updates**: Only mark tasks complete after verifying the actual code changes, not just agent reports.
+- **Registry/closure updates**: Only move a plan to `closed` in `registry.md` after verifying the actual code changes and writing the closure record, not just agent reports.
 - **Agent re-commits on main**: If a subagent says it committed but the worktree shows no changes, the agent likely committed to its worktree incorrectly. You may need to implement the fix directly on main.
 - **Merge conflicts**: When merging worktrees to main, conflicts can occur. Resolve by choosing the "main" version for unrelated changes and the "fix" version for the specific fix.
 - **Re-verify after merge**: Always re-run tests after merge to ensure no regressions.

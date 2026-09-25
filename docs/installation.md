@@ -41,7 +41,7 @@ To pin a PowerShell install without first saving the script, invoke the
 downloaded script block with its `-Version` parameter:
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/eggstack/stegoeggo/releases/latest/download/install.ps1))) -Version 0.4.0
+& ([scriptblock]::Create((irm https://github.com/eggstack/stegoeggo/releases/latest/download/install.ps1))) -Version 0.4.2
 ```
 
 ## Supported binary assets
@@ -71,7 +71,7 @@ override according to local policy.
 Pin a Unix install to an exact release version:
 
 ```bash
-curl -fsSL https://github.com/eggstack/stegoeggo/releases/download/v0.4.0/install.sh | bash -s -- --version 0.4.0
+curl -fsSL https://github.com/eggstack/stegoeggo/releases/download/v0.4.2/install.sh | bash -s -- --version 0.4.2
 ```
 
 The pinned installer downloads from that exact tag. An unpinned installer uses
@@ -86,7 +86,7 @@ the executable:
 
 ```bash
 asset=stegoeggo-x86_64-unknown-linux-gnu
-version=0.4.0
+version=0.4.2
 curl -fL -o "$asset" "https://github.com/eggstack/stegoeggo/releases/download/v$version/$asset"
 curl -fL -o "$asset.sha256" "https://github.com/eggstack/stegoeggo/releases/download/v$version/$asset.sha256"
 expected="$(awk 'NF {print tolower($1); exit}' "$asset.sha256")"
