@@ -250,7 +250,7 @@ invariants.
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
 | M001 Python foundation | closed | `implementation/language-bindings/001-python-binding-foundation.md` | `closure/language-bindings/001-status.md` | none |
-| M002 Python packaging | ready | `implementation/language-bindings/002-python-packaging-qualification.md` | pending | none |
-| M003 Node binding | proposed | not yet written | pending | M001-M002 closure |
+| M002 Python packaging | conditionally closed | `implementation/language-bindings/002-python-packaging-qualification.md` | `closure/language-bindings/002-status.md` | First `release-python.yml` dispatch to populate Linux x86_64/aarch64, macOS arm64, and Windows x86_64 native smoke evidence |
+| M003 Node binding | proposed | not yet written | pending | M001-M002 fully closed |
 | M004 C ABI design | proposed | not yet written | pending | Python + Node closure |
 | M005 C ABI implementation | proposed | not yet written | pending | M004 accepted contract |

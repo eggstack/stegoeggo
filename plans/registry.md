@@ -31,13 +31,13 @@ predecessor history, indexed by the roadmaps below.
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked | stable release B newer than 0.4.2 (flat Plan 106 failure policy: no throwaway version) |
-| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M002 active | M001 closed at `plans/closure/language-bindings/001-status.md`; M002 packaging underway |
+| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M002 conditionally closed | M001 closed at `plans/closure/language-bindings/001-status.md`; M002 closure at `plans/closure/language-bindings/002-status.md` (macOS x86_64 native smoke; other four platforms pending first `release-python.yml` dispatch) |
 
 ## Dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
-| language-bindings | M002 Python packaging and qualification | active | `plans/implementation/language-bindings/002-python-packaging-qualification.md` | Cross-platform abi3 wheels, isolated sdist, manual artifact workflow. M001 closed at `plans/closure/language-bindings/001-status.md`. |
+| language-bindings | (none) | — | — | M001 closed; M002 conditionally closed (macOS x86_64 native; 4/5 platform native smoke pending first workflow dispatch) |
 
 ## Active closure work
 
@@ -55,6 +55,12 @@ None.
   `plans/closure/language-bindings/001-status.md`. PyO3/maturin
   leaf binding over canonical byte APIs, 57 Python tests, panic
   profile `unwind`, required `./scripts/check.sh` unchanged.
+- Language Bindings M002 Python packaging and qualification: closure
+  recorded at `plans/closure/language-bindings/002-status.md`.
+  Conditionally closed: macOS x86_64 native wheel/sdist/smoke
+  qualified locally; the other four wheel platforms are produced
+  by the manually-dispatched `.github/workflows/release-python.yml`
+  and require their first dispatch to lift the condition.
 
 ## Recently closed work
 
