@@ -31,27 +31,29 @@ predecessor history, indexed by the roadmaps below.
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked | stable release B newer than 0.4.2 (flat Plan 106 failure policy: no throwaway version) |
+| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M001 ready | none; independent of blocked release-distribution A→B evidence |
 
 ## Dependency-ready implementation plans
 
-New-hierarchy queue is empty. Next new work takes
-`plans/implementation/<subsystem>/001-short-title.md` (numbers local to
-subsystem; flat numbering retired after Plan 107).
+| Subsystem | Milestone | Status | Plan | Notes |
+|---|---|---|---|---|
+| language-bindings | M001 Python binding foundation | ready | `plans/implementation/language-bindings/001-python-binding-foundation.md` | PyO3/maturin leaf binding over canonical byte APIs; no publication |
 
 ## Active closure work
 
-None. Plan 107 closes here with `plans/107-status.md`.
+None.
 
 ## Blocked work
 
 | Subsystem | Milestone | Blocker |
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
+| language-bindings | M002 Python packaging and qualification | M001 closure must accept API/parity/error/panic-profile evidence before distribution contracts are frozen. Plan: `plans/implementation/language-bindings/002-python-packaging-qualification.md`. |
 
 ## Recently closed work
 
 - Plan 107 planning-convention migration (this registry, `000`–`003`,
-  ADRs, six roadmaps, planning skill): `plans/107-status.md`.
+  ADRs, six original roadmaps, planning skill): `plans/107-status.md`.
 - First eggfetch-enabled release 0.4.2 five-target qualification:
   `plans/105-status.md`.
 - Carrier v1 packaging/documentation/evidence closure:
