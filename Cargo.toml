@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [".", "stegoeggo-stego", "stegoeggo-cli", "fuzz"]
+exclude = ["bindings"]
 
 [package]
 name = "stegoeggo"
