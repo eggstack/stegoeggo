@@ -31,13 +31,13 @@ predecessor history, indexed by the roadmaps below.
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked | stable release B newer than 0.4.2 (flat Plan 106 failure policy: no throwaway version) |
-| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M001 closed | M002 unblocked: closure recorded at `plans/closure/language-bindings/001-status.md` |
+| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M002 active | M001 closed at `plans/closure/language-bindings/001-status.md`; M002 packaging underway |
 
 ## Dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
-| language-bindings | M002 Python packaging and qualification | ready | `plans/implementation/language-bindings/002-python-packaging-qualification.md` | Cross-platform abi3 wheels, isolated sdist, manual artifact workflow. M001 closed at `plans/closure/language-bindings/001-status.md`. |
+| language-bindings | M002 Python packaging and qualification | active | `plans/implementation/language-bindings/002-python-packaging-qualification.md` | Cross-platform abi3 wheels, isolated sdist, manual artifact workflow. M001 closed at `plans/closure/language-bindings/001-status.md`. |
 
 ## Active closure work
 
