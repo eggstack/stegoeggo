@@ -6,7 +6,6 @@ build-backend = "maturin"
 name = "stegoeggo"
 version = "0.4.2"
 description = "Python bindings for the stegoeggo rights-reservation and steganography library"
-readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "David Bowman", email = "dbowman91@proton.me" }]
@@ -31,6 +30,9 @@ test = ["pytest>=7"]
 
 [tool.maturin]
 features = ["pyo3/abi3-py311"]
+# Paths are relative to the pyproject.toml location inside the source tree.
+# In a sdist build, the pyproject.toml is hoisted to the package root, so the
+# python-source path is rewritten in the sdist hook below.
 python-source = "python"
 module-name = "stegoeggo._native"
-include = ["_native.pyi", "py.typed", "README.md"]
+include = ["_native.pyi", "py.typed"]

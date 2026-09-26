@@ -60,6 +60,13 @@ versions, checksum behavior, PATH setup, and source-install details.
 GitHub binary releases attach the complete five-target CLI matrix to an
 existing release; they do not publish crates automatically.
 
+A typed Python frontend lives at `bindings/python/` (PyO3 + maturin, abi3-py311).
+It is **experimental / local source build** today; see
+[`bindings/python/README.md`](bindings/python/README.md) and [SUPPORT.md](SUPPORT.md#python-binding)
+for the interpreter range and platform matrix. The binding does not require
+a Python install of the CLI binary or the Rust toolchain when installed from a
+future prebuilt wheel.
+
 ## Quick start
 
 Write a metadata-only AI/ML training prohibition:

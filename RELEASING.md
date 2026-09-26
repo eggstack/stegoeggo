@@ -30,6 +30,15 @@ carrier, library, and CLI crates in order before its matching `vX.Y.Z` GitHub
 Release is made available. The binary workflow must attach every target asset
 and its `.sha256` sidecar before that release is considered updater-ready.
 
+Python wheels follow the same manual publication policy. The
+`.github/workflows/release-python.yml` workflow is **manually dispatched**;
+it never publishes to PyPI, has no PyPI credentials in CI, and only uploads
+the built wheels as GitHub Actions artifacts for maintainer inspection.
+PyPI publication (if ever performed) remains an explicit local maintainer
+step performed after the artifact rehearsal is audited. The Python package
+version tracks the StegoEggo source version but lives outside the
+carrier → library → CLI crates.io publication chain.
+
 ## Immutable Crates.io Versions
 
 Once crates.io accepts a package version, its bytes cannot be replaced. Key implications:
@@ -180,6 +189,40 @@ git push origin vX.Y.Z
   contract behind the stable `releases/latest/download/install.sh` URL.
 - A crates-only/library release may omit binary assets, but it must not be
   presented as a binary CLI release or as an updater target.
+
+## Python Wheel Artifacts
+
+The Python binding (`bindings/python/`) is governed by the same manual-only
+policy as the rest of the release surface. It is not part of the
+carrier → library → CLI crates.io chain and is published independently
+(if at all). The end-to-end process is:
+
+1. Confirm the binding version in `bindings/python/pyproject.toml`,
+   `bindings/python/Cargo.toml`, and `bindings/python/Cargo.lock` matches
+   the StegoEggo source release version (0.4.2 by default).
+2. Dispatch `.github/workflows/release-python.yml` manually with the
+   source ref. The workflow builds abi3-py311 wheels for the documented
+   platform matrix via `cibuildwheel`, builds an isolated sdist via
+   `maturin sdist`, runs a per-platform install/protect/verify smoke,
+   and uploads the wheels, the sdist, and the smoke logs as GitHub
+   Actions artifacts.
+3. Download the artifacts, audit the wheel filenames and sdist against
+   `plans/subsystems/language-bindings-roadmap.md#m002`, and confirm
+   each `python -m pip install <wheel>` + import/protect/verify smoke
+   succeeds on the corresponding native platform.
+4. Record the artifact identifiers and any platform-level native smoke
+   results in `plans/closure/language-bindings/002-status.md`. Update
+   `SUPPORT.md` only when the platform's smoke evidence is recorded.
+5. Maintainer-only PyPI publication (separate from the GitHub workflow)
+   is performed locally with `twine upload <dist/*>` after the wheel
+   set is validated. Add the new version with `--skip-existing` if a
+   prior attempt partially landed.
+6. If a published PyPI version is defective, publish a new unused version
+   with the fix; yanking does not make a version reusable.
+
+The Python distribution's `requires-python = ">=3.11"`, free-threaded
+CPython support, and PyPy qualification are explicitly deferred per the
+language-bindings subsystem roadmap.
 
 ## Partial Failure Handling
 

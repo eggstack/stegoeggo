@@ -1,0 +1,176 @@
+# Build Python wheels for stegoeggo.
+#
+# This workflow is manually dispatched (`workflow_dispatch`); it never runs on
+# push or pull_request and it never publishes to PyPI. See RELEASING.md for the
+# manual registry publication policy.
+#
+# Wheels are produced for the project's documented support matrix and
+# uploaded as GitHub Actions artifacts for maintainer inspection:
+#
+#   - manylinux x86_64 (musllinux variant skipped — Python 3.11+ uses
+#     manylinux_2_28 baseline which is the project's documented glibc floor
+#     across CLI release targets).
+#   - manylinux aarch64
+#   - macOS x86_64
+#   - macOS arm64
+#   - Windows x86_64
+#
+# Linux and Windows matrices run inside the standard cibuildwheel images. The
+# maintainer manually verifies wheel install + protect/verify smoke on each
+# platform before any future PyPI publication.
+
+name: release-python
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: >
+          Source ref (tag, branch, or SHA) to build from. Use the StegoEggo
+          release tag or a specific commit SHA.
+        required: true
+        type: string
+
+concurrency:
+  group: release-python-${{ github.event.inputs.source_ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_wheels:
+    name: build ${{ matrix.id }} wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x86_64
+            os: ubuntu-22.04
+            cibw_archs: x86_64
+            cibw_build: cp311-*
+            cibw_environment:
+              CIBW_BEFORE_BUILD: rustup default 1.89
+          - id: linux-aarch64
+            os: ubuntu-22.04
+            cibw_archs: aarch64
+            cibw_build: cp311-*
+            cibw_environment:
+              CIBW_BEFORE_BUILD: rustup default 1.89
+          - id: macos-x86_64
+            os: macos-13
+            cibw_archs: x86_64
+            cibw_build: cp311-*
+            cibw_environment:
+              CIBW_BEFORE_BUILD: rustup default 1.89
+          - id: macos-arm64
+            os: macos-14
+            cibw_archs: arm64
+            cibw_build: cp311-*
+            cibw_environment:
+              CIBW_BEFORE_BUILD: rustup default 1.89
+          - id: windows-x86_64
+            os: windows-2022
+            cibw_archs: AMD64
+            cibw_build: cp311-*
+            cibw_environment:
+              CIBW_BEFORE_BUILD: rustup default 1.89
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source_ref }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.89
+        with:
+          toolchain: 1.89
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install cibuildwheel
+        run: python -m pip install cibuildwheel==2.22.0
+
+      - name: Build wheels
+        env: ${{ matrix.cibw_environment }}
+        run: |
+          python -m cibuildwheel ./bindings/python \
+            --output-dir ./dist \
+            --archs "${{ matrix.cibw_archs }}" \
+            --build "${{ matrix.cibw_build }}"
+
+      - name: Build sdist
+        run: |
+          python -m pip install maturin==1.5.0
+          cd bindings/python
+          python -m maturin sdist -o ../../dist
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheels-${{ matrix.id }}
+          path: ./dist/*
+
+  verify_smoke:
+    name: smoke ${{ matrix.id }}
+    needs: build_wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x86_64
+            os: ubuntu-22.04
+            cibw_archs: x86_64
+            python: "3.11"
+          - id: linux-aarch64
+            os: ubuntu-22.04
+            cibw_archs: aarch64
+            python: "3.11"
+          - id: macos-x86_64
+            os: macos-13
+            cibw_archs: x86_64
+            python: "3.11"
+          - id: macos-arm64
+            os: macos-14
+            cibw_archs: arm64
+            python: "3.11"
+          - id: windows-x86_64
+            os: windows-2022
+            cibw_archs: AMD64
+            python: "3.11"
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-wheels-${{ matrix.id }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install wheel and smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -U pip
+          WHEEL=$(ls stegoeggo-*-cp311-abi3-*.whl | head -n1)
+          echo "Using wheel: $WHEEL"
+          python -m pip install "$WHEEL" pytest
+          python -c "import stegoeggo; print('version:', stegoeggo.__version__)"
+          python -c "import stegoeggo; print('detect:', stegoeggo.detect_format(b'\\x89PNG\\r\\n'))"
+          python -c "
+          import stegoeggo
+          notice = stegoeggo.RightsNotice().with_copyright_holder('M002 smoke')
+          request = stegoeggo.ProtectionRequest.metadata_only(
+              notice, stegoeggo.RightsPolicy.ProhibitedAiMlTraining,
+          ).with_seed(42).with_timestamp_override('2026-01-01T00:00:00Z')
+          png = bytes.fromhex('89504e470d0a1a0a0000000d49484452000000040000000408060000003e15c4890000001e49444154789c63fcffffff3f0324c00409ff0518110000000049454e44ae426082')
+          out = stegoeggo.protect(png, request)
+          rep = stegoeggo.verify(out)
+          assert rep.rights_found, rep.to_json()
+          assert rep.copyright_holder == 'M002 smoke', rep.to_json()
+          print('smoke ok')
+          "

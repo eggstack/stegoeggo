@@ -145,6 +145,59 @@ cd stegoeggo
 cargo build --release --bin stegoeggo
 ```
 
+## Python Binding
+
+A typed Python frontend lives at `bindings/python/` and builds an
+`abi3-py311` wheel via PyO3 + maturin. It mirrors the canonical Rust
+`process_request_bytes*` and `verify_image_bytes_report` API surface and
+shares the same resource-limit, error, and panic profile semantics as
+the library crate. The binding is **experimental / local source build**
+until M002 publishes wheels; it is not yet on PyPI.
+
+### Documented interpreter support
+
+| Interpreter | Range | Wheel tag |
+|-------------|-------|-----------|
+| CPython | 3.11, 3.12, 3.13, 3.14 | `cp311-abi3` (one wheel per OS/arch) |
+
+Free-threaded CPython (`cp311t-abi3`, etc.) and PyPy are intentionally
+unsupported in the initial milestone. The binding release profile uses
+`panic = "unwind"`; the standalone CLI keeps `panic = "abort"` and is
+unaffected.
+
+### Install (local source build)
+
+```bash
+git clone https://github.com/eggstack/stegoeggo
+cd stegoeggo/bindings/python
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -U pip maturin pytest
+maturin develop --release
+```
+
+The wheel installs into the active virtualenv. Building from source
+requires a Rust toolchain ≥ 1.89 (the binding's `rust-version` floor);
+installing a future prebuilt wheel will not.
+
+### Documented platform matrix for wheel artefacts
+
+| OS | Architecture | Status |
+|----|--------------|--------|
+| Linux | x86_64 | Produced in CI via cibuildwheel (`x86_64-unknown-linux-gnu`) |
+| Linux | aarch64 | Produced in CI via cibuildwheel (`aarch64-unknown-linux-gnu`) |
+| macOS | x86_64 | Produced in CI via cibuildwheel (`x86_64-apple-darwin`) |
+| macOS | arm64 | Produced in CI via cibuildwheel (`aarch64-apple-darwin`) |
+| Windows | x86_64 | Produced in CI via cibuildwheel (`x86_64-pc-windows-msvc`) |
+
+Wheels are built by the manually-dispatched
+`.github/workflows/release-python.yml` workflow (no PyPI publish) and
+attached as GitHub Actions artifacts. The matrix above is the source of
+truth for what is "qualified"; supports claims should not be made before
+the corresponding matrix entry has native install + protect/verify
+smoke evidence recorded in
+`plans/closure/language-bindings/002-status.md`.
+
 ## External Tools
 
 External tools are required only for development and conformance testing. They are not required at runtime or for library use.
