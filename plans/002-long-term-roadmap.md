@@ -40,7 +40,33 @@ Predecessor evidence: flat plans `008`, `024`–`025`, `032`–`037`,
 (flat Plan 106, blocked: no stable B exists yet; closes at the first
 ordinary stable release after 0.4.2, never via a throwaway version).
 
-## Phase 5 — v1 boundary (deferred)
+The remaining Phase 4 evidence gate does not block language-binding work:
+bindings consume the already-stable library API and have independent
+distribution qualification.
+
+## Phase 5 — Language bindings (active)
+
+Maintainer-directed extension accepted in
+`plans/adrs/ADR-0005-foreign-language-bindings.md`.
+
+Sequence:
+
+1. Python binding foundation and distribution qualification.
+2. Node.js binding using the same canonical request/verification semantics.
+3. C ABI contract design and implementation after Python and Node have
+   exercised the foreign-runtime boundary.
+
+Bindings are leaf frontends over the canonical byte API; they do not
+reimplement protection/container/carrier logic and do not use the future C
+ABI as the implementation substrate for Python or Node. Binding dependencies
+remain outside core/carrier/CLI dependency graphs. The root and carrier retain
+`#![forbid(unsafe_code)]`; any C-ABI unsafe is confined to the future leaf
+binding crate.
+
+Operational sequencing and evidence:
+`plans/subsystems/language-bindings-roadmap.md`.
+
+## Phase 6 — v1 boundary (deferred)
 
 Remove deprecated adapters (`ProtectionLevel`, `EvidenceProfile`,
 `ProtectionContext` builders, `Protector`/`ProtectionPipeline` v1
