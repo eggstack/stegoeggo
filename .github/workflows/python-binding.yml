@@ -47,8 +47,6 @@ jobs:
 
       - name: Install Rust toolchain (matches binding MSRV)
         uses: dtolnay/rust-toolchain@1.89
-        with:
-          toolchain: 1.89
 
       - name: Set up Python
         uses: actions/setup-python@v5
