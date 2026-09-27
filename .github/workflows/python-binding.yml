@@ -1,0 +1,67 @@
+# Lightweight Python binding compatibility check.
+#
+# Runs the binding test suite on a single Linux x86_64 / Python 3.11 job to
+# catch root API drift early. This is a binding-specific signal and is
+# independent of the standard Rust Check gate in `ci.yml`; it does not add
+# Python tooling to `./scripts/check.sh` and never publishes wheels or
+# sdists. Cross-platform wheel qualification remains the responsibility of
+# the manually-dispatched `.github/workflows/release-python.yml`.
+
+name: python-binding
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bindings/python/**"
+      - "src/**"
+      - "stegoeggo-stego/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "bindings/python/tests/fixtures/**"
+      - ".github/workflows/python-binding.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "bindings/python/**"
+      - "src/**"
+      - "stegoeggo-stego/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "bindings/python/tests/fixtures/**"
+      - ".github/workflows/python-binding.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python-binding-check:
+    name: python-binding-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (matches binding MSRV)
+        uses: dtolnay/rust-toolchain@1.89
+        with:
+          toolchain: 1.89
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install maturin and pytest
+        run: python -m pip install -U pip "maturin>=1.5,<2.0" pytest
+
+      - name: Build and install the binding
+        working-directory: bindings/python
+        run: maturin develop --release
+
+      - name: Run the binding test suite
+        working-directory: bindings/python
+        run: python -m pytest -v

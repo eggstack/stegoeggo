@@ -62,7 +62,6 @@ None.
   qualified locally; the other four wheel platforms are produced
   by the manually-dispatched `.github/workflows/release-python.yml`
   and require their first dispatch to lift the condition.
-
 - Plan 107 planning-convention migration (this registry, `000`–`003`,
   ADRs, six original roadmaps, planning skill): `plans/107-status.md`.
 - First eggfetch-enabled release 0.4.2 five-target qualification:

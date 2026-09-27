@@ -2,7 +2,45 @@
 
 from typing import Optional
 
-class StegoEggoError(Exception): ...
+class StegoEggoError(Exception):
+    """Base exception for every stegoeggo binding error."""
+
+class InvalidConfigError(StegoEggoError):
+    """Configuration or request validation error."""
+
+class InvalidFormatError(StegoEggoError):
+    """Image format could not be determined or is unsupported."""
+
+class EncodeDecodeError(StegoEggoError):
+    """Image decoding, encoding, or truncation failure."""
+
+class MetadataError(StegoEggoError):
+    """Metadata operation failed."""
+
+class SteganographyError(StegoEggoError):
+    """Steganographic embedding or extraction failed."""
+
+class InsufficientCapacityError(StegoEggoError):
+    """Carrier lacks capacity for the requested payload."""
+
+    required: int
+    available: int
+
+class VerificationError(StegoEggoError):
+    """Payload verification (CRC32 or HMAC) failed."""
+
+class ResourceLimitError(StegoEggoError):
+    """Configured resource limit exceeded during parsing or extraction."""
+
+    resource: str
+    size: Optional[int]
+    limit: Optional[int]
+    kind: Optional[str]
+    count: Optional[int]
+    width: Optional[int]
+    height: Optional[int]
+    max_width: Optional[int]
+    max_height: Optional[int]
 
 class RightsPolicy:
     Unspecified: "RightsPolicy"
@@ -362,12 +400,6 @@ def protect_with_report(
 ) -> tuple[bytes, ExecutionReport]: ...
 def verify(
     data: bytes,
-    mac_key: Optional[bytes] = ...,
-    resource_limits: Optional[ResourceLimits] = ...,
-) -> VerificationReport: ...
-def protect_file(path: str, request: ProtectionRequest) -> None: ...
-def verify_file(
-    path: str,
     mac_key: Optional[bytes] = ...,
     resource_limits: Optional[ResourceLimits] = ...,
 ) -> VerificationReport: ...

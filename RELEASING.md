@@ -201,18 +201,32 @@ carrier → library → CLI crates.io chain and is published independently
    `bindings/python/Cargo.toml`, and `bindings/python/Cargo.lock` matches
    the StegoEggo source release version (0.4.2 by default).
 2. Dispatch `.github/workflows/release-python.yml` manually with the
-   source ref. The workflow builds abi3-py311 wheels for the documented
-   platform matrix via `cibuildwheel`, builds an isolated sdist via
-   `maturin sdist`, runs a per-platform install/protect/verify smoke,
-   and uploads the wheels, the sdist, and the smoke logs as GitHub
-   Actions artifacts.
+   source ref. The workflow:
+   - Builds `cp311-abi3` wheels on native runners for the documented
+     five-target matrix using `cibuildwheel` (Linux x86_64 and aarch64
+     on `ubuntu-24.04` / `ubuntu-24.04-arm` with Rust 1.89 provisioned
+     inside the build container via `before-all`, macOS x86_64 on
+     `macos-15-intel`, macOS arm64 on `macos-14`, Windows x86_64 on
+     `windows-2022`). Linux wheels use the explicit `manylinux_2_28`
+     compatibility floor.
+   - Runs a per-platform install + import + protect + verify smoke
+     step on a runner whose native architecture matches the wheel tag.
+   - Builds one sdist in a dedicated job via `maturin sdist`, then
+     installs the tarball through a literal `pip install <tarball>` in
+     a fresh venv that does not have the source checkout on `sys.path`,
+     and runs an import + protect + verify smoke against the installed
+     package.
 3. Download the artifacts, audit the wheel filenames and sdist against
-   `plans/subsystems/language-bindings-roadmap.md#m002`, and confirm
-   each `python -m pip install <wheel>` + import/protect/verify smoke
-   succeeds on the corresponding native platform.
-4. Record the artifact identifiers and any platform-level native smoke
-   results in `plans/closure/language-bindings/002-status.md`. Update
-   `SUPPORT.md` only when the platform's smoke evidence is recorded.
+   `plans/subsystems/language-bindings-roadmap.md#m003--python-corrective-qualification`,
+   and confirm each smoke step succeeded on its native architecture. No
+   wheel is treated as qualified by the build job alone — the matching
+   native smoke run must also pass.
+4. Record the artifact identifiers, the workflow run URL/ID, the exact
+   implementation SHA, and the per-platform native smoke outcomes in
+   `plans/closure/language-bindings/003-status.md`. Update `SUPPORT.md`
+   only when the platform's native smoke evidence is recorded (the
+   default wording is "Configured"; promote individual rows to
+   "Qualified" as the evidence arrives).
 5. Maintainer-only PyPI publication (separate from the GitHub workflow)
    is performed locally with `twine upload <dist/*>` after the wheel
    set is validated. Add the new version with `--skip-existing` if a
@@ -222,7 +236,8 @@ carrier → library → CLI crates.io chain and is published independently
 
 The Python distribution's `requires-python = ">=3.11"`, free-threaded
 CPython support, and PyPy qualification are explicitly deferred per the
-language-bindings subsystem roadmap.
+language-bindings subsystem roadmap. Every wheel platform must clear its
+native smoke run before any maintainer-published PyPI release.
 
 ## Partial Failure Handling
 
