@@ -31,13 +31,12 @@ predecessor history, indexed by the roadmaps below.
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked | stable release B newer than 0.4.2 (flat Plan 106 failure policy: no throwaway version) |
-| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M003 ready | M001 closed; M002 conditionally closed with findings consumed by M003 corrective qualification |
+| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M003 closed (M004 ready to plan) | M001 closed; M002 closed (condition satisfied by M003); M003 closed; M004 ready to plan from the final Python contract |
 
 ## Dependency-ready implementation plans
 
-| Subsystem | Milestone | Status | Plan | Notes |
-|---|---|---|---|---|
-| language-bindings | M003 Python corrective qualification | ready | `plans/implementation/language-bindings/003-python-corrective-qualification.md` | Close structured-error, file-helper, CI, native wheel, direct-sdist, and documentation qualification gaps before Node work |
+None. (M003 is closed and M004 is ready to be planned under
+`plans/implementation/language-bindings/`.)
 
 ## Active closure work
 
@@ -48,20 +47,31 @@ None.
 | Subsystem | Milestone | Blocker |
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
-| language-bindings | M004 Node binding | M003 Python corrective qualification must close and reconcile M002's remaining qualification condition before Node planning/implementation is ready. |
 
 ## Recently closed work
 
-- Language Bindings M001 Python binding foundation: closure recorded at
-  `plans/closure/language-bindings/001-status.md`. PyO3/maturin
-  leaf binding over canonical byte APIs, 57 Python tests, panic
-  profile `unwind`, required `./scripts/check.sh` unchanged.
+- Language Bindings M003 Python corrective qualification: closure
+  recorded at `plans/closure/language-bindings/003-status.md`.
+  Structured Python exception attributes (InsufficientCapacity +
+  every ResourceLimit variant; ImageTruncated mapped to
+  EncodeDecodeError), failure-safe pure-Python file helpers with
+  optional `output_path`, lightweight path-filtered python-binding
+  workflow, corrected five-platform manual wheel workflow with
+  Rust provisioned inside the cibuildwheel Linux container and
+  native-arch smokes, single-sdist/direct-pip-install proof,
+  documentation/registry reconciliation. Five matrix wheels
+  qualified natively; M002's outstanding qualification condition
+  satisfied.
 - Language Bindings M002 Python packaging and qualification: closure
   recorded at `plans/closure/language-bindings/002-status.md`.
-  Conditionally closed: macOS x86_64 native wheel/sdist/smoke
-  qualified locally; the other four wheel platforms are produced
-  by the manually-dispatched `.github/workflows/release-python.yml`
-  and require their first dispatch to lift the condition.
+  Conditionally closed at M002 publication; M003's evidence
+  satisfies the outstanding four-platform native-smoke condition,
+  closing M002 as part of the M003 closure per the M003 disposition.
+- Language Bindings M001 Python binding foundation: closure recorded at
+  `plans/closure/language-bindings/001-status.md`. PyO3/maturin
+  leaf binding over canonical byte APIs, 57 Python tests (now 71
+  in M003+), panic profile `unwind`, required `./scripts/check.sh`
+  unchanged.
 - Plan 107 planning-convention migration (this registry, `000`–`003`,
   ADRs, six original roadmaps, planning skill): `plans/107-status.md`.
 - First eggfetch-enabled release 0.4.2 five-target qualification:

@@ -268,8 +268,8 @@ invariants.
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
 | M001 Python foundation | closed | `implementation/language-bindings/001-python-binding-foundation.md` | `closure/language-bindings/001-status.md` | none |
-| M002 Python packaging | conditionally closed | `implementation/language-bindings/002-python-packaging-qualification.md` | `closure/language-bindings/002-status.md` | Outstanding qualification condition is consumed by M003 |
-| M003 Python corrective qualification | ready | `implementation/language-bindings/003-python-corrective-qualification.md` | pending | none; M001 closed and M002 findings recorded |
-| M004 Node binding | proposed | not yet written | pending | M003 closure |
+| M002 Python packaging | closed (M003 satisfied the outstanding platform condition) | `implementation/language-bindings/002-python-packaging-qualification.md` | `closure/language-bindings/002-status.md` + `closure/language-bindings/003-status.md` §11 | none |
+| M003 Python corrective qualification | closed | `implementation/language-bindings/003-python-corrective-qualification.md` | `closure/language-bindings/003-status.md` | none; M001 closed and M002 findings recorded |
+| M004 Node binding | proposed (ready to plan from the final Python contract) | not yet written | pending | none |
 | M005 C ABI design | proposed | not yet written | pending | Python + Node closure |
 | M006 C ABI implementation | proposed | not yet written | pending | M005 accepted contract |
