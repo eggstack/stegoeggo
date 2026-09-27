@@ -88,7 +88,7 @@ jobs:
       - name: Build wheel
         env:
           CIBW_BUILD: "${{ matrix.cibw_build }}"
-          CIBW_BEFORE_ALL: 'curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.89 --profile minimal --target $(uname -m)-unknown-linux-gnu'
+          CIBW_BEFORE_ALL_LINUX: 'curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.89 --profile minimal --target $(uname -m)-unknown-linux-gnu'
           CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH"'
           CIBW_ENVIRONMENT_MACOS: 'MACOSX_DEPLOYMENT_TARGET=10.12'
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
@@ -160,19 +160,33 @@ jobs:
           python -m venv /tmp/stegoeggo-sdist-venv
           /tmp/stegoeggo-sdist-venv/bin/python -m pip install --no-cache-dir "$SDIST" pytest
           /tmp/stegoeggo-sdist-venv/bin/python -c "import stegoeggo; print('version:', stegoeggo.__version__)"
-          /tmp/stegoeggo-sdist-venv/bin/python -c "
-          import stegoeggo
-          notice = stegoeggo.RightsNotice().with_copyright_holder('sdist smoke')
+          /tmp/stegoeggo-sdist-venv/bin/python - <<'PY'
+          import struct, zlib, stegoeggo
+
+          def make_png(width: int = 16, height: int = 16) -> bytes:
+              sig = b"\x89PNG\r\n\x1a\n"
+              def chunk(t, d):
+                  c = t + d
+                  return struct.pack(">I", len(d)) + c + struct.pack(">I", zlib.crc32(c) & 0xffffffff)
+              ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+              raw = b""
+              for _ in range(height):
+                  raw += b"\x00" + b"\x80" * (width * 3)
+              idat = chunk(b"IDAT", zlib.compress(raw))
+              iend = chunk(b"IEND", b"")
+              return sig + ihdr + idat + iend
+
+          png = make_png()
+          notice = stegoeggo.RightsNotice().with_copyright_holder("sdist smoke")
           request = stegoeggo.ProtectionRequest.metadata_only(
               notice, stegoeggo.RightsPolicy.ProhibitedAiMlTraining,
-          ).with_seed(42).with_timestamp_override('2026-01-01T00:00:00Z')
-          png = bytes.fromhex('89504e470d0a1a0a0000000d49484452000000040000000408060000003e15c4890000001e49444154789c63fcffffff3f0324c00409ff0518110000000049454e44ae426082')
+          ).with_seed(42).with_timestamp_override("2026-01-01T00:00:00Z")
           out = stegoeggo.protect(png, request)
           rep = stegoeggo.verify(out)
           assert rep.rights_found, rep.to_json()
-          assert rep.copyright_holder == 'sdist smoke', rep.to_json()
-          print('sdist direct-pip-install smoke ok')
-          "
+          assert rep.copyright_holder == "sdist smoke", rep.to_json()
+          print("sdist direct-pip-install smoke ok")
+          PY
 
   verify_smoke:
     name: smoke ${{ matrix.id }}
@@ -222,16 +236,30 @@ jobs:
           python -m pip install "$WHEEL" pytest
           python -c "import stegoeggo; print('version:', stegoeggo.__version__)"
           python -c "import stegoeggo; print('detect:', stegoeggo.detect_format(b'\\x89PNG\\r\\n'))"
-          python -c "
-          import stegoeggo
-          notice = stegoeggo.RightsNotice().with_copyright_holder('release-python smoke')
+          python - <<'PY'
+          import struct, zlib, stegoeggo
+
+          def make_png(width: int = 16, height: int = 16) -> bytes:
+              sig = b"\x89PNG\r\n\x1a\n"
+              def chunk(t, d):
+                  c = t + d
+                  return struct.pack(">I", len(d)) + c + struct.pack(">I", zlib.crc32(c) & 0xffffffff)
+              ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+              raw = b""
+              for _ in range(height):
+                  raw += b"\x00" + b"\x80" * (width * 3)
+              idat = chunk(b"IDAT", zlib.compress(raw))
+              iend = chunk(b"IEND", b"")
+              return sig + ihdr + idat + iend
+
+          png = make_png()
+          notice = stegoeggo.RightsNotice().with_copyright_holder("release-python smoke")
           request = stegoeggo.ProtectionRequest.metadata_only(
               notice, stegoeggo.RightsPolicy.ProhibitedAiMlTraining,
-          ).with_seed(42).with_timestamp_override('2026-01-01T00:00:00Z')
-          png = bytes.fromhex('89504e470d0a1a0a0000000d49484452000000040000000408060000003e15c4890000001e49444154789c63fcffffff3f0324c00409ff0518110000000049454e44ae426082')
+          ).with_seed(42).with_timestamp_override("2026-01-01T00:00:00Z")
           out = stegoeggo.protect(png, request)
           rep = stegoeggo.verify(out)
           assert rep.rights_found, rep.to_json()
-          assert rep.copyright_holder == 'release-python smoke', rep.to_json()
-          print('smoke ok')
-          "
+          assert rep.copyright_holder == "release-python smoke", rep.to_json()
+          print("smoke ok")
+          PY
