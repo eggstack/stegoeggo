@@ -31,13 +31,13 @@ predecessor history, indexed by the roadmaps below.
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked | stable release B newer than 0.4.2 (flat Plan 106 failure policy: no throwaway version) |
-| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M002 conditionally closed | M001 closed at `plans/closure/language-bindings/001-status.md`; M002 closure at `plans/closure/language-bindings/002-status.md` (macOS x86_64 native smoke; other four platforms pending first `release-python.yml` dispatch) |
+| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M003 ready | M001 closed; M002 conditionally closed with findings consumed by M003 corrective qualification |
 
 ## Dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
-| language-bindings | (none) | — | — | M001 closed; M002 conditionally closed (macOS x86_64 native; 4/5 platform native smoke pending first workflow dispatch) |
+| language-bindings | M003 Python corrective qualification | ready | `plans/implementation/language-bindings/003-python-corrective-qualification.md` | Close structured-error, file-helper, CI, native wheel, direct-sdist, and documentation qualification gaps before Node work |
 
 ## Active closure work
 
@@ -48,6 +48,7 @@ None.
 | Subsystem | Milestone | Blocker |
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
+| language-bindings | M004 Node binding | M003 Python corrective qualification must close and reconcile M002's remaining qualification condition before Node planning/implementation is ready. |
 
 ## Recently closed work
 
@@ -61,8 +62,6 @@ None.
   qualified locally; the other four wheel platforms are produced
   by the manually-dispatched `.github/workflows/release-python.yml`
   and require their first dispatch to lift the condition.
-
-## Recently closed work
 
 - Plan 107 planning-convention migration (this registry, `000`–`003`,
   ADRs, six original roadmaps, planning skill): `plans/107-status.md`.
