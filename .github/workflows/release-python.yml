@@ -87,14 +87,14 @@ jobs:
 
       - name: Build wheels
         env:
+          CIBW_BUILD: "${{ matrix.cibw_build }}"
           CIBW_BEFORE_ALL: 'curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.89 --profile minimal --target $(uname -m)-unknown-linux-gnu && echo "source $HOME/.cargo/env" >> $GITHUB_ENV'
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
         run: |
           python -m cibuildwheel ./bindings/python \
             --output-dir ./dist \
-            --archs "${{ matrix.cibw_archs }}" \
-            --build "${{ matrix.cibw_build }}"
+            --archs "${{ matrix.cibw_archs }}"
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
