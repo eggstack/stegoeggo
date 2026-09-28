@@ -278,11 +278,18 @@ promise that every Node binary itself runs on glibc 2.17.
 
 | OS | Architecture | Runner | Status |
 |----|--------------|--------|--------|
-| Linux (GNU) | x86_64 | `ubuntu-24.04` | Configured |
-| Linux (GNU) | aarch64 | `ubuntu-24.04-arm` | Configured |
-| macOS | x86_64 | `macos-15-intel` | Configured |
-| macOS | arm64 | `macos-14` | Configured |
-| Windows (MSVC) | x86_64 | `windows-2022` | Configured |
+| Linux (GNU) | x86_64 | `ubuntu-24.04` | Qualified |
+| Linux (GNU) | aarch64 | `ubuntu-24.04-arm` | Qualified |
+| macOS | x86_64 | `macos-15-intel` | Qualified |
+| macOS | arm64 | `macos-14` | Qualified |
+| Windows (MSVC) | x86_64 | `windows-2022` | Qualified |
+
+All five rows are qualified by the
+`.github/workflows/release-node.yml` run `36488540671` (head
+`abc0354`), which built each addon with the napi-rs CLI and ran a
+native import + protect + verify smoke on the same native
+OS/architecture that built it (Linux x86_64 additionally on Node 22,
+24, and 26).
 
 A separate lightweight `.github/workflows/node-binding.yml` workflow
 builds the addon once on Linux x86_64 (Rust 1.89 + Node 24), runs the

@@ -301,6 +301,6 @@ invariants.
 | M002 Python packaging | closed (four-platform condition satisfied by M003 evidence, accepted in M004) | `implementation/language-bindings/002-python-packaging-qualification.md` | `closure/language-bindings/002-status.md` + `closure/language-bindings/004-status.md` §11 | none |
 | M003 Python corrective qualification | closed | `implementation/language-bindings/003-python-corrective-qualification.md` | `closure/language-bindings/003-status.md` (corrected; §13 lists the M004 corrections) | none; M001 closed and M002 findings recorded |
 | M004 M003 closure corrective | closed | `implementation/language-bindings/004-m003-closure-corrective.md` | `closure/language-bindings/004-status.md` | none; bounded defects corrected in PR #1 |
-| M005 Node binding | closing | `implementation/language-bindings/005-node-binding-foundation-qualification.md` | pending | none; M003 + M004 closed |
-| M006 C ABI design | proposed | not yet written | pending | Python + Node closure |
+| M005 Node binding | closed | `implementation/language-bindings/005-node-binding-foundation-qualification.md` | `closure/language-bindings/005-status.md` | none; release-node run 36488540671 green |
+| M006 C ABI design | proposed | not yet written | pending | Python + Node closure satisfied by M005 close; M006 plan not yet written |
 | M007 C ABI implementation | proposed | not yet written | pending | M006 accepted contract |
