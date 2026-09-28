@@ -6,6 +6,13 @@
 # Python tooling to `./scripts/check.sh` and never publishes wheels or
 # sdists. Cross-platform wheel qualification remains the responsibility of
 # the manually-dispatched `.github/workflows/release-python.yml`.
+#
+# The job deliberately builds a real wheel and installs that wheel instead of
+# running `maturin develop`. `maturin develop` requires an active virtualenv
+# or conda environment, and `actions/setup-python` does not provide one, so
+# the develop path failed before any test could run. The wheel path is
+# self-contained, validates the same artifact shape users install, and keeps
+# this job much lighter than the five-platform release workflow.
 
 name: python-binding
 
@@ -56,9 +63,12 @@ jobs:
       - name: Install maturin and pytest
         run: python -m pip install -U pip "maturin>=1.5,<2.0" pytest
 
-      - name: Build and install the binding
+      - name: Build the binding wheel
         working-directory: bindings/python
-        run: maturin develop --release
+        run: maturin build --release --out dist-ci
+
+      - name: Install the built wheel
+        run: python -m pip install --force-reinstall bindings/python/dist-ci/stegoeggo-*.whl
 
       - name: Run the binding test suite
         working-directory: bindings/python
