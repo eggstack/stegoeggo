@@ -1,0 +1,276 @@
+# Build Node napi-rs artifacts for stegoeggo.
+#
+# This workflow is manually dispatched (`workflow_dispatch`); it never runs on
+# push or pull_request and it never publishes to npm. See RELEASING.md for the
+# manual Node artifact policy.
+#
+# Native addons are produced for the project's documented Node support matrix
+# and uploaded as GitHub Actions artifacts for maintainer inspection:
+#
+#   - Linux x86_64 (GNU, napi-cross glibc 2.17 build floor)
+#   - Linux aarch64 (GNU, napi-cross glibc 2.17 build floor)
+#   - macOS x86_64
+#   - macOS arm64
+#   - Windows x86_64 (MSVC)
+#
+# Every addon is built and smoke-tested on a runner that matches the addon's
+# native OS/architecture. Each build job runs `scripts/smoke.mjs` (self
+# contained: builds its own tiny PNG, asserts the source/binding version,
+# Buffer output, a Promise-based operation, and a protect/verify round-trip)
+# against the just-built `.node` before uploading it. Linux x86_64 additionally
+# records runtime compatibility on Node 22, 24, and 26.
+#
+# The assembly job collects all five artifacts, runs `napi create-npm-dirs`
+# and `napi artifacts`, validates the per-platform package metadata and the
+# root loader mapping, creates a local pack tarball, and performs a clean
+# local install/load smoke on the collector platform. Registry-install
+# selection of the optional platform dependencies cannot be exercised without
+# a real registry, so the smoke stands in the registry-provided platform
+# package explicitly; `napi pre-publish` is never invoked.
+#
+# Destructive-tooling warning: `napi artifacts` fails closed on a partial
+# artifact set AND deletes an already-collected local `.node`. Never run it
+# without all five target artifacts present; rebuild locally with
+# `pnpm build` if the local addon goes missing.
+
+name: release-node
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: >
+          Source ref (tag, branch, or SHA) to build from. Use the StegoEggo
+          release tag or a specific commit SHA.
+        required: true
+        type: string
+
+concurrency:
+  group: release-node-${{ github.event.inputs.source_ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build_addon:
+    name: build ${{ matrix.id }} addon
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x86_64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            artifact: stegoeggo.linux-x64-gnu.node
+            cross: true
+          - id: linux-aarch64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: stegoeggo.linux-arm64-gnu.node
+            cross: true
+          - id: macos-x86_64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            artifact: stegoeggo.darwin-x64.node
+            cross: false
+          - id: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            artifact: stegoeggo.darwin-arm64.node
+            cross: false
+          - id: windows-x86_64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            artifact: stegoeggo.win32-x64-msvc.node
+            cross: false
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source_ref }}
+
+      - name: Install Rust toolchain (matches binding MSRV)
+        uses: dtolnay/rust-toolchain@1.89
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.6.0
+          run_install: false
+
+      - name: Set up Node 24 (build)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: bindings/node/pnpm-lock.yaml
+
+      - name: Install Node dependencies
+        working-directory: bindings/node
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the addon (napi-cross GNU Linux)
+        if: matrix.cross
+        working-directory: bindings/node
+        run: pnpm napi build --platform --release --target ${{ matrix.target }} --use-napi-cross --no-const-enum --runtime-string-enum
+
+      - name: Build the addon (native)
+        if: ${{ !matrix.cross }}
+        working-directory: bindings/node
+        run: pnpm napi build --platform --release --target ${{ matrix.target }} --no-const-enum --runtime-string-enum
+
+      - name: Assert the expected artifact exists
+        working-directory: bindings/node
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "${{ matrix.artifact }}"
+          ls -la "${{ matrix.artifact }}"
+
+      - name: Set up Node 22 (oldest-supported-line smoke)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Native import/protect/verify smoke (Node 22)
+        working-directory: bindings/node
+        run: node scripts/smoke.mjs
+
+      - name: Set up Node 24 (extended smoke)
+        if: matrix.id == 'linux-x86_64'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Native import/protect/verify smoke (Node 24)
+        if: matrix.id == 'linux-x86_64'
+        working-directory: bindings/node
+        run: node scripts/smoke.mjs
+
+      - name: Set up Node 26 (extended smoke)
+        if: matrix.id == 'linux-x86_64'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+
+      - name: Native import/protect/verify smoke (Node 26)
+        if: matrix.id == 'linux-x86_64'
+        working-directory: bindings/node
+        run: node scripts/smoke.mjs
+
+      - name: Upload addon artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-addon-${{ matrix.id }}
+          path: bindings/node/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  assemble_package:
+    name: assemble package
+    needs: build_addon
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source_ref }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.6.0
+          run_install: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: bindings/node/pnpm-lock.yaml
+
+      - name: Install Node dependencies
+        working-directory: bindings/node
+        run: pnpm install --frozen-lockfile
+
+      - name: Download all addon artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: node-addon-*
+          path: bindings/node/collected
+          merge-multiple: true
+
+      - name: Stage the five artifacts for collection
+        working-directory: bindings/node
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls collected/
+          cp collected/stegoeggo.linux-x64-gnu.node .
+          cp collected/stegoeggo.linux-arm64-gnu.node .
+          cp collected/stegoeggo.darwin-x64.node .
+          cp collected/stegoeggo.darwin-arm64.node .
+          cp collected/stegoeggo.win32-x64-msvc.node .
+
+      - name: Create platform package dirs and collect artifacts
+        working-directory: bindings/node
+        run: |
+          pnpm napi create-npm-dirs
+          mkdir -p artifacts
+          pnpm napi artifacts --output-dir artifacts --npm-dir npm
+
+      - name: Audit the assembled package layout
+        working-directory: bindings/node
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(ls -d npm/*/ | wc -l)" = "5"
+          for spec in \
+            "linux-x64-gnu:linux:x64:glibc:stegoeggo.linux-x64-gnu.node" \
+            "linux-arm64-gnu:linux:arm64:glibc:stegoeggo.linux-arm64-gnu.node" \
+            "darwin-x64:darwin:x64::stegoeggo.darwin-x64.node" \
+            "darwin-arm64:darwin:arm64::stegoeggo.darwin-arm64.node" \
+            "win32-x64-msvc:win32:x64::stegoeggo.win32-x64-msvc.node"; do
+            dir="${spec%%:*}"; rest="${spec#*:}"
+            os="${rest%%:*}"; rest="${rest#*:}"
+            cpu="${rest%%:*}"; rest="${rest#*:}"
+            libc="${rest%%:*}"; node_file="${rest##*:}"
+            pkg="npm/$dir/package.json"
+            test -f "$pkg"
+            test -f "npm/$dir/$node_file"
+            node -e "
+              const p = require('./$pkg');
+              const assert = require('node:assert/strict');
+              assert.equal(p.version, require('./package.json').version);
+              assert.deepEqual(p.os, ['$os']);
+              assert.deepEqual(p.cpu, ['$cpu']);
+              assert.equal(p.main, '$node_file');
+              ${libc:+assert.deepEqual(p.libc, ['$libc']); }
+            "
+          done
+          for name in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64 win32-x64-msvc; do
+            grep -q "@eggstack/stegoeggo-$name" index.js
+          done
+          echo "package layout audit ok"
+
+      - name: Create the local pack tarball
+        working-directory: bindings/node
+        run: pnpm pack
+
+      - name: Clean local pack/install smoke (collector platform)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SMOKE=$(mktemp -d)
+          trap 'rm -rf "$SMOKE"' EXIT
+          cd "$SMOKE"
+          npm init -y >/dev/null 2>&1
+          npm install "$GITHUB_WORKSPACE/bindings/node/eggstack-stegoeggo-"*.tgz
+          mkdir -p node_modules/@eggstack/stegoeggo-linux-x64-gnu
+          cp "$GITHUB_WORKSPACE/bindings/node/npm/linux-x64-gnu/stegoeggo.linux-x64-gnu.node" \
+             "$GITHUB_WORKSPACE/bindings/node/npm/linux-x64-gnu/package.json" \
+             node_modules/@eggstack/stegoeggo-linux-x64-gnu/
+          NODE_PATH="$SMOKE/node_modules" STEGOEGGO_SMOKE_SPEC=@eggstack/stegoeggo node "$GITHUB_WORKSPACE/bindings/node/scripts/smoke.mjs"
+          echo "clean local pack/install smoke ok"

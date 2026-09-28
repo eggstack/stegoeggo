@@ -1,0 +1,126 @@
+# Lightweight Node binding compatibility check.
+#
+# Builds the napi-rs addon once on Linux x86_64 (Rust 1.89 + Node 24), runs
+# the generated-declaration drift check, the Node unit/integration suite, and
+# the TypeScript consumer contract, then reuses the same built addon for a
+# dependency-free runtime smoke on Node 22, 24, and 26. This is a
+# binding-specific signal independent of the standard Rust Check gate in
+# `ci.yml`; it does not add Node tooling to `./scripts/check.sh` and never
+# publishes to npm. Five-target native qualification remains the
+# responsibility of the manually-dispatched
+# `.github/workflows/release-node.yml`.
+#
+# The runtime smoke reuses `scripts/smoke.mjs`, which builds its own tiny PNG
+# and depends only on Node builtins, so the smoke jobs need no pnpm install.
+
+name: node-binding
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bindings/node/**"
+      - "src/**"
+      - "stegoeggo-stego/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "tests/fixtures/conformance/canonical/**"
+      - ".github/workflows/node-binding.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "bindings/node/**"
+      - "src/**"
+      - "stegoeggo-stego/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "tests/fixtures/conformance/canonical/**"
+      - ".github/workflows/node-binding.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  node-binding-check:
+    name: node-binding-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (matches binding MSRV)
+        uses: dtolnay/rust-toolchain@1.89
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.6.0
+          run_install: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: bindings/node/pnpm-lock.yaml
+
+      - name: Install Node dependencies
+        working-directory: bindings/node
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the addon
+        working-directory: bindings/node
+        run: pnpm build
+
+      - name: Check generated-file drift
+        working-directory: bindings/node
+        run: git diff --exit-code -- index.js index.d.ts
+
+      - name: Run the binding test suite
+        working-directory: bindings/node
+        run: pnpm test
+
+      - name: Check the TypeScript consumer contract
+        working-directory: bindings/node
+        run: pnpm typecheck
+
+      - name: Upload the built package for runtime smoke
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-package-linux-x64
+          path: |
+            bindings/node/index.js
+            bindings/node/index.d.ts
+            bindings/node/stegoeggo.js
+            bindings/node/stegoeggo.mjs
+            bindings/node/stegoeggo.d.ts
+            bindings/node/stegoeggo.linux-x64-gnu.node
+            bindings/node/package.json
+            bindings/node/scripts/smoke.mjs
+          if-no-files-found: error
+
+  node-runtime-smoke:
+    name: smoke Node ${{ matrix.node }}
+    needs: node-binding-check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24", "26"]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: node-package-linux-x64
+          path: bindings/node
+
+      - name: Set up Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Run the package smoke
+        working-directory: bindings/node
+        run: node scripts/smoke.mjs

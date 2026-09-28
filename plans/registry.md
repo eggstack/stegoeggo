@@ -31,13 +31,13 @@ predecessor history, indexed by the roadmaps below.
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked | stable release B newer than 0.4.2 (flat Plan 106 failure policy: no throwaway version) |
-| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M005 Node ready | M001–M004 closed; M005 implementation plan written and dependency-ready |
+| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M005 Node closing | M001–M004 closed; M005 implementation landed, closure evidence being gathered |
 
 ## Dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
-| language-bindings | M005 Node binding foundation and qualification | ready | `plans/implementation/language-bindings/005-node-binding-foundation-qualification.md` | napi-rs v3 leaf binding; async canonical byte API; bigint seeds; structured errors; TS contract; Node 22/24/26 + five native target qualification; no npm publication |
+| language-bindings | M005 Node binding foundation and qualification | closing | `plans/implementation/language-bindings/005-node-binding-foundation-qualification.md` | napi-rs v3 leaf binding; async canonical byte API; bigint seeds; structured errors; TS contract; Node 22/24/26 + five native target qualification; no npm publication |
 
 ## Active closure work
 

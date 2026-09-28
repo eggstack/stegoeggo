@@ -224,6 +224,88 @@ The sdist is a self-contained PEP 517 build artefact: `pip install
 stegoeggo-0.4.2.tar.gz` resolves the binding's path dependencies from
 the tarball itself rather than the source checkout.
 
+## Node Binding
+
+A typed Node.js frontend lives at `bindings/node/` and builds a napi-rs v3
+native addon directly against the canonical Rust `process_request_bytes*`
+and `verify_image_bytes_report` byte API. It shares the same resource-limit,
+structured-error, and panic-profile semantics as the library crate. The
+binding is **experimental / not on npm**: native artifacts are produced by
+a manually dispatched workflow and are not published to any registry. The
+five documented native targets are configured; native-smoke qualification
+evidence is recorded in `plans/closure/language-bindings/005-status.md`
+once the manual workflow has run.
+
+### Documented runtime support
+
+| Item | Value |
+|------|-------|
+| Package engine floor (`engines.node`) | `>= 22.13.0` |
+| Node-API ABI level | 6 (exact `u64` seed ↔ `BigInt` conversion) |
+| Tested runtime lines | Node 22, 24, 26 |
+| Seeds | `bigint` only; `u64::MAX` round-trips exactly |
+
+The Node-API level is the ABI the addon is built against, not a claim that
+every Node version runs it. Only the tested runtime lines above are
+supported. Bun, Deno, Electron-specific qualification, browser/WASM, and
+WASI are intentionally unsupported in the initial milestone. The binding
+release profile uses `panic = "unwind"`; the standalone CLI keeps
+`panic = "abort"` and is unaffected.
+
+### Install (local source build)
+
+```bash
+git clone https://github.com/eggstack/stegoeggo
+cd stegoeggo/bindings/node
+corepack enable
+pnpm install --frozen-lockfile
+pnpm build
+```
+
+Building from source requires a Rust toolchain ≥ 1.89 (the binding's
+`rust-version` floor) and Node >= 22.13.0 for the napi-rs build CLI.
+
+### Documented platform matrix for native artefacts
+
+The matrix below describes what the manually-dispatched
+`.github/workflows/release-node.yml` workflow produces. "Qualified" means
+native build + native import/protect/verify smoke evidence is recorded in
+`plans/closure/language-bindings/005-status.md`; "configured" means the
+matrix row is wired up in CI but the native smoke run has not yet
+completed. GNU Linux rows build with napi-cross rather than inheriting the
+runner's newer glibc: the addon build floor is glibc 2.17, which is not a
+promise that every Node binary itself runs on glibc 2.17.
+
+| OS | Architecture | Runner | Status |
+|----|--------------|--------|--------|
+| Linux (GNU) | x86_64 | `ubuntu-24.04` | Configured |
+| Linux (GNU) | aarch64 | `ubuntu-24.04-arm` | Configured |
+| macOS | x86_64 | `macos-15-intel` | Configured |
+| macOS | arm64 | `macos-14` | Configured |
+| Windows (MSVC) | x86_64 | `windows-2022` | Configured |
+
+A separate lightweight `.github/workflows/node-binding.yml` workflow
+builds the addon once on Linux x86_64 (Rust 1.89 + Node 24), runs the
+generated-declaration drift check, the full Node test suite, and the
+TypeScript consumer contract, then reuses the same built addon for a
+dependency-free runtime smoke on Node 22, 24, and 26. It never publishes
+artifacts.
+
+Native addons are built by the manually-dispatched
+`.github/workflows/release-node.yml` workflow (no npm publish) and
+uploaded as GitHub Actions artifacts. Every addon is built on a runner
+that matches its native architecture and the per-platform smoke
+(`scripts/smoke.mjs`: import + protect + verify with version, Buffer, and
+Promise assertions) runs on the same native arch. Linux x86_64
+additionally records runtime compatibility on Node 22, 24, and 26. The
+assembly job collects all five artifacts with `napi create-npm-dirs` /
+`napi artifacts` (which fails closed on a partial set), audits the
+per-platform `os`/`cpu`/`libc` metadata and the root loader mapping,
+creates a local pack tarball, and performs a clean local install/load
+smoke on the collector platform. Registry-install selection of the
+optional platform dependencies cannot be exercised without a real
+registry; `napi pre-publish` is never invoked.
+
 ## External Tools
 
 External tools are required only for development and conformance testing. They are not required at runtime or for library use.

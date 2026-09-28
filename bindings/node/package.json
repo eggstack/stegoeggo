@@ -1,0 +1,72 @@
+{
+  "name": "@eggstack/stegoeggo",
+  "version": "0.4.2",
+  "description": "Node.js bindings for the stegoeggo rights-reservation and steganography library",
+  "license": "MIT",
+  "author": "David Bowman <dbowman91@proton.me>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eggstack/stegoeggo.git"
+  },
+  "engines": {
+    "node": ">= 22.13.0"
+  },
+  "packageManager": "pnpm@12.6.0",
+  "keywords": [
+    "image",
+    "steganography",
+    "legal-notice",
+    "ai-safety",
+    "rights-metadata",
+    "napi-rs"
+  ],
+  "main": "stegoeggo.js",
+  "module": "stegoeggo.mjs",
+  "types": "stegoeggo.d.ts",
+  "exports": {
+    ".": {
+      "types": "./stegoeggo.d.ts",
+      "import": "./stegoeggo.mjs",
+      "require": "./stegoeggo.js"
+    },
+    "./native": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "stegoeggo.js",
+    "stegoeggo.mjs",
+    "stegoeggo.d.ts",
+    "README.md"
+  ],
+  "napi": {
+    "binaryName": "stegoeggo",
+    "packageName": "@eggstack/stegoeggo",
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.10.5",
+    "@types/node": "^22.20.4",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "artifacts": "napi artifacts",
+    "build": "napi build --platform --release --no-const-enum --runtime-string-enum",
+    "build:debug": "napi build --platform --no-const-enum --runtime-string-enum",
+    "create-npm-dirs": "napi create-npm-dirs",
+    "test": "node --test test/smoke.test.mjs test/request.test.mjs test/operations.test.mjs test/errors.test.mjs",
+    "test:parity": "cargo build --manifest-path ./Cargo.toml --bin oracle && node --test test/parity.test.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "typecheck": "tsc --project tsconfig.json"
+  }
+}

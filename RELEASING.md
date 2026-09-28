@@ -239,6 +239,60 @@ CPython support, and PyPy qualification are explicitly deferred per the
 language-bindings subsystem roadmap. Every wheel platform must clear its
 native smoke run before any maintainer-published PyPI release.
 
+## Node Native Artifacts
+
+The Node binding (`bindings/node/`) is governed by the same manual-only
+policy as the rest of the release surface. No npm publication occurs in
+M005: there are no npm credentials in Actions, no registry publish step in
+any workflow, and `napi pre-publish` is never invoked (its normal behavior
+has registry and release side effects). The end-to-end process is:
+
+1. Confirm the binding version in `bindings/node/package.json`,
+   `bindings/node/Cargo.toml`, and `bindings/node/Cargo.lock` matches
+   the StegoEggo source release version (0.4.2 by default).
+2. Dispatch `.github/workflows/release-node.yml` manually with the
+   source ref. The workflow:
+   - Builds release addons on native runners for the documented
+     five-target matrix with the napi-rs CLI (Linux x86_64 and aarch64
+     on `ubuntu-24.04` / `ubuntu-24.04-arm` with `--use-napi-cross` so
+     the addon targets the glibc 2.17 build floor instead of the
+     runner's newer glibc, macOS x86_64 on `macos-15-intel`, macOS
+     arm64 on `macos-14`, Windows x86_64 on `windows-2022`).
+   - Runs a per-platform import + protect + verify smoke
+     (`scripts/smoke.mjs`) on a runner whose native OS/architecture
+     matches the addon before uploading it. Linux x86_64 additionally
+     smokes Node 22, 24, and 26.
+   - Collects all five artifacts in an assembly job with
+     `napi create-npm-dirs` / `napi artifacts`, audits the
+     per-platform `os`/`cpu`/`libc` metadata and the root loader
+     mapping, creates a local pack tarball, and performs a clean local
+     install/load smoke on the collector platform (standing in the
+     registry-provided platform package explicitly, since
+     registry-install selection cannot be exercised without a real
+     registry).
+3. Download the artifacts, audit the `.node` filenames and platform
+   package metadata against
+   `plans/subsystems/language-bindings-roadmap.md`, and confirm each
+   smoke step succeeded on its native architecture. No addon is treated
+   as qualified by the build job alone — the matching native smoke run
+   must also pass.
+4. Record the artifact identifiers, the workflow run URL/ID, the exact
+   implementation SHA, and the per-platform native smoke outcomes in
+   `plans/closure/language-bindings/005-status.md`. Update `SUPPORT.md`
+   only when the platform's native smoke evidence is recorded (the
+   default wording is "Configured"; promote individual rows to
+   "Qualified" as the evidence arrives).
+5. Do not run `napi artifacts` locally without all five target
+   artifacts present: it fails closed on a partial set and deletes an
+   already-collected local `.node`. Rebuild locally with `pnpm build`
+   if the local addon goes missing.
+
+A future first npm publication (outside M005) must account for napi
+multi-platform publication being non-atomic over immutable versions:
+a partial platform set cannot be repaired by republishing the same
+version, so the release failure policy must be explicit before any
+registry action is attempted.
+
 ## Partial Failure Handling
 
 ### Carrier publishes, library fails before acceptance
