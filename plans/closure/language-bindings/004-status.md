@@ -49,7 +49,7 @@ No new Python API capability was added.
 | WP3 remove the stale "cannot run until main" statement | `003-status.md` §10: the claim is struck and replaced with the factual record that GitHub executed the workflow twice on the PR (`36338087686` red, `36456938690` green). §11/§13 record the correction. |
 | WP3 promote all five SUPPORT rows to `Qualified` | `SUPPORT.md`: all five rows read `Qualified`, backed by run `36337194059` (head `d40f1b3`); the placeholder "Configured (qualified when smoke evidence recorded)" wording is retired, and the intro no longer conditions qualification on future work. |
 | WP3 no PyPI/publication claim introduced | `release-python.yml` still has no credentials, no `twine upload` / `pypi-publish` step; SUPPORT/closures still describe manual-only artifacts. Verified by grep. |
-| WP4 required final PR checks are green | CI run `36456939020` (`Check`, `success`) and python-binding run `36456938690` (`success`), both observed on the workflow-fix head `f9c55e4`; re-observed on the final tip after the evidence commit (see §4). PR #1 remains open and mergeable. |
+| WP4 required final PR checks are green | CI run `36456939020` (`Check`, `success`) and python-binding run `36456938690` (`success`), both observed on the workflow-fix head `f9c55e4`; both re-observed green on the final evidence tip `430599e` (python-binding `36459733771`, CI `36459734181`; see §4). PR #1 remains open and mergeable. |
 | WP4 no executable change after the qualified release SHA invalidates the release evidence | `git diff --name-only d40f1b3..HEAD -- bindings/python/src bindings/python/python bindings/python/pyproject.toml bindings/python/Cargo.toml .github/workflows/release-python.yml src stegoeggo-stego` is empty (§3). The only behavioural change since `d40f1b3` is the lightweight `python-binding.yml` fix. No release rerun required. |
 | Plan invariant: `./scripts/check.sh` stays Python-free | `check.sh` untouched; `grep -ri python scripts/check.sh` empty. |
 | Plan invariant: standard Rust `ci.yml` contract unchanged | `.github/workflows/ci.yml` untouched by this branch (not in `git diff main...HEAD`). |
@@ -162,6 +162,24 @@ ignored-only suites unchanged), and `check-docs-contract.sh`
   `success`, reused because no executable binding/release change after
   the qualified commit `d40f1b3` (§3).
 - Existing direct sdist install smoke: same run, `success`.
+
+### Remote evidence on the final evidence tip
+
+Head `430599e` (`430599ea0624f5238a2f40a4507f1621c56d9a1e`) carries the
+complete evidence state: workflow fix, SUPPORT qualification, corrected
+`003-status.md`, this record, and the final registry/roadmap states. Both
+required workflows ran green on it:
+
+- python-binding run `36459733771`: `success` — wheel
+  `stegoeggo-0.4.2-cp311-abi3-manylinux_2_34_x86_64.whl` built and
+  installed, `70 passed, 1 skipped in 0.19s` (the same pre-existing M001
+  CLI-guard skip).
+- CI run `36459734181`: `success` (job `Check`).
+
+The commit carrying this paragraph changes only this planning record
+relative to `430599e`; per this plan's documentation-only-commit
+semantics it does not invalidate the evidence above. The final tip SHA
+and its own check runs are recorded in the PR #1 body (§12).
 
 ## 5. Invariant review
 
