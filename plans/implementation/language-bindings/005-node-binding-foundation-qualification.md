@@ -117,6 +117,35 @@ than creating another binding-specific copy. Package-install smoke tests that
 run independently of the checkout should create their own tiny valid input in
 the smoke script.
 
+### Upstream research basis (2026-09-28)
+
+Implementation should re-check these upstream contracts if the relevant
+toolchain version changes before execution:
+
+- napi-rs v3 getting started:
+  https://napi.rs/docs/introduction/getting-started
+- napi-rs support/compatibility and current Node test matrix:
+  https://napi.rs/docs/more/support-compatibility
+- napi-rs v2→v3 migration notes, including modern API/config and no permanent
+  `compat-mode`:
+  https://napi.rs/docs/more/v2-v3-migration-guide
+- napi-rs AsyncTask worker model:
+  https://napi.rs/docs/concepts/async-task
+- napi-rs Buffer/TypedArray lifetime and cross-thread mutation warning:
+  https://napi.rs/docs/concepts/understanding-lifetime
+  and https://napi.rs/docs/concepts/typed-array
+- napi-rs GNU Linux glibc guidance:
+  https://napi.rs/docs/more/faq
+- napi-rs artifact collection and package assembly:
+  https://napi.rs/docs/cli/artifacts
+  and https://napi.rs/docs/deep-dive/release
+- napi-rs pre-publish side effects:
+  https://napi.rs/docs/cli/pre-publish
+- Node-API version matrix / BigInt conversion:
+  https://nodejs.org/api/n-api.html
+- current Node release lines:
+  https://nodejs.org/en/blog/release
+
 ## 4. Invariants that must not regress
 
 - The Rust application crate and `stegoeggo-stego` remain
