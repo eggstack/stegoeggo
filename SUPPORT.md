@@ -151,10 +151,11 @@ A typed Python frontend lives at `bindings/python/` and builds an
 `abi3-py311` wheel via PyO3 + maturin. It mirrors the canonical Rust
 `process_request_bytes*` and `verify_image_bytes_report` API surface and
 shares the same resource-limit, error, and panic profile semantics as
-the library crate. The binding is **experimental / not on PyPI** until
-M003 qualification records native smoke evidence for every documented
-wheel platform; wheel qualification evidence is recorded in
-`plans/closure/language-bindings/003-status.md`.
+the library crate. The binding is **experimental / not on PyPI**: wheels
+are produced as GitHub Actions artifacts by a manually dispatched
+workflow and are not published to any registry. All five documented
+wheel platforms are qualified; wheel qualification evidence is recorded
+in `plans/closure/language-bindings/003-status.md`.
 
 ### Documented interpreter support
 
@@ -185,20 +186,29 @@ installing a prebuilt wheel will not.
 ### Documented platform matrix for wheel artefacts
 
 The wheel matrix below describes what the manually-dispatched
-`.github/workflows/release-python.yml` workflow is configured to produce.
-"Qualified" means native build + native install + protect/verify smoke
-evidence is recorded in
-`plans/closure/language-bindings/003-status.md`; "configured" means the
-matrix row is wired up in CI but the native smoke run has not yet
-completed.
+`.github/workflows/release-python.yml` workflow produces. "Qualified"
+means native build + native install + protect/verify smoke evidence is
+recorded in
+`plans/closure/language-bindings/003-status.md`; "configured" would mean
+the matrix row is wired up in CI but the native smoke run has not yet
+completed. All five rows are qualified by the
+`.github/workflows/release-python.yml` run `36337194059` (head
+`d40f1b37cf031b05e4f9c76af1cdfcf789d739b5`), which installed each wheel
+on the same native architecture that built it and ran an import +
+protect + verify smoke.
 
 | OS | Architecture | Runner | Status |
 |----|--------------|--------|--------|
-| Linux | x86_64 | `ubuntu-24.04` | Configured (qualified when smoke evidence recorded) |
-| Linux | aarch64 | `ubuntu-24.04-arm` | Configured (qualified when smoke evidence recorded) |
-| macOS | x86_64 | `macos-15-intel` | Configured (qualified when smoke evidence recorded) |
-| macOS | arm64 | `macos-14` | Configured (qualified when smoke evidence recorded) |
-| Windows | x86_64 | `windows-2022` | Configured (qualified when smoke evidence recorded) |
+| Linux | x86_64 | `ubuntu-24.04` | Qualified |
+| Linux | aarch64 | `ubuntu-24.04-arm` | Qualified |
+| macOS | x86_64 | `macos-15-intel` | Qualified |
+| macOS | arm64 | `macos-14` | Qualified |
+| Windows | x86_64 | `windows-2022` | Qualified |
+
+A separate lightweight `.github/workflows/python-binding.yml` workflow
+runs the full Python test suite on Linux x86_64 / CPython 3.11 on
+binding-relevant pull requests and pushes. It builds and installs a
+wheel and never publishes artifacts.
 
 Wheels are built by the manually-dispatched
 `.github/workflows/release-python.yml` workflow (no PyPI publish) and

@@ -141,12 +141,15 @@ Closed canonical API/verification/container/carrier contracts
 
 M001/M002 do not depend on the blocked release-distribution A->B updater
 evidence milestone. M003 consumes the concrete findings from M001/M002.
-PR #1 contains the M003 implementation and successful five-platform release
-qualification, but M003 remains in closing because its lightweight Python
-compatibility CI is red and its draft closure contains evidence/status defects.
-M004 owns that bounded corrective pass. M005 MUST consume the final accepted
-Python contract rather than invent a competing semantic surface. M006 starts
-only after Python and Node have closed so the C ABI is informed by two real
+PR #1 contains the M003 implementation and successful five-platform
+release qualification. M003 was accepted, and M004 — the corrective pass
+for M003's closure/evidence defects — closed, on PR #1: the lightweight
+Python compatibility CI now builds and installs a wheel and is green
+(run `36456938690`), and the release qualification identity is the
+GitHub-recorded SHA `d40f1b37cf031b05e4f9c76af1cdfcf789d739b5` for run
+`36337194059`. M005 MUST consume the final accepted Python contract
+rather than invent a competing semantic surface. M006 starts only after
+Python and Node have closed so the C ABI is informed by two real
 foreign-runtime clients.
 
 ## 7. Milestones
@@ -198,7 +201,8 @@ Implementation:
 `plans/implementation/language-bindings/004-m003-closure-corrective.md`.
 
 Hard dependency: M003 implementation evidence exists in PR #1. M003 closure
-itself remains pending this corrective pass.
+itself remained pending this corrective pass and was accepted when it
+closed.
 
 ### M005 — Node.js binding
 
@@ -206,7 +210,7 @@ Class: capability/infrastructure. Use napi-rs directly over the canonical Rust
 API, map encoded bytes to Buffer/Uint8Array, generate TypeScript declarations,
 reuse cross-language parity vectors, and qualify supported Node/platform
 targets. Scope is written only after M003 and M004 corrective closure are
-accepted.
+accepted; both are now closed, so M005 is ready to plan.
 
 ### M006 — C ABI contract design
 
@@ -285,9 +289,9 @@ invariants.
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
 | M001 Python foundation | closed | `implementation/language-bindings/001-python-binding-foundation.md` | `closure/language-bindings/001-status.md` | none |
-| M002 Python packaging | conditionally closed | `implementation/language-bindings/002-python-packaging-qualification.md` | `closure/language-bindings/002-status.md` | Five-platform evidence exists in PR #1 but condition lift waits for accepted M003/M004 closure |
-| M003 Python corrective qualification | closing | `implementation/language-bindings/003-python-corrective-qualification.md` | draft in PR #1 | Lightweight Python CI is red; closure/evidence reconciliation owned by M004 |
-| M004 M003 closure corrective | ready | `implementation/language-bindings/004-m003-closure-corrective.md` | pending | none; bounded defects are verified in PR #1 |
-| M005 Node binding | proposed | not yet written | pending | M003 + M004 closure |
+| M002 Python packaging | closed (four-platform condition satisfied by M003 evidence, accepted in M004) | `implementation/language-bindings/002-python-packaging-qualification.md` | `closure/language-bindings/002-status.md` + `closure/language-bindings/004-status.md` §11 | none |
+| M003 Python corrective qualification | closed | `implementation/language-bindings/003-python-corrective-qualification.md` | `closure/language-bindings/003-status.md` (corrected; §13 lists the M004 corrections) | none; M001 closed and M002 findings recorded |
+| M004 M003 closure corrective | closed | `implementation/language-bindings/004-m003-closure-corrective.md` | `closure/language-bindings/004-status.md` | none; bounded defects corrected in PR #1 |
+| M005 Node binding | proposed (dependency-ready; no plan written yet) | not yet written | pending | none; M003 + M004 closed |
 | M006 C ABI design | proposed | not yet written | pending | Python + Node closure |
 | M007 C ABI implementation | proposed | not yet written | pending | M006 accepted contract |
