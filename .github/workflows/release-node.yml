@@ -207,18 +207,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p artifacts
           ls collected/
-          cp collected/stegoeggo.linux-x64-gnu.node .
-          cp collected/stegoeggo.linux-arm64-gnu.node .
-          cp collected/stegoeggo.darwin-x64.node .
-          cp collected/stegoeggo.darwin-arm64.node .
-          cp collected/stegoeggo.win32-x64-msvc.node .
+          cp collected/stegoeggo.linux-x64-gnu.node artifacts/
+          cp collected/stegoeggo.linux-arm64-gnu.node artifacts/
+          cp collected/stegoeggo.darwin-x64.node artifacts/
+          cp collected/stegoeggo.darwin-arm64.node artifacts/
+          cp collected/stegoeggo.win32-x64-msvc.node artifacts/
 
       - name: Create platform package dirs and collect artifacts
         working-directory: bindings/node
         run: |
           pnpm napi create-npm-dirs
-          mkdir -p artifacts
           pnpm napi artifacts --output-dir artifacts --npm-dir npm
 
       - name: Audit the assembled package layout
