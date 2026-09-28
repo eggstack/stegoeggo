@@ -151,8 +151,11 @@ A typed Python frontend lives at `bindings/python/` and builds an
 `abi3-py311` wheel via PyO3 + maturin. It mirrors the canonical Rust
 `process_request_bytes*` and `verify_image_bytes_report` API surface and
 shares the same resource-limit, error, and panic profile semantics as
-the library crate. The binding is **experimental / local source build**
-until M002 publishes wheels; it is not yet on PyPI.
+the library crate. The binding is **experimental / not on PyPI**: wheels
+are produced as GitHub Actions artifacts by a manually dispatched
+workflow and are not published to any registry. All five documented
+wheel platforms are qualified; wheel qualification evidence is recorded
+in `plans/closure/language-bindings/003-status.md`.
 
 ### Documented interpreter support
 
@@ -178,25 +181,48 @@ maturin develop --release
 
 The wheel installs into the active virtualenv. Building from source
 requires a Rust toolchain ≥ 1.89 (the binding's `rust-version` floor);
-installing a future prebuilt wheel will not.
+installing a prebuilt wheel will not.
 
 ### Documented platform matrix for wheel artefacts
 
-| OS | Architecture | Status |
-|----|--------------|--------|
-| Linux | x86_64 | Produced in CI via cibuildwheel (`x86_64-unknown-linux-gnu`) |
-| Linux | aarch64 | Produced in CI via cibuildwheel (`aarch64-unknown-linux-gnu`) |
-| macOS | x86_64 | Produced in CI via cibuildwheel (`x86_64-apple-darwin`) |
-| macOS | arm64 | Produced in CI via cibuildwheel (`aarch64-apple-darwin`) |
-| Windows | x86_64 | Produced in CI via cibuildwheel (`x86_64-pc-windows-msvc`) |
+The wheel matrix below describes what the manually-dispatched
+`.github/workflows/release-python.yml` workflow produces. "Qualified"
+means native build + native install + protect/verify smoke evidence is
+recorded in
+`plans/closure/language-bindings/003-status.md`; "configured" would mean
+the matrix row is wired up in CI but the native smoke run has not yet
+completed. All five rows are qualified by the
+`.github/workflows/release-python.yml` run `36337194059` (head
+`d40f1b37cf031b05e4f9c76af1cdfcf789d739b5`), which installed each wheel
+on the same native architecture that built it and ran an import +
+protect + verify smoke.
+
+| OS | Architecture | Runner | Status |
+|----|--------------|--------|--------|
+| Linux | x86_64 | `ubuntu-24.04` | Qualified |
+| Linux | aarch64 | `ubuntu-24.04-arm` | Qualified |
+| macOS | x86_64 | `macos-15-intel` | Qualified |
+| macOS | arm64 | `macos-14` | Qualified |
+| Windows | x86_64 | `windows-2022` | Qualified |
+
+A separate lightweight `.github/workflows/python-binding.yml` workflow
+runs the full Python test suite on Linux x86_64 / CPython 3.11 on
+binding-relevant pull requests and pushes. It builds and installs a
+wheel and never publishes artifacts.
 
 Wheels are built by the manually-dispatched
 `.github/workflows/release-python.yml` workflow (no PyPI publish) and
-attached as GitHub Actions artifacts. The matrix above is the source of
-truth for what is "qualified"; supports claims should not be made before
-the corresponding matrix entry has native install + protect/verify
-smoke evidence recorded in
-`plans/closure/language-bindings/002-status.md`.
+attached as GitHub Actions artifacts. Every wheel is built on a runner
+that matches its native architecture and the per-platform smoke install
+runs on the same native arch. Linux cibuildwheel uses `before-all` to
+install Rust 1.89 inside the build container and the manylinux
+compatibility floor is pinned to `manylinux_2_28`. The same workflow
+builds one sdist and the sdist job installs it through a literal
+`pip install <tarball>` in a clean venv outside the source checkout.
+
+The sdist is a self-contained PEP 517 build artefact: `pip install
+stegoeggo-0.4.2.tar.gz` resolves the binding's path dependencies from
+the tarball itself rather than the source checkout.
 
 ## External Tools
 

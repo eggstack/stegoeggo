@@ -1,5 +1,6 @@
 """StegoEggo — Python bindings for rights-reservation and steganography."""
 
+from ._files import protect_file, verify_file
 from ._native import (  # noqa: F401
     AuthenticationMode,
     DmiValue,
@@ -29,11 +30,9 @@ from ._native import (  # noqa: F401
     VerificationStatus,
     detect_format,
     protect,
-    protect_file,
     protect_with_report,
     protect_with_warnings,
     verify,
-    verify_file,
 )
 from ._native import __version__ as __binding_version__
 from ._native import __stegoeggo_version__ as __stegoeggo_version__

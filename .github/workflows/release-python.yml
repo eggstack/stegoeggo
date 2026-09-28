@@ -7,17 +7,21 @@
 # Wheels are produced for the project's documented support matrix and
 # uploaded as GitHub Actions artifacts for maintainer inspection:
 #
-#   - manylinux x86_64 (musllinux variant skipped — Python 3.11+ uses
-#     manylinux_2_28 baseline which is the project's documented glibc floor
-#     across CLI release targets).
+#   - manylinux x86_64 (musllinux variant skipped — manylinux_2_28 baseline
+#     matches the documented glibc floor of the Rust CLI release targets).
 #   - manylinux aarch64
 #   - macOS x86_64
 #   - macOS arm64
 #   - Windows x86_64
 #
-# Linux and Windows matrices run inside the standard cibuildwheel images. The
-# maintainer manually verifies wheel install + protect/verify smoke on each
-# platform before any future PyPI publication.
+# Every wheel is produced on a runner that matches the wheel's native
+# architecture and the per-platform smoke installs the wheel on the same
+# native arch. The Linux cibuildwheel job installs Rust 1.89 inside the
+# build container via `before-all` (rather than only on the outer GitHub
+# runner) and pins the manylinux compatibility tag explicitly. A separate
+# sdist build runs once on a single Linux x86_64 job; the resulting sdist
+# is then installed by direct `pip install <tarball>` in a clean venv that
+# does not have the source checkout on `sys.path`.
 
 name: release-python
 
@@ -37,42 +41,32 @@ concurrency:
 
 jobs:
   build_wheels:
-    name: build ${{ matrix.id }} wheels
+    name: build ${{ matrix.id }} wheel
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - id: linux-x86_64
-            os: ubuntu-22.04
+            os: ubuntu-24.04
             cibw_archs: x86_64
-            cibw_build: cp311-*
-            cibw_environment:
-              CIBW_BEFORE_BUILD: rustup default 1.89
+            cibw_build: cp311-manylinux_x86_64
           - id: linux-aarch64
-            os: ubuntu-22.04
+            os: ubuntu-24.04-arm
             cibw_archs: aarch64
-            cibw_build: cp311-*
-            cibw_environment:
-              CIBW_BEFORE_BUILD: rustup default 1.89
+            cibw_build: cp311-manylinux_aarch64
           - id: macos-x86_64
-            os: macos-13
+            os: macos-15-intel
             cibw_archs: x86_64
-            cibw_build: cp311-*
-            cibw_environment:
-              CIBW_BEFORE_BUILD: rustup default 1.89
+            cibw_build: cp311-macosx_x86_64
           - id: macos-arm64
             os: macos-14
             cibw_archs: arm64
-            cibw_build: cp311-*
-            cibw_environment:
-              CIBW_BEFORE_BUILD: rustup default 1.89
+            cibw_build: cp311-macosx_arm64
           - id: windows-x86_64
             os: windows-2022
             cibw_archs: AMD64
-            cibw_build: cp311-*
-            cibw_environment:
-              CIBW_BEFORE_BUILD: rustup default 1.89
+            cibw_build: cp311-win_amd64
 
     steps:
       - name: Checkout source
@@ -80,10 +74,8 @@ jobs:
         with:
           ref: ${{ github.event.inputs.source_ref }}
 
-      - name: Install Rust toolchain
+      - name: Install Rust toolchain on outer runner
         uses: dtolnay/rust-toolchain@1.89
-        with:
-          toolchain: 1.89
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -93,13 +85,43 @@ jobs:
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.22.0
 
-      - name: Build wheels
-        env: ${{ matrix.cibw_environment }}
+      - name: Build wheel
+        env:
+          CIBW_BUILD: "${{ matrix.cibw_build }}"
+          CIBW_BEFORE_ALL_LINUX: 'curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.89 --profile minimal --target $(uname -m)-unknown-linux-gnu'
+          CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH"'
+          CIBW_ENVIRONMENT_MACOS: 'MACOSX_DEPLOYMENT_TARGET=10.12'
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
         run: |
           python -m cibuildwheel ./bindings/python \
             --output-dir ./dist \
-            --archs "${{ matrix.cibw_archs }}" \
-            --build "${{ matrix.cibw_build }}"
+            --archs "${{ matrix.cibw_archs }}"
+        shell: bash
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheel-${{ matrix.id }}
+          path: dist/
+          if-no-files-found: error
+
+  build_sdist:
+    name: build sdist
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source_ref }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.89
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - name: Build sdist
         run: |
@@ -107,11 +129,64 @@ jobs:
           cd bindings/python
           python -m maturin sdist -o ../../dist
 
-      - name: Upload artifacts
+      - name: Upload sdist
         uses: actions/upload-artifact@v4
         with:
-          name: python-wheels-${{ matrix.id }}
-          path: ./dist/*
+          name: python-sdist
+          path: ./dist/stegoeggo-*.tar.gz
+          if-no-files-found: error
+
+  sdist_install_smoke:
+    name: sdist direct pip install smoke
+    needs: build_sdist
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-sdist
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install sdist in a clean venv outside the checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -U pip
+          SDIST=$(ls stegoeggo-*.tar.gz | head -n1)
+          echo "Using sdist: $SDIST"
+          python -m venv /tmp/stegoeggo-sdist-venv
+          /tmp/stegoeggo-sdist-venv/bin/python -m pip install --no-cache-dir "$SDIST" pytest
+          /tmp/stegoeggo-sdist-venv/bin/python -c "import stegoeggo; print('version:', stegoeggo.__version__)"
+          /tmp/stegoeggo-sdist-venv/bin/python - <<'PY'
+          import struct, zlib, stegoeggo
+
+          def make_png(width: int = 16, height: int = 16) -> bytes:
+              sig = b"\x89PNG\r\n\x1a\n"
+              def chunk(t, d):
+                  c = t + d
+                  return struct.pack(">I", len(d)) + c + struct.pack(">I", zlib.crc32(c) & 0xffffffff)
+              ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+              raw = b""
+              for _ in range(height):
+                  raw += b"\x00" + b"\x80" * (width * 3)
+              idat = chunk(b"IDAT", zlib.compress(raw))
+              iend = chunk(b"IEND", b"")
+              return sig + ihdr + idat + iend
+
+          png = make_png()
+          notice = stegoeggo.RightsNotice().with_copyright_holder("sdist smoke")
+          request = stegoeggo.ProtectionRequest.metadata_only(
+              notice, stegoeggo.RightsPolicy.ProhibitedAiMlTraining,
+          ).with_seed(42).with_timestamp_override("2026-01-01T00:00:00Z")
+          out = stegoeggo.protect(png, request)
+          rep = stegoeggo.verify(out)
+          assert rep.rights_found, rep.to_json()
+          assert rep.copyright_holder == "sdist smoke", rep.to_json()
+          print("sdist direct-pip-install smoke ok")
+          PY
 
   verify_smoke:
     name: smoke ${{ matrix.id }}
@@ -122,15 +197,15 @@ jobs:
       matrix:
         include:
           - id: linux-x86_64
-            os: ubuntu-22.04
+            os: ubuntu-24.04
             cibw_archs: x86_64
             python: "3.11"
           - id: linux-aarch64
-            os: ubuntu-22.04
+            os: ubuntu-24.04-arm
             cibw_archs: aarch64
             python: "3.11"
           - id: macos-x86_64
-            os: macos-13
+            os: macos-15-intel
             cibw_archs: x86_64
             python: "3.11"
           - id: macos-arm64
@@ -144,7 +219,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: python-wheels-${{ matrix.id }}
+          name: python-wheel-${{ matrix.id }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -156,21 +231,35 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -U pip
-          WHEEL=$(ls stegoeggo-*-cp311-abi3-*.whl | head -n1)
+          WHEEL=$(ls stegoeggo-*.whl | head -n1)
           echo "Using wheel: $WHEEL"
           python -m pip install "$WHEEL" pytest
           python -c "import stegoeggo; print('version:', stegoeggo.__version__)"
           python -c "import stegoeggo; print('detect:', stegoeggo.detect_format(b'\\x89PNG\\r\\n'))"
-          python -c "
-          import stegoeggo
-          notice = stegoeggo.RightsNotice().with_copyright_holder('M002 smoke')
+          python - <<'PY'
+          import struct, zlib, stegoeggo
+
+          def make_png(width: int = 16, height: int = 16) -> bytes:
+              sig = b"\x89PNG\r\n\x1a\n"
+              def chunk(t, d):
+                  c = t + d
+                  return struct.pack(">I", len(d)) + c + struct.pack(">I", zlib.crc32(c) & 0xffffffff)
+              ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+              raw = b""
+              for _ in range(height):
+                  raw += b"\x00" + b"\x80" * (width * 3)
+              idat = chunk(b"IDAT", zlib.compress(raw))
+              iend = chunk(b"IEND", b"")
+              return sig + ihdr + idat + iend
+
+          png = make_png()
+          notice = stegoeggo.RightsNotice().with_copyright_holder("release-python smoke")
           request = stegoeggo.ProtectionRequest.metadata_only(
               notice, stegoeggo.RightsPolicy.ProhibitedAiMlTraining,
-          ).with_seed(42).with_timestamp_override('2026-01-01T00:00:00Z')
-          png = bytes.fromhex('89504e470d0a1a0a0000000d49484452000000040000000408060000003e15c4890000001e49444154789c63fcffffff3f0324c00409ff0518110000000049454e44ae426082')
+          ).with_seed(42).with_timestamp_override("2026-01-01T00:00:00Z")
           out = stegoeggo.protect(png, request)
           rep = stegoeggo.verify(out)
           assert rep.rights_found, rep.to_json()
-          assert rep.copyright_holder == 'M002 smoke', rep.to_json()
-          print('smoke ok')
-          "
+          assert rep.copyright_holder == "release-python smoke", rep.to_json()
+          print("smoke ok")
+          PY

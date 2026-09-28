@@ -72,29 +72,72 @@ create_exception!(
     "Configured resource limit exceeded during parsing or extraction."
 );
 
-fn map_error(err: RustError) -> PyErr {
-    match &err {
-        RustError::Config(_) => PyErr::new::<InvalidConfigError, _>(err.to_string()),
-        RustError::InvalidFormat(_) => PyErr::new::<InvalidFormatError, _>(err.to_string()),
-        RustError::ImageDecode(_) | RustError::ImageEncode(_) | RustError::Image(_) => {
-            PyErr::new::<EncodeDecodeError, _>(err.to_string())
-        }
-        RustError::Metadata(_) => PyErr::new::<MetadataError, _>(err.to_string()),
-        RustError::Steganography(_) => PyErr::new::<SteganographyError, _>(err.to_string()),
-        RustError::InsufficientCapacity { .. } => {
-            PyErr::new::<InsufficientCapacityError, _>(err.to_string())
+fn map_error(py: Python<'_>, err: RustError) -> PyErr {
+    let message = err.to_string();
+    match err {
+        RustError::Config(_) => PyErr::new::<InvalidConfigError, _>(message),
+        RustError::InvalidFormat(_) => PyErr::new::<InvalidFormatError, _>(message),
+        RustError::ImageDecode(_)
+        | RustError::ImageEncode(_)
+        | RustError::Image(_)
+        | RustError::ImageTruncated(_) => PyErr::new::<EncodeDecodeError, _>(message),
+        RustError::Metadata(_) => PyErr::new::<MetadataError, _>(message),
+        RustError::Steganography(_) => PyErr::new::<SteganographyError, _>(message),
+        RustError::InsufficientCapacity { required, available } => {
+            let exc = PyErr::new::<InsufficientCapacityError, _>(message);
+            let _ = exc.value(py).setattr("required", required);
+            let _ = exc.value(py).setattr("available", available);
+            exc
         }
         RustError::PayloadVerification(_) | RustError::Crypto(_) => {
-            PyErr::new::<VerificationError, _>(err.to_string())
+            PyErr::new::<VerificationError, _>(message)
         }
-        RustError::InputTooLarge { .. }
-        | RustError::DimensionsExceeded { .. }
-        | RustError::ContainerLimitExceeded { .. }
-        | RustError::MetadataLimitExceeded { .. }
-        | RustError::VerificationBudgetExceeded { .. } => {
-            PyErr::new::<ResourceLimitError, _>(err.to_string())
+        RustError::InputTooLarge { size, limit } => {
+            let exc = PyErr::new::<ResourceLimitError, _>(message);
+            let _ = exc.value(py).setattr("resource", "input_bytes");
+            let _ = exc.value(py).setattr("size", size);
+            let _ = exc.value(py).setattr("limit", limit);
+            exc
         }
-        _ => PyErr::new::<StegoEggoError, _>(err.to_string()),
+        RustError::DimensionsExceeded {
+            width,
+            height,
+            max_width,
+            max_height,
+        } => {
+            let exc = PyErr::new::<ResourceLimitError, _>(message);
+            let _ = exc.value(py).setattr("resource", "dimensions");
+            let _ = exc.value(py).setattr("width", width);
+            let _ = exc.value(py).setattr("height", height);
+            let _ = exc.value(py).setattr("max_width", max_width);
+            let _ = exc.value(py).setattr("max_height", max_height);
+            exc
+        }
+        RustError::ContainerLimitExceeded { kind, count, limit } => {
+            let exc = PyErr::new::<ResourceLimitError, _>(message);
+            let _ = exc.value(py).setattr("resource", "container");
+            let _ = exc.value(py).setattr("kind", kind);
+            let _ = exc.value(py).setattr("count", count);
+            let _ = exc.value(py).setattr("limit", limit);
+            exc
+        }
+        RustError::MetadataLimitExceeded { kind, size, limit } => {
+            let exc = PyErr::new::<ResourceLimitError, _>(message);
+            let _ = exc.value(py).setattr("resource", "metadata");
+            let _ = exc.value(py).setattr("kind", kind);
+            let _ = exc.value(py).setattr("size", size);
+            let _ = exc.value(py).setattr("limit", limit);
+            exc
+        }
+        RustError::VerificationBudgetExceeded { kind, count, limit } => {
+            let exc = PyErr::new::<ResourceLimitError, _>(message);
+            let _ = exc.value(py).setattr("resource", "verification_budget");
+            let _ = exc.value(py).setattr("kind", kind);
+            let _ = exc.value(py).setattr("count", count);
+            let _ = exc.value(py).setattr("limit", limit);
+            exc
+        }
+        _ => PyErr::new::<StegoEggoError, _>(message),
     }
 }
 
@@ -1704,7 +1747,7 @@ fn protect<'py>(
     let req = request.inner.as_ref().expect("request initialized").clone();
     let bytes = py
         .detach(|| process_request_bytes(data, &req))
-        .map_err(map_error)?;
+        .map_err(|e| map_error(py, e))?;
     Ok(PyBytes::new(py, &bytes))
 }
 
@@ -1717,7 +1760,7 @@ fn protect_with_warnings<'py>(
     let req = request.inner.as_ref().expect("request initialized").clone();
     let (bytes, warnings) = py
         .detach(|| process_request_bytes_with_warnings(data, &req))
-        .map_err(map_error)?;
+        .map_err(|e| map_error(py, e))?;
     let py_bytes: Bound<'py, PyAny> = PyBytes::new(py, &bytes).into_any();
     let py_warnings = PyList::empty(py);
     for w in warnings {
@@ -1736,7 +1779,7 @@ fn protect_with_report<'py>(
     let req = request.inner.as_ref().expect("request initialized").clone();
     let (bytes, report) = py
         .detach(|| process_request_bytes_with_report(data, &req))
-        .map_err(map_error)?;
+        .map_err(|e| map_error(py, e))?;
     let py_bytes: Bound<'py, PyAny> = PyBytes::new(py, &bytes).into_any();
     let py_report = PyExecutionReport { inner: report };
     Ok(PyTuple::new(
@@ -1763,35 +1806,6 @@ fn verify<'py>(
         }
     });
     Ok(PyVerificationReport { inner: report })
-}
-
-fn path_to_bytes(path: &str) -> PyResult<Vec<u8>> {
-    std::fs::read(path).map_err(|e| {
-        PyErr::new::<StegoEggoError, _>(format!("failed to read {path}: {e}"))
-    })
-}
-
-#[pyfunction]
-fn protect_file(path: &str, request: &PyProtectionRequest) -> PyResult<()> {
-    let data = path_to_bytes(path)?;
-    let req = request.inner.as_ref().expect("request initialized").clone();
-    let protected = process_request_bytes(&data, &req).map_err(map_error)?;
-    std::fs::write(path, &protected).map_err(|e| {
-        PyErr::new::<StegoEggoError, _>(format!("failed to write {path}: {e}"))
-    })?;
-    Ok(())
-}
-
-#[pyfunction]
-#[pyo3(signature = (path, mac_key=None, resource_limits=None))]
-fn verify_file(
-    py: Python<'_>,
-    path: &str,
-    mac_key: Option<Vec<u8>>,
-    resource_limits: Option<&PyResourceLimits>,
-) -> PyResult<PyVerificationReport> {
-    let data = path_to_bytes(path)?;
-    verify(py, data.as_slice(), mac_key, resource_limits)
 }
 
 #[pymodule(name = "_native")]
@@ -1830,8 +1844,6 @@ fn _native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(protect_with_warnings, m)?)?;
     m.add_function(wrap_pyfunction!(protect_with_report, m)?)?;
     m.add_function(wrap_pyfunction!(verify, m)?)?;
-    m.add_function(wrap_pyfunction!(protect_file, m)?)?;
-    m.add_function(wrap_pyfunction!(verify_file, m)?)?;
     m.add_function(wrap_pyfunction!(detect_format, m)?)?;
 
     Ok(())
