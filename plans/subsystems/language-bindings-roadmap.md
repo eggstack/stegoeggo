@@ -147,10 +147,12 @@ for M003's closure/evidence defects — closed, on PR #1: the lightweight
 Python compatibility CI now builds and installs a wheel and is green
 (run `36456938690`), and the release qualification identity is the
 GitHub-recorded SHA `d40f1b37cf031b05e4f9c76af1cdfcf789d739b5` for run
-`36337194059`. M005 MUST consume the final accepted Python contract
-rather than invent a competing semantic surface. M006 starts only after
-Python and Node have closed so the C ABI is informed by two real
-foreign-runtime clients.
+`36337194059`. M005 consumes the final accepted Python contract rather than inventing a
+competing semantic surface. Its implementation plan fixes the initial Node
+contract around napi-rs v3, Promise-based CPU work, bigint seeds, structured
+errors, generated TypeScript declarations, and five-target artifact
+qualification without npm publication. M006 starts only after M005 closes so
+the C ABI is informed by two real foreign-runtime clients.
 
 ## 7. Milestones
 
@@ -206,11 +208,18 @@ closed.
 
 ### M005 — Node.js binding
 
-Class: capability/infrastructure. Use napi-rs directly over the canonical Rust
-API, map encoded bytes to Buffer/Uint8Array, generate TypeScript declarations,
-reuse cross-language parity vectors, and qualify supported Node/platform
-targets. Scope is written only after M003 and M004 corrective closure are
-accepted; both are now closed, so M005 is ready to plan.
+Class: capability/infrastructure. Use napi-rs v3 directly over the canonical
+Rust byte API, map encoded bytes to Buffer/Uint8Array, preserve u64 seeds as
+JavaScript bigint, run CPU-heavy protection/verification through an off-thread
+Promise boundary, generate and compile-check TypeScript declarations, preserve
+structured error codes/fields, reuse canonical parity fixtures, and qualify
+five native platform packages without npm publication.
+
+Implementation:
+`plans/implementation/language-bindings/005-node-binding-foundation-qualification.md`.
+
+Hard dependency: M003 and M004 closure. Both are closed, so M005 is ready for
+handoff.
 
 ### M006 — C ABI contract design
 
@@ -292,6 +301,6 @@ invariants.
 | M002 Python packaging | closed (four-platform condition satisfied by M003 evidence, accepted in M004) | `implementation/language-bindings/002-python-packaging-qualification.md` | `closure/language-bindings/002-status.md` + `closure/language-bindings/004-status.md` §11 | none |
 | M003 Python corrective qualification | closed | `implementation/language-bindings/003-python-corrective-qualification.md` | `closure/language-bindings/003-status.md` (corrected; §13 lists the M004 corrections) | none; M001 closed and M002 findings recorded |
 | M004 M003 closure corrective | closed | `implementation/language-bindings/004-m003-closure-corrective.md` | `closure/language-bindings/004-status.md` | none; bounded defects corrected in PR #1 |
-| M005 Node binding | proposed (dependency-ready; no plan written yet) | not yet written | pending | none; M003 + M004 closed |
+| M005 Node binding | ready | `implementation/language-bindings/005-node-binding-foundation-qualification.md` | pending | none; M003 + M004 closed |
 | M006 C ABI design | proposed | not yet written | pending | Python + Node closure |
 | M007 C ABI implementation | proposed | not yet written | pending | M006 accepted contract |
