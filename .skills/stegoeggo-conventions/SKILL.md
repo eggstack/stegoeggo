@@ -273,7 +273,7 @@ frame::decode_prefix(data) -> Result<(FrameHeader, usize)>
 19. **`verify_image_bytes` returns directly** — Returns `VerificationStatus`, not `Result<VerificationStatus>`. Use `verify_image_bytes_detailed` for full `VerificationResult`.
 20. **Output-domain carrier routing** — Carrier family is selected from the final output format (`output_format == JPEG ? DCT : LSB`); input format controls fast-path reuse only. `execute_full_marker_and_metadata()` in `src/pipeline.rs` is the sole current-carrier router; `apply_lsb_to_image_with_summary_from_plan()` in `src/protected/steganography/embed.rs` is explicitly raster-domain and must never branch on `plan.input_format()`. JPEG→PNG/WebP is one pixel decode plus LSB, never a transient DCT step. `EmbedPath` follows the operation actually executed (`Lsb`/`LsbTiled` for raster output, `DctF5`/`DctF5Tiled` for JPEG output).
 21. **Timestamp provenance** — Canonical metadata writers consume the resolved `RightsNotice`; JPEG structured COM rendering must receive `notice_applied_at` from that same notice. An explicit `ProtectionRequest::with_timestamp_override(...)` must not be replaced by a lower-level `SystemTime::now()` read, while requests without an override retain wall-clock defaults.
-22. **`Error` has 20 variants** — 19 always-available plus async-only `Task` (`#[cfg(feature = "async")]`). Count `InsufficientCapacity` among the 19; docs claiming 17/18/19 total are stale.
+22. **`Error` has 21 variants** — 20 always-available plus async-only `Task` (`#[cfg(feature = "async")]`). Count `InsufficientCapacity` and `ResourceLimitExceeded` (the `StegoError::ResourceLimitExceeded` carrier conversion) among the 20; docs claiming 17/18/19/20 total are stale.
 
 ## Build & Test
 ```bash

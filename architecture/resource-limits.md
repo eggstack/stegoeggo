@@ -60,6 +60,8 @@ Limits violations produce structured errors:
 - `Error::MetadataLimitExceeded { kind, size, limit }` — Metadata too large
 - `Error::VerificationBudgetExceeded { kind, count, limit }` — Too many candidates
 
+Carrier-side limit violations reported by the generic carrier (`StegoError::ResourceLimitExceeded`, e.g. carrier dimension or payload-length overflow) convert to `Error::ResourceLimitExceeded(String)`, which keeps the carrier condition distinguishable from user configuration errors.
+
 Note the disposition split: `check_metadata_field_count()` reports field-count overflow as `Error::ContainerLimitExceeded { kind: "metadata fields", .. }`, not `MetadataLimitExceeded` — only byte-size overflow yields `MetadataLimitExceeded`. The observer records the first violation stickily (`limit_error`) and surfaces it via `check_limits()`.
 
 ## `OperationObserver`

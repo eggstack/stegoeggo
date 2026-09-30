@@ -1769,6 +1769,20 @@ mod tests {
     }
 
     #[test]
+    fn config_builders_never_produce_an_unvalidated_redundancy() {
+        for raw in [1usize, 5, 10] {
+            let config = JpegConfig::new(42).with_redundancy(raw);
+            assert_eq!(config.redundancy_value().get_usize(), raw);
+        }
+        let clamped = JpegConfig::new(42).try_with_redundancy(usize::MAX);
+        assert!(clamped.is_err());
+        let validated = JpegConfig::from_redundancy(42, crate::Redundancy::new(7).unwrap())
+            .with_redundancy_value(crate::Redundancy::new(7).unwrap());
+        assert_eq!(validated.redundancy_value().get_usize(), 7);
+        assert!(JpegConfig::try_new(42, 0).is_err());
+    }
+
+    #[test]
     fn framed_extraction_decodes_coefficients_once_per_operation() {
         let jpeg_bytes = make_test_jpeg(256, 256);
         let first = embed_framed(&jpeg_bytes, b"one", &JpegConfig::new(42).with_redundancy(1))

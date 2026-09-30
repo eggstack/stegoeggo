@@ -694,5 +694,5 @@ Validates manifest structure before processing fixtures. Checks for duplicate ID
 
 ## Serialization Notes
 
-- `ProtectionContext.config` is `#[serde(skip)]` — MAC keys and legal metadata are lost in serde roundtrips (a `_config_dropped_warning` field is emitted instead). `timestamp_override` and `resource_limits` are also `#[serde(skip)]`
+- `ProtectionContext.config` is `#[serde(skip)]` — MAC keys and legal metadata are lost in serde roundtrips. `timestamp_override` and `resource_limits` are also `#[serde(skip)]`. The custom `Serialize` emits the same `_config_dropped_warning` field when **any** of the three skipped fields is present, so `config_dropped_in_serialization()` covers dropped limits and timestamp overrides too
 - A test (`test_config_skipped_in_serde_roundtrip`) documents this behavior

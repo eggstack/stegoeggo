@@ -47,7 +47,7 @@ fn test_v3_header_serialize_deserialize_roundtrip() {
 
 #[test]
 fn test_v3_parser_detects_v1() {
-    let mut data = vec![0u8; 32];
+    let mut data = vec![0u8; 24];
     data[0] = 1;
     data[1] = 2;
     data[2..10].copy_from_slice(&42u64.to_le_bytes());
@@ -409,7 +409,7 @@ fn test_v3_extension_truncated() {
 
 #[test]
 fn test_v1_crc_payload_parsing() {
-    let mut data = vec![0u8; 32];
+    let mut data = vec![0u8; 24];
     data[0] = 1; // version
     data[1] = 2; // protection_level = Standard
     data[2..10].copy_from_slice(&12345u64.to_le_bytes()); // seed
@@ -430,7 +430,7 @@ fn test_v1_crc_payload_parsing() {
 
 #[test]
 fn test_v1_crc_payload_minimal_values() {
-    let mut data = vec![0u8; 32];
+    let mut data = vec![0u8; 24];
     data[0] = 1;
     data[1] = 0; // Disabled
                  // seed = 0, intensity = 0, timestamp = 0
@@ -449,7 +449,7 @@ fn test_v1_crc_payload_minimal_values() {
 
 #[test]
 fn test_v1_crc_payload_maximal_values() {
-    let mut data = vec![0u8; 32];
+    let mut data = vec![0u8; 24];
     data[0] = 1;
     data[1] = 2; // Standard
     data[2..10].copy_from_slice(&u64::MAX.to_le_bytes());

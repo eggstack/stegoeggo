@@ -18,6 +18,7 @@ pub(crate) fn classify_error(e: &(dyn std::error::Error + 'static)) -> i32 {
             Error::ContainerLimitExceeded { .. } | Error::MetadataLimitExceeded { .. } => {
                 EXIT_CONFIG
             }
+            Error::ResourceLimitExceeded(_) => EXIT_CONFIG,
             Error::PayloadVerification(_) | Error::Crypto(_) => EXIT_INTEGRITY,
             Error::ImageDecode(_)
             | Error::ImageEncode(_)

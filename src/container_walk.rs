@@ -35,12 +35,14 @@ fn observe_png_work(
         let Some(chunk_total) = chunk_len.checked_add(12) else {
             break;
         };
-        budget.observe_png_chunk(chunk_total);
         let data_start = pos + 8;
-        let data_end = data_start
-            .checked_add(chunk_len)
-            .unwrap_or(img_bytes.len())
-            .min(img_bytes.len());
+        let Some(data_end) = data_start.checked_add(chunk_len) else {
+            break;
+        };
+        if data_end > img_bytes.len() {
+            break;
+        }
+        budget.observe_png_chunk(chunk_total);
         if (chunk_type == b"tEXt" || chunk_type == b"iTXt") && data_end > data_start {
             budget.observe_metadata_field(data_end - data_start);
         }
@@ -258,7 +260,25 @@ mod tests {
         let mut budget = observer(&limits);
         observe_container_work(&png, ImageOutputFormat::Png, &mut budget).unwrap();
         let usage = budget.finish(png.len());
+        assert_eq!(usage.png_chunks_scanned, 0);
+        assert_eq!(usage.metadata_fields_extracted, 0);
+    }
+
+    #[test]
+    fn png_truncated_chunk_data_is_not_counted() {
+        let png = minimal_png(&[
+            png_chunk(b"IHDR", &[0; 13]),
+            png_chunk(b"tEXt", b"Comment\x00hello"),
+            png_chunk(b"IEND", &[]),
+        ]);
+        let text_data_start = 8 + png_chunk(b"IHDR", &[0; 13]).len();
+        let truncated = &png[..text_data_start + 8];
+        let limits = ResourceLimits::default();
+        let mut budget = observer(&limits);
+        observe_container_work(truncated, ImageOutputFormat::Png, &mut budget).unwrap();
+        let usage = budget.finish(truncated.len());
         assert_eq!(usage.png_chunks_scanned, 1);
+        assert_eq!(usage.metadata_fields_extracted, 0);
     }
 
     #[test]

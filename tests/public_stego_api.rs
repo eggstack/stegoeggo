@@ -629,6 +629,34 @@ fn public_lsb_zero_image_returns_empty() {
 }
 
 #[test]
+fn public_lsb_zero_pixel_image_returns_empty() {
+    let config = LsbConfig::new(42);
+    let tile = lsb::TileConfig::try_new(42, 8).unwrap();
+    for (width, height) in [(0u32, 8u32), (8u32, 0u32)] {
+        let img = RgbaImage::new(width, height);
+        assert!(
+            matches!(
+                lsb::embed(&img, b"test", &config),
+                Err(StegoError::EmptyCarrier)
+            ),
+            "{width}x{height} must be an empty carrier"
+        );
+        assert!(
+            matches!(
+                lsb::embed_tiled(&img, b"test", &tile),
+                Err(StegoError::EmptyCarrier)
+            ),
+            "{width}x{height} must be an empty carrier for tiled embedding"
+        );
+        let mut mutable = RgbaImage::new(width, height);
+        assert!(matches!(
+            lsb::embed_in_place(&mut mutable, b"test", &config),
+            Err(StegoError::EmptyCarrier)
+        ));
+    }
+}
+
+#[test]
 fn public_stego_error_display() {
     let err = StegoError::InsufficientCapacity {
         required: 100,

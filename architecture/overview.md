@@ -21,7 +21,7 @@ stegoeggo/                          Workspace root (4 crates)
 │   ├── types/                      Core types by domain (rights, compat, legal,
 │   │                               context, verification, warnings, request)
 │   ├── traits.rs                   Protector trait
-│   ├── error.rs                    Error enum (20 variants: 19 + async-only `Task`)
+│   ├── error.rs                    Error enum (21 variants: 20 + async-only `Task`)
 │   ├── protected/                  Protection strategies (all implement Protector)
 │   ├── payload_v3/                 V3 payload wire format
 │   ├── provenance/                 Provenance claim model
@@ -324,7 +324,7 @@ src/
 │   ├── warnings.rs            ProtectionWarning + categories
 │   └── request.rs             RightsPolicy, channels, request/plan/preset/report
 ├── traits.rs                  Protector trait (apply/apply_bytes)
-├── error.rs                   Error enum (20 variants: 19 always-available + 1 async-only `Task`), Result type
+├── error.rs                   Error enum (21 variants: 20 always-available + 1 async-only `Task`), Result type
 ├── async_api.rs               Tokio spawn_blocking wrappers (feature: async)
 ├── conformance.rs             Conformance reporting types (feature: conformance)
 ├── resource_limits.rs         ResourceLimits for parser hardening (DoS prevention)

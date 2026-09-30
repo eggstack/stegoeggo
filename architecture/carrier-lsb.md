@@ -25,6 +25,8 @@ lsb tiled/framed ────────┘
 ## Core semantics
 
 - One in-place core: `embed_lsb_tiled_in_place` is the shared algorithm; cloning `embed_lsb_tiled` delegates to it. Insufficient capacity leaves the caller's buffer unchanged.
+- Slot addressing is overflow-checked: the logical slot index uses `checked_mul`/`checked_add` and the flat pixel index is divided at full `usize` width before the `u32` coordinate conversion, so a carrier with more than `u32::MAX` pixels cannot alias two slots onto one pixel. Any arithmetic overflow reports `embedded: false` (embed) or `None` (extract) rather than wrapping.
+- Any zero-width or zero-height carrier is `EmptyCarrier`; `embed`/`embed_tiled` and their in-place/borrowed-view forms all agree.
 - V2 slot mapping is byte-frozen; injectivity is verified for documented domains only — never claim a full-domain bijection.
 - Permutation seeds derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)` internally; embed and extract must use the same seed.
 - Two unrelated RNGs: `PixelSelectionRng` (root crate `src/util/image.rs`, pixel selection) vs `DctCoefficientRng` (`jpeg_transcoder/stego_f5.rs`, DCT shuffle). Do not interchange.

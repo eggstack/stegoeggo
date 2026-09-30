@@ -1,12 +1,12 @@
 # Error Types
 
-**Source:** `src/error.rs` (~411 lines)
+**Source:** `src/error.rs` (~424 lines)
 
 Uses `thiserror` for ergonomic error derivation.
 
 ## Error Enum
 
-20 total variants: 19 always-available + 1 async-only (`Task`).
+21 total variants: 20 always-available + 1 async-only (`Task`).
 
 ```rust
 #[non_exhaustive]
@@ -30,6 +30,7 @@ pub enum Error {
     ContainerLimitExceeded { kind: &'static str, count: usize, limit: usize },
     MetadataLimitExceeded { kind: &'static str, size: usize, limit: usize },
     VerificationBudgetExceeded { kind: &'static str, count: usize, limit: usize },
+    ResourceLimitExceeded(String),
     #[cfg(feature = "async")]
     Task(String),
 }
@@ -58,6 +59,7 @@ pub enum Error {
 | `ContainerLimitExceeded` | Resource limits | Container (e.g., PNG chunks) exceeds count limit |
 | `MetadataLimitExceeded` | Resource limits | Metadata section exceeds size limit |
 | `VerificationBudgetExceeded` | Resource limits | Verification attempts exceed budget |
+| `ResourceLimitExceeded` | `StegoError::ResourceLimitExceeded` via `From` | Carrier resource limit during parsing/alloc (free-form message only) |
 | `Task` | `async_api` | Tokio task join errors (async feature only) |
 
 ## Result Type

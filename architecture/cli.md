@@ -149,7 +149,9 @@ builder rejects:
 - explicit channel flags with explicit legacy channel flags;
 - contradictory policy sources;
 - `--metadata false` with legal metadata or metadata-injecting channels;
-- HMAC without a key or with a disabled hidden marker.
+- HMAC without a key or with a disabled hidden marker;
+- out-of-range numeric flags: `--stego-redundancy` outside `1..=10` and
+  `--jpeg-quality` outside `1..=100` (values are never silently clamped).
 
 Legacy defaults remain unchanged: `standard` plus `legal-notice` resolves to
 rights metadata, a best-effort hidden marker, and

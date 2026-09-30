@@ -1,6 +1,6 @@
 # WebP Container
 
-**Source:** `src/webp_container.rs` (~2090 lines, `pub(crate)`) — strict RIFF parser and re-serializer for WebP injection.
+**Source:** `src/webp_container.rs` (~2108 lines, `pub(crate)`) — strict RIFF parser and re-serializer for WebP injection.
 
 Owns the `WEBP` RIFF model that `protected/metadata_trap/webp.rs` mutates and `container_walk.rs` accounts. All offsets are `usize` with checked arithmetic; malformed input returns `Error::Metadata` / `Error::InvalidFormat`, never panics.
 
@@ -17,7 +17,7 @@ Owns the `WEBP` RIFF model that `protected/metadata_trap/webp.rs` mutates and `c
 
 - Requires `RIFF` + `WEBP` magic, LE32 sizes, even-byte padding per chunk.
 - Recognizes `VP8X`, `VP8 `, `VP8L`, `XMP `, `EXIF`, `ICCP`, `ALPH`, `ANIM`, `ANMF`.
-- `VP8X` parsing is strict: reserved flag bits `0xC1` and non-zero reserved bytes are rejected with `Error::Metadata`. On write, feature flags are re-derived via `derive_features(...).with_xmp(...)` and emitted with `encode_vp8x_chunk` (which writes the given flags verbatim), so output never carries reserved bits; `validate_webp_output` additionally rejects flags that do not match the derived features. Malformed inputs therefore fail at `parse_webp` instead of being silently normalized (see `overview.md` WebP correctness note).
+- `VP8X` parsing is strict: reserved flag bits `0xC1` and non-zero reserved bytes are rejected with `Error::Metadata`. On write, feature flags are re-derived via `derive_features(...).with_xmp(...)` and emitted with `encode_vp8x_chunk` (which writes the given flags verbatim), so output never carries reserved bits; `validate_webp_output` additionally rejects flags that do not match the derived features. `encode_vp8x_chunk` also rejects a zero dimension and any canvas beyond the 24-bit `width-1`/`height-1` limit (max `0x0100_0000`) instead of truncating into a different canvas. Malformed inputs therefore fail at `parse_webp` instead of being silently normalized (see `overview.md` WebP correctness note).
 - `ANMF` sub-frames are descended for kind/alpha discovery; unknown FourCCs are indexed, never rejected.
 
 ## Write path

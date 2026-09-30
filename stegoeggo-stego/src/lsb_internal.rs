@@ -562,13 +562,25 @@ pub(crate) fn embed_v2_in_place_carrier<C: PixelCarrierMut>(
     };
     for bit_index in 0..bit_len {
         let bit = payload_bit(payload, bit_index);
+        let Some(bit_base) = bit_index.checked_mul(replicas_per_bit) else {
+            return InPlaceEmbedReport {
+                embedded: false,
+                payload_bytes: payload.len(),
+                required_capacity: required,
+                available_capacity: available,
+                actual_redundancy: redundancy,
+            };
+        };
         for replica in 0..replicas_per_bit {
-            debug_assert!(bit_index.checked_mul(replicas_per_bit).is_some());
-            debug_assert!(bit_index
-                .checked_mul(replicas_per_bit)
-                .and_then(|v| v.checked_add(replica))
-                .is_some());
-            let logical = bit_index * replicas_per_bit + replica;
+            let Some(logical) = bit_base.checked_add(replica) else {
+                return InPlaceEmbedReport {
+                    embedded: false,
+                    payload_bytes: payload.len(),
+                    required_capacity: required,
+                    available_capacity: available,
+                    actual_redundancy: redundancy,
+                };
+            };
             let slot = stego_permutation_v2(logical, available, seed);
             let pixel_channel =
                 slot.and_then(|slot| carrier_v2_slot_to_pixel_channel(slot, width, height));
@@ -581,8 +593,24 @@ pub(crate) fn embed_v2_in_place_carrier<C: PixelCarrierMut>(
                     actual_redundancy: redundancy,
                 };
             };
-            let x = pixel_index as u32 % width;
-            let y = pixel_index as u32 / width;
+            let Ok(x) = u32::try_from(pixel_index % width as usize) else {
+                return InPlaceEmbedReport {
+                    embedded: false,
+                    payload_bytes: payload.len(),
+                    required_capacity: required,
+                    available_capacity: available,
+                    actual_redundancy: redundancy,
+                };
+            };
+            let Ok(y) = u32::try_from(pixel_index / width as usize) else {
+                return InPlaceEmbedReport {
+                    embedded: false,
+                    payload_bytes: payload.len(),
+                    required_capacity: required,
+                    available_capacity: available,
+                    actual_redundancy: redundancy,
+                };
+            };
             if carrier.write_channel_bit(x, y, slot_channel, bit).is_none() {
                 return InPlaceEmbedReport {
                     embedded: false,
@@ -657,8 +685,8 @@ pub(crate) fn extract_v2_carrier<C: PixelCarrier>(
             let slot = stego_permutation_v2(logical, available, seed)?;
             let (pixel_index, slot_channel) =
                 carrier_v2_slot_to_pixel_channel(slot, width, height)?;
-            let x = pixel_index as u32 % width;
-            let y = pixel_index as u32 / width;
+            let x = u32::try_from(pixel_index % width as usize).ok()?;
+            let y = u32::try_from(pixel_index / width as usize).ok()?;
             ones += u32::from(carrier.read_channel(x, y, slot_channel)? & 1);
         }
 
@@ -1409,7 +1437,7 @@ pub fn embed(
     payload: &[u8],
     config: &LsbConfig,
 ) -> Result<super::EmbedReport<RgbaImage>, super::StegoError> {
-    if img.dimensions() == (0, 0) {
+    if img.width() == 0 || img.height() == 0 {
         return Err(super::StegoError::EmptyCarrier);
     }
     checked_lsb_available_slots(img.width(), img.height())?;
@@ -1436,7 +1464,7 @@ pub fn embed_in_place(
     payload: &[u8],
     config: &LsbConfig,
 ) -> Result<InPlaceEmbedReport, super::StegoError> {
-    if img.dimensions() == (0, 0) {
+    if img.width() == 0 || img.height() == 0 {
         return Err(super::StegoError::EmptyCarrier);
     }
     checked_lsb_available_slots(img.width(), img.height())?;
@@ -1513,6 +1541,119 @@ mod tests {
         let mut img = uniform_image(16, 16, 128);
         let report = embed_lsb_v2_in_place(&mut img, &[0xA5], 42, 11);
         assert!(!report.embedded);
+    }
+
+    struct RecordingCarrier {
+        width: u32,
+        height: u32,
+        writes: Vec<(u32, u32, usize)>,
+        reads: std::cell::RefCell<Vec<(u32, u32)>>,
+    }
+
+    impl RecordingCarrier {
+        fn new(width: u32, height: u32) -> Self {
+            Self {
+                width,
+                height,
+                writes: Vec::new(),
+                reads: std::cell::RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl PixelCarrier for RecordingCarrier {
+        fn carrier_width(&self) -> u32 {
+            self.width
+        }
+
+        fn carrier_height(&self) -> u32 {
+            self.height
+        }
+
+        fn read_channel(&self, x: u32, y: u32, _channel: usize) -> Option<u8> {
+            self.reads.borrow_mut().push((x, y));
+            Some(0)
+        }
+    }
+
+    impl PixelCarrierMut for RecordingCarrier {
+        fn write_channel_bit(&mut self, x: u32, y: u32, channel: usize, _bit: u8) -> Option<()> {
+            self.writes.push((x, y, channel));
+            Some(())
+        }
+    }
+
+    const HUGE_CARRIER: (u32, u32) = (70_000, 70_000);
+
+    fn expected_coordinate(
+        ordinal: usize,
+        width: u32,
+        height: u32,
+        available: usize,
+    ) -> (usize, usize) {
+        let replicas_per_bit = STEGO_SPREAD_FACTOR;
+        let logical =
+            (ordinal / replicas_per_bit) * replicas_per_bit + (ordinal % replicas_per_bit);
+        let slot = stego_permutation_v2(logical, available, 42).unwrap();
+        let (pixel_index, _) = carrier_v2_slot_to_pixel_channel(slot, width, height).unwrap();
+        (pixel_index % width as usize, pixel_index / width as usize)
+    }
+
+    #[test]
+    fn embed_v2_uses_untruncated_pixel_index_for_coordinates() {
+        let (width, height) = HUGE_CARRIER;
+        let available = lsb_available_slots(width, height).unwrap();
+        assert!(
+            available / 3 > u32::MAX as usize,
+            "carrier must exceed u32::MAX pixels"
+        );
+        let mut carrier = RecordingCarrier::new(width, height);
+        embed_v2_in_place_carrier(&mut carrier, &vec![0xA5u8; 4096], 42, 1);
+        assert!(!carrier.writes.is_empty());
+        let mut oversized_seen = 0usize;
+        for (k, (x, y, _channel)) in carrier.writes.iter().enumerate() {
+            let (expected_x, expected_y) = expected_coordinate(k, width, height, available);
+            if expected_y > u32::MAX as usize / width as usize {
+                oversized_seen += 1;
+            }
+            assert_eq!(*x as usize, expected_x);
+            assert_eq!(*y as usize, expected_y);
+        }
+        assert!(
+            oversized_seen > 0,
+            "fixture must exercise oversized pixel indices"
+        );
+    }
+
+    #[test]
+    fn extract_v2_uses_untruncated_pixel_index_for_coordinates() {
+        let (width, height) = HUGE_CARRIER;
+        let available = lsb_available_slots(width, height).unwrap();
+        let carrier = RecordingCarrier::new(width, height);
+        let _ = extract_v2_carrier(&carrier, 4096 * 8, 42, 1);
+        let reads = carrier.reads.borrow();
+        assert!(!reads.is_empty());
+        let mut oversized_seen = 0usize;
+        for (k, (x, y)) in reads.iter().enumerate() {
+            let (expected_x, expected_y) = expected_coordinate(k, width, height, available);
+            if expected_y > u32::MAX as usize / width as usize {
+                oversized_seen += 1;
+            }
+            assert_eq!(*x as usize, expected_x);
+            assert_eq!(*y as usize, expected_y);
+        }
+        assert!(
+            oversized_seen > 0,
+            "fixture must exercise oversized pixel indices"
+        );
+    }
+
+    #[test]
+    fn embed_v2_empty_payload_over_huge_carrier_is_embedded() {
+        let mut carrier = RecordingCarrier::new(HUGE_CARRIER.0, HUGE_CARRIER.1);
+        let report = embed_v2_in_place_carrier(&mut carrier, &[], 42, 1);
+        assert!(report.embedded);
+        assert!(carrier.writes.is_empty());
     }
 
     fn channel_value(img: &RgbaImage, x: u32, y: u32, channel: usize) -> u8 {
@@ -2079,6 +2220,17 @@ mod tests {
         let recovered =
             extract(&report.output, payload.len(), &config).expect("zero seed extracts");
         assert_eq!(&recovered, payload);
+    }
+
+    #[test]
+    fn lsb_config_builders_never_produce_an_unvalidated_redundancy() {
+        for raw in [1usize, 5, 10] {
+            let config = LsbConfig::new(42).with_redundancy(raw);
+            assert_eq!(config.redundancy_value().get_usize(), raw);
+        }
+        let validated = LsbConfig::from_redundancy(42, crate::Redundancy::new(7).unwrap())
+            .with_redundancy_value(crate::Redundancy::new(7).unwrap());
+        assert_eq!(validated.redundancy_value().get_usize(), 7);
     }
 
     #[test]

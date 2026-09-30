@@ -89,11 +89,17 @@ pub fn parse_payload(data: &[u8]) -> Result<ParsedPayload, PayloadV3ParseError> 
 }
 
 fn parse_v1(data: &[u8]) -> Result<ParsedPayload, PayloadV3ParseError> {
-    const V1_MIN_SIZE: usize = 24;
-    if data.len() < V1_MIN_SIZE {
+    const V1_SIZE: usize = 24;
+    if data.len() < V1_SIZE {
         return Err(PayloadV3ParseError::TooShort {
-            min: V1_MIN_SIZE,
+            min: V1_SIZE,
             actual: data.len(),
+        });
+    }
+    if data.len() > V1_SIZE {
+        return Err(PayloadV3ParseError::Oversized {
+            size: data.len(),
+            max: V1_SIZE,
         });
     }
 
@@ -124,6 +130,12 @@ fn parse_v2(data: &[u8]) -> Result<ParsedPayload, PayloadV3ParseError> {
         return Err(PayloadV3ParseError::TooShort {
             min: V2_SIZE,
             actual: data.len(),
+        });
+    }
+    if data.len() > V2_SIZE {
+        return Err(PayloadV3ParseError::Oversized {
+            size: data.len(),
+            max: V2_SIZE,
         });
     }
 
@@ -303,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_parse_v1_payload() {
-        let mut data = vec![1u8; 32];
+        let mut data = vec![1u8; 24];
         data[0] = 1;
         data[1] = 2;
         data[2..10].copy_from_slice(&42u64.to_le_bytes());
@@ -319,6 +331,26 @@ mod tests {
             }
             _ => panic!("Expected V1"),
         }
+    }
+
+    #[test]
+    fn test_parse_v1_rejects_trailing_bytes() {
+        let mut data = vec![1u8; 25];
+        data[0] = 1;
+        assert!(matches!(
+            parse_payload(&data),
+            Err(PayloadV3ParseError::Oversized { size: 25, max: 24 })
+        ));
+    }
+
+    #[test]
+    fn test_parse_v2_rejects_trailing_bytes() {
+        let mut data = vec![2u8; 40];
+        data[0] = 2;
+        assert!(matches!(
+            parse_payload(&data),
+            Err(PayloadV3ParseError::Oversized { size: 40, max: 32 })
+        ));
     }
 
     #[test]

@@ -337,7 +337,7 @@ impl<'a> PixelViewMut<'a> {
         payload: &[u8],
         config: &LsbConfig,
     ) -> Result<crate::InPlaceEmbedReport, StegoError> {
-        if self.geometry.width == 0 && self.geometry.height == 0 {
+        if self.geometry.width == 0 || self.geometry.height == 0 {
             return Err(StegoError::EmptyCarrier);
         }
         checked_lsb_available_slots(self.geometry.width, self.geometry.height)?;
@@ -366,7 +366,7 @@ impl<'a> PixelViewMut<'a> {
         payload: &[u8],
         config: &TileConfig,
     ) -> Result<crate::InPlaceEmbedReport, StegoError> {
-        if self.geometry.width == 0 && self.geometry.height == 0 {
+        if self.geometry.width == 0 || self.geometry.height == 0 {
             return Err(StegoError::EmptyCarrier);
         }
         Ok(embed_tiled_carrier(
@@ -688,6 +688,26 @@ mod tests {
             empty.embed(b"x", &config),
             Err(StegoError::EmptyCarrier)
         ));
+    }
+
+    #[test]
+    fn zero_pixel_views_report_empty_carrier() {
+        let config = LsbConfig::new(42);
+        let tile = TileConfig::try_new(42, 8).unwrap();
+        for (width, height) in [(0u32, 8u32), (8u32, 0u32)] {
+            let mut bytes = Vec::new();
+            let stride = width as usize * 3;
+            let mut view =
+                PixelViewMut::new(&mut bytes, width, height, PixelLayout::Rgb8, stride).unwrap();
+            assert!(
+                matches!(view.embed(b"x", &config), Err(StegoError::EmptyCarrier)),
+                "{width}x{height} must be an empty carrier"
+            );
+            assert!(
+                matches!(view.embed_tiled(b"x", &tile), Err(StegoError::EmptyCarrier)),
+                "{width}x{height} must be an empty carrier for tiled embedding"
+            );
+        }
     }
 
     #[test]

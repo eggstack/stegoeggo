@@ -682,6 +682,11 @@ pub(crate) fn encode_vp8x_chunk(width: u32, height: u32, flags: u8) -> Result<Ve
     let h = height
         .checked_sub(1)
         .ok_or_else(|| Error::Metadata("VP8X height must be at least 1".to_string()))?;
+    if w > 0x00FF_FFFF || h > 0x00FF_FFFF {
+        return Err(Error::Metadata(
+            "VP8X dimensions exceed the 24-bit canvas limit".to_string(),
+        ));
+    }
     let mut data = vec![0u8; 10];
     data[0] = flags;
     data[4] = w as u8;
@@ -934,6 +939,17 @@ mod tests {
     fn encode_vp8x_rejects_zero_dimensions() {
         assert!(encode_vp8x_chunk(0, 100, 0).is_err());
         assert!(encode_vp8x_chunk(100, 0, 0).is_err());
+    }
+
+    #[test]
+    fn encode_vp8x_rejects_dimensions_beyond_24_bits() {
+        assert!(encode_vp8x_chunk(0x0100_0001, 100, 0).is_err());
+        assert!(encode_vp8x_chunk(100, 0x0100_0001, 0).is_err());
+        let max = encode_vp8x_chunk(0x0100_0000, 0x0100_0000, 0x10).unwrap();
+        assert_eq!(
+            vp8x_dimensions(&max, 0).unwrap(),
+            (0x0100_0000, 0x0100_0000)
+        );
     }
 
     #[test]

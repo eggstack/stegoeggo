@@ -563,7 +563,9 @@ forcing an upgrade.
 - The protection pipeline writes V3 (36 bytes CRC / 48 bytes HMAC, no
   key ID / extensions).
 - `parse_stego_payload()` / `parse_payload()` accept V1/V2/V3 (V3 dispatched
-  by magic before the legacy version loop).
+  by magic before the legacy version loop). The legacy branches require the
+  exact header size (V1 = 24, V2 = 32) and reject trailing bytes with
+  `Oversized`, matching the strict V3 length checks.
 
 ## 12. Security Considerations
 

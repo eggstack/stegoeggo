@@ -59,8 +59,8 @@ impl ProtectionConfig {
 ///
 /// Serialization loses the MAC key, legal metadata, resource limits, and
 /// timestamp override (`#[serde(skip)]`; keys must not serialize). The
-/// serialized form carries a `_config_dropped_warning` field when config was
-/// present, which is captured on deserialization (see
+/// serialized form carries a `_config_dropped_warning` field when any of those
+/// was present, which is captured on deserialization (see
 /// [`ProtectionContext::config_dropped_in_serialization`]). After
 /// deserialization re-attach via `with_mac_key()`,
 /// `with_legal_metadata()`, `with_config()`, or `with_resource_limits()`;
@@ -156,7 +156,7 @@ impl Serialize for ProtectionContext {
     {
         use serde::ser::SerializeStruct;
         let mut fields = 17;
-        if self.config.is_some() || self.config_dropped_warning.is_some() {
+        if self.has_dropped_fields() || self.config_dropped_warning.is_some() {
             fields += 1;
         }
         let mut s = serializer.serialize_struct("ProtectionContext", fields)?;
@@ -180,17 +180,16 @@ impl Serialize for ProtectionContext {
         )?;
         s.serialize_field("content_hash", &self.content_hash)?;
         s.serialize_field("metadata_update_policy", &self.metadata_update_policy)?;
-        if self.config.is_some() {
-            s.serialize_field(
-                "_config_dropped_warning",
-                "ProtectionContext.config is not serialized; MAC key and legal metadata will be lost on roundtrip. Set them again after deserialization.",
-            )?;
+        if self.has_dropped_fields() {
+            s.serialize_field("_config_dropped_warning", DROPPED_FIELD_WARNING)?;
         } else if let Some(warning) = &self.config_dropped_warning {
             s.serialize_field("_config_dropped_warning", warning)?;
         }
         s.end()
     }
 }
+
+const DROPPED_FIELD_WARNING: &str = "ProtectionContext.config, resource_limits, and timestamp_override are not serialized; MAC key, legal metadata, custom resource limits, and the timestamp override are lost on roundtrip. Re-attach them after deserialization.";
 
 /// The default seed is generated via `getrandom` (OS CSPRNG).
 /// For reproducible protection, use `ProtectionContext::new(intensity, seed)`.
@@ -337,6 +336,10 @@ impl ProtectionContext {
     #[must_use]
     pub fn config_dropped_in_serialization(&self) -> bool {
         self.config_dropped_warning.is_some()
+    }
+
+    fn has_dropped_fields(&self) -> bool {
+        self.config.is_some() || self.resource_limits.is_some() || self.timestamp_override.is_some()
     }
 
     /// Set the maximum image dimension limit.

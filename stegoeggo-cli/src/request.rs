@@ -222,8 +222,7 @@ pub(crate) fn build_protection_request_with_explicit_options(
 
     let mut request = stegoeggo::ProtectionRequest::new(notice, policy, channels)
         .with_seed(seed)
-        .with_intensity(args.intensity.clamp(0.0, 1.0))
-        .with_jpeg_quality(args.jpeg_quality.clamp(1, 100));
+        .with_intensity(args.intensity.clamp(0.0, 1.0));
 
     if !(1..=10).contains(&args.stego_redundancy) {
         return Err(config_err(format!(
@@ -232,6 +231,14 @@ pub(crate) fn build_protection_request_with_explicit_options(
         )));
     }
     request = request.with_stego_redundancy(args.stego_redundancy);
+
+    if !(1..=100).contains(&args.jpeg_quality) {
+        return Err(config_err(format!(
+            "--jpeg-quality must be between 1 and 100, got {}",
+            args.jpeg_quality
+        )));
+    }
+    request = request.with_jpeg_quality(args.jpeg_quality);
 
     if let Some(fmt) = output_format {
         request = request.with_output_format(fmt);
@@ -771,6 +778,22 @@ mod tests {
         args.jpeg_quality = 75;
         let req = build_protection_request(&args).unwrap();
         assert_eq!(req.processing().jpeg_quality, 75);
+    }
+
+    #[test]
+    fn test_jpeg_quality_out_of_range_is_config_error() {
+        for out_of_range in [0u8, 101, 200] {
+            let mut args = default_args();
+            args.jpeg_quality = out_of_range;
+            let err = build_protection_request(&args).unwrap_err();
+            let downcast = err.downcast_ref::<stegoeggo::Error>().expect(
+                "jpeg quality validation must be stegoeggo::Error for exit-code classification",
+            );
+            assert!(
+                matches!(downcast, stegoeggo::Error::Config(_)),
+                "expected Config error for jpeg quality {out_of_range}, got: {downcast:?}"
+            );
+        }
     }
 
     #[test]

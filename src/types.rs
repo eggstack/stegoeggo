@@ -99,6 +99,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn serialize_emits_warning_when_only_resource_limits_set() {
+        let ctx = ProtectionContext::new(0.5, 99)
+            .with_resource_limits(crate::resource_limits::ResourceLimits::default());
+        let json = serde_json::to_string(&ctx).unwrap();
+        assert!(
+            json.contains("_config_dropped_warning"),
+            "Skipped resource limits should signal the dropped-field warning: {json}"
+        );
+        let restored: ProtectionContext = serde_json::from_str(&json).unwrap();
+        assert!(restored.config_dropped_in_serialization());
+    }
+
+    #[test]
+    fn serialize_emits_warning_when_only_timestamp_override_set() {
+        let ctx = ProtectionContext::new(0.5, 99).with_timestamp_override("2026-01-01T00:00:00Z");
+        let json = serde_json::to_string(&ctx).unwrap();
+        assert!(
+            json.contains("_config_dropped_warning"),
+            "Skipped timestamp override should signal the dropped-field warning: {json}"
+        );
+        let restored: ProtectionContext = serde_json::from_str(&json).unwrap();
+        assert!(restored.config_dropped_in_serialization());
+    }
+
     // ── Tile size configuration ───────────────────────────────────────
 
     #[test]

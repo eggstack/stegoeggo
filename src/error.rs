@@ -25,7 +25,7 @@ impl From<StegoError> for Error {
             StegoError::FrameNotFound => Error::Steganography(e.to_string()),
             StegoError::MalformedFrame(_) => Error::Steganography(e.to_string()),
             StegoError::FrameChecksumMismatch => Error::PayloadVerification(e.to_string()),
-            StegoError::ResourceLimitExceeded(msg) => Error::Config(msg.clone()),
+            StegoError::ResourceLimitExceeded(msg) => Error::ResourceLimitExceeded(msg.clone()),
             StegoError::EmptyCarrier => Error::Steganography(e.to_string()),
             _ => Error::Steganography(e.to_string()),
         }
@@ -80,7 +80,7 @@ pub enum Error {
     /// [`StegoError::InsufficientCapacity`] so callers can distinguish
     /// capacity failures from other steganography errors programmatically.
     /// (`StegoError::ResourceLimitExceeded` carries only a free-form message
-    /// and still maps to [`Error::Config`].)
+    /// and maps to [`Error::ResourceLimitExceeded`].)
     #[error("Insufficient capacity: need {required} carrier units, have {available}")]
     InsufficientCapacity {
         /// Required capacity in carrier units.
@@ -163,6 +163,16 @@ pub enum Error {
         /// Configured maximum count.
         limit: usize,
     },
+
+    /// A carrier resource limit was exceeded during parsing or allocation.
+    ///
+    /// Preserves the distinct carrier condition reported by
+    /// [`StegoError::ResourceLimitExceeded`] (for example carrier dimension or
+    /// payload-length overflow) instead of flattening it into
+    /// [`Error::Config`]. Unlike the structured limit variants, the carrier
+    /// reports only a free-form description, so the condition stays a message.
+    #[error("Carrier resource limit exceeded: {0}")]
+    ResourceLimitExceeded(String),
 
     /// An async blocking task failed.
     #[cfg(feature = "async")]
@@ -334,6 +344,7 @@ mod tests {
             required: 100,
             available: 10,
         };
+        let _ = Error::ResourceLimitExceeded("test".to_string());
     }
 
     #[test]
@@ -404,8 +415,10 @@ mod tests {
     }
 
     #[test]
-    fn error_from_stego_resource_limit_is_config() {
+    fn error_from_stego_resource_limit_keeps_typing() {
         let err = Error::from(StegoError::ResourceLimitExceeded("overflow".to_string()));
-        assert!(matches!(err, Error::Config(_)));
+        assert!(matches!(err, Error::ResourceLimitExceeded(_)));
+        let err = Error::from(StegoError::ResourceLimitExceeded("overflow".to_string()));
+        assert!(err.to_string().contains("overflow"));
     }
 }

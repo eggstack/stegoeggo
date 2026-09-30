@@ -115,7 +115,11 @@ fn raw_of_outcome(outcome: &CandidateOutcome) -> Option<Vec<u8>> {
 }
 
 fn is_hmac_payload(raw: &[u8]) -> bool {
-    raw.len() > 30 && raw[0] == 0x53 && raw[1] == 0x45 && raw[2] == 3 && raw[29] == 2
+    raw.len() >= crate::payload_v3::types::V3_CORE_SIZE
+        && raw[0] == 0x53
+        && raw[1] == 0x45
+        && raw[2] == 3
+        && raw[29] == 2
 }
 
 fn marker_source_for_version(version: Option<u8>) -> FieldSource {
@@ -693,4 +697,44 @@ pub(crate) fn project_notice_from_canonical(facts: &CanonicalFacts) -> NoticeVer
 
 pub(crate) fn project_report_from_canonical(facts: &CanonicalFacts) -> VerificationReport {
     facts.report.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_hmac_payload;
+
+    fn hmac_header(len: usize) -> Vec<u8> {
+        let mut raw = vec![0u8; len];
+        raw[0] = 0x53;
+        raw[1] = 0x45;
+        raw[2] = 3;
+        raw[29] = 2;
+        raw
+    }
+
+    #[test]
+    fn hmac_heuristic_rejects_truncated_core() {
+        assert!(!is_hmac_payload(&hmac_header(31)));
+        assert!(!is_hmac_payload(&hmac_header(30)));
+        assert!(!is_hmac_payload(&[]));
+    }
+
+    #[test]
+    fn hmac_heuristic_accepts_full_core() {
+        assert!(is_hmac_payload(&hmac_header(32)));
+        assert!(is_hmac_payload(&hmac_header(48)));
+    }
+
+    #[test]
+    fn hmac_heuristic_requires_magic_version_and_auth_byte() {
+        let mut raw = hmac_header(48);
+        raw[0] = 0;
+        assert!(!is_hmac_payload(&raw));
+        let mut raw = hmac_header(48);
+        raw[2] = 2;
+        assert!(!is_hmac_payload(&raw));
+        let mut raw = hmac_header(48);
+        raw[29] = 0;
+        assert!(!is_hmac_payload(&raw));
+    }
 }

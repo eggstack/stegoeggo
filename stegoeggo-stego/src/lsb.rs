@@ -149,7 +149,7 @@ pub fn embed_tiled(
     payload: &[u8],
     config: &TileConfig,
 ) -> Result<super::EmbedReport<image::RgbaImage>, super::StegoError> {
-    if img.dimensions() == (0, 0) {
+    if img.width() == 0 || img.height() == 0 {
         return Err(super::StegoError::EmptyCarrier);
     }
     let outcome =
@@ -226,7 +226,7 @@ pub fn embed_tiled_in_place(
     payload: &[u8],
     config: &TileConfig,
 ) -> Result<InPlaceEmbedReport, super::StegoError> {
-    if img.dimensions() == (0, 0) {
+    if img.width() == 0 || img.height() == 0 {
         return Err(super::StegoError::EmptyCarrier);
     }
     Ok(crate::lsb_internal::embed_lsb_tiled_in_place(
