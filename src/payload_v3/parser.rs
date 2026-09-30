@@ -172,8 +172,15 @@ fn parse_v2(data: &[u8]) -> Result<ParsedPayload, PayloadV3ParseError> {
 fn parse_v3(data: &[u8]) -> Result<ParsedPayload, PayloadV3ParseError> {
     let header = PayloadV3Header::from_bytes(data)?;
 
+    if (header.total_length as usize) < (header.header_length as usize) {
+        return Err(PayloadV3ParseError::HeaderLengthMismatch {
+            header: header.header_length as usize,
+        });
+    }
     let key_id_start = V3_CORE_SIZE;
-    let key_id_end = key_id_start + header.key_id_len as usize;
+    let Some(key_id_end) = key_id_start.checked_add(header.key_id_len as usize) else {
+        return Err(PayloadV3ParseError::ExtensionsTooLarge);
+    };
     if key_id_end > data.len() {
         return Err(PayloadV3ParseError::TooShort {
             min: key_id_end,
@@ -265,11 +272,20 @@ fn parse_extensions(
         }
 
         let ext_len = ext_len as usize;
-        if offset + 4 + ext_len > data.len() {
+        let Some(end) = offset.checked_add(4).and_then(|v| v.checked_add(ext_len)) else {
+            return Err(PayloadV3ParseError::ExtensionsTooLarge);
+        };
+        if end > data.len() {
             return Err(PayloadV3ParseError::ExtensionsTooLarge);
         }
 
-        total_ext_size += 4 + ext_len;
+        let Some(entry_size) = 4usize.checked_add(ext_len) else {
+            return Err(PayloadV3ParseError::ExtensionsTooLarge);
+        };
+        let Some(new_total) = total_ext_size.checked_add(entry_size) else {
+            return Err(PayloadV3ParseError::ExtensionsTooLarge);
+        };
+        total_ext_size = new_total;
         if total_ext_size > V3_MAX_EXTENSION_SIZE {
             return Err(PayloadV3ParseError::ExtensionsTooLarge);
         }
@@ -287,14 +303,14 @@ fn parse_extensions(
             return Err(PayloadV3ParseError::DuplicateExtension(ext_type));
         }
 
-        let ext_data = data[offset + 4..offset + 4 + ext_len].to_vec();
+        let ext_data = data[offset + 4..end].to_vec();
         extensions.push(ExtensionEntry {
             extension_type: ext_type,
             critical: crate::payload_v3::types::ExtensionType::is_critical(ext_type),
             data: ext_data,
         });
 
-        offset += 4 + ext_len;
+        offset = end;
     }
 
     if offset < data.len() {

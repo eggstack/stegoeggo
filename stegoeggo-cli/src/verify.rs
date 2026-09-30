@@ -21,6 +21,10 @@ pub(crate) fn run_legacy_verify(
     json: bool,
     verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!(
+        "Note: legacy --verify always exits 0; read the output text. \
+        Use `stegoeggo verify` (exits 3 on missing/invalid protection) for automation."
+    );
     run_report(input_path, output.as_deref(), key, json, verbose, false)
 }
 

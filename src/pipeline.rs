@@ -63,19 +63,22 @@ pub(crate) fn process_plan_bytes(
             }
         }
     } else {
-        if let Ok(reader) = image::ImageReader::new(Cursor::new(img_bytes)).with_guessed_format() {
-            if let Ok((width, height)) = reader.into_dimensions() {
-                limits.check_dimensions(width, height)?;
-                if let Some(max_dim) = plan.processing().max_dimension {
-                    if width > max_dim || height > max_dim {
-                        return Err(Error::ImageDecode(format!(
-                            "Image dimensions {width}x{height} exceed max_dimension {max_dim}"
-                        )));
-                    }
-                }
+        let reader = image::ImageReader::new(Cursor::new(img_bytes))
+            .with_guessed_format()
+            .map_err(|e| Error::ImageDecode(format!("unable to guess image format: {e}")))?;
+        let (width, height) = reader
+            .into_dimensions()
+            .map_err(|e| Error::ImageDecode(format!("unable to read image dimensions: {e}")))?;
+        limits.check_dimensions(width, height)?;
+        if let Some(max_dim) = plan.processing().max_dimension {
+            if width > max_dim || height > max_dim {
+                return Err(Error::ImageDecode(format!(
+                    "Image dimensions {width}x{height} exceed max_dimension {max_dim}"
+                )));
             }
         }
     }
+    observe_metadata_work(img_bytes, plan.input_format(), budget)?;
 
     if plan.is_metadata_only()
         || matches!(plan.channels().hidden_marker, HiddenMarkerMode::Disabled)
@@ -246,11 +249,11 @@ pub(crate) fn execute_seed_only_and_metadata(
             plan.processing().progressive_jpeg,
             plan.processing().jpeg_quality,
         )?;
-        let with_metadata = metadata_trap.inject_bytes_from_plan(&jpeg_bytes, plan)?;
-        let with_seed = steganography.apply_qtable_seed_bytes(&with_metadata, plan.seed())?;
-        observe_metadata_work(&with_seed, output_format, budget)?;
+        let with_seed = steganography.apply_qtable_seed_bytes(&jpeg_bytes, plan.seed())?;
+        let bytes = metadata_trap.inject_bytes_from_plan(&with_seed, plan)?;
+        observe_metadata_work(&bytes, output_format, budget)?;
         return Ok(PipelineResult {
-            bytes: with_seed,
+            bytes,
             embed_summary: None,
         });
     }

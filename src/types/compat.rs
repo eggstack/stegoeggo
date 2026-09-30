@@ -237,16 +237,13 @@ impl ImageOutputFormat {
     /// Returns `None` if the bytes are too short or the format is unrecognized.
     #[must_use]
     pub fn from_magic_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() < 4 {
-            return None;
-        }
-        if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+        if Self::is_png(bytes) {
             return Some(ImageOutputFormat::Png);
         }
-        if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        if Self::is_jpeg(bytes) {
             return Some(ImageOutputFormat::Jpeg);
         }
-        if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        if Self::is_webp(bytes) {
             return Some(ImageOutputFormat::WebP);
         }
         None
@@ -255,13 +252,13 @@ impl ImageOutputFormat {
     /// Returns `true` if the bytes start with the PNG magic number.
     #[must_use]
     pub fn is_png(bytes: &[u8]) -> bool {
-        bytes.len() >= 4 && bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47])
+        bytes.len() >= 8 && bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
     }
 
     /// Returns `true` if the bytes start with the JPEG magic number.
     #[must_use]
     pub fn is_jpeg(bytes: &[u8]) -> bool {
-        bytes.len() >= 3 && bytes.starts_with(&[0xFF, 0xD8, 0xFF])
+        bytes.len() >= 2 && bytes.starts_with(&[0xFF, 0xD8])
     }
 
     /// Returns `true` if the bytes start with the RIFF/WEBP magic number.

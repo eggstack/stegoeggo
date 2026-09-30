@@ -383,6 +383,16 @@ impl CoefficientDecoder {
         let mcu_width = (self.header.width as usize).div_ceil((max_h_sampling as usize) * 8);
         let mcu_height = (self.header.height as usize).div_ceil((max_v_sampling as usize) * 8);
         let mcus_per_row = mcu_width;
+        let Some(mcu_count) = mcu_width.checked_mul(mcu_height) else {
+            return Err(TranscoderError::HuffmanDecode(
+                "JPEG MCU count overflow".to_string(),
+            ));
+        };
+        if mcu_count > 16_777_216 {
+            return Err(TranscoderError::HuffmanDecode(format!(
+                "JPEG MCU count {mcu_count} exceeds DoS bound"
+            )));
+        }
 
         let mut dc_predictors: HashMap<u8, i16> = HashMap::new();
 
@@ -658,6 +668,16 @@ impl CoefficientEncoder {
         let mcu_width = (self.header.width as usize).div_ceil((max_h_sampling as usize) * 8);
         let mcu_height = (self.header.height as usize).div_ceil((max_v_sampling as usize) * 8);
         let mcus_per_row = mcu_width;
+        let Some(mcu_count) = mcu_width.checked_mul(mcu_height) else {
+            return Err(TranscoderError::HuffmanEncode(
+                "JPEG MCU count overflow".to_string(),
+            ));
+        };
+        if mcu_count > 16_777_216 {
+            return Err(TranscoderError::HuffmanEncode(format!(
+                "JPEG MCU count {mcu_count} exceeds DoS bound"
+            )));
+        }
 
         // Initialize DC predictors
         let mut dc_predictors: HashMap<u8, i16> = HashMap::new();

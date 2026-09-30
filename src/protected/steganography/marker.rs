@@ -17,7 +17,7 @@ impl SteganographyProtector {
         &self,
         emission: &PayloadEmissionContext,
         ctx: &ProtectionContext,
-    ) -> Vec<u8> {
+    ) -> crate::Result<Vec<u8>> {
         let dmi_byte = Self::dmi_to_byte(ctx.dmi_value());
         self.build_v3_payload(
             ctx.seed(),
@@ -33,7 +33,7 @@ impl SteganographyProtector {
         &self,
         emission: &PayloadEmissionContext,
         plan: &crate::types::ResolvedProtectionPlan,
-    ) -> Vec<u8> {
+    ) -> crate::Result<Vec<u8>> {
         let dmi_byte = Self::dmi_to_byte(plan.effective_dmi());
         self.build_v3_payload(
             plan.seed(),
@@ -66,8 +66,13 @@ impl SteganographyProtector {
         dmi_byte: u8,
         emission: &PayloadEmissionContext,
         mac_key: Option<&[u8]>,
-    ) -> Vec<u8> {
-        let intensity_val = (intensity * 100.0) as u16;
+    ) -> crate::Result<Vec<u8>> {
+        if !emission.extensions.is_empty() || emission.key_id.is_some() {
+            return Err(crate::Error::Config(
+                "V3 writer does not emit extensions or key IDs".to_string(),
+            ));
+        }
+        let intensity_val = (intensity * 100.0).round().clamp(0.0, 100.0) as u16;
         let content_hash_8 = content_hash
             .map(|h| {
                 let mut buf = [0u8; 8];
@@ -111,18 +116,14 @@ impl SteganographyProtector {
         buf.push(auth_algo as u8);
         buf.push(auth_tag_len);
         buf.push(0);
-        assert!(
-            emission.extensions.is_empty() && emission.key_id.is_none(),
-            "V3 writer does not emit extensions or key IDs; flags must not advertise them"
-        );
         debug_assert_eq!(buf.len(), crate::payload_v3::types::V3_CORE_SIZE);
         let auth_tag = if let Some(key) = mac_key {
-            Self::compute_payload_mac_v3(&buf, key).to_vec()
+            Self::compute_payload_mac_v3(&buf, key)?.to_vec()
         } else {
             Self::compute_checksum(&buf).to_vec()
         };
         buf.extend_from_slice(&auth_tag);
-        buf
+        Ok(buf)
     }
 
     /// Test-only wrapper: generate payload from a [`ProtectionContext`].
@@ -133,6 +134,7 @@ impl SteganographyProtector {
     #[cfg(test)]
     pub(crate) fn generate_payload_from_ctx(&self, ctx: &ProtectionContext) -> Vec<u8> {
         self.generate_payload_for_context(ctx)
+            .expect("test payload construction must succeed")
     }
 
     /// Generate the V3 stego payload for a given context.
@@ -140,7 +142,7 @@ impl SteganographyProtector {
     /// Exposed for testing channel flags and payload structure without
     /// requiring a full image embed/extract cycle.
     #[doc(hidden)]
-    pub fn generate_payload_for_context(&self, ctx: &ProtectionContext) -> Vec<u8> {
+    pub fn generate_payload_for_context(&self, ctx: &ProtectionContext) -> crate::Result<Vec<u8>> {
         let embed_path = if ctx.is_tile_mode_enabled() {
             if ctx.input_format() == Some(crate::types::ImageOutputFormat::Jpeg) {
                 crate::stego::EmbedPath::DctF5Tiled

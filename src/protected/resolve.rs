@@ -31,6 +31,13 @@ pub fn resolve_request(
             "A non-Unspecified rights policy requires rights_metadata to be enabled (use MetadataUpdatePolicy::PreserveExisting with rights_metadata=true if you want stego-only but must declare a policy)".into(),
         ));
     }
+    if !request.channels().rights_metadata
+        && request.legal_metadata().is_some_and(|m| m.has_content())
+    {
+        return Err(Error::Config(
+            "Legal metadata requires rights_metadata to be enabled".to_string(),
+        ));
+    }
 
     if request.policy() == RightsPolicy::ProhibitedSeeConstraints {
         let notice = request.notice();
@@ -68,6 +75,9 @@ pub fn resolve_request(
             base
         };
         let override_ts = request.timestamp_override();
+        if let Some(ts) = override_ts {
+            crate::types::LegalMetadata::validate_date("timestamp_override", ts)?;
+        }
         let legal_has_explicit_ts = request
             .legal_metadata()
             .and_then(|m| m.notice_applied_at())

@@ -467,15 +467,22 @@ impl JpegTranscoder {
                 // The SOS header includes component table assignments and spectral
                 // selection which must match the header state.
                 if pos + 4 > original_jpeg.len() {
-                    output.extend_from_slice(&original_jpeg[pos..]);
-                    return Ok(output);
+                    return Err(TranscoderError::InvalidFormat(
+                        "Truncated JPEG SOS header".to_string(),
+                    ));
                 }
                 let orig_seg_len =
                     u16::from_be_bytes([original_jpeg[pos + 2], original_jpeg[pos + 3]]) as usize;
-                let sos_end = pos + 2 + orig_seg_len;
+                let Some(sos_end) = pos.checked_add(2).and_then(|p| p.checked_add(orig_seg_len))
+                else {
+                    return Err(TranscoderError::InvalidFormat(
+                        "JPEG SOS length overflow".to_string(),
+                    ));
+                };
                 if sos_end > original_jpeg.len() {
-                    output.extend_from_slice(&original_jpeg[pos..]);
-                    return Ok(output);
+                    return Err(TranscoderError::InvalidFormat(
+                        "Truncated JPEG SOS segment".to_string(),
+                    ));
                 }
                 output.extend_from_slice(&original_jpeg[pos..sos_end]); // SOS marker + header
                 output.extend_from_slice(&scan_data);
@@ -495,28 +502,48 @@ impl JpegTranscoder {
             }
 
             if pos + 3 >= original_jpeg.len() {
-                output.extend_from_slice(&original_jpeg[pos..]);
-                return Ok(output);
+                return Err(TranscoderError::InvalidFormat(
+                    "Truncated JPEG segment header".to_string(),
+                ));
             }
 
             let seg_len =
                 u16::from_be_bytes([original_jpeg[pos + 2], original_jpeg[pos + 3]]) as usize;
-            let seg_end = pos + 2 + seg_len;
+            let Some(seg_end) = pos.checked_add(2).and_then(|p| p.checked_add(seg_len)) else {
+                return Err(TranscoderError::InvalidFormat(
+                    "JPEG segment length overflow".to_string(),
+                ));
+            };
 
             if seg_end > original_jpeg.len() {
-                output.extend_from_slice(&original_jpeg[pos..]);
-                return Ok(output);
+                return Err(TranscoderError::InvalidFormat(
+                    "Truncated JPEG segment".to_string(),
+                ));
             }
 
             if marker == 0xDB {
                 pos = seg_end;
                 if !wrote_qtables {
                     for table in header.quantization_tables.iter().flatten() {
+                        if table.table_id > 15 {
+                            return Err(TranscoderError::InvalidFormat(
+                                "Invalid JPEG DQT table id".to_string(),
+                            ));
+                        }
                         output.push(0xFF);
                         output.push(0xDB);
-                        let table_data_len = if table.precision == 16 { 129 } else { 65 };
-                        let total_len = table_data_len + 2;
-                        output.extend_from_slice(&(total_len as u16).to_be_bytes());
+                        let table_data_len: usize = if table.precision == 16 { 129 } else { 65 };
+                        let Some(total_len) = table_data_len.checked_add(2) else {
+                            return Err(TranscoderError::InvalidFormat(
+                                "JPEG DQT length overflow".to_string(),
+                            ));
+                        };
+                        let Ok(total_len_u16) = u16::try_from(total_len) else {
+                            return Err(TranscoderError::InvalidFormat(
+                                "JPEG DQT length exceeds u16".to_string(),
+                            ));
+                        };
+                        output.extend_from_slice(&total_len_u16.to_be_bytes());
                         let precision_bit = if table.precision == 16 { 1 } else { 0 };
                         output.push((precision_bit << 4) | table.table_id);
                         if table.precision == 8 {
@@ -538,10 +565,9 @@ impl JpegTranscoder {
             pos = seg_end;
         }
 
-        output.extend_from_slice(&scan_data);
-        output.push(0xFF);
-        output.push(0xD9);
-        Ok(output)
+        Err(TranscoderError::InvalidFormat(
+            "Truncated JPEG: missing SOS".to_string(),
+        ))
     }
 }
 

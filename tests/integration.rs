@@ -1558,12 +1558,10 @@ mod inject_legal_claims_toggle {
         let png_bytes = image_to_png_bytes(&img);
         let ctx = legal_ctx(Some(false));
 
-        let protected = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
-
-        let has_copyright = protected.windows(9).any(|w| w == b"Copyright");
+        let err = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap_err();
         assert!(
-            !has_copyright,
-            "Copyright metadata should be absent when inject_legal_claims=false"
+            matches!(err, stegoeggo::Error::Config(_)),
+            "inject_legal_claims=false with legal metadata must fail with Config, got: {err:?}"
         );
     }
 

@@ -1,8 +1,7 @@
 pub(crate) fn try_generate_random_seed() -> std::result::Result<u64, getrandom::Error> {
     let mut buf = [0u8; 8];
     getrandom::getrandom(&mut buf)?;
-    let x = u64::from_le_bytes(buf);
-    Ok(if x == 0 { 42 } else { x })
+    Ok(u64::from_le_bytes(buf))
 }
 
 /// Generate a random seed for APIs that cannot propagate entropy errors.
@@ -26,20 +25,5 @@ pub fn generate_random_seed() -> u64 {
     x ^= x >> 27;
     x = x.wrapping_mul(0x94D049BB133111EB);
     x ^= x >> 31;
-    if x == 0 {
-        42
-    } else {
-        x
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn generate_random_seed_returns_nonzero() {
-        let seed = generate_random_seed();
-        assert_ne!(seed, 0);
-    }
+    x
 }

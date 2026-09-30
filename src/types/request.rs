@@ -1,5 +1,6 @@
 use super::*;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize as _;
 
 /// Explicit rights policy expressing data-mining intent.
 ///
@@ -281,7 +282,11 @@ impl ProtectionRequest {
     /// Sets the embedding intensity (0.0-1.0).
     #[must_use]
     pub fn with_intensity(mut self, intensity: f32) -> Self {
-        self.intensity = intensity.clamp(0.0, 1.0);
+        self.intensity = if intensity.is_finite() {
+            intensity.clamp(0.0, 1.0)
+        } else {
+            intensity
+        };
         self
     }
 
@@ -652,6 +657,22 @@ impl ResolvedProtectionPlan {
             mac_key,
             warnings,
             resource_limits,
+        }
+    }
+}
+
+impl Drop for ProtectionRequest {
+    fn drop(&mut self) {
+        if let Some(ref mut key) = self.mac_key {
+            key.zeroize();
+        }
+    }
+}
+
+impl Drop for ResolvedProtectionPlan {
+    fn drop(&mut self) {
+        if let Some(ref mut key) = self.mac_key {
+            key.zeroize();
         }
     }
 }

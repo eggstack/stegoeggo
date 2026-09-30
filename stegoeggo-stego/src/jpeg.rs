@@ -127,7 +127,10 @@ fn dct_payload_capacity(coefficients: &crate::jpeg_transcoder::Coefficients) -> 
             block
                 .iter()
                 .skip(1)
-                .filter(|&&coef| coef.abs() >= 2)
+                .filter(|&&coef| {
+                    let clamped = coef.clamp(-1023, 1023);
+                    clamped.abs_diff(0) >= 2
+                })
                 .count()
         })
         .sum()
@@ -365,7 +368,7 @@ fn reassemble_jpeg_with_qtables(
     output.extend_from_slice(&jpeg_bytes[0..2]);
 
     let mut pos = 2;
-    let mut wrote_tables = false;
+    let mut found_terminator = false;
 
     while pos + 4 <= jpeg_bytes.len() {
         if jpeg_bytes[pos] != 0xFF {
@@ -382,41 +385,89 @@ fn reassemble_jpeg_with_qtables(
 
         if marker == 0xDA || marker == 0xD9 {
             output.extend_from_slice(&jpeg_bytes[pos..]);
+            found_terminator = true;
             break;
         }
 
         if marker == 0xDB {
             let segment_len =
                 u16::from_be_bytes([jpeg_bytes[pos + 2], jpeg_bytes[pos + 3]]) as usize;
-            let segment_end = pos + 2 + segment_len;
+            let Some(segment_end) = pos.checked_add(2).and_then(|p| p.checked_add(segment_len))
+            else {
+                return Err(StegoError::MalformedInput(
+                    "Malformed JPEG DQT length overflow".into(),
+                ));
+            };
             if segment_end > jpeg_bytes.len() {
                 return Err(StegoError::MalformedInput(
                     "Malformed JPEG segment length exceeds buffer".into(),
                 ));
             }
-            pos = segment_end;
-
-            if !wrote_tables {
-                for table in header.quantization_tables.iter().flatten() {
-                    output.push(0xFF);
-                    output.push(0xDB);
-                    let table_data_len = if table.precision == 16 { 129 } else { 65 };
-                    let total_len = table_data_len + 2;
-                    output.extend_from_slice(&(total_len as u16).to_be_bytes());
-                    let precision_bit = if table.precision == 16 { 1 } else { 0 };
-                    output.push((precision_bit << 4) | table.table_id);
+            let payload = &jpeg_bytes[pos + 4..segment_end];
+            let mut table_pos = 0;
+            let mut rewritten = Vec::with_capacity(segment_len);
+            while table_pos < payload.len() {
+                if table_pos + 1 > payload.len() {
+                    return Err(StegoError::MalformedInput(
+                        "Truncated JPEG DQT table header".into(),
+                    ));
+                }
+                let info = payload[table_pos];
+                let precision_bit = info >> 4;
+                let table_id = info & 0x0F;
+                if table_id > 15 {
+                    return Err(StegoError::MalformedInput(
+                        "Invalid JPEG DQT table id".into(),
+                    ));
+                }
+                if precision_bit > 1 {
+                    return Err(StegoError::MalformedInput(
+                        "Invalid JPEG DQT precision".into(),
+                    ));
+                }
+                let value_bytes = if precision_bit == 0 { 64 } else { 128 };
+                if table_pos + 1 + value_bytes > payload.len() {
+                    return Err(StegoError::MalformedInput(
+                        "Truncated JPEG DQT table data".into(),
+                    ));
+                }
+                let updated = if (table_id as usize) < header.quantization_tables.len() {
+                    header.quantization_tables[table_id as usize].as_ref()
+                } else {
+                    None
+                };
+                if let Some(table) = updated {
+                    let table_precision_bit = if table.precision == 16 { 1 } else { 0 };
+                    rewritten.push((table_precision_bit << 4) | table.table_id);
                     if table.precision == 8 {
                         for &val in &table.values {
-                            output.push(val as u8);
+                            rewritten.push(val as u8);
                         }
                     } else {
                         for &val in &table.values {
-                            output.extend_from_slice(&val.to_be_bytes());
+                            rewritten.extend_from_slice(&val.to_be_bytes());
                         }
                     }
+                } else {
+                    rewritten.extend_from_slice(&payload[table_pos..table_pos + 1 + value_bytes]);
                 }
-                wrote_tables = true;
+                table_pos += 1 + value_bytes;
             }
+            let Some(total_len) = rewritten.len().checked_add(2) else {
+                return Err(StegoError::MalformedInput(
+                    "JPEG DQT length overflow".into(),
+                ));
+            };
+            let Ok(total_len_u16) = u16::try_from(total_len) else {
+                return Err(StegoError::MalformedInput(
+                    "JPEG DQT length exceeds u16".into(),
+                ));
+            };
+            output.push(0xFF);
+            output.push(0xDB);
+            output.extend_from_slice(&total_len_u16.to_be_bytes());
+            output.extend_from_slice(&rewritten);
+            pos = segment_end;
             continue;
         }
 
@@ -426,13 +477,24 @@ fn reassemble_jpeg_with_qtables(
         }
 
         let segment_len = u16::from_be_bytes([jpeg_bytes[pos + 2], jpeg_bytes[pos + 3]]) as usize;
-        if pos + 2 + segment_len > jpeg_bytes.len() {
+        let Some(segment_end) = pos.checked_add(2).and_then(|p| p.checked_add(segment_len)) else {
+            return Err(StegoError::MalformedInput(
+                "Malformed JPEG segment length overflow".into(),
+            ));
+        };
+        if segment_end > jpeg_bytes.len() {
             return Err(StegoError::MalformedInput(
                 "Malformed JPEG segment length exceeds buffer".into(),
             ));
         }
-        output.extend_from_slice(&jpeg_bytes[pos..pos + 2 + segment_len]);
-        pos += 2 + segment_len;
+        output.extend_from_slice(&jpeg_bytes[pos..segment_end]);
+        pos = segment_end;
+    }
+
+    if !found_terminator {
+        return Err(StegoError::MalformedInput(
+            "Truncated JPEG: missing SOS/EOI".into(),
+        ));
     }
 
     Ok(output)
@@ -519,21 +581,14 @@ impl JpegConfig {
     /// Set the redundancy level (1–10). Higher redundancy increases
     /// robustness at the cost of reduced capacity.
     ///
-    /// Compatibility builder for compile-time-constant values. In debug
-    /// builds, panics if `redundancy` is 0 or greater than 10. In
-    /// release builds with `panic=abort`, an out-of-range value is clamped to
-    /// `1..=10` to avoid aborting the process; prefer
+    /// Compatibility builder for compile-time-constant values. Out-of-range
+    /// values are clamped to `1..=10` in all profiles; prefer
     /// [`JpegConfig::try_with_redundancy`](Self::try_with_redundancy) or
     /// [`JpegConfig::with_redundancy_value`](Self::with_redundancy_value)
     /// when the value is not statically known to be in `1..=10` (for example
-    /// values from configuration files, CLI flags, or network payloads,
-    /// which must not abort the process on invalid input).
+    /// values from configuration files, CLI flags, or network payloads).
     #[must_use]
     pub fn with_redundancy(mut self, redundancy: usize) -> Self {
-        debug_assert!(
-            (1..=10).contains(&redundancy),
-            "redundancy must be 1..=10, got {redundancy}"
-        );
         if !(1..=10).contains(&redundancy) {
             self.redundancy = redundancy.clamp(1, 10);
             return self;
@@ -587,8 +642,7 @@ impl JpegConfig {
     /// The redundancy level as a validated [`Redundancy`](crate::Redundancy).
     #[must_use]
     pub fn redundancy_value(&self) -> crate::Redundancy {
-        crate::Redundancy::from_usize(self.redundancy)
-            .expect("JpegConfig invariant: redundancy is always validated")
+        crate::Redundancy::from_usize(self.redundancy).unwrap_or(crate::Redundancy::MIN)
     }
 
     /// The seed used for DCT coefficient selection.
@@ -772,6 +826,11 @@ pub fn embed(
     config: &JpegConfig,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
     crate::constants::validate_redundancy(config.redundancy())?;
+    if payload.is_empty() {
+        return Err(StegoError::InvalidConfig(
+            "empty payload requires no carrier".to_string(),
+        ));
+    }
     let payload_bits = checked_payload_bits(payload.len())?;
     let required = checked_required_capacity(payload.len(), config.redundancy())?;
 
@@ -812,11 +871,13 @@ pub fn embed(
             )
             .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
 
+            let required_actual =
+                checked_required_capacity(payload.len(), selected_redundancy).unwrap_or(required);
             return Ok(super::EmbedReport {
                 embedded: true,
                 output,
                 payload_bytes: payload.len(),
-                required_capacity: required,
+                required_capacity: required_actual,
                 available_capacity: available,
                 actual_redundancy: selected_redundancy,
             });
@@ -1249,12 +1310,17 @@ pub fn embed_tiled(
     config: &TileConfig,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
     validate_jpeg_tile_size(config.tile_size())?;
+    if payload.is_empty() {
+        return Err(StegoError::InvalidConfig(
+            "empty payload requires no carrier".to_string(),
+        ));
+    }
     if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
         return Err(StegoError::MalformedInput("not a valid JPEG".to_string()));
     }
     let tile_size = config.tile_size();
     let seed = config.seed();
-    let payload_bits = payload.len().saturating_mul(8);
+    let payload_bits = checked_payload_bits(payload.len())?;
 
     let decoded = JpegTranscoder::decode_coefficients_with_probe(jpeg_bytes)
         .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
@@ -1312,12 +1378,10 @@ pub fn embed_tiled(
         }
     }
 
-    let output = JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))
-        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
     let Some((tile_x, tile_y, local_seed)) = first_embedded else {
         return Ok(super::EmbedReport {
             embedded: false,
-            output,
+            output: jpeg_bytes.to_vec(),
             payload_bytes: payload.len(),
             required_capacity: payload_bits,
             available_capacity: 0,
@@ -1336,13 +1400,15 @@ pub fn embed_tiled(
     ) {
         return Ok(super::EmbedReport {
             embedded: false,
-            output,
+            output: jpeg_bytes.to_vec(),
             payload_bytes: payload.len(),
             required_capacity: payload_bits,
             available_capacity: 0,
             actual_redundancy: 0,
         });
     }
+    let output = JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))
+        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
     Ok(super::EmbedReport {
         embedded: true,
         output,
@@ -1353,14 +1419,15 @@ pub fn embed_tiled(
     })
 }
 
-/// Extract tiled payload bytes when the payload length is known.
+/// Extract tiled payload bytes when the payload length is known (unchecked).
 ///
 /// Decodes supported coefficients once per operation and searches at most
 /// `max_origins` tile origins with the tile-grid neighbourhood (`0..=2`)
 /// used by the current tiled path. Returns the first candidate in
 /// deterministic scan order with redundancy 1.
 ///
-/// Raw mode cannot authenticate correctness; prefer [`extract_tiled_framed`]
+/// Unchecked raw mode cannot authenticate correctness and returns garbage as
+/// `Ok` on misaligned crops; prefer [`extract_tiled_framed`]
 /// for self-validating crop recovery.
 ///
 /// # Errors
@@ -1395,11 +1462,11 @@ pub(crate) fn extract_tiled_from_decoded(
     };
     if tiles_x == 0 || tiles_y == 0 {
         return Err(StegoError::InsufficientCapacity {
-            required: payload_len.saturating_mul(8),
+            required: checked_payload_bits(payload_len)?,
             available: 0,
         });
     }
-    let payload_bits = payload_len.saturating_mul(8);
+    let payload_bits = checked_payload_bits(payload_len)?;
     let mut origins_tried = 0u32;
     for ty in 0..tiles_y {
         for tx in 0..tiles_x {

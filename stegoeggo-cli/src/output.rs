@@ -25,7 +25,8 @@ pub(crate) fn classify_error(e: &(dyn std::error::Error + 'static)) -> i32 {
             | Error::Image(_)
             | Error::ImageTruncated(_)
             | Error::Steganography(_)
-            | Error::InvalidFormat(_) => EXIT_ERROR,
+            | Error::InvalidFormat(_)
+            | Error::InsufficientCapacity { .. } => EXIT_ERROR,
             Error::Metadata(_) => EXIT_ERROR,
             Error::Io(_) => EXIT_ERROR,
             Error::Serialization(_) => EXIT_CONFIG,

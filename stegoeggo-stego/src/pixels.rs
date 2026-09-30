@@ -182,7 +182,9 @@ impl<'a> PixelView<'a> {
         config: &LsbConfig,
     ) -> Result<crate::CapacityReport, StegoError> {
         let available = checked_lsb_available_slots(self.geometry.width, self.geometry.height)?;
-        let payload_bits = payload_len.saturating_mul(8);
+        let payload_bits = payload_len.checked_mul(8).ok_or_else(|| {
+            StegoError::InvalidConfig(format!("payload length {payload_len} overflows bit count"))
+        })?;
         let required = lsb_required_capacity_v2(payload_bits, config.redundancy());
         Ok(crate::CapacityReport {
             required,

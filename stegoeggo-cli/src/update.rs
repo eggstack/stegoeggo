@@ -270,6 +270,7 @@ fn ensure_replaceable(path: &Path) -> Result<(), UpdateError> {
 fn read_limited<R: Read>(mut reader: R) -> Vec<u8> {
     let mut output = Vec::new();
     let mut buffer = [0_u8; 4096];
+    let mut truncated = false;
     loop {
         match reader.read(&mut buffer) {
             Ok(0) => break,
@@ -277,10 +278,18 @@ fn read_limited<R: Read>(mut reader: R) -> Vec<u8> {
                 if output.len() < MAX_COMMAND_OUTPUT {
                     let remaining = MAX_COMMAND_OUTPUT - output.len();
                     output.extend_from_slice(&buffer[..read.min(remaining)]);
+                    if read > remaining {
+                        truncated = true;
+                    }
+                } else {
+                    truncated = true;
                 }
             }
             Err(_) => break,
         }
+    }
+    if truncated {
+        output.extend_from_slice(b"...[truncated]");
     }
     output
 }
@@ -294,8 +303,18 @@ fn run_bounded(mut command: Command, label: &str) -> Result<Output, UpdateError>
             command: label.to_string(),
             detail: error.to_string(),
         })?;
-    let stdout = child.stdout.take().expect("stdout was piped");
-    let stderr = child.stderr.take().expect("stderr was piped");
+    let Some(stdout) = child.stdout.take() else {
+        return Err(UpdateError::CommandFailed {
+            command: label.to_string(),
+            detail: "stdout was not piped".to_string(),
+        });
+    };
+    let Some(stderr) = child.stderr.take() else {
+        return Err(UpdateError::CommandFailed {
+            command: label.to_string(),
+            detail: "stderr was not piped".to_string(),
+        });
+    };
     let stdout_thread = thread::spawn(move || read_limited(stdout));
     let stderr_thread = thread::spawn(move || read_limited(stderr));
     let deadline = Instant::now() + COMMAND_TIMEOUT;

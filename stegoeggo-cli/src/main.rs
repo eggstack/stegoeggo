@@ -229,6 +229,19 @@ fn run_protect(
     let input_files = collect_input_files(&args.input);
 
     if input_files.is_empty() {
+        if args.json {
+            let json_output = JsonOutput {
+                schema_version: 1,
+                status: "failed".to_string(),
+                output_path: None,
+                warnings: Vec::new(),
+                report: None,
+            };
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json_output).unwrap_or_else(|_| "{}".to_string())
+            );
+        }
         eprintln!("Error: No input files found");
         std::process::exit(EXIT_CONFIG);
     }
@@ -248,6 +261,19 @@ fn run_protect(
 
     if args.verify {
         if is_batch {
+            if args.json {
+                let json_output = JsonOutput {
+                    schema_version: 1,
+                    status: "failed".to_string(),
+                    output_path: None,
+                    warnings: Vec::new(),
+                    report: None,
+                };
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json_output).unwrap_or_else(|_| "{}".to_string())
+                );
+            }
             eprintln!("Error: Verify mode only works with single files");
             std::process::exit(EXIT_CONFIG);
         }

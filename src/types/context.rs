@@ -1,6 +1,7 @@
 use super::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use zeroize::Zeroize as _;
 
 /// Heavy configuration that is shared across requests via `Arc`.
 /// Create once, reuse across many image processing calls.
@@ -50,6 +51,14 @@ impl ProtectionConfig {
     #[must_use]
     pub fn legal_metadata(&self) -> Option<&LegalMetadata> {
         self.legal_metadata.as_ref()
+    }
+}
+
+impl Drop for ProtectionConfig {
+    fn drop(&mut self) {
+        if let Some(ref mut key) = self.mac_key {
+            key.zeroize();
+        }
     }
 }
 
@@ -255,7 +264,11 @@ impl ProtectionContext {
     /// ```
     pub fn new(intensity: f32, seed: u64) -> Self {
         Self {
-            intensity: intensity.clamp(0.0, 1.0),
+            intensity: if intensity.is_finite() {
+                intensity.clamp(0.0, 1.0)
+            } else {
+                intensity
+            },
             seed,
             input_format: None,
             output_format: None,
@@ -503,7 +516,11 @@ impl ProtectionContext {
     /// Set the intensity for this context, returning a new context.
     #[must_use]
     pub fn with_intensity(mut self, intensity: f32) -> Self {
-        self.intensity = intensity.clamp(0.0, 1.0);
+        self.intensity = if intensity.is_finite() {
+            intensity.clamp(0.0, 1.0)
+        } else {
+            intensity
+        };
         self
     }
 

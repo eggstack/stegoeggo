@@ -563,7 +563,9 @@ pub(crate) fn parse_webp(data: &[u8], limits: Option<&ResourceLimits>) -> Result
     let (canvas_width, canvas_height) = if let Some(idx) = vp8x_index {
         match vp8x_dimensions(data, chunks[idx].data_start) {
             Some((w, h)) => (w, h),
-            None => (0, 0),
+            None => {
+                return Err(Error::Metadata("invalid VP8X dimensions".to_string()));
+            }
         }
     } else {
         (0, 0)

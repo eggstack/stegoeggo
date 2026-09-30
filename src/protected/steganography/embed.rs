@@ -163,7 +163,7 @@ impl SteganographyProtector {
                 crate::stego::EmbedPath::DctF5,
             ),
             ctx,
-        );
+        )?;
         Self::embed_dct_payload(jpeg_bytes, &payload, ctx.seed(), ctx.effective_redundancy())
     }
 
@@ -205,7 +205,7 @@ impl SteganographyProtector {
                 crate::stego::EmbedPath::DctF5Tiled,
             ),
             ctx,
-        );
+        )?;
         Self::embed_dct_tiled_payload(jpeg_bytes, &payload, ctx.seed(), tile_size)
     }
 
@@ -250,7 +250,7 @@ impl SteganographyProtector {
             crate::stego::EmbedPath::DctF5
         };
         let emission = PayloadEmissionContext::from_plan(plan, path);
-        let payload = self.generate_payload_for_plan(&emission, plan);
+        let payload = self.generate_payload_for_plan(&emission, plan)?;
         match tile_size.filter(|&size| size > 0) {
             Some(size) => Self::embed_dct_tiled_payload(jpeg_bytes, &payload, plan.seed(), size),
             None => Self::embed_dct_payload(
@@ -276,7 +276,7 @@ impl SteganographyProtector {
         };
 
         let emission = PayloadEmissionContext::from_plan(plan, embed_path);
-        let payload = self.generate_payload_for_plan(&emission, plan);
+        let payload = self.generate_payload_for_plan(&emission, plan)?;
         let mut rgba = img.to_rgba8();
         let summary = self.embed_raster_with_seed_fallback(
             &mut rgba,
@@ -413,7 +413,7 @@ impl SteganographyProtector {
         };
 
         let emission = crate::types::PayloadEmissionContext::from_plan_for_context(ctx, embed_path);
-        let payload = self.generate_payload(&emission, ctx);
+        let payload = self.generate_payload(&emission, ctx)?;
 
         let redundancy = ctx.effective_redundancy();
 

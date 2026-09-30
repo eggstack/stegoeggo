@@ -29,12 +29,9 @@ pub(crate) enum Format {
 }
 
 pub(crate) fn detect_format(bytes: &[u8]) -> Option<Format> {
-    if bytes.len() < 4 {
-        return None;
-    }
-    if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+    if bytes.len() >= 8 && bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) {
         Some(Format::Png)
-    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+    } else if bytes.len() >= 2 && bytes.starts_with(&[0xFF, 0xD8]) {
         Some(Format::Jpeg)
     } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
         Some(Format::WebP)

@@ -206,7 +206,8 @@ pub fn embed_tiled(
 ///
 /// Mutates the caller's buffer with no full-image clone. Capacity is checked
 /// before the first pixel mutation, so an insufficient carrier is left
-/// unchanged.
+/// unchanged. Mid-embed failures roll back to the original bytes, so a
+/// `embedded == false` report leaves the caller's buffer unchanged.
 ///
 /// # Errors
 ///
@@ -229,25 +230,30 @@ pub fn embed_tiled_in_place(
     if img.width() == 0 || img.height() == 0 {
         return Err(super::StegoError::EmptyCarrier);
     }
-    Ok(crate::lsb_internal::embed_lsb_tiled_in_place(
+    let snapshot = img.clone();
+    let report = crate::lsb_internal::embed_lsb_tiled_in_place(
         img,
         payload,
         config.seed(),
         config.tile_size(),
-    ))
+    );
+    if !report.embedded {
+        *img = snapshot;
+    }
+    Ok(report)
 }
 
-/// Extract tiled payload bytes when the payload length is known.
+/// Extract tiled payload bytes when the payload length is known (unchecked).
 ///
 /// Searches at most `max_origins` crop origins (stride `tile_size / 2`) and,
 /// per origin, the tile-grid neighbourhood (`0..=2`) with the 5-pass seed
 /// history used by the current tiled path. Returns the first candidate in
 /// deterministic scan order.
 ///
-/// Raw mode cannot authenticate correctness: without frame integrity any
-/// candidate with sufficient capacity yields bytes, so a misaligned crop may
-/// return bytes from the wrong tile. Prefer [`extract_tiled_framed`] for
-/// self-validating crop recovery.
+/// Unchecked raw mode cannot authenticate correctness: without frame integrity
+/// any candidate with sufficient capacity yields bytes as `Ok`, so a
+/// misaligned crop may return garbage bytes from the wrong tile. Prefer
+/// [`extract_tiled_framed`] for self-validating crop recovery.
 ///
 /// # Errors
 ///

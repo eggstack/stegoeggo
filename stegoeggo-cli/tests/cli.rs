@@ -2058,8 +2058,8 @@ fn test_corrupt_image_decode_exits_error_not_internal() {
     );
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
-        stderr.contains("Image error:"),
-        "failure must surface as Error::Image, got: {stderr}"
+        stderr.contains("Image error:") || stderr.contains("Image decoding error:"),
+        "failure must surface as Error::Image/ImageDecode, got: {stderr}"
     );
 }
 

@@ -48,7 +48,11 @@ struct DctCoefficientRng(u64);
 
 impl DctCoefficientRng {
     fn new(seed: u64) -> Self {
-        Self(if seed == 0 { 1 } else { seed })
+        Self(if seed == 0 {
+            crate::constants::SPLITMIX64_SEED
+        } else {
+            seed
+        })
     }
 
     fn next_u64(&mut self) -> u64 {
@@ -92,6 +96,10 @@ impl DctStegoF5 {
     }
 
     pub fn with_redundancy(redundancy: usize) -> Self {
+        debug_assert!(
+            (1..=10).contains(&redundancy),
+            "redundancy must be 1..=10, got {redundancy}"
+        );
         Self {
             redundancy: redundancy.clamp(1, 10),
         }
@@ -500,10 +508,38 @@ impl DctStegoF5 {
             let h = comp.h_sampling as u32;
             let v = comp.v_sampling as u32;
 
-            let bx_start = (tile_x * blocks_per_luma_tile * h / max_h) as usize;
-            let bx_end = ((tile_x + 1) * blocks_per_luma_tile * h / max_h) as usize;
-            let by_start = (tile_y * blocks_per_luma_tile * v / max_v) as usize;
-            let by_end = ((tile_y + 1) * blocks_per_luma_tile * v / max_v) as usize;
+            let Some(bx_start) = tile_x
+                .checked_mul(blocks_per_luma_tile)
+                .and_then(|v| v.checked_mul(h))
+                .map(|v| v / max_h)
+                .map(|v| v as usize)
+            else {
+                continue;
+            };
+            let Some(bx_end) = (tile_x + 1)
+                .checked_mul(blocks_per_luma_tile)
+                .and_then(|v| v.checked_mul(h))
+                .map(|v| v / max_h)
+                .map(|v| v as usize)
+            else {
+                continue;
+            };
+            let Some(by_start) = tile_y
+                .checked_mul(blocks_per_luma_tile)
+                .and_then(|tmp| tmp.checked_mul(v))
+                .map(|tmp| tmp / max_v)
+                .map(|tmp| tmp as usize)
+            else {
+                continue;
+            };
+            let Some(by_end) = (tile_y + 1)
+                .checked_mul(blocks_per_luma_tile)
+                .and_then(|tmp| tmp.checked_mul(v))
+                .map(|tmp| tmp / max_v)
+                .map(|tmp| tmp as usize)
+            else {
+                continue;
+            };
 
             for by in by_start..by_end {
                 for bx in bx_start..bx_end {
@@ -972,10 +1008,10 @@ mod tests {
         );
         assert_ne!(first_a, 0, "zero seed must not produce zero state");
         let mut c = DctCoefficientRng::new(1);
-        assert_eq!(
+        assert_ne!(
             first_a,
             c.next_u64(),
-            "both seed 0 (mapped to 1) and seed 1 must produce same first output under this RNG's zero-guard"
+            "seed 0 and seed 1 must produce distinct shuffles"
         );
         let mut d = DctCoefficientRng::new(0);
         let second = {

@@ -450,6 +450,13 @@ fn process_image_ref(
     if level == ProtectionLevel::Disabled {
         return Ok(img.clone());
     }
+    if matches!(ctx.inject_legal_claims(), Some(false))
+        && ctx.legal_metadata().is_some_and(|m| m.has_content())
+    {
+        return Err(crate::Error::Config(
+            "inject_legal_claims(false) with legal metadata is contradictory".to_string(),
+        ));
+    }
     let request = request_from_legacy(level, ctx);
     let format = ctx
         .output_format()
@@ -842,6 +849,13 @@ pub fn process_image_bytes(
     ctx.validate()?;
     if let Some(meta) = ctx.legal_metadata() {
         meta.validate()?;
+    }
+    if matches!(ctx.inject_legal_claims(), Some(false))
+        && ctx.legal_metadata().is_some_and(|m| m.has_content())
+    {
+        return Err(crate::Error::Config(
+            "inject_legal_claims(false) with legal metadata is contradictory".to_string(),
+        ));
     }
     let request = request_from_legacy(level, ctx);
     process_request_bytes(img_bytes, &request)

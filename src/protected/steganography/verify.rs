@@ -3,9 +3,8 @@
 use super::*;
 
 impl SteganographyProtector {
-    fn new_hmac(mac_key: &[u8]) -> HmacSha256 {
-        HmacSha256::new_from_slice(mac_key)
-            .unwrap_or_else(|_| unreachable!("HMAC accepts keys of every length"))
+    fn new_hmac(mac_key: &[u8]) -> crate::Result<HmacSha256> {
+        HmacSha256::new_from_slice(mac_key).map_err(|e| crate::Error::Crypto(e.to_string()))
     }
 
     pub(crate) fn payload_within_limits(&self, bytes: &[u8]) -> bool {
@@ -438,23 +437,29 @@ impl SteganographyProtector {
         })
     }
 
-    pub(crate) fn compute_payload_mac(payload_without_mac: &[u8], mac_key: &[u8]) -> [u8; 8] {
-        let mut mac = Self::new_hmac(mac_key);
+    pub(crate) fn compute_payload_mac(
+        payload_without_mac: &[u8],
+        mac_key: &[u8],
+    ) -> crate::Result<[u8; 8]> {
+        let mut mac = Self::new_hmac(mac_key)?;
         mac.update(payload_without_mac);
         let result = mac.finalize().into_bytes();
-        [
+        Ok([
             result[0], result[1], result[2], result[3], result[4], result[5], result[6], result[7],
-        ]
+        ])
     }
 
-    pub(crate) fn compute_payload_mac_v3(payload_without_mac: &[u8], mac_key: &[u8]) -> [u8; 16] {
-        let mut mac = Self::new_hmac(mac_key);
+    pub(crate) fn compute_payload_mac_v3(
+        payload_without_mac: &[u8],
+        mac_key: &[u8],
+    ) -> crate::Result<[u8; 16]> {
+        let mut mac = Self::new_hmac(mac_key)?;
         mac.update(crate::payload_v3::types::V3_DOMAIN_STRING);
         mac.update(payload_without_mac);
         let result = mac.finalize().into_bytes();
         let mut out = [0u8; 16];
         out.copy_from_slice(&result[..16]);
-        out
+        Ok(out)
     }
 
     pub(crate) fn verify_payload_mac(
@@ -462,7 +467,9 @@ impl SteganographyProtector {
         mac_key: &[u8],
         expected_mac: &[u8],
     ) -> bool {
-        let computed_mac = Self::compute_payload_mac(payload_without_mac, mac_key);
+        let Ok(computed_mac) = Self::compute_payload_mac(payload_without_mac, mac_key) else {
+            return false;
+        };
         computed_mac.ct_eq(expected_mac).into()
     }
 
@@ -580,7 +587,9 @@ impl SteganographyProtector {
                 2 if auth_tag_len == 16 && !mac_key.is_empty() => {
                     let core_and_ext = &payload[..total_length - auth_tag_len];
                     let tag = &payload[total_length - auth_tag_len..total_length];
-                    let expected = Self::compute_payload_mac_v3(core_and_ext, mac_key);
+                    let Ok(expected) = Self::compute_payload_mac_v3(core_and_ext, mac_key) else {
+                        return false;
+                    };
                     let Some(expected_prefix) = expected.get(..tag.len()) else {
                         return false;
                     };
@@ -588,7 +597,9 @@ impl SteganographyProtector {
                     if authenticated {
                         true
                     } else {
-                        let mut legacy_mac = Self::new_hmac(mac_key);
+                        let Ok(mut legacy_mac) = Self::new_hmac(mac_key) else {
+                            return false;
+                        };
                         legacy_mac.update(core_and_ext);
                         let result = legacy_mac.finalize().into_bytes();
                         result
@@ -920,7 +931,7 @@ mod tests {
     fn verify_accepts_wellformed_hmac_payload_and_rejects_wrong_key() {
         let key = b"secret-key";
         let mut payload = v3_payload(48, 2, 16);
-        let mac = SteganographyProtector::compute_payload_mac_v3(&payload[..32], key);
+        let mac = SteganographyProtector::compute_payload_mac_v3(&payload[..32], key).unwrap();
         payload[32..48].copy_from_slice(&mac);
         assert!(SteganographyProtector::verify_payload_integrity(
             &payload, key
@@ -950,7 +961,7 @@ mod tests {
         for tag_len in [1u8, 8, 15] {
             let total = crate::payload_v3::types::V3_CORE_SIZE + tag_len as usize;
             let mut payload = v3_payload(total, 2, tag_len);
-            let mac = SteganographyProtector::compute_payload_mac_v3(&payload[..32], key);
+            let mac = SteganographyProtector::compute_payload_mac_v3(&payload[..32], key).unwrap();
             let start = crate::payload_v3::types::V3_CORE_SIZE;
             payload[start..total].copy_from_slice(&mac[..tag_len as usize]);
             assert!(!SteganographyProtector::verify_payload_integrity(

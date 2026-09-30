@@ -83,11 +83,18 @@ pub(crate) fn handle_sign(
                 .lines()
                 .find(|l| l.starts_with("key_id:"))
                 .map(|l| l.strip_prefix("key_id:").unwrap_or("").to_string());
-            let key_hex = block
+            let key_hex: String = block
                 .lines()
-                .find(|l| !l.starts_with("key_id:"))
-                .map(String::from);
-            key_hex.map(|k| (k, key_id.unwrap_or_default()))
+                .filter(|l| !l.starts_with("key_id:"))
+                .collect::<Vec<_>>()
+                .join("")
+                .trim()
+                .to_string();
+            if key_hex.is_empty() {
+                None
+            } else {
+                Some((key_hex, key_id.unwrap_or_default()))
+            }
         })
         .unwrap_or_else(|| {
             (
@@ -186,11 +193,18 @@ pub(crate) fn handle_verify_manifest(
                     .lines()
                     .find(|l| l.starts_with("key_id:"))
                     .map(|l| l.strip_prefix("key_id:").unwrap_or("").to_string());
-                let key_hex = block
+                let key_hex: String = block
                     .lines()
-                    .find(|l| !l.starts_with("key_id:"))
-                    .map(String::from);
-                key_hex.map(|k| (k, key_id.unwrap_or_default()))
+                    .filter(|l| !l.starts_with("key_id:"))
+                    .collect::<Vec<_>>()
+                    .join("")
+                    .trim()
+                    .to_string();
+                if key_hex.is_empty() {
+                    None
+                } else {
+                    Some((key_hex, key_id.unwrap_or_default()))
+                }
             })
             .unwrap_or_else(|| {
                 (

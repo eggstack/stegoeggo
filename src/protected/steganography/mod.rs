@@ -505,24 +505,24 @@ mod tests {
     fn compute_payload_mac_deterministic() {
         let data = vec![1u8; 24];
         let key = b"test-secret-key";
-        let a = SteganographyProtector::compute_payload_mac(&data, key);
-        let b = SteganographyProtector::compute_payload_mac(&data, key);
+        let a = SteganographyProtector::compute_payload_mac(&data, key).unwrap();
+        let b = SteganographyProtector::compute_payload_mac(&data, key).unwrap();
         assert_eq!(a, b);
     }
 
     #[test]
     fn compute_payload_mac_different_keys() {
         let data = vec![1u8; 24];
-        let a = SteganographyProtector::compute_payload_mac(&data, b"key-a");
-        let b = SteganographyProtector::compute_payload_mac(&data, b"key-b");
+        let a = SteganographyProtector::compute_payload_mac(&data, b"key-a").unwrap();
+        let b = SteganographyProtector::compute_payload_mac(&data, b"key-b").unwrap();
         assert_ne!(a, b);
     }
 
     #[test]
     fn compute_payload_mac_different_data() {
         let key = b"test-key";
-        let a = SteganographyProtector::compute_payload_mac(&[0u8; 24], key);
-        let b = SteganographyProtector::compute_payload_mac(&[1u8; 24], key);
+        let a = SteganographyProtector::compute_payload_mac(&[0u8; 24], key).unwrap();
+        let b = SteganographyProtector::compute_payload_mac(&[1u8; 24], key).unwrap();
         assert_ne!(a, b);
     }
 
@@ -533,7 +533,7 @@ mod tests {
         let mut raw_mac = HmacSha256::new_from_slice(key).unwrap();
         raw_mac.update(&data);
         let raw = raw_mac.finalize().into_bytes();
-        let v3 = SteganographyProtector::compute_payload_mac_v3(&data, key);
+        let v3 = SteganographyProtector::compute_payload_mac_v3(&data, key).unwrap();
         assert_ne!(v3, raw[..16]);
     }
 
@@ -541,14 +541,14 @@ mod tests {
     fn verify_payload_mac_match() {
         let data = vec![42u8; 24];
         let key = b"my-key";
-        let mac = SteganographyProtector::compute_payload_mac(&data, key);
+        let mac = SteganographyProtector::compute_payload_mac(&data, key).unwrap();
         assert!(SteganographyProtector::verify_payload_mac(&data, key, &mac));
     }
 
     #[test]
     fn verify_payload_mac_wrong_key() {
         let data = vec![42u8; 24];
-        let mac = SteganographyProtector::compute_payload_mac(&data, b"correct-key");
+        let mac = SteganographyProtector::compute_payload_mac(&data, b"correct-key").unwrap();
         assert!(!SteganographyProtector::verify_payload_mac(
             &data,
             b"wrong-key",
@@ -560,7 +560,7 @@ mod tests {
     fn verify_payload_mac_corrupted_mac() {
         let data = vec![42u8; 24];
         let key = b"key";
-        let mut mac = SteganographyProtector::compute_payload_mac(&data, key);
+        let mut mac = SteganographyProtector::compute_payload_mac(&data, key).unwrap();
         mac[0] ^= 0xFF;
         assert!(!SteganographyProtector::verify_payload_mac(
             &data, key, &mac

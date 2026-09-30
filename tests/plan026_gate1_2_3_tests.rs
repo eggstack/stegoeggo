@@ -176,7 +176,7 @@ fn missing_hmac_key_on_hmac_payload_reports_invalid() {
 fn crc_channel_flags_do_not_claim_authentication() {
     let ctx = ProtectionContext::new(0.5, 42);
     let stego = stegoeggo::SteganographyProtector::new();
-    let payload_bytes = stego.generate_payload_for_context(&ctx);
+    let payload_bytes = stego.generate_payload_for_context(&ctx).unwrap();
     assert!(payload_bytes.len() >= 3);
     assert_eq!(payload_bytes[0], 0x53);
     assert_eq!(payload_bytes[1], 0x45);
@@ -187,7 +187,7 @@ fn crc_channel_flags_do_not_claim_authentication() {
 fn hmac_channel_flags_claim_authentication() {
     let ctx = ProtectionContext::new(0.5, 42).with_mac_key(b"test-key".to_vec());
     let stego = stegoeggo::SteganographyProtector::new();
-    let payload_bytes = stego.generate_payload_for_context(&ctx);
+    let payload_bytes = stego.generate_payload_for_context(&ctx).unwrap();
     assert!(payload_bytes.len() >= 3);
     assert_eq!(payload_bytes[0], 0x53);
     assert_eq!(payload_bytes[1], 0x45);

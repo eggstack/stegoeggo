@@ -212,9 +212,11 @@ fn public_lsb_empty_payload() {
     let img = make_lsb_image(64, 64);
     let config = LsbConfig::new(42);
 
-    let report = lsb::embed(&img, b"", &config).unwrap();
-    assert!(report.embedded);
-    assert_eq!(report.payload_bytes, 0);
+    let err = lsb::embed(&img, b"", &config).unwrap_err();
+    assert!(matches!(
+        err,
+        stegoeggo::stego::StegoError::InvalidConfig(_)
+    ));
 }
 
 #[test]

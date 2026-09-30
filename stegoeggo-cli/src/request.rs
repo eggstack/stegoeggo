@@ -218,11 +218,17 @@ pub(crate) fn build_protection_request_with_explicit_options(
             args.intensity
         )));
     }
+    if !(0.0..=1.0).contains(&args.intensity) {
+        return Err(config_err(format!(
+            "--intensity must be between 0.0 and 1.0, got {}",
+            args.intensity
+        )));
+    }
     let notice = stegoeggo::RightsNotice::default();
 
     let mut request = stegoeggo::ProtectionRequest::new(notice, policy, channels)
         .with_seed(seed)
-        .with_intensity(args.intensity.clamp(0.0, 1.0));
+        .with_intensity(args.intensity);
 
     if !(1..=10).contains(&args.stego_redundancy) {
         return Err(config_err(format!(

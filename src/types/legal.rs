@@ -279,6 +279,15 @@ impl RightsNotice {
                 }
             }
         }
+        if let Some(v) = self.creation_date.as_deref() {
+            crate::types::LegalMetadata::validate_date("creation_date", v)?;
+        }
+        if let Some(v) = self.metadata_date.as_deref() {
+            crate::types::LegalMetadata::validate_date("metadata_date", v)?;
+        }
+        if let Some(v) = self.notice_applied_at.as_deref() {
+            crate::types::LegalMetadata::validate_date("notice_applied_at", v)?;
+        }
         Ok(())
     }
 
@@ -589,7 +598,7 @@ impl LegalMetadata {
         })
     }
 
-    fn validate_date(field_name: &str, value: &str) -> crate::Result<()> {
+    pub(crate) fn validate_date(field_name: &str, value: &str) -> crate::Result<()> {
         if value.is_empty() {
             return Err(crate::Error::Config(format!(
                 "Date field '{}' must not be empty",

@@ -300,7 +300,9 @@ impl<C: PixelCarrier + ?Sized> PixelCarrier for TileWindow<'_, C> {
     }
 
     fn read_channel(&self, x: u32, y: u32, channel: usize) -> Option<u8> {
-        self.inner.read_channel(self.x0 + x, self.y0 + y, channel)
+        let ax = self.x0.checked_add(x)?;
+        let ay = self.y0.checked_add(y)?;
+        self.inner.read_channel(ax, ay, channel)
     }
 }
 
@@ -335,14 +337,17 @@ impl<C: PixelCarrierMut + ?Sized> PixelCarrier for TileWindowMut<'_, C> {
     }
 
     fn read_channel(&self, x: u32, y: u32, channel: usize) -> Option<u8> {
-        self.inner.read_channel(self.x0 + x, self.y0 + y, channel)
+        let ax = self.x0.checked_add(x)?;
+        let ay = self.y0.checked_add(y)?;
+        self.inner.read_channel(ax, ay, channel)
     }
 }
 
 impl<C: PixelCarrierMut + ?Sized> PixelCarrierMut for TileWindowMut<'_, C> {
     fn write_channel_bit(&mut self, x: u32, y: u32, channel: usize, bit: u8) -> Option<()> {
-        self.inner
-            .write_channel_bit(self.x0 + x, self.y0 + y, channel, bit)
+        let ax = self.x0.checked_add(x)?;
+        let ay = self.y0.checked_add(y)?;
+        self.inner.write_channel_bit(ax, ay, channel, bit)
     }
 }
 
@@ -1283,21 +1288,14 @@ impl LsbConfig {
     /// Set the redundancy level (1–10). Higher redundancy increases
     /// robustness at the cost of reduced capacity.
     ///
-    /// Compatibility builder for compile-time-constant values. In debug
-    /// builds, panics if `redundancy` is 0 or greater than 10. In
-    /// release builds with `panic=abort`, an out-of-range value is clamped to
-    /// `1..=10` to avoid aborting the process; prefer
+    /// Compatibility builder for compile-time-constant values. Out-of-range
+    /// values are clamped to `1..=10` in all profiles; prefer
     /// [`LsbConfig::try_with_redundancy`](Self::try_with_redundancy) or
     /// [`LsbConfig::with_redundancy_value`](Self::with_redundancy_value) when
     /// the value is not statically known to be in `1..=10` (for example
-    /// values from configuration files, CLI flags, or network payloads,
-    /// which must not abort the process on invalid input).
+    /// values from configuration files, CLI flags, or network payloads).
     #[must_use]
     pub fn with_redundancy(mut self, redundancy: usize) -> Self {
-        debug_assert!(
-            (1..=10).contains(&redundancy),
-            "redundancy must be 1..=10, got {redundancy}"
-        );
         if !(1..=10).contains(&redundancy) {
             self.redundancy = redundancy.clamp(1, 10);
             return self;
@@ -1351,8 +1349,7 @@ impl LsbConfig {
     /// The redundancy level as a validated [`Redundancy`](crate::Redundancy).
     #[must_use]
     pub fn redundancy_value(&self) -> crate::Redundancy {
-        crate::Redundancy::from_usize(self.redundancy)
-            .expect("LsbConfig invariant: redundancy is always validated")
+        crate::Redundancy::from_usize(self.redundancy).unwrap_or(crate::Redundancy::MIN)
     }
 
     /// The seed used for the carrier permutation.
@@ -1398,7 +1395,11 @@ pub fn capacity(
 ) -> Result<super::CapacityReport, super::StegoError> {
     let (w, h) = img.dimensions();
     let available = checked_lsb_available_slots(w, h)?;
-    let payload_bits = payload_len.saturating_mul(8);
+    let payload_bits = payload_len.checked_mul(8).ok_or_else(|| {
+        super::StegoError::InvalidConfig(format!(
+            "payload length {payload_len} overflows bit count"
+        ))
+    })?;
     let required = lsb_required_capacity_v2(payload_bits, config.redundancy());
     Ok(super::CapacityReport {
         required,
@@ -1440,6 +1441,12 @@ pub fn embed(
     if img.width() == 0 || img.height() == 0 {
         return Err(super::StegoError::EmptyCarrier);
     }
+    if payload.is_empty() {
+        return Err(super::StegoError::InvalidConfig(
+            "empty payload requires no carrier".to_string(),
+        ));
+    }
+    crate::constants::validate_redundancy(config.redundancy())?;
     checked_lsb_available_slots(img.width(), img.height())?;
 
     let mut output = img.clone();
@@ -1467,6 +1474,12 @@ pub fn embed_in_place(
     if img.width() == 0 || img.height() == 0 {
         return Err(super::StegoError::EmptyCarrier);
     }
+    if payload.is_empty() {
+        return Err(super::StegoError::InvalidConfig(
+            "empty payload requires no carrier".to_string(),
+        ));
+    }
+    crate::constants::validate_redundancy(config.redundancy())?;
     checked_lsb_available_slots(img.width(), img.height())?;
 
     Ok(embed_lsb_v2_in_place(

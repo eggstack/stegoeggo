@@ -23,7 +23,7 @@ pub struct PayloadV3Header {
     pub dmi_policy: u8,
     /// PRNG seed for steganographic embedding.
     pub seed: u64,
-    /// Embedding intensity (0–10000, where 10000 = 100.0%).
+    /// Embedding intensity raw (application 0.0–1.0 maps to 0–100 via round).
     pub intensity: u16,
     /// Content hash truncated to 8 bytes.
     pub content_hash: [u8; 8],
@@ -48,7 +48,7 @@ impl PayloadV3Header {
         AuthAlgorithm::from_byte(self.auth_algorithm)
     }
 
-    /// Convert the stored intensity to a 0.0–100.0 float.
+    /// Convert the stored intensity to application scale 0.0–1.0 via /100.
     #[must_use]
     pub fn intensity_f32(&self) -> f32 {
         self.intensity as f32 / 100.0

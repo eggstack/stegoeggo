@@ -13,11 +13,17 @@ pub(crate) fn collect_input_files(inputs: &[PathBuf]) -> Vec<PathBuf> {
                     let path = entry.path();
                     if is_image_file(&path) {
                         files.push(path);
+                    } else {
+                        eprintln!("Warning: skipping non-image file {}", path.display());
                     }
                 }
             }
+        } else if !input.exists() {
+            eprintln!("Warning: skipping missing input {}", input.display());
         } else if is_image_file(input) {
             files.push(input.clone());
+        } else {
+            eprintln!("Warning: skipping non-image input {}", input.display());
         }
     }
     files.sort();
@@ -84,6 +90,19 @@ pub(crate) fn check_input_output_disjoint(input: &Path, output: &Path) -> Result
         return Err(Error::Config(
             "Input and output paths resolve to the same file; use --output to specify a different path".to_string(),
         ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        if let (Ok(input_meta), Ok(output_meta)) =
+            (std::fs::metadata(input), std::fs::metadata(output))
+        {
+            if input_meta.dev() == output_meta.dev() && input_meta.ino() == output_meta.ino() {
+                return Err(Error::Config(
+                    "Input and output paths resolve to the same file; use --output to specify a different path".to_string(),
+                ));
+            }
+        }
     }
     Ok(())
 }
