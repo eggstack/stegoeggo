@@ -41,7 +41,7 @@ impl SteganographyProtector {
         if let Ok(png_bytes) = crate::util::image::encode_image(img, image::ImageFormat::Png) {
             self.verify_payload_from_bytes_with_key(&png_bytes, mac_key)
         } else {
-            VerificationStatus::Invalid
+            VerificationStatus::NotFound
         }
     }
 
@@ -110,27 +110,6 @@ impl SteganographyProtector {
             let rgba = img.to_rgba8();
             if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
                 let outcome = self.verify_payload_with_seed_outcome(&img, fallback_seed, mac_key);
-                let outcome = if fallback_seed == 0 {
-                    match outcome {
-                        CandidateOutcome::ResourceLimitExceeded => {
-                            CandidateOutcome::ResourceLimitExceeded
-                        }
-                        CandidateOutcome::Valid(payload)
-                        | CandidateOutcome::Invalid(payload)
-                        | CandidateOutcome::AuthenticationKeyMissing(payload)
-                        | CandidateOutcome::AuthenticationFailed(payload)
-                            if !Self::payload_is_structurally_plausible(&payload) =>
-                        {
-                            CandidateOutcome::NotFound
-                        }
-                        CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
-                            CandidateOutcome::NotFound
-                        }
-                        outcome => outcome,
-                    }
-                } else {
-                    outcome
-                };
                 if !matches!(&outcome, CandidateOutcome::NotFound) {
                     return outcome;
                 }
@@ -148,27 +127,6 @@ impl SteganographyProtector {
                     self.limits.max_tile_extraction_origins_u32(),
                     mac_key,
                 );
-                let outcome = if _suppress_unstructured_candidates {
-                    match outcome {
-                        CandidateOutcome::ResourceLimitExceeded => {
-                            CandidateOutcome::ResourceLimitExceeded
-                        }
-                        CandidateOutcome::Valid(payload)
-                        | CandidateOutcome::Invalid(payload)
-                        | CandidateOutcome::AuthenticationKeyMissing(payload)
-                        | CandidateOutcome::AuthenticationFailed(payload)
-                            if !Self::payload_is_structurally_plausible(&payload) =>
-                        {
-                            CandidateOutcome::NotFound
-                        }
-                        CandidateOutcome::MalformedV3 | CandidateOutcome::UnsupportedVersion(_) => {
-                            CandidateOutcome::NotFound
-                        }
-                        outcome => outcome,
-                    }
-                } else {
-                    outcome
-                };
                 if !matches!(&outcome, CandidateOutcome::NotFound) {
                     return outcome;
                 }
@@ -228,7 +186,11 @@ impl SteganographyProtector {
     }
 
     pub(crate) fn parse_verified_payload(raw: &[u8]) -> Option<StegoPayload> {
-        let decoded = Self::try_ecc_decode(raw).unwrap_or_else(|| raw.to_vec());
+        let decoded = if raw.starts_with(b"SE") {
+            raw.to_vec()
+        } else {
+            Self::try_ecc_decode(raw)?
+        };
         let mut payload = Self::parse_stego_payload(&decoded)?;
         payload.raw_payload = Some(Self::truncate_to_actual_payload(raw));
         Some(payload)
@@ -381,11 +343,6 @@ impl SteganographyProtector {
         None
     }
 
-    pub(crate) fn payload_is_structurally_plausible(payload: &[u8]) -> bool {
-        let decoded = Self::try_ecc_decode(payload).unwrap_or_else(|| payload.to_vec());
-        Self::parse_stego_payload(&decoded).is_some()
-    }
-
     pub(crate) fn parse_stego_payload_v3(payload: &[u8]) -> Option<StegoPayload> {
         if payload.len() < crate::payload_v3::types::V3_CORE_SIZE {
             return None;
@@ -431,6 +388,10 @@ impl SteganographyProtector {
             seed: extracted_seed,
             intensity,
             version: 3,
+            tiled: crate::payload_v3::types::PayloadFlags::from_bits(u16::from_le_bytes([
+                payload[6], payload[7],
+            ]))
+            .tiled,
             content_hash,
             dmi_value,
             raw_payload: None,
@@ -991,11 +952,11 @@ mod tests {
     }
 
     #[test]
-    fn encode_failure_is_invalid_verification() {
+    fn encode_failure_is_not_found() {
         let image = DynamicImage::new_rgba8(0, 0);
         assert_eq!(
             SteganographyProtector::new().verify_payload_with_key(&image, &[]),
-            VerificationStatus::Invalid
+            VerificationStatus::NotFound
         );
     }
 

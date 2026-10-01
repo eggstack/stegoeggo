@@ -22,6 +22,7 @@ pub(crate) type NoticeFields = (
     Option<String>,
 );
 
+#[derive(Clone, Copy)]
 pub(crate) enum Format {
     Png,
     Jpeg,
@@ -83,7 +84,10 @@ pub(crate) fn extract_png_notice(
             let Some(raw_end) = data_start.checked_add(chunk_len) else {
                 break;
             };
-            let data_end = raw_end.min(png_data.len());
+            if raw_end > png_data.len() {
+                break;
+            }
+            let data_end = raw_end;
             if data_start > data_end {
                 break;
             }
@@ -91,6 +95,7 @@ pub(crate) fn extract_png_notice(
 
             if let Some(null_pos) = data.iter().position(|&b| b == 0) {
                 let key = &data[..null_pos];
+                let key = key.strip_prefix(b"StegoEggo:").unwrap_or(key);
                 let value_raw = &data[null_pos + 1..];
                 let value_str = if let Some(end) = value_raw.iter().position(|&b| b == 0) {
                     String::from_utf8_lossy(&value_raw[..end]).into_owned()
@@ -99,8 +104,11 @@ pub(crate) fn extract_png_notice(
                 };
 
                 if key == b"X-Protection-Seed" && seed.is_none() {
-                    if let Ok(s) = value_str.parse() {
-                        *seed = Some(s);
+                    let seed_bytes = value_raw.split(|&b| b == 0).next().unwrap_or_default();
+                    if let Ok(seed_text) = std::str::from_utf8(seed_bytes) {
+                        if let Ok(s) = seed_text.parse() {
+                            *seed = Some(s);
+                        }
                     }
                 }
 
@@ -182,12 +190,16 @@ pub(crate) fn extract_png_notice(
                 };
                 let inner_end = inner_raw.min(png_data.len());
                 if inner_start <= inner_end {
-                    let prefix_len = 18.min(inner_end - inner_start);
+                    let prefix_len = b"XML:com.adobe.xmp".len().min(inner_end - inner_start);
                     let Some(prefix_end) = inner_start.checked_add(prefix_len) else {
                         break;
                     };
                     if prefix_end <= inner_end
+                        && prefix_len == b"XML:com.adobe.xmp".len()
                         && &png_data[inner_start..prefix_end] == b"XML:com.adobe.xmp"
+                        && png_data.get(prefix_end) == Some(&0)
+                        && png_data.get(prefix_end + 1).is_some_and(|flag| *flag <= 1)
+                        && png_data.get(prefix_end + 2) == Some(&0)
                     {
                         channels.push(EvidenceChannel::PngXmp);
                     }
@@ -254,7 +266,10 @@ pub(crate) fn extract_xmp_dmi_from_png_with_limits(
             let Some(raw_end) = data_start.checked_add(chunk_len) else {
                 break;
             };
-            let data_end = raw_end.min(png_data.len());
+            if raw_end > png_data.len() {
+                break;
+            }
+            let data_end = raw_end;
             if data_start > data_end {
                 break;
             }
@@ -359,7 +374,10 @@ pub(crate) fn extract_jpeg_notice(
             let Some(raw_end) = comment_start.checked_add(comment_len.saturating_sub(2)) else {
                 break;
             };
-            let comment_end = raw_end.min(jpeg_data.len());
+            if raw_end > jpeg_data.len() {
+                break;
+            }
+            let comment_end = raw_end;
             if comment_start > comment_end {
                 break;
             }
@@ -712,7 +730,10 @@ pub(crate) fn extract_webp_notice(
         let Some(raw_end) = data_start.checked_add(chunk_size) else {
             break;
         };
-        let data_end = raw_end.min(webp_data.len());
+        if raw_end > webp_data.len() {
+            break;
+        }
+        let data_end = raw_end;
         if data_start > data_end {
             break;
         }
@@ -836,7 +857,10 @@ pub(crate) fn extract_xmp_dmi_from_webp_with_limits(
         let Some(raw_end) = data_start.checked_add(chunk_size) else {
             break;
         };
-        let data_end = raw_end.min(webp_data.len());
+        if raw_end > webp_data.len() {
+            break;
+        }
+        let data_end = raw_end;
         if data_start > data_end {
             break;
         }

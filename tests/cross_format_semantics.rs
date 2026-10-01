@@ -696,7 +696,10 @@ fn cross_format_external_parser_comparison() {
             .unwrap()
             .iter()
             .find(|(k, _)| {
-                k.ends_with(":Copyright") || k.ends_with(":Comment") || k.ends_with(":Rights")
+                k.ends_with(":Copyright")
+                    || k.ends_with(":StegoEggoCopyright")
+                    || k.ends_with(":Comment")
+                    || k.ends_with(":Rights")
             })
             .map(|(_, v)| v.as_str().unwrap_or("").to_string());
         assert!(

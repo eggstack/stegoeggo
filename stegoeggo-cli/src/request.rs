@@ -5,8 +5,8 @@ use crate::args::{
 use crate::keys::resolve_key_input;
 use crate::output::config_err;
 use stegoeggo::{
-    generate_random_seed, DmiValue, HiddenMarkerMode, ImageOutputFormat, ProtectionChannels,
-    ProtectionLevel, ProtectionRequest, ProtectionWarning, RightsPolicy, WarningSeverity,
+    DmiValue, HiddenMarkerMode, ImageOutputFormat, ProtectionChannels, ProtectionLevel,
+    ProtectionRequest, ProtectionWarning, RightsPolicy, WarningSeverity,
 };
 
 pub(crate) fn build_legal_metadata(
@@ -180,7 +180,7 @@ pub(crate) fn build_protection_request_with_explicit_options(
         ));
     }
 
-    let seed = args.seed.unwrap_or_else(generate_random_seed);
+    let seed = args.seed;
 
     let mac_key = resolve_key_input(&args.key, "STEGOEGGO_KEY")?;
 
@@ -226,17 +226,21 @@ pub(crate) fn build_protection_request_with_explicit_options(
     }
     let notice = stegoeggo::RightsNotice::default();
 
-    let mut request = stegoeggo::ProtectionRequest::new(notice, policy, channels)
-        .with_seed(seed)
-        .with_intensity(args.intensity);
-
-    if !(1..=10).contains(&args.stego_redundancy) {
-        return Err(config_err(format!(
-            "--stego-redundancy must be between 1 and 10, got {}",
-            args.stego_redundancy
-        )));
+    let mut request =
+        stegoeggo::ProtectionRequest::new(notice, policy, channels).with_intensity(args.intensity);
+    if let Some(seed) = seed {
+        request = request.with_seed(seed);
     }
-    request = request.with_stego_redundancy(args.stego_redundancy);
+
+    if let Some(redundancy) = args.stego_redundancy {
+        if !(1..=10).contains(&redundancy) {
+            return Err(config_err(format!(
+                "--stego-redundancy must be between 1 and 10, got {}",
+                redundancy
+            )));
+        }
+        request = request.with_stego_redundancy(redundancy);
+    }
 
     if !(1..=100).contains(&args.jpeg_quality) {
         return Err(config_err(format!(
@@ -483,7 +487,7 @@ mod tests {
             intensity: 0.5,
             seed: Some(42),
             format: None,
-            stego_redundancy: 2,
+            stego_redundancy: None,
             jpeg_quality: 90,
             progressive: false,
             verbose: false,
@@ -568,16 +572,24 @@ mod tests {
     #[test]
     fn test_stego_redundancy_is_applied_to_request() {
         let mut args = default_args();
-        args.stego_redundancy = 8;
+        args.stego_redundancy = Some(8);
         let req = build_protection_request(&args).unwrap();
         assert_eq!(req.processing().stego_redundancy, Some(8));
+    }
+
+    #[test]
+    fn default_redundancy_is_derived_from_intensity() {
+        let mut args = default_args();
+        args.intensity = 0.9;
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.processing().stego_redundancy, None);
     }
 
     #[test]
     fn test_stego_redundancy_out_of_range_is_config_error() {
         for out_of_range in [0usize, 11, 100] {
             let mut args = default_args();
-            args.stego_redundancy = out_of_range;
+            args.stego_redundancy = Some(out_of_range);
             let err = build_protection_request(&args).unwrap_err();
             let downcast = err.downcast_ref::<stegoeggo::Error>().expect(
                 "redundancy validation must be stegoeggo::Error for exit-code classification",

@@ -24,6 +24,9 @@ pub enum VerificationResult {
         /// The partially extracted payload (may contain valid metadata).
         payload: crate::StegoPayload,
     },
+    /// An invalid steganographic payload was detected, but it could not be
+    /// decoded into a complete payload value.
+    Invalid,
     /// Metadata markers were found, but no steganographic payload could be
     /// integrity-verified.
     ///
@@ -207,7 +210,7 @@ pub enum EvidenceChannel {
     /// F5-style DCT steganographic payload embedded in JPEG coefficients.
     DctPayload,
     /// Seed stored in JPEG quantization table LSBs.
-    /// Reserved for future use — currently not emitted by `verify_legal_notice()`.
+    /// Emitted when a JPEG quantization-table seed marker is found.
     QTableSeed,
 }
 

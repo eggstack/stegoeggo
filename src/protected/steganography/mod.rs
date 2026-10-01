@@ -282,6 +282,7 @@ pub struct StegoPayload {
     seed: u64,
     intensity: f32,
     version: u8,
+    tiled: bool,
     content_hash: Option<[u8; 4]>,
     dmi_value: Option<crate::types::DmiValue>,
     raw_payload: Option<Vec<u8>>,
@@ -310,6 +311,12 @@ impl StegoPayload {
     #[must_use]
     pub fn version(&self) -> u8 {
         self.version
+    }
+
+    /// Returns whether the embedded payload declares tiled placement.
+    #[must_use]
+    pub fn is_tiled(&self) -> bool {
+        self.tiled
     }
 
     /// Truncated content hash (4 bytes) for linking to the original image.

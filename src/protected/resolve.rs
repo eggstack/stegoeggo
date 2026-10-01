@@ -116,6 +116,9 @@ fn apply_timestamp_override(
     override_ts: Option<&str>,
     auto_compute: bool,
 ) -> RightsNotice {
+    if !auto_compute && !notice.has_legal_content() {
+        return notice;
+    }
     if let Some(ts) = override_ts {
         return notice.with_notice_applied_at(ts.to_string());
     }
@@ -123,8 +126,9 @@ fn apply_timestamp_override(
         return notice;
     }
     if auto_compute {
-        return notice
-            .with_notice_applied_at(crate::protected::metadata_trap::current_timestamp_iso8601());
+        if let Some(ts) = crate::protected::metadata_trap::current_timestamp_iso8601() {
+            return notice.with_notice_applied_at(ts);
+        }
     }
     notice
 }

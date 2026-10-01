@@ -345,7 +345,11 @@ fn external_extract_json(
     Ok(ExternalExtraction {
         tool: "exiftool".to_string(),
         version,
-        copyright: resolve_tag(&obj, group, &["Copyright", "Rights", "XMP-dc:Rights"]),
+        copyright: resolve_tag(
+            &obj,
+            group,
+            &["Copyright", "StegoEggoCopyright", "Rights", "XMP-dc:Rights"],
+        ),
         creators: resolve_array_tag(&obj, group, &["Creator", "XMP-dc:Creator"]),
         usage_terms: resolve_tag(&obj, group, &["UsageTerms", "XMP-xmpRights:UsageTerms"]),
         rights_url: resolve_tag(

@@ -4,22 +4,24 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use stegoeggo::{process_request_bytes_with_warnings, Error, ImageOutputFormat, ProtectionWarning};
 
-pub(crate) fn collect_input_files(inputs: &[PathBuf]) -> Vec<PathBuf> {
+pub(crate) fn collect_input_files(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, Error> {
     let mut files = Vec::new();
     for input in inputs {
         if input.is_dir() {
-            if let Ok(entries) = fs::read_dir(input) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if is_image_file(&path) {
-                        files.push(path);
-                    } else {
-                        eprintln!("Warning: skipping non-image file {}", path.display());
-                    }
+            for entry in fs::read_dir(input).map_err(Error::Io)? {
+                let entry = entry.map_err(Error::Io)?;
+                let path = entry.path();
+                if is_image_file(&path) {
+                    files.push(path);
+                } else {
+                    eprintln!("Warning: skipping non-image file {}", path.display());
                 }
             }
         } else if !input.exists() {
-            eprintln!("Warning: skipping missing input {}", input.display());
+            return Err(Error::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("input does not exist: {}", input.display()),
+            )));
         } else if is_image_file(input) {
             files.push(input.clone());
         } else {
@@ -27,16 +29,15 @@ pub(crate) fn collect_input_files(inputs: &[PathBuf]) -> Vec<PathBuf> {
         }
     }
     files.sort();
-    files
+    Ok(files)
 }
 
 pub(crate) fn is_image_file(path: &Path) -> bool {
-    if let Some(ext) = path.extension() {
-        let ext = ext.to_string_lossy().to_lowercase();
-        matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp")
-    } else {
-        false
-    }
+    path.is_file()
+        && fs::read(path)
+            .ok()
+            .and_then(|bytes| ImageOutputFormat::from_magic_bytes(&bytes))
+            .is_some()
 }
 
 pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> Result<(), Error> {
@@ -148,7 +149,14 @@ pub(crate) fn has_duplicate_stems(files: &[PathBuf]) -> bool {
 }
 
 pub(crate) fn output_looks_like_file(out: &Path) -> bool {
-    out.is_file() || (out.extension().is_some() && is_image_file(out))
+    out.is_file()
+        || (!out.is_dir()
+            && out.extension().is_some_and(|ext| {
+                matches!(
+                    ext.to_string_lossy().to_ascii_lowercase().as_str(),
+                    "png" | "jpg" | "jpeg" | "webp"
+                )
+            }))
 }
 
 #[allow(dead_code)]
@@ -267,13 +275,35 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let first = temp.path().join("b.png");
         let second = temp.path().join("a.png");
-        fs::write(&first, []).unwrap();
-        fs::write(&second, []).unwrap();
+        fs::write(&first, b"\x89PNG\r\n\x1a\n").unwrap();
+        fs::write(&second, b"\x89PNG\r\n\x1a\n").unwrap();
 
         assert_eq!(
-            collect_input_files(&[temp.path().to_path_buf()]),
+            collect_input_files(&[temp.path().to_path_buf()]).unwrap(),
             vec![second, first]
         );
+    }
+
+    #[test]
+    fn collect_input_files_uses_magic_bytes_and_rejects_missing_inputs() {
+        let temp = tempfile::tempdir().unwrap();
+        let image = temp.path().join("without_extension");
+        fs::write(&image, b"\x89PNG\r\n\x1a\n").unwrap();
+        assert_eq!(
+            collect_input_files(std::slice::from_ref(&image)).unwrap(),
+            vec![image]
+        );
+
+        let missing = temp.path().join("missing.png");
+        assert!(collect_input_files(&[missing]).is_err());
+    }
+
+    #[test]
+    fn output_directory_with_image_extension_is_not_a_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let directory = temp.path().join("output.png");
+        fs::create_dir(&directory).unwrap();
+        assert!(!output_looks_like_file(&directory));
     }
 
     #[test]

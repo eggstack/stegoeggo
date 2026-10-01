@@ -179,6 +179,8 @@ pub struct ProcessingOptions {
     /// Whether to produce progressive JPEG output.
     pub progressive_jpeg: bool,
     /// Maximum image dimension in pixels.
+    /// Application-level maximum dimension. `ResourceLimits::max_width` and
+    /// `max_height` are always enforced as an additional hard bound.
     pub max_dimension: Option<u32>,
     /// Metadata update policy for re-processing.
     pub metadata_update_policy: MetadataUpdatePolicy,
@@ -279,7 +281,8 @@ impl ProtectionRequest {
         self
     }
 
-    /// Sets the embedding intensity (0.0-1.0).
+    /// Sets embedding intensity. Finite values are clamped to `0.0..=1.0`;
+    /// non-finite values are stored and rejected when the request is resolved.
     #[must_use]
     pub fn with_intensity(mut self, intensity: f32) -> Self {
         self.intensity = if intensity.is_finite() {

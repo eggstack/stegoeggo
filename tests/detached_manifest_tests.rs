@@ -570,7 +570,7 @@ fn test_embedded_reference_raw_payload_none() {
     let result = verify_detached_manifest(&image_bytes, &manifest, &TrustPolicy::TrustNone);
     assert_eq!(
         result.embedded_reference_status,
-        EmbeddedReferenceStatus::Stripped
+        EmbeddedReferenceStatus::Malformed
     );
 }
 
@@ -847,7 +847,7 @@ fn test_embedded_reference_wrong_digest_reports_stripped_without_payload() {
     let result = verify_detached_manifest(&image_bytes, &manifest, &TrustPolicy::TrustNone);
     assert_eq!(
         result.embedded_reference_status,
-        EmbeddedReferenceStatus::Stripped
+        EmbeddedReferenceStatus::Malformed
     );
 }
 

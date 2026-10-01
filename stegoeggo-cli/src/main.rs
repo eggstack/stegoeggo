@@ -226,7 +226,7 @@ fn run_protect(
         );
     }
 
-    let input_files = collect_input_files(&args.input);
+    let input_files = collect_input_files(&args.input)?;
 
     if input_files.is_empty() {
         if args.json {

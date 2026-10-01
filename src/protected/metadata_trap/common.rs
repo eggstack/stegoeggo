@@ -47,19 +47,21 @@ pub(super) fn date_parts_from_secs(now: u64) -> (i32, usize, u64, u64) {
     (year, month + 1, remaining_days + 1, now % 86400)
 }
 
+#[cfg(test)]
 pub(super) fn current_date_parts() -> (i32, usize, u64, u64) {
-    let now = current_unix_seconds();
+    let now = current_unix_seconds().unwrap_or_default();
     date_parts_from_secs(now)
 }
 
-pub(super) fn current_unix_seconds() -> u64 {
+pub(super) fn current_unix_seconds() -> Option<u64> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0)
+        .ok()
 }
 
 pub(super) fn unix_seconds_from_timestamp(value: &str) -> Option<u64> {
+    crate::types::LegalMetadata::validate_date("timestamp", value).ok()?;
     let (year, month, day, hour, minute, second, offset_seconds) = match value.len() {
         10 if value.as_bytes().get(4) == Some(&b'-') && value.as_bytes().get(7) == Some(&b'-') => (
             value[0..4].parse::<i64>().ok()?,
@@ -157,16 +159,17 @@ pub(super) fn current_date_iso() -> String {
     format!("{:04}-{:02}-{:02}", year, month, day)
 }
 
-pub(crate) fn current_timestamp_iso8601() -> String {
-    let (year, month, day, day_secs) = current_date_parts();
+pub(crate) fn current_timestamp_iso8601() -> Option<String> {
+    let secs = current_unix_seconds()?;
+    let (year, month, day, day_secs) = date_parts_from_secs(secs);
     let hours = day_secs / 3600;
     let minutes = (day_secs % 3600) / 60;
     let seconds = day_secs % 60;
 
-    format!(
+    Some(format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
         year, month, day, hours, minutes, seconds
-    )
+    ))
 }
 
 #[cfg(test)]

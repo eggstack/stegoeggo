@@ -252,25 +252,14 @@ fn legacy_missing_mac_key_is_compat_only() {
 }
 
 #[test]
-fn legacy_contradictory_claims_is_compat_only() {
+fn legacy_contradictory_claims_returns_config_error() {
     let input = png_bytes(64);
     let ctx = ProtectionContext::new(0.5, 42)
         .with_timestamp_override(TS)
         .with_legal_metadata(LegalMetadata::new().with_copyright_holder("Owner"))
         .with_legal_claims(false);
-    let (legacy_bytes, legacy_warnings) =
-        process_image_bytes_with_warnings(&input, ProtectionLevel::Standard, &ctx).unwrap();
-    assert!(legacy_warnings.contains(&ProtectionWarning::ContradictoryLegalClaims));
-    let notice = RightsNotice::default()
-        .with_dmi(DmiValue::ProhibitedAiMlTraining)
-        .with_seed(42);
-    let request =
-        ProtectionRequest::with_hidden_marker(notice, RightsPolicy::ProhibitedAiMlTraining)
-            .with_seed(42)
-            .with_intensity(0.5)
-            .with_timestamp_override(TS);
-    let (canonical_bytes, _) = process_request_bytes_with_warnings(&input, &request).unwrap();
-    assert_eq!(legacy_bytes, canonical_bytes);
+    let result = process_image_bytes_with_warnings(&input, ProtectionLevel::Standard, &ctx);
+    assert!(matches!(result, Err(stegoeggo::Error::Config(_))));
 }
 
 #[test]

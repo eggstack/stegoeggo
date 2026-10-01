@@ -5,6 +5,7 @@ target/
 # Test artifacts
 conformance-report.json
 test_input.png
+test_cli_protected*.png
 test_output/
 testfinal/
 testimages/

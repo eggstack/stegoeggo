@@ -63,7 +63,7 @@ impl Default for ResourceLimits {
             max_metadata_field_bytes: 8192,
             max_payload_bytes: 256,
             max_detached_manifest_bytes: 1024 * 1024,
-            max_tile_extraction_origins: 16,
+            max_tile_extraction_origins: 64,
             max_verification_seeds: 32,
         }
     }
@@ -528,6 +528,14 @@ impl OperationObserver {
                 limit: self.limits.max_png_chunks(),
             });
         }
+        let size = bytes.saturating_sub(12);
+        if size > self.limits.max_png_chunk_bytes() && self.limit_error.is_none() {
+            self.limit_error = Some(ObserverLimitError::MetadataLimit {
+                kind: "PNG chunk",
+                size,
+                limit: self.limits.max_png_chunk_bytes(),
+            });
+        }
         self.observe_alloc(bytes);
     }
 
@@ -542,6 +550,14 @@ impl OperationObserver {
                 limit: self.limits.max_jpeg_segments(),
             });
         }
+        let size = bytes.saturating_sub(2);
+        if size > self.limits.max_jpeg_segment_bytes() && self.limit_error.is_none() {
+            self.limit_error = Some(ObserverLimitError::MetadataLimit {
+                kind: "JPEG segment",
+                size,
+                limit: self.limits.max_jpeg_segment_bytes(),
+            });
+        }
         self.observe_alloc(bytes);
     }
 
@@ -554,6 +570,14 @@ impl OperationObserver {
                 kind: "WebP RIFF chunks",
                 count: self.usage.webp_riff_chunks_scanned,
                 limit: self.limits.max_webp_riff_chunks(),
+            });
+        }
+        let size = bytes.saturating_sub(8);
+        if size > self.limits.max_webp_riff_bytes() && self.limit_error.is_none() {
+            self.limit_error = Some(ObserverLimitError::MetadataLimit {
+                kind: "WebP RIFF chunk",
+                size,
+                limit: self.limits.max_webp_riff_bytes(),
             });
         }
         self.observe_alloc(bytes);
@@ -610,7 +634,7 @@ mod tests {
         assert_eq!(limits.max_xmp_bytes(), 65535);
         assert_eq!(limits.max_metadata_fields(), 64);
         assert_eq!(limits.max_payload_bytes(), 256);
-        assert_eq!(limits.max_tile_extraction_origins(), 16);
+        assert_eq!(limits.max_tile_extraction_origins(), 64);
         assert_eq!(limits.max_verification_seeds(), 32);
     }
 

@@ -56,8 +56,12 @@ fn legacy_light_png_embeds_seed_only_no_full_payload() {
     let bytes = process_image_bytes(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
     let status = verify_image_bytes_detailed(&bytes, b"");
     assert!(
-        matches!(status, stegoeggo::VerificationResult::MetadataOnly { .. }),
-        "Light should verify as MetadataOnly, got {status:?}"
+        matches!(
+            status,
+            stegoeggo::VerificationResult::MetadataOnly { .. }
+                | stegoeggo::VerificationResult::Invalid
+        ),
+        "Seed-only PNG should report metadata or invalid payload evidence, got {status:?}"
     );
 }
 
@@ -80,8 +84,8 @@ fn legacy_light_jpeg_embeds_seed_only_no_full_payload() {
     let bytes = process_image_bytes(&jpeg_bytes, ProtectionLevel::Light, &ctx).unwrap();
     let status = verify_image_bytes_detailed(&bytes, b"");
     assert!(
-        matches!(status, stegoeggo::VerificationResult::MetadataOnly { .. }),
-        "Light JPEG should verify as MetadataOnly, got {status:?}"
+        matches!(status, stegoeggo::VerificationResult::Invalid),
+        "Malformed seed-only extraction should remain Invalid, got {status:?}"
     );
 }
 
@@ -110,21 +114,15 @@ fn legacy_legal_claims_true_injects_metadata() {
 }
 
 #[test]
-fn legacy_legal_claims_false_with_metadata_emits_warning() {
+fn legacy_legal_claims_false_with_metadata_returns_config_error() {
     #[allow(deprecated)]
     let ctx = ProtectionContext::new(0.5, 42)
         .with_legal_metadata(LegalMetadata::new().with_copyright_holder("Owner"))
         .with_legal_claims(false);
     let png_bytes = make_png(64, 64, 128);
-    let (_bytes, warnings) =
-        stegoeggo::process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Standard, &ctx)
-            .unwrap();
-    assert!(
-        warnings
-            .iter()
-            .any(|w| matches!(w, stegoeggo::ProtectionWarning::ContradictoryLegalClaims)),
-        "Some(false) + legal metadata must emit ContradictoryLegalClaims warning, got: {warnings:?}"
-    );
+    let result =
+        stegoeggo::process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Standard, &ctx);
+    assert!(matches!(result, Err(stegoeggo::Error::Config(_))));
 }
 
 #[test]

@@ -1,32 +1,31 @@
 use crate::error::{Error, Result};
 use crate::types::DmiValue;
 
-/// All PNG `tEXt` and `iTXt` keywords owned by StegoEggo.
+/// PNG keywords used by StegoEggo for metadata ownership.
 ///
 /// Shared by `png_has_stego_metadata`, `strip_stego_owned_png`, and
 /// `collect_stego_owned_png_keys` to ensure the three sites agree on what
-/// counts as StegoEggo-owned metadata. Includes the `XML:com.adobe.xmp`
-/// XMP iTXt keyword (BUG-02).
+/// counts as StegoEggo-owned metadata. Standard legal keywords are namespaced
+/// because their unqualified form may belong to the image author.
 const STEGO_OWNED_PNG_KEYS: &[&[u8]] = &[
     b"X-Protection-Seed",
     b"DMI-PROHIBITED",
-    b"XML:com.adobe.xmp",
     b"noai",
-    b"Copyright",
-    b"Contact",
-    b"License",
-    b"UsageTerms",
-    b"DateCreated",
-    b"AIConstraints",
-    b"WebStatementOfRights",
-    b"Creator",
-    b"CreditLine",
-    b"CopyrightOwner",
-    b"LicensorName",
-    b"LicensorEmail",
-    b"LicensorURL",
-    b"MetadataDate",
-    b"NoticeAppliedAt",
+    b"StegoEggo:Copyright",
+    b"StegoEggo:Contact",
+    b"StegoEggo:License",
+    b"StegoEggo:UsageTerms",
+    b"StegoEggo:DateCreated",
+    b"StegoEggo:AIConstraints",
+    b"StegoEggo:WebStatementOfRights",
+    b"StegoEggo:Creator",
+    b"StegoEggo:CreditLine",
+    b"StegoEggo:CopyrightOwner",
+    b"StegoEggo:LicensorName",
+    b"StegoEggo:LicensorEmail",
+    b"StegoEggo:LicensorURL",
+    b"StegoEggo:MetadataDate",
+    b"StegoEggo:NoticeAppliedAt",
 ];
 
 impl super::RightsMetadataProtector {
@@ -57,7 +56,7 @@ impl super::RightsMetadataProtector {
                 let data = &png_data[data_start..data_end];
                 if let Some(null_pos) = data.iter().position(|&b| b == 0) {
                     let key = &data[..null_pos];
-                    if Self::is_stego_owned_text_key(key) {
+                    if Self::is_stego_owned_png_entry(key, data) {
                         return true;
                     }
                 }
@@ -182,7 +181,12 @@ impl super::RightsMetadataProtector {
                     output.extend_from_slice(&xmp_chunk);
                 }
                 for (key, value) in metadata {
-                    let text_chunk = Self::create_png_text_chunk(key, value, limits)?;
+                    let namespaced_key = if Self::is_legal_png_key(key) {
+                        [b"StegoEggo:".as_slice(), key.as_slice()].concat()
+                    } else {
+                        key.clone()
+                    };
+                    let text_chunk = Self::create_png_text_chunk(&namespaced_key, value, limits)?;
                     output.extend_from_slice(&text_chunk);
                 }
                 if let Some(s) = seed {
@@ -332,6 +336,42 @@ impl super::RightsMetadataProtector {
         STEGO_OWNED_PNG_KEYS.contains(&key)
     }
 
+    fn is_legal_png_key(key: &[u8]) -> bool {
+        matches!(
+            key,
+            b"Copyright"
+                | b"Contact"
+                | b"License"
+                | b"UsageTerms"
+                | b"DateCreated"
+                | b"AIConstraints"
+                | b"WebStatementOfRights"
+                | b"Creator"
+                | b"CreditLine"
+                | b"CopyrightOwner"
+                | b"LicensorName"
+                | b"LicensorEmail"
+                | b"LicensorURL"
+                | b"MetadataDate"
+                | b"NoticeAppliedAt"
+        )
+    }
+
+    fn is_stego_owned_png_entry(key: &[u8], data: &[u8]) -> bool {
+        if key == b"XML:com.adobe.xmp" {
+            let start = key.len().saturating_add(5);
+            return data.get(key.len()) == Some(&0)
+                && data.get(key.len() + 1) == Some(&0)
+                && data.get(key.len() + 2) == Some(&0)
+                && data.get(key.len() + 3) == Some(&0)
+                && data.get(key.len() + 4) == Some(&0)
+                && data
+                    .get(start..)
+                    .is_some_and(Self::xmp_has_stego_properties);
+        }
+        Self::is_stego_owned_text_key(key)
+    }
+
     pub(super) fn strip_stego_owned_png(png_data: &[u8]) -> Result<Vec<u8>> {
         if png_data.len() < 8 || &png_data[0..8] != b"\x89PNG\r\n\x1a\n" {
             return Err(Error::Metadata("Invalid PNG signature".to_string()));
@@ -365,7 +405,7 @@ impl super::RightsMetadataProtector {
             let is_stego = if chunk_type == b"tEXt" || chunk_type == b"iTXt" {
                 let data = &png_data[pos + 8..chunk_end];
                 if let Some(null_pos) = data.iter().position(|&b| b == 0) {
-                    Self::is_stego_owned_text_key(&data[..null_pos])
+                    Self::is_stego_owned_png_entry(&data[..null_pos], data)
                 } else {
                     false
                 }
@@ -409,8 +449,8 @@ impl super::RightsMetadataProtector {
                 let data = &png_data[data_start..data_end];
                 if let Some(null_pos) = data.iter().position(|&b| b == 0) {
                     let key = &data[..null_pos];
-                    if Self::is_stego_owned_text_key(key) {
-                        keys.push(key.to_vec());
+                    if Self::is_stego_owned_png_entry(key, data) {
+                        keys.push(key.strip_prefix(b"StegoEggo:").unwrap_or(key).to_vec());
                     }
                 }
             }

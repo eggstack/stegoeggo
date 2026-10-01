@@ -14,11 +14,11 @@ pub(crate) fn classify_error(e: &(dyn std::error::Error + 'static)) -> i32 {
     if let Some(e) = e.downcast_ref::<stegoeggo::Error>() {
         match e {
             Error::Config(_) => EXIT_CONFIG,
-            Error::InputTooLarge { .. } | Error::DimensionsExceeded { .. } => EXIT_CONFIG,
-            Error::ContainerLimitExceeded { .. } | Error::MetadataLimitExceeded { .. } => {
-                EXIT_CONFIG
-            }
-            Error::ResourceLimitExceeded(_) => EXIT_CONFIG,
+            Error::InputTooLarge { .. }
+            | Error::DimensionsExceeded { .. }
+            | Error::ContainerLimitExceeded { .. }
+            | Error::MetadataLimitExceeded { .. }
+            | Error::ResourceLimitExceeded(_) => EXIT_ERROR,
             Error::PayloadVerification(_) | Error::Crypto(_) => EXIT_INTEGRITY,
             Error::ImageDecode(_)
             | Error::ImageEncode(_)

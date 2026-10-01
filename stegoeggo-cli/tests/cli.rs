@@ -1371,7 +1371,7 @@ fn test_batch_stems_produce_unique_outputs() {
 }
 
 #[test]
-fn test_pixel_only_api_does_not_claim_metadata() {
+fn test_pixel_only_preset_does_not_claim_metadata() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("input.png");
     let output = tmp.path().join("out");
@@ -1394,9 +1394,10 @@ fn test_pixel_only_api_does_not_claim_metadata() {
     let stdout = String::from_utf8_lossy(&result.stdout);
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let report = json.get("report").expect("Should have report");
-    assert!(
-        report.get("metadata_injected").unwrap() == true,
-        "legal-notice preset should inject metadata"
+    assert_eq!(
+        report.get("metadata_injected").unwrap(),
+        false,
+        "pixel-only preset should not inject metadata"
     );
     assert!(
         report.get("stego_attempted").unwrap() == false,

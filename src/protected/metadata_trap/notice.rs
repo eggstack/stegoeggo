@@ -591,7 +591,8 @@ impl super::RightsMetadataProtector {
 
         let timestamp_secs = timestamp
             .and_then(super::common::unix_seconds_from_timestamp)
-            .unwrap_or_else(super::common::current_unix_seconds);
+            .or_else(super::common::current_unix_seconds)
+            .unwrap_or_default();
         payload.extend_from_slice(&timestamp_secs.to_le_bytes());
 
         let dmi_byte = dmi

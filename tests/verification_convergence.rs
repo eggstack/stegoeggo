@@ -327,6 +327,47 @@ fn verification_matrix_cross_api_consistency() {
 }
 
 #[test]
+fn tiled_payload_flag_is_reported() {
+    let bytes = process_request_bytes(&make_png(256, 256, 77), &tiled_request(42)).unwrap();
+    assert!(verify_image_bytes_report(&bytes, &[])
+        .hidden_marker()
+        .tiled());
+}
+
+#[test]
+fn notice_extraction_obeys_container_limits() {
+    let bytes = make_png(32, 32, 77);
+    let limits = ResourceLimits::builder().max_png_chunks(1).build();
+    let report = stegoeggo::verify_image_bytes_report_with_limits(&bytes, &[], &limits);
+    assert!(report
+        .diagnostics()
+        .iter()
+        .any(|diagnostic| diagnostic.source() == "rights"
+            && diagnostic.message().contains("Resource limit")));
+}
+
+#[test]
+fn jpeg_seed_hint_is_reported_as_qtable_evidence() {
+    let image = image::DynamicImage::ImageRgb8(ImageBuffer::from_pixel(
+        128,
+        128,
+        image::Rgb([64, 96, 128]),
+    ));
+    let mut jpeg = Vec::new();
+    image
+        .write_to(
+            &mut std::io::Cursor::new(&mut jpeg),
+            image::ImageFormat::Jpeg,
+        )
+        .unwrap();
+    let jpeg = stegoeggo::stego::jpeg::embed_seed_hint(&jpeg, 42).unwrap();
+    let notice = verify_legal_notice(&jpeg, &[]);
+    assert!(notice
+        .channels()
+        .contains(&stegoeggo::EvidenceChannel::QTableSeed));
+}
+
+#[test]
 fn tiled_crop_recovery_is_consistent() {
     let base = make_png(256, 256, 77);
     let protected = process_request_bytes(&base, &tiled_request(42)).unwrap();

@@ -60,6 +60,7 @@ fn create_png_with_custom_text(png_bytes: &[u8], key: &str, value: &str) -> Vec<
 }
 
 fn has_text_chunk(png_bytes: &[u8], key: &str) -> bool {
+    let namespaced_key = format!("StegoEggo:{key}");
     let mut i = 8;
     while i + 8 <= png_bytes.len() {
         let length = u32::from_be_bytes([
@@ -74,7 +75,7 @@ fn has_text_chunk(png_bytes: &[u8], key: &str) -> bool {
             let null_pos = chunk_data.iter().position(|&b| b == 0);
             if let Some(pos) = null_pos {
                 let chunk_key = &chunk_data[..pos];
-                if chunk_key == key.as_bytes() {
+                if chunk_key == key.as_bytes() || chunk_key == namespaced_key.as_bytes() {
                     return true;
                 }
             }
@@ -85,6 +86,7 @@ fn has_text_chunk(png_bytes: &[u8], key: &str) -> bool {
 }
 
 fn get_text_value(png_bytes: &[u8], key: &str) -> Option<String> {
+    let namespaced_key = format!("StegoEggo:{key}");
     let mut i = 8;
     while i + 8 <= png_bytes.len() {
         let length = u32::from_be_bytes([
@@ -99,7 +101,7 @@ fn get_text_value(png_bytes: &[u8], key: &str) -> Option<String> {
             let null_pos = chunk_data.iter().position(|&b| b == 0);
             if let Some(pos) = null_pos {
                 let chunk_key = &chunk_data[..pos];
-                if chunk_key == key.as_bytes() {
+                if chunk_key == key.as_bytes() || chunk_key == namespaced_key.as_bytes() {
                     let val = &chunk_data[pos + 1..];
                     return Some(String::from_utf8_lossy(val).into_owned());
                 }
@@ -112,11 +114,11 @@ fn get_text_value(png_bytes: &[u8], key: &str) -> Option<String> {
 
 fn count_stego_text_chunks(png_bytes: &[u8]) -> usize {
     let stego_keys: &[&[u8]] = &[
-        b"Copyright",
-        b"Creator",
-        b"Contact",
-        b"UsageTerms",
-        b"AIConstraints",
+        b"StegoEggo:Copyright",
+        b"StegoEggo:Creator",
+        b"StegoEggo:Contact",
+        b"StegoEggo:UsageTerms",
+        b"StegoEggo:AIConstraints",
         b"X-Protection-Seed",
         b"LicenseURL",
         b"WebStatement",

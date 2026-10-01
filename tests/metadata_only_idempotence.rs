@@ -45,6 +45,24 @@ fn count_png_text_chunks(png: &[u8], keyword: &[u8]) -> usize {
     count
 }
 
+fn add_png_text_chunk(png: &[u8], keyword: &[u8], value: &[u8]) -> Vec<u8> {
+    let mut data = keyword.to_vec();
+    data.push(0);
+    data.extend_from_slice(value);
+    let mut chunk = Vec::new();
+    chunk.extend_from_slice(&(data.len() as u32).to_be_bytes());
+    chunk.extend_from_slice(b"tEXt");
+    chunk.extend_from_slice(&data);
+    let mut checksum_data = b"tEXt".to_vec();
+    checksum_data.extend_from_slice(&data);
+    chunk.extend_from_slice(&crc32fast::hash(&checksum_data).to_be_bytes());
+    let iend = png.windows(4).position(|window| window == b"IEND").unwrap() - 4;
+    let mut output = png[..iend].to_vec();
+    output.extend_from_slice(&chunk);
+    output.extend_from_slice(&png[iend..]);
+    output
+}
+
 fn metadata_only_request() -> ProtectionRequest {
     ProtectionRequest::metadata_only(
         RightsNotice::default(),
@@ -160,22 +178,22 @@ fn png_replace_stego_owned_idempotent_on_metadata_only_path() {
     let out2 = process_request_bytes(&out1, &request).unwrap();
 
     assert_eq!(
-        count_png_text_chunks(&out1, b"Copyright"),
+        count_png_text_chunks(&out1, b"StegoEggo:Copyright"),
         1,
         "first round should write exactly one Copyright tEXt"
     );
     assert_eq!(
-        count_png_text_chunks(&out2, b"Copyright"),
+        count_png_text_chunks(&out2, b"StegoEggo:Copyright"),
         1,
         "second round must not duplicate Copyright (BUG-01)"
     );
     assert_eq!(
-        count_png_text_chunks(&out2, b"Creator"),
+        count_png_text_chunks(&out2, b"StegoEggo:Creator"),
         1,
         "second round must not duplicate Creator (BUG-01)"
     );
     assert_eq!(
-        count_png_text_chunks(&out2, b"UsageTerms"),
+        count_png_text_chunks(&out2, b"StegoEggo:UsageTerms"),
         1,
         "second round must not duplicate UsageTerms (BUG-01)"
     );
@@ -211,15 +229,27 @@ fn png_preserve_existing_does_not_duplicate_legal_keys() {
     let second = process_request_bytes(&first, &preserved_request).unwrap();
 
     assert_eq!(
-        count_png_text_chunks(&second, b"Copyright"),
+        count_png_text_chunks(&second, b"StegoEggo:Copyright"),
         1,
         "PreserveExisting must keep a single Copyright (BUG-01)"
     );
     assert_eq!(
-        count_png_text_chunks(&second, b"Creator"),
+        count_png_text_chunks(&second, b"StegoEggo:Creator"),
         1,
         "PreserveExisting must keep a single Creator (BUG-01)"
     );
+}
+
+#[test]
+fn replace_stego_owned_preserves_unqualified_copyright_metadata() {
+    let base = add_png_text_chunk(
+        &make_test_image_png(32, 32),
+        b"Copyright",
+        b"Image author's copyright",
+    );
+    let output = process_request_bytes(&base, &metadata_only_request()).unwrap();
+    assert_eq!(count_png_text_chunks(&output, b"Copyright"), 1);
+    assert_eq!(count_png_text_chunks(&output, b"StegoEggo:Copyright"), 1);
 }
 
 #[test]

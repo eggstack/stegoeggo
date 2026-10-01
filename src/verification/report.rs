@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 /// Source from which a verification field was obtained.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FieldSource {
+    /// No value was found for this field.
+    Unavailable,
     /// Extracted from XMP metadata.
     Xmp,
     /// Extracted from legacy (non-XMP) metadata.

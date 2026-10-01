@@ -71,11 +71,10 @@ pub(crate) struct ProtectArgs {
 
     #[arg(
         long,
-        default_value = "2",
         help_heading = "Image output",
         help = "Stego embedding redundancy (1-10). Higher = more robust, lower = faster"
     )]
-    pub(crate) stego_redundancy: usize,
+    pub(crate) stego_redundancy: Option<usize>,
 
     #[arg(
         long,

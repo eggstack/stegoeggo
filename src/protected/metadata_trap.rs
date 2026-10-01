@@ -275,10 +275,16 @@ impl RightsMetadataProtector {
         plan: &crate::types::ResolvedProtectionPlan,
     ) -> Result<Vec<u8>> {
         let should_inject = plan.channels().rights_metadata;
-        let notice = plan.effective_notice();
+        let mut notice = plan.effective_notice().clone();
+        if matches!(
+            plan.channels().hidden_marker,
+            crate::types::HiddenMarkerMode::Disabled
+        ) {
+            notice.seed = None;
+        }
         let effective_dmi = plan.effective_dmi();
 
-        let metadata = self.generate_rights_metadata_from_notice(notice, should_inject, None);
+        let metadata = self.generate_rights_metadata_from_notice(&notice, should_inject, None);
 
         if metadata.is_empty() && effective_dmi.is_none() {
             return Ok(img_bytes.to_vec());
@@ -351,7 +357,7 @@ impl RightsMetadataProtector {
                             )
                         }
                         ImageOutputFormat::WebP => {
-                            self.inject_text_chunks_webp_from_notice(img_bytes, notice)
+                            self.inject_text_chunks_webp_from_notice(img_bytes, &notice)
                         }
                     };
                 }
@@ -383,7 +389,7 @@ impl RightsMetadataProtector {
                 true,
             )?,
             ImageOutputFormat::WebP => {
-                self.inject_text_chunks_webp_from_notice(&stripped, notice)?
+                self.inject_text_chunks_webp_from_notice(&stripped, &notice)?
             }
         };
 
@@ -422,6 +428,13 @@ mod tests {
     }
 
     // ── Date computation ──────────────────────────────────────────────
+
+    #[test]
+    fn common_png_rights_keywords_are_not_stego_owned() {
+        for key in [b"Copyright".as_slice(), b"Creator", b"UsageTerms"] {
+            assert!(!RightsMetadataProtector::is_stego_owned_text_key(key));
+        }
+    }
 
     #[test]
     fn is_leap_year_divisible_by_400() {

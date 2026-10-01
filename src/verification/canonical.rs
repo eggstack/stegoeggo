@@ -127,7 +127,7 @@ fn marker_source_for_version(version: Option<u8>) -> FieldSource {
         Some(1) => FieldSource::EmbeddedPayloadV1,
         Some(2) => FieldSource::EmbeddedPayloadV2,
         Some(3) => FieldSource::EmbeddedPayloadV3,
-        _ => FieldSource::Xmp,
+        _ => FieldSource::Unavailable,
     }
 }
 
@@ -177,6 +177,7 @@ pub(crate) fn verify_canonical_with_limits(
         canonical_dmi,
         legacy_dmi,
         rights_signal_kind_opt,
+        rights_scan_limited,
     ) = extract_rights(img_bytes, limits);
 
     let has_notice = copyright_holder.is_some()
@@ -343,6 +344,10 @@ pub(crate) fn verify_canonical_with_limits(
     let mut marker_builder = HiddenMarkerVerification::builder()
         .status(stego_status)
         .source(marker_source);
+    let tiled = stego_payload
+        .as_ref()
+        .is_some_and(|payload| payload.is_tiled());
+    marker_builder = marker_builder.tiled(tiled);
     if let Some(v) = payload_version {
         marker_builder = marker_builder.payload_version(v);
     }
@@ -429,6 +434,16 @@ pub(crate) fn verify_canonical_with_limits(
         CanonicalOutcomeKind::Verified | CanonicalOutcomeKind::NotFound => builder,
     };
 
+    if rights_scan_limited {
+        builder = builder.add_diagnostic(
+            Diagnostic::builder()
+                .level(DiagnosticLevel::Error)
+                .message("Resource limit exceeded during rights metadata extraction".to_string())
+                .source("rights".to_string())
+                .build(),
+        );
+    }
+
     if outcome_kind == CanonicalOutcomeKind::NotFound && has_notice {
         builder = builder.add_diagnostic(
             Diagnostic::builder()
@@ -440,7 +455,6 @@ pub(crate) fn verify_canonical_with_limits(
     }
 
     let report = builder.build();
-
     CanonicalFacts {
         copyright_holder,
         creator,
@@ -471,7 +485,7 @@ pub(crate) fn verify_canonical_with_limits(
         payload_version,
         stego_seed,
         intensity,
-        tiled: false,
+        tiled,
         marker_source,
         auth_attempted,
         hmac_status,
@@ -481,7 +495,8 @@ pub(crate) fn verify_canonical_with_limits(
         evidence_strength,
         outcome_kind,
         unsupported_version,
-        resource_limit_exceeded: outcome_kind == CanonicalOutcomeKind::ResourceLimitExceeded,
+        resource_limit_exceeded: rights_scan_limited
+            || outcome_kind == CanonicalOutcomeKind::ResourceLimitExceeded,
         report,
     }
 }
@@ -514,6 +529,7 @@ fn extract_rights(
     Option<DmiValue>,
     Option<DmiValue>,
     Option<RightsSignalKind>,
+    bool,
 ) {
     if img_bytes.len() < 8 {
         return (
@@ -539,9 +555,47 @@ fn extract_rights(
             None,
             None,
             None,
+            false,
         );
     }
     let format = notice::detect_format(img_bytes);
+    let mut observer = crate::resource_limits::OperationObserver::new(limits, img_bytes.len());
+    let scan_limited = format.is_some_and(|format| {
+        let image_format = match format {
+            notice::Format::Png => crate::types::ImageOutputFormat::Png,
+            notice::Format::Jpeg => crate::types::ImageOutputFormat::Jpeg,
+            notice::Format::WebP => crate::types::ImageOutputFormat::WebP,
+        };
+        crate::container_walk::observe_container_work(img_bytes, image_format, &mut observer)
+            .is_err()
+    });
+    if scan_limited {
+        return (
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+        );
+    }
     let mut channels = Vec::new();
     let mut seed: Option<u64> = None;
     let mut dmi: Option<DmiValue> = None;
@@ -565,6 +619,10 @@ fn extract_rights(
         }
         Some(notice::Format::Jpeg) => {
             let result = notice::extract_jpeg_notice(img_bytes, &mut channels, &mut seed);
+            if let Ok(Some(seed_hint)) = stegoeggo_stego::jpeg::extract_seed_hint(img_bytes) {
+                channels.push(EvidenceChannel::QTableSeed);
+                seed.get_or_insert(seed_hint);
+            }
             notice::extract_xmp_dmi_from_jpeg_with_limits(
                 img_bytes,
                 &mut dmi,
@@ -613,6 +671,7 @@ fn extract_rights(
                 None,
                 None,
                 None,
+                false,
             );
         }
     };
@@ -639,6 +698,7 @@ fn extract_rights(
         canonical_dmi,
         legacy_dmi,
         kind,
+        false,
     )
 }
 
@@ -654,6 +714,7 @@ pub(crate) fn project_result_from_canonical(facts: &CanonicalFacts) -> Verificat
         (VerificationStatus::Invalid, Some(payload)) => VerificationResult::Corrupted {
             payload: payload.clone(),
         },
+        (VerificationStatus::Invalid, None) => VerificationResult::Invalid,
         _ => {
             if let Some(s) = facts.protection_seed {
                 VerificationResult::MetadataOnly { seed: s }

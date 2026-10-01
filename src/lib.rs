@@ -751,7 +751,11 @@ fn request_from_legacy(level: ProtectionLevel, ctx: &ProtectionContext) -> Prote
     };
 
     let mut notice = RightsNotice::default();
-    let effective_dmi = ctx.dmi_value().unwrap_or_else(|| DmiValue::from(policy));
+    let effective_dmi = if rights_metadata {
+        ctx.dmi_value().unwrap_or_else(|| DmiValue::from(policy))
+    } else {
+        DmiValue::Unspecified
+    };
     notice = notice.with_dmi(effective_dmi);
     notice = notice.with_seed(ctx.seed());
 
@@ -916,10 +920,8 @@ pub fn process_image_bytes_with_info(
 /// - `MissingMacKey` when a legacy authenticated profile was selected without
 ///   a MAC key (the canonical request model reports this as `Error::Config`
 ///   for HMAC channels instead of a profile-driven warning).
-/// - `ContradictoryLegalClaims` when `inject_legal_claims(false)` is combined
-///   with non-empty legal metadata (the canonical request has no disable flag;
-///   presence of legal metadata means include). The CLI rejects the same
-///   combination as `EXIT_CONFIG` 2.
+/// - `ContradictoryLegalClaims` is retained for compatibility but the
+///   contradictory combination now returns `Error::Config` consistently.
 /// - `JpegReencodeFragile` for non-`Disabled` JPEG output (advisory fragility
 ///   note; the canonical path reports only resolution and runtime warnings).
 ///
@@ -948,6 +950,13 @@ pub fn process_image_bytes_with_warnings(
     if let Some(meta) = ctx.legal_metadata() {
         meta.validate()?;
     }
+    if matches!(ctx.inject_legal_claims(), Some(false))
+        && ctx.legal_metadata().is_some_and(|m| m.has_content())
+    {
+        return Err(crate::Error::Config(
+            "inject_legal_claims(false) with legal metadata is contradictory".to_string(),
+        ));
+    }
 
     let request = request_from_legacy(level, ctx);
     let (bytes, canonical_warnings) = process_request_bytes_with_warnings(img_bytes, &request)?;
@@ -960,11 +969,6 @@ pub fn process_image_bytes_with_warnings(
         )
     {
         compat.push(ProtectionWarning::MissingMacKey);
-    }
-    if matches!(ctx.inject_legal_claims(), Some(false))
-        && ctx.legal_metadata().is_some_and(|m| m.has_content())
-    {
-        compat.push(ProtectionWarning::ContradictoryLegalClaims);
     }
     if ImageOutputFormat::is_jpeg(&bytes) {
         compat.push(ProtectionWarning::JpegReencodeFragile);
@@ -1197,6 +1201,7 @@ pub fn verify_image_bytes_with_limits(
 ///         println!("Metadata seed found, but payload was not verified: {}", seed);
 ///     }
 ///     VerificationResult::Corrupted { .. } => println!("Protection found but corrupted"),
+///     VerificationResult::Invalid => println!("Invalid steganographic payload found"),
 ///     VerificationResult::NotFound => println!("No protection found"),
 /// }
 /// ```

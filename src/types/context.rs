@@ -513,7 +513,9 @@ impl ProtectionContext {
         self
     }
 
-    /// Set the intensity for this context, returning a new context.
+    /// Set the intensity for this context, returning a new context. Finite
+    /// values are clamped to `0.0..=1.0`; non-finite values are retained and
+    /// rejected when the context is validated for processing.
     #[must_use]
     pub fn with_intensity(mut self, intensity: f32) -> Self {
         self.intensity = if intensity.is_finite() {
@@ -870,18 +872,17 @@ impl ProtectionContext {
             })
             .filter(|v| *v != DmiValue::Unspecified);
 
-        let notice_applied_at =
-            legal
-                .and_then(|l| l.notice_applied_at().map(String::from))
-                .or_else(|| {
-                    if legal.is_some() {
-                        Some(self.timestamp_override.clone().unwrap_or_else(
-                            crate::protected::metadata_trap::current_timestamp_iso8601,
-                        ))
-                    } else {
-                        None
-                    }
-                });
+        let notice_applied_at = legal
+            .and_then(|l| l.notice_applied_at().map(String::from))
+            .or_else(|| {
+                if legal.is_some() {
+                    self.timestamp_override
+                        .clone()
+                        .or_else(crate::protected::metadata_trap::current_timestamp_iso8601)
+                } else {
+                    None
+                }
+            });
 
         RightsNotice {
             copyright_holder: legal.and_then(|l| l.copyright_holder().map(String::from)),

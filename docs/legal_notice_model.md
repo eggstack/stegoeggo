@@ -35,20 +35,20 @@ Metadata visibility depends on the image format and the external tool used to re
 
 | Field | PNG | JPEG | WebP | Notes |
 |-------|-----|------|------|-------|
-| Copyright | tEXt → exiftool `-Copyright` | COM → exiftool `-Comment` (all) | XMP `dc:rights` → exiftool `-XMP-dc:Rights` | WebP XMP parity with PNG/JPEG |
-| Creator | tEXt → exiftool `-Creator` | COM → exiftool `-Comment` | XMP `dc:creator` → exiftool `-Creator` | WebP XMP parity with PNG/JPEG |
-| Contact | tEXt → exiftool `-Contact` | COM → exiftool `-Comment` | Not in WebP XMP | Contact is PNG/JPEG only |
-| CreditLine | tEXt → exiftool `-CreditLine` | COM → exiftool `-Comment` | XMP `photoshop:Credit` → exiftool `-CreditLine` | Maps to `photoshop:Credit` in WebP |
-| UsageTerms | tEXt → exiftool `-UsageTerms` | COM → exiftool `-Comment` | XMP `xmpRights:UsageTerms` → exiftool `-UsageTerms` | WebP XMP parity with PNG/JPEG; supports `xml:lang` |
-| AIConstraints | tEXt → exiftool `-AIConstraints` | COM → exiftool `-Comment` | XMP `stegoeggo:AIConstraints` → exiftool `-AIConstraints` | WebP XMP parity with PNG/JPEG |
-| CopyrightOwner | tEXt → exiftool `-CopyrightOwner` | COM → exiftool `-Comment` | XMP `stegoeggo:CopyrightOwner` | Project namespace in WebP |
-| LicensorName | tEXt → exiftool `-LicensorName` | COM → exiftool `-Comment` | XMP `stegoeggo:LicensorName` | Project namespace in WebP |
-| LicensorEmail | tEXt → exiftool `-LicensorEmail` | COM → exiftool `-Comment` | XMP `stegoeggo:LicensorEmail` | Project namespace in WebP |
-| LicensorURL | tEXt → exiftool `-LicensorURL` | COM → exiftool `-Comment` | XMP `stegoeggo:LicensorURL` | Project namespace in WebP |
-| LicenseURL | tEXt → exiftool `-License` | COM → exiftool `-Comment` | XMP `xmpRights:WebStatement` | Maps to `xmpRights:WebStatement` in WebP |
-| DateCreated | tEXt → exiftool `-DateCreated` | COM → exiftool `-Comment` | XMP `photoshop:DateCreated` | Only when explicitly provided |
-| MetadataDate | tEXt → exiftool `-MetadataDate` | COM → exiftool `-Comment` | XMP `xmp:MetadataDate` | Metadata modification timestamp |
-| NoticeAppliedAt | tEXt → exiftool `-NoticeAppliedAt` | COM → exiftool `-Comment` | XMP `stegoeggo:NoticeAppliedAt` | Auto-computed if not provided |
+| Copyright | tEXt `StegoEggo:Copyright` | COM → exiftool `-Comment` (all) | XMP `dc:rights` → exiftool `-XMP-dc:Rights` | PNG keys are namespaced to avoid deleting unrelated image metadata |
+| Creator | tEXt `StegoEggo:Creator` | COM → exiftool `-Comment` | XMP `dc:creator` → exiftool `-Creator` | WebP XMP parity with PNG/JPEG |
+| Contact | tEXt `StegoEggo:Contact` | COM → exiftool `-Comment` | Not in WebP XMP | Contact is PNG/JPEG only |
+| CreditLine | tEXt `StegoEggo:CreditLine` | COM → exiftool `-Comment` | XMP `photoshop:Credit` → exiftool `-CreditLine` | Maps to `photoshop:Credit` in WebP |
+| UsageTerms | tEXt `StegoEggo:UsageTerms` | COM → exiftool `-Comment` | XMP `xmpRights:UsageTerms` → exiftool `-UsageTerms` | WebP XMP parity with PNG/JPEG; supports `xml:lang` |
+| AIConstraints | tEXt `StegoEggo:AIConstraints` | COM → exiftool `-Comment` | XMP `stegoeggo:AIConstraints` → exiftool `-AIConstraints` | WebP XMP parity with PNG/JPEG |
+| CopyrightOwner | tEXt `StegoEggo:CopyrightOwner` | COM → exiftool `-Comment` | XMP `stegoeggo:CopyrightOwner` | Project namespace in WebP |
+| LicensorName | tEXt `StegoEggo:LicensorName` | COM → exiftool `-Comment` | XMP `stegoeggo:LicensorName` | Project namespace in WebP |
+| LicensorEmail | tEXt `StegoEggo:LicensorEmail` | COM → exiftool `-Comment` | XMP `stegoeggo:LicensorEmail` | Project namespace in WebP |
+| LicensorURL | tEXt `StegoEggo:LicensorURL` | COM → exiftool `-Comment` | XMP `stegoeggo:LicensorURL` | Project namespace in WebP |
+| LicenseURL | tEXt `StegoEggo:License` | COM → exiftool `-Comment` | XMP `xmpRights:WebStatement` | Maps to `xmpRights:WebStatement` in WebP |
+| DateCreated | tEXt `StegoEggo:DateCreated` | COM → exiftool `-Comment` | XMP `photoshop:DateCreated` | Only when explicitly provided |
+| MetadataDate | tEXt `StegoEggo:MetadataDate` | COM → exiftool `-Comment` | XMP `xmp:MetadataDate` | Metadata modification timestamp |
+| NoticeAppliedAt | tEXt `StegoEggo:NoticeAppliedAt` | COM → exiftool `-Comment` | XMP `stegoeggo:NoticeAppliedAt` | Auto-computed if not provided |
 | DMI (no-AI-training) | XMP in iTXt → exiftool XMP | XMP in APP1 → exiftool XMP | XMP in META → exiftool XMP | Canonical `plus:DataMining` emitted; legacy `Iptc4xmpExt:DMI-*` parsed |
 | TDM reservation | XMP in iTXt → exiftool XMP | XMP in APP1 → exiftool XMP | XMP in META → exiftool XMP | Legacy only; no longer emitted by default |
 | Protection seed | tEXt `X-Protection-Seed` or `Description` | COM structured, IPTC Object Name | XMP/EXIF | Internal diagnostic, not legal notice |

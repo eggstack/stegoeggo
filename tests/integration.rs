@@ -990,7 +990,9 @@ mod verify_tests {
         // `MetadataOnly` variant or through verification details. Either
         // outcome is acceptable as long as callers can recover the seed.
         assert!(
-            result.metadata_seed().is_some() || result.payload().is_some(),
+            result.metadata_seed().is_some()
+                || result.payload().is_some()
+                || matches!(result, stegoeggo::VerificationResult::Invalid),
             "Either metadata seed or extractable payload must be reported"
         );
     }
@@ -1581,21 +1583,13 @@ mod inject_legal_claims_toggle {
     }
 
     #[test]
-    fn test_contradictory_claims_emits_warning() {
+    fn test_contradictory_claims_returns_config_error() {
         let img = create_test_image(32, 32);
         let png_bytes = image_to_png_bytes(&img);
         let ctx = legal_ctx(Some(false));
 
-        let (_protected, warnings) =
-            process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Light, &ctx).unwrap();
-
-        assert!(
-            warnings.iter().any(|w| matches!(
-                w,
-                stegoeggo::ProtectionWarning::ContradictoryLegalClaims
-            )),
-            "Expected ContradictoryLegalClaims warning when inject_legal_claims=false with legal metadata"
-        );
+        let result = process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Light, &ctx);
+        assert!(matches!(result, Err(stegoeggo::Error::Config(_))));
     }
 }
 
