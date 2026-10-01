@@ -325,6 +325,6 @@ invariants.
 | M003 Python corrective qualification | closed | `implementation/language-bindings/003-python-corrective-qualification.md` | `closure/language-bindings/003-status.md` (corrected; §13 lists the M004 corrections) | none; M001 closed and M002 findings recorded |
 | M004 M003 closure corrective | closed | `implementation/language-bindings/004-m003-closure-corrective.md` | `closure/language-bindings/004-status.md` | none; bounded defects corrected in PR #1 |
 | M005 Node binding | closed | `implementation/language-bindings/005-node-binding-foundation-qualification.md` | `closure/language-bindings/005-status.md` | historical qualification valid for its recorded SHA; later core drift is owned by M006 |
-| M006 post-core compatibility corrective | active | `implementation/language-bindings/006-post-core-compatibility-corrective.md` | pending | verification-conformance M6 closed; M006 closure needs binding-side corrective evidence |
-| M007 C ABI design | proposed | not yet written | pending | language-bindings M006 closure |
+| M006 post-core compatibility corrective | closed | `implementation/language-bindings/006-post-core-compatibility-corrective.md` | `closure/language-bindings/006-status.md` | none |
+| M007 C ABI design | proposed | not yet written | pending | none (M006 closed; awaits implementation plan) |
 | M008 C ABI implementation | proposed | not yet written | pending | M007 accepted contract |

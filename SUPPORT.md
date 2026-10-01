@@ -154,8 +154,9 @@ shares the same resource-limit, error, and panic profile semantics as
 the library crate. The binding is **experimental / not on PyPI**: wheels
 are produced as GitHub Actions artifacts by a manually dispatched
 workflow and are not published to any registry. All five documented
-wheel platforms are qualified; wheel qualification evidence is recorded
-in `plans/closure/language-bindings/003-status.md`.
+wheel platforms are qualified; current wheel qualification evidence is
+recorded in `plans/closure/language-bindings/006-status.md` (original
+qualification in `plans/closure/language-bindings/003-status.md`).
 
 ### Documented interpreter support
 
@@ -189,13 +190,14 @@ The wheel matrix below describes what the manually-dispatched
 `.github/workflows/release-python.yml` workflow produces. "Qualified"
 means native build + native install + protect/verify smoke evidence is
 recorded in
-`plans/closure/language-bindings/003-status.md`; "configured" would mean
+`plans/closure/language-bindings/006-status.md` (originally in
+`003-status.md`); "configured" would mean
 the matrix row is wired up in CI but the native smoke run has not yet
 completed. All five rows are qualified by the
-`.github/workflows/release-python.yml` run `36337194059` (head
-`d40f1b37cf031b05e4f9c76af1cdfcf789d739b5`), which installed each wheel
+`.github/workflows/release-python.yml` run `36922890804` (head
+`d24b37767a44fc530ebb3e8efed420f7b0a5d731`), which installed each wheel
 on the same native architecture that built it and ran an import +
-protect + verify smoke.
+protect + verify smoke (plus an sdist direct-install smoke).
 
 | OS | Architecture | Runner | Status |
 |----|--------------|--------|--------|
@@ -232,9 +234,11 @@ and `verify_image_bytes_report` byte API. It shares the same resource-limit,
 structured-error, and panic-profile semantics as the library crate. The
 binding is **experimental / not on npm**: native artifacts are produced by
 a manually dispatched workflow and are not published to any registry. The
-five documented native targets are configured; native-smoke qualification
-evidence is recorded in `plans/closure/language-bindings/005-status.md`
-once the manual workflow has run.
+five documented native targets are configured; current native-smoke
+qualification evidence is recorded in
+`plans/closure/language-bindings/006-status.md` (original qualification
+in `plans/closure/language-bindings/005-status.md`).
+The manually dispatched workflow below has run for the current source.
 
 ### Documented runtime support
 
@@ -270,7 +274,8 @@ Building from source requires a Rust toolchain ≥ 1.89 (the binding's
 The matrix below describes what the manually-dispatched
 `.github/workflows/release-node.yml` workflow produces. "Qualified" means
 native build + native import/protect/verify smoke evidence is recorded in
-`plans/closure/language-bindings/005-status.md`; "configured" means the
+`plans/closure/language-bindings/006-status.md` (originally in
+`005-status.md`); "configured" means the
 matrix row is wired up in CI but the native smoke run has not yet
 completed. GNU Linux rows build with napi-cross rather than inheriting the
 runner's newer glibc: the addon build floor is glibc 2.17, which is not a
@@ -285,8 +290,8 @@ promise that every Node binary itself runs on glibc 2.17.
 | Windows (MSVC) | x86_64 | `windows-2022` | Qualified |
 
 All five rows are qualified by the
-`.github/workflows/release-node.yml` run `36488540671` (head
-`abc0354`), which built each addon with the napi-rs CLI and ran a
+`.github/workflows/release-node.yml` run `36922895760` (head
+`d24b37767a44fc530ebb3e8efed420f7b0a5d731`), which built each addon with the napi-rs CLI and ran a
 native import + protect + verify smoke on the same native
 OS/architecture that built it (Linux x86_64 additionally on Node 22,
 24, and 26).
