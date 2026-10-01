@@ -31,16 +31,14 @@ predecessor history, indexed by the roadmaps below.
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed; M003 closed | M003 closed the consumer-owned nested-runtime panic; M001/M002 still wait for the same ordinary stable B > 0.4.2 |
-| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M006 closed; M007 C ABI design dependency-ready | none |
+| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M007 C ABI contract design ready | M006 closed; ADR-0006 accepted; M008 blocked on M007 closure |
 
 ## Dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
-| verification-conformance | M006 unstructured-candidate false-positive corrective | closed | `plans/implementation/verification-conformance/006-unstructured-candidate-false-positive-corrective.md` | Closure at `plans/closure/verification-conformance/006-status.md`; absence-vs-corruption restored with Rust guards |
-| language-bindings | M006 post-core compatibility corrective and requalification | closed | `plans/implementation/language-bindings/006-post-core-compatibility-corrective.md` | Closure at `plans/closure/language-bindings/006-status.md` against final SHA `d24b377` (fresh Python + Node five-target qualification green) |
-| release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); closure at `plans/closure/release-distribution/002-status.md`; live B > 0.4.2 evidence outstanding, shared with M001; updater-runtime code blocker resolved by closed M003 |
-| release-distribution | M003 synchronous Eggup updater bridge corrective | closed | `plans/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md` | outer Tokio runtime removed at `e611c91`; closure at `plans/closure/release-distribution/003-status.md`; updater rehearsal green |
+| language-bindings | M007 C ABI contract design | ready | `plans/implementation/language-bindings/007-c-abi-contract-design.md` | ADR-0006 accepted; exact v1 symbols/codes/ownership/report/error/header/export contract must close before M008 |
+| release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); live B > 0.4.2 evidence remains outstanding, shared with M001 |
 
 ## Active closure work
 
@@ -52,6 +50,7 @@ None.
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
 | release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | Missing ordinary stable B > 0.4.2. The updater-runtime code blocker is resolved by closed M003; cutover/closure remains `plans/closure/release-distribution/002-status.md`. |
+| language-bindings | M008 C ABI implementation and qualification | M007 must close with an accepted exact ABI v1 contract before any stable C symbols are implemented/shipped. |
 
 ## Recently closed work
 
