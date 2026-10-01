@@ -59,9 +59,9 @@ landed and conditionally closed (`plans/closure/release-distribution/002-status.
 Eggpack is now the producer authority for the same five native CLI targets,
 and the next ordinary stable release serves as both M002's live
 second-consumer proof and, after publication, M001's A→B evidence. No
-throwaway version may be cut for either. Note: the updater rehearsal
-currently panics at baseline (proven pre-existing, recorded in the M002
-closure); it must be resolved before the shared live A→B proof runs green.
+throwaway version may be cut for either. The pre-existing updater rehearsal
+panic is now owned by ready M003, the synchronous Eggup updater bridge
+corrective; M003 must close before the shared live A→B proof runs green.
 
 ## 5. Target architecture
 
