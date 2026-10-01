@@ -70,15 +70,15 @@ All default-off: `async` (canonical `process_request_bytes_async*`), `parallel` 
 
 ## Releases
 
-Manual only: no crates.io publication, no crates.io token in Actions, and no tag-triggered publication. The preferred Unix installer source is `https://github.com/eggstack/stegoeggo/releases/latest/download/install.sh`. A manually dispatched `release-binaries.yml` attaches the complete CLI asset matrix to an existing GitHub Release; it never publishes crates. All three crates share one version with exact `=X.Y.Z` deps; publish crates in order carrier → library → CLI. See `RELEASING.md` and `docs/installation.md`.
+Manual only: no crates.io publication, no crates.io token in Actions, and no tag-triggered publication. The preferred Unix installer source is `https://github.com/eggstack/stegoeggo/releases/latest/download/install.sh`. A manually dispatched Eggpack-generated `release-binaries.yml` stages a draft with the complete CLI asset matrix for maintainer publication; it never publishes crates or the GitHub draft. All three crates share one version with exact `=X.Y.Z` deps; publish crates in order carrier → library → CLI. See `RELEASING.md` and `docs/installation.md`.
 
 Binary release contract: assets use the versionless names in
-`scripts/release-targets.txt` and every executable has a `.sha256` sidecar.
+`release/eggpack/distribution.toml` and every executable has a `.sha256` sidecar.
 The release binary feature set is the CLI package default (`signatures`). Run
 `./scripts/release-binary-preflight.sh --tag=vX.Y.Z` and
-`./scripts/release-check-assets.sh --dir=<asset-directory>` before attaching
-assets. The workflow stages `target/<triple>/release/stegoeggo` (or
-`stegoeggo.exe` on Windows) explicitly; it must not discover candidates with
+`./scripts/release-check-assets.sh --dir=<asset-directory>` before staging
+assets. The workflow captures the canonical Cargo output per target through
+the Eggpack handoff explicitly; it must not discover candidates with
 `find`. `packaging/install.sh` and `packaging/install.ps1` verify checksums and
 candidate identity before installation; Cargo fallback is allowed only for an
 unsupported target or a missing (404) binary asset, never for checksum,

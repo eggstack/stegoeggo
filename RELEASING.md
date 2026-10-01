@@ -166,22 +166,29 @@ git push origin vX.Y.Z
 ```
 
 - A binary release requires an exact `vX.Y.Z` tag pointing to the published
-  source commit and an existing GitHub Release for that tag.
+  source commit.
 - Do not force-move the tag after publication.
-- Create the GitHub release manually from the tag, then dispatch
-  `.github/workflows/release-binaries.yml` with the exact `vX.Y.Z` tag. The
-  workflow checks out that tag, builds the five targets in
-  `scripts/release-targets.txt`, stages the exact Cargo output path for each
-  target, smoke-tests each native binary, and attaches the executables,
-  checksums, and installers.
-- Binary attachment does not publish any crate and does not replace the
+- Dispatch the Eggpack-generated `.github/workflows/release-binaries.yml`
+  with the exact `vX.Y.Z` tag. The workflow checks out that tag, resolves the
+  release identity from `release/eggpack/distribution.toml`, builds the five
+  targets, qualifies each exact candidate natively, runs the StegoEggo
+  product validator (`scripts/smoke-release-binary.py`, including the Linux
+  GLIBC_2.17 ceiling), and stages a draft GitHub Release. The draft is
+  created or reconciled, never clobbered: reruns reuse exact matching assets
+  and fail closed on same-name/different-digest.
+- A maintainer inspects the complete draft (including the staging receipt)
+  and explicitly publishes it. Neither the workflow nor Eggpack publishes the
+  draft.
+- Binary staging does not publish any crate and does not replace the
   carrier → library → CLI crates.io sequence.
 - Run `./scripts/release-binary-preflight.sh --tag=vX.Y.Z` before dispatch and
   `./scripts/release-check-assets.sh --dir=<downloaded-assets>` when auditing
   a completed release.
-- The asset audit requires exactly the five versionless executables, one
-  correctly named `.sha256` sidecar per executable, and the two installers;
-  it rejects extra or misnamed files.
+- The asset audit requires exactly the 15-file Eggpack inventory: the five
+  versionless executables, one correctly named `.sha256` sidecar per
+  executable, `install.sh`, `install.ps1`, the generated `install-exact.sh` /
+  `install-exact.ps1`, and `release-manifest.json`; it rejects extra or
+  misnamed files.
 - Verify that `stegoeggo X.Y.Z` from every attached executable matches the tag;
   the updater performs the same candidate identity/version check.
 - A CLI release is not updater-ready until all five executable assets, their

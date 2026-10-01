@@ -2,7 +2,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGETS_FILE="$ROOT_DIR/scripts/release-targets.txt"
 TAG=""
 ASSET_DIR=""
 ALLOW_DIRTY=false
@@ -12,12 +11,12 @@ usage() {
     cat <<'EOF'
 Usage: release-binary-preflight.sh --tag=vX.Y.Z [options]
 
-Validate a manually dispatched GitHub binary release without publishing or
+Validate a manually dispatched Eggpack binary release without publishing or
 uploading anything.
 
 Options:
   --tag=vX.Y.Z       Release tag; when omitted, use an exact tag at HEAD
-  --asset-dir=DIR    Also validate built executable assets and sidecars
+  --asset-dir=DIR    Also validate staged executable assets and sidecars
   --allow-dirty      Allow local changes (useful for pre-tag local checks)
   --skip-check       Skip ./scripts/check.sh
   --help             Show this help
@@ -60,17 +59,19 @@ if [[ "$SKIP_CHECK" == false ]]; then
     "$ROOT_DIR/scripts/check.sh"
 fi
 
-python3 - "$ROOT_DIR" "$TARGETS_FILE" "${TAG#v}" <<'PY'
+python3 - "$ROOT_DIR" "${TAG#v}" <<'PY'
 import json
 import pathlib
 import subprocess
 import sys
 
 root = pathlib.Path(sys.argv[1])
-targets_file = pathlib.Path(sys.argv[2])
-tag_version = sys.argv[3]
-workflow_text = (root / ".github/workflows/release-binaries.yml").read_text()
-update_text = (root / "stegoeggo-cli/src/update.rs").read_text()
+tag_version = sys.argv[2]
+try:
+    import tomllib
+except ModuleNotFoundError:
+    raise SystemExit("ERROR: python3 tomllib is required (3.11+)")
+
 metadata = json.loads(subprocess.check_output([
     "cargo", "metadata", "--no-deps", "--format-version", "1",
 ], cwd=root))
@@ -96,26 +97,36 @@ if cli["features"].get("default") != ["signatures"]:
 if cli["features"].get("signatures") != ["stegoeggo/signatures", "stegoeggo/detached-manifest"]:
     raise SystemExit("ERROR: CLI signatures feature set changed unexpectedly")
 
-rows = []
-for raw in targets_file.read_text().splitlines():
-    if not raw.strip() or raw.lstrip().startswith("#"):
-        continue
-    fields = raw.split("|")
-    if len(fields) != 4:
-        raise SystemExit(f"ERROR: malformed target row: {raw}")
-    target, asset, runner, build = fields
-    expected_asset = f"stegoeggo-{target}" + (".exe" if target.endswith("-pc-windows-msvc") else "")
+egg = root / "release/eggpack"
+with open(egg / "distribution.toml", "rb") as handle:
+    contract = tomllib.load(handle)
+if contract["product"]["id"] != "stegoeggo":
+    raise SystemExit("ERROR: Eggpack contract product id must be stegoeggo")
+triples = [target["triple"] for target in contract["targets"]]
+if len(triples) != 5 or len(set(triples)) != 5:
+    raise SystemExit("ERROR: Eggpack contract must define exactly five unique targets")
+aliases = [alias for target in contract["targets"] for alias in target.get("aliases", [])]
+if sorted(aliases) != ["linux-arm64", "linux-x64", "macos-arm64", "macos-x64", "windows-x64"]:
+    raise SystemExit(f"ERROR: Eggpack target aliases drifted: {sorted(aliases)}")
+for target in contract["targets"]:
+    triple = target["triple"]
+    expected_asset = f"stegoeggo-{triple}" + (".exe" if triple.endswith("-pc-windows-msvc") else "")
+    asset = target["asset"]["asset"].replace("{product}", "stegoeggo").replace("{target}", triple)
     if asset != expected_asset:
-        raise SystemExit(f"ERROR: target {target} must use asset {expected_asset}")
-    if workflow_text.count(f"target: {target}") != 1:
-        raise SystemExit(f"ERROR: workflow target matrix drifted for {target}")
-    if workflow_text.count(f"asset: {asset}") != 1:
-        raise SystemExit(f"ERROR: workflow asset matrix drifted for {asset}")
-    if target not in update_text:
-        raise SystemExit(f"ERROR: updater target mapping is missing {target}")
-    rows.append((target, asset))
-if len(rows) != 5 or len({target for target, _ in rows}) != 5 or len({asset for _, asset in rows}) != 5:
-    raise SystemExit("ERROR: target manifest must contain five unique targets and assets")
+        raise SystemExit(f"ERROR: target {triple} must use asset {expected_asset}")
+
+with open(egg / "pack.toml", "rb") as handle:
+    pack = tomllib.load(handle)
+if len(pack["targets"]) != 5:
+    raise SystemExit("ERROR: pack.toml must define exactly five targets")
+for entry in pack["targets"]:
+    if entry["target"] not in triples:
+        raise SystemExit(f"ERROR: pack.toml references unknown target {entry['target']}")
+
+update_text = (root / "stegoeggo-cli/src/update.rs").read_text()
+for triple in triples:
+    if triple not in update_text:
+        raise SystemExit(f"ERROR: updater target mapping is missing {triple}")
 if 'format!("stegoeggo-{target}.exe")' not in update_text:
     raise SystemExit("ERROR: updater Windows asset naming drifted")
 if 'format!("stegoeggo-{target}")' not in update_text:
@@ -123,8 +134,10 @@ if 'format!("stegoeggo-{target}")' not in update_text:
 
 print(f"Version lockstep: {carrier['version']}")
 print("CLI distributed features: signatures")
-print(f"Binary targets: {len(rows)}")
+print(f"Eggpack targets: {len(triples)}")
 PY
+
+"$ROOT_DIR/scripts/check-release-contract.py"
 
 [[ -f "$ROOT_DIR/packaging/install.sh" ]] || fail "missing packaging/install.sh"
 [[ -f "$ROOT_DIR/packaging/install.ps1" ]] || fail "missing packaging/install.ps1"

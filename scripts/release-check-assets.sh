@@ -2,7 +2,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGETS_FILE="$ROOT_DIR/scripts/release-targets.txt"
 ASSET_DIR=""
 VERSION=""
 NATIVE_SMOKE=false
@@ -42,12 +41,27 @@ if [[ -n "$VERSION" && ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     fail "invalid version '$VERSION'; expected X.Y.Z"
 fi
 
-count=0
 assets=()
-while IFS='|' read -r target asset runner build; do
-    [[ -z "$target" || "$target" == \#* ]] && continue
-    [[ -n "$runner" && -n "$build" ]] || fail "malformed target row for $target"
-    assets+=("$asset")
+while IFS= read -r line; do
+    [[ -n "$line" ]] && assets+=("$line")
+done < <(python3 - "$ROOT_DIR" <<'PY'
+import pathlib
+import sys
+import tomllib
+
+root = pathlib.Path(sys.argv[1])
+with open(root / "release/eggpack/distribution.toml", "rb") as handle:
+    contract = tomllib.load(handle)
+product = contract["product"]["id"]
+for target in contract["targets"]:
+    triple = target["triple"]
+    print(target["asset"]["asset"].replace("{product}", product).replace("{target}", triple))
+PY
+)
+[[ "${#assets[@]}" -eq 5 ]] || fail "Eggpack contract must define five assets"
+
+count=0
+for asset in "${assets[@]}"; do
     binary="$ASSET_DIR/$asset"
     checksum="$binary.sha256"
     [[ -f "$binary" ]] || fail "missing binary asset: $asset"
@@ -67,11 +81,14 @@ while IFS='|' read -r target asset runner build; do
         fi
     fi
     count=$((count + 1))
-done < "$TARGETS_FILE"
+done
 
 [[ "$count" -eq 5 ]] || fail "expected 5 target assets, found $count"
 [[ -f "$ASSET_DIR/install.sh" ]] || fail "missing install.sh"
 [[ -f "$ASSET_DIR/install.ps1" ]] || fail "missing install.ps1"
+[[ -f "$ASSET_DIR/install-exact.sh" ]] || fail "missing install-exact.sh"
+[[ -f "$ASSET_DIR/install-exact.ps1" ]] || fail "missing install-exact.ps1"
+[[ -f "$ASSET_DIR/release-manifest.json" ]] || fail "missing release-manifest.json"
 for path in "$ASSET_DIR"/*; do
     [[ -f "$path" ]] || fail "asset directory contains a non-file entry: ${path##*/}"
     name="${path##*/}"
@@ -82,7 +99,11 @@ for path in "$ASSET_DIR"/*; do
             break
         fi
     done
-    [[ "$name" == "install.sh" || "$name" == "install.ps1" ]] && expected_file=true
+    case "$name" in
+        install.sh|install.ps1|install-exact.sh|install-exact.ps1|release-manifest.json)
+            expected_file=true
+            ;;
+    esac
     [[ "$expected_file" == true ]] || fail "unexpected release asset: $name"
 done
-echo "Release assets valid: $count binaries with SHA-256 sidecars"
+echo "Release assets valid: $count binaries with SHA-256 sidecars plus Eggpack staging set"

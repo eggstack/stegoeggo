@@ -4,9 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 python3 - "$ROOT_DIR" <<'PY'
+import json
 import pathlib
 import re
 import sys
+import tomllib
 
 root = pathlib.Path(sys.argv[1])
 files = {
@@ -40,44 +42,51 @@ if "GitHub binary releases are manual but are a supported CLI distribution" not 
 if "0.4.x" not in files["SECURITY.md"]:
     raise SystemExit("SECURITY.md supported-version table is stale")
 
-target_rows = []
-binary_name_counts = {}
+with open(root / "release/eggpack/distribution.toml", "rb") as handle:
+    contract = tomllib.load(handle)
+if contract["product"]["id"] != "stegoeggo":
+    raise SystemExit("Eggpack contract product id must be stegoeggo")
+targets = []
+for entry in contract["targets"]:
+    triple = entry["triple"]
+    asset = entry["asset"]["asset"].replace("{product}", "stegoeggo").replace("{target}", triple)
+    targets.append((triple, asset))
+if len(targets) != 5 or len({triple for triple, _ in targets}) != 5:
+    raise SystemExit("Eggpack contract must define exactly five unique targets")
+
 workflow = files[".github/workflows/release-binaries.yml"]
-for raw in (root / "scripts/release-targets.txt").read_text().splitlines():
-    if not raw.strip() or raw.lstrip().startswith("#"):
-        continue
-    fields = raw.split("|")
-    if len(fields) != 4:
-        raise SystemExit(f"malformed release target row: {raw}")
-    target, asset, _, _ = fields
-    target_rows.append((target, asset))
+for triple, asset in targets:
     if asset not in files["docs/installation.md"] or asset not in files["architecture/cli.md"]:
         raise SystemExit(f"release asset {asset} is missing from architecture/user docs")
-    binary_name = "stegoeggo.exe" if target.endswith("-pc-windows-msvc") else "stegoeggo"
-    if workflow.count(f"target: {target}") != 1:
-        raise SystemExit(f"release workflow target matrix is missing or duplicating {target}")
-    if workflow.count(f"asset: {asset}") != 1:
-        raise SystemExit(f"release workflow asset matrix is missing or duplicating {asset}")
-    binary_name_counts[binary_name] = binary_name_counts.get(binary_name, 0) + 1
+    if triple not in workflow:
+        raise SystemExit(f"generated workflow does not mention target {triple}")
 
-if len(target_rows) != 5:
-    raise SystemExit(f"expected five release targets, found {len(target_rows)}")
-if workflow.count("- target:") != len(target_rows):
-    raise SystemExit("release workflow target matrix has extra or missing rows")
-for binary_name, expected_count in binary_name_counts.items():
-    actual_count = len(re.findall(rf"^\s+binary_name:\s+{re.escape(binary_name)}$", workflow, re.MULTILINE))
-    if actual_count != expected_count:
-        raise SystemExit(f"release workflow binary name count for {binary_name} is {actual_count}, expected {expected_count}")
-if "source=\"target/${{ matrix.target }}/release/${{ matrix.binary_name }}\"" not in workflow:
-    raise SystemExit("release workflow does not use the exact Cargo output path")
-if 'test -f "$source"' not in workflow or 'cp -p "$source"' not in workflow:
-    raise SystemExit("release workflow does not fail-fast and copy the exact Cargo output")
-if "find target" in workflow or "stegoeggo*" in workflow:
-    raise SystemExit("release workflow still uses broad binary discovery")
+if "release_tag" not in workflow:
+    raise SystemExit("generated workflow must accept the exact release_tag dispatch input")
+if re.search(r"(?m)^\s*push\s*:", workflow):
+    raise SystemExit("generated workflow must not trigger on push")
+if workflow.count("contents: write") != 1:
+    raise SystemExit("generated workflow must grant contents: write to exactly one job")
+for forbidden in ("--clobber", "gh release publish", "gh release create --latest"):
+    if forbidden in workflow:
+        raise SystemExit(f"generated workflow must not contain {forbidden!r}")
+if re.search(r"cargo install\b.*(?:\s-p\b|\s--package\b)", workflow):
+    raise SystemExit("generated workflow passes -p/--package to cargo install")
+if "apt-get install" in workflow or "apt install zig" in workflow:
+    raise SystemExit("generated workflow must not install Zig through apt")
+if "_stage-github-draft" not in workflow:
+    raise SystemExit("generated workflow must stage through the Eggpack draft path")
+
+policy = json.loads((root / "release/eggpack/github-policy.json").read_text())
+revision = policy.get("eggpack_tool", {}).get("revision", "")
+if not re.fullmatch(r"[0-9a-f]{40}", revision):
+    raise SystemExit("eggpack_tool.revision must be an exact 40-hex commit revision")
+if revision not in workflow:
+    raise SystemExit("generated workflow does not install the pinned Eggpack revision")
 
 for name in ("docs/installation.md", "STABILITY.md", "SECURITY.md", "architecture/cli.md"):
     if "sha256" not in files[name].lower().replace("sha-256", "sha256"):
         raise SystemExit(f"checksum contract is missing from {name}")
 
-print(f"Documentation contracts valid: {len(target_rows)} release targets")
+print(f"Documentation contracts valid: {len(targets)} release targets")
 PY

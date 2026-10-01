@@ -1,0 +1,17 @@
+schema_version = 1
+
+# One direct Cargo output per canonical target. The same package/binary pair
+# is used for every target; only the target triple changes. The CLI package
+# default feature set (`signatures`) is the distributed feature set, so no
+# explicit feature flags are requested here; a release-contract guard keeps
+# that equivalence visible.
+#
+# TOML note: the schema is a map of target triple to a *list* of outputs, so
+# each entry is an inline table rather than a `[[...outputs]]` sub-table.
+
+[targets]
+"aarch64-apple-darwin" = [{ selector = { kind = "direct" }, package = "stegoeggo-cli", binary = "stegoeggo" }]
+"aarch64-unknown-linux-gnu" = [{ selector = { kind = "direct" }, package = "stegoeggo-cli", binary = "stegoeggo" }]
+"x86_64-apple-darwin" = [{ selector = { kind = "direct" }, package = "stegoeggo-cli", binary = "stegoeggo" }]
+"x86_64-pc-windows-msvc" = [{ selector = { kind = "direct" }, package = "stegoeggo-cli", binary = "stegoeggo" }]
+"x86_64-unknown-linux-gnu" = [{ selector = { kind = "direct" }, package = "stegoeggo-cli", binary = "stegoeggo" }]

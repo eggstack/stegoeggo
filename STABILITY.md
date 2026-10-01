@@ -115,7 +115,8 @@ syntax remains a 0.x compatibility alias for `protect`.
 The stable Unix bootstrap URL is
 `https://github.com/eggstack/stegoeggo/releases/latest/download/install.sh`;
 the Windows counterpart is the matching `install.ps1` asset. Release
-executables use the versionless names in `scripts/release-targets.txt`, each
+executables use the versionless names in `release/eggpack/distribution.toml`,
+each
 with a `<asset>.sha256` sidecar. The supported binary targets are Linux
 x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64.
 

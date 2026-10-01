@@ -58,9 +58,11 @@ current executable untouched.
 
 ### Release and installer contract
 
-The manual `release-binaries.yml` workflow checks out an exact `vX.Y.Z` tag and
-attaches all five CLI assets, their `.sha256` sidecars, `install.sh`, and
-`install.ps1` to an existing GitHub Release. The versionless asset names are:
+The Eggpack-generated `release-binaries.yml` workflow checks out an exact
+`vX.Y.Z` tag and stages a draft GitHub Release with all five CLI assets,
+their `.sha256` sidecars, `install.sh`, `install.ps1`, the generated exact
+installers, and `release-manifest.json` for maintainer publication. The
+versionless asset names are:
 
 | Target | Asset |
 |---|---|
@@ -70,12 +72,14 @@ attaches all five CLI assets, their `.sha256` sidecars, `install.sh`, and
 | `aarch64-apple-darwin` | `stegoeggo-aarch64-apple-darwin` |
 | `x86_64-pc-windows-msvc` | `stegoeggo-x86_64-pc-windows-msvc.exe` |
 
-The workflow keeps the Cargo output name separate from the public asset name:
-it stages `target/<triple>/release/stegoeggo` on Unix and
-`target/<triple>/release/stegoeggo.exe` on Windows, failing if that exact path
-is absent. The required documentation-contract check verifies that this
-source-path rule, the five-row workflow matrix, and `release-targets.txt`
-remain aligned; broad filesystem discovery is not permitted.
+Eggpack is the producer authority: `release/eggpack/distribution.toml` owns
+the target set, asset names, and sidecars, and the checked-in workflow is
+generated from that configuration (drift-gated by `eggpack ci check` at the
+pinned tool revision). The build captures the canonical Cargo output per
+target through the Eggpack handoff; broad filesystem discovery is not
+permitted. The required documentation-contract check verifies that the
+generated workflow, the Eggpack contract, and the product docs remain
+aligned.
 
 The stable Unix bootstrap URL is
 `releases/latest/download/install.sh`. Installers and the updater treat

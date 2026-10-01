@@ -47,7 +47,7 @@ downloaded script block with its `-Version` parameter:
 ## Supported binary assets
 
 Every executable has a matching `<asset>.sha256` sidecar. The stable asset
-contract is maintained in [`scripts/release-targets.txt`](../scripts/release-targets.txt):
+contract is maintained in [`release/eggpack/distribution.toml`](../release/eggpack/distribution.toml):
 
 | Target | Asset |
 |---|---|
@@ -175,7 +175,7 @@ installer does not register a package-manager uninstall entry.
 
 ## Release verification
 
-Maintainers can validate a tagged checkout before dispatching the manual
+Maintainers can validate a tagged checkout before dispatching the Eggpack
 binary workflow:
 
 ```bash
@@ -189,6 +189,11 @@ sidecars with:
 ./scripts/release-check-assets.sh --dir=release-assets --version=X.Y.Z
 ```
 
-The release workflow attaches GitHub Release assets only. It does not publish
+The asset audit expects the 15-file Eggpack inventory: five executables, five
+`.sha256` sidecars, `install.sh`, `install.ps1`, the generated
+`install-exact.sh`/`install-exact.ps1`, and `release-manifest.json`.
+
+The release workflow stages a draft GitHub Release only; a maintainer reviews
+and publishes it. It does not publish
 crates.io packages; crate publication remains the manual carrier → library →
 CLI sequence described in [`RELEASING.md`](../RELEASING.md).
