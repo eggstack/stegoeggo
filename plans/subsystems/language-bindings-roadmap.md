@@ -258,8 +258,8 @@ Class: invariant/infrastructure. Materialize ADR-0006 into an exact ABI v1
 contract: versioned symbol inventory, fixed numeric codes, opaque handle
 lifecycles, pointer/null/ownership rules, request/resource-limit coverage,
 error/report access, panic containment, threading semantics, cbindgen/header
-generation, symbol-audit policy, and the M008 five-target qualification
-matrix. No stable C symbols ship in M007.
+generation, symbol-audit policy, and the future five-target qualification
+matrix now owned by M010. No stable C symbols ship in M007.
 
 Implementation:
 `plans/implementation/language-bindings/007-c-abi-contract-design.md`.
