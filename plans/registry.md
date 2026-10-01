@@ -30,7 +30,7 @@ predecessor history, indexed by the roadmaps below.
 | stego-carrier | closed | `plans/subsystems/stego-carrier-roadmap.md` | all milestones closed | none |
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
-| release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked | stable release B newer than 0.4.2 (flat Plan 106 failure policy: no throwaway version) |
+| release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 ready | M001 waits for ordinary stable B > 0.4.2; M002 Eggpack adoption can implement now and use that same future B for live evidence |
 | language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M005 Node closed | M001–M005 closed; M006 C ABI design dependency-ready |
 
 ## Dependency-ready implementation plans
@@ -38,6 +38,7 @@ predecessor history, indexed by the roadmaps below.
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
 | language-bindings | M005 Node binding foundation and qualification | closed | `plans/implementation/language-bindings/005-node-binding-foundation-qualification.md` | closure at `plans/closure/language-bindings/005-status.md`; release-node run 36488540671 green; no npm publication |
+| release-distribution | M002 Eggpack producer adoption and second-consumer qualification | ready | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | paired with Eggpack Ecosystem M002 at `58b0ef8`; no new Eggpack producer primitive identified; next ordinary stable release supplies live closure evidence |
 
 ## Active closure work
 

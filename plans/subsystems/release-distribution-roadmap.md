@@ -53,11 +53,14 @@ Protection algorithms, verification semantics, automated publication.
 ## 4. Current state
 
 Active. 0.4.2 is the first eggfetch-enabled release, five-target
-qualified (`105-status.md`). One milestone remains blocked: the real
-public A→B self-update proof (flat Plan 106) until a newer stable B is
-ordinarily released. Evidence so far: `cargo test -p stegoeggo-cli
---all-features`, `./scripts/test-release-updater.sh`,
-`./scripts/test-release-installers.sh` rehearsals at 0.4.2.
+qualified (`105-status.md`). M001 remains operationally blocked on a newer
+ordinary stable B for the real public A→B self-update proof. M002 is now ready:
+adopt Eggpack as producer authority for the same five native CLI targets and
+use the next ordinary stable release as both M002's live second-consumer proof
+and, after publication, M001's A→B evidence. M002 implementation does not need
+to wait for B. Evidence so far: `cargo test -p stegoeggo-cli --all-features`,
+`./scripts/test-release-updater.sh`, `./scripts/test-release-installers.sh`
+rehearsals at 0.4.2 and Eggpack's closed first-consumer/M003h evidence.
 
 ## 5. Target architecture
 
@@ -76,6 +79,14 @@ CI/release gates (008, 032-037, closed)
                         +--> first eggfetch release 0.4.2 (105, closed, hard dep)
                                   |
                                   `--> M001 real A->B transition (106, BLOCKED on stable B)
+
+Eggpack Ecosystem M001/M003h [CLOSED]
+    |
+    `--> M002 Eggpack producer adoption [READY NOW]
+             |
+             `--> next ordinary stable B live Eggpack release
+                        |
+                        `--> same public B supplies M001 A->B evidence
 ```
 
 M001's blocker is operational (external release event), not a code dep.
@@ -103,6 +114,33 @@ Exit conditions: all Plan 106 acceptance criteria; evidence in
 
 Deferred work: none.
 
+### Milestone 2 — Eggpack producer adoption and second-consumer qualification
+
+Class: capability
+
+Objective: replace the handwritten native CLI release matrix with Eggpack
+producer configuration/generated CI, preserving StegoEggo crates.io,
+installer, updater, and human-publication policy.
+
+Dependencies: hard/interface on Eggpack Ecosystem M001/M003h (closed) and
+StegoEggo 0.4.2 five-target qualification (closed). M001's missing stable B is
+not a hard dependency; M002 can implement before B exists.
+
+Deliverable boundary: checked-in `release/eggpack/` authority, deterministic
+five-target generated workflow, bounded product/GLIBC validators,
+installer/updater parity guards, drift checking, then one real ordinary stable
+release with draft staging and human publication.
+
+Shared operational event: the first ordinary B > 0.4.2 after cutover may also
+supply flat Plan 106's real A→B updater evidence after B is public.
+
+Implementation plan:
+`plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md`.
+
+Exit conditions: M002 plan acceptance criteria and
+`plans/closure/release-distribution/002-status.md`.
+
+
 ## 8. Cross-cutting requirements
 
 Storage: none. Protocol: crates.io API + GitHub Release assets over
@@ -127,13 +165,17 @@ transition.
 
 ## 11. Completion definition
 
-M001 closes when `plans/106-status.md` holds reproducible A→B evidence
-per the plan; then this roadmap moves to closed and the closed row
-records it in `registry.md`.
+The subsystem closes only when both active capability milestones are closed:
+M001 holds reproducible public A→B evidence in `plans/106-status.md`, and M002
+records the Eggpack producer-adoption/live-release evidence in
+`plans/closure/release-distribution/002-status.md`. The same ordinary stable
+B release may satisfy both operational evidence sets, but the closure records
+remain separate.
 
 ## 12. Milestone status table
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
 | M001 real A→B update | blocked | flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md` | flat `plans/106-status.md` (pending B) | stable B > 0.4.2 not yet published |
+| M002 Eggpack producer adoption | ready | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | — | Eggpack Ecosystem M001/M003h + Stego 0.4.2 qualification closed; live closure waits for next ordinary stable release |
 | prior gates/binary/eggfetch/0.4.2 | closed | flat `008`, `024`–`025`, `032`–`037`, `086`, `089`, `099`–`105` | `*.status.md` companions as present | — |
