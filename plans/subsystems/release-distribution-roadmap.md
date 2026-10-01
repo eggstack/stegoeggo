@@ -54,13 +54,14 @@ Protection algorithms, verification semantics, automated publication.
 
 Active. 0.4.2 is the first eggfetch-enabled release, five-target
 qualified (`105-status.md`). M001 remains operationally blocked on a newer
-ordinary stable B for the real public A→B self-update proof. M002 is now ready:
-adopt Eggpack as producer authority for the same five native CLI targets and
-use the next ordinary stable release as both M002's live second-consumer proof
-and, after publication, M001's A→B evidence. M002 implementation does not need
-to wait for B. Evidence so far: `cargo test -p stegoeggo-cli --all-features`,
-`./scripts/test-release-updater.sh`, `./scripts/test-release-installers.sh`
-rehearsals at 0.4.2 and Eggpack's closed first-consumer/M003h evidence.
+ordinary stable B for the real public A→B self-update proof. M002 cutover is
+landed and conditionally closed (`plans/closure/release-distribution/002-status.md`):
+Eggpack is now the producer authority for the same five native CLI targets,
+and the next ordinary stable release serves as both M002's live
+second-consumer proof and, after publication, M001's A→B evidence. No
+throwaway version may be cut for either. Note: the updater rehearsal
+currently panics at baseline (proven pre-existing, recorded in the M002
+closure); it must be resolved before the shared live A→B proof runs green.
 
 ## 5. Target architecture
 
@@ -177,5 +178,5 @@ remain separate.
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
 | M001 real A→B update | blocked | flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md` | flat `plans/106-status.md` (pending B) | stable B > 0.4.2 not yet published |
-| M002 Eggpack producer adoption | ready | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | — | Eggpack Ecosystem M001/M003h + Stego 0.4.2 qualification closed; live closure waits for next ordinary stable release |
+| M002 Eggpack producer adoption | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | `plans/closure/release-distribution/002-status.md` | cutover landed; live B > 0.4.2 evidence outstanding on the same ordinary release as M001 |
 | prior gates/binary/eggfetch/0.4.2 | closed | flat `008`, `024`–`025`, `032`–`037`, `086`, `089`, `099`–`105` | `*.status.md` companions as present | — |
