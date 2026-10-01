@@ -16,6 +16,7 @@ Related ADRs:
 - `plans/adrs/ADR-0001-canonical-protection-request.md`
 - `plans/adrs/ADR-0003-byte-vs-pixel-paths.md`
 - `plans/adrs/ADR-0005-foreign-language-bindings.md`
+- `plans/adrs/ADR-0006-versioned-c-abi.md`
 
 ## 1. Purpose and ownership boundary
 
@@ -245,11 +246,18 @@ language-bindings M006 cannot close until verification-conformance M6 closes.
 
 ### M007 — C ABI contract design
 
-Class: invariant/infrastructure. Define ownership, allocation/free functions,
-opaque handles versus serialized DTOs, error codes/details, ABI version
-negotiation, panic containment, thread-safety, symbol visibility, and
-header-generation strategy. No stable symbols ship before the contract is
-reviewed. Hard dependency: language-bindings M006 closure.
+Class: invariant/infrastructure. Materialize ADR-0006 into an exact ABI v1
+contract: versioned symbol inventory, fixed numeric codes, opaque handle
+lifecycles, pointer/null/ownership rules, request/resource-limit coverage,
+error/report access, panic containment, threading semantics, cbindgen/header
+generation, symbol-audit policy, and the M008 five-target qualification
+matrix. No stable C symbols ship in M007.
+
+Implementation:
+`plans/implementation/language-bindings/007-c-abi-contract-design.md`.
+
+Hard dependency: language-bindings M006 closure. Satisfied; M007 is ready for
+handoff.
 
 ### M008 — C ABI implementation and qualification
 
@@ -326,5 +334,5 @@ invariants.
 | M004 M003 closure corrective | closed | `implementation/language-bindings/004-m003-closure-corrective.md` | `closure/language-bindings/004-status.md` | none; bounded defects corrected in PR #1 |
 | M005 Node binding | closed | `implementation/language-bindings/005-node-binding-foundation-qualification.md` | `closure/language-bindings/005-status.md` | historical qualification valid for its recorded SHA; later core drift is owned by M006 |
 | M006 post-core compatibility corrective | closed | `implementation/language-bindings/006-post-core-compatibility-corrective.md` | `closure/language-bindings/006-status.md` | none |
-| M007 C ABI design | proposed | not yet written | pending | none (M006 closed; awaits implementation plan) |
+| M007 C ABI design | ready | `implementation/language-bindings/007-c-abi-contract-design.md` | pending | none; M006 closed and ADR-0006 accepted |
 | M008 C ABI implementation | proposed | not yet written | pending | M007 accepted contract |
