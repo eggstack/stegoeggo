@@ -1772,7 +1772,7 @@ fn protect_with_warnings<'py>(
         let pw: PyProtectionWarning = w.into();
         py_warnings.append(pw)?;
     }
-    Ok(PyTuple::new(py, [py_bytes, py_warnings.into_any()])?)
+    PyTuple::new(py, [py_bytes, py_warnings.into_any()])
 }
 
 #[pyfunction]
@@ -1787,10 +1787,7 @@ fn protect_with_report<'py>(
         .map_err(|e| map_error(py, e))?;
     let py_bytes: Bound<'py, PyAny> = PyBytes::new(py, &bytes).into_any();
     let py_report = PyExecutionReport { inner: report };
-    Ok(PyTuple::new(
-        py,
-        [py_bytes, Bound::new(py, py_report)?.into_any()],
-    )?)
+    PyTuple::new(py, [py_bytes, Bound::new(py, py_report)?.into_any()])
 }
 
 #[pyfunction]
@@ -1852,4 +1849,47 @@ fn _native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_format, m)?)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn carrier_resource_limit_projects_to_resource_limit_error() {
+        Python::initialize();
+        Python::attach(|py| {
+            let err = map_error(
+                py,
+                RustError::ResourceLimitExceeded("carrier dimensions overflow".to_string()),
+            );
+            assert!(err.is_instance_of::<ResourceLimitError>(py));
+            let value = err.value(py);
+            assert_eq!(
+                value.getattr("resource").unwrap().extract::<String>().unwrap(),
+                "carrier"
+            );
+            assert!(value
+                .getattr("size")
+                .is_err_and(|e| e.is_instance_of::<pyo3::exceptions::PyAttributeError>(py)));
+            assert!(value
+                .getattr("limit")
+                .is_err_and(|e| e.is_instance_of::<pyo3::exceptions::PyAttributeError>(py)));
+            assert!(!err.to_string().contains("super-secret-mac-key"));
+        });
+    }
+
+    #[test]
+    fn structured_limits_keep_prior_projection() {
+        Python::initialize();
+        Python::attach(|py| {
+            let err = map_error(py, RustError::InputTooLarge { size: 1000, limit: 8 });
+            assert!(err.is_instance_of::<ResourceLimitError>(py));
+            let value = err.value(py);
+            assert_eq!(
+                value.getattr("resource").unwrap().extract::<String>().unwrap(),
+                "input_bytes"
+            );
+        });
+    }
 }
