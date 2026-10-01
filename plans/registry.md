@@ -31,13 +31,13 @@ predecessor history, indexed by the roadmaps below.
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed; M003 closed | M003 closed the consumer-owned nested-runtime panic; M001/M002 still wait for the same ordinary stable B > 0.4.2 |
-| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M008 M007 symbol-inventory corrective ready | M009 blocked on M008 closure; M010 blocked on M009 closure |
+| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M009 C ABI v1 implementation foundation ready | M010 blocked on M009 closure |
 
 ## Dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
-| language-bindings | M008 M007 symbol-inventory corrective | ready | `plans/implementation/language-bindings/008-m007-symbol-inventory-corrective.md` | Correct 89→90/86→87 bookkeeping without changing signatures; materialize checked 90-symbol manifest before implementation |
+| language-bindings | M009 C ABI v1 implementation foundation | ready | `plans/implementation/language-bindings/009-c-abi-v1-implementation-foundation.md` | M008 closed with corrected 90-symbol manifest/checker (`plans/closure/language-bindings/008-status.md`); Linux x86_64 implementation may be handed off |
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); live B > 0.4.2 evidence remains outstanding, shared with M001 |
 
 ## Active closure work
@@ -50,20 +50,24 @@ None.
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
 | release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | Missing ordinary stable B > 0.4.2. The updater-runtime code blocker is resolved by closed M003; cutover/closure remains `plans/closure/release-distribution/002-status.md`. |
-| language-bindings | M009 C ABI v1 implementation foundation | M008 must close with corrected 90-symbol manifest/evidence before implementation begins. Plan: `plans/implementation/language-bindings/009-c-abi-v1-implementation-foundation.md`. |
 | language-bindings | M010 C ABI v1 cross-platform qualification | M009 implementation foundation must close before five-target qualification/stability activation. Plan: `plans/implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md`. |
 
 ## Recently closed work
 
+- Language Bindings M008 M007 symbol-inventory corrective: closure
+  recorded at `plans/closure/language-bindings/008-status.md`
+  (implementation `6cbc0d4`; 90/87 arithmetic corrected with no signature
+  change; checked 90-line manifest plus stdlib-only contract checker;
+  C11/C++17 90-signature smoke green on Apple clang 21.0.0;
+  `./scripts/check.sh` green). M009 is now dependency-ready.
 - Language Bindings M007 C ABI contract design: closure recorded at
   `plans/closure/language-bindings/007-status.md` (normative
   `bindings/c/ABI-V1.md` plus `bindings/c/README.md`; design commit
   `3e3e463`; `./scripts/check.sh` green; C11/C++17 signature sketch
   smoke on Apple clang 21.0.0; no C symbols, header, or library shipped).
-  A post-closure audit found a bounded count defect: the document declares
-  90 callable functions while its arithmetic says 89. M008 is registered to
-  correct the evidence and add a checked 90-symbol manifest before M009
-  implementation.
+   A post-closure audit found a bounded count defect: the document declares
+   90 callable functions while its arithmetic says 89. M008 corrected the
+   evidence and added the checked 90-symbol manifest (closed; see above).
 - Language Bindings M006 post-core compatibility corrective and
   requalification: closure recorded at
   `plans/closure/language-bindings/006-status.md` against final SHA

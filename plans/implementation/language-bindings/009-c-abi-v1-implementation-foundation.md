@@ -1,6 +1,6 @@
 # Language Bindings Milestone 009 — C ABI v1 Implementation Foundation
 
-Status: blocked
+Status: ready for handoff
 
 Repository baseline: `9cac8fcda81ecc3e9e491d28e166470a9e8a7d8c`
 

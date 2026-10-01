@@ -280,7 +280,10 @@ correct historical references transparently.
 Implementation:
 `plans/implementation/language-bindings/008-m007-symbol-inventory-corrective.md`.
 
-Hard dependency: M007 closure. Satisfied; M008 is ready for handoff.
+Hard dependency: M007 closure. Satisfied; M008 is closed with the
+corrected 90-symbol manifest and checker
+(`plans/closure/language-bindings/008-status.md`). M009 is ready for
+handoff.
 
 ### M009 — C ABI v1 implementation foundation
 
@@ -293,7 +296,9 @@ path-filtered Linux x86_64 compatibility workflow. ABI remains pre-stable.
 Implementation:
 `plans/implementation/language-bindings/009-c-abi-v1-implementation-foundation.md`.
 
-Hard dependency: M008 closure.
+Hard dependency: M008 closure. Satisfied and M008 is closed with the
+accepted manifest (`plans/closure/language-bindings/008-status.md`);
+M009 is ready for handoff.
 
 ### M010 — C ABI v1 cross-platform qualification and stability activation
 
@@ -377,6 +382,6 @@ invariants.
 | M005 Node binding | closed | `implementation/language-bindings/005-node-binding-foundation-qualification.md` | `closure/language-bindings/005-status.md` | historical qualification valid for its recorded SHA; later core drift is owned by M006 |
 | M006 post-core compatibility corrective | closed | `implementation/language-bindings/006-post-core-compatibility-corrective.md` | `closure/language-bindings/006-status.md` | none |
 | M007 C ABI design | closed | `implementation/language-bindings/007-c-abi-contract-design.md` | `closure/language-bindings/007-status.md` | accepted semantic contract; symbol-count evidence corrected by M008 |
-| M008 M007 symbol-inventory corrective | ready | `implementation/language-bindings/008-m007-symbol-inventory-corrective.md` | pending | none; bounded 89→90 count defect reproduced |
-| M009 C ABI v1 implementation foundation | blocked | `implementation/language-bindings/009-c-abi-v1-implementation-foundation.md` | pending | M008 closure |
+| M008 M007 symbol-inventory corrective | closed | `implementation/language-bindings/008-m007-symbol-inventory-corrective.md` | `closure/language-bindings/008-status.md` | 90/87 arithmetic corrected with no signature change; checked manifest + checker landed |
+| M009 C ABI v1 implementation foundation | ready | `implementation/language-bindings/009-c-abi-v1-implementation-foundation.md` | pending | M008 manifest accepted |
 | M010 C ABI cross-platform qualification | blocked | `implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md` | pending | M009 closure |
