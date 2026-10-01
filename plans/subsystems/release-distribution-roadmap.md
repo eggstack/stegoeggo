@@ -59,9 +59,10 @@ landed and conditionally closed (`plans/closure/release-distribution/002-status.
 Eggpack is now the producer authority for the same five native CLI targets,
 and the next ordinary stable release serves as both M002's live
 second-consumer proof and, after publication, M001's A→B evidence. No
-throwaway version may be cut for either. The pre-existing updater rehearsal
-panic is now owned by ready M003, the synchronous Eggup updater bridge
-corrective; M003 must close before the shared live A→B proof runs green.
+throwaway version may be cut for either. The updater rehearsal panic is
+resolved by closed M003, the synchronous Eggup updater bridge corrective
+(`plans/closure/release-distribution/003-status.md`); the shared live A→B
+proof still waits for the ordinary stable B event.
 
 ## 5. Target architecture
 
@@ -205,5 +206,5 @@ remain separate.
 |---|---|---|---|---|
 | M001 real A→B update | blocked | flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md` | flat `plans/106-status.md` (pending B) | stable B > 0.4.2 not yet published |
 | M002 Eggpack producer adoption | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | `plans/closure/release-distribution/002-status.md` | cutover landed; live B > 0.4.2 evidence outstanding on the same ordinary release as M001 |
-| M003 synchronous Eggup updater bridge corrective | ready | `plans/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md` | — | pre-existing nested Tokio runtime panic blocks updater rehearsal; consumer-side fix can execute now |
+| M003 synchronous Eggup updater bridge corrective | closed | `plans/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md` | `plans/closure/release-distribution/003-status.md` | nested Tokio runtime removed; updater rehearsal green; no release/fallback policy change |
 | prior gates/binary/eggfetch/0.4.2 | closed | flat `008`, `024`–`025`, `032`–`037`, `086`, `089`, `099`–`105` | `*.status.md` companions as present | — |
