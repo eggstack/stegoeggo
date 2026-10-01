@@ -89,9 +89,21 @@ and cannot close until verification M6 closes.
 - M5 verification-model convergence — flat `083`. Class: invariant.
 - M6 unstructured-candidate false-positive corrective —
   `implementation/verification-conformance/006-unstructured-candidate-false-positive-corrective.md`.
-  Class: invariant. Restore the canonical absence-versus-corruption boundary
-  after post-closure candidate-classification drift and add Rust regression
-  guards.
+  Class: invariant.
+
+### M6 — Unstructured candidate false-positive corrective
+
+Restore the canonical absence-versus-corruption boundary after post-closure
+candidate-classification drift and add Rust-level regression guards. Ordinary
+valid carriers with no credible StegoEggo marker evidence must report
+`NotFound`; structured/provenance-bearing corrupted candidates remain
+`Invalid`.
+
+Implementation:
+`plans/implementation/verification-conformance/006-unstructured-candidate-false-positive-corrective.md`.
+
+The written classification contract is an interface dependency for
+language-bindings M006. Verification M6 itself has no open hard dependency.
 
 ## 8. Cross-cutting requirements
 
