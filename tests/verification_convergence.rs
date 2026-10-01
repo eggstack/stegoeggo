@@ -430,7 +430,10 @@ fn black_png() -> Vec<u8> {
 #[test]
 fn unstructured_fallback_bytes_report_absence_not_corruption() {
     let plain = black_png();
-    assert_eq!(verify_image_bytes(&plain, &[]), VerificationStatus::NotFound);
+    assert_eq!(
+        verify_image_bytes(&plain, &[]),
+        VerificationStatus::NotFound
+    );
     let report = verify_image_bytes_report(&plain, &[]);
     assert_eq!(
         report.hidden_marker().status(),
@@ -446,9 +449,7 @@ fn canonical_independent_fixtures_report_absence() {
         "canonical_independent.jpg",
         "canonical_independent.webp",
     ] {
-        let path = format!(
-            "bindings/python/tests/fixtures/conformance/canonical/{name}"
-        );
+        let path = format!("bindings/python/tests/fixtures/conformance/canonical/{name}");
         let bytes = std::fs::read(&path).unwrap();
         assert_eq!(
             verify_image_bytes(&bytes, &[]),
@@ -468,8 +469,7 @@ fn canonical_independent_fixtures_report_absence() {
 fn metadata_only_black_image_has_rights_without_marker() {
     let plain = black_png();
     let notice = RightsNotice::new().with_copyright_holder("Convergence");
-    let request =
-        ProtectionRequest::metadata_only(notice, RightsPolicy::ProhibitedAiMlTraining);
+    let request = ProtectionRequest::metadata_only(notice, RightsPolicy::ProhibitedAiMlTraining);
     let protected = process_request_bytes(&plain, &request).unwrap();
     let report = verify_image_bytes_report(&protected, &[]);
     assert!(report.rights().found());
@@ -483,9 +483,10 @@ fn metadata_only_black_image_has_rights_without_marker() {
 fn seed_zero_marker_verifies_on_black_image() {
     let plain = black_png();
     let notice = RightsNotice::new().with_copyright_holder("Convergence");
-    let request = ProtectionRequest::with_hidden_marker(notice, RightsPolicy::ProhibitedAiMlTraining)
-        .with_seed(0)
-        .with_intensity(0.5);
+    let request =
+        ProtectionRequest::with_hidden_marker(notice, RightsPolicy::ProhibitedAiMlTraining)
+            .with_seed(0)
+            .with_intensity(0.5);
     let protected = process_request_bytes(&plain, &request).unwrap();
     assert_eq!(
         verify_image_bytes(&protected, &[]),
@@ -497,10 +498,11 @@ fn seed_zero_marker_verifies_on_black_image() {
 fn wrong_hmac_key_stays_invalid_on_black_image() {
     let plain = black_png();
     let notice = RightsNotice::new().with_copyright_holder("Convergence");
-    let request = ProtectionRequest::with_hidden_marker(notice, RightsPolicy::ProhibitedAiMlTraining)
-        .with_seed(42)
-        .with_intensity(0.5)
-        .with_mac_key(b"matrix-key".to_vec());
+    let request =
+        ProtectionRequest::with_hidden_marker(notice, RightsPolicy::ProhibitedAiMlTraining)
+            .with_seed(42)
+            .with_intensity(0.5)
+            .with_mac_key(b"matrix-key".to_vec());
     let protected = process_request_bytes(&plain, &request).unwrap();
     assert_eq!(
         verify_image_bytes(&protected, b"matrix-key"),
