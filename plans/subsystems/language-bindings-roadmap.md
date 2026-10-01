@@ -256,8 +256,9 @@ matrix. No stable C symbols ship in M007.
 Implementation:
 `plans/implementation/language-bindings/007-c-abi-contract-design.md`.
 
-Hard dependency: language-bindings M006 closure. Satisfied; M007 is ready for
-handoff.
+Hard dependency: language-bindings M006 closure. Satisfied and M007 is
+closed with the accepted contract in `bindings/c/ABI-V1.md`; closure
+record: `plans/closure/language-bindings/007-status.md`.
 
 ### M008 — C ABI implementation and qualification
 
@@ -334,5 +335,5 @@ invariants.
 | M004 M003 closure corrective | closed | `implementation/language-bindings/004-m003-closure-corrective.md` | `closure/language-bindings/004-status.md` | none; bounded defects corrected in PR #1 |
 | M005 Node binding | closed | `implementation/language-bindings/005-node-binding-foundation-qualification.md` | `closure/language-bindings/005-status.md` | historical qualification valid for its recorded SHA; later core drift is owned by M006 |
 | M006 post-core compatibility corrective | closed | `implementation/language-bindings/006-post-core-compatibility-corrective.md` | `closure/language-bindings/006-status.md` | none |
-| M007 C ABI design | ready | `implementation/language-bindings/007-c-abi-contract-design.md` | pending | none; M006 closed and ADR-0006 accepted |
-| M008 C ABI implementation | proposed | not yet written | pending | M007 accepted contract |
+| M007 C ABI design | closed | `implementation/language-bindings/007-c-abi-contract-design.md` | `closure/language-bindings/007-status.md` | none; exact 89-symbol v1 contract accepted, no symbols shipped |
+| M008 C ABI implementation | proposed | not yet written | pending | none; M007 contract accepted (plan not yet written) |

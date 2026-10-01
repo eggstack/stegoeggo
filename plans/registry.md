@@ -31,13 +31,13 @@ predecessor history, indexed by the roadmaps below.
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed; M003 closed | M003 closed the consumer-owned nested-runtime panic; M001/M002 still wait for the same ordinary stable B > 0.4.2 |
-| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M007 C ABI contract design ready | M006 closed; ADR-0006 accepted; M008 blocked on M007 closure |
+| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M007 closed; M008 proposed (plan not yet written) | M008 awaits its implementation plan; no core blocker |
 
 ## Dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
-| language-bindings | M007 C ABI contract design | ready | `plans/implementation/language-bindings/007-c-abi-contract-design.md` | ADR-0006 accepted; exact v1 symbols/codes/ownership/report/error/header/export contract must close before M008 |
+| language-bindings | M007 C ABI contract design | closed | `plans/implementation/language-bindings/007-c-abi-contract-design.md` | Exact 89-symbol v1 contract accepted (`bindings/c/ABI-V1.md`); closure `plans/closure/language-bindings/007-status.md`; no symbols shipped |
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); live B > 0.4.2 evidence remains outstanding, shared with M001 |
 
 ## Active closure work
@@ -50,10 +50,17 @@ None.
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
 | release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | Missing ordinary stable B > 0.4.2. The updater-runtime code blocker is resolved by closed M003; cutover/closure remains `plans/closure/release-distribution/002-status.md`. |
-| language-bindings | M008 C ABI implementation and qualification | M007 must close with an accepted exact ABI v1 contract before any stable C symbols are implemented/shipped. |
 
 ## Recently closed work
 
+- Language Bindings M007 C ABI contract design: closure recorded at
+  `plans/closure/language-bindings/007-status.md` (normative
+  `bindings/c/ABI-V1.md` with the exact 89-symbol v1 contract plus
+  `bindings/c/README.md`; design commit `3e3e463`; `./scripts/check.sh`
+  green; C11/C++17 signature sketch smoke on Apple clang 21.0.0; no C
+  symbols, header, or library shipped). M008 implementation and
+  qualification is now dependency-ready; its implementation plan is not
+  yet written.
 - Language Bindings M006 post-core compatibility corrective and
   requalification: closure recorded at
   `plans/closure/language-bindings/006-status.md` against final SHA
