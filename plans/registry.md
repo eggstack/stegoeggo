@@ -28,7 +28,7 @@ predecessor history, indexed by the roadmaps below.
 | rights-metadata | closed | `plans/subsystems/rights-metadata-roadmap.md` | all milestones closed | none |
 | container-correctness | closed | `plans/subsystems/container-correctness-roadmap.md` | all milestones closed | none |
 | stego-carrier | closed | `plans/subsystems/stego-carrier-roadmap.md` | all milestones closed | none |
-| verification-conformance | active | `plans/subsystems/verification-conformance-roadmap.md` | M006 false-positive corrective ready | Post-closure core drift makes unprotected valid images surface hidden-marker Invalid; Python + Node independently reproduce it |
+| verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed; M003 closed | M003 closed the consumer-owned nested-runtime panic; M001/M002 still wait for the same ordinary stable B > 0.4.2 |
 | language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M006 post-core compatibility corrective ready | Python + Node current compatibility CI red; verification-conformance M006 interface contracted; C ABI shifted to M007/M008 |
@@ -37,8 +37,8 @@ predecessor history, indexed by the roadmaps below.
 
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
-| verification-conformance | M006 unstructured-candidate false-positive corrective | active | `plans/implementation/verification-conformance/006-unstructured-candidate-false-positive-corrective.md` | Restore canonical absence-vs-corruption classification; add Rust guards for the regression caught by Python/Node |
-| language-bindings | M006 post-core compatibility corrective and requalification | ready | `plans/implementation/language-bindings/006-post-core-compatibility-corrective.md` | Interface dependency on verification M006 is contracted; map new carrier resource-limit variant in Python/Node, reconcile descriptive metadata kind, then requalify both five-target matrices |
+| verification-conformance | M006 unstructured-candidate false-positive corrective | closed | `plans/implementation/verification-conformance/006-unstructured-candidate-false-positive-corrective.md` | Closure at `plans/closure/verification-conformance/006-status.md`; absence-vs-corruption restored with Rust guards |
+| language-bindings | M006 post-core compatibility corrective and requalification | ready | `plans/implementation/language-bindings/006-post-core-compatibility-corrective.md` | Verification M006 closed, releasing the closure gate; map new carrier resource-limit variant in Python/Node, reconcile descriptive metadata kind and rights-source label, then requalify both five-target matrices |
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); closure at `plans/closure/release-distribution/002-status.md`; live B > 0.4.2 evidence outstanding, shared with M001; updater-runtime code blocker resolved by closed M003 |
 | release-distribution | M003 synchronous Eggup updater bridge corrective | closed | `plans/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md` | outer Tokio runtime removed at `e611c91`; closure at `plans/closure/release-distribution/003-status.md`; updater rehearsal green |
 
@@ -52,7 +52,7 @@ None.
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
 | release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | Missing ordinary stable B > 0.4.2. The updater-runtime code blocker is resolved by closed M003; cutover/closure remains `plans/closure/release-distribution/002-status.md`. |
-| language-bindings | M007 C ABI contract design | Language-bindings M006 compatibility corrective/requalification must close against a green current Python + Node contract first. |
+| language-bindings | M007 C ABI contract design | Language-bindings M006 compatibility corrective/requalification must close against a green current Python + Node contract first. Verification M006 is closed; only language M006 remains. |
 
 ## Recently closed work
 

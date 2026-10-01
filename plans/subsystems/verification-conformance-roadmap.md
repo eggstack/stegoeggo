@@ -1,6 +1,6 @@
 # Verification and Conformance Roadmap
 
-Status: active
+Status: closed
 
 Long-term references:
 
@@ -49,12 +49,13 @@ Marker embedding, container shaping, CLI update mechanics.
 
 ## 4. Current state
 
-The 0.4.2 verification/conformance line was accepted as closed, but the
-subsystem is reactivated for M6 after post-closure core commit `8c89e8cb`
+The 0.4.2 verification/conformance line was accepted as closed, then the
+subsystem was reactivated for M6 after post-closure core commit `8c89e8cb`
 introduced an absence-versus-corruption regression. Standard Rust CI stayed
 green while both Python and Node compatibility suites independently observed
 valid unprotected images reporting hidden-marker `Invalid` rather than
-`NotFound`.
+`NotFound`. M6 is now closed with the corrective and Rust-level guards
+recorded in `plans/closure/verification-conformance/006-status.md`.
 
 M6 owns the canonical correction and Rust-level regression guards. Prior
 closure evidence remains historical and is not rewritten. Existing convergence
@@ -129,9 +130,10 @@ Without-key forgeability remains a documented limitation, not this defect.
 ## 11. Completion definition
 
 The original completion definition was met for the accepted 0.4.2 state.
-The subsystem returns to closed only after M6 restores the
-absence-versus-corruption invariant, adds Rust-level regression guards, and
-records accepted closure evidence.
+M6 restored the absence-versus-corruption invariant, added Rust-level
+regression guards, and recorded accepted closure evidence in
+`plans/closure/verification-conformance/006-status.md`. The subsystem is
+closed.
 
 ## 12. Milestone status table
 
@@ -142,4 +144,4 @@ records accepted closure evidence.
 | M3 release-3 closure | closed | flat `018`–`021`, `023` | `019-status.md`–`024-status.md` (as present) | — |
 | M4 trust correctives | closed | flat `026`–`031` | `029-status.md`–`031-status.md` (as present) | — |
 | M5 model convergence | closed | flat `083` | `083-status.md` | — |
-| M6 unstructured-candidate false-positive corrective | active | `implementation/verification-conformance/006-unstructured-candidate-false-positive-corrective.md` | pending | none; regression reproduced by Python + Node compatibility CI |
+| M6 unstructured-candidate false-positive corrective | closed | `implementation/verification-conformance/006-unstructured-candidate-false-positive-corrective.md` | `closure/verification-conformance/006-status.md` | none |
