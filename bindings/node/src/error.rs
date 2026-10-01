@@ -234,6 +234,21 @@ impl NativeError {
                 kind: Some((*kind).to_string()),
                 count: Some(*count as f64),
             },
+            RustError::ResourceLimitExceeded(_) => Self {
+                code: ErrorCode::ResourceLimit,
+                message,
+                resource: Some("carrier".to_string()),
+                required: None,
+                available: None,
+                size: None,
+                limit: None,
+                width: None,
+                height: None,
+                max_width: None,
+                max_height: None,
+                kind: None,
+                count: None,
+            },
             _ => Self::plain(ErrorCode::Internal, message),
         }
     }
@@ -407,5 +422,76 @@ mod tests {
         let err = RustError::Config("no key material here".to_string());
         let dto = NativeError::from_rust(&err);
         assert!(!dto.message.contains("super-secret-mac-key"));
+    }
+
+    #[test]
+    fn carrier_resource_limit_projection() {
+        let err = RustError::ResourceLimitExceeded("carrier dimensions overflow".to_string());
+        let dto = NativeError::from_rust(&err);
+        assert_eq!(dto.code, ErrorCode::ResourceLimit);
+        assert_eq!(dto.resource.as_deref(), Some("carrier"));
+        assert!(dto.message.contains("carrier dimensions overflow"));
+        assert!(dto.required.is_none());
+        assert!(dto.available.is_none());
+        assert!(dto.size.is_none());
+        assert!(dto.limit.is_none());
+        assert!(dto.width.is_none());
+        assert!(dto.height.is_none());
+        assert!(dto.max_width.is_none());
+        assert!(dto.max_height.is_none());
+        assert!(dto.kind.is_none());
+        assert!(dto.count.is_none());
+    }
+
+    #[test]
+    fn resource_limit_family_parity_table() {
+        let cases: Vec<(RustError, &str)> = vec![
+            (
+                RustError::InputTooLarge { size: 1000, limit: 8 },
+                "input_bytes",
+            ),
+            (
+                RustError::DimensionsExceeded {
+                    width: 8,
+                    height: 8,
+                    max_width: 4,
+                    max_height: 4,
+                },
+                "dimensions",
+            ),
+            (
+                RustError::ContainerLimitExceeded {
+                    kind: "PNG chunks",
+                    count: 9,
+                    limit: 1,
+                },
+                "container",
+            ),
+            (
+                RustError::MetadataLimitExceeded {
+                    kind: "metadata field",
+                    size: 12,
+                    limit: 1,
+                },
+                "metadata",
+            ),
+            (
+                RustError::VerificationBudgetExceeded {
+                    kind: "tile origins",
+                    count: 40,
+                    limit: 16,
+                },
+                "verification_budget",
+            ),
+            (
+                RustError::ResourceLimitExceeded("carrier dimensions overflow".to_string()),
+                "carrier",
+            ),
+        ];
+        for (err, resource) in cases {
+            let dto = NativeError::from_rust(&err);
+            assert_eq!(dto.code, ErrorCode::ResourceLimit, "resource={resource}");
+            assert_eq!(dto.resource.as_deref(), Some(resource));
+        }
     }
 }

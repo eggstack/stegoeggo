@@ -91,7 +91,10 @@ Every public Promise rejects with a normal `Error` whose `code` is stable:
 - `ERR_STEGOEGGO_VERIFICATION`
 - `ERR_STEGOEGGO_RESOURCE_LIMIT` (with `resource` plus the
   `size`/`limit`, `width`/`height`/`maxWidth`/`maxHeight`,
-  `kind`/`count`/`limit` fields that triggered it)
+  `kind`/`count`/`limit` fields that triggered it; the carrier-level
+  `resource: "carrier"` case preserves the canonical message with no
+  numeric fields, and `kind` is descriptive Rust-provided context, so
+  branch on `resource`, not exact `kind` wording)
 - `ERR_STEGOEGGO_INTERNAL` (safe fallback)
 
 The human-readable `message` is not the machine contract; never parse it to

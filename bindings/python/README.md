@@ -102,7 +102,10 @@ The exception classes raised by `protect*` / `verify` carry the same
 structured fields as the canonical Rust `Error` variants. `InsufficientCapacityError`
 exposes `required` and `available` carrier-unit counts. `ResourceLimitError`
 exposes `resource` together with the structured `size`/`limit`, `kind`/`count`/`limit`,
-or `width`/`height`/`max_width`/`max_height` triple that triggered it. Secret
+or `width`/`height`/`max_width`/`max_height` triple that triggered it. The
+carrier-level `resource="carrier"` case preserves the canonical message with
+no numeric fields. `kind` is descriptive Rust-provided context, so branch on
+`resource` or the exception class rather than exact `kind` wording. Secret
 MAC/HMAC key bytes never appear in exception messages or attributes.
 
 ```python

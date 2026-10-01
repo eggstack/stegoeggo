@@ -127,6 +127,36 @@ test('metadata resource-limit carries resource, kind, size, and limit', async ()
   assert.equal(error.limit, 1)
 })
 
+test('carrier resource-limit carries resource without invented fields', () => {
+  // The carrier-level Rust variant reports only a free-form message, so the
+  // public API cannot currently produce it. The binding-side projection is
+  // therefore exercised directly; the canonical Rust variant mapping is
+  // covered by the binding's own unit tests.
+  const error = toPublicError({
+    code: ErrorCode.ResourceLimit,
+    message: 'Carrier resource limit exceeded: carrier dimensions overflow',
+    resource: 'carrier',
+    required: null,
+    available: null,
+    size: null,
+    limit: null,
+    width: null,
+    height: null,
+    maxWidth: null,
+    maxHeight: null,
+    kind: null,
+    count: null,
+  })
+  assert.ok(error instanceof Error)
+  assert.equal(error.code, ErrorCode.ResourceLimit)
+  assert.equal(error.resource, 'carrier')
+  assert.equal(error.message, 'Carrier resource limit exceeded: carrier dimensions overflow')
+  assert.equal(error.size, undefined)
+  assert.equal(error.limit, undefined)
+  assert.equal(error.kind, undefined)
+  assert.equal(error.count, undefined)
+})
+
 test('verification accepts resource limits and still returns a report', async () => {
   const limits = ResourceLimitsBuilder.new().withMaxInputBytes(8).build()
   const report = await verify(fixture('canonical_complete.png'), { resourceLimits: limits })

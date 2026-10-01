@@ -137,6 +137,11 @@ fn map_error(py: Python<'_>, err: RustError) -> PyErr {
             let _ = exc.value(py).setattr("limit", limit);
             exc
         }
+        RustError::ResourceLimitExceeded(_) => {
+            let exc = PyErr::new::<ResourceLimitError, _>(message);
+            let _ = exc.value(py).setattr("resource", "carrier");
+            exc
+        }
         _ => PyErr::new::<StegoEggoError, _>(message),
     }
 }
