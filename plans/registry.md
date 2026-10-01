@@ -28,16 +28,17 @@ predecessor history, indexed by the roadmaps below.
 | rights-metadata | closed | `plans/subsystems/rights-metadata-roadmap.md` | all milestones closed | none |
 | container-correctness | closed | `plans/subsystems/container-correctness-roadmap.md` | all milestones closed | none |
 | stego-carrier | closed | `plans/subsystems/stego-carrier-roadmap.md` | all milestones closed | none |
-| verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
+| verification-conformance | active | `plans/subsystems/verification-conformance-roadmap.md` | M006 false-positive corrective ready | Post-closure core drift makes unprotected valid images surface hidden-marker Invalid; Python + Node independently reproduce it |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed; M003 closed | M003 closed the consumer-owned nested-runtime panic; M001/M002 still wait for the same ordinary stable B > 0.4.2 |
-| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M005 Node closed | M001–M005 closed; M006 C ABI design dependency-ready |
+| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M006 post-core compatibility corrective ready | Python + Node current compatibility CI red; verification-conformance M006 interface contracted; C ABI shifted to M007/M008 |
 
 ## Dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
-| language-bindings | M005 Node binding foundation and qualification | closed | `plans/implementation/language-bindings/005-node-binding-foundation-qualification.md` | closure at `plans/closure/language-bindings/005-status.md`; release-node run 36488540671 green; no npm publication |
+| verification-conformance | M006 unstructured-candidate false-positive corrective | ready | `plans/implementation/verification-conformance/006-unstructured-candidate-false-positive-corrective.md` | Restore canonical absence-vs-corruption classification; add Rust guards for the regression caught by Python/Node |
+| language-bindings | M006 post-core compatibility corrective and requalification | ready | `plans/implementation/language-bindings/006-post-core-compatibility-corrective.md` | Interface dependency on verification M006 is contracted; map new carrier resource-limit variant in Python/Node, reconcile descriptive metadata kind, then requalify both five-target matrices |
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); closure at `plans/closure/release-distribution/002-status.md`; live B > 0.4.2 evidence outstanding, shared with M001; updater-runtime code blocker resolved by closed M003 |
 | release-distribution | M003 synchronous Eggup updater bridge corrective | closed | `plans/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md` | outer Tokio runtime removed at `e611c91`; closure at `plans/closure/release-distribution/003-status.md`; updater rehearsal green |
 
@@ -51,9 +52,16 @@ None.
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
 | release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | Missing ordinary stable B > 0.4.2. The updater-runtime code blocker is resolved by closed M003; cutover/closure remains `plans/closure/release-distribution/002-status.md`. |
+| language-bindings | M007 C ABI contract design | Language-bindings M006 compatibility corrective/requalification must close against a green current Python + Node contract first. |
 
 ## Recently closed work
 
+- Language Bindings M005 Node binding foundation and qualification: historical
+  closure remains valid at `plans/closure/language-bindings/005-status.md`
+  with release-node run `36488540671` on `abc0354`. Later canonical-core
+  changes made current Python/Node compatibility CI red; that post-closure
+  drift is owned by verification-conformance M006 + language-bindings M006 and
+  does not rewrite the original M005 evidence.
 - Language Bindings M004 M003 closure corrective pass: closure recorded
   at `plans/closure/language-bindings/004-status.md`. Lightweight
   `python-binding` CI corrected to a self-contained wheel
