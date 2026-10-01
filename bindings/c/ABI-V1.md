@@ -36,7 +36,10 @@
   `STEGOEGGO_V1_ERR_INVALID_ARGUMENT`.
 - All C symbols in this document are normative. M008 MUST export exactly
   these `stegoeggo_*` symbols and no other `stegoeggo_*` symbol (`§15`).
-- Total normative symbol count: **89** (3 bootstrap + 86 `stegoeggo_v1_*`).
+- Total normative symbol count: **90** (3 bootstrap + 87 `stegoeggo_v1_*`).
+- Category totals: notice 20, request 18, resource limits 20, operations 4,
+  buffer 3, error 6, execution report 10, verification report 6
+  (versioned `stegoeggo_v1_*` total 87; grand total 90 with bootstrap).
 
 ## 1. Bootstrap / version symbols (3, unversioned)
 
@@ -681,7 +684,7 @@ input (or allocation failure). The buffer holds a JSON object:
 
 ## 12. Report contract
 
-### 12.1 Execution report (9 symbols)
+### 12.1 Execution report (10 symbols)
 
 ```c
 stegoeggo_v1_rights_policy_t stegoeggo_v1_execution_report_effective_policy(
@@ -792,7 +795,7 @@ void stegoeggo_v1_verification_report_free(
   repository. Regeneration drift in CI/qualification is a failure.
 - Generation configuration (normative): C language output with C++
   compatibility guards; explicit include guard; `usize_is_size_t = true`;
-  opaque-handle emission (no struct bodies); only the 89 documented symbols
+  opaque-handle emission (no struct bodies); only the 90 documented symbols
   plus the scalar typedefs/constants; `stdint.h`/`stddef.h` includes.
 - The header MUST compile as C11 (`-std=c11 -Wall -Wextra -Werror`) and as
   C++17 (`-std=c++17 -Wall -Wextra -Werror`); the C++17 compile is a smoke
@@ -802,7 +805,7 @@ void stegoeggo_v1_verification_report_free(
 
 ## 16. Symbol manifest and platform contract (M008 qualification)
 
-- The normative planned symbol inventory is the 89 symbols named in
+- The normative planned symbol inventory is the 90 symbols named in
   `§1`/`§6`–`§12` of this document. M008 MUST materialize it as a checked
   `bindings/c/abi-v1-symbols.txt` (one symbol per line, sorted) and fail
   qualification on any missing expected symbol or any unexpected exported

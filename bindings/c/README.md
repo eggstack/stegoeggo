@@ -4,7 +4,7 @@ This directory will host the versioned C ABI leaf binding over the
 canonical `stegoeggo` Rust library.
 
 Status: **design contract accepted, no implementation**. The normative
-contract is `ABI-V1.md` (ABI major `1`, minor `0`; 89 planned symbols),
+contract is `ABI-V1.md` (ABI major `1`, minor `0`; 90 planned symbols),
 materialized from accepted `plans/adrs/ADR-0006-versioned-c-abi.md` by
 language-bindings M007. M007 ships no Crate, no header, no shared library,
 and no stable symbols.

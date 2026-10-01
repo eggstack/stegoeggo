@@ -7,11 +7,19 @@ Repository baseline reviewed: `89b2198f1d8b7072ec6720a16130bb440a718604` (work-s
 Design commit: `3e3e4637f131cfe667d9f110d999742358f16277` — docs: add C ABI v1 normative contract and binding README (M007 WP1-WP6)
 Closing commit: this record plus roadmap/registry/`STABILITY.md` reconciliation (see git log for `plans: close language-bindings M007 C ABI contract design`).
 
+> Correction note (language-bindings M008): the function set and every
+> signature recorded here were correct as designed; only the count
+> arithmetic was wrong. `ABI-V1.md` always declared 90 unique callable
+> symbols (3 bootstrap + 87 v1, execution report 10 — not 9). The `89`
+> / `86` totals repeated in this record are corrected to `90` / `87`
+> without any semantic change. M007 remains closed historical design
+> work; M008 owns the corrected manifest and checker.
+
 ## 1. Executive finding
 
 ADR-0006 is materialized into an exact, implementation-ready C ABI v1
 contract with no remaining TBDs. `bindings/c/ABI-V1.md` freezes the full
-v1 symbol inventory (**89 symbols**: 3 unversioned bootstrap + 86
+v1 symbol inventory (**90 symbols**: 3 unversioned bootstrap + 87
 `stegoeggo_v1_*`), every ABI-visible numeric value, opaque-handle
 lifecycles, pointer/null/length rules, request/notice/limits coverage,
 synchronous operation semantics, the error/report/JSON contract, panic
@@ -26,7 +34,7 @@ dependency-ready (its implementation plan is not yet written).
 
 | Plan requirement (§6/§13) | Evidence |
 |---|---|
-| Exact complete symbol inventory, ADR-0006 satisfied | `ABI-V1.md` §§1–2, 6–12: 89 symbols enumerated with C signatures; no Rust layout anywhere (§3) |
+| Exact complete symbol inventory, ADR-0006 satisfied | `ABI-V1.md` §§1–2, 6–12: 90 symbols enumerated with C signatures; no Rust layout anywhere (§3) |
 | Every ABI-visible constant has an explicit fixed value | `ABI-V1.md` §4: 12 code tables with frozen values + reserved ranges, not derived from Rust discriminants (§4) |
 | Ownership/free/null/lifetime rules for every handle/pointer | `ABI-V1.md` §§2, 5–12: one free per handle, NULL-free no-op, NULL/length/UTF-8/overflow rules, borrow-vs-copy stated per function (§5) |
 | Request/notice/limits coverage matches common foreign semantics | §7 of this record: every Python∩Node-stable option representable; full-width seeds; no secret getter; all 18 `ResourceLimits` fields; no legacy adapters (§6) |
@@ -35,7 +43,7 @@ dependency-ready (its implementation plan is not yet written).
 | Panic boundary exact | `ABI-V1.md` §13: 7-step wrapper contract for every future operational export; accessors/destructors must not unwind; OOM/abort out of scope (§9) |
 | Thread/reentrancy exact, no over-promised concurrency | `ABI-V1.md` §14: no global state; same-handle concurrent read-only use explicitly UNSUPPORTED unless M008 qualifies it (§9) |
 | cbindgen/header-generation exact | `ABI-V1.md` §15: pin `0.29.4`, standalone-tool (never `build.rs`/root prerequisite), committed header, drift-is-failure, C11 + C++17 (§10) |
-| Dynamic-library/export-symbol contract exact | `ABI-V1.md` §16: 89-symbol manifest rule + platform inspection tooling; staticlib deferred (§10) |
+| Dynamic-library/export-symbol contract exact | `ABI-V1.md` §16: 90-symbol manifest rule + platform inspection tooling; staticlib deferred (§10) |
 | M008 five-target matrix exact | `ABI-V1.md` §16 table: the five native distribution architectures (§10) |
 | No stable C symbols/artifacts shipped | §11 of this record: only two markdown files added; no crate/header/library (§11) |
 | `./scripts/check.sh` green | §4 of this record (§4) |
@@ -71,7 +79,7 @@ grep -R "ADR-0006" plans/subsystems/language-bindings-roadmap.md plans/implement
 ```
 
 Optional C11/C++17 syntax smoke (review-only sketch in `/tmp`, never
-committed): all 89 contract signatures transcribed to a sketch header plus
+committed): all 90 contract signatures transcribed to a sketch header plus
 a lifecycle consumer exercising bootstrap/notice/request/operations/
 buffer/error/report symbols:
 
@@ -105,11 +113,11 @@ Bootstrap (3, unversioned, retained by future majors):
 `stegoeggo_abi_version_major`, `stegoeggo_abi_version_minor`,
 `stegoeggo_source_version`.
 
-Operational v1 (86): notice 20 (create/free + 18 setters), request 18
+Operational v1 (87): notice 20 (create/free + 18 setters), request 18
 (3 constructors/free + 14 setters), limits 20 (create/free + 18 setters),
 operations 4 (`detect_format`, `protect`, `protect_with_report`,
-`verify`), buffer 3, error 6, execution report 9, verification report 6.
-Total normative inventory: **89 symbols** (`ABI-V1.md` §§1, 6–12).
+`verify`), buffer 3, error 6, execution report 10, verification report 6.
+Total normative inventory: **90 symbols** (`ABI-V1.md` §§1, 6–12).
 
 Request/limits coverage against the Python∩Node M006 common contract:
 
@@ -204,9 +212,9 @@ additive-only) details-JSON buffer; no per-field nullable getter surface.
   contract review note first.
 - Generated `bindings/c/include/stegoeggo.h` committed; drift is failure.
   Normative generation: C with C++ guards, include guard, `usize_is_size_t`,
-  opaque handles, only the 89 symbols + scalar typedefs/constants,
+  opaque handles, only the 90 symbols + scalar typedefs/constants,
   C11-clean and C++17-clean on every matrix target.
-- Planned manifest: the 89 symbols become a checked sorted
+- Planned manifest: the 90 symbols become a checked sorted
   `bindings/c/abi-v1-symbols.txt` in M008; missing expected or unexpected
   `stegoeggo_*` exports fail qualification (`nm -D`, `nm -gU`,
   `dumpbin /EXPORTS`). `cdylib` first; staticlib deferred.

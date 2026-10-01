@@ -158,7 +158,7 @@ absent, contradictions exit 2). See `docs/cli-usage.md` and `architecture/cli.md
 ## C ABI v1 (planned — not stable, not shipped)
 
 A normative design contract for a future versioned C ABI exists at
-`bindings/c/ABI-V1.md` (ABI major `1`, minor `0`; 89 planned symbols),
+`bindings/c/ABI-V1.md` (ABI major `1`, minor `0`; 90 planned symbols),
 accepted as language-bindings M007 closure evidence under
 `plans/adrs/ADR-0006-versioned-c-abi.md`. No C header, shared/static
 library, or stable C symbol is shipped: ABI v1 promises begin only when
