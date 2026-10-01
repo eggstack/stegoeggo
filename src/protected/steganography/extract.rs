@@ -240,12 +240,14 @@ impl SteganographyProtector {
         for redundancy in 1..=10 {
             let v2_corrected =
                 self.verify_extract_at_seed_v2(img, prefix_bits, seed, mac_key, redundancy);
+            if matches!(&v2_corrected, CandidateOutcome::ResourceLimitExceeded) {
+                return v2_corrected;
+            }
             match &v2_corrected {
                 CandidateOutcome::Valid(_)
                 | CandidateOutcome::Invalid(_)
                 | CandidateOutcome::AuthenticationKeyMissing(_)
-                | CandidateOutcome::AuthenticationFailed(_)
-                | CandidateOutcome::ResourceLimitExceeded => {
+                | CandidateOutcome::AuthenticationFailed(_) => {
                     if Self::candidate_seed_matches(&v2_corrected, seed) {
                         return v2_corrected;
                     }
@@ -257,14 +259,16 @@ impl SteganographyProtector {
             }
         }
         let legacy_primary = self.verify_extract_at_seed_legacy(img, prefix_bits, seed, mac_key);
+        if matches!(&legacy_primary, CandidateOutcome::ResourceLimitExceeded) {
+            return legacy_primary;
+        }
         match &legacy_primary {
             CandidateOutcome::Valid(_)
             | CandidateOutcome::Invalid(_)
             | CandidateOutcome::AuthenticationKeyMissing(_)
             | CandidateOutcome::AuthenticationFailed(_)
             | CandidateOutcome::MalformedV3
-            | CandidateOutcome::UnsupportedVersion(_)
-            | CandidateOutcome::ResourceLimitExceeded => {
+            | CandidateOutcome::UnsupportedVersion(_) => {
                 if Self::candidate_seed_matches(&legacy_primary, seed) {
                     return legacy_primary;
                 }
@@ -284,12 +288,14 @@ impl SteganographyProtector {
                     mac_key,
                     redundancy,
                 );
+                if matches!(&v2_outcome, CandidateOutcome::ResourceLimitExceeded) {
+                    return v2_outcome;
+                }
                 match &v2_outcome {
                     CandidateOutcome::Valid(_)
                     | CandidateOutcome::Invalid(_)
                     | CandidateOutcome::AuthenticationKeyMissing(_)
-                    | CandidateOutcome::AuthenticationFailed(_)
-                    | CandidateOutcome::ResourceLimitExceeded => {
+                    | CandidateOutcome::AuthenticationFailed(_) => {
                         if Self::candidate_seed_matches(&v2_outcome, seed) {
                             return v2_outcome;
                         }
@@ -303,14 +309,16 @@ impl SteganographyProtector {
 
             let legacy_outcome =
                 self.verify_extract_at_seed_legacy(img, prefix_bits, offset_seed, mac_key);
+            if matches!(&legacy_outcome, CandidateOutcome::ResourceLimitExceeded) {
+                return legacy_outcome;
+            }
             match &legacy_outcome {
                 CandidateOutcome::Valid(_)
                 | CandidateOutcome::Invalid(_)
                 | CandidateOutcome::AuthenticationKeyMissing(_)
                 | CandidateOutcome::AuthenticationFailed(_)
                 | CandidateOutcome::MalformedV3
-                | CandidateOutcome::UnsupportedVersion(_)
-                | CandidateOutcome::ResourceLimitExceeded => {
+                | CandidateOutcome::UnsupportedVersion(_) => {
                     if Self::candidate_seed_matches(&legacy_outcome, seed) {
                         return legacy_outcome;
                     }
@@ -1183,6 +1191,7 @@ impl SteganographyProtector {
                             );
                             match &outcome {
                                 CandidateOutcome::Valid(_) => return outcome,
+                                CandidateOutcome::ResourceLimitExceeded => return outcome,
                                 CandidateOutcome::Invalid(_)
                                 | CandidateOutcome::AuthenticationKeyMissing(_)
                                 | CandidateOutcome::AuthenticationFailed(_) => {
@@ -1194,11 +1203,6 @@ impl SteganographyProtector {
                                     last_outcome = Some(outcome);
                                 }
                                 CandidateOutcome::UnsupportedVersion(_)
-                                    if last_outcome.is_none() =>
-                                {
-                                    last_outcome = Some(outcome);
-                                }
-                                CandidateOutcome::ResourceLimitExceeded
                                     if last_outcome.is_none() =>
                                 {
                                     last_outcome = Some(outcome);
@@ -1260,10 +1264,7 @@ impl SteganographyProtector {
                                     }
                                 }
                                 V3PrefixResult::ResourceLimitExceeded => {
-                                    if last_outcome.is_none() {
-                                        last_outcome =
-                                            Some(CandidateOutcome::ResourceLimitExceeded);
-                                    }
+                                    return CandidateOutcome::ResourceLimitExceeded;
                                 }
                                 V3PrefixResult::NotV3 => {
                                     for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {

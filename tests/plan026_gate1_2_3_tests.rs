@@ -746,17 +746,25 @@ fn default_dimension_limits_apply_to_jpeg() {
 
 #[test]
 fn payload_limit_rejects_large_payload() {
+    let img = textured_image(128, 128);
+    let ctx = ProtectionContext::new(0.5, 42);
+    let protected = process_image_bytes(
+        &encode_image(&img, image::ImageFormat::Png).unwrap(),
+        ProtectionLevel::Standard,
+        &ctx,
+    )
+    .unwrap();
+    assert_eq!(
+        verify_image_bytes(&protected, &[]),
+        VerificationStatus::Verified
+    );
     let limits = ResourceLimits::builder().max_payload_bytes(10).build();
     let stego = stegoeggo::SteganographyProtector::with_resource_limits(limits);
-    let img = image::DynamicImage::new_rgb8(64, 64);
-    let result = stego.verify_payload_from_bytes_with_key(
-        &encode_image(&img, image::ImageFormat::Png).unwrap(),
-        &[],
-    );
+    let result = stego.verify_payload_from_bytes_with_key(&protected, &[]);
     assert_eq!(
         result,
         VerificationStatus::Invalid,
-        "Payload found but oversized -> Invalid, not NotFound"
+        "Payload exceeding limits -> Invalid, not NotFound"
     );
 }
 

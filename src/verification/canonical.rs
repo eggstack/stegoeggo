@@ -198,7 +198,7 @@ pub(crate) fn verify_canonical_with_limits(
         || notice_applied_at.is_some();
 
     let protector = SteganographyProtector::with_resource_limits(limits.clone());
-    let outcome = protector.verify_payload_from_bytes_outcome(img_bytes, mac_key, true);
+    let outcome = protector.verify_payload_from_bytes_outcome(img_bytes, mac_key);
     let (outcome_kind, unsupported_version) = outcome_kind_of(&outcome);
     let stego_status = status_of_kind(outcome_kind);
     let raw_payload = raw_of_outcome(&outcome);

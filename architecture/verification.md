@@ -180,6 +180,8 @@ let report = VerificationReportBuilder::new()
 
 `src/verification/canonical.rs` owns verification semantics. `verify_canonical_with_limits` extracts rights metadata via `src/protected/notice_verification.rs` helpers (format-specific notice plus `*_with_limits` XMP/DMI parsers) and runs one `SteganographyProtector::verify_payload_from_bytes_outcome` search, preserving `Valid`, `Invalid`, `MalformedV3`, `UnsupportedVersion`, `AuthenticationKeyMissing`, `AuthenticationFailed`, `ResourceLimitExceeded`, and `NotFound`. It builds `VerificationReport` once, with diagnostics for malformed, unsupported, missing/failed auth, corruption, resource exhaustion, and metadata-only cases.
 
+Absence is not corruption. Metadata/Q-table seeds are explicit provenance: integrity failure on those candidates stays `Invalid` (or the matching auth/malformed/unsupported variant). Fixed-position LSB fallback seeds and test-seed sweeps are unstructured probes: an `Invalid` candidate from those probes is kept only when the bytes are structurally plausible StegoEggo payloads (`SteganographyProtector::payload_is_structurally_plausible`, i.e. V3 magic parse or legacy ECC-decode-then-parse); otherwise it is `NotFound`. Seed value zero is valid and never used as an absence signal. `ResourceLimitExceeded` is order-independent and never shadowed by earlier unstructured candidates.
+
 Centralized projections, named and tested in `tests/verification_convergence.rs`:
 
 - `project_status_from_canonical` -> `VerificationStatus` (stego-only; `summary_status` rights fallback is separate)

@@ -142,4 +142,4 @@ records accepted closure evidence.
 | M3 release-3 closure | closed | flat `018`–`021`, `023` | `019-status.md`–`024-status.md` (as present) | — |
 | M4 trust correctives | closed | flat `026`–`031` | `029-status.md`–`031-status.md` (as present) | — |
 | M5 model convergence | closed | flat `083` | `083-status.md` | — |
-| M6 unstructured-candidate false-positive corrective | ready | `implementation/verification-conformance/006-unstructured-candidate-false-positive-corrective.md` | pending | none; regression reproduced by Python + Node compatibility CI |
+| M6 unstructured-candidate false-positive corrective | active | `implementation/verification-conformance/006-unstructured-candidate-false-positive-corrective.md` | pending | none; regression reproduced by Python + Node compatibility CI |

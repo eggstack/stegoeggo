@@ -53,7 +53,7 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> VerificationStatus {
-        match self.verify_payload_from_bytes_outcome(img_bytes, mac_key, false) {
+        match self.verify_payload_from_bytes_outcome(img_bytes, mac_key) {
             CandidateOutcome::Valid(_) => VerificationStatus::Verified,
             CandidateOutcome::Invalid(_)
             | CandidateOutcome::MalformedV3
@@ -65,11 +65,29 @@ impl SteganographyProtector {
         }
     }
 
+    pub(crate) fn payload_is_structurally_plausible(payload: &[u8]) -> bool {
+        let decoded = Self::try_ecc_decode(payload).unwrap_or_else(|| payload.to_vec());
+        Self::parse_stego_payload(&decoded).is_some()
+    }
+
+    fn filter_candidate_outcome(
+        outcome: CandidateOutcome,
+        provenance: CandidateProvenance,
+    ) -> CandidateOutcome {
+        match (outcome, provenance) {
+            (CandidateOutcome::Invalid(payload), CandidateProvenance::Unstructured)
+                if !Self::payload_is_structurally_plausible(&payload) =>
+            {
+                CandidateOutcome::NotFound
+            }
+            (other, _) => other,
+        }
+    }
+
     pub(crate) fn verify_payload_from_bytes_outcome(
         &self,
         img_bytes: &[u8],
         mac_key: &[u8],
-        _suppress_unstructured_candidates: bool,
     ) -> CandidateOutcome {
         let (metadata_seed, seed_scan_truncated) =
             RightsMetadataProtector::extract_seed_from_image_with_limits_truncated(
@@ -86,12 +104,15 @@ impl SteganographyProtector {
 
         if img_bytes.starts_with(&[0xFF, 0xD8]) {
             let outcome = self.verify_extract_verified_dct(img_bytes, mac_key);
+            let outcome = Self::filter_candidate_outcome(outcome, CandidateProvenance::Explicit);
             if !matches!(&outcome, CandidateOutcome::NotFound) {
                 return outcome;
             }
 
             if let Some(metadata_seed) = metadata_seed {
                 let outcome = self.verify_extract_dct_with_seed(img_bytes, metadata_seed, mac_key);
+                let outcome =
+                    Self::filter_candidate_outcome(outcome, CandidateProvenance::Explicit);
                 if !matches!(&outcome, CandidateOutcome::NotFound) {
                     return outcome;
                 }
@@ -103,6 +124,8 @@ impl SteganographyProtector {
         if let Ok(img) = image::load_from_memory(img_bytes) {
             if let Some(metadata_seed) = metadata_seed {
                 let outcome = self.verify_payload_with_seed_outcome(&img, metadata_seed, mac_key);
+                let outcome =
+                    Self::filter_candidate_outcome(outcome, CandidateProvenance::Explicit);
                 if !matches!(&outcome, CandidateOutcome::NotFound) {
                     return outcome;
                 }
@@ -110,6 +133,8 @@ impl SteganographyProtector {
             let rgba = img.to_rgba8();
             if let Some(fallback_seed) = Self::extract_seed_lsb_fallback(&rgba) {
                 let outcome = self.verify_payload_with_seed_outcome(&img, fallback_seed, mac_key);
+                let outcome =
+                    Self::filter_candidate_outcome(outcome, CandidateProvenance::Unstructured);
                 if !matches!(&outcome, CandidateOutcome::NotFound) {
                     return outcome;
                 }
@@ -127,6 +152,8 @@ impl SteganographyProtector {
                     self.limits.max_tile_extraction_origins_u32(),
                     mac_key,
                 );
+                let outcome =
+                    Self::filter_candidate_outcome(outcome, CandidateProvenance::Unstructured);
                 if !matches!(&outcome, CandidateOutcome::NotFound) {
                     return outcome;
                 }
@@ -151,7 +178,7 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> (VerificationStatus, Option<Vec<u8>>) {
-        match self.verify_payload_from_bytes_outcome(img_bytes, mac_key, true) {
+        match self.verify_payload_from_bytes_outcome(img_bytes, mac_key) {
             CandidateOutcome::Valid(_) => (VerificationStatus::Verified, None),
             CandidateOutcome::Invalid(raw)
             | CandidateOutcome::AuthenticationKeyMissing(raw)
@@ -171,7 +198,7 @@ impl SteganographyProtector {
         img_bytes: &[u8],
         mac_key: &[u8],
     ) -> (VerificationStatus, Option<Vec<u8>>) {
-        match self.verify_payload_from_bytes_outcome(img_bytes, mac_key, true) {
+        match self.verify_payload_from_bytes_outcome(img_bytes, mac_key) {
             CandidateOutcome::Valid(raw) => (VerificationStatus::Verified, Some(raw)),
             CandidateOutcome::Invalid(raw)
             | CandidateOutcome::AuthenticationKeyMissing(raw)

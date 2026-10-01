@@ -90,6 +90,12 @@ pub(crate) enum CandidateOutcome {
     NotFound,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CandidateProvenance {
+    Explicit,
+    Unstructured,
+}
+
 /// Number of bytes in the v3 prefix: magic (2) + version (1) + header_length (1) + total_length (2).
 const V3_PREFIX_BYTES: usize = 6;
 
