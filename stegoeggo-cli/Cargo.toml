@@ -31,12 +31,12 @@ tempfile = "3"
 eggup-acquisition = "0.1.0"
 eggup-core = "0.1.0"
 eggup-eggfetch = "0.1.0"
-tokio = { version = "1", features = ["rt"] }
 
 [target.'cfg(windows)'.dependencies]
 self-replace = "1.5"
 
 [dev-dependencies]
+tokio = { version = "1", features = ["rt"] }
 tempfile = "3"
 image = { version = "=0.25.6", default-features = false, features = ["png", "jpeg", "webp"] }
 base64 = "0.22"

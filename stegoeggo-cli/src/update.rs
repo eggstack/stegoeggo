@@ -651,7 +651,7 @@ fn seam_download(url: &str, destination: &Path) -> Result<u16, UpdateError> {
     }
 }
 
-async fn update_to(current: StableVersion, latest: StableVersion) -> Result<(), UpdateError> {
+fn update_to(current: StableVersion, latest: StableVersion) -> Result<(), UpdateError> {
     if current >= latest {
         println!("stegoeggo {current} is up to date (latest stable {latest}).");
         return Ok(());
@@ -809,21 +809,11 @@ async fn update_to(current: StableVersion, latest: StableVersion) -> Result<(), 
     Ok(())
 }
 
-async fn run_update_async() -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn run_update() -> Result<(), Box<dyn std::error::Error>> {
     let current = parse_stable_version(env!("CARGO_PKG_VERSION"))?;
     let registry = eggup_get_bytes(&registry_url(), REGISTRY_BODY_LIMIT)?;
     let latest = latest_stable_version_from_json(&registry)?;
-    update_to(current, latest).await.map_err(Into::into)
-}
-
-pub(crate) fn run_update() -> Result<(), Box<dyn std::error::Error>> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| {
-            UpdateError::Transport(format!("failed to start update runtime: {error}"))
-        })?;
-    runtime.block_on(run_update_async())
+    update_to(current, latest).map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -990,7 +980,7 @@ mod tests {
     fn already_current_update_needs_no_preflight_or_download() {
         let current = parse_stable_version("0.4.1").unwrap();
         let latest = parse_stable_version("0.4.1").unwrap();
-        block_on(update_to(current, latest)).unwrap();
+        update_to(current, latest).unwrap();
     }
 
     #[test]
@@ -1428,5 +1418,123 @@ mod tests {
         let manifest = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"));
         assert!(manifest.contains("eggup-core"));
         assert!(manifest.contains("eggup-eggfetch"));
+    }
+
+    #[test]
+    fn production_updater_is_synchronous_without_nested_runtime() {
+        let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/update.rs"));
+        let production = source.split("\nmod tests").next().unwrap_or(source);
+        assert!(!production.contains("tokio"));
+        assert!(!production.contains("block_on"));
+        assert!(!production.contains("spawn_blocking"));
+        assert!(!production.contains("async fn update_to"));
+        assert!(!production.contains("run_update_async"));
+        assert!(production.contains("\nfn update_to("));
+        assert!(production.contains("\npub(crate) fn run_update("));
+        assert!(production.contains("eggup_get_bytes"));
+        assert!(production.contains("seam_download"));
+    }
+
+    #[test]
+    fn seam_registry_acquisition_from_sync_context_resolves_latest() {
+        let body =
+            br#"{"versions":[{"num":"0.4.0","yanked":false},{"num":"0.4.1","yanked":false}]}"#;
+        let base = spawn_single(http_response(200, "OK", "", body));
+        let bytes = eggup_get_bytes(&format!("{base}/api"), REGISTRY_BODY_LIMIT).unwrap();
+        let latest = latest_stable_version_from_json(&bytes).unwrap();
+        assert_eq!(latest.to_string(), "0.4.1");
+    }
+
+    #[test]
+    fn seam_artifact_download_from_sync_context_writes_bytes() {
+        let base = spawn_single(http_response(200, "OK", "", b"asset-bytes"));
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("asset");
+        let status = seam_download(&format!("{base}/asset"), &destination).unwrap();
+        assert_eq!(status, 200);
+        assert_eq!(fs::read(&destination).unwrap(), b"asset-bytes");
+    }
+
+    #[test]
+    fn seam_asset_404_permits_fallback_only_at_binary_boundary() {
+        let base = spawn_single(http_response(404, "Not Found", "", b"missing"));
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("asset");
+        let status = seam_download(&format!("{base}/asset"), &destination).unwrap();
+        assert_eq!(status, 404);
+        assert!(fallback_allowed(Some(status)));
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn seam_sidecar_404_is_hard_failure() {
+        let base = spawn_single(http_response(404, "Not Found", "", b"missing"));
+        let error =
+            eggup_get_bytes(&format!("{base}/asset.sha256"), SIDECAR_BODY_LIMIT).unwrap_err();
+        match error {
+            UpdateError::HttpStatus { status, .. } => assert_eq!(status, 404),
+            other => panic!("expected HttpStatus, got {other}"),
+        }
+    }
+
+    #[test]
+    fn seam_registry_500_is_hard_failure_without_fallback() {
+        let base = spawn_single(http_response(500, "Internal Server Error", "", b"error"));
+        let error = eggup_get_bytes(&format!("{base}/api"), REGISTRY_BODY_LIMIT).unwrap_err();
+        assert!(matches!(error, UpdateError::Transport(_)));
+    }
+
+    #[test]
+    fn seam_artifact_500_is_hard_failure_without_fallback() {
+        let base = spawn_single(http_response(500, "Internal Server Error", "", b"error"));
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("asset");
+        let error = seam_download(&format!("{base}/asset"), &destination).unwrap_err();
+        assert!(matches!(error, UpdateError::Transport(_)));
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn seam_oversized_registry_body_is_rejected() {
+        let base = spawn_single(http_response(200, "OK", "", b"0123456789ABCDEF"));
+        let error = eggup_get_bytes(&format!("{base}/registry"), 8).unwrap_err();
+        assert!(matches!(error, UpdateError::BodyTooLarge { .. }));
+    }
+
+    #[test]
+    fn seam_timeout_is_hard_failure() {
+        use eggup_acquisition::AcquisitionTransport as _;
+        let base = spawn_single_with_delay(
+            http_response(200, "OK", "", b"slow"),
+            Some(Duration::from_millis(500)),
+        );
+        let config = EggfetchConfig::strict()
+            .timeouts(Duration::from_millis(50), Duration::from_millis(100))
+            .proxy(ProxyDecision::Disabled);
+        let transport = EggfetchTransport::strict(config).unwrap();
+        let request = eggup_acquisition::AcquisitionRequest::new(format!("{base}/slow")).unwrap();
+        let limits = eggup_acquisition::FetchLimits {
+            max_metadata_bytes: REGISTRY_BODY_LIMIT,
+            max_artifact_bytes: Some(EXECUTABLE_BODY_LIMIT as u64),
+            connect_timeout: Duration::from_millis(50),
+            total_timeout: Duration::from_millis(100),
+        };
+        let error = transport
+            .fetch_metadata(&request, limits, &eggup_acquisition::CancelFlag::new())
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            eggup_acquisition::AcquisitionError::Timeout { .. }
+                | eggup_acquisition::AcquisitionError::Transport(_)
+        ));
+    }
+
+    #[test]
+    fn seam_malformed_proxy_fails_closed() {
+        let config = EggfetchConfig::strict().proxy(ProxyDecision::Custom(vec![(
+            "HTTPS_PROXY".to_string(),
+            "http://user:env-secret-9@[::1".to_string(),
+        )]));
+        assert!(EggfetchTransport::strict(config).is_err());
     }
 }

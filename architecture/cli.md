@@ -221,8 +221,11 @@ behavior and may read an explicit output file supplied with `--output`.
 
 Production dependencies are clap 4, the `stegoeggo` library, rayon for
 error-tolerant CLI batches, hex, serde/serde_json, sha2, self-replace,
-tempfile, eggup-acquisition/eggup-eggfetch over eggfetch-core for the embedded updater transport, and tokio for the
-narrow synchronous CLI/async transport boundary. The CLI does
+tempfile, and eggup-acquisition/eggup-eggfetch over eggfetch-core for the
+embedded updater transport. The updater calls the synchronous Eggup
+acquisition seam directly from synchronous CLI code; `tokio` remains only as
+a CLI dev-dependency for the retained test-only direct-`eggfetch_core`
+policy harness. The CLI does
 not enable the library's `parallel`, `iscc`, or `conformance` features. The
 package's default feature is `signatures`, which adds the detached-manifest
 commands to Cargo-installed and prebuilt binaries. Release asset names,
