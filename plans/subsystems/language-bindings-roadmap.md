@@ -136,8 +136,9 @@ Closed canonical API/verification/container/carrier contracts
 -> M003 Python corrective qualification
 -> M004 M003 closure corrective pass
 -> M005 Node binding foundation and qualification
--> M006 C ABI contract design
--> M007 C ABI implementation and qualification
+-> M006 post-core compatibility corrective and requalification
+-> M007 C ABI contract design
+-> M008 C ABI implementation and qualification
 
 M001/M002 do not depend on the blocked release-distribution A->B updater
 evidence milestone. M003 consumes the concrete findings from M001/M002.
@@ -148,11 +149,15 @@ Python compatibility CI now builds and installs a wheel and is green
 (run `36456938690`), and the release qualification identity is the
 GitHub-recorded SHA `d40f1b37cf031b05e4f9c76af1cdfcf789d739b5` for run
 `36337194059`. M005 consumes the final accepted Python contract rather than inventing a
-competing semantic surface. Its implementation plan fixes the initial Node
-contract around napi-rs v3, Promise-based CPU work, bigint seeds, structured
-errors, generated TypeScript declarations, and five-target artifact
-qualification without npm publication. M006 starts only after M005 closes so
-the C ABI is informed by two real foreign-runtime clients.
+competing semantic surface. M005 closed with five-target Node qualification,
+but later canonical-core correctness changes made both Python and Node
+compatibility workflows red and added a new Rust resource-limit variant not
+explicitly projected by either binding. M006 owns that post-core compatibility
+corrective and fresh native requalification. It has an interface dependency on
+verification-conformance M6's explicit absence-versus-corruption contract and
+cannot close before that core corrective closes. M007 C ABI design starts only
+after language-bindings M006 closes so it is informed by two currently-green
+foreign-runtime clients.
 
 ## 7. Milestones
 
@@ -218,22 +223,40 @@ five native platform packages without npm publication.
 Implementation:
 `plans/implementation/language-bindings/005-node-binding-foundation-qualification.md`.
 
-Hard dependency: M003 and M004 closure. Both are closed, so M005 is ready for
-handoff.
+Hard dependency: M003 and M004 closure. M005 closed with accepted evidence in
+`plans/closure/language-bindings/005-status.md`.
 
-### M006 — C ABI contract design
+### M006 — Post-core compatibility corrective and requalification
+
+Class: invariant. Reconcile Python and Node with post-M005 canonical-core
+changes: consume verification-conformance M6's corrected `NotFound` versus
+`Invalid` contract without wrapper reinterpretation, explicitly map the new
+`Error::ResourceLimitExceeded(String)` into each language's existing
+resource-limit family, stop freezing descriptive metadata-limit `kind`
+wording as an enum-like contract, and requalify both native binding matrices.
+
+Implementation:
+`plans/implementation/language-bindings/006-post-core-compatibility-corrective.md`.
+
+Interface dependency:
+`plans/implementation/verification-conformance/006-unstructured-candidate-false-positive-corrective.md`.
+The interface is contracted, so implementation may proceed in parallel, but
+language-bindings M006 cannot close until verification-conformance M6 closes.
+
+### M007 — C ABI contract design
 
 Class: invariant/infrastructure. Define ownership, allocation/free functions,
 opaque handles versus serialized DTOs, error codes/details, ABI version
 negotiation, panic containment, thread-safety, symbol visibility, and
 header-generation strategy. No stable symbols ship before the contract is
-reviewed.
+reviewed. Hard dependency: language-bindings M006 closure.
 
-### M007 — C ABI implementation and qualification
+### M008 — C ABI implementation and qualification
 
 Class: capability/infrastructure. Implement the accepted C boundary in a leaf
 crate, confine/audit required unsafe there, add C smoke/integration tests,
-cross-language parity, and native artifact/header packaging.
+cross-language parity, and native artifact/header packaging. Hard dependency:
+M007 accepted contract.
 
 ## 8. Cross-cutting requirements
 
@@ -301,6 +324,7 @@ invariants.
 | M002 Python packaging | closed (four-platform condition satisfied by M003 evidence, accepted in M004) | `implementation/language-bindings/002-python-packaging-qualification.md` | `closure/language-bindings/002-status.md` + `closure/language-bindings/004-status.md` §11 | none |
 | M003 Python corrective qualification | closed | `implementation/language-bindings/003-python-corrective-qualification.md` | `closure/language-bindings/003-status.md` (corrected; §13 lists the M004 corrections) | none; M001 closed and M002 findings recorded |
 | M004 M003 closure corrective | closed | `implementation/language-bindings/004-m003-closure-corrective.md` | `closure/language-bindings/004-status.md` | none; bounded defects corrected in PR #1 |
-| M005 Node binding | closed | `implementation/language-bindings/005-node-binding-foundation-qualification.md` | `closure/language-bindings/005-status.md` | none; release-node run 36488540671 green |
-| M006 C ABI design | proposed | not yet written | pending | Python + Node closure satisfied by M005 close; M006 plan not yet written |
-| M007 C ABI implementation | proposed | not yet written | pending | M006 accepted contract |
+| M005 Node binding | closed | `implementation/language-bindings/005-node-binding-foundation-qualification.md` | `closure/language-bindings/005-status.md` | historical qualification valid for its recorded SHA; later core drift is owned by M006 |
+| M006 post-core compatibility corrective | ready | `implementation/language-bindings/006-post-core-compatibility-corrective.md` | pending | verification-conformance M6 interface contracted; M006 closure waits for verification M6 closure |
+| M007 C ABI design | proposed | not yet written | pending | language-bindings M006 closure |
+| M008 C ABI implementation | proposed | not yet written | pending | M007 accepted contract |
