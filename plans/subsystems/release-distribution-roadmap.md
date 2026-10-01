@@ -83,7 +83,7 @@ CI/release gates (008, 032-037, closed)
 
 Eggpack Ecosystem M001/M003h [CLOSED]
     |
-    `--> M002 Eggpack producer adoption [READY NOW]
+    `--> M002 Eggpack producer adoption [CONDITIONALLY CLOSED: CUTOVER LANDED]
              |
              `--> next ordinary stable B live Eggpack release
                         |
@@ -141,6 +141,32 @@ Implementation plan:
 Exit conditions: M002 plan acceptance criteria and
 `plans/closure/release-distribution/002-status.md`.
 
+### Milestone 3 — Synchronous Eggup updater bridge corrective
+
+Class: corrective
+
+Objective: remove StegoEggo's unnecessary outer Tokio runtime around the
+synchronous `eggup-eggfetch` acquisition seam. The current nested runtime
+panics in the deterministic updater rehearsal and blocks the shared M001/M002
+live B evidence.
+
+Dependencies: M002 cutover/closure evidence (landed). No Eggup implementation
+dependency is open; the reviewed Eggup adapter documents the synchronous seam
+and private runtime ownership.
+
+Deliverable boundary: synchronous production updater call graph, nested-runtime
+regression coverage, green deterministic updater rehearsal, and no release or
+fallback policy change.
+
+Implementation plan:
+`plans/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md`.
+
+Exit conditions:
+`plans/closure/release-distribution/003-status.md`.
+
+M003 must close before the ordinary stable B release is used for M001/M002
+shared operational evidence.
+
 
 ## 8. Cross-cutting requirements
 
@@ -166,7 +192,7 @@ transition.
 
 ## 11. Completion definition
 
-The subsystem closes only when both active capability milestones are closed:
+The subsystem closes only when both capability milestones are fully closed and the M003 updater-runtime corrective is closed:
 M001 holds reproducible public A→B evidence in `plans/106-status.md`, and M002
 records the Eggpack producer-adoption/live-release evidence in
 `plans/closure/release-distribution/002-status.md`. The same ordinary stable
@@ -179,4 +205,5 @@ remain separate.
 |---|---|---|---|---|
 | M001 real A→B update | blocked | flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md` | flat `plans/106-status.md` (pending B) | stable B > 0.4.2 not yet published |
 | M002 Eggpack producer adoption | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | `plans/closure/release-distribution/002-status.md` | cutover landed; live B > 0.4.2 evidence outstanding on the same ordinary release as M001 |
+| M003 synchronous Eggup updater bridge corrective | ready | `plans/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md` | — | pre-existing nested Tokio runtime panic blocks updater rehearsal; consumer-side fix can execute now |
 | prior gates/binary/eggfetch/0.4.2 | closed | flat `008`, `024`–`025`, `032`–`037`, `086`, `089`, `099`–`105` | `*.status.md` companions as present | — |

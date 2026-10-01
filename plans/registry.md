@@ -30,7 +30,7 @@ predecessor history, indexed by the roadmaps below.
 | stego-carrier | closed | `plans/subsystems/stego-carrier-roadmap.md` | all milestones closed | none |
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
-| release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed | M001 waits for ordinary stable B > 0.4.2; M002 cutover landed, live B evidence outstanding on that same future release |
+| release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed; M003 ready | M003 fixes the consumer-owned nested-runtime panic now; after it closes, M001/M002 still wait for the same ordinary stable B > 0.4.2 |
 | language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M005 Node closed | M001–M005 closed; M006 C ABI design dependency-ready |
 
 ## Dependency-ready implementation plans
@@ -38,7 +38,8 @@ predecessor history, indexed by the roadmaps below.
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
 | language-bindings | M005 Node binding foundation and qualification | closed | `plans/implementation/language-bindings/005-node-binding-foundation-qualification.md` | closure at `plans/closure/language-bindings/005-status.md`; release-node run 36488540671 green; no npm publication |
-| release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); closure at `plans/closure/release-distribution/002-status.md`; live B > 0.4.2 evidence outstanding, shared with M001; pre-existing updater rehearsal panic recorded there |
+| release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); closure at `plans/closure/release-distribution/002-status.md`; live B > 0.4.2 evidence outstanding, shared with M001; pre-existing updater rehearsal panic is now owned by ready M003 |
+| release-distribution | M003 synchronous Eggup updater bridge corrective | ready | `plans/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md` | remove unnecessary outer Tokio runtime around synchronous Eggup seam; must close before shared live B updater evidence |
 
 ## Active closure work
 
@@ -49,7 +50,7 @@ None.
 | Subsystem | Milestone | Blocker |
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
-| release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | Same missing ordinary stable B > 0.4.2; pre-existing updater rehearsal panic (baseline-proven) must also be resolved before WP10 runs green. Cutover/closure in `plans/closure/release-distribution/002-status.md`. |
+| release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | Missing ordinary stable B > 0.4.2. The separate updater-runtime code blocker is tracked by ready M003 and must close before WP10; cutover/closure remains `plans/closure/release-distribution/002-status.md`. |
 
 ## Recently closed work
 

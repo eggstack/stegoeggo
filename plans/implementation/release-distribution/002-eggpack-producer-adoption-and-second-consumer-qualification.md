@@ -1,6 +1,6 @@
 # Release and Distribution Milestone 002 — Eggpack Producer Adoption and Second-Consumer Qualification
 
-Status: ready for handoff
+Status: conditionally closed — implementation `3b96fae`; see `plans/closure/release-distribution/002-status.md`
 
 Repository baseline: `8c89e8cb1677a355d639ca1ead93c3dd2587e317`
 
