@@ -139,7 +139,9 @@ Closed canonical API/verification/container/carrier contracts
 -> M005 Node binding foundation and qualification
 -> M006 post-core compatibility corrective and requalification
 -> M007 C ABI contract design
--> M008 C ABI implementation and qualification
+-> M008 M007 symbol-inventory corrective
+-> M009 C ABI v1 implementation foundation
+-> M010 C ABI v1 cross-platform qualification and stability activation
 
 M001/M002 do not depend on the blocked release-distribution A->B updater
 evidence milestone. M003 consumes the concrete findings from M001/M002.
@@ -158,7 +160,13 @@ corrective and fresh native requalification. It has an interface dependency on
 verification-conformance M6's explicit absence-versus-corruption contract and
 cannot close before that core corrective closes. M007 C ABI design starts only
 after language-bindings M006 closes so it is informed by two currently-green
-foreign-runtime clients.
+foreign-runtime clients. M007 closed with an exact semantic contract, but its
+manual symbol-count evidence contains a bounded arithmetic defect: the
+document declares 90 callable functions while repeatedly claiming 89.
+M008 corrects that inventory and materializes a machine-checked 90-symbol
+manifest. M009 then implements the leaf ABI on Linux x86_64 with header/export
+gates; M010 performs five-target native qualification and activates the ABI v1
+stability promise.
 
 ## 7. Milestones
 
@@ -260,12 +268,45 @@ Hard dependency: language-bindings M006 closure. Satisfied and M007 is
 closed with the accepted contract in `bindings/c/ABI-V1.md`; closure
 record: `plans/closure/language-bindings/007-status.md`.
 
-### M008 — C ABI implementation and qualification
+### M008 — M007 symbol-inventory corrective
 
-Class: capability/infrastructure. Implement the accepted C boundary in a leaf
-crate, confine/audit required unsafe there, add C smoke/integration tests,
-cross-language parity, and native artifact/header packaging. Hard dependency:
-M007 accepted contract.
+Class: invariant. Correct the M007 bookkeeping defect without changing the
+accepted function set: the normative contract contains 90 callable symbols
+(3 bootstrap + 87 v1), not 89 (3 + 86). Correct the execution-report count,
+materialize a sorted 90-line symbol manifest, add deterministic
+document↔manifest checking, rerun the 90-signature C11/C++17 design smoke, and
+correct historical references transparently.
+
+Implementation:
+`plans/implementation/language-bindings/008-m007-symbol-inventory-corrective.md`.
+
+Hard dependency: M007 closure. Satisfied; M008 is ready for handoff.
+
+### M009 — C ABI v1 implementation foundation
+
+Class: capability. Implement the corrected 90-symbol contract as an isolated
+Rust `cdylib`: opaque handles, raw-pointer conversion helpers, panic/error
+containment, canonical request/protect/verify projection, generated cbindgen
+header, Linux export-manifest gate, C/C++ integration, Rust↔C parity, and a
+path-filtered Linux x86_64 compatibility workflow. ABI remains pre-stable.
+
+Implementation:
+`plans/implementation/language-bindings/009-c-abi-v1-implementation-foundation.md`.
+
+Hard dependency: M008 closure.
+
+### M010 — C ABI v1 cross-platform qualification and stability activation
+
+Class: infrastructure. Qualify the M009 implementation on Linux
+x86_64/aarch64, macOS x86_64/arm64, and Windows x86_64; prove the exact
+90-symbol export contract on every target, preserve the repository's Linux
+glibc 2.17 floor, run C11/C++17 artifact-only consumer smokes, audit package
+contents/dependencies, and only then activate ABI v1 stability.
+
+Implementation:
+`plans/implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md`.
+
+Hard dependency: M009 closure.
 
 ## 8. Cross-cutting requirements
 
@@ -335,5 +376,7 @@ invariants.
 | M004 M003 closure corrective | closed | `implementation/language-bindings/004-m003-closure-corrective.md` | `closure/language-bindings/004-status.md` | none; bounded defects corrected in PR #1 |
 | M005 Node binding | closed | `implementation/language-bindings/005-node-binding-foundation-qualification.md` | `closure/language-bindings/005-status.md` | historical qualification valid for its recorded SHA; later core drift is owned by M006 |
 | M006 post-core compatibility corrective | closed | `implementation/language-bindings/006-post-core-compatibility-corrective.md` | `closure/language-bindings/006-status.md` | none |
-| M007 C ABI design | closed | `implementation/language-bindings/007-c-abi-contract-design.md` | `closure/language-bindings/007-status.md` | none; exact 89-symbol v1 contract accepted, no symbols shipped |
-| M008 C ABI implementation | proposed | not yet written | pending | none; M007 contract accepted (plan not yet written) |
+| M007 C ABI design | closed | `implementation/language-bindings/007-c-abi-contract-design.md` | `closure/language-bindings/007-status.md` | accepted semantic contract; symbol-count evidence corrected by M008 |
+| M008 M007 symbol-inventory corrective | ready | `implementation/language-bindings/008-m007-symbol-inventory-corrective.md` | pending | none; bounded 89→90 count defect reproduced |
+| M009 C ABI v1 implementation foundation | blocked | `implementation/language-bindings/009-c-abi-v1-implementation-foundation.md` | pending | M008 closure |
+| M010 C ABI cross-platform qualification | blocked | `implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md` | pending | M009 closure |
