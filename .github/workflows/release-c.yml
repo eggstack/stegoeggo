@@ -54,6 +54,7 @@ jobs:
             target: x86_64-unknown-linux-gnu.2.17
             rust_target: x86_64-unknown-linux-gnu
             lib: libstegoeggo_c.so
+            rustflags: ''
             zig_arch: x86_64-linux
             zig_sha: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
             zigbuild: true
@@ -62,6 +63,7 @@ jobs:
             target: aarch64-unknown-linux-gnu.2.17
             rust_target: aarch64-unknown-linux-gnu
             lib: libstegoeggo_c.so
+            rustflags: ''
             zig_arch: aarch64-linux
             zig_sha: f7a654acc967864f7a050ddacfaa778c7504a0eca8d2b678839c21eea47c992b
             zigbuild: true
@@ -70,18 +72,21 @@ jobs:
             target: x86_64-apple-darwin
             rust_target: x86_64-apple-darwin
             lib: libstegoeggo_c.dylib
+            rustflags: '-C link-args=-Wl,-install_name,@rpath/libstegoeggo_c.dylib'
             zigbuild: false
           - id: macos-arm64
             os: macos-14
             target: aarch64-apple-darwin
             rust_target: aarch64-apple-darwin
             lib: libstegoeggo_c.dylib
+            rustflags: '-C link-args=-Wl,-install_name,@rpath/libstegoeggo_c.dylib'
             zigbuild: false
           - id: windows-x86_64
             os: windows-2022
             target: x86_64-pc-windows-msvc
             rust_target: x86_64-pc-windows-msvc
             lib: stegoeggo_c.dll
+            rustflags: ''
             zigbuild: false
 
     steps:
@@ -147,6 +152,8 @@ jobs:
 
       - name: Build the release cdylib (native)
         if: ${{ !matrix.zigbuild }}
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
         run: cargo build --manifest-path bindings/c/Cargo.toml --release --locked --target ${{ matrix.target }}
 
       - name: Assert the exact expected library path
@@ -166,6 +173,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          ls -la "bindings/c/target/${{ matrix.target }}/release/"
           test -f "bindings/c/target/${{ matrix.target }}/release/stegoeggo_c.lib"
 
       - name: Export audit (Linux)
