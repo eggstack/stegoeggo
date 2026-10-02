@@ -200,3 +200,23 @@ closure record; M001/Plan 106 blocker unchanged (stable B newer than
 0.4.2). `plans/subsystems/release-distribution-roadmap.md`: M002 status
 table and current state updated to conditionally closed with live
 evidence outstanding.
+## 13. Post-closure updater corrective resolution — 2026-10-01
+
+The medium consumer-owned updater-runtime finding recorded in §10 is resolved.
+StegoEggo Release-Distribution M003 implemented the synchronous updater bridge
+at `e611c913f97c804620f26c7514d59e0cb84d34cc` and closed at
+`f80eebe3fb983a5e8b13f7e082fe573636d65756` with:
+
+- `./scripts/test-release-updater.sh` green end to end;
+- ten focused seam/runtime regressions covering the prior failure shape;
+- direct Tokio moved from production dependencies to dev-dependencies;
+- `eggpack ci check` still byte-matching the M002-generated workflow;
+- hosted CI run `36902385826` green;
+- hosted release-drift run `36902385784` green;
+- no remaining critical/high/medium updater-runtime finding.
+
+This addendum does not fully close M002. The sole remaining M002 condition is
+operational: the next ordinary stable B > 0.4.2 must provide the first live
+Eggpack-produced five-target draft/publication evidence. The same B can then
+provide M001 / Plan 106's real public 0.4.2 -> B updater proof. No throwaway
+release is authorized.

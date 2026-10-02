@@ -147,13 +147,15 @@ Exit conditions: M002 plan acceptance criteria and
 Class: corrective
 
 Objective: remove StegoEggo's unnecessary outer Tokio runtime around the
-synchronous `eggup-eggfetch` acquisition seam. The current nested runtime
-panics in the deterministic updater rehearsal and blocks the shared M001/M002
-live B evidence.
+synchronous `eggup-eggfetch` acquisition seam. Closed implementation
+`e611c91` removed the nested runtime; the deterministic updater rehearsal is
+green and the shared M001/M002 path is now blocked only on the ordinary stable
+B release event.
 
 Dependencies: M002 cutover/closure evidence (landed). No Eggup implementation
-dependency is open; the reviewed Eggup adapter documents the synchronous seam
-and private runtime ownership.
+dependency was required; the reviewed Eggup adapter documents the synchronous
+seam and private runtime ownership. M003 is closed at
+`plans/closure/release-distribution/003-status.md`.
 
 Deliverable boundary: synchronous production updater call graph, nested-runtime
 regression coverage, green deterministic updater rehearsal, and no release or
@@ -165,8 +167,8 @@ Implementation plan:
 Exit conditions:
 `plans/closure/release-distribution/003-status.md`.
 
-M003 must close before the ordinary stable B release is used for M001/M002
-shared operational evidence.
+M003 is closed. The next ordinary stable B release may now be used for the
+shared M001/M002 operational evidence without an updater-runtime code blocker.
 
 
 ## 8. Cross-cutting requirements
