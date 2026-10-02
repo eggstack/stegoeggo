@@ -230,6 +230,6 @@ direction.
 | M002 API normalization | closed | `plans/implementation/stego-library-evolution/002-generic-carrier-api-normalization.md` | `plans/closure/stego-library-evolution/002-status.md` | none |
 | M003 limits/prepared parity | closed | `plans/implementation/stego-library-evolution/003-carrier-resource-and-prepared-hardening.md` | `plans/closure/stego-library-evolution/003-status.md` | none |
 | M004 in-place allocation hardening | closed | `plans/implementation/stego-library-evolution/004-transactional-in-place-allocation-hardening.md` | `plans/closure/stego-library-evolution/004-status.md` | none |
-| M005 lossless WebP byte facade | active | `plans/implementation/stego-library-evolution/005-lossless-webp-byte-carrier.md` | pending | none (M003 interface contracted) |
-| M006 keyed placement | blocked | `plans/implementation/stego-library-evolution/006-keyed-carrier-placement.md` | pending | ADR-0007 acceptance (M002/M003 closed) |
+| M005 lossless WebP byte facade | closed | `plans/implementation/stego-library-evolution/005-lossless-webp-byte-carrier.md` | `plans/closure/stego-library-evolution/005-status.md` | none |
+| M006 keyed placement | blocked | `plans/implementation/stego-library-evolution/006-keyed-carrier-placement.md` | pending | ADR-0007 acceptance (M001–M005 closed) |
 | M007 adaptive/robust experiment | proposed | none | none | explicit maintainer authorization after M001–M005 |
