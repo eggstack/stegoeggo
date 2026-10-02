@@ -11,7 +11,7 @@ table), links canonical requirements instead of duplicating them, and
 indexes the flat `001`–`107` predecessor plans it supersedes as evidence
 where predecessor work exists.
 
-Create only roadmaps ready to be reasoned about. Seven exist:
+Create only roadmaps ready to be reasoned about. Nine exist:
 
 - `rights-metadata-roadmap.md` (closed)
 - `container-correctness-roadmap.md` (closed)
@@ -19,4 +19,6 @@ Create only roadmaps ready to be reasoned about. Seven exist:
 - `verification-conformance-roadmap.md` (closed)
 - `api-cli-contract-roadmap.md` (closed)
 - `release-distribution-roadmap.md` (active — M001 blocked on release B)
-- `language-bindings-roadmap.md` (active — M001 Python foundation ready)
+- `language-bindings-roadmap.md` (closed — Python → Node → C sequence complete)
+- `stego-library-evolution-roadmap.md` (active — M001 boundary convergence ready)
+- `maintenance-quality-roadmap.md` (active — M001 workflow consolidation ready)
