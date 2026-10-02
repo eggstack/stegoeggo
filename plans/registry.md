@@ -32,7 +32,7 @@ predecessor history, indexed by the roadmaps below.
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed; M003 closed | M003 closed the consumer-owned nested-runtime panic; M001/M002 still wait for the same ordinary stable B > 0.4.2 |
 | language-bindings | closed | `plans/subsystems/language-bindings-roadmap.md` | all milestones closed; initial Python -> Node -> C sequence complete | none |
-| stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M002 ready | M003–M005 hard/interface-blocked behind predecessor closure; M006 also requires ADR-0007 acceptance |
+| stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M003 ready | M004–M005 hard/interface-blocked behind M003 closure; M006 also requires ADR-0007 acceptance (M002 closed) |
 | maintenance-quality | closed | `plans/subsystems/maintenance-quality-roadmap.md` | M001 closed; M002 proposed optional polish | none |
 
 ## Dependency-ready implementation plans
@@ -40,7 +40,7 @@ predecessor history, indexed by the roadmaps below.
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); live B > 0.4.2 evidence remains outstanding, shared with M001 |
-| stego-library-evolution | M002 generic carrier API normalization | ready | `plans/implementation/stego-library-evolution/002-generic-carrier-api-normalization.md` | unblocked by M001 closure; additive/renaming carrier API work without changing current defaults |
+| stego-library-evolution | M003 carrier resource/prepared hardening | ready | `plans/implementation/stego-library-evolution/003-carrier-resource-and-prepared-hardening.md` | unblocked by M002 closure; carrier-owned limits plus prepared-state parity without changing current defaults |
 
 ## Active closure work
 
@@ -52,13 +52,21 @@ None.
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
 | release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | Missing ordinary stable B > 0.4.2. The updater-runtime code blocker is resolved by closed M003; cutover/closure remains `plans/closure/release-distribution/002-status.md`. |
-| stego-library-evolution | M003 carrier resource/prepared hardening | M002 closure. |
 | stego-library-evolution | M004 transactional in-place allocation hardening | M003 closure. |
 | stego-library-evolution | M005 lossless WebP byte carrier | M003 interface contract. |
 | stego-library-evolution | M006 keyed carrier placement | ADR-0007 acceptance plus M002/M003 closure. |
 
 ## Recently closed work
 
+- Stego Library Evolution M002 generic carrier API normalization: closure
+  recorded at `plans/closure/stego-library-evolution/002-status.md`
+  (implementation `beb4145`; explicit `embed_best_effort` /
+  `embed_framed_best_effort` aliases with old/new parity, `EmbedReport` /
+  `InPlaceEmbedReport` accessor coverage, direct-consumer/public-API
+  migration to strict/explicit names, semver-checks 196 pass / 58 skip
+  with no update required, focused suites 192 + 10 + 35 carrier and
+  55 public API / 10 known-answer green, `./scripts/check.sh` green with
+  2045 passed / 0 failed). M003 promoted blocked → ready.
 - Maintenance Quality M001 release workflow consolidation: closure
   recorded at `plans/closure/maintenance-quality/001-status.md`
   (implementation `f9bee3d`; all third-party actions full-SHA pinned,
