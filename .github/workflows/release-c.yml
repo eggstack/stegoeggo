@@ -1,0 +1,428 @@
+# Build and qualify the versioned C ABI as a portable system library.
+#
+# This workflow is manually dispatched (`workflow_dispatch`); it never runs
+# on push or pull_request, never publishes to GitHub Releases or any
+# package registry, and needs no write permissions. See RELEASING.md for
+# the manual C artifact policy.
+#
+# The M009 implementation is qualified on the same five native
+# architectures as the binary/Python/Node distribution work:
+#
+#   - Linux x86_64 (GNU, cargo-zigbuild glibc 2.17 floor)
+#   - Linux aarch64 (GNU, cargo-zigbuild glibc 2.17 floor)
+#   - macOS x86_64
+#   - macOS arm64
+#   - Windows x86_64 (MSVC)
+#
+# Every row builds the exact `bindings/c` cdylib, proves the 90-symbol
+# export manifest, runs the native C11 lifecycle smoke plus the C++17
+# header smoke against the built library, and uploads an inspection
+# bundle as a GitHub Actions artifact. Separate clean-smoke jobs then
+# prove each bundle is consumable from the downloaded artifact alone
+# (no source-tree library or header). A collector job audits the five
+# bundles for identical contract files and a single source SHA.
+
+name: release-c
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: >
+          Source ref (tag, branch, or SHA) to build from. Use an
+          immutable commit SHA for final qualification.
+        required: true
+        type: string
+
+concurrency:
+  group: release-c-${{ github.event.inputs.source_ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build_c:
+    name: build ${{ matrix.id }} library
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x86_64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu.2.17
+            rust_target: x86_64-unknown-linux-gnu
+            lib: libstegoeggo_c.so
+            zig_arch: x86_64-linux
+            zig_sha: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
+            zigbuild: true
+          - id: linux-aarch64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu.2.17
+            rust_target: aarch64-unknown-linux-gnu
+            lib: libstegoeggo_c.so
+            zig_arch: aarch64-linux
+            zig_sha: f7a654acc967864f7a050ddacfaa778c7504a0eca8d2b678839c21eea47c992b
+            zigbuild: true
+          - id: macos-x86_64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            rust_target: x86_64-apple-darwin
+            lib: libstegoeggo_c.dylib
+            zigbuild: false
+          - id: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            rust_target: aarch64-apple-darwin
+            lib: libstegoeggo_c.dylib
+            zigbuild: false
+          - id: windows-x86_64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            rust_target: x86_64-pc-windows-msvc
+            lib: stegoeggo_c.dll
+            zigbuild: false
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source_ref }}
+
+      - name: Record the resolved source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > "$RUNNER_TEMP/source-sha.txt"
+          cat "$RUNNER_TEMP/source-sha.txt"
+
+      - name: Install Rust 1.89 with the target
+        uses: dtolnay/rust-toolchain@1.89
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Install exact cargo-zigbuild 0.23.3 (Linux)
+        if: matrix.zigbuild
+        shell: bash
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          install_root="${{ runner.temp }}/c-abi/cargo-install/${{ github.run_id }}-${{ github.run_attempt }}"
+          mkdir -p "$install_root"
+          CARGO_INSTALL_ROOT="$install_root" cargo install cargo-zigbuild --version '0.23.3' --locked
+          echo "CARGO_INSTALL_ROOT=$install_root" >> "$GITHUB_ENV"
+          echo "$install_root/bin" >> "$GITHUB_PATH"
+          export PATH="$install_root/bin:$PATH"
+          test -x "$install_root/bin/cargo-zigbuild"
+
+      - name: Provision verified Zig 0.14.1 (Linux)
+        if: matrix.zigbuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          zig_version='0.14.1'
+          zig_archive='zig-${{ matrix.zig_arch }}-0.14.1.tar.xz'
+          zig_url='https://ziglang.org/download/0.14.1/zig-${{ matrix.zig_arch }}-0.14.1.tar.xz'
+          zig_sha='${{ matrix.zig_sha }}'
+          work="${{ runner.temp }}/c-abi/zig/${{ github.run_id }}-${{ github.run_attempt }}"
+          mkdir -p "$work"
+          archive="$work/$zig_archive"
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location --proto-redir '=https' --connect-timeout 30 --max-time 600 -o "$archive" "$zig_url"
+          printf '%s  %s\n' "$zig_sha" "$archive" | sha256sum --check -
+          tar -xf "$archive" -C "$work"
+          echo "$work/zig-${{ matrix.zig_arch }}-0.14.1" >> "$GITHUB_PATH"
+
+      - name: Install cbindgen 0.29.4 (authoritative drift gate)
+        if: matrix.id == 'linux-x86_64'
+        run: cargo install cbindgen --version 0.29.4 --locked
+
+      - name: Header drift gate (authoritative Linux x86_64)
+        if: matrix.id == 'linux-x86_64'
+        run: bindings/c/scripts/generate-header.sh --check
+
+      - name: Build the release cdylib (cargo-zigbuild GNU Linux)
+        if: matrix.zigbuild
+        run: cargo zigbuild --manifest-path bindings/c/Cargo.toml --release --locked --target ${{ matrix.target }}
+
+      - name: Build the release cdylib (native)
+        if: ${{ !matrix.zigbuild }}
+        run: cargo build --manifest-path bindings/c/Cargo.toml --release --locked --target ${{ matrix.target }}
+
+      - name: Assert the exact expected library path
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="bindings/c/target/${{ matrix.target }}/release/${{ matrix.lib }}"
+          if [ ! -f "$lib" ] && [ "${{ matrix.zigbuild }}" = "true" ]; then
+            lib="bindings/c/target/${{ matrix.rust_target }}/release/${{ matrix.lib }}"
+          fi
+          test -f "$lib"
+          ls -la "$lib"
+          echo "C_ABI_LIB=$lib" >> "$GITHUB_ENV"
+
+      - name: Assert the MSVC import library exists (Windows)
+        if: matrix.id == 'windows-x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "bindings/c/target/${{ matrix.target }}/release/stegoeggo_c.lib"
+
+      - name: Export audit (Linux)
+        if: startsWith(matrix.id, 'linux-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          nm -D --defined-only "$C_ABI_LIB" | awk '{print $NF}' | grep '^stegoeggo_' | grep -v '@' | LC_ALL=C sort -u > "$RUNNER_TEMP/c-exports.txt"
+          test "$(wc -l < "$RUNNER_TEMP/c-exports.txt" | tr -d ' ')" = "90"
+          diff bindings/c/abi-v1-symbols.txt "$RUNNER_TEMP/c-exports.txt"
+
+      - name: Export audit (macOS)
+        if: startsWith(matrix.id, 'macos-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          nm -gU "$C_ABI_LIB" | awk '{print $NF}' | grep '^_stegoeggo_' | sed 's/^_//' | LC_ALL=C sort -u > "$RUNNER_TEMP/c-exports.txt"
+          test "$(wc -l < "$RUNNER_TEMP/c-exports.txt" | tr -d ' ')" = "90"
+          diff bindings/c/abi-v1-symbols.txt "$RUNNER_TEMP/c-exports.txt"
+
+      - name: Export audit (Windows)
+        if: matrix.id == 'windows-x86_64'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = & dumpbin /EXPORTS "$env:C_ABI_LIB" | Out-String
+          $names = $out -split "`r?`n" | ForEach-Object {
+            if ($_ -match '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)') { $matches[1] }
+          } | Where-Object { $_ -like 'stegoeggo_*' } | Sort-Object -Unique
+          if ($names.Count -ne 90) { throw "expected 90 exports, found $($names.Count)" }
+          $manifest = Get-Content bindings/c/abi-v1-symbols.txt | Sort-Object -Unique
+          $diff = Compare-Object $manifest $names
+          if ($diff) { $diff | Out-String | Write-Host; throw 'export manifest mismatch' }
+          $names | Set-Content "$env:RUNNER_TEMP/c-exports.txt"
+
+      - name: Linux glibc 2.17 floor audit
+        if: startsWith(matrix.id, 'linux-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          readelf -d "$C_ABI_LIB"
+          need="$(readelf --version-info "$C_ABI_LIB" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -uV | tail -n 1)"
+          echo "max required symbol version: ${need:-none}"
+          if [ -n "$need" ] && [ "$(printf '%s\nGLIBC_2.17\n' "$need" | sort -uV | tail -n 1)" != "GLIBC_2.17" ]; then
+            echo "error: $C_ABI_LIB requires $need, newer than the GLIBC_2.17 floor" >&2
+            exit 1
+          fi
+
+      - name: macOS dependency and install-name proof
+        if: startsWith(matrix.id, 'macos-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          otool -L "$C_ABI_LIB"
+          otool -D "$C_ABI_LIB"
+          if otool -D "$C_ABI_LIB" | grep -q '/Users/'; then
+            echo "error: install name embeds a developer-worktree path" >&2
+            exit 1
+          fi
+
+      - name: Windows dependency proof
+        if: matrix.id == 'windows-x86_64'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & dumpbin /DEPENDENTS "$env:C_ABI_LIB"
+
+      - name: Set up MSVC (Windows C/C++ smokes)
+        if: matrix.id == 'windows-x86_64'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Native C11 lifecycle smoke (Unix)
+        if: matrix.id != 'windows-x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror bindings/c/examples/smoke.c \
+            -Ibindings/c/include -L"$(dirname "$C_ABI_LIB")" -lstegoeggo_c \
+            -o "$RUNNER_TEMP/c-smoke"
+          case "$(uname -s)" in
+            Darwin) export DYLD_LIBRARY_PATH="$(dirname "$C_ABI_LIB")" ;;
+            *) export LD_LIBRARY_PATH="$(dirname "$C_ABI_LIB")" ;;
+          esac
+          "$RUNNER_TEMP/c-smoke"
+
+      - name: Native C11 lifecycle smoke (Windows)
+        if: matrix.id == 'windows-x86_64'
+        shell: cmd
+        run: >
+          cl /std:c11 /W3 /WX /Ibindings\c\include bindings\c\examples\smoke.c
+          /link /LIBPATH:bindings\c\target\${{ matrix.target }}\release
+          stegoeggo_c.lib /OUT:%RUNNER_TEMP%\c-smoke.exe
+          && %RUNNER_TEMP%\c-smoke.exe
+
+      - name: Native C++17 header smoke (Unix)
+        if: matrix.id != 'windows-x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          c++ -std=c++17 -Wall -Wextra -Werror bindings/c/examples/smoke.cpp \
+            -Ibindings/c/include -L"$(dirname "$C_ABI_LIB")" -lstegoeggo_c \
+            -o "$RUNNER_TEMP/cxx-smoke"
+          case "$(uname -s)" in
+            Darwin) export DYLD_LIBRARY_PATH="$(dirname "$C_ABI_LIB")" ;;
+            *) export LD_LIBRARY_PATH="$(dirname "$C_ABI_LIB")" ;;
+          esac
+          "$RUNNER_TEMP/cxx-smoke"
+
+      - name: Native C++17 header smoke (Windows)
+        if: matrix.id == 'windows-x86_64'
+        shell: cmd
+        run: >
+          cl /EHsc /std:c++17 /W3 /WX /Ibindings\c\include bindings\c\examples\smoke.cpp
+          /link /LIBPATH:bindings\c\target\${{ matrix.target }}\release
+          stegoeggo_c.lib /OUT:%RUNNER_TEMP%\cxx-smoke.exe
+          && %RUNNER_TEMP%\cxx-smoke.exe
+
+      - name: Assemble the inspection bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          dest="c-bundle-${{ matrix.id }}/stegoeggo-c"
+          mkdir -p "$dest/include" "$dest/lib" "$dest/share" "$dest/examples"
+          cp bindings/c/include/stegoeggo.h "$dest/include/"
+          cp "$C_ABI_LIB" "$dest/lib/"
+          if [ "${{ matrix.id }}" = "windows-x86_64" ]; then
+            cp "bindings/c/target/${{ matrix.target }}/release/stegoeggo_c.lib" "$dest/lib/"
+          fi
+          cp bindings/c/abi-v1-symbols.txt "$dest/share/"
+          cp bindings/c/examples/smoke.c bindings/c/examples/smoke.cpp "$dest/examples/"
+          cp bindings/c/README.md "$dest/"
+          cp LICENSE "$dest/"
+          {
+            echo "source_sha=$(cat "$RUNNER_TEMP/source-sha.txt")"
+            echo "source_version=$(grep '^version' bindings/c/Cargo.toml | head -n 1 | cut -d'\"' -f2)"
+            echo "abi_major=1"
+            echo "abi_minor=0"
+            echo "rust_version=$(rustc --version)"
+            echo "target=${{ matrix.target }}"
+            echo "runner=${{ matrix.os }}"
+            echo "cbindgen=0.29.4"
+            if [ "${{ matrix.zigbuild }}" = "true" ]; then
+              echo "cargo_zigbuild=0.23.3"
+            else
+              echo "cargo_zigbuild=n/a"
+            fi
+          } > "$dest/BUILD-INFO.txt"
+          cat "$dest/BUILD-INFO.txt"
+
+      - name: Upload the inspection bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: c-abi-${{ matrix.id }}
+          path: c-bundle-${{ matrix.id }}/
+          if-no-files-found: error
+
+  smoke_artifact:
+    name: clean smoke ${{ matrix.id }}
+    needs: build_c
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x86_64
+            os: ubuntu-24.04
+          - id: linux-aarch64
+            os: ubuntu-24.04-arm
+          - id: macos-x86_64
+            os: macos-15-intel
+          - id: macos-arm64
+            os: macos-14
+          - id: windows-x86_64
+            os: windows-2022
+
+    steps:
+      - name: Download the inspection bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: c-abi-${{ matrix.id }}
+          path: artifact/
+
+      - name: Set up MSVC (Windows)
+        if: matrix.id == 'windows-x86_64'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Compile and run from the bundle only (Unix)
+        if: matrix.id != 'windows-x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls artifact/stegoeggo-c/include/stegoeggo.h artifact/stegoeggo-c/share/abi-v1-symbols.txt
+          cc -std=c11 -Wall -Wextra -Werror artifact/stegoeggo-c/examples/smoke.c \
+            -Iartifact/stegoeggo-c/include -Lartifact/stegoeggo-c/lib -lstegoeggo_c \
+            -o "$RUNNER_TEMP/clean-smoke"
+          c++ -std=c++17 -Wall -Wextra -Werror -fsyntax-only \
+            -Iartifact/stegoeggo-c/include artifact/stegoeggo-c/examples/smoke.cpp
+          case "$(uname -s)" in
+            Darwin) export DYLD_LIBRARY_PATH="$PWD/artifact/stegoeggo-c/lib" ;;
+            *) export LD_LIBRARY_PATH="$PWD/artifact/stegoeggo-c/lib" ;;
+          esac
+          "$RUNNER_TEMP/clean-smoke"
+
+      - name: Compile and run from the bundle only (Windows)
+        if: matrix.id == 'windows-x86_64'
+        shell: cmd
+        run: >
+          cl /std:c11 /W3 /WX /Iartifact\stegoeggo-c\include artifact\stegoeggo-c\examples\smoke.c
+          /link /LIBPATH:artifact\stegoeggo-c\lib stegoeggo_c.lib
+          /OUT:%RUNNER_TEMP%\clean-smoke.exe
+          && set PATH=%CD%\artifact\stegoeggo-c\lib;%PATH%
+          && %RUNNER_TEMP%\clean-smoke.exe
+
+  collect_audit:
+    name: collect audit
+    needs: [build_c, smoke_artifact]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source (contract files only)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source_ref }}
+
+      - name: Download all five bundles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: c-abi-*
+          path: collected/
+
+      - name: Audit the complete artifact set
+        shell: bash
+        run: |
+          set -euo pipefail
+          for id in linux-x86_64 linux-aarch64 macos-x86_64 macos-arm64 windows-x86_64; do
+            base="collected/c-abi-$id/stegoeggo-c"
+            test -f "$base/include/stegoeggo.h"
+            test -f "$base/share/abi-v1-symbols.txt"
+            test -f "$base/examples/smoke.c"
+            test -f "$base/examples/smoke.cpp"
+            test -f "$base/README.md"
+            test -f "$base/LICENSE"
+            test -f "$base/BUILD-INFO.txt"
+            test "$(find "$base/lib" -maxdepth 1 -type f | wc -l)" -ge 1
+            grep -q '^abi_major=1$' "$base/BUILD-INFO.txt"
+            grep -q '^abi_minor=0$' "$base/BUILD-INFO.txt"
+          done
+          test -f collected/c-abi-windows-x86_64/stegoeggo-c/lib/stegoeggo_c.lib
+          sha="$(cat collected/c-abi-linux-x86_64/stegoeggo-c/BUILD-INFO.txt | grep '^source_sha=' | cut -d= -f2)"
+          for id in linux-aarch64 macos-x86_64 macos-arm64 windows-x86_64; do
+            test "$(grep '^source_sha=' collected/c-abi-$id/stegoeggo-c/BUILD-INFO.txt | cut -d= -f2)" = "$sha"
+          done
+          echo "source SHA: $sha"
+          for f in include/stegoeggo.h share/abi-v1-symbols.txt; do
+            ref="collected/c-abi-linux-x86_64/stegoeggo-c/$f"
+            for id in linux-aarch64 macos-x86_64 macos-arm64 windows-x86_64; do
+              cmp "$ref" "collected/c-abi-$id/stegoeggo-c/$f"
+            done
+          done
+          echo "header and manifest identical across all five bundles"
+          echo "collector audit OK"
