@@ -1,0 +1,83 @@
+# Shared verified-Zig provisioning for Linux release/C workflows.
+#
+# Single maintained source for the checksum-pinned Zig download/extract/verify
+# sequence previously duplicated inline in `release-binaries.yml` (Eggpack
+# shape-owned; intentionally not migrated, see README.md) and `release-c.yml`.
+# Fails closed on download, checksum, archive-shape, binary, or version
+# mismatch. Publishes nothing; exports CARGO_ZIGBUILD_ZIG_PATH (and optionally
+# CARGO_ZIGBUILD_CACHE_DIR) for later steps and adds the Zig directory to PATH.
+#
+# Pin procedure: `zig-version` defaults to `0.14.1` and per-architecture
+# SHA-256 values stay visible at the caller (workflow matrix), matching
+# `release/eggpack/workflow-shape.json`. Bump the default, the caller SHAs,
+# and the contract checker together; see `.github/actions/README.md`.
+name: Provision verified Zig
+description: Download a checksum-pinned Zig release, verify it, and export it for cargo-zigbuild
+inputs:
+  zig-version:
+    description: Exact Zig version to provision
+    required: false
+    default: '0.14.1'
+  zig-arch:
+    description: Zig distribution architecture slug (for example x86_64-linux or aarch64-linux)
+    required: true
+  zig-sha:
+    description: Expected SHA-256 of the Zig release archive for zig-arch
+    required: true
+  work-dir:
+    description: Scratch directory for the archive and extraction (caller composes it from runner.temp and run id)
+    required: true
+  cache-dir:
+    description: cargo-zigbuild cache directory to create and export as CARGO_ZIGBUILD_CACHE_DIR (empty skips it)
+    required: false
+    default: ''
+outputs:
+  zig-bin:
+    description: Absolute path of the verified zig binary
+    value: ${{ steps.provision.outputs.zig-bin }}
+  zig-dir:
+    description: Directory containing the verified zig binary (added to PATH)
+    value: ${{ steps.provision.outputs.zig-dir }}
+runs:
+  using: composite
+  steps:
+    - name: Provision verified Zig
+      id: provision
+      shell: bash
+      run: |
+        set -euo pipefail
+        zig_version='${{ inputs.zig-version }}'
+        zig_arch='${{ inputs.zig-arch }}'
+        zig_sha='${{ inputs.zig-sha }}'
+        zig_archive="zig-${zig_arch}-${zig_version}.tar.xz"
+        zig_url="https://ziglang.org/download/${zig_version}/${zig_archive}"
+        work='${{ inputs.work-dir }}'
+        mkdir -p "$work"
+        archive="$work/$zig_archive"
+        curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location --proto-redir '=https' --connect-timeout 30 --max-time 600 -o "$archive" "$zig_url"
+        printf '%s  %s\n' "$zig_sha" "$archive" | sha256sum --check -
+        entries="$(tar -tf "$archive")"
+        test -n "$entries"
+        if printf '%s\n' "$entries" | grep -Eq '(^/)|(^|/)\.\.(/|$)'; then echo 'rejected Zig archive path' >&2; exit 1; fi
+        top="$(printf '%s\n' "$entries" | cut -d/ -f1 | sort -u)"
+        test -n "$top"
+        test "$(printf '%s\n' "$top" | wc -l)" = "1"
+        printf '%s\n' "$entries" | grep -Fxq "$top/zig"
+        rm -rf "$work/extract"
+        mkdir -p "$work/extract"
+        tar -xf "$archive" -C "$work/extract"
+        test ! -L "$work/extract/$top/zig"
+        test -f "$work/extract/$top/zig"
+        test -s "$work/extract/$top/zig"
+        test -x "$work/extract/$top/zig"
+        zig_bin="$work/extract/$top/zig"
+        test "$("$zig_bin" version)" = "$zig_version"
+        echo "CARGO_ZIGBUILD_ZIG_PATH=$zig_bin" >> "$GITHUB_ENV"
+        echo "$work/extract/$top" >> "$GITHUB_PATH"
+        cache_dir='${{ inputs.cache-dir }}'
+        if test -n "$cache_dir"; then
+          mkdir -p "$cache_dir"
+          echo "CARGO_ZIGBUILD_CACHE_DIR=$cache_dir" >> "$GITHUB_ENV"
+        fi
+        echo "zig-bin=$zig_bin" >> "$GITHUB_OUTPUT"
+        echo "zig-dir=$work/extract/$top" >> "$GITHUB_OUTPUT"

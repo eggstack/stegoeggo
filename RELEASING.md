@@ -94,6 +94,20 @@ Release readiness is established by the local checks in Pre-Release
 Preparation below, not by green scheduled runs. See `SUPPORT.md` for the exact
 evidence matrix. No workflow publishes crates or reacts automatically to tags.
 
+## Release Workflow Maintenance
+
+Every third-party action in the release/binding workflows
+(`release-binaries.yml`, `release-python.yml`, `release-node.yml`,
+`release-c.yml`) is pinned to a full commit SHA with an adjacent
+`# <upstream release>` comment. Repeated Linux bootstrap (exact
+cargo-zigbuild install, verified Zig 0.14.1 provisioning) lives in the local
+composite actions under `.github/actions/` and is consumed by `release-c.yml`;
+`release-binaries.yml` keeps its inline blocks because it is Eggpack-generated
+and byte-compared by `eggpack ci check`. `python3
+scripts/check-release-workflow-contract.py` asserts pinning plus
+target/artifact/toolchain equivalence across the four workflows; it is manual
+only and never required CI. Pin update procedure: `.github/actions/README.md`.
+
 ## Pre-Release Preparation
 
 1. Confirm a clean working tree (`git status` shows no uncommitted changes).

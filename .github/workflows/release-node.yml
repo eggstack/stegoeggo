@@ -88,21 +88,21 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.inputs.source_ref }}
 
       - name: Install Rust toolchain (matches binding MSRV)
-        uses: dtolnay/rust-toolchain@1.89
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable-action-pin (shared with release-binaries.yml)
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 12.6.0
           run_install: false
 
       - name: Set up Node 24 (build)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
           cache: pnpm
@@ -131,7 +131,7 @@ jobs:
           ls -la "${{ matrix.artifact }}"
 
       - name: Set up Node 22 (oldest-supported-line smoke)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
@@ -141,7 +141,7 @@ jobs:
 
       - name: Set up Node 24 (extended smoke)
         if: matrix.id == 'linux-x86_64'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
 
@@ -152,7 +152,7 @@ jobs:
 
       - name: Set up Node 26 (extended smoke)
         if: matrix.id == 'linux-x86_64'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "26"
 
@@ -162,7 +162,7 @@ jobs:
         run: node scripts/smoke.mjs
 
       - name: Upload addon artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: node-addon-${{ matrix.id }}
           path: bindings/node/${{ matrix.artifact }}
@@ -174,18 +174,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.inputs.source_ref }}
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 12.6.0
           run_install: false
 
       - name: Set up Node 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
           cache: pnpm
@@ -196,7 +196,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download all addon artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: node-addon-*
           path: bindings/node/collected

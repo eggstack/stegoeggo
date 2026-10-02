@@ -1,0 +1,36 @@
+# Shared exact cargo-zigbuild installer for Linux release/C workflows.
+#
+# Single maintained source for the `cargo install cargo-zigbuild --locked`
+# bootstrap previously duplicated inline in `release-binaries.yml` (Eggpack
+# shape-owned; intentionally not migrated, see README.md) and `release-c.yml`.
+# Fails closed: `set -euo pipefail` plus an executable assertion. Publishes
+# nothing; only extends PATH and records the install root for later steps.
+#
+# Pin procedure: the caller pins nothing here (local action). The installed
+# tool version is the `version` input (default `0.23.3`, matching
+# `release/eggpack/workflow-shape.json` toolchain pins). Bump the default and
+# the contract checker together; see `.github/actions/README.md`.
+name: Install exact cargo-zigbuild
+description: Install a pinned cargo-zigbuild into an isolated root and expose it on PATH
+inputs:
+  version:
+    description: Exact cargo-zigbuild version to install
+    required: false
+    default: '0.23.3'
+  install-dir:
+    description: Isolated CARGO_INSTALL_ROOT directory (caller composes it from runner.temp and run id)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install exact cargo-zigbuild
+      shell: bash
+      run: |
+        set -euo pipefail
+        install_root="${{ inputs.install-dir }}"
+        mkdir -p "$install_root"
+        CARGO_INSTALL_ROOT="$install_root" cargo install cargo-zigbuild --version '${{ inputs.version }}' --locked
+        echo "CARGO_INSTALL_ROOT=$install_root" >> "$GITHUB_ENV"
+        echo "$install_root/bin" >> "$GITHUB_PATH"
+        export PATH="$install_root/bin:$PATH"
+        test -x "$install_root/bin/cargo-zigbuild"
