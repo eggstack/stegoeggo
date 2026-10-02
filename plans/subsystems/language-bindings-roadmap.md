@@ -298,7 +298,9 @@ Implementation:
 
 Hard dependency: M008 closure. Satisfied and M008 is closed with the
 accepted manifest (`plans/closure/language-bindings/008-status.md`);
-M009 is ready for handoff.
+M009 is closed with the accepted implementation
+(`plans/closure/language-bindings/009-status.md`). M010 is ready for
+handoff.
 
 ### M010 — C ABI v1 cross-platform qualification and stability activation
 
@@ -383,5 +385,6 @@ invariants.
 | M006 post-core compatibility corrective | closed | `implementation/language-bindings/006-post-core-compatibility-corrective.md` | `closure/language-bindings/006-status.md` | none |
 | M007 C ABI design | closed | `implementation/language-bindings/007-c-abi-contract-design.md` | `closure/language-bindings/007-status.md` | accepted semantic contract; symbol-count evidence corrected by M008 |
 | M008 M007 symbol-inventory corrective | closed | `implementation/language-bindings/008-m007-symbol-inventory-corrective.md` | `closure/language-bindings/008-status.md` | 90/87 arithmetic corrected with no signature change; checked manifest + checker landed |
-| M009 C ABI v1 implementation foundation | ready | `implementation/language-bindings/009-c-abi-v1-implementation-foundation.md` | pending | M008 manifest accepted |
+| M009 C ABI v1 implementation foundation | closed | `implementation/language-bindings/009-c-abi-v1-implementation-foundation.md` | `closure/language-bindings/009-status.md` | 90 exports, generated header, C/C++ tests, parity, c-binding green; pre-stable |
+| M010 C ABI cross-platform qualification | ready | `implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md` | pending | M009 implementation accepted; release-c dispatched |
 | M010 C ABI cross-platform qualification | blocked | `implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md` | pending | M009 closure |

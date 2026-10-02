@@ -1,6 +1,6 @@
 # Language Bindings Milestone 010 — C ABI v1 Cross-Platform Qualification and Stability Activation
 
-Status: blocked
+Status: ready for handoff
 
 Repository baseline: `cfce18b3b7ab24832e7988201c981e49af96a9c7`
 
