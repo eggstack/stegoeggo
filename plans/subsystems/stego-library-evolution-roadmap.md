@@ -226,8 +226,8 @@ direction.
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
-| M001 boundary/metadata convergence | ready | `plans/implementation/stego-library-evolution/001-boundary-and-metadata-convergence.md` | pending | none |
-| M002 API normalization | blocked | `plans/implementation/stego-library-evolution/002-generic-carrier-api-normalization.md` | pending | M001 hard |
+| M001 boundary/metadata convergence | closed | `plans/implementation/stego-library-evolution/001-boundary-and-metadata-convergence.md` | `plans/closure/stego-library-evolution/001-status.md` | none |
+| M002 API normalization | ready | `plans/implementation/stego-library-evolution/002-generic-carrier-api-normalization.md` | pending | none (M001 closed) |
 | M003 limits/prepared parity | blocked | `plans/implementation/stego-library-evolution/003-carrier-resource-and-prepared-hardening.md` | pending | M002 hard |
 | M004 in-place allocation hardening | blocked | `plans/implementation/stego-library-evolution/004-transactional-in-place-allocation-hardening.md` | pending | M003 hard |
 | M005 lossless WebP byte facade | blocked | `plans/implementation/stego-library-evolution/005-lossless-webp-byte-carrier.md` | pending | M003 interface |

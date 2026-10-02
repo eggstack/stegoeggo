@@ -1,6 +1,6 @@
 # Maintenance Quality Roadmap
 
-Status: active
+Status: closed
 
 Repository baseline reviewed: `d5425d3c73e634fd2276d44507fa94728a18784f`
 
@@ -124,5 +124,5 @@ optional future polish and does not block roadmap closure.
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
-| M001 workflow consolidation/pinning | ready | `plans/implementation/maintenance-quality/001-release-workflow-consolidation.md` | pending | none |
-| M002 drift linting | proposed | none | none | M001 + maintainer decision on CI placement |
+| M001 workflow consolidation/pinning | closed | `plans/implementation/maintenance-quality/001-release-workflow-consolidation.md` | `plans/closure/maintenance-quality/001-status.md` | none |
+| M002 drift linting | proposed | none | none | maintainer decision on CI placement (M001 precondition satisfied) |

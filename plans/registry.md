@@ -32,16 +32,15 @@ predecessor history, indexed by the roadmaps below.
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed; M003 closed | M003 closed the consumer-owned nested-runtime panic; M001/M002 still wait for the same ordinary stable B > 0.4.2 |
 | language-bindings | closed | `plans/subsystems/language-bindings-roadmap.md` | all milestones closed; initial Python -> Node -> C sequence complete | none |
-| stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M001 ready | M002–M005 hard/interface-blocked behind predecessor closure; M006 also requires ADR-0007 acceptance |
-| maintenance-quality | active | `plans/subsystems/maintenance-quality-roadmap.md` | M001 ready | none |
+| stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M002 ready | M003–M005 hard/interface-blocked behind predecessor closure; M006 also requires ADR-0007 acceptance |
+| maintenance-quality | closed | `plans/subsystems/maintenance-quality-roadmap.md` | M001 closed; M002 proposed optional polish | none |
 
 ## Dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); live B > 0.4.2 evidence remains outstanding, shared with M001 |
-| stego-library-evolution | M001 boundary and metadata convergence | ready | `plans/implementation/stego-library-evolution/001-boundary-and-metadata-convergence.md` | internal convergence; no public or encoded-metadata semantic change |
-| maintenance-quality | M001 release workflow consolidation | ready | `plans/implementation/maintenance-quality/001-release-workflow-consolidation.md` | semantics-preserving workflow/pinning cleanup; no publication |
+| stego-library-evolution | M002 generic carrier API normalization | ready | `plans/implementation/stego-library-evolution/002-generic-carrier-api-normalization.md` | unblocked by M001 closure; additive/renaming carrier API work without changing current defaults |
 
 ## Active closure work
 
@@ -53,7 +52,6 @@ None.
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
 | release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | Missing ordinary stable B > 0.4.2. The updater-runtime code blocker is resolved by closed M003; cutover/closure remains `plans/closure/release-distribution/002-status.md`. |
-| stego-library-evolution | M002 generic carrier API normalization | M001 closure. |
 | stego-library-evolution | M003 carrier resource/prepared hardening | M002 closure. |
 | stego-library-evolution | M004 transactional in-place allocation hardening | M003 closure. |
 | stego-library-evolution | M005 lossless WebP byte carrier | M003 interface contract. |
@@ -61,6 +59,22 @@ None.
 
 ## Recently closed work
 
+- Maintenance Quality M001 release workflow consolidation: closure
+  recorded at `plans/closure/maintenance-quality/001-status.md`
+  (implementation `f9bee3d`; all third-party actions full-SHA pinned,
+  shared Zig/cargo-zigbuild composite actions consumed by `release-c.yml`,
+  `release-binaries.yml` untouched per the Eggpack byte-shape stop condition,
+  contract checker green, `release-c` run `37045104837` on `f9bee3d` 11/11
+  green, `./scripts/check.sh` green; no publication). M002 drift linting
+  stays proposed and needs only the maintainer CI-placement decision.
+- Stego Library Evolution M001 boundary and metadata convergence: closure
+  recorded at `plans/closure/stego-library-evolution/001-status.md`
+  (implementation `ed1dd6d`; private `MetadataWriteSpec` plus one executor,
+  explicit JPEG render values, six golden byte-identity hashes unchanged,
+  dead `PixelSelectionRng` removed with grep proof, 18 hidden
+  `application_support` symbols inventoried and retained, focused suites
+  179 green, non-strict conformance 44/44, `./scripts/check.sh` green with
+  2039 passed / 0 failed). M002 promoted blocked → ready.
 - Language Bindings M010 C ABI v1 cross-platform qualification:
   closure recorded at `plans/closure/language-bindings/010-status.md`
   (final `release-c` run `36952787634` on `0e52feb`, 11/11 green:
