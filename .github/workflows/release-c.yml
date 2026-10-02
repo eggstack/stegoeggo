@@ -174,7 +174,7 @@ jobs:
         run: |
           set -euo pipefail
           ls -la "bindings/c/target/${{ matrix.target }}/release/"
-          test -f "bindings/c/target/${{ matrix.target }}/release/stegoeggo_c.lib"
+          test -f "bindings/c/target/${{ matrix.target }}/release/stegoeggo_c.dll.lib"
 
       - name: Export audit (Linux)
         if: startsWith(matrix.id, 'linux-')
@@ -265,7 +265,7 @@ jobs:
         run: >
           cl /std:c11 /W3 /WX /Ibindings\c\include bindings\c\examples\smoke.c
           /link /LIBPATH:bindings\c\target\${{ matrix.target }}\release
-          stegoeggo_c.lib /OUT:%RUNNER_TEMP%\c-smoke.exe
+          stegoeggo_c.dll.lib /OUT:%RUNNER_TEMP%\c-smoke.exe
           && %RUNNER_TEMP%\c-smoke.exe
 
       - name: Native C++17 header smoke (Unix)
@@ -288,7 +288,7 @@ jobs:
         run: >
           cl /EHsc /std:c++17 /W3 /WX /Ibindings\c\include bindings\c\examples\smoke.cpp
           /link /LIBPATH:bindings\c\target\${{ matrix.target }}\release
-          stegoeggo_c.lib /OUT:%RUNNER_TEMP%\cxx-smoke.exe
+          stegoeggo_c.dll.lib /OUT:%RUNNER_TEMP%\cxx-smoke.exe
           && %RUNNER_TEMP%\cxx-smoke.exe
 
       - name: Assemble the inspection bundle
@@ -300,7 +300,7 @@ jobs:
           cp bindings/c/include/stegoeggo.h "$dest/include/"
           cp "$C_ABI_LIB" "$dest/lib/"
           if [ "${{ matrix.id }}" = "windows-x86_64" ]; then
-            cp "bindings/c/target/${{ matrix.target }}/release/stegoeggo_c.lib" "$dest/lib/"
+            cp "bindings/c/target/${{ matrix.target }}/release/stegoeggo_c.dll.lib" "$dest/lib/"
           fi
           cp bindings/c/abi-v1-symbols.txt "$dest/share/"
           cp bindings/c/examples/smoke.c bindings/c/examples/smoke.cpp "$dest/examples/"
@@ -382,7 +382,7 @@ jobs:
         shell: cmd
         run: >
           cl /std:c11 /W3 /WX /Iartifact\stegoeggo-c\include artifact\stegoeggo-c\examples\smoke.c
-          /link /LIBPATH:artifact\stegoeggo-c\lib stegoeggo_c.lib
+          /link /LIBPATH:artifact\stegoeggo-c\lib stegoeggo_c.dll.lib
           /OUT:%RUNNER_TEMP%\clean-smoke.exe
           && set PATH=%CD%\artifact\stegoeggo-c\lib;%PATH%
           && %RUNNER_TEMP%\clean-smoke.exe
@@ -420,7 +420,7 @@ jobs:
             grep -q '^abi_major=1$' "$base/BUILD-INFO.txt"
             grep -q '^abi_minor=0$' "$base/BUILD-INFO.txt"
           done
-          test -f collected/c-abi-windows-x86_64/stegoeggo-c/lib/stegoeggo_c.lib
+          test -f collected/c-abi-windows-x86_64/stegoeggo-c/lib/stegoeggo_c.dll.lib
           sha="$(cat collected/c-abi-linux-x86_64/stegoeggo-c/BUILD-INFO.txt | grep '^source_sha=' | cut -d= -f2)"
           for id in linux-aarch64 macos-x86_64 macos-arm64 windows-x86_64; do
             test "$(grep '^source_sha=' collected/c-abi-$id/stegoeggo-c/BUILD-INFO.txt | cut -d= -f2)" = "$sha"
