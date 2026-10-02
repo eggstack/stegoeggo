@@ -266,6 +266,7 @@ jobs:
           cl /std:c11 /W3 /WX /Ibindings\c\include bindings\c\examples\smoke.c
           /link /LIBPATH:bindings\c\target\${{ matrix.target }}\release
           stegoeggo_c.dll.lib /OUT:%RUNNER_TEMP%\c-smoke.exe
+          && set PATH=%CD%\bindings\c\target\${{ matrix.target }}\release;%PATH%
           && %RUNNER_TEMP%\c-smoke.exe
 
       - name: Native C++17 header smoke (Unix)
@@ -289,6 +290,7 @@ jobs:
           cl /EHsc /std:c++17 /W3 /WX /Ibindings\c\include bindings\c\examples\smoke.cpp
           /link /LIBPATH:bindings\c\target\${{ matrix.target }}\release
           stegoeggo_c.dll.lib /OUT:%RUNNER_TEMP%\cxx-smoke.exe
+          && set PATH=%CD%\bindings\c\target\${{ matrix.target }}\release;%PATH%
           && %RUNNER_TEMP%\cxx-smoke.exe
 
       - name: Assemble the inspection bundle
