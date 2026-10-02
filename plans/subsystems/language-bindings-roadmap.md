@@ -1,6 +1,6 @@
 # Language Bindings Roadmap
 
-Status: active
+Status: closed
 
 Long-term references:
 
@@ -370,11 +370,15 @@ For every implemented language:
 
 ## 11. Completion definition
 
-The subsystem is complete when Python and Node packages are independently
-installable and cross-language-equivalent to the canonical Rust API, and a
-versioned C ABI with explicit ownership/error/panic contracts is implemented
-and qualified, without regressions to core Rust, CLI, carrier, or release
-invariants.
+Met by language-bindings M010. Python and Node are independently qualified
+direct-Rust bindings, and C ABI v1 is implemented and qualified on the
+documented five-target matrix with explicit ownership/error/panic contracts.
+The initial Python -> Node -> C sequence is complete without regressions to
+core Rust, CLI, carrier, or release invariants.
+
+Future language-binding work reactivates this roadmap with a new
+subsystem-local milestone rather than treating the closed initial sequence as
+still active.
 
 ## 12. Milestone status table
 
