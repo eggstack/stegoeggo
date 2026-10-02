@@ -324,6 +324,13 @@ jobs:
             fi
           } > "$dest/BUILD-INFO.txt"
           cat "$dest/BUILD-INFO.txt"
+          # Normalize text files to LF so contract-file hashes are
+          # identical across platforms regardless of checkout line endings.
+          for f in "$dest/include/stegoeggo.h" "$dest/share/abi-v1-symbols.txt" \
+                   "$dest/examples/smoke.c" "$dest/examples/smoke.cpp" \
+                   "$dest/README.md" "$dest/LICENSE" "$dest/BUILD-INFO.txt"; do
+            tr -d '\r' < "$f" > "$f.lf" && mv "$f.lf" "$f"
+          done
 
       - name: Upload the inspection bundle
         uses: actions/upload-artifact@v4
