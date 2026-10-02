@@ -23,7 +23,10 @@
 //! - [`limits`] — carrier-owned [`CarrierLimits`] bounding untrusted-input
 //!   parsing, dimensions, framed sizes, and tiled-search extent.
 //! - [`frame`] — self-describing framed payload with CRC32.
-//! - [`error`] — [`StegoError`] and [`JpegUnsupportedReason`].
+//! - [`webp`] (feature `webp`, off by default) — still-lossless WebP
+//!   encoded-byte convenience over the LSB pixel carrier.
+//! - [`error`] — [`StegoError`], [`JpegUnsupportedReason`], and
+//!   [`WebpUnsupportedReason`].
 //! - [`CapacityReport`], [`EmbedReport`], [`InPlaceEmbedReport`],
 //!   [`Redundancy`] — structured reports and the validated redundancy
 //!   primitive.
@@ -61,7 +64,10 @@ pub mod types;
 #[doc(hidden)]
 pub mod application_support;
 
-pub use error::{JpegUnsupportedReason, StegoError, StegoResult};
+#[cfg(feature = "webp")]
+pub mod webp;
+
+pub use error::{JpegUnsupportedReason, StegoError, StegoResult, WebpUnsupportedReason};
 pub use jpeg::is_progressive_jpeg;
 pub use limits::{CarrierLimits, CarrierLimitsBuilder};
 pub use lsb::DEFAULT_TILE_SIZE;

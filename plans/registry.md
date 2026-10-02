@@ -32,7 +32,7 @@ predecessor history, indexed by the roadmaps below.
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed; M003 closed | M003 closed the consumer-owned nested-runtime panic; M001/M002 still wait for the same ordinary stable B > 0.4.2 |
 | language-bindings | closed | `plans/subsystems/language-bindings-roadmap.md` | all milestones closed; initial Python -> Node -> C sequence complete | none |
-| stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M005 ready | M006 blocked on ADR-0007 acceptance (M002/M003/M004 closed) |
+| stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M005 active | M006 blocked on ADR-0007 acceptance (M002/M003/M004 closed) |
 | maintenance-quality | closed | `plans/subsystems/maintenance-quality-roadmap.md` | M001 closed; M002 proposed optional polish | none |
 
 ## Dependency-ready implementation plans
@@ -40,7 +40,7 @@ predecessor history, indexed by the roadmaps below.
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); live B > 0.4.2 evidence remains outstanding, shared with M001 |
-| stego-library-evolution | M005 lossless WebP byte carrier | ready | `plans/implementation/stego-library-evolution/005-lossless-webp-byte-carrier.md` | unblocked by M003 interface contract; `CarrierLimits` vocabulary available for bounded RIFF traversal |
+| stego-library-evolution | M005 lossless WebP byte carrier | active | `plans/implementation/stego-library-evolution/005-lossless-webp-byte-carrier.md` | unblocked by M003 interface contract; `CarrierLimits` vocabulary available for bounded RIFF traversal |
 
 ## Active closure work
 

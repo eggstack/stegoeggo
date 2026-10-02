@@ -27,3 +27,4 @@ thiserror = "1.0"
 
 [features]
 application-support = []
+webp = ["image/webp"]

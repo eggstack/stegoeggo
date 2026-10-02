@@ -59,7 +59,12 @@ over LSB and JPEG carriers, with `Redundancy`, `LsbConfig`, `JpegConfig`,
  `probe_support_with_limits`, `CarrierLimits`/`CarrierLimitsBuilder`, and
  `PreparedJpeg::new_with_limits`/`embed_tiled`/`embed_tiled_framed` are
  additive stable APIs sharing the single decode path with identical
- results under default limits. `EmbedOutcome`/`EmbedStatus`/`EmbedPath` are parent-owned
+ results under default limits. The opt-in `webp` feature adds the
+ still-lossless WebP byte facade (`probe_support`, `capacity`,
+ raw/framed/tiled embed/extract over the LSB carrier with explicit
+ `CarrierLimits` on every operation) with the same additive-stability
+ promise; `WebpUnsupportedReason` classifies lossy/animated/non-lossless
+ input that is rejected rather than transcoded. `EmbedOutcome`/`EmbedStatus`/`EmbedPath` are parent-owned
  application vocabulary retained through 0.x with removal from the
  recommended generic surface at v1 (parent keeps its own vocabulary).
  `EmbedReport` and `InPlaceEmbedReport` public fields are frozen through
@@ -72,6 +77,7 @@ over LSB and JPEG carriers, with `Redundancy`, `LsbConfig`, `JpegConfig`,
 | Item | Module |
 |------|--------|
 | `lsb`, `jpeg`, `frame`, `error`, `types`, `pixels`, `prepared` carrier modules | `stegoeggo::stego` / `stegoeggo-stego` |
+| `webp` carrier module (feature `webp`, off by default) | `stegoeggo::stego` (feature `webp`) / `stegoeggo-stego` |
 | `TileConfig`, `MAX_TILED_ORIGINS`, `Redundancy`, `PreparedJpeg`, `PixelView`, `PixelViewMut`, `PixelLayout` | `stegoeggo::stego` / `stegoeggo-stego` |
 
 ## Deprecated Compatibility API

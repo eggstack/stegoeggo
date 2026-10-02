@@ -29,6 +29,10 @@ pub enum StegoError {
     /// The JPEG structure is not supported for DCT embedding.
     UnsupportedJpeg(JpegUnsupportedReason),
 
+    /// The WebP structure is not a still lossless image usable by the
+    /// optional `webp` byte-carrier facade.
+    UnsupportedWebP(WebpUnsupportedReason),
+
     /// No frame was found at the start of the extracted carrier data.
     FrameNotFound,
 
@@ -87,6 +91,9 @@ impl fmt::Display for StegoError {
             StegoError::UnsupportedJpeg(reason) => {
                 write!(f, "unsupported JPEG structure: {reason}")
             }
+            StegoError::UnsupportedWebP(reason) => {
+                write!(f, "unsupported WebP structure: {reason}")
+            }
             StegoError::FrameNotFound => write!(f, "frame not found in carrier data"),
             StegoError::MalformedFrame(msg) => write!(f, "malformed frame: {msg}"),
             StegoError::FrameChecksumMismatch => write!(f, "frame CRC32 checksum mismatch"),
@@ -99,6 +106,28 @@ impl fmt::Display for StegoError {
 }
 
 impl std::error::Error for StegoError {}
+
+/// Reason a WebP structure is not usable by the still-lossless byte carrier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum WebpUnsupportedReason {
+    /// Lossy VP8 image data (never transcoded into the lossless carrier).
+    LossyVp8,
+    /// Animated image (never reduced to a single still frame).
+    Animated,
+    /// Extended container without still lossless image data.
+    MissingLosslessImageData,
+}
+
+impl fmt::Display for WebpUnsupportedReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LossyVp8 => write!(f, "lossy VP8 image data"),
+            Self::Animated => write!(f, "animated image"),
+            Self::MissingLosslessImageData => write!(f, "missing still lossless image data"),
+        }
+    }
+}
 
 impl fmt::Display for JpegUnsupportedReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

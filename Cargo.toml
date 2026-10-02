@@ -44,6 +44,7 @@ detached-manifest = []
 iscc = ["dep:iscc-lib"]
 conformance = ["dep:toml", "unicode-normalization"]
 parallel = ["dep:rayon"]
+webp = ["stegoeggo-stego/webp"]
 
 [dependencies]
 stegoeggo-stego = { path = "stegoeggo-stego", version = "=0.4.2", features = ["application-support"] }

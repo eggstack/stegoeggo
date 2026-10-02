@@ -43,6 +43,7 @@ bytes that can be recovered later. The following operation styles are supported:
 |---|---|---|---|
 | `lsb` | Pixel (R, G, B channels of `RgbaImage`, or borrowed RGB/RGBA views) | RGB carrier slots (`width * height * 3`) | Fragile under lossy re-encoding; survives lossless WebP and PNG only. The V2 slot mapping is byte-frozen for compatibility; full-domain injectivity is verified for documented small/medium domains only |
 | `jpeg` | DCT coefficients (F5-style variant, not conventional F5) | Eligible AC coefficients with `\|coef\| >= 2` after canonicalization | Bounded supported subset: 8-bit, sequential, single-scan, Huffman, ≤4 components, ≤4 sampling factor, no restart intervals. No interoperability with other F5 implementations is claimed |
+| `webp` (feature `webp`, off by default) | Still-lossless WebP file bytes (decoded to RGBA, LSB carrier, re-encoded VP8L) | RGB carrier slots of the decoded image | Still VP8L only (plain or extended-container still); lossy VP8 and animation are rejected, never transcoded. Output is a newly encoded carrier: ICC/EXIF/XMP are not preserved |
 
 The alpha channel is never a carrier. The JPEG DCT path operates on the
 encoded JPEG byte stream directly — pixels are not decoded.
@@ -258,6 +259,31 @@ let jpeg_payload = jpeg::extract_tiled_framed(&jpeg_report.output, &tile, 64)?;
 “search everything” convenience exists. Tiled extraction decodes JPEG
 coefficients once per operation and reuses that state across candidates.
 
+## Still-lossless WebP byte carrier (optional `webp` feature)
+
+With `features = ["webp"]`, `webp::embed`/`extract` (plus
+`capacity`, framed, tiled, and `probe_support` convenience) accept a
+still VP8L file — plain or extended-container still — decode it to
+RGBA, run the LSB carrier, and re-encode losslessly. Every operation
+takes a `CarrierLimits` bounding input bytes, dimensions, framed sizes,
+and tiled-search extent before any large allocation:
+
+```rust
+use stegoeggo_stego::lsb::LsbConfig;
+use stegoeggo_stego::{webp, CarrierLimits};
+
+let limits = CarrierLimits::default();
+let report = webp::embed(&webp_bytes, b"payload", &LsbConfig::new(42), &limits)?;
+let recovered = webp::extract(&report.output, 7, &LsbConfig::new(42), &limits)?;
+```
+
+Lossy VP8 and animated inputs return `UnsupportedWebP` (`LossyVp8` /
+`Animated`) instead of being transcoded; well-formed extended files
+without still lossless data return `MissingLosslessImageData`.
+Container metadata (ICC/EXIF/XMP) is dropped, never preserved, and no
+preservation is claimed. Rights metadata stays with the parent crate:
+its byte paths never switch to this facade.
+
 ## Capacity and redundancy
 
 Capacity is reported in carrier-specific units:
@@ -324,6 +350,9 @@ All public operations return a `StegoResult<T>`. The error type
 - `MalformedInput` — the input image/JPEG cannot be decoded.
 - `UnsupportedJpeg(reason)` — the JPEG structure is well-formed but
   not embeddable (with a structured `JpegUnsupportedReason`).
+- `UnsupportedWebP(reason)` — the WebP structure is not a still
+  lossless image (with a structured `WebpUnsupportedReason`;
+  `webp` feature operations only).
 - `FrameNotFound`, `MalformedFrame`, `FrameChecksumMismatch` —
   generic frame decode failures.
 - `ResourceLimitExceeded` — a parser resource limit was hit.

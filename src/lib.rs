@@ -248,11 +248,13 @@ pub mod stego {
     pub use stegoeggo_stego::pixels;
     pub use stegoeggo_stego::prepared;
     pub use stegoeggo_stego::types;
+    #[cfg(feature = "webp")]
+    pub use stegoeggo_stego::webp;
     pub use stegoeggo_stego::{
         CapacityReport, CarrierLimits, CarrierLimitsBuilder, EmbedOutcome, EmbedOutcomeSummary,
         EmbedPath, EmbedReport, EmbedStatus, InPlaceEmbedReport, JpegUnsupportedReason,
         PixelLayout, PixelView, PixelViewMut, PreparedJpeg, Redundancy, StegoError, StegoResult,
-        TileConfig, DEFAULT_TILE_SIZE, MAX_TILED_ORIGINS,
+        TileConfig, WebpUnsupportedReason, DEFAULT_TILE_SIZE, MAX_TILED_ORIGINS,
     };
 }
 pub(crate) mod container_walk;

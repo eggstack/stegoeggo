@@ -7,7 +7,7 @@ The stable generic surface re-exported as `stegoeggo::stego`. For standalone gen
 ## Reports (`lib.rs`)
 
 - `CapacityReport { required, available }` — carrier units per family (LSB: RGB slots; JPEG: eligible AC coefficients `|coef| >= 2`). `is_sufficient()` is a direct comparison.
-- `EmbedReport<T> { embedded, output, payload_bytes, required_capacity, available_capacity, actual_redundancy }` — `output` is `RgbaImage` for LSB, `Vec<u8>` for JPEG. `payload_bytes` includes frame overhead for framed ops. Public fields frozen through 0.x; `into_output()` / `into_parts()` / `capacity()` plus semver-safe accessors (`is_embedded` / `embedded` / `output` / `payload_bytes` / `required_capacity` / `available_capacity` / `actual_redundancy`; `InPlaceEmbedReport` adds the same plus `capacity()`) carry the same facts for the v1 privatization. Pass `actual_redundancy` to JPEG `extract`. `EmbedOutcome` / `EmbedStatus` / `EmbedPath` are parent-owned compatibility vocabulary retained through 0.x with removal from the recommended generic surface at v1.
+- `EmbedReport<T> { embedded, output, payload_bytes, required_capacity, available_capacity, actual_redundancy }` — `output` is `RgbaImage` for LSB, `Vec<u8>` for JPEG/WebP byte carriers. `payload_bytes` includes frame overhead for framed ops. Public fields frozen through 0.x; `into_output()` / `into_parts()` / `capacity()` plus semver-safe accessors (`is_embedded` / `embedded` / `output` / `payload_bytes` / `required_capacity` / `available_capacity` / `actual_redundancy`; `InPlaceEmbedReport` adds the same plus `capacity()`) carry the same facts for the v1 privatization. Pass `actual_redundancy` to JPEG `extract`. `EmbedOutcome` / `EmbedStatus` / `EmbedPath` are parent-owned compatibility vocabulary retained through 0.x with removal from the recommended generic surface at v1.
 - `InPlaceEmbedReport` / `EmbedOutcome<T::{Embedded, SkippedCapacity, UnsupportedProgressive}>` / `EmbedStatus` / `EmbedOutcomeSummary { status, path, payload_bytes, required_capacity, available_capacity }` / `EmbedPath::{Lsb, LsbTiled, DctF5, DctF5Tiled, QTableSeedOnly}` follow the operation actually executed.
 
 ## Bounded contract (`limits.rs`)
@@ -25,7 +25,11 @@ Self-describing TLV wrapper: `FRAMED_MAGIC [0x53,0x47]` ("SG"), `FRAME_VERSION`,
 
 ## Errors (`error.rs`)
 
-`StegoError::{InvalidConfig, InsufficientCapacity, MalformedInput, UnsupportedJpeg, FrameNotFound, MalformedFrame, FrameChecksumMismatch, ResourceLimitExceeded, EmptyCarrier}` + `JpegUnsupportedReason` (10 variants) + `StegoResult<T>`. The `stego` surface uses `StegoError`, not root `Error` (convert via `From`).
+`StegoError::{InvalidConfig, InsufficientCapacity, MalformedInput, UnsupportedJpeg, UnsupportedWebP, FrameNotFound, MalformedFrame, FrameChecksumMismatch, ResourceLimitExceeded, EmptyCarrier}` + `JpegUnsupportedReason` (10 variants) + `WebpUnsupportedReason::{LossyVp8, Animated, MissingLosslessImageData}` + `StegoResult<T>`. The `stego` surface uses `StegoError`, not root `Error` (convert via `From`).
+
+## WebP byte facade (`webp.rs`, feature `webp`, off by default)
+
+Still-VP8L encoded-byte convenience over the LSB pixel carrier: `probe_support` (bounded RIFF/VP8X walk distinguishing plain-VP8L, still-VP8X+VP8L, VP8, animation; VP8X payload is the 10-byte feature header, image/metadata chunks are top-level siblings), `capacity`, raw/framed/tiled embed/extract delegating to `lsb::` on the decoded RGBA with VP8L-lossless re-encode. Every operation takes `CarrierLimits` (input bytes, canvas/bitstream dims pre- and post-decode, frame totals, tiled origins); decode is all-or-error with no partial output; the decoder animation flag is re-checked after probing. Output is a new carrier: ICC/EXIF/XMP dropped without claim. Pure-Rust codec (`image-webp` 0.2.4 + `byteorder-lite` + `quick-error`, already in the workspace lock via the parent). Consumer tests: `stegoeggo-stego/tests/webp_carrier.rs`; probe unit tests live in the module.
 
 ## Constants (`constants.rs`, `frame.rs`, `types.rs`)
 

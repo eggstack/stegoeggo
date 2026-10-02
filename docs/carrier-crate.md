@@ -76,6 +76,23 @@ for extraction). Capacity units are RGB slots for LSB, eligible AC
 coefficients with `|coef| >= 2` for JPEG DCT, and 96 hint-bit positions
 for seed hints.
 
+### Still-lossless WebP byte carrier (optional `webp` feature)
+
+`webp::embed`/`extract` (plus `capacity`, framed, tiled, and
+`probe_support` convenience) accept a still VP8L file — plain or
+extended-container still — decode it to RGBA, run the LSB carrier, and
+re-encode losslessly with `WebPEncoder::new_lossless`. Every operation
+takes a `CarrierLimits` bounding input bytes, decoded dimensions,
+framed sizes, and tiled-search extent before any large allocation, and
+every operation is all-or-error with no partial output. Lossy VP8 and
+animated inputs return structured `UnsupportedWebP` (`LossyVp8` /
+`Animated`) instead of being transcoded; the decoder's own animation
+flag is re-checked after probing as defense in depth. Output is a newly
+encoded carrier: ICC/EXIF/XMP chunks are dropped and no preservation is
+claimed. Rights metadata rendering stays with the parent crate. Enable
+with `stegoeggo-stego = { features = ["webp"] }` (off by default; the
+codec is pure Rust via `image-webp`, no native dependency).
+
 ## Configuration
 
 `Redundancy` is the recommended validated redundancy primitive with
