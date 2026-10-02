@@ -1,0 +1,30 @@
+[workspace]
+
+[package]
+name = "stegoeggo-c"
+version = "0.4.2"
+edition = "2021"
+rust-version = "1.89"
+description = "Versioned C ABI leaf binding over the stegoeggo rights-reservation library"
+authors = ["David Bowman <dbowman91@proton.me>"]
+license = "MIT"
+repository = "https://github.com/eggstack/stegoeggo"
+publish = false
+
+[lib]
+name = "stegoeggo_c"
+crate-type = ["cdylib"]
+
+[dependencies]
+stegoeggo = { path = "../..", version = "=0.4.2", default-features = false }
+serde_json = "1.0"
+zeroize = "1"
+
+[dev-dependencies]
+image = { version = "=0.25.6", default-features = false, features = ["png"] }
+
+[profile.release]
+panic = "unwind"
+
+[profile.dev]
+panic = "unwind"

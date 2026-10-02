@@ -1,0 +1,89 @@
+# Lightweight C ABI compatibility check.
+#
+# Builds the versioned C ABI leaf crate on Linux x86_64, verifies the
+# committed cbindgen header is drift-free, audits the 90-symbol export
+# manifest against the built cdylib, and runs the native C11/C++17
+# consumer suite plus the Rust<->C parity script. This is a
+# binding-specific signal independent of the standard Rust Check gate in
+# `ci.yml`; it does not add C tooling to `./scripts/check.sh` and never
+# publishes artifacts. Five-platform native qualification remains the
+# responsibility of the manually-dispatched
+# `.github/workflows/release-c.yml`.
+
+name: c-binding
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bindings/c/**"
+      - "src/**"
+      - "stegoeggo-stego/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "tests/fixtures/**"
+      - ".github/workflows/c-binding.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "bindings/c/**"
+      - "src/**"
+      - "stegoeggo-stego/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "tests/fixtures/**"
+      - ".github/workflows/c-binding.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  c-binding-check:
+    name: c-binding-check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (matches binding MSRV)
+        uses: dtolnay/rust-toolchain@1.89
+
+      - name: Install cbindgen 0.29.4
+        run: cargo install cbindgen --version 0.29.4 --locked
+
+      - name: Check the C binding crate
+        run: cargo check --manifest-path bindings/c/Cargo.toml --locked
+
+      - name: Lint the C binding crate
+        run: cargo clippy --manifest-path bindings/c/Cargo.toml --locked --all-targets -- -D warnings
+
+      - name: Test the C binding crate
+        run: cargo test --manifest-path bindings/c/Cargo.toml --locked
+
+      - name: Verify the committed header is drift-free
+        run: bindings/c/scripts/generate-header.sh --check
+
+      - name: Build the release cdylib
+        run: cargo build --manifest-path bindings/c/Cargo.toml --locked --release
+
+      - name: Audit the 90-symbol export manifest
+        run: bindings/c/scripts/check-exports.sh
+
+      - name: Run the native C11/C++17 consumer suite
+        run: bindings/c/scripts/run-c-tests.sh
+
+      - name: Run Rust<->C parity
+        run: bindings/c/scripts/parity.sh
+
+      - name: Upload the Linux test library and header
+        uses: actions/upload-artifact@v4
+        with:
+          name: c-binding-linux-x86_64
+          path: |
+            bindings/c/target/release/libstegoeggo_c.so
+            bindings/c/include/stegoeggo.h
+            bindings/c/abi-v1-symbols.txt
+          if-no-files-found: error
