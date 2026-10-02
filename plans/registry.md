@@ -31,7 +31,7 @@ predecessor history, indexed by the roadmaps below.
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed; M003 closed | M003 closed the consumer-owned nested-runtime panic; M001/M002 still wait for the same ordinary stable B > 0.4.2 |
-| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | all milestones closed (M010 C ABI qualification green) | none |
+| language-bindings | closed | `plans/subsystems/language-bindings-roadmap.md` | all milestones closed; initial Python -> Node -> C sequence complete | none |
 
 ## Dependency-ready implementation plans
 
@@ -71,7 +71,8 @@ None.
   (implementation `6cbc0d4`; 90/87 arithmetic corrected with no signature
   change; checked 90-line manifest plus stdlib-only contract checker;
   C11/C++17 90-signature smoke green on Apple clang 21.0.0;
-  `./scripts/check.sh` green). M009 is now dependency-ready.
+  `./scripts/check.sh` green). M009 subsequently implemented the corrected
+  manifest and closed before M010 qualification.
 - Language Bindings M007 C ABI contract design: closure recorded at
   `plans/closure/language-bindings/007-status.md` (normative
   `bindings/c/ABI-V1.md` plus `bindings/c/README.md`; design commit
@@ -86,7 +87,7 @@ None.
   `d24b377` (implementation `e6c1e2b` + test-only `d24b377`; CI
   `36922556633`, `python-binding` `36922556590`, fresh `release-python`
   `36922890804` and `release-node` `36922895760` all green; no
-  registry publication). M007 C ABI design is now dependency-ready.
+  registry publication). M007 subsequently completed the C ABI design line.
 - Language Bindings M005 Node binding foundation and qualification: historical
   closure remains valid at `plans/closure/language-bindings/005-status.md`
   with release-node run `36488540671` on `abc0354`. Later canonical-core
