@@ -204,10 +204,10 @@ pub fn embed_tiled(
 
 /// Embed arbitrary bytes once per tile in place.
 ///
-/// Mutates the caller's buffer with no full-image clone. Capacity is checked
-/// before the first pixel mutation, so an insufficient carrier is left
-/// unchanged. Mid-embed failures roll back to the original bytes, so a
-/// `embedded == false` report leaves the caller's buffer unchanged.
+/// Mutates the caller's buffer with no full-image clone. Viable tiles,
+/// exact capacity, and every remaining mutation failure condition resolve
+/// in a checked preflight before the first pixel write, so an
+/// `embedded == false` report always leaves the caller's buffer unchanged.
 ///
 /// # Errors
 ///
@@ -230,17 +230,12 @@ pub fn embed_tiled_in_place(
     if img.width() == 0 || img.height() == 0 {
         return Err(super::StegoError::EmptyCarrier);
     }
-    let snapshot = img.clone();
-    let report = crate::lsb_internal::embed_lsb_tiled_in_place(
+    Ok(crate::lsb_internal::embed_lsb_tiled_in_place(
         img,
         payload,
         config.seed(),
         config.tile_size(),
-    );
-    if !report.embedded {
-        *img = snapshot;
-    }
-    Ok(report)
+    ))
 }
 
 /// Extract tiled payload bytes when the payload length is known (unchecked).
@@ -373,6 +368,21 @@ mod tests {
         let report = embed_tiled_in_place(&mut untouched, &[0xA5; 36], &config).unwrap();
         assert!(!report.embedded);
         assert_eq!(untouched, tiny);
+    }
+
+    #[test]
+    fn tiled_in_place_exact_fit_embeds_and_roundtrips() {
+        let img = uniform_image(64, 64);
+        let payload = vec![0xA5; 307];
+        let config = TileConfig::try_new(42, 64).unwrap();
+        let cloned = embed_tiled(&img, &payload, &config).unwrap();
+        assert!(cloned.embedded);
+        let mut inplace = img.clone();
+        let report = embed_tiled_in_place(&mut inplace, &payload, &config).unwrap();
+        assert!(report.embedded);
+        assert_eq!(inplace, cloned.output);
+        let recovered = extract_tiled(&inplace, payload.len(), &config, 64).unwrap();
+        assert_eq!(recovered, payload);
     }
 
     #[test]

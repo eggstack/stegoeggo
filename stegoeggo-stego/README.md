@@ -221,6 +221,11 @@ assert!(report.embedded);
 Capacity is checked before the first pixel mutation, so an insufficient
 carrier is left unchanged. The cloning `embed` and in-place
 `embed_in_place` paths share the same corrected V2 mutation core.
+Tiled in-place embedding (`embed_tiled_in_place`, borrowed-view
+`embed_tiled`) goes further: viable tiles, exact capacity, and every
+remaining mutation failure condition resolve in a checked preflight
+before the first write, so no full-image rollback clone is kept and any
+`embedded == false` report leaves the buffer unchanged.
 
 ## Tiled API (crop resistance)
 

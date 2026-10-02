@@ -784,6 +784,15 @@ pub(crate) fn embed_tiled_carrier<C: PixelCarrierMut>(
             actual_redundancy: TILED_REDUNDANCY,
         };
     };
+    let Some(tile_required) = bit_len.checked_mul(STEGO_SPREAD_FACTOR) else {
+        return InPlaceEmbedReport {
+            embedded: false,
+            payload_bytes: payload.len(),
+            required_capacity: usize::MAX,
+            available_capacity: 0,
+            actual_redundancy: TILED_REDUNDANCY,
+        };
+    };
 
     let mut scans = Vec::new();
     let mut total_required = 0usize;
@@ -816,9 +825,11 @@ pub(crate) fn embed_tiled_carrier<C: PixelCarrierMut>(
                     actual_redundancy: TILED_REDUNDANCY,
                 };
             };
-            let tile_required = lsb_required_capacity_v2(bit_len, TILED_REDUNDANCY);
 
-            let embed = (tile_available >= tile_required && bit_len > 0).then(|| TiledEmbedPlan {
+            let embed = (tile_available >= tile_required
+                && bit_len > 0
+                && tile_available.checked_next_power_of_two().is_some())
+            .then(|| TiledEmbedPlan {
                 x0,
                 y0,
                 sub_w,
