@@ -108,6 +108,10 @@ jobs:
           toolchain: 1.89
           targets: ${{ matrix.rust_target }}
 
+      - name: Pin Rust 1.89 over rust-toolchain.toml
+        shell: bash
+        run: echo "RUSTUP_TOOLCHAIN=1.89" >> "$GITHUB_ENV"
+
       - name: Set up MSVC (dumpbin/cl/link on Windows)
         if: matrix.id == 'windows-x86_64'
         uses: ilammy/msvc-dev-cmd@v1
