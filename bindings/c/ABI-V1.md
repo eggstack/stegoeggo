@@ -1,22 +1,28 @@
 # StegoEggo C ABI v1 — Normative Contract
 
-> **NOT YET SHIPPED — DESIGN ONLY.** This document is the accepted design
-> authority for the future C ABI v1 implementation (language-bindings M008).
-> No C shared library, static library, generated header, or stable C symbol
-> is shipped by the milestone that created this document. ABI v1 stability
-> promises begin only when M008 implementation and qualification close.
-> Until then the symbol names, numeric values, and ownership rules below are
-> a frozen design contract for the implementer, not a distributed ABI promise.
+> **IMPLEMENTED AND QUALIFIED — ABI v1 STABLE.** This document is the
+> normative C ABI v1 contract. Language-bindings M009 implemented the leaf
+> `cdylib`, generated header, tests, and exact export surface; M010 qualified
+> that implementation on the documented five-target matrix and activated the
+> ABI v1 stability promise. Existing v1 symbol names, signatures, numeric
+> values, and ownership rules are append-only within ABI major 1; breaking
+> changes require a new `stegoeggo_v2_*` namespace.
 
 - Authority: `plans/adrs/ADR-0006-versioned-c-abi.md` (accepted; this
   document materializes it and invents no new architecture).
-- Implementation plan:
+- Contract-design plan:
   `plans/implementation/language-bindings/007-c-abi-contract-design.md`
-  (M007, design milestone; explicitly ships no stable C symbols).
-- Implementer: language-bindings M008 (blocked until M007 closure).
+  (M007; design-only).
+- Implementation:
+  `plans/implementation/language-bindings/009-c-abi-v1-implementation-foundation.md`
+  (M009; 90-symbol leaf ABI implementation).
+- Cross-platform qualification:
+  `plans/implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md`
+  and `plans/closure/language-bindings/010-status.md` (M010; five-target
+  qualification and stability activation).
 - ABI major: `1`. ABI minor: `0`. Source package version is independent
   (currently `0.4.2`; query at runtime via `stegoeggo_source_version`).
-- cbindgen pin for M008 header generation: `0.29.4`.
+- Qualified cbindgen header-generation pin: `0.29.4`.
 - Language targets: C11 consumer-compatible, C++17 include-compatible.
 - First qualification matrix: Linux x86_64 GNU, Linux aarch64 GNU,
   macOS x86_64, macOS arm64, Windows x86_64 MSVC (`§14`).
@@ -34,8 +40,9 @@
 - "NULL-accepting" is stated per parameter. Anything not stated
   NULL-accepting requires non-NULL; a NULL there returns
   `STEGOEGGO_V1_ERR_INVALID_ARGUMENT`.
-- All C symbols in this document are normative. M008 MUST export exactly
-  these `stegoeggo_*` symbols and no other `stegoeggo_*` symbol (`§15`).
+- All C symbols in this document are normative. Implementations of ABI v1
+  MUST export exactly these `stegoeggo_*` symbols and no other
+  `stegoeggo_*` symbol (`§15`).
 - Total normative symbol count: **90** (3 bootstrap + 87 `stegoeggo_v1_*`).
 - Category totals: notice 20, request 18, resource limits 20, operations 4,
   buffer 3, error 6, execution report 10, verification report 6
@@ -777,17 +784,18 @@ void stegoeggo_v1_verification_report_free(
 - A single mutable handle (notice/request/limits under construction) MUST
   NOT be mutated, freed, or used concurrently from multiple threads.
 - Same-handle concurrent read-only use (e.g. sharing one request across
-  threads for parallel `protect`) is explicitly UNSUPPORTED in v1 unless
-  M008 qualifies it; M007 documents it unsupported rather than leaking an
-  unqualified Rust `Sync` promise into the C contract.
+  threads for parallel `protect`) is explicitly UNSUPPORTED in v1. M010 did
+  not qualify that behavior, so Rust `Sync` implementation details do not
+  become part of the C contract.
 - v1 operations are synchronous. No callbacks into C, no async runtime, no
   worker threads, no cancellation.
 
-## 15. Header-generation contract (frozen for M008)
+## 15. Header-generation contract (ABI v1)
 
-- cbindgen is pinned at `0.29.4` (current at design time; declares Rust
-  1.74, below the 1.89 MSRV). A newer version requires an M007-level
-  contract review note before M008 may adopt it.
+- The qualified header-generation tool is cbindgen `0.29.4` (it declares
+  Rust 1.74, below the project's Rust 1.89 MSRV). A future generator upgrade
+  requires contract/header-drift review before it can replace this qualified
+  baseline.
 - cbindgen runs as a standalone development/qualification tool, never as a
   `build.rs` dependency and never as a prerequisite of ordinary root Rust
   builds/checks.
@@ -803,16 +811,17 @@ void stegoeggo_v1_verification_report_free(
 - Staticlib distribution is explicitly deferred (unresolved transitive
   symbol/link contract); the first artifact contract is `cdylib` only.
 
-## 16. Symbol manifest and platform contract (M008 qualification)
+## 16. Symbol manifest and platform qualification contract
 
-- The normative planned symbol inventory is the 90 symbols named in
-  `§1`/`§6`–`§12` of this document. M008 MUST materialize it as a checked
-  `bindings/c/abi-v1-symbols.txt` (one symbol per line, sorted) and fail
-  qualification on any missing expected symbol or any unexpected exported
-  `stegoeggo_*` symbol, inspected with platform tooling (`nm -D --defined-only`
-  on Linux, `nm -gU` on macOS, `dumpbin /EXPORTS` on Windows).
-- First M008 matrix (same five native distribution architectures as the
-  Python/Node qualification):
+- The normative symbol inventory is the 90 symbols named in
+  `§1`/`§6`–`§12` of this document and materialized in the checked
+  `bindings/c/abi-v1-symbols.txt` (one symbol per line, sorted).
+  Qualification fails on any missing expected symbol or any unexpected
+  exported `stegoeggo_*` symbol, inspected with platform tooling
+  (`nm -D --defined-only` on Linux, `nm -gU` on macOS,
+  `dumpbin /EXPORTS` on Windows).
+- The qualified M010 matrix (same five native distribution architectures as
+  the Python/Node qualification):
 
 | Target | Native smoke |
 |---|---|
