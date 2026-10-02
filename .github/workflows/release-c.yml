@@ -107,6 +107,10 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
 
+      - name: Set up MSVC (dumpbin/cl/link on Windows)
+        if: matrix.id == 'windows-x86_64'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Install exact cargo-zigbuild 0.23.3 (Linux)
         if: matrix.zigbuild
         shell: bash
@@ -240,10 +244,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           & dumpbin /DEPENDENTS "$env:C_ABI_LIB"
-
-      - name: Set up MSVC (Windows C/C++ smokes)
-        if: matrix.id == 'windows-x86_64'
-        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Native C11 lifecycle smoke (Unix)
         if: matrix.id != 'windows-x86_64'
