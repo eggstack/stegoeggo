@@ -32,7 +32,7 @@ predecessor history, indexed by the roadmaps below.
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed; M003 closed | M003 closed the consumer-owned nested-runtime panic; M001/M002 still wait for the same ordinary stable B > 0.4.2 |
 | language-bindings | closed | `plans/subsystems/language-bindings-roadmap.md` | all milestones closed; initial Python -> Node -> C sequence complete | none |
-| stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M004, M005 ready | M006 blocked on ADR-0007 acceptance (M002/M003 closed) |
+| stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M005 ready | M006 blocked on ADR-0007 acceptance (M002/M003/M004 closed) |
 | maintenance-quality | closed | `plans/subsystems/maintenance-quality-roadmap.md` | M001 closed; M002 proposed optional polish | none |
 
 ## Dependency-ready implementation plans
@@ -40,7 +40,6 @@ predecessor history, indexed by the roadmaps below.
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); live B > 0.4.2 evidence remains outstanding, shared with M001 |
-| stego-library-evolution | M004 transactional in-place allocation hardening | ready | `plans/implementation/stego-library-evolution/004-transactional-in-place-allocation-hardening.md` | unblocked by M003 closure; preflight/journal optimization with byte-identical success/failure semantics |
 | stego-library-evolution | M005 lossless WebP byte carrier | ready | `plans/implementation/stego-library-evolution/005-lossless-webp-byte-carrier.md` | unblocked by M003 interface contract; `CarrierLimits` vocabulary available for bounded RIFF traversal |
 
 ## Active closure work
@@ -53,10 +52,17 @@ None.
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
 | release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | Missing ordinary stable B > 0.4.2. The updater-runtime code blocker is resolved by closed M003; cutover/closure remains `plans/closure/release-distribution/002-status.md`. |
-| stego-library-evolution | M006 keyed carrier placement | ADR-0007 acceptance (M002/M003 closed). |
+| stego-library-evolution | M006 keyed carrier placement | ADR-0007 acceptance (M002/M003/M004 closed). |
 
 ## Recently closed work
 
+- Stego Library Evolution M004 transactional in-place allocation
+  hardening: closure recorded at
+  `plans/closure/stego-library-evolution/004-status.md` (implementation
+  `6616db2`; complete checked preflight replaces the full-image rollback
+  clone, peak aux 1,053,952 → 5,376 bytes on a 1 MiB image with no
+  runtime regression, byte-identical success/failure semantics,
+  `./scripts/check.sh` green).
 - Stego Library Evolution M003 carrier resource/prepared hardening:
   closure recorded at `plans/closure/stego-library-evolution/003-status.md`
   (implementation `6d87c57`; carrier-owned `CarrierLimits` with 13
