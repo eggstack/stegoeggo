@@ -52,6 +52,7 @@ jobs:
         uses: dtolnay/rust-toolchain@1.89
         with:
           toolchain: 1.89
+          components: clippy
 
       - name: Pin Rust 1.89 over rust-toolchain.toml
         run: echo "RUSTUP_TOOLCHAIN=1.89" >> "$GITHUB_ENV"
