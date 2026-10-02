@@ -106,6 +106,16 @@ Remote: `c-binding` run `36945460318` on `ee0f99e` — **success**
 `https://github.com/eggstack/stegoeggo/actions/runs/36945460318`
 `c-binding` run `36946341300` on `95796be` (M009 content unchanged;
 only the M010 workflow/examples added) — **success**.
+
+> Toolchain correction (recorded at M010 closure): those two runs, and
+> the `release-c` runs cited in §6, installed Rust 1.89 but the
+> repository `rust-toolchain.toml` (`channel = "stable"`) silently
+> routed every build through stable (1.98.x). The crate itself was
+> proven on genuine Rust 1.89.0 locally (`cargo +1.89 check/test`,
+> 26/26 green), and the follow-up `c-binding` run `36952403174` on
+> `0e52feb` — with `RUSTUP_TOOLCHAIN=1.89.0` enforced over the
+> toolchain file — is green with the exact pinned toolchain. No
+> implementation change resulted.
 Required `CI` Check runs `36945460405` (on `ee0f99e`) and `36946341303`
 (on `95796be`) — **success**. (The one earlier `CI` failure on the
 pre-M009 base `839c4c8`, `update::tests::candidate_wrong_version_is_fatal`,

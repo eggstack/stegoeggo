@@ -300,6 +300,58 @@ a partial platform set cannot be repaired by republishing the same
 version, so the release failure policy must be explicit before any
 registry action is attempted.
 
+## C ABI Native Artifacts
+
+The C binding (`bindings/c/`) is governed by the same manual-only
+policy as the rest of the release surface. It is not part of the
+carrier → library → CLI crates.io chain, and no GitHub Release
+publication or package-registry publication occurs in M010: there are
+no publish credentials in Actions and no publish step in any
+workflow. The end-to-end process is:
+
+1. Confirm the binding version in `bindings/c/Cargo.toml` and
+   `bindings/c/Cargo.lock` matches the StegoEggo source release
+   version (0.4.2 by default). The ABI major/minor (`1`/`0`) is
+   independent of the source version.
+2. Dispatch `.github/workflows/release-c.yml` manually with an
+   immutable source SHA for final qualification. The workflow:
+   - Builds the release `cdylib` on native runners for the documented
+     five-target matrix with Rust 1.89 (Linux x86_64 and aarch64 on
+     `ubuntu-24.04` / `ubuntu-24.04-arm` with cargo-zigbuild 0.23.3
+     targeting the glibc 2.17 floor, macOS x86_64 on
+     `macos-15-intel` with an `@rpath` install name, macOS arm64 on
+     `macos-14`, Windows x86_64 on `windows-2022` producing the DLL
+     plus the MSVC import library).
+   - Verifies the committed header is drift-free against cbindgen
+     0.29.4 on the authoritative Linux x86_64 job, then proves the
+     exact 90-symbol export manifest on every target (`nm -D` on
+     Linux, `nm -gU` on macOS, `dumpbin /EXPORTS` on Windows),
+     records the Linux glibc version-needs proof and the macOS/Windows
+     dependency evidence, and runs the native C11 lifecycle smoke
+     plus the C++17 header smoke against the built library.
+   - Assembles one inspection bundle per target (`stegoeggo-c/` with
+     `include/`, `lib/`, `share/`, `examples/`, `README.md`,
+     `LICENSE`, `BUILD-INFO.txt`) and uploads the five bundles as
+     GitHub Actions artifacts.
+   - Runs clean artifact-only smokes from each downloaded bundle
+     (no source-tree library or header) on the matching native
+     runner, then a collector job audits the set: exactly five
+     bundles, one dynamic library each (plus the Windows import
+     library), identical header/manifest hashes, ABI 1.0, and a
+     single source SHA.
+3. Download the artifacts, audit the bundle layout against
+   `plans/subsystems/language-bindings-roadmap.md`, and confirm each
+   native smoke and the collector audit passed. No bundle is treated
+   as qualified by the build job alone — the matching native and
+   clean smokes must also pass.
+4. Record the artifact identifiers, the workflow run URL/ID, the exact
+   implementation SHA, and the per-platform outcomes in
+   `plans/closure/language-bindings/010-status.md`. Update `SUPPORT.md`
+   only when the platform's native smoke evidence is recorded.
+5. If maintainers later attach C bundles to a GitHub Release, that is
+   a separate manual release-distribution decision outside this
+   workflow.
+
 ## Partial Failure Handling
 
 ### Carrier publishes, library fails before acceptance

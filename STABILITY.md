@@ -155,16 +155,29 @@ All protect modes share one canonical `ProtectionRequest` builder with explicit
 modern-vs-legacy precedence (modern wins, legacy translates only when modern
 absent, contradictions exit 2). See `docs/cli-usage.md` and `architecture/cli.md`.
 
-## C ABI v1 (planned — not stable, not shipped)
+## C ABI v1 (stable)
 
-A normative design contract for a future versioned C ABI exists at
-`bindings/c/ABI-V1.md` (ABI major `1`, minor `0`; 90 planned symbols),
-accepted as language-bindings M007 closure evidence under
-`plans/adrs/ADR-0006-versioned-c-abi.md`. No C header, shared/static
-library, or stable C symbol is shipped: ABI v1 promises begin only when
-the M008 implementation and qualification close. Until then nothing under
-`bindings/c/` is a stable or usable API, and the Python/Node direct-Rust
-bindings are unaffected.
+A versioned C ABI exists at `bindings/c/ABI-V1.md` (ABI major `1`,
+minor `0`; 90 symbols: 3 unversioned bootstrap + 87
+`stegoeggo_v1_*`), implemented by the isolated `stegoeggo-c` leaf crate
+(`bindings/c/`) and qualified on Linux x86_64/aarch64, macOS
+x86_64/arm64, and Windows x86_64 under
+`plans/adrs/ADR-0006-versioned-c-abi.md`. Qualification evidence is
+recorded in `plans/closure/language-bindings/010-status.md`.
+
+Within ABI major 1, the existing v1 symbols, C signatures, numeric
+codes, and handle-ownership rules are frozen and append-only:
+compatible additions may extend v1, but breaking changes require new
+`stegoeggo_v2_*` symbols. The StegoEggo source version advances
+independently of the ABI major/minor (query it at runtime via
+`stegoeggo_source_version`).
+
+ABI stability is a source-contract promise, not a distribution claim:
+whether a given GitHub Release has C artifact bundles attached is a
+separate manual release-distribution decision. Static-library
+distribution is deferred and not covered by this promise; the
+qualified artifact contract is `cdylib` only. The Python/Node
+direct-Rust bindings are unaffected.
 
 ## Machine-Readable Schemas
 

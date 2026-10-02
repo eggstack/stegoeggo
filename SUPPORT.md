@@ -318,6 +318,61 @@ smoke on the collector platform. Registry-install selection of the
 optional platform dependencies cannot be exercised without a real
 registry; `napi pre-publish` is never invoked.
 
+## C ABI
+
+A versioned C ABI lives at `bindings/c/` and is implemented by the
+isolated `stegoeggo-c` Rust `cdylib` leaf crate over the canonical
+`process_request_bytes*` / `verify_image_bytes_report` byte API. The
+normative contract is `bindings/c/ABI-V1.md` (ABI major `1`, minor
+`0`; 90 symbols) with the committed generated header
+`bindings/c/include/stegoeggo.h` and the checked export manifest
+`bindings/c/abi-v1-symbols.txt`. ABI v1 is **stable** per
+`STABILITY.md` (append-only within major 1); static-library
+distribution is deferred and not covered.
+
+### Documented platform matrix for native artefacts
+
+The matrix below describes what the manually-dispatched
+`.github/workflows/release-c.yml` workflow produces. "Qualified" means
+native build + exact 90-symbol export proof + native C11 lifecycle and
+C++17 header smokes + clean artifact-only smoke evidence is recorded
+in `plans/closure/language-bindings/010-status.md`; "configured" would
+mean the matrix row is wired up in CI but the native smoke run has not
+yet completed. Linux builds target the glibc 2.17 floor with
+cargo-zigbuild 0.23.3. macOS libraries use an `@rpath` install name.
+The Windows bundle carries the MSVC import library
+(`stegoeggo_c.dll.lib`) alongside the DLL.
+
+| OS | Architecture | Runner | Status |
+|----|--------------|--------|--------|
+| Linux (GNU) | x86_64 | `ubuntu-24.04` | Qualified |
+| Linux (GNU) | aarch64 | `ubuntu-24.04-arm` | Qualified |
+| macOS | x86_64 | `macos-15-intel` | Qualified |
+| macOS | arm64 | `macos-14` | Qualified |
+| Windows (MSVC) | x86_64 | `windows-2022` | Qualified |
+
+All five rows are qualified by the
+`.github/workflows/release-c.yml` run `36952787634` (head
+`0e52febef43096b6a8610cc5050631fab47feb4a`), which built each library on the matching native
+runner, proved the exact 90-symbol export manifest on every target
+(`nm -D` on Linux, `nm -gU` on macOS, `dumpbin /EXPORTS` on Windows),
+ran the native C11/C++17 smokes against both the built library and
+the downloaded artifact bundle alone, and passed the collector audit
+(identical header/manifest hashes and a single source SHA across all
+five bundles).
+
+A separate lightweight `.github/workflows/c-binding.yml` workflow
+checks the C crate on Linux x86_64 (Rust 1.89: check/clippy/test,
+header drift, release build, export audit, C11/C++17 suite, parity)
+on binding-relevant pushes and pull requests. It never publishes
+artifacts.
+
+Native libraries are built by the manually-dispatched
+`.github/workflows/release-c.yml` workflow (no registry or GitHub
+Release publication) and uploaded as GitHub Actions artifacts. C11
+consumers are supported; C++17 inclusion of the same header is
+smoke-tested on every target. No C++ wrapper layer is provided.
+
 ## External Tools
 
 External tools are required only for development and conformance testing. They are not required at runtime or for library use.

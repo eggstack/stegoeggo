@@ -3,14 +3,14 @@
 This directory hosts the versioned C ABI leaf binding over the
 canonical `stegoeggo` Rust library.
 
-Status: **implemented on Linux; ABI v1 is not yet stable or shipped**.
+Status: **implemented and qualified; ABI v1 is stable**.
 The normative contract is `ABI-V1.md` (ABI major `1`, minor `0`;
 90 symbols: 3 bootstrap + 87 `stegoeggo_v1_*`), materialized from
 accepted `plans/adrs/ADR-0006-versioned-c-abi.md` by language-bindings
 M007 and corrected by M008. M009 implements all 90 symbols as an
-isolated Rust `cdylib` with a committed cbindgen-generated header.
-ABI v1 stability promises begin only when M010 cross-platform
-qualification closes.
+isolated Rust `cdylib` with a committed cbindgen-generated header, and
+M010 qualifies it on all five native targets. ABI v1 stability holds
+per `STABILITY.md` (append-only within major 1).
 
 ## Layout
 
@@ -72,5 +72,6 @@ exactly the 90 manifest symbols and no other `stegoeggo_*` symbol.
 - panics contained by `catch_unwind` at every `extern "C"` export;
 - Python and Node stay direct Rust bindings and are not moved onto C.
 
-Do not treat anything under `bindings/c/` as a stable API until M010
-closes and `STABILITY.md` says so.
+The C ABI surface described here is stable per `STABILITY.md`
+(append-only within ABI major 1). Static-library distribution remains
+deferred; the qualified artifact contract is `cdylib` only.

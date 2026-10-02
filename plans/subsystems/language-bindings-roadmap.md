@@ -311,9 +311,12 @@ glibc 2.17 floor, run C11/C++17 artifact-only consumer smokes, audit package
 contents/dependencies, and only then activate ABI v1 stability.
 
 Implementation:
-`plans/implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md`.
+`plans/implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md`
+(closed; closure: `plans/closure/language-bindings/010-status.md`).
 
-Hard dependency: M009 closure.
+Hard dependency: M009 closure. Satisfied and M010 is closed with
+five-target qualification (`plans/closure/language-bindings/010-status.md`).
+The initial Python -> Node -> C sequence is complete.
 
 ## 8. Cross-cutting requirements
 
@@ -385,6 +388,5 @@ invariants.
 | M006 post-core compatibility corrective | closed | `implementation/language-bindings/006-post-core-compatibility-corrective.md` | `closure/language-bindings/006-status.md` | none |
 | M007 C ABI design | closed | `implementation/language-bindings/007-c-abi-contract-design.md` | `closure/language-bindings/007-status.md` | accepted semantic contract; symbol-count evidence corrected by M008 |
 | M008 M007 symbol-inventory corrective | closed | `implementation/language-bindings/008-m007-symbol-inventory-corrective.md` | `closure/language-bindings/008-status.md` | 90/87 arithmetic corrected with no signature change; checked manifest + checker landed |
-| M009 C ABI v1 implementation foundation | closed | `implementation/language-bindings/009-c-abi-v1-implementation-foundation.md` | `closure/language-bindings/009-status.md` | 90 exports, generated header, C/C++ tests, parity, c-binding green; pre-stable |
-| M010 C ABI cross-platform qualification | ready | `implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md` | pending | M009 implementation accepted; release-c dispatched |
-| M010 C ABI cross-platform qualification | blocked | `implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md` | pending | M009 closure |
+| M009 C ABI v1 implementation foundation | closed | `implementation/language-bindings/009-c-abi-v1-implementation-foundation.md` | `closure/language-bindings/009-status.md` | 90 exports, generated header, C/C++ tests, parity, c-binding green (pre-stable at closure; stabilized by M010) |
+| M010 C ABI cross-platform qualification | closed | `implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md` | `closure/language-bindings/010-status.md` | five-target qualification green; ABI v1 stable |
