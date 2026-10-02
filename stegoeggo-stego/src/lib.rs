@@ -105,9 +105,12 @@ impl CapacityReport {
 ///
 /// This is the recommended generic result surface for 0.x: public fields are
 /// frozen through 0.x (no new public fields will be added), evolution happens
-/// through additive helpers, and failures are reported with [`StegoError`]
-/// instead of sentinel reports. At the v1 boundary the fields become private
-/// behind getters for semver-safe evolution.
+/// through additive helpers (`is_embedded` / `embedded` / `output` /
+/// `payload_bytes` / `required_capacity` / `available_capacity` /
+/// `actual_redundancy` plus `capacity` / `into_output` / `into_parts`), and
+/// failures are reported with [`StegoError`] instead of sentinel reports.
+/// At the v1 boundary the fields become private behind the same getters for
+/// semver-safe evolution.
 #[derive(Debug, Clone)]
 pub struct EmbedReport<T = Vec<u8>> {
     /// Whether the payload was embedded.
@@ -151,5 +154,40 @@ impl<T> EmbedReport<T> {
             required: self.required_capacity,
             available: self.available_capacity,
         }
+    }
+
+    #[must_use]
+    pub fn is_embedded(&self) -> bool {
+        self.embedded
+    }
+
+    #[must_use]
+    pub fn embedded(&self) -> bool {
+        self.embedded
+    }
+
+    #[must_use]
+    pub fn output(&self) -> &T {
+        &self.output
+    }
+
+    #[must_use]
+    pub fn payload_bytes(&self) -> usize {
+        self.payload_bytes
+    }
+
+    #[must_use]
+    pub fn required_capacity(&self) -> usize {
+        self.required_capacity
+    }
+
+    #[must_use]
+    pub fn available_capacity(&self) -> usize {
+        self.available_capacity
+    }
+
+    #[must_use]
+    pub fn actual_redundancy(&self) -> usize {
+        self.actual_redundancy
     }
 }

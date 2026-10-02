@@ -319,6 +319,10 @@ pub enum EmbedStatus {
 /// The alpha channel is never a carrier. `payload_bytes` is the raw
 /// payload size in bytes placed in the carrier; for framed operations it
 /// includes the frame header and CRC32 overhead.
+///
+/// Public fields are frozen through 0.x; the accessor methods below carry
+/// the same facts so the v1 boundary can privatize fields without
+/// inventing new semantics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InPlaceEmbedReport {
     /// Whether the payload was embedded.
@@ -331,6 +335,46 @@ pub struct InPlaceEmbedReport {
     pub available_capacity: usize,
     /// The redundancy level used for embedding.
     pub actual_redundancy: usize,
+}
+
+impl InPlaceEmbedReport {
+    #[must_use]
+    pub fn is_embedded(&self) -> bool {
+        self.embedded
+    }
+
+    #[must_use]
+    pub fn embedded(&self) -> bool {
+        self.embedded
+    }
+
+    #[must_use]
+    pub fn payload_bytes(&self) -> usize {
+        self.payload_bytes
+    }
+
+    #[must_use]
+    pub fn required_capacity(&self) -> usize {
+        self.required_capacity
+    }
+
+    #[must_use]
+    pub fn available_capacity(&self) -> usize {
+        self.available_capacity
+    }
+
+    #[must_use]
+    pub fn actual_redundancy(&self) -> usize {
+        self.actual_redundancy
+    }
+
+    #[must_use]
+    pub fn capacity(&self) -> crate::CapacityReport {
+        crate::CapacityReport {
+            required: self.required_capacity,
+            available: self.available_capacity,
+        }
+    }
 }
 
 impl std::fmt::Display for EmbedStatus {

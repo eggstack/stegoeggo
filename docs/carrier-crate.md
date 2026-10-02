@@ -24,10 +24,14 @@ It exposes the following operation styles on the same corrected carrier model:
 
 ### Strict JPEG embedding
 
-`jpeg::embed` is best-effort compatibility behavior (lowers redundancy to
-fit; seed-hint carrier when nothing fits). `jpeg::embed_strict` and
-`jpeg::embed_framed_strict` embed at exactly the requested redundancy or
-return `InsufficientCapacity` without emitting output. Seed hints
+`jpeg::embed_best_effort` and `jpeg::embed_framed_best_effort` are the
+explicit best-effort operations (lower redundancy to fit; seed-hint
+carrier when nothing fits). `jpeg::embed` and `jpeg::embed_framed` are
+byte-identical compatibility names for the same behavior.
+`jpeg::embed_strict` and `jpeg::embed_framed_strict` embed at exactly the
+requested redundancy or return `InsufficientCapacity` without emitting
+output. New code uses the explicit best-effort names or the strict
+operations; the compatibility names remain for 0.x. Seed hints
 (`jpeg::embed_seed_hint`) are transactional: success implies the complete
 96-bit hint is recoverable.
 
@@ -91,9 +95,9 @@ let report = lsb::embed_in_place(&mut img, secret, &config)?;
 let report = lsb::embed_framed(&img, secret, &config)?;
 let recovered = lsb::extract_framed(&report.output, &config)?;
 
-// JPEG round-trip
+// JPEG round-trip (explicit best-effort; `embed` is the compat name)
 let jpeg_config = JpegConfig::new(seed).with_redundancy(2);
-let report = jpeg::embed(&jpeg_bytes, secret, &jpeg_config)?;
+let report = jpeg::embed_best_effort(&jpeg_bytes, secret, &jpeg_config)?;
 let recovered = jpeg::extract(
     &report.output, secret.len(), &jpeg_config, report.actual_redundancy,
 )?;

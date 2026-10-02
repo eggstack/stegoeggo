@@ -18,12 +18,14 @@
 //!   redundancy must fit exactly. Insufficient capacity returns
 //!   [`StegoError::InsufficientCapacity`] without emitting carrier output,
 //!   lowering redundancy, or degrading to a seed hint.
-//! - **Best-effort** ([`embed`], [`embed_framed`]) — compatibility behavior:
-//!   automatically selects the largest feasible redundancy up to the
-//!   configured value, and emits a quantization-table seed-hint carrier
-//!   with `embedded == false` when no payload fits. Prefer the strict
-//!   operations for new callers; the best-effort operations preserve the
-//!   established StegoEggo application behavior.
+//! - **Best-effort** ([`embed_best_effort`], [`embed_framed_best_effort`])
+//!   — explicitly named generic semantics: automatically selects the
+//!   largest feasible redundancy up to the configured value, and emits a
+//!   quantization-table seed-hint carrier with `embedded == false` when no
+//!   payload fits. [`embed`] and [`embed_framed`] are byte-identical
+//!   compatibility names for the same behavior. Prefer the strict
+//!   operations for new callers needing exact redundancy; the best-effort
+//!   operations preserve the established StegoEggo application behavior.
 //!
 //! Seed hints ([`embed_seed_hint`]) are transactional: success implies the
 //! complete 96-bit hint is recoverable by [`extract_seed_hint`], and short
@@ -787,13 +789,14 @@ pub fn capacity(
 /// Embed arbitrary bytes into a JPEG using F5-style DCT coefficient
 /// modification.
 ///
-/// Best-effort compatibility behavior: automatically selects the largest
-/// feasible redundancy up to the configured value, and emits a
-/// quantization-table seed-hint carrier with `embedded == false` when no
-/// payload fits. The seed hint is attempted on a best-effort basis and a
-/// short quantization table never fails an otherwise successful payload
-/// embed. Prefer [`embed_strict`] when the requested redundancy must hold
-/// exactly.
+/// Compatibility name for [`embed_best_effort`]: best-effort behavior that
+/// automatically selects the largest feasible redundancy up to the
+/// configured value, and emits a quantization-table seed-hint carrier with
+/// `embedded == false` when no payload fits. The seed hint is attempted on
+/// a best-effort basis and a short quantization table never fails an
+/// otherwise successful payload embed. New code should call
+/// [`embed_best_effort`] for explicit best-effort semantics or
+/// [`embed_strict`] when the requested redundancy must hold exactly.
 ///
 /// Returns an [`EmbedReport`](super::EmbedReport) with the output JPEG
 /// bytes and capacity information. Uses the container-preserving encoding
@@ -900,6 +903,31 @@ pub fn embed(
     })
 }
 
+/// Embed arbitrary bytes into a JPEG with explicit best-effort semantics.
+///
+/// Canonical explicit name for the historical best-effort behavior also
+/// exposed as [`embed`] for compatibility: automatically selects the
+/// largest feasible redundancy up to the configured value, and emits a
+/// quantization-table seed-hint carrier with `embedded == false` when no
+/// payload fits. Delegates directly to [`embed`]; there is no second
+/// best-effort implementation.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// let jpeg_bytes = std::fs::read("photo.jpg").unwrap();
+/// let config = stegoeggo_stego::jpeg::JpegConfig::new(42);
+/// let report = stegoeggo_stego::jpeg::embed_best_effort(&jpeg_bytes, b"secret", &config).unwrap();
+/// assert!(report.is_embedded());
+/// ```
+pub fn embed_best_effort(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &JpegConfig,
+) -> std::result::Result<super::EmbedReport, StegoError> {
+    embed(jpeg_bytes, payload, config)
+}
+
 /// Embed arbitrary bytes into a JPEG at exactly the requested redundancy.
 ///
 /// Strict carrier semantics: either the payload is embedded at the
@@ -997,10 +1025,12 @@ pub(crate) fn embed_strict_from_decoded(
 
 /// Embed a self-describing framed payload into a supported JPEG.
 ///
-/// The frame is encoded with [`crate::frame::encode`] and then embedded using
-/// the raw JPEG DCT carrier. The returned report's `payload_bytes` includes
-/// the frame header and CRC overhead because those bytes are placed in the
-/// carrier.
+/// Compatibility name for [`embed_framed_best_effort`]: the frame is encoded
+/// with [`crate::frame::encode`] and then embedded using the best-effort
+/// JPEG DCT carrier. The returned report's `payload_bytes` includes the
+/// frame header and CRC overhead because those bytes are placed in the
+/// carrier. New code should call [`embed_framed_best_effort`] for explicit
+/// best-effort semantics or [`embed_framed_strict`] for exact redundancy.
 ///
 /// # Examples
 ///
@@ -1017,6 +1047,28 @@ pub fn embed_framed(
 ) -> std::result::Result<super::EmbedReport, StegoError> {
     let framed = crate::frame::encode(payload)?;
     embed(jpeg_bytes, &framed, config)
+}
+
+/// Embed a self-describing framed payload with explicit best-effort semantics.
+///
+/// Canonical explicit name for the behavior also exposed as [`embed_framed`]
+/// for compatibility. Delegates directly to [`embed_framed`]; there is no
+/// second best-effort implementation.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// let jpeg_bytes = std::fs::read("photo.jpg").unwrap();
+/// let config = stegoeggo_stego::jpeg::JpegConfig::new(42);
+/// let report = stegoeggo_stego::jpeg::embed_framed_best_effort(&jpeg_bytes, b"payload", &config).unwrap();
+/// assert!(report.is_embedded());
+/// ```
+pub fn embed_framed_best_effort(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &JpegConfig,
+) -> std::result::Result<super::EmbedReport, StegoError> {
+    embed_framed(jpeg_bytes, payload, config)
 }
 
 /// Embed a self-describing framed payload into a supported JPEG at exactly

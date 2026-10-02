@@ -83,7 +83,7 @@ let jpeg_bytes = std::fs::read("photo.jpg")?;
 let config = JpegConfig::new(42);
 
 if jpeg::probe_support(&jpeg_bytes)? == jpeg::JpegSupport::Supported {
-    let report = jpeg::embed(&jpeg_bytes, payload, &config)?;
+    let report = jpeg::embed_best_effort(&jpeg_bytes, payload, &config)?;
     let recovered = jpeg::extract(
         &report.output,
         payload.len(),
@@ -95,12 +95,15 @@ if jpeg::probe_support(&jpeg_bytes)? == jpeg::JpegSupport::Supported {
 
 ## Strict vs best-effort JPEG embedding
 
-`jpeg::embed` is best-effort compatibility behavior: it lowers the
-requested redundancy to the largest value that fits and emits a
-seed-hint carrier with `embedded == false` when no payload fits. New
-callers that need exact semantics should use `jpeg::embed_strict` (and
-`jpeg::embed_framed_strict`), which embed at exactly the requested
-redundancy or return `InsufficientCapacity` without emitting output:
+`jpeg::embed_best_effort` (and `jpeg::embed_framed_best_effort`) are the
+explicit best-effort operations: they lower the requested redundancy to
+the largest value that fits and emit a seed-hint carrier with
+`embedded == false` when no payload fits. `jpeg::embed` and
+`jpeg::embed_framed` are byte-identical compatibility names for the same
+behavior. New callers that need exact semantics should use
+`jpeg::embed_strict` (and `jpeg::embed_framed_strict`), which embed at
+exactly the requested redundancy or return `InsufficientCapacity`
+without emitting output:
 
 ```rust
 use stegoeggo_stego::jpeg::{self, JpegConfig};
@@ -343,8 +346,9 @@ stegoeggo_stego::lsb                          → LsbConfig, TileConfig, capacit
 stegoeggo_stego::pixels                       → PixelLayout, PixelView, PixelViewMut (borrowed
                                                 packed/strided RGB/RGBA views sharing the LSB core)
 stegoeggo_stego::jpeg                         → JpegConfig, TileConfig, JpegSupport, probe_support,
-                                                capacity, embed, embed_strict, extract,
-                                                embed_framed, embed_framed_strict,
+                                                capacity, embed (compat), embed_best_effort,
+                                                embed_strict, extract, embed_framed (compat),
+                                                embed_framed_best_effort, embed_framed_strict,
                                                 extract_framed, embed_tiled, extract_tiled,
                                                 embed_tiled_framed, extract_tiled_framed,
                                                 inspect, is_progressive_jpeg,

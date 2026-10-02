@@ -231,9 +231,11 @@ fn direct_consumer_jpeg_strict_and_best_effort() {
         }
         other => panic!("strict oversized embed must fail with capacity, got {other:?}"),
     }
-    let best_effort = jpeg::embed(&jpeg_bytes, &oversized, &config).unwrap();
+    let best_effort = jpeg::embed_best_effort(&jpeg_bytes, &oversized, &config).unwrap();
     assert!(!best_effort.embedded);
+    assert!(!best_effort.is_embedded());
     assert_eq!(best_effort.actual_redundancy, 0);
+    assert_eq!(best_effort.actual_redundancy(), 0);
 }
 
 #[test]
@@ -250,8 +252,9 @@ fn direct_consumer_jpeg_tiled_and_prepared_reuse() {
         payload
     );
 
-    let framed = jpeg::embed(&jpeg_bytes, &frame::encode(payload).unwrap(), &config).unwrap();
+    let framed = jpeg::embed_framed_best_effort(&jpeg_bytes, payload, &config).unwrap();
     assert!(framed.embedded);
+    assert!(framed.is_embedded());
     let prepared = PreparedJpeg::new(&framed.output).unwrap();
     assert_eq!(prepared.support(), jpeg::JpegSupport::Supported);
     assert_eq!(
@@ -318,6 +321,92 @@ fn direct_consumer_unsupported_jpeg_has_explicit_contract() {
         Err(StegoError::UnsupportedJpeg(_)) => {}
         other => panic!("prepared reads on unsupported input must fail explicitly, got {other:?}"),
     }
+}
+
+#[test]
+fn direct_consumer_best_effort_alias_parity() {
+    let jpeg_bytes = encode_jpeg(&textured_rgb(256, 256), 90);
+    let config = JpegConfig::new(4242);
+    let payload = b"best-effort alias parity";
+
+    let legacy = jpeg::embed(&jpeg_bytes, payload, &config).unwrap();
+    let explicit = jpeg::embed_best_effort(&jpeg_bytes, payload, &config).unwrap();
+    assert_eq!(legacy.embedded, explicit.embedded);
+    assert_eq!(legacy.output, explicit.output);
+    assert_eq!(legacy.payload_bytes, explicit.payload_bytes);
+    assert_eq!(legacy.required_capacity, explicit.required_capacity);
+    assert_eq!(legacy.available_capacity, explicit.available_capacity);
+    assert_eq!(legacy.actual_redundancy, explicit.actual_redundancy);
+
+    let legacy_framed = jpeg::embed_framed(&jpeg_bytes, payload, &config).unwrap();
+    let explicit_framed = jpeg::embed_framed_best_effort(&jpeg_bytes, payload, &config).unwrap();
+    assert_eq!(legacy_framed.output, explicit_framed.output);
+    assert_eq!(
+        legacy_framed.actual_redundancy,
+        explicit_framed.actual_redundancy
+    );
+
+    let available = jpeg::capacity(&jpeg_bytes, 1, &config).unwrap().available;
+    let framed_len = available / 16;
+    assert!(framed_len > frame::FRAME_HEADER_SIZE);
+    let downgrade_payload = vec![0xA5; framed_len - frame::FRAME_HEADER_SIZE];
+    let requested = JpegConfig::new(4242).try_with_redundancy(3).unwrap();
+    let legacy_downgrade = jpeg::embed_framed(&jpeg_bytes, &downgrade_payload, &requested).unwrap();
+    let explicit_downgrade =
+        jpeg::embed_framed_best_effort(&jpeg_bytes, &downgrade_payload, &requested).unwrap();
+    assert!(legacy_downgrade.embedded);
+    assert!(legacy_downgrade.actual_redundancy < requested.redundancy());
+    assert_eq!(legacy_downgrade.output, explicit_downgrade.output);
+    assert_eq!(
+        jpeg::extract_framed(&explicit_downgrade.output, &requested).unwrap(),
+        downgrade_payload
+    );
+
+    let oversized = vec![0xA5u8; available + 128];
+    let legacy_seed_only = jpeg::embed(&jpeg_bytes, &oversized, &config).unwrap();
+    let explicit_seed_only = jpeg::embed_best_effort(&jpeg_bytes, &oversized, &config).unwrap();
+    assert!(!legacy_seed_only.embedded);
+    assert!(!explicit_seed_only.embedded);
+    assert_eq!(legacy_seed_only.output, explicit_seed_only.output);
+    assert_eq!(legacy_seed_only.actual_redundancy, 0);
+    assert_eq!(explicit_seed_only.actual_redundancy(), 0);
+}
+
+#[test]
+fn direct_consumer_report_accessors_cover_stable_facts() {
+    let image = textured_rgba(64, 64);
+    let config = LsbConfig::new(99);
+    let payload = b"report accessors";
+
+    let report: EmbedReport<image::RgbaImage> = lsb::embed(&image, payload, &config).unwrap();
+    assert_eq!(report.embedded(), report.embedded);
+    assert_eq!(report.is_embedded(), report.embedded);
+    assert_eq!(report.payload_bytes(), report.payload_bytes);
+    assert_eq!(report.required_capacity(), report.required_capacity);
+    assert_eq!(report.available_capacity(), report.available_capacity);
+    assert_eq!(report.actual_redundancy(), report.actual_redundancy);
+    assert_eq!(report.capacity().required, report.required_capacity);
+    assert_eq!(report.output().width(), 64);
+    assert_eq!(report.output().height(), 64);
+
+    let mut owned = image.clone();
+    let in_place = lsb::embed_in_place(&mut owned, payload, &config).unwrap();
+    assert_eq!(in_place.embedded(), in_place.embedded);
+    assert_eq!(in_place.is_embedded(), in_place.embedded);
+    assert_eq!(in_place.payload_bytes(), in_place.payload_bytes);
+    assert_eq!(in_place.required_capacity(), in_place.required_capacity);
+    assert_eq!(in_place.available_capacity(), in_place.available_capacity);
+    assert_eq!(in_place.actual_redundancy(), in_place.actual_redundancy);
+    assert_eq!(in_place.capacity().required, in_place.required_capacity);
+
+    let jpeg_bytes = encode_jpeg(&textured_rgb(128, 128), 90);
+    let jpeg_config = JpegConfig::new(7);
+    let jpeg_report = jpeg::embed_strict(&jpeg_bytes, payload, &jpeg_config).unwrap();
+    assert!(jpeg_report.is_embedded());
+    assert!(jpeg_report.embedded());
+    assert_eq!(jpeg_report.payload_bytes(), payload.len());
+    assert_eq!(jpeg_report.actual_redundancy(), jpeg_config.redundancy());
+    assert!(jpeg_report.capacity().is_sufficient());
 }
 
 #[test]

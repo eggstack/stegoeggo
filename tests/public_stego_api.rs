@@ -237,8 +237,9 @@ fn public_jpeg_raw_roundtrip_arbitrary_bytes() {
     let payload = b"jpeg stego test";
     let config = JpegConfig::new(42);
 
-    let report = jpeg::embed(&jpeg_bytes, payload, &config).unwrap();
+    let report = jpeg::embed_strict(&jpeg_bytes, payload, &config).unwrap();
     assert!(report.embedded);
+    assert!(report.is_embedded());
 
     let recovered = jpeg::extract(
         &report.output,
@@ -256,7 +257,7 @@ fn public_jpeg_supported_container_preservation() {
     let config = JpegConfig::new(42);
     let payload = b"preservation test";
 
-    let report = jpeg::embed(&jpeg_bytes, payload, &config).unwrap();
+    let report = jpeg::embed_strict(&jpeg_bytes, payload, &config).unwrap();
     assert!(report.embedded);
 
     assert!(report.output.starts_with(&[0xFF, 0xD8]));
@@ -421,7 +422,7 @@ fn public_jpeg_framed_roundtrip() {
     let payload = b"framed jpeg payload";
     let config = JpegConfig::new(42);
 
-    let report = jpeg::embed_framed(&jpeg_bytes, payload, &config).unwrap();
+    let report = jpeg::embed_framed_strict(&jpeg_bytes, payload, &config).unwrap();
     assert!(report.embedded);
     assert_eq!(
         report.payload_bytes,
@@ -443,7 +444,7 @@ fn public_jpeg_framed_extracts_after_capacity_downgrade() {
     assert!(framed_len > FRAME_HEADER_SIZE);
     let payload = vec![0xA5; framed_len - FRAME_HEADER_SIZE];
 
-    let report = jpeg::embed_framed(&jpeg_bytes, &payload, &requested).unwrap();
+    let report = jpeg::embed_framed_best_effort(&jpeg_bytes, &payload, &requested).unwrap();
     assert!(report.embedded);
     assert!(report.actual_redundancy < requested.redundancy());
 
@@ -455,7 +456,8 @@ fn public_jpeg_framed_extracts_after_capacity_downgrade() {
 fn public_jpeg_framed_wrong_seed_fails() {
     let jpeg_bytes = make_jpeg_bytes(256, 256);
     let config = JpegConfig::new(42);
-    let report = jpeg::embed_framed(&jpeg_bytes, b"framed jpeg payload", &config).unwrap();
+    let report =
+        jpeg::embed_framed_best_effort(&jpeg_bytes, b"framed jpeg payload", &config).unwrap();
 
     let result = jpeg::extract_framed(&report.output, &JpegConfig::new(43));
     assert!(result.is_err());
@@ -746,11 +748,60 @@ fn public_jpeg_raw_redundancy_one_and_ten_remain_valid() {
 
     for redundancy in [1, 10] {
         let config = JpegConfig::new(42).with_redundancy(redundancy);
-        let report = jpeg::embed(&jpeg_bytes, b"raw", &config).unwrap();
+        let report = jpeg::embed_best_effort(&jpeg_bytes, b"raw", &config).unwrap();
         assert!(report.embedded);
         assert_eq!(report.actual_redundancy, redundancy);
         let recovered =
             jpeg::extract(&report.output, 3, &config, report.actual_redundancy).unwrap();
         assert_eq!(&recovered, b"raw");
     }
+}
+
+#[test]
+fn public_jpeg_best_effort_alias_parity() {
+    let jpeg_bytes = make_jpeg_bytes(256, 256);
+    let config = JpegConfig::new(4242);
+    let payload = b"best-effort alias parity";
+
+    let legacy = jpeg::embed(&jpeg_bytes, payload, &config).unwrap();
+    let explicit = jpeg::embed_best_effort(&jpeg_bytes, payload, &config).unwrap();
+    assert_eq!(legacy.output, explicit.output);
+    assert_eq!(legacy.actual_redundancy, explicit.actual_redundancy);
+    assert_eq!(legacy.payload_bytes(), payload.len());
+    assert_eq!(explicit.payload_bytes(), payload.len());
+
+    let legacy_framed = jpeg::embed_framed(&jpeg_bytes, payload, &config).unwrap();
+    let explicit_framed = jpeg::embed_framed_best_effort(&jpeg_bytes, payload, &config).unwrap();
+    assert_eq!(legacy_framed.output, explicit_framed.output);
+
+    let available = jpeg::capacity(&jpeg_bytes, 1, &config).unwrap().available;
+    let oversized = vec![0xA5u8; available + 128];
+    let legacy_seed_only = jpeg::embed(&jpeg_bytes, &oversized, &config).unwrap();
+    let explicit_seed_only = jpeg::embed_best_effort(&jpeg_bytes, &oversized, &config).unwrap();
+    assert!(!legacy_seed_only.is_embedded());
+    assert!(!explicit_seed_only.is_embedded());
+    assert_eq!(legacy_seed_only.output, explicit_seed_only.output);
+}
+
+#[test]
+fn public_report_accessors_cover_stable_facts() {
+    let img = make_lsb_image(64, 64);
+    let config = LsbConfig::new(42);
+    let payload = b"report accessors";
+
+    let report = lsb::embed(&img, payload, &config).unwrap();
+    assert_eq!(report.embedded(), report.embedded);
+    assert_eq!(report.is_embedded(), report.embedded);
+    assert_eq!(report.payload_bytes(), report.payload_bytes);
+    assert_eq!(report.required_capacity(), report.required_capacity);
+    assert_eq!(report.available_capacity(), report.available_capacity);
+    assert_eq!(report.actual_redundancy(), report.actual_redundancy);
+    assert_eq!(report.capacity().required, report.required_capacity);
+
+    let mut owned = img.clone();
+    let in_place = lsb::embed_in_place(&mut owned, payload, &config).unwrap();
+    assert_eq!(in_place.embedded(), in_place.embedded);
+    assert_eq!(in_place.is_embedded(), in_place.embedded);
+    assert_eq!(in_place.payload_bytes(), in_place.payload_bytes);
+    assert_eq!(in_place.capacity().required, in_place.required_capacity);
 }

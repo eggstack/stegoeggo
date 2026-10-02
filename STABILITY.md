@@ -42,7 +42,9 @@ and `plans/096-status.md` for the v1 disposition).
 
 ### Generic Carrier API
 
-The standalone carrier surface is stable: raw (`embed`/`extract`), strict
+The standalone carrier surface is stable: raw (`embed`/`extract`), explicit
+best-effort JPEG (`embed_best_effort`/`embed_framed_best_effort`) plus
+byte-identical compatibility names (`embed`/`embed_framed`), strict
 JPEG (`embed_strict`/`embed_framed_strict`), in-place
 (`lsb::embed_in_place`), borrowed views (`PixelView`/`PixelViewMut`),
 framed (`embed_framed`/`extract_framed`), prepared JPEG reuse
@@ -52,11 +54,16 @@ over LSB and JPEG carriers, with `Redundancy`, `LsbConfig`, `JpegConfig`,
 `TileConfig`, `MAX_TILED_ORIGINS`, `StegoError`, and the capacity/embed
  report types. `jpeg::embed`/`embed_framed` remain best-effort
  compatibility operations (redundancy reduction plus seed-hint
- degradation); `EmbedOutcome`/`EmbedStatus`/`EmbedPath` are parent-owned
- application vocabulary retained through 0.x. `EmbedReport` and
- `InPlaceEmbedReport` public fields are frozen through 0.x (no new public
- fields will be added); the v1 boundary moves them to private fields plus
- getters for semver-safe evolution.
+ degradation); new code uses the explicit best-effort names or the strict
+ operations. `EmbedOutcome`/`EmbedStatus`/`EmbedPath` are parent-owned
+ application vocabulary retained through 0.x with removal from the
+ recommended generic surface at v1 (parent keeps its own vocabulary).
+ `EmbedReport` and `InPlaceEmbedReport` public fields are frozen through
+ 0.x (no new public fields will be added); accessor methods
+ (`embedded`/`is_embedded`/`payload_bytes`/`required_capacity`/
+ `available_capacity`/`actual_redundancy`/`output`/`capacity`) carry the
+ same facts so the v1 boundary can privatize fields without inventing new
+ semantics.
 
 | Item | Module |
 |------|--------|

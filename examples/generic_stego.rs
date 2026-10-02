@@ -77,7 +77,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match jpeg::probe_support(&jpeg_bytes)? {
         jpeg::JpegSupport::Supported => {
             // Explicit best-effort choice: may lower redundancy and report it.
-            let report = jpeg::embed(&jpeg_bytes, secret, &jpeg_config)?;
+            let report = jpeg::embed_best_effort(&jpeg_bytes, secret, &jpeg_config)?;
             println!(
                 "JPEG embedded: {} (actual redundancy: {})",
                 report.embedded, report.actual_redundancy
@@ -111,7 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let jpeg_framed = make_test_jpeg(128, 128);
     let jpeg_framed_config = JpegConfig::new(seed).with_redundancy(3);
     if jpeg::probe_support(&jpeg_framed)? == jpeg::JpegSupport::Supported {
-        let report = jpeg::embed_framed(&jpeg_framed, secret, &jpeg_framed_config)?;
+        let report = jpeg::embed_framed_best_effort(&jpeg_framed, secret, &jpeg_framed_config)?;
         let recovered = jpeg::extract_framed(&report.output, &jpeg_framed_config)?;
         println!(
             "Framed JPEG extracted: {:?}",
