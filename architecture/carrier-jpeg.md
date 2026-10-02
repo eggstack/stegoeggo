@@ -8,8 +8,9 @@ Encoded-JPEG DCT carrier with container-preserving encode. Operates on baseline 
 
 | Group | Functions |
 |-------|-----------|
-| Probe | `inspect(bytes, max_segments, max_segment_bytes) -> JpegInfo { width, height }`, `probe_support(bytes) -> JpegSupport::{Supported, Unsupported(reason)}`, `is_progressive_jpeg(bytes)` |
-| Capacity | `capacity(bytes, payload_len, &JpegConfig) -> CapacityReport` — units are eligible AC coefficients with `\|coef\| >= 2` after canonicalization |
+| Probe | `inspect(bytes, max_segments, max_segment_bytes) -> JpegInfo { width, height }` (delegates through `CarrierLimits`), `inspect_with_limits` / `probe_support_with_limits`, `probe_support(bytes) -> JpegSupport::{Supported, Unsupported(reason)}`, `is_progressive_jpeg(bytes)` |
+| Capacity | `capacity(bytes, payload_len, &JpegConfig) -> CapacityReport` + `capacity_with_limits` — units are eligible AC coefficients with `\|coef\| >= 2` after canonicalization |
+| Bounded | `*_with_limits` variants for `embed_best_effort`, `embed_strict`, `embed_framed_best_effort`, `embed_framed_strict`, `extract`, `extract_framed`, `embed_tiled`, `embed_tiled_framed`, `extract_tiled`, `extract_tiled_framed` — share the single decode path; defaults preserve behavior |
 | Raw | `embed_best_effort` (explicit) / `embed` (byte-identical compat): auto-downgrade redundancy, seed-only fallback / `extract(bytes, len, &config, actual_redundancy)` — pass `report.actual_redundancy` to `extract` |
 | Strict | `embed_strict` / `embed_framed_strict` — exact requested redundancy or `InsufficientCapacity`, no output |
 | Framed | `embed_framed_best_effort` (explicit) / `embed_framed` (compat) / `extract_framed` — `frame::{encode,decode}` wrapper; length self-describing |
@@ -30,7 +31,9 @@ Explicit best-effort `embed_best_effort` (`embed` is the byte-identical compat n
 let p = PreparedJpeg::new(&jpeg_bytes)?;
 p.support(); p.capacity(len, &cfg); p.extract(len, &cfg, r);
 p.extract_framed(&cfg); p.extract_tiled(len, &tile, n);
-p.embed_strict(payload, &cfg); p.embed_framed_strict(payload, &cfg); p.seed_hint();
+p.embed_strict(payload, &cfg); p.embed_framed_strict(payload, &cfg);
+p.embed_tiled(payload, &tile); p.embed_tiled_framed(payload, &tile); p.seed_hint();
+let bounded = PreparedJpeg::new_with_limits(&jpeg_bytes, &limits)?;
 ```
 
 `Debug + Send + Sync`. `seed_hint()` is header-only, so it works even for

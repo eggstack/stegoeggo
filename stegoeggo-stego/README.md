@@ -121,10 +121,12 @@ units instead of an unrecoverable partial hint.
 ## Prepared JPEG (repeated operations)
 
 `prepared::PreparedJpeg` borrows encoded JPEG bytes and retains one
-coefficient decode across repeated capacity, extraction, and
-strict-embedding operations. Results agree exactly with the one-shot
-API. Codec internals (headers, coefficient maps, Huffman/F5 state) stay
-private:
+coefficient decode across repeated capacity, extraction, strict-embedding,
+and tiled exact-embedding operations. Results agree exactly with the
+one-shot API. Codec internals (headers, coefficient maps, Huffman/F5
+state) stay private. `PreparedJpeg::new_with_limits` applies a
+carrier-owned [`CarrierLimits`] bound at construction; the handle stays
+reusable after failed queries or embeds:
 
 ```rust
 use stegoeggo_stego::jpeg::JpegConfig;
@@ -137,6 +139,32 @@ if report.is_sufficient() {
     let payload = prepared.extract_framed(&config)?;
 }
 ```
+
+## Bounded parsing with `CarrierLimits`
+
+Network-facing generic consumers bound untrusted-input parsing through
+`limits::CarrierLimits` (private fields with getters and a builder):
+input bytes, JPEG segment count/segment bytes, decoded
+dimensions/pixels, framed totals, and tiled-search extent. Bounded
+`*_with_limits` one-shot variants and `PreparedJpeg::new_with_limits`
+share the single decode path with the default one-shot API, so
+default-limit and bounded results agree exactly. Limit failures return
+`StegoError::ResourceLimitExceeded` without dumping secret or input
+bytes:
+
+```rust
+use stegoeggo_stego::{CarrierLimits, jpeg::JpegConfig};
+
+let limits = CarrierLimits::builder().max_input_bytes(10 * 1024 * 1024).build();
+let config = JpegConfig::new(42);
+let report = jpeg::capacity_with_limits(&jpeg_bytes, 100, &config, &limits)?;
+let prepared = stegoeggo_stego::PreparedJpeg::new_with_limits(&jpeg_bytes, &limits)?;
+```
+
+`jpeg::inspect` keeps its `(bytes, max_segments, max_segment_bytes)`
+signature and delegates through the same bounded header path. The root
+application crate keeps its own `ResourceLimits` parser policy; the
+carrier never depends on the root type.
 
 ## Borrowed pixel buffers (no `RgbaImage` conversion)
 
@@ -353,7 +381,10 @@ stegoeggo_stego::jpeg                         → JpegConfig, TileConfig, JpegSu
                                                 embed_tiled_framed, extract_tiled_framed,
                                                 inspect, is_progressive_jpeg,
                                                 embed_seed_hint, extract_seed_hint
-stegoeggo_stego::prepared                     → PreparedJpeg (one decode across repeated operations)
+stegoeggo_stego::prepared                     → PreparedJpeg (one decode across repeated operations,
+                                                including tiled exact embed; `new_with_limits`)
+stegoeggo_stego::limits                       → CarrierLimits, CarrierLimitsBuilder (bounded
+                                                untrusted-input contract; `*_with_limits` variants)
 stegoeggo_stego::frame                        → FRAMED_MAGIC, FRAME_VERSION, MAX_FRAME_PAYLOAD,
                                                 FRAME_HEADER_SIZE, FrameHeader, encode, decode,
                                                 decode_prefix

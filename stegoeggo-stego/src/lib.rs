@@ -20,6 +20,8 @@
 //!   hints.
 //! - [`prepared`] — opaque borrowed [`prepared::PreparedJpeg`] retaining one
 //!   coefficient decode across repeated generic JPEG operations.
+//! - [`limits`] — carrier-owned [`CarrierLimits`] bounding untrusted-input
+//!   parsing, dimensions, framed sizes, and tiled-search extent.
 //! - [`frame`] — self-describing framed payload with CRC32.
 //! - [`error`] — [`StegoError`] and [`JpegUnsupportedReason`].
 //! - [`CapacityReport`], [`EmbedReport`], [`InPlaceEmbedReport`],
@@ -48,6 +50,7 @@ pub mod error;
 pub mod frame;
 pub mod jpeg;
 pub(crate) mod jpeg_transcoder;
+pub mod limits;
 pub mod lsb;
 pub(crate) mod lsb_internal;
 pub mod pixels;
@@ -60,6 +63,7 @@ pub mod application_support;
 
 pub use error::{JpegUnsupportedReason, StegoError, StegoResult};
 pub use jpeg::is_progressive_jpeg;
+pub use limits::{CarrierLimits, CarrierLimitsBuilder};
 pub use lsb::DEFAULT_TILE_SIZE;
 pub use pixels::{PixelLayout, PixelView, PixelViewMut};
 pub use prepared::PreparedJpeg;

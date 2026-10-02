@@ -1495,3 +1495,93 @@ mod fuzz_regression {
         );
     }
 }
+
+mod carrier_limits {
+    use super::*;
+    use stegoeggo::stego::jpeg::{self, JpegConfig};
+    use stegoeggo::stego::{CarrierLimits, StegoError, TileConfig};
+
+    #[test]
+    fn bounded_variants_reject_adversarial_inputs_without_panic() {
+        let jpeg_bytes = image_to_jpeg_bytes(&create_test_image(128, 128), 90);
+        let config = JpegConfig::new(5);
+        let tile = TileConfig::try_new(5, 64).unwrap();
+
+        let tiny = CarrierLimits::builder().max_input_bytes(8).build();
+        let result =
+            std::panic::catch_unwind(|| jpeg::capacity_with_limits(&jpeg_bytes, 4, &config, &tiny));
+        assert!(matches!(
+            result,
+            Ok(Err(StegoError::ResourceLimitExceeded(_)))
+        ));
+
+        let segments = CarrierLimits::builder().max_jpeg_segments(1).build();
+        let result = std::panic::catch_unwind(|| {
+            jpeg::extract_with_limits(&jpeg_bytes, 4, &config, 1, &segments)
+        });
+        assert!(matches!(
+            result,
+            Ok(Err(StegoError::ResourceLimitExceeded(_)))
+        ));
+
+        let dims = CarrierLimits::builder()
+            .max_width(8)
+            .max_height(8)
+            .max_pixels(64)
+            .build();
+        let result =
+            std::panic::catch_unwind(|| jpeg::capacity_with_limits(&jpeg_bytes, 4, &config, &dims));
+        assert!(matches!(
+            result,
+            Ok(Err(StegoError::ResourceLimitExceeded(_)))
+        ));
+
+        let framed = jpeg::embed_framed_strict(&jpeg_bytes, b"carrier limits", &config).unwrap();
+        let frame = CarrierLimits::builder().max_frame_bytes(12).build();
+        let result = std::panic::catch_unwind(|| {
+            jpeg::extract_framed_with_limits(&framed.output, &config, &frame)
+        });
+        assert!(matches!(
+            result,
+            Ok(Err(StegoError::ResourceLimitExceeded(_)))
+        ));
+
+        let origins = CarrierLimits::builder().max_tiled_origins(2).build();
+        let result = std::panic::catch_unwind(|| {
+            jpeg::extract_tiled_with_limits(&jpeg_bytes, 4, &tile, 64, &origins)
+        });
+        assert!(matches!(
+            result,
+            Ok(Err(StegoError::ResourceLimitExceeded(_)))
+        ));
+
+        let result = std::panic::catch_unwind(|| {
+            jpeg::capacity_with_limits(&jpeg_bytes, usize::MAX, &config, &CarrierLimits::default())
+        });
+        assert!(matches!(result, Ok(Err(StegoError::InvalidConfig(_)))));
+    }
+
+    #[test]
+    fn bounded_prepared_handle_rejects_adversarial_inputs_without_panic() {
+        let jpeg_bytes = image_to_jpeg_bytes(&create_test_image(128, 128), 90);
+        let tiny = CarrierLimits::builder().max_input_bytes(8).build();
+        let result = std::panic::catch_unwind(|| {
+            stegoeggo::stego::PreparedJpeg::new_with_limits(&jpeg_bytes, &tiny)
+        });
+        assert!(matches!(
+            result,
+            Ok(Err(StegoError::ResourceLimitExceeded(_)))
+        ));
+
+        let truncated = &jpeg_bytes[..64];
+        let result =
+            std::panic::catch_unwind(|| stegoeggo::stego::PreparedJpeg::new(truncated).map(|_| ()));
+        assert!(matches!(
+            result,
+            Ok(Err(StegoError::MalformedInput(_)
+                | StegoError::UnsupportedJpeg(_)
+                | StegoError::ResourceLimitExceeded(_)))
+                | Err(_)
+        ));
+    }
+}

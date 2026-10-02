@@ -10,6 +10,10 @@ The stable generic surface re-exported as `stegoeggo::stego`. For standalone gen
 - `EmbedReport<T> { embedded, output, payload_bytes, required_capacity, available_capacity, actual_redundancy }` — `output` is `RgbaImage` for LSB, `Vec<u8>` for JPEG. `payload_bytes` includes frame overhead for framed ops. Public fields frozen through 0.x; `into_output()` / `into_parts()` / `capacity()` plus semver-safe accessors (`is_embedded` / `embedded` / `output` / `payload_bytes` / `required_capacity` / `available_capacity` / `actual_redundancy`; `InPlaceEmbedReport` adds the same plus `capacity()`) carry the same facts for the v1 privatization. Pass `actual_redundancy` to JPEG `extract`. `EmbedOutcome` / `EmbedStatus` / `EmbedPath` are parent-owned compatibility vocabulary retained through 0.x with removal from the recommended generic surface at v1.
 - `InPlaceEmbedReport` / `EmbedOutcome<T::{Embedded, SkippedCapacity, UnsupportedProgressive}>` / `EmbedStatus` / `EmbedOutcomeSummary { status, path, payload_bytes, required_capacity, available_capacity }` / `EmbedPath::{Lsb, LsbTiled, DctF5, DctF5Tiled, QTableSeedOnly}` follow the operation actually executed.
 
+## Bounded contract (`limits.rs`)
+
+- `CarrierLimits` — private fields with getters + builder (`builder().max_input_bytes().max_width().max_height().max_pixels().max_jpeg_segments().max_jpeg_segment_bytes().max_frame_bytes().max_tiled_origins().build()`); defaults 100 MiB / 16384×16384 / 256×65535 / 16 MiB+11 / 4096. `*_with_limits` JPEG variants and `PreparedJpeg::new_with_limits` share the single decode path; limit failures map to `StegoError::ResourceLimitExceeded` with no secret/input dump. The carrier never depends on the root `ResourceLimits`.
+
 ## Validated primitives (`types.rs`)
 
 - `Redundancy(u8)` — `1..=10`, `new` / `from_usize` / `get` / `MIN` / `MAX`, identical debug/release semantics. Use `LsbConfig::from_redundancy` / `JpegConfig::from_redundancy` + `with_redundancy_value` for runtime values.

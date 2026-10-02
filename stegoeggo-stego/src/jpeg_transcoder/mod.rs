@@ -192,7 +192,17 @@ pub struct JpegTranscoder;
 
 impl JpegTranscoder {
     pub fn decode_coefficients_with_probe(jpeg_data: &[u8]) -> Result<CoefficientDecode> {
-        let header = JpegHeader::parse(jpeg_data)?;
+        Self::decode_coefficients_with_probe_and_limits(
+            jpeg_data,
+            &crate::jpeg_transcoder::header::ParseLimits::default(),
+        )
+    }
+
+    pub fn decode_coefficients_with_probe_and_limits(
+        jpeg_data: &[u8],
+        limits: &crate::jpeg_transcoder::header::ParseLimits,
+    ) -> Result<CoefficientDecode> {
+        let header = JpegHeader::parse_with_limits(jpeg_data, limits)?;
         let structure = match checked_supported_structure(&header, jpeg_data) {
             Ok(structure) => structure,
             Err(reason) => return Ok(CoefficientDecode::Unsupported(reason)),

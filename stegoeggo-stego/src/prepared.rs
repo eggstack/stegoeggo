@@ -32,9 +32,10 @@
 
 use crate::error::StegoError;
 use crate::jpeg::{
-    capacity_from_decoded, decode_supported_carrier, embed_strict_from_decoded,
-    extract_framed_from_decoded, extract_from_decoded, extract_tiled_framed_from_decoded,
-    extract_tiled_from_decoded, DecodedJpegCarrier, JpegConfig, JpegSupport,
+    capacity_from_decoded, decode_supported_carrier_with_limits, embed_strict_from_decoded,
+    embed_tiled_from_decoded, extract_framed_from_decoded_with_limits, extract_from_decoded,
+    extract_tiled_framed_from_decoded_with_limits, extract_tiled_from_decoded_with_limits,
+    DecodedJpegCarrier, JpegConfig, JpegSupport,
 };
 use crate::types::TileConfig;
 
@@ -49,6 +50,7 @@ pub struct PreparedJpeg<'a> {
     source: &'a [u8],
     support: JpegSupport,
     decoded: Option<DecodedJpegCarrier>,
+    limits: crate::CarrierLimits,
 }
 
 impl<'a> PreparedJpeg<'a> {
@@ -63,7 +65,21 @@ impl<'a> PreparedJpeg<'a> {
     /// coefficient operations on them return
     /// [`StegoError::UnsupportedJpeg`].
     pub fn new(encoded: &'a [u8]) -> Result<Self, StegoError> {
-        let (support, decoded) = match decode_supported_carrier(encoded) {
+        Self::new_with_limits(encoded, &crate::CarrierLimits::default())
+    }
+
+    /// Prepare a JPEG under a carrier-owned [`crate::CarrierLimits`].
+    ///
+    /// Bounds input bytes, JPEG segments, and decoded dimensions before the
+    /// single coefficient decode; limit failures map to
+    /// [`StegoError::ResourceLimitExceeded`]. The stored limits also bound
+    /// subsequent framed-size and tiled-search operations on this handle.
+    /// The handle remains reusable after failed queries or embeds.
+    pub fn new_with_limits(
+        encoded: &'a [u8],
+        limits: &crate::CarrierLimits,
+    ) -> Result<Self, StegoError> {
+        let (support, decoded) = match decode_supported_carrier_with_limits(encoded, limits) {
             Ok(decoded) => (JpegSupport::Supported, Some(decoded)),
             Err(StegoError::UnsupportedJpeg(reason)) => (JpegSupport::Unsupported(reason), None),
             Err(other) => return Err(other),
@@ -72,7 +88,14 @@ impl<'a> PreparedJpeg<'a> {
             source: encoded,
             support,
             decoded,
+            limits: limits.clone(),
         })
+    }
+
+    /// The [`crate::CarrierLimits`] bounding this handle.
+    #[must_use]
+    pub fn limits(&self) -> &crate::CarrierLimits {
+        &self.limits
     }
 
     /// The DCT support classification for the prepared JPEG.
@@ -125,38 +148,52 @@ impl<'a> PreparedJpeg<'a> {
 
     /// Extract a framed payload, reusing the prepared decode.
     ///
-    /// Matches [`crate::jpeg::extract_framed`] exactly.
+    /// Matches [`crate::jpeg::extract_framed`] exactly, with the framed
+    /// total additionally bounded by this handle's [`crate::CarrierLimits`].
     pub fn extract_framed(&self, config: &JpegConfig) -> Result<Vec<u8>, StegoError> {
-        extract_framed_from_decoded(self.decoded_or_unsupported()?, config)
+        extract_framed_from_decoded_with_limits(
+            self.decoded_or_unsupported()?,
+            config,
+            &self.limits,
+        )
     }
 
     /// Extract tiled raw bytes, reusing the prepared decode.
     ///
     /// Matches [`crate::jpeg::extract_tiled`] exactly, including the
-    /// bounded `max_origins` search.
+    /// bounded `max_origins` search additionally bounded by this handle's
+    /// [`crate::CarrierLimits`].
     pub fn extract_tiled(
         &self,
         payload_len: usize,
         config: &TileConfig,
         max_origins: u32,
     ) -> Result<Vec<u8>, StegoError> {
-        extract_tiled_from_decoded(
+        extract_tiled_from_decoded_with_limits(
             self.decoded_or_unsupported()?,
             payload_len,
             config,
             max_origins,
+            &self.limits,
         )
     }
 
     /// Extract a framed tiled payload, reusing the prepared decode.
     ///
-    /// Matches [`crate::jpeg::extract_tiled_framed`] exactly.
+    /// Matches [`crate::jpeg::extract_tiled_framed`] exactly, with framed
+    /// totals and `max_origins` additionally bounded by this handle's
+    /// [`crate::CarrierLimits`].
     pub fn extract_tiled_framed(
         &self,
         config: &TileConfig,
         max_origins: u32,
     ) -> Result<Vec<u8>, StegoError> {
-        extract_tiled_framed_from_decoded(self.decoded_or_unsupported()?, config, max_origins)
+        extract_tiled_framed_from_decoded_with_limits(
+            self.decoded_or_unsupported()?,
+            config,
+            max_origins,
+            &self.limits,
+        )
     }
 
     /// Strict-embed at exactly the requested redundancy.
@@ -175,14 +212,47 @@ impl<'a> PreparedJpeg<'a> {
 
     /// Strict-embed a framed payload at exactly the requested redundancy.
     ///
-    /// Matches [`crate::jpeg::embed_framed_strict`] exactly.
+    /// Matches [`crate::jpeg::embed_framed_strict`] exactly, with the framed
+    /// total additionally bounded by this handle's [`crate::CarrierLimits`].
     pub fn embed_framed_strict(
         &self,
         payload: &[u8],
         config: &JpegConfig,
     ) -> Result<crate::EmbedReport, StegoError> {
         let framed = crate::frame::encode(payload)?;
+        self.limits.check_frame_bytes(framed.len())?;
         self.embed_strict(&framed, config)
+    }
+
+    /// Tiled exact embed, reusing the prepared decode.
+    ///
+    /// Matches [`crate::jpeg::embed_tiled`] exactly, including the
+    /// container-preserving encode against the borrowed source bytes and the
+    /// production self-check from already-mutated in-memory coefficients (one
+    /// decode at construction plus one encode here, no re-decode). Only the
+    /// structures needed for the output are cloned, so a failed attempt
+    /// leaves the prepared state unchanged and reusable. No best-effort
+    /// application degradation is added to the prepared handle.
+    pub fn embed_tiled(
+        &self,
+        payload: &[u8],
+        config: &TileConfig,
+    ) -> Result<crate::EmbedReport, StegoError> {
+        embed_tiled_from_decoded(self.decoded_or_unsupported()?, self.source, payload, config)
+    }
+
+    /// Framed tiled exact embed, reusing the prepared decode.
+    ///
+    /// Matches [`crate::jpeg::embed_tiled_framed`] exactly, with the framed
+    /// total additionally bounded by this handle's [`crate::CarrierLimits`].
+    pub fn embed_tiled_framed(
+        &self,
+        payload: &[u8],
+        config: &TileConfig,
+    ) -> Result<crate::EmbedReport, StegoError> {
+        let framed = crate::frame::encode(payload)?;
+        self.limits.check_frame_bytes(framed.len())?;
+        self.embed_tiled(&framed, config)
     }
 
     /// Read the quantization-table seed hint from the source JPEG.

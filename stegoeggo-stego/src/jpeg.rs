@@ -101,12 +101,32 @@ pub fn inspect(
     max_segments: usize,
     max_segment_bytes: usize,
 ) -> std::result::Result<JpegInfo, StegoError> {
-    let limits = crate::jpeg_transcoder::header::ParseLimits {
-        max_jpeg_segments: max_segments,
-        max_jpeg_segment_bytes: max_segment_bytes,
-    };
-    let header = JpegHeader::parse_with_limits(jpeg_bytes, &limits)
-        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+    let limits = crate::CarrierLimits::builder()
+        .max_jpeg_segments(max_segments)
+        .max_jpeg_segment_bytes(max_segment_bytes)
+        .build();
+    inspect_with_limits(jpeg_bytes, &limits)
+}
+
+/// Inspect a JPEG header under a carrier-owned [`crate::CarrierLimits`].
+///
+/// Shares the bounded header path with the carrier decode plumbing; segment
+/// limit failures map to [`StegoError::ResourceLimitExceeded`].
+pub fn inspect_with_limits(
+    jpeg_bytes: &[u8],
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<JpegInfo, StegoError> {
+    limits.check_input_bytes(jpeg_bytes.len())?;
+    let header =
+        JpegHeader::parse_with_limits(jpeg_bytes, &limits.parse_limits()).map_err(|e| {
+            let message = e.to_string();
+            if message.contains("exceeds limit") {
+                StegoError::ResourceLimitExceeded(message)
+            } else {
+                StegoError::MalformedInput(message)
+            }
+        })?;
+    limits.check_dimensions(header.width as u32, header.height as u32)?;
     Ok(JpegInfo {
         width: header.width as u32,
         height: header.height as u32,
@@ -197,15 +217,33 @@ pub(crate) fn checked_required_capacity(
 pub(crate) fn decode_supported_carrier(
     jpeg_bytes: &[u8],
 ) -> std::result::Result<DecodedJpegCarrier, StegoError> {
+    decode_supported_carrier_with_limits(jpeg_bytes, &crate::CarrierLimits::default())
+}
+
+pub(crate) fn decode_supported_carrier_with_limits(
+    jpeg_bytes: &[u8],
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<DecodedJpegCarrier, StegoError> {
     if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
         return Err(StegoError::MalformedInput("not a valid JPEG".to_string()));
     }
+    limits.check_input_bytes(jpeg_bytes.len())?;
 
     #[cfg(test)]
     JPEG_COEFFICIENT_DECODE_COUNT.with(|count| count.set(count.get() + 1));
 
-    let decoded = JpegTranscoder::decode_coefficients_with_probe(jpeg_bytes)
-        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+    let decoded = JpegTranscoder::decode_coefficients_with_probe_and_limits(
+        jpeg_bytes,
+        &limits.parse_limits(),
+    )
+    .map_err(|e| {
+        let message = e.to_string();
+        if message.contains("exceeds limit") {
+            StegoError::ResourceLimitExceeded(message)
+        } else {
+            StegoError::MalformedInput(message)
+        }
+    })?;
     let (header, coefficients) = match decoded {
         crate::jpeg_transcoder::CoefficientDecode::Supported {
             header,
@@ -215,6 +253,7 @@ pub(crate) fn decode_supported_carrier(
             return Err(StegoError::UnsupportedJpeg(map_unsupported_reason(reason)));
         }
     };
+    limits.check_dimensions(header.width as u32, header.height as u32)?;
     let available_capacity = dct_payload_capacity(&coefficients);
 
     Ok(DecodedJpegCarrier {
@@ -691,12 +730,32 @@ pub enum JpegSupport {
 /// }
 /// ```
 pub fn probe_support(jpeg_bytes: &[u8]) -> std::result::Result<JpegSupport, StegoError> {
+    probe_support_with_limits(jpeg_bytes, &crate::CarrierLimits::default())
+}
+
+/// Probe DCT support under a carrier-owned [`crate::CarrierLimits`].
+///
+/// Bounds input bytes, JPEG segments, and decoded dimensions before
+/// classification; otherwise identical to [`probe_support`].
+pub fn probe_support_with_limits(
+    jpeg_bytes: &[u8],
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<JpegSupport, StegoError> {
     if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
         return Err(StegoError::MalformedInput("not a valid JPEG".to_string()));
     }
+    limits.check_input_bytes(jpeg_bytes.len())?;
 
     let header =
-        JpegHeader::parse(jpeg_bytes).map_err(|e| StegoError::MalformedInput(e.to_string()))?;
+        JpegHeader::parse_with_limits(jpeg_bytes, &limits.parse_limits()).map_err(|e| {
+            let message = e.to_string();
+            if message.contains("exceeds limit") {
+                StegoError::ResourceLimitExceeded(message)
+            } else {
+                StegoError::MalformedInput(message)
+            }
+        })?;
+    limits.check_dimensions(header.width as u32, header.height as u32)?;
 
     let support = crate::jpeg_transcoder::probe_dct_support_full(&header, jpeg_bytes);
 
@@ -777,9 +836,27 @@ pub fn capacity(
     payload_len: usize,
     config: &JpegConfig,
 ) -> std::result::Result<super::CapacityReport, StegoError> {
+    capacity_with_limits(
+        jpeg_bytes,
+        payload_len,
+        config,
+        &crate::CarrierLimits::default(),
+    )
+}
+
+/// Query DCT capacity under a carrier-owned [`crate::CarrierLimits`].
+///
+/// Bounds input bytes, JPEG segments, and decoded dimensions before
+/// coefficient work; otherwise identical to [`capacity`].
+pub fn capacity_with_limits(
+    jpeg_bytes: &[u8],
+    payload_len: usize,
+    config: &JpegConfig,
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<super::CapacityReport, StegoError> {
     crate::constants::validate_redundancy(config.redundancy())?;
     let required = checked_required_capacity(payload_len, config.redundancy())?;
-    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    let decoded = decode_supported_carrier_with_limits(jpeg_bytes, limits)?;
     Ok(super::CapacityReport {
         required,
         available: decoded.available_capacity,
@@ -828,6 +905,25 @@ pub fn embed(
     payload: &[u8],
     config: &JpegConfig,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
+    embed_best_effort_with_limits(
+        jpeg_bytes,
+        payload,
+        config,
+        &crate::CarrierLimits::default(),
+    )
+}
+
+/// Embed with explicit best-effort semantics under a carrier-owned
+/// [`crate::CarrierLimits`].
+///
+/// Bounds input bytes, JPEG segments, and decoded dimensions before
+/// coefficient work; otherwise identical to [`embed_best_effort`].
+pub fn embed_best_effort_with_limits(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &JpegConfig,
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<super::EmbedReport, StegoError> {
     crate::constants::validate_redundancy(config.redundancy())?;
     if payload.is_empty() {
         return Err(StegoError::InvalidConfig(
@@ -837,23 +933,11 @@ pub fn embed(
     let payload_bits = checked_payload_bits(payload.len())?;
     let required = checked_required_capacity(payload.len(), config.redundancy())?;
 
-    if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
-        return Err(StegoError::MalformedInput("not a valid JPEG".to_string()));
-    }
+    let decoded = decode_supported_carrier_with_limits(jpeg_bytes, limits)?;
+    let header = decoded.header.as_ref().clone();
+    let coefficients = decoded.coefficients.clone();
 
-    let decoded = JpegTranscoder::decode_coefficients_with_probe(jpeg_bytes)
-        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
-    let (header, coefficients) = match decoded {
-        crate::jpeg_transcoder::CoefficientDecode::Supported {
-            header,
-            coefficients,
-        } => (*header, coefficients),
-        crate::jpeg_transcoder::CoefficientDecode::Unsupported(reason) => {
-            return Err(StegoError::UnsupportedJpeg(map_unsupported_reason(reason)));
-        }
-    };
-
-    let available = dct_payload_capacity(&coefficients);
+    let available = decoded.available_capacity();
 
     let max_feasible = available.checked_div(payload_bits).unwrap_or(0);
     let selected_redundancy = config.redundancy().min(max_feasible).max(1);
@@ -965,6 +1049,26 @@ pub fn embed_strict(
     payload: &[u8],
     config: &JpegConfig,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
+    embed_strict_with_limits(
+        jpeg_bytes,
+        payload,
+        config,
+        &crate::CarrierLimits::default(),
+    )
+}
+
+/// Strict-embed at exactly the requested redundancy under a carrier-owned
+/// [`crate::CarrierLimits`].
+///
+/// Bounds input bytes, JPEG segments, and decoded dimensions before
+/// coefficient work; otherwise identical to [`embed_strict`], including no
+/// output on insufficient capacity.
+pub fn embed_strict_with_limits(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &JpegConfig,
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<super::EmbedReport, StegoError> {
     crate::constants::validate_redundancy(config.redundancy())?;
     if payload.is_empty() {
         return Err(StegoError::InvalidConfig(
@@ -972,7 +1076,7 @@ pub fn embed_strict(
         ));
     }
     checked_required_capacity(payload.len(), config.redundancy())?;
-    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    let decoded = decode_supported_carrier_with_limits(jpeg_bytes, limits)?;
     embed_strict_from_decoded(&decoded, jpeg_bytes, payload, config)
 }
 
@@ -1071,6 +1175,22 @@ pub fn embed_framed_best_effort(
     embed_framed(jpeg_bytes, payload, config)
 }
 
+/// Framed explicit best-effort embed under a carrier-owned
+/// [`crate::CarrierLimits`].
+///
+/// Bounds the framed total against `limits` before carrier work; otherwise
+/// identical to [`embed_framed_best_effort`].
+pub fn embed_framed_best_effort_with_limits(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &JpegConfig,
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<super::EmbedReport, StegoError> {
+    let framed = crate::frame::encode(payload)?;
+    limits.check_frame_bytes(framed.len())?;
+    embed_best_effort_with_limits(jpeg_bytes, &framed, config, limits)
+}
+
 /// Embed a self-describing framed payload into a supported JPEG at exactly
 /// the requested redundancy.
 ///
@@ -1083,8 +1203,27 @@ pub fn embed_framed_strict(
     payload: &[u8],
     config: &JpegConfig,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
+    embed_framed_strict_with_limits(
+        jpeg_bytes,
+        payload,
+        config,
+        &crate::CarrierLimits::default(),
+    )
+}
+
+/// Framed strict embed under a carrier-owned [`crate::CarrierLimits`].
+///
+/// Bounds the framed total against `limits` before carrier work; otherwise
+/// identical to [`embed_framed_strict`].
+pub fn embed_framed_strict_with_limits(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &JpegConfig,
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<super::EmbedReport, StegoError> {
     let framed = crate::frame::encode(payload)?;
-    embed_strict(jpeg_bytes, &framed, config)
+    limits.check_frame_bytes(framed.len())?;
+    embed_strict_with_limits(jpeg_bytes, &framed, config, limits)
 }
 
 /// Extract arbitrary bytes from a JPEG using F5-style DCT coefficient
@@ -1120,14 +1259,30 @@ pub fn extract(
     config: &JpegConfig,
     actual_redundancy: usize,
 ) -> std::result::Result<Vec<u8>, StegoError> {
+    extract_with_limits(
+        jpeg_bytes,
+        payload_len,
+        config,
+        actual_redundancy,
+        &crate::CarrierLimits::default(),
+    )
+}
+
+/// Raw extract under a carrier-owned [`crate::CarrierLimits`].
+///
+/// Bounds input bytes, JPEG segments, and decoded dimensions before
+/// coefficient work; otherwise identical to [`extract`].
+pub fn extract_with_limits(
+    jpeg_bytes: &[u8],
+    payload_len: usize,
+    config: &JpegConfig,
+    actual_redundancy: usize,
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<Vec<u8>, StegoError> {
     crate::constants::validate_redundancy(actual_redundancy)?;
     checked_payload_bits(payload_len)?;
 
-    if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
-        return Err(StegoError::MalformedInput("not a valid JPEG".to_string()));
-    }
-
-    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    let decoded = decode_supported_carrier_with_limits(jpeg_bytes, limits)?;
     extract_from_decoded(&decoded, payload_len, config.seed(), actual_redundancy)
 }
 
@@ -1152,14 +1307,28 @@ pub fn extract_framed(
     jpeg_bytes: &[u8],
     config: &JpegConfig,
 ) -> std::result::Result<Vec<u8>, StegoError> {
-    crate::constants::validate_redundancy(config.redundancy())?;
-    let decoded = decode_supported_carrier(jpeg_bytes)?;
-    extract_framed_from_decoded(&decoded, config)
+    extract_framed_with_limits(jpeg_bytes, config, &crate::CarrierLimits::default())
 }
 
-pub(crate) fn extract_framed_from_decoded(
+/// Framed extract under a carrier-owned [`crate::CarrierLimits`].
+///
+/// Bounds input bytes, JPEG segments, decoded dimensions, and the declared
+/// framed total before full extraction; otherwise identical to
+/// [`extract_framed`].
+pub fn extract_framed_with_limits(
+    jpeg_bytes: &[u8],
+    config: &JpegConfig,
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<Vec<u8>, StegoError> {
+    crate::constants::validate_redundancy(config.redundancy())?;
+    let decoded = decode_supported_carrier_with_limits(jpeg_bytes, limits)?;
+    extract_framed_from_decoded_with_limits(&decoded, config, limits)
+}
+
+pub(crate) fn extract_framed_from_decoded_with_limits(
     decoded: &DecodedJpegCarrier,
     config: &JpegConfig,
+    limits: &crate::CarrierLimits,
 ) -> std::result::Result<Vec<u8>, StegoError> {
     crate::constants::validate_redundancy(config.redundancy())?;
     let mut failures = FramedFailure::default();
@@ -1192,6 +1361,8 @@ pub(crate) fn extract_framed_from_decoded(
                 continue;
             }
         };
+
+        limits.check_frame_bytes(total_len)?;
 
         let frame_capacity = capacity_from_decoded(decoded, total_len, redundancy)?;
         if !frame_capacity.is_sufficient() {
@@ -1361,30 +1532,52 @@ pub fn embed_tiled(
     payload: &[u8],
     config: &TileConfig,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
+    embed_tiled_with_limits(
+        jpeg_bytes,
+        payload,
+        config,
+        &crate::CarrierLimits::default(),
+    )
+}
+
+/// Tiled exact embed under a carrier-owned [`crate::CarrierLimits`].
+///
+/// Bounds input bytes, JPEG segments, and decoded dimensions before
+/// coefficient work; otherwise identical to [`embed_tiled`].
+pub fn embed_tiled_with_limits(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &TileConfig,
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<super::EmbedReport, StegoError> {
     validate_jpeg_tile_size(config.tile_size())?;
     if payload.is_empty() {
         return Err(StegoError::InvalidConfig(
             "empty payload requires no carrier".to_string(),
         ));
     }
-    if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
-        return Err(StegoError::MalformedInput("not a valid JPEG".to_string()));
+    let decoded = decode_supported_carrier_with_limits(jpeg_bytes, limits)?;
+    embed_tiled_from_decoded(&decoded, jpeg_bytes, payload, config)
+}
+
+pub(crate) fn embed_tiled_from_decoded(
+    decoded: &DecodedJpegCarrier,
+    source: &[u8],
+    payload: &[u8],
+    config: &TileConfig,
+) -> std::result::Result<super::EmbedReport, StegoError> {
+    validate_jpeg_tile_size(config.tile_size())?;
+    if payload.is_empty() {
+        return Err(StegoError::InvalidConfig(
+            "empty payload requires no carrier".to_string(),
+        ));
     }
     let tile_size = config.tile_size();
     let seed = config.seed();
     let payload_bits = checked_payload_bits(payload.len())?;
 
-    let decoded = JpegTranscoder::decode_coefficients_with_probe(jpeg_bytes)
-        .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
-    let (mut header, mut coefficients) = match decoded {
-        crate::jpeg_transcoder::CoefficientDecode::Supported {
-            header,
-            coefficients,
-        } => (*header, coefficients),
-        crate::jpeg_transcoder::CoefficientDecode::Unsupported(reason) => {
-            return Err(StegoError::UnsupportedJpeg(map_unsupported_reason(reason)));
-        }
-    };
+    let mut header = decoded.header().clone();
+    let mut coefficients = decoded.coefficients().clone();
     let _ = try_write_seed_hint(&mut header, seed)?;
 
     let max_h = header
@@ -1433,7 +1626,7 @@ pub fn embed_tiled(
     let Some((tile_x, tile_y, local_seed)) = first_embedded else {
         return Ok(super::EmbedReport {
             embedded: false,
-            output: jpeg_bytes.to_vec(),
+            output: source.to_vec(),
             payload_bytes: payload.len(),
             required_capacity: payload_bits,
             available_capacity: 0,
@@ -1452,14 +1645,14 @@ pub fn embed_tiled(
     ) {
         return Ok(super::EmbedReport {
             embedded: false,
-            output: jpeg_bytes.to_vec(),
+            output: source.to_vec(),
             payload_bytes: payload.len(),
             required_capacity: payload_bits,
             available_capacity: 0,
             actual_redundancy: 0,
         });
     }
-    let output = JpegTranscoder::encode_coefficients(&header, &coefficients, Some(jpeg_bytes))
+    let output = JpegTranscoder::encode_coefficients(&header, &coefficients, Some(source))
         .map_err(|e| StegoError::MalformedInput(e.to_string()))?;
     Ok(super::EmbedReport {
         embedded: true,
@@ -1493,18 +1686,41 @@ pub fn extract_tiled(
     config: &TileConfig,
     max_origins: u32,
 ) -> std::result::Result<Vec<u8>, StegoError> {
-    let decoded = decode_supported_carrier(jpeg_bytes)?;
-    extract_tiled_from_decoded(&decoded, payload_len, config, max_origins)
+    extract_tiled_with_limits(
+        jpeg_bytes,
+        payload_len,
+        config,
+        max_origins,
+        &crate::CarrierLimits::default(),
+    )
 }
 
-pub(crate) fn extract_tiled_from_decoded(
+/// Tiled raw extract under a carrier-owned [`crate::CarrierLimits`].
+///
+/// Bounds input bytes, JPEG segments, decoded dimensions, and the
+/// `max_origins` search extent before coefficient work; otherwise identical
+/// to [`extract_tiled`].
+pub fn extract_tiled_with_limits(
+    jpeg_bytes: &[u8],
+    payload_len: usize,
+    config: &TileConfig,
+    max_origins: u32,
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<Vec<u8>, StegoError> {
+    limits.check_tiled_origins(max_origins)?;
+    let decoded = decode_supported_carrier_with_limits(jpeg_bytes, limits)?;
+    extract_tiled_from_decoded_with_limits(&decoded, payload_len, config, max_origins, limits)
+}
+
+pub(crate) fn extract_tiled_from_decoded_with_limits(
     decoded: &DecodedJpegCarrier,
     payload_len: usize,
     config: &TileConfig,
     max_origins: u32,
+    limits: &crate::CarrierLimits,
 ) -> std::result::Result<Vec<u8>, StegoError> {
     validate_jpeg_tile_size(config.tile_size())?;
-    crate::types::validate_max_origins(max_origins)?;
+    limits.check_tiled_origins(max_origins)?;
     checked_payload_bits(payload_len)?;
     let tile_size = config.tile_size();
     let Some((tiles_x, tiles_y)) = jpeg_tile_geometry(&decoded.header, tile_size) else {
@@ -1571,8 +1787,27 @@ pub fn embed_tiled_framed(
     payload: &[u8],
     config: &TileConfig,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
+    embed_tiled_framed_with_limits(
+        jpeg_bytes,
+        payload,
+        config,
+        &crate::CarrierLimits::default(),
+    )
+}
+
+/// Framed tiled embed under a carrier-owned [`crate::CarrierLimits`].
+///
+/// Bounds the framed total against `limits` before carrier work; otherwise
+/// identical to [`embed_tiled_framed`].
+pub fn embed_tiled_framed_with_limits(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &TileConfig,
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<super::EmbedReport, StegoError> {
     let framed = crate::frame::encode(payload)?;
-    embed_tiled(jpeg_bytes, &framed, config)
+    limits.check_frame_bytes(framed.len())?;
+    embed_tiled_with_limits(jpeg_bytes, &framed, config, limits)
 }
 
 /// Extract and validate a framed tiled payload without caller-known length.
@@ -1595,17 +1830,38 @@ pub fn extract_tiled_framed(
     config: &TileConfig,
     max_origins: u32,
 ) -> std::result::Result<Vec<u8>, StegoError> {
-    let decoded = decode_supported_carrier(jpeg_bytes)?;
-    extract_tiled_framed_from_decoded(&decoded, config, max_origins)
+    extract_tiled_framed_with_limits(
+        jpeg_bytes,
+        config,
+        max_origins,
+        &crate::CarrierLimits::default(),
+    )
 }
 
-pub(crate) fn extract_tiled_framed_from_decoded(
+/// Framed tiled extract under a carrier-owned [`crate::CarrierLimits`].
+///
+/// Bounds input bytes, JPEG segments, decoded dimensions, the declared
+/// framed total, and the `max_origins` search extent; otherwise identical
+/// to [`extract_tiled_framed`].
+pub fn extract_tiled_framed_with_limits(
+    jpeg_bytes: &[u8],
+    config: &TileConfig,
+    max_origins: u32,
+    limits: &crate::CarrierLimits,
+) -> std::result::Result<Vec<u8>, StegoError> {
+    limits.check_tiled_origins(max_origins)?;
+    let decoded = decode_supported_carrier_with_limits(jpeg_bytes, limits)?;
+    extract_tiled_framed_from_decoded_with_limits(&decoded, config, max_origins, limits)
+}
+
+pub(crate) fn extract_tiled_framed_from_decoded_with_limits(
     decoded: &DecodedJpegCarrier,
     config: &TileConfig,
     max_origins: u32,
+    limits: &crate::CarrierLimits,
 ) -> std::result::Result<Vec<u8>, StegoError> {
     validate_jpeg_tile_size(config.tile_size())?;
-    crate::types::validate_max_origins(max_origins)?;
+    limits.check_tiled_origins(max_origins)?;
     let tile_size = config.tile_size();
     let Some((tiles_x, tiles_y)) = jpeg_tile_geometry(&decoded.header, tile_size) else {
         return Err(StegoError::InvalidConfig(format!(
@@ -1660,6 +1916,9 @@ pub(crate) fn extract_tiled_framed_from_decoded(
                     let Ok((_, total_len)) = crate::frame::decode_prefix(&prefix) else {
                         continue;
                     };
+                    if limits.check_frame_bytes(total_len).is_err() {
+                        continue;
+                    }
                     let Some(total_bits) = total_len.checked_mul(8) else {
                         continue;
                     };

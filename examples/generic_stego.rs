@@ -10,7 +10,7 @@ use stegoeggo_stego::{
     lsb::{self, LsbConfig},
     pixels::{PixelLayout, PixelViewMut},
     prepared::PreparedJpeg,
-    Redundancy, TileConfig,
+    CarrierLimits, Redundancy, TileConfig,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -170,6 +170,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "Framed tiled LSB extracted: {:?}",
         String::from_utf8_lossy(&framed_recovered)
+    );
+
+    // --- Bounded parsing for network-facing inputs (same bytes as defaults) ---
+    let limits = CarrierLimits::builder()
+        .max_input_bytes(10 * 1024 * 1024)
+        .build();
+    let bounded_capacity =
+        jpeg::capacity_with_limits(&jpeg_bytes, secret.len(), &jpeg_config, &limits)?;
+    println!(
+        "Bounded JPEG capacity: {} available, {} required",
+        bounded_capacity.available, bounded_capacity.required
+    );
+    let bounded_prepared = PreparedJpeg::new_with_limits(&jpeg_bytes, &limits)?;
+    let tiled_report = bounded_prepared.embed_tiled(secret, &tile)?;
+    println!(
+        "Prepared tiled embedded: {} (actual redundancy: {})",
+        tiled_report.embedded, tiled_report.actual_redundancy
     );
 
     // --- Tiled JPEG round-trip (textured fixture: smooth gradients lack

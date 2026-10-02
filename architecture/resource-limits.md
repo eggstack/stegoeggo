@@ -62,6 +62,15 @@ Limits violations produce structured errors:
 
 Carrier-side limit violations reported by the generic carrier (`StegoError::ResourceLimitExceeded`, e.g. carrier dimension or payload-length overflow) convert to `Error::ResourceLimitExceeded(String)`, which keeps the carrier condition distinguishable from user configuration errors.
 
+The generic carrier owns a separate bounded-input contract
+(`stegoeggo_stego::CarrierLimits` with `*_with_limits` JPEG variants and
+`PreparedJpeg::new_with_limits`; see `carrier-surface.md`): input bytes,
+JPEG segments, dimensions/pixels, framed totals, and tiled-search extent,
+all checked before allocation with `StegoError::ResourceLimitExceeded`
+and no secret/input dump. The carrier never depends on the root
+`ResourceLimits`; the root may later translate its policy into carrier
+limits privately.
+
 Note the disposition split: `check_metadata_field_count()` reports field-count overflow as `Error::ContainerLimitExceeded { kind: "metadata fields", .. }`, not `MetadataLimitExceeded` — only byte-size overflow yields `MetadataLimitExceeded`. The observer records the first violation stickily (`limit_error`) and surfaces it via `check_limits()`.
 
 ## `OperationObserver`

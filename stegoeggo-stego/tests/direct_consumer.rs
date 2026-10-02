@@ -15,7 +15,8 @@ use stegoeggo_stego::{
     lsb::LsbConfig,
     pixels::{PixelLayout, PixelView, PixelViewMut},
     prepared::PreparedJpeg,
-    CapacityReport, EmbedReport, Redundancy, StegoError, TileConfig, MAX_TILED_ORIGINS,
+    CapacityReport, CarrierLimits, EmbedReport, Redundancy, StegoError, TileConfig,
+    MAX_TILED_ORIGINS,
 };
 
 fn textured_rgb(width: u32, height: u32) -> image::RgbImage {
@@ -441,4 +442,215 @@ fn direct_consumer_errors_need_no_exhaustive_match() {
         Err(_) => {}
         Ok(_) => panic!("frame decode of garbage must fail"),
     }
+}
+
+#[test]
+fn direct_consumer_bounded_variants_match_one_shot_with_defaults() {
+    let jpeg_bytes = encode_jpeg(&textured_rgb(256, 256), 90);
+    let config = JpegConfig::new(777);
+    let payload = b"bounded defaults parity";
+    let limits = CarrierLimits::default();
+
+    assert_eq!(
+        jpeg::capacity_with_limits(&jpeg_bytes, payload.len(), &config, &limits).unwrap(),
+        jpeg::capacity(&jpeg_bytes, payload.len(), &config).unwrap()
+    );
+    let strict = jpeg::embed_strict_with_limits(&jpeg_bytes, payload, &config, &limits).unwrap();
+    let one_shot = jpeg::embed_strict(&jpeg_bytes, payload, &config).unwrap();
+    assert_eq!(strict.output, one_shot.output);
+    assert_eq!(
+        jpeg::extract_with_limits(
+            &strict.output,
+            payload.len(),
+            &config,
+            strict.actual_redundancy,
+            &limits
+        )
+        .unwrap(),
+        payload
+    );
+    let framed =
+        jpeg::embed_framed_strict_with_limits(&jpeg_bytes, payload, &config, &limits).unwrap();
+    assert_eq!(
+        jpeg::extract_framed_with_limits(&framed.output, &config, &limits).unwrap(),
+        payload
+    );
+    assert_eq!(
+        jpeg::probe_support_with_limits(&jpeg_bytes, &limits).unwrap(),
+        jpeg::probe_support(&jpeg_bytes).unwrap()
+    );
+    assert_eq!(
+        jpeg::inspect_with_limits(&jpeg_bytes, &limits)
+            .unwrap()
+            .width,
+        jpeg::inspect(
+            &jpeg_bytes,
+            limits.max_jpeg_segments(),
+            limits.max_jpeg_segment_bytes()
+        )
+        .unwrap()
+        .width
+    );
+
+    let tile = TileConfig::try_new(777, 64).unwrap();
+    let tiled = jpeg::embed_tiled_with_limits(&jpeg_bytes, payload, &tile, &limits).unwrap();
+    assert_eq!(
+        tiled.output,
+        jpeg::embed_tiled(&jpeg_bytes, payload, &tile)
+            .unwrap()
+            .output
+    );
+    assert_eq!(
+        jpeg::extract_tiled_with_limits(&tiled.output, payload.len(), &tile, 64, &limits).unwrap(),
+        payload
+    );
+    let tiled_framed =
+        jpeg::embed_tiled_framed_with_limits(&jpeg_bytes, payload, &tile, &limits).unwrap();
+    assert_eq!(
+        jpeg::extract_tiled_framed_with_limits(&tiled_framed.output, &tile, 64, &limits).unwrap(),
+        payload
+    );
+
+    let best_effort =
+        jpeg::embed_best_effort_with_limits(&jpeg_bytes, payload, &config, &limits).unwrap();
+    assert_eq!(
+        best_effort.output,
+        jpeg::embed_best_effort(&jpeg_bytes, payload, &config)
+            .unwrap()
+            .output
+    );
+    let framed_best =
+        jpeg::embed_framed_best_effort_with_limits(&jpeg_bytes, payload, &config, &limits).unwrap();
+    assert_eq!(
+        framed_best.output,
+        jpeg::embed_framed_best_effort(&jpeg_bytes, payload, &config)
+            .unwrap()
+            .output
+    );
+}
+
+#[test]
+fn direct_consumer_carrier_limits_bound_adversarial_inputs() {
+    let jpeg_bytes = encode_jpeg(&textured_rgb(256, 256), 90);
+    let config = JpegConfig::new(999);
+    let tile = TileConfig::try_new(999, 64).unwrap();
+
+    let tiny_input = CarrierLimits::builder().max_input_bytes(8).build();
+    assert!(matches!(
+        jpeg::capacity_with_limits(&jpeg_bytes, 4, &config, &tiny_input),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+    assert!(matches!(
+        PreparedJpeg::new_with_limits(&jpeg_bytes, &tiny_input),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+
+    let tight_segments = CarrierLimits::builder().max_jpeg_segments(1).build();
+    assert!(matches!(
+        jpeg::capacity_with_limits(&jpeg_bytes, 4, &config, &tight_segments),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+    assert!(matches!(
+        jpeg::probe_support_with_limits(&jpeg_bytes, &tight_segments),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+
+    let tight_dims = CarrierLimits::builder()
+        .max_width(8)
+        .max_height(8)
+        .max_pixels(64)
+        .build();
+    assert!(matches!(
+        jpeg::capacity_with_limits(&jpeg_bytes, 4, &config, &tight_dims),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+
+    let tight_frame = CarrierLimits::builder().max_frame_bytes(12).build();
+    let framed = jpeg::embed_framed_strict(&jpeg_bytes, b"frame bound payload", &config).unwrap();
+    assert!(matches!(
+        jpeg::extract_framed_with_limits(&framed.output, &config, &tight_frame),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+
+    let tight_origins = CarrierLimits::builder().max_tiled_origins(2).build();
+    assert!(matches!(
+        jpeg::extract_tiled_with_limits(&jpeg_bytes, 4, &tile, 64, &tight_origins),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+    assert!(matches!(
+        jpeg::extract_tiled_framed_with_limits(&jpeg_bytes, &tile, 64, &tight_origins),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+    assert!(matches!(
+        jpeg::extract_tiled(&jpeg_bytes, 4, &tile, 0),
+        Err(StegoError::InvalidConfig(_))
+    ));
+    assert!(matches!(
+        jpeg::extract_tiled(&jpeg_bytes, 4, &tile, MAX_TILED_ORIGINS + 1),
+        Err(StegoError::InvalidConfig(_))
+    ));
+
+    assert!(matches!(
+        jpeg::capacity_with_limits(&jpeg_bytes, usize::MAX, &config, &CarrierLimits::default()),
+        Err(StegoError::InvalidConfig(_))
+    ));
+    assert!(matches!(
+        PreparedJpeg::new(b"not a jpeg"),
+        Err(StegoError::MalformedInput(_))
+    ));
+    assert!(matches!(
+        PreparedJpeg::new(&jpeg_bytes[..64]),
+        Err(StegoError::MalformedInput(_)) | Err(StegoError::UnsupportedJpeg(_))
+    ));
+    assert!(matches!(
+        jpeg::capacity(&jpeg_bytes[..64], 4, &config),
+        Err(StegoError::MalformedInput(_)) | Err(StegoError::UnsupportedJpeg(_))
+    ));
+    assert!(matches!(
+        jpeg::extract_tiled_framed(&jpeg_bytes, &tile, 0),
+        Err(StegoError::InvalidConfig(_))
+    ));
+}
+
+#[test]
+fn direct_consumer_prepared_tiled_embed_matches_one_shot_and_reuses() {
+    let jpeg_bytes = encode_jpeg(&textured_rgb(256, 256), 90);
+    let tile = TileConfig::try_new(31337, 64).unwrap();
+    let payload = b"prepared tiled embed parity";
+
+    let prepared = PreparedJpeg::new(&jpeg_bytes).unwrap();
+    let prepared_report = prepared.embed_tiled(payload, &tile).unwrap();
+    let one_shot = jpeg::embed_tiled(&jpeg_bytes, payload, &tile).unwrap();
+    assert_eq!(prepared_report.embedded, one_shot.embedded);
+    assert_eq!(prepared_report.output, one_shot.output);
+    assert_eq!(prepared_report.actual_redundancy(), 1);
+
+    let prepared_framed = prepared.embed_tiled_framed(payload, &tile).unwrap();
+    let one_shot_framed = jpeg::embed_tiled_framed(&jpeg_bytes, payload, &tile).unwrap();
+    assert_eq!(prepared_framed.output, one_shot_framed.output);
+    assert_eq!(
+        jpeg::extract_tiled_framed(&prepared_framed.output, &tile, 64).unwrap(),
+        payload
+    );
+
+    let small = encode_jpeg(&textured_rgb(64, 64), 90);
+    let small_prepared = PreparedJpeg::new(&small).unwrap();
+    let oversized = vec![0xA5; 4096];
+    let before = small_prepared.capacity(4, &JpegConfig::new(1)).unwrap();
+    let attempt = small_prepared.embed_tiled(&oversized, &tile).unwrap();
+    assert_eq!(attempt.payload_bytes(), oversized.len());
+    assert_eq!(
+        small_prepared.capacity(4, &JpegConfig::new(1)).unwrap(),
+        before
+    );
+    assert_eq!(
+        small_prepared.extract_tiled_framed(&tile, 1).is_ok(),
+        jpeg::extract_tiled_framed(&small, &tile, 1).is_ok()
+    );
+
+    let limits = CarrierLimits::builder().max_input_bytes(8).build();
+    assert!(matches!(
+        PreparedJpeg::new_with_limits(&jpeg_bytes, &limits),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
 }

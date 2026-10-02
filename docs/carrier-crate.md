@@ -38,9 +38,28 @@ operations; the compatibility names remain for 0.x. Seed hints
 ### Prepared JPEG (repeated operations)
 
 `prepared::PreparedJpeg` borrows encoded JPEG bytes and retains one
-coefficient decode across repeated capacity, extraction, and
-strict-embedding operations, with results identical to the one-shot API.
-Codec internals stay private.
+coefficient decode across repeated capacity, extraction,
+strict-embedding, and tiled exact-embedding operations, with results
+identical to the one-shot API. Codec internals stay private.
+`PreparedJpeg::new_with_limits` bounds construction through the
+carrier-owned `CarrierLimits`; the handle stays reusable after failed
+queries or embeds, and no best-effort application degradation is added
+to the prepared handle.
+
+### Bounded parsing (`CarrierLimits`)
+
+`limits::CarrierLimits` is the carrier-owned bounded-untrusted-input
+contract (private fields, getters, builder): input bytes (100 MiB),
+JPEG segments (256 × 65535 bytes), dimensions/pixels (16384 × 16384),
+framed totals (16 MiB + 11-byte header), and tiled-search extent
+(`MAX_TILED_ORIGINS`). Bounded `*_with_limits` JPEG one-shot variants
+share the single decode path with the defaults, so default and bounded
+results agree exactly; limit failures map to
+`StegoError::ResourceLimitExceeded` with no secret/input dump.
+`jpeg::inspect` keeps its signature and delegates through the same
+bounded header path. The carrier never depends on the root crate's
+`ResourceLimits`; the root may later translate its policy into carrier
+limits privately.
 
 ### Borrowed pixel buffers
 

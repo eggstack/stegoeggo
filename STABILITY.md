@@ -55,7 +55,11 @@ over LSB and JPEG carriers, with `Redundancy`, `LsbConfig`, `JpegConfig`,
  report types. `jpeg::embed`/`embed_framed` remain best-effort
  compatibility operations (redundancy reduction plus seed-hint
  degradation); new code uses the explicit best-effort names or the strict
- operations. `EmbedOutcome`/`EmbedStatus`/`EmbedPath` are parent-owned
+ operations. Bounded `*_with_limits` JPEG variants, `inspect_with_limits`,
+ `probe_support_with_limits`, `CarrierLimits`/`CarrierLimitsBuilder`, and
+ `PreparedJpeg::new_with_limits`/`embed_tiled`/`embed_tiled_framed` are
+ additive stable APIs sharing the single decode path with identical
+ results under default limits. `EmbedOutcome`/`EmbedStatus`/`EmbedPath` are parent-owned
  application vocabulary retained through 0.x with removal from the
  recommended generic surface at v1 (parent keeps its own vocabulary).
  `EmbedReport` and `InPlaceEmbedReport` public fields are frozen through

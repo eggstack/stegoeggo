@@ -784,6 +784,61 @@ fn public_jpeg_best_effort_alias_parity() {
 }
 
 #[test]
+fn public_bounded_variants_match_one_shot_with_defaults() {
+    let jpeg_bytes = make_jpeg_bytes(256, 256);
+    let config = JpegConfig::new(777);
+    let payload = b"bounded facade parity";
+    let limits = stego::CarrierLimits::default();
+
+    let strict =
+        stego::jpeg::embed_strict_with_limits(&jpeg_bytes, payload, &config, &limits).unwrap();
+    assert_eq!(
+        strict.output,
+        stego::jpeg::embed_strict(&jpeg_bytes, payload, &config)
+            .unwrap()
+            .output
+    );
+    assert_eq!(
+        stego::jpeg::extract_with_limits(
+            &strict.output,
+            payload.len(),
+            &config,
+            strict.actual_redundancy,
+            &limits
+        )
+        .unwrap(),
+        payload
+    );
+    let framed =
+        stego::jpeg::embed_framed_strict_with_limits(&jpeg_bytes, payload, &config, &limits)
+            .unwrap();
+    assert_eq!(
+        stego::jpeg::extract_framed_with_limits(&framed.output, &config, &limits).unwrap(),
+        payload
+    );
+
+    let tile = stego::TileConfig::try_new(777, 64).unwrap();
+    let tiled = stego::jpeg::embed_tiled_with_limits(&jpeg_bytes, payload, &tile, &limits).unwrap();
+    assert_eq!(
+        tiled.output,
+        stego::jpeg::embed_tiled(&jpeg_bytes, payload, &tile)
+            .unwrap()
+            .output
+    );
+    let prepared = stego::PreparedJpeg::new_with_limits(&jpeg_bytes, &limits).unwrap();
+    assert_eq!(
+        prepared.embed_tiled(payload, &tile).unwrap().output,
+        tiled.output
+    );
+
+    let tight = stego::CarrierLimits::builder().max_tiled_origins(2).build();
+    assert!(matches!(
+        stego::jpeg::extract_tiled_with_limits(&jpeg_bytes, 4, &tile, 64, &tight),
+        Err(stego::StegoError::ResourceLimitExceeded(_))
+    ));
+}
+
+#[test]
 fn public_report_accessors_cover_stable_facts() {
     let img = make_lsb_image(64, 64);
     let config = LsbConfig::new(42);

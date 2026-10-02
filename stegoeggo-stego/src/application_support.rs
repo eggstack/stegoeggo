@@ -527,9 +527,9 @@ mod tests {
 
     #[test]
     fn jpeg_search_context_decodes_once_for_standard_and_tiled_probes() {
-        crate::jpeg::reset_decode_count();
         let payload = vec![0xA5; 36];
         let output = stable_tiled_output(&payload);
+        crate::jpeg::reset_decode_count();
         let context = JpegSearchContext::new(&output).expect("search context should decode");
         assert_eq!(crate::jpeg::decode_count(), 1);
         for redundancy in 1..=10 {
