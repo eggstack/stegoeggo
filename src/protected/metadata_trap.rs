@@ -8,6 +8,7 @@ mod common;
 mod jpeg;
 mod notice;
 mod png;
+mod spec;
 mod webp;
 
 pub(crate) use self::common::current_timestamp_iso8601;
@@ -152,115 +153,10 @@ impl RightsMetadataProtector {
 impl RightsMetadataProtector {
     #[doc(hidden)]
     pub fn inject_bytes(&self, img_bytes: &[u8], ctx: &ProtectionContext) -> Result<Vec<u8>> {
-        let should_inject_metadata =
-            Self::should_inject_metadata(ctx.inject_metadata(), ctx.protection_level());
-
-        let notice = ctx.normalize_rights_notice();
-
-        let metadata = self.generate_rights_metadata_from_notice(
-            &notice,
-            should_inject_metadata,
-            ctx.inject_legal_claims(),
-        );
-
-        if metadata.is_empty() {
+        let Some(spec) = self.spec_from_legacy(ctx, img_bytes) else {
             return Ok(img_bytes.to_vec());
-        }
-
-        let format = ctx
-            .output_format()
-            .or(ctx.input_format())
-            .unwrap_or_else(|| {
-                ImageOutputFormat::from_magic_bytes(img_bytes)
-                    .unwrap_or(crate::types::DEFAULT_OUTPUT_FORMAT)
-            });
-
-        match ctx.metadata_update_policy() {
-            MetadataUpdatePolicy::FailOnConflict => {
-                if self.has_stego_owned_metadata(img_bytes, format) {
-                    return Err(Error::Metadata(
-                        "MetadataUpdatePolicy::FailOnConflict: \
-                         image already contains StegoEggo metadata"
-                            .to_string(),
-                    ));
-                }
-            }
-            MetadataUpdatePolicy::PreserveExisting => {
-                if self.has_stego_owned_metadata(img_bytes, format) {
-                    let existing_keys = match format {
-                        ImageOutputFormat::Png => Self::collect_stego_owned_png_keys(img_bytes),
-                        ImageOutputFormat::Jpeg => Self::collect_stego_owned_jpeg_keys(img_bytes),
-                        ImageOutputFormat::WebP => Self::collect_stego_owned_webp_keys(img_bytes),
-                    };
-                    let metadata: Vec<_> = metadata
-                        .into_iter()
-                        .filter(|(k, _)| !existing_keys.contains(k))
-                        .collect();
-                    if metadata.is_empty() && notice.dmi().is_none() {
-                        return Ok(img_bytes.to_vec());
-                    }
-                    return match format {
-                        ImageOutputFormat::Png => self.inject_text_chunks_png(
-                            img_bytes,
-                            &metadata,
-                            notice.dmi(),
-                            notice.seed(),
-                            Some(&ctx.resource_limits()),
-                        ),
-                        ImageOutputFormat::Jpeg => {
-                            let (effective_dmi, emit_structured_com) =
-                                Self::jpeg_preserve_existing_suppression(
-                                    &existing_keys,
-                                    notice.dmi(),
-                                );
-                            self.inject_text_chunks_jpeg_with_timestamp(
-                                img_bytes,
-                                &metadata,
-                                effective_dmi,
-                                notice.seed(),
-                                Some(ctx),
-                                notice.notice_applied_at(),
-                                emit_structured_com,
-                            )
-                        }
-                        ImageOutputFormat::WebP => {
-                            self.inject_text_chunks_webp_from_notice(img_bytes, &notice)
-                        }
-                    };
-                }
-            }
-            MetadataUpdatePolicy::ReplaceStegoOwned => {}
-        }
-
-        let stripped = match format {
-            ImageOutputFormat::Png => Self::strip_stego_owned_png(img_bytes)?,
-            ImageOutputFormat::Jpeg => Self::strip_stego_owned_jpeg(img_bytes)?,
-            ImageOutputFormat::WebP => Self::strip_stego_owned_webp(img_bytes)?,
         };
-
-        let with_metadata = match format {
-            ImageOutputFormat::Png => self.inject_text_chunks_png(
-                &stripped,
-                &metadata,
-                notice.dmi(),
-                notice.seed(),
-                Some(&ctx.resource_limits()),
-            )?,
-            ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg_with_timestamp(
-                &stripped,
-                &metadata,
-                notice.dmi(),
-                notice.seed(),
-                Some(ctx),
-                notice.notice_applied_at(),
-                true,
-            )?,
-            ImageOutputFormat::WebP => {
-                self.inject_text_chunks_webp_from_notice(&stripped, &notice)?
-            }
-        };
-
-        Ok(with_metadata)
+        self.execute_resolved_write(img_bytes, &spec)
     }
 
     /// Inject metadata bytes using a resolved plan directly.
@@ -274,41 +170,23 @@ impl RightsMetadataProtector {
         img_bytes: &[u8],
         plan: &crate::types::ResolvedProtectionPlan,
     ) -> Result<Vec<u8>> {
-        let should_inject = plan.channels().rights_metadata;
-        let mut notice = plan.effective_notice().clone();
-        if matches!(
-            plan.channels().hidden_marker,
-            crate::types::HiddenMarkerMode::Disabled
-        ) {
-            notice.seed = None;
-        }
-        let effective_dmi = plan.effective_dmi();
-
-        let metadata = self.generate_rights_metadata_from_notice(&notice, should_inject, None);
-
-        if metadata.is_empty() && effective_dmi.is_none() {
+        let Some(spec) = self.spec_from_plan(plan) else {
             return Ok(img_bytes.to_vec());
-        }
-
-        if !should_inject {
-            return Ok(img_bytes.to_vec());
-        }
-
-        let format = plan.output_format();
-        let policy = plan.processing().metadata_update_policy;
-
-        // Translation adapter: the plan-based path carries intensity, seed,
-        // and resource limits, while the shared JPEG injection internals
-        // (including the structured-COM renderer) still read those three
-        // fields through the legacy context shape. No level/policy is set
-        // here, so rendering matches the established plan-path bytes exactly.
-        let limits_ctx = {
-            let mut ctx = ProtectionContext::new(plan.intensity(), plan.seed());
-            ctx = ctx.with_resource_limits(plan.resource_limits().clone());
-            ctx
         };
+        self.execute_resolved_write(img_bytes, &spec)
+    }
 
-        match policy {
+    fn execute_resolved_write(
+        &self,
+        img_bytes: &[u8],
+        spec: &self::spec::MetadataWriteSpec,
+    ) -> Result<Vec<u8>> {
+        let format = spec.format;
+        let render = self::spec::JpegRender {
+            limits: &spec.limits,
+            structured: Some(&spec.structured),
+        };
+        match spec.policy {
             MetadataUpdatePolicy::FailOnConflict => {
                 if self.has_stego_owned_metadata(img_bytes, format) {
                     return Err(Error::Metadata(
@@ -325,39 +203,41 @@ impl RightsMetadataProtector {
                         ImageOutputFormat::Jpeg => Self::collect_stego_owned_jpeg_keys(img_bytes),
                         ImageOutputFormat::WebP => Self::collect_stego_owned_webp_keys(img_bytes),
                     };
-                    let metadata: Vec<_> = metadata
-                        .into_iter()
+                    let metadata: Vec<_> = spec
+                        .metadata
+                        .iter()
                         .filter(|(k, _)| !existing_keys.contains(k))
+                        .cloned()
                         .collect();
-                    if metadata.is_empty() && effective_dmi.is_none() {
+                    if metadata.is_empty() && spec.effective_dmi.is_none() {
                         return Ok(img_bytes.to_vec());
                     }
                     return match format {
                         ImageOutputFormat::Png => self.inject_text_chunks_png(
                             img_bytes,
                             &metadata,
-                            effective_dmi,
-                            notice.seed(),
-                            Some(plan.resource_limits()),
+                            spec.effective_dmi,
+                            spec.notice.seed(),
+                            Some(&spec.limits),
                         ),
                         ImageOutputFormat::Jpeg => {
                             let (preserved_dmi, emit_structured_com) =
                                 Self::jpeg_preserve_existing_suppression(
                                     &existing_keys,
-                                    effective_dmi,
+                                    spec.effective_dmi,
                                 );
                             self.inject_text_chunks_jpeg_with_timestamp(
                                 img_bytes,
                                 &metadata,
                                 preserved_dmi,
-                                notice.seed(),
-                                Some(&limits_ctx),
-                                notice.notice_applied_at(),
+                                spec.notice.seed(),
+                                &render,
+                                spec.notice.notice_applied_at(),
                                 emit_structured_com,
                             )
                         }
                         ImageOutputFormat::WebP => {
-                            self.inject_text_chunks_webp_from_notice(img_bytes, &notice)
+                            self.inject_text_chunks_webp_from_notice(img_bytes, &spec.notice)
                         }
                     };
                 }
@@ -374,22 +254,22 @@ impl RightsMetadataProtector {
         let with_metadata = match format {
             ImageOutputFormat::Png => self.inject_text_chunks_png(
                 &stripped,
-                &metadata,
-                effective_dmi,
-                notice.seed(),
-                Some(plan.resource_limits()),
+                &spec.metadata,
+                spec.effective_dmi,
+                spec.notice.seed(),
+                Some(&spec.limits),
             )?,
             ImageOutputFormat::Jpeg => self.inject_text_chunks_jpeg_with_timestamp(
                 &stripped,
-                &metadata,
-                effective_dmi,
-                notice.seed(),
-                Some(&limits_ctx),
-                notice.notice_applied_at(),
+                &spec.metadata,
+                spec.effective_dmi,
+                spec.notice.seed(),
+                &render,
+                spec.notice.notice_applied_at(),
                 true,
             )?,
             ImageOutputFormat::WebP => {
-                self.inject_text_chunks_webp_from_notice(&stripped, &notice)?
+                self.inject_text_chunks_webp_from_notice(&stripped, &spec.notice)?
             }
         };
 
@@ -1653,10 +1533,15 @@ mod tests {
     fn structured_com_marker_parse_roundtrip() {
         let ctx =
             ProtectionContext::new(0.5, 12345).with_format(crate::types::ImageOutputFormat::Jpeg);
-        let marker = RightsMetadataProtector::generate_structured_com_marker(
+        let params = self::spec::StructuredComParams::from_legacy(
+            ctx.protection_level(),
+            ctx.seed(),
+            ctx.intensity(),
+        );
+        let marker = RightsMetadataProtector::generate_structured_com_marker_with_timestamp(
             Some(DmiValue::Prohibited),
+            &params,
             None,
-            &ctx,
         );
         let payload = &marker[4..];
         let parsed = RightsMetadataProtector::parse_structured_com_payload(payload);
@@ -2078,4 +1963,86 @@ mod tests {
             "XMP with unclosed rdf:Description must fail"
         );
     }
+
+    fn golden_request() -> crate::types::ProtectionRequest {
+        use crate::types::{ProtectionRequest, RightsNotice, RightsPolicy};
+        let notice = RightsNotice::new()
+            .with_copyright_holder("Golden Holder")
+            .with_seed(4242);
+        ProtectionRequest::metadata_only(notice, RightsPolicy::ProhibitedAiMlTraining)
+            .with_seed(4242)
+            .with_timestamp_override("2026-01-01T00:00:00Z")
+    }
+
+    fn golden_legacy_ctx() -> ProtectionContext {
+        use crate::types::{LegalMetadata, ProtectionLevel};
+        let legal = LegalMetadata::new().with_copyright_holder("Golden Holder");
+        let mut ctx = ProtectionContext::new(0.5, 4242).with_legal_metadata(legal);
+        ctx.set_protection_level(ProtectionLevel::Standard);
+        ctx.with_timestamp_override("2026-01-01T00:00:00Z")
+    }
+
+    fn sha_hex(bytes: &[u8]) -> String {
+        use sha2::Digest;
+        hex::encode(sha2::Sha256::digest(bytes))
+    }
+
+    #[test]
+    fn canonical_plan_metadata_bytes_are_stable() {
+        use crate::types::ImageOutputFormat;
+        let protector = RightsMetadataProtector::new();
+        let img = make_test_image();
+        for (name, input, format, expected) in [
+            (
+                "png",
+                encode_png(&img),
+                ImageOutputFormat::Png,
+                GOLDEN_PLAN_PNG,
+            ),
+            (
+                "jpeg",
+                encode_jpeg(&img),
+                ImageOutputFormat::Jpeg,
+                GOLDEN_PLAN_JPEG,
+            ),
+            (
+                "webp",
+                encode_webp(&img),
+                ImageOutputFormat::WebP,
+                GOLDEN_PLAN_WEBP,
+            ),
+        ] {
+            let plan = crate::resolve_request(&golden_request(), format).unwrap();
+            let out = protector.inject_bytes_from_plan(&input, &plan).unwrap();
+            assert_eq!(sha_hex(&out), expected, "plan-path {name} bytes changed");
+        }
+    }
+
+    #[test]
+    fn legacy_metadata_bytes_are_stable() {
+        let protector = RightsMetadataProtector::new();
+        let img = make_test_image();
+        let ctx = golden_legacy_ctx();
+        for (name, input, expected) in [
+            ("png", encode_png(&img), GOLDEN_LEGACY_PNG),
+            ("jpeg", encode_jpeg(&img), GOLDEN_LEGACY_JPEG),
+            ("webp", encode_webp(&img), GOLDEN_LEGACY_WEBP),
+        ] {
+            let out = protector.inject_bytes(&input, &ctx).unwrap();
+            assert_eq!(sha_hex(&out), expected, "legacy-path {name} bytes changed");
+        }
+    }
+
+    const GOLDEN_PLAN_PNG: &str =
+        "6e1592208fd4f214e0dbfa351ea4e2e9d1a8f713440fdea2c36251bb08f6153b";
+    const GOLDEN_PLAN_JPEG: &str =
+        "3b6567934e1dd71c8680727725924d778d0476bdeeeb7c837033902463fac95a";
+    const GOLDEN_PLAN_WEBP: &str =
+        "3a1b3fc8065aa4e9fff0cd6c229a14062b8d1d07f3756451b98ee1bad128a6af";
+    const GOLDEN_LEGACY_PNG: &str =
+        "9e388c6aa7647bb91c52537ec581877ab5b6f56e881821153ac7c1a3e5d9c476";
+    const GOLDEN_LEGACY_JPEG: &str =
+        "e5f290832758d4b5d07aac2d311dc380c288f4dd821d1f062e49251d7b8a8b62";
+    const GOLDEN_LEGACY_WEBP: &str =
+        "0cf99f8fb2a8286e3821b127266b12d1b35a86b42f19c47b511a53a5d2ca44e4";
 }

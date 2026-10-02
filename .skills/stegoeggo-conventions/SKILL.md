@@ -223,7 +223,6 @@ frame::decode_prefix(data) -> Result<(FrameHeader, usize)>
 
 ### Application crate (`src/protected/constants.rs`, all `pub(crate)` — read values, do not import)
 - `STEGO_OFFSET_SEED_1: u64 = 0x517cc1b727220a95`
-- `XORSHIFT_SEED_OFFSET: u64 = 0x123456789ABCDEF0`
 
 ### Payload (`src/payload_v3/types.rs`)
 - `V3_MAGIC: [u8; 2] = [0x53, 0x45]` ("SE")
@@ -252,7 +251,7 @@ frame::decode_prefix(data) -> Result<(FrameHeader, usize)>
 
 ## Common Pitfalls
 
-1. **Two XorShiftRng implementations** — `PixelSelectionRng` in `util/image.rs` and `DctCoefficientRng` in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs` use different algorithms. Never interchange.
+1. **One stego PRNG** — `DctCoefficientRng` in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs` (sequence pinned by unit tests). The retired root-crate pixel RNG was removed; do not reintroduce a second shuffling PRNG.
 2. **Metadata injection survives only in byte paths** — `RightsMetadataProtector::apply()` returns `Cow::Borrowed` unchanged. Use `inject_bytes_from_plan()` or `process_image_bytes()` for metadata.
 3. **Stego seed derivation** — embed/extract functions internally derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)`. Match seeds when calling directly.
 4. **`subtle` crate** — use `ConstantTimeEq::ct_eq()` for HMAC verification, not `==`

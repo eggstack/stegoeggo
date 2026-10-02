@@ -38,12 +38,7 @@ const SEED_MAGIC: &[u8] = b"SEED";
 pub(crate) const SEED_HINT_BITS: usize = 96;
 
 /// DCT coefficient shuffling PRNG for F5 steganography.
-/// Uses a different algorithm than the general-purpose `PixelSelectionRng` in `util/image.rs`.
 /// Changing this algorithm would break compatibility with existing steganographic data.
-///
-/// **WARNING:** Do NOT interchange with the general-purpose `PixelSelectionRng` — they produce
-/// different sequences for the same seed and are each paired with their respective
-/// embed/extract code paths.
 struct DctCoefficientRng(u64);
 
 impl DctCoefficientRng {
@@ -1022,20 +1017,20 @@ mod tests {
     }
 
     #[test]
-    fn dct_and_pixel_rngs_produce_different_sequences_for_same_seed() {
+    fn dct_rng_sequence_is_pinned() {
         let mut dct = DctCoefficientRng::new(0);
         let dct_first = dct.next_u64();
         const PIX_FIRST_FOR_ZERO: u64 = 0xb7fb0288c5ee4339;
         assert_ne!(
             dct_first, PIX_FIRST_FOR_ZERO,
-            "DctCoefficientRng(0) {dct_first:#x} must differ from PixelSelectionRng(0) {PIX_FIRST_FOR_ZERO:#x} — do not unify the two RNGs"
+            "DctCoefficientRng(0) {dct_first:#x} must differ from the retired pixel RNG output {PIX_FIRST_FOR_ZERO:#x} — do not unify the two RNGs"
         );
         let mut dct42 = DctCoefficientRng::new(42);
         let dct42_first = dct42.next_u64();
         const PIX_FIRST_FOR_42: u64 = 0x25eedbfc15706989;
         assert_ne!(
             dct42_first, PIX_FIRST_FOR_42,
-            "DctCoefficientRng(42) must differ from PixelSelectionRng(42)"
+            "DctCoefficientRng(42) must differ from the retired pixel RNG output"
         );
     }
 

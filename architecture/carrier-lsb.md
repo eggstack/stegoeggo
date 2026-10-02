@@ -29,7 +29,7 @@ lsb tiled/framed ────────┘
 - Any zero-width or zero-height carrier is `EmptyCarrier`; `embed`/`embed_tiled` and their in-place/borrowed-view forms all agree.
 - V2 slot mapping is byte-frozen; injectivity is verified for documented domains only — never claim a full-domain bijection.
 - Permutation seeds derive `offset_seed = seed * (STEGO_OFFSET_SEED_1 + pass)` internally; embed and extract must use the same seed.
-- Two unrelated RNGs: `PixelSelectionRng` (root crate `src/util/image.rs`, pixel selection) vs `DctCoefficientRng` (`jpeg_transcoder/stego_f5.rs`, DCT shuffle). Do not interchange.
+- Stego shuffling uses `DctCoefficientRng` (`jpeg_transcoder/stego_f5.rs`, DCT shuffle), whose sequence is pinned by unit tests. The retired root-crate pixel RNG was removed in stego-library-evolution M001.
 
 ## Operation styles
 

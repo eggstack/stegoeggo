@@ -59,7 +59,7 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 - `stegoeggo-stego/src/jpeg_transcoder/` — JPEG DCT internals (private to carrier)
 - `src/payload_v3/types.rs` — V3 payload constants and types
 - `stegoeggo-stego/src/constants.rs` — Carrier-level tuning constants (`STEGO_SPREAD_FACTOR`, `STEGO_OFFSET_SEED_1`, `SPLITMIX64_SEED`, `MIN_REDUNDANCY`, `MAX_REDUNDANCY`)
-- `src/protected/constants.rs` — Application-level constants (`STEGO_OFFSET_SEED_1`, `XORSHIFT_SEED_OFFSET`)
+- `src/protected/constants.rs` — Application-level constants (`STEGO_OFFSET_SEED_1`)
 
 ### 5. Document findings in this format
 
@@ -80,7 +80,7 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 - `ProtectionContext` fields are all private with getter methods — docs often show public fields
 - `Cow<'a, DynamicImage>` returns require lifetime annotations that docs frequently omit
 - `Option<bool>` fields have ambiguous `None` vs `false` semantics — document this explicitly
-- The carrier crate has two separate PRNG implementations (`PixelSelectionRng` in `util/image.rs` and `DctCoefficientRng` in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs`) — never interchange
+- The retired root-crate pixel RNG was removed; `DctCoefficientRng` in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs` is the only stego PRNG
 - ISCC implementation is NOT standard-compliant — uses custom component codes
 - `src/constants.rs` does NOT exist as a top-level file — constants are in `src/protected/constants.rs` (application) and `stegoeggo-stego/src/constants.rs` (carrier)
 - The JPEG transcoder lives in the carrier crate (`stegoeggo-stego/src/jpeg_transcoder/`), not the root crate
@@ -90,7 +90,6 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 
 These have been fixed in documentation — if the code hasn't changed, these are now correctly documented:
 
-- **`XorShiftRng::new`** uses `wrapping_add`, not XOR — use `seed.wrapping_add(XORSHIFT_SEED_OFFSET)`
 - **`parallel_threshold()`** and **`LazyLock` singletons** do NOT exist anywhere in the current codebase — docs claiming them are stale; free functions delegate directly to `request_from_legacy()` + `process_request_bytes()`
 - **`verify_image_bytes`** DOES perform DCT stego verification — contrary to old docs
 - **CLI batch** does NOT preserve directory structure — outputs flat to `-o` dir

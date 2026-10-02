@@ -7,8 +7,9 @@ The metadata facade, split by format behind `RightsMetadataProtector`. Injects m
 ## Key Behavior
 
 - **`apply()` returns `Cow::Borrowed(img)` unchanged** — metadata injection cannot survive through the `DynamicImage` API
-- **`inject_bytes()`** — Legacy metadata injection using `&ProtectionContext`
-- **`inject_bytes_from_plan()`** — Canonical metadata injection using `&ResolvedProtectionPlan` directly (no `ProtectionContext` reconstruction)
+- **`inject_bytes()`** — Legacy metadata injection using `&ProtectionContext`; translates once through `spec_from_legacy()` into a private `MetadataWriteSpec`
+- **`inject_bytes_from_plan()`** — Canonical metadata injection using `&ResolvedProtectionPlan` directly (no `ProtectionContext` construction); translates through `spec_from_plan()` into the same private `MetadataWriteSpec`
+- **`execute_resolved_write()`** — Single private executor owning update-policy dispatch (conflict detection, preservation filtering, stripping) and format dispatch for both entry points. JPEG helpers consume explicit `JpegRender` (resource limits plus resolved structured-COM parameters) instead of a context object
 - **Pipeline routes `Light` level through `execute_seed_only_and_metadata()`** which resolves to `HiddenMarkerMode::SeedOnly` and calls `inject_bytes_from_plan` (legacy level APIs translate via `request_from_legacy()` into `ProtectionRequest`)
 - **Canonical path uses `inject_bytes_from_plan()`** from `execute_metadata_only()`, `execute_full_marker_and_metadata()`, and `execute_seed_only_and_metadata()`
 

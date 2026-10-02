@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
 use crate::types::{
-    DmiValue, LegalMetadata, ProtectionContext, ProtectionLevel, RightsNotice,
-    PLUS_DATA_MINING_PROPERTY, PLUS_NAMESPACE,
+    DmiValue, LegalMetadata, ProtectionLevel, RightsNotice, PLUS_DATA_MINING_PROPERTY,
+    PLUS_NAMESPACE,
 };
 use crc32fast::Hasher as Crc32Hasher;
 
@@ -562,18 +562,9 @@ impl super::RightsMetadataProtector {
 
     pub(super) const STRUCTURED_COM_MAGIC: &'static [u8] = b"cloakrs:v1:";
 
-    #[cfg(test)]
-    pub(super) fn generate_structured_com_marker(
-        dmi: Option<DmiValue>,
-        _seed: Option<u64>,
-        ctx: &ProtectionContext,
-    ) -> Vec<u8> {
-        Self::generate_structured_com_marker_with_timestamp(dmi, ctx, None)
-    }
-
     pub(super) fn generate_structured_com_marker_with_timestamp(
         dmi: Option<DmiValue>,
-        ctx: &ProtectionContext,
+        params: &super::spec::StructuredComParams,
         timestamp: Option<&str>,
     ) -> Vec<u8> {
         let mut payload = Vec::with_capacity(48);
@@ -581,12 +572,11 @@ impl super::RightsMetadataProtector {
 
         payload.push(1); // version
 
-        let level_byte = ctx.protection_level().map(|l| l.to_byte()).unwrap_or(2);
-        payload.push(level_byte);
+        payload.push(params.level_byte);
 
-        payload.extend_from_slice(&ctx.seed().to_le_bytes());
+        payload.extend_from_slice(&params.seed.to_le_bytes());
 
-        let intensity_val = (ctx.intensity() * 100.0) as u16;
+        let intensity_val = (params.intensity * 100.0) as u16;
         payload.extend_from_slice(&intensity_val.to_le_bytes());
 
         let timestamp_secs = timestamp

@@ -1,5 +1,7 @@
 use crate::error::{Error, Result};
-use crate::types::{DmiValue, ProtectionContext, PLUS_DATA_MINING_PROPERTY};
+#[cfg(test)]
+use crate::types::ProtectionContext;
+use crate::types::{DmiValue, PLUS_DATA_MINING_PROPERTY};
 
 impl super::RightsMetadataProtector {
     pub(super) fn jpeg_has_stego_metadata(&self, jpeg_data: &[u8]) -> bool {
@@ -239,7 +241,23 @@ impl super::RightsMetadataProtector {
         seed: Option<u64>,
         ctx: Option<&ProtectionContext>,
     ) -> Result<Vec<u8>> {
-        self.inject_text_chunks_jpeg_with_timestamp(jpeg_data, metadata, dmi, seed, ctx, None, true)
+        let default_limits = crate::ResourceLimits::default();
+        let owned_limits = ctx.map(|c| c.resource_limits());
+        let limits = owned_limits.as_ref().unwrap_or(&default_limits);
+        let owned_structured = ctx.map(|c| {
+            super::spec::StructuredComParams::from_legacy(
+                c.protection_level(),
+                c.seed(),
+                c.intensity(),
+            )
+        });
+        let render = super::spec::JpegRender {
+            limits,
+            structured: owned_structured.as_ref(),
+        };
+        self.inject_text_chunks_jpeg_with_timestamp(
+            jpeg_data, metadata, dmi, seed, &render, None, true,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -249,7 +267,7 @@ impl super::RightsMetadataProtector {
         metadata: &[(Vec<u8>, Vec<u8>)],
         dmi: Option<DmiValue>,
         seed: Option<u64>,
-        ctx: Option<&ProtectionContext>,
+        render: &super::spec::JpegRender,
         timestamp: Option<&str>,
         emit_structured_com: bool,
     ) -> Result<Vec<u8>> {
@@ -316,7 +334,7 @@ impl super::RightsMetadataProtector {
                         dmi,
                         metadata,
                         seed,
-                        ctx,
+                        render,
                         timestamp,
                         emit_structured_com,
                     )?;
@@ -333,7 +351,7 @@ impl super::RightsMetadataProtector {
                         dmi,
                         metadata,
                         seed,
-                        ctx,
+                        render,
                         timestamp,
                         emit_structured_com,
                     )?;
@@ -386,7 +404,7 @@ impl super::RightsMetadataProtector {
                 dmi,
                 metadata,
                 seed,
-                ctx,
+                render,
                 timestamp,
                 emit_structured_com,
             )?;
@@ -404,13 +422,11 @@ impl super::RightsMetadataProtector {
         dmi: Option<DmiValue>,
         metadata: &[(Vec<u8>, Vec<u8>)],
         seed: Option<u64>,
-        ctx: Option<&ProtectionContext>,
+        render: &super::spec::JpegRender,
         timestamp: Option<&str>,
         emit_structured_com: bool,
     ) -> Result<()> {
-        let default_limits = crate::ResourceLimits::default();
-        let limits = ctx.map(|c| c.resource_limits());
-        let limits_ref = limits.as_ref().unwrap_or(&default_limits);
+        let limits_ref = render.limits;
 
         let injected_field_count = metadata.len() + usize::from(dmi.is_some());
         limits_ref.check_metadata_field_count(injected_field_count)?;
@@ -434,9 +450,9 @@ impl super::RightsMetadataProtector {
             output.extend_from_slice(&com_chunk);
         }
 
-        if let Some(context) = ctx.filter(|_| emit_structured_com) {
+        if let Some(params) = render.structured.filter(|_| emit_structured_com) {
             let structured_com =
-                Self::generate_structured_com_marker_with_timestamp(dmi, context, timestamp);
+                Self::generate_structured_com_marker_with_timestamp(dmi, params, timestamp);
             output.extend_from_slice(&structured_com);
         }
         Ok(())

@@ -233,7 +233,7 @@ preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 | **Types** | [types.md](types.md) | `ProtectionLevel`, `ProtectionContext`, `RightsPolicy`, `ProtectionRequest`, `ProtectionPreset`, `ProtectionChannels`, `ExecutionReport`, v0.3→v0.4 migration |
 | **Traits** | [traits.md](traits.md) | `Protector` trait contract, `apply`/`apply_bytes` methods, implementation table |
 | **Error Types** | [error.md](error.md) | `Error` enum variants, structured resource-limit errors, async `Task` variant |
-| **Constants** | [constants.md](constants.md) | All tuning constants: `STEGO_SPREAD_FACTOR`, `XORSHIFT_SEED_OFFSET`, `SPLITMIX64_SEED`, tile defaults, payload version |
+| **Constants** | [constants.md](constants.md) | All tuning constants: `STEGO_SPREAD_FACTOR`, `SPLITMIX64_SEED`, tile defaults, payload version |
 
 ### Protection Strategies
 
@@ -273,7 +273,7 @@ preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 
 | Component | Deep Dive | What It Covers |
 |-----------|-----------|----------------|
-| **Image Utilities** | [util-image.md](util-image.md) | `PixelSelectionRng` (XorShift64 PRNG), encoding, format detection, image hashing |
+| **Image Utilities** | [util-image.md](util-image.md) | Encoding, format detection, image hashing |
 | **ISCC Identifiers** | [util-iscc.md](util-iscc.md) | Non-standard ISCC-like perceptual hashing, `ContentIdentifiers` |
 | **Seed Generation** | [util-seed.md](util-seed.md) | CSPRNG via `getrandom`, time-based splitmix64 fallback |
 | **Async API** | [async-api.md](async-api.md) | Tokio `spawn_blocking` wrappers for WAF/CDN integration |
@@ -384,7 +384,7 @@ src/
 │   └── stegoeggo-conformance.rs  Conformance harness binary
 │
 └── util/
-    ├── image.rs               PixelSelectionRng, encoding, format detection
+    ├── image.rs               encoding, format detection, image hashing
     ├── iscc.rs                ContentIdentifiers (feature: iscc)
     └── seed.rs                generate_random_seed() via getrandom (CSPRNG)
 ```
@@ -552,12 +552,9 @@ The canonical executor resolves a `ProtectionRequest` into a plan and runs the s
 
 When **both** input and output are JPEG, the application adapter calls the carrier's encoded-byte JPEG operation. The carrier privately operates directly on DCT coefficients, avoiding pixel decode/encode cycles that would introduce additional lossy compression artifacts. Format conversion (JPEG → PNG) always takes the full pixel pipeline.
 
-### Two XorShiftRng Implementations
+### DCT Shuffling PRNG
 
-- **`PixelSelectionRng`** in `util/image.rs` — general-purpose pixel selection for steganography
-- **`DctCoefficientRng`** in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs` — DCT coefficient shuffling
-
-They use different algorithms and produce different sequences for the same seed. **Do NOT interchange them.**
+**`DctCoefficientRng`** in `stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs` performs DCT coefficient shuffling. Its sequence is pinned by unit tests. The retired root-crate pixel RNG was removed in stego-library-evolution M001 after proving no in-crate consumer.
 
 ### Private Fields with Getters
 

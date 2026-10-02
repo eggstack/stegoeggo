@@ -224,8 +224,7 @@ When metadata is stripped (seed unavailable), extraction tries `FALLBACK_SEEDS` 
 - **stegoeggo-stego/src/jpeg.rs**: Generic encoded-byte JPEG carrier facade (DCT capacity, raw/framed/tiled embed/extract, Q-table reassembly, seed hint). Tiled JPEG uses redundancy 1 per tile and rejects `tile_size < 8` / non-multiples of 8. No application-type imports
 - **stegoeggo-stego/src/jpeg_transcoder/**: Private JPEG fast-path implementation used behind `jpeg.rs` and `application_support.rs`
 - **stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs**: Private F5-style DCT manipulation
-- **util/image.rs**: `PixelSelectionRng` for LSB pixel selection (seeded via `seed.wrapping_add(XORSHIFT_SEED_OFFSET)`; do not interchange with `DctCoefficientRng`)
-- **protected/constants.rs**: `STEGO_OFFSET_SEED_1`, `XORSHIFT_SEED_OFFSET`
+- **protected/constants.rs**: `STEGO_OFFSET_SEED_1`
 - **stegoeggo-stego/src/constants.rs**: `STEGO_SPREAD_FACTOR`, `STEGO_OFFSET_SEED_1`, `SPLITMIX64_SEED`, `MIN_REDUNDANCY`, `MAX_REDUNDANCY`
 - **types/**: Uses `ProtectionLevel`, `StegoPayload` (via stable `stegoeggo::types::*` re-exports)
 

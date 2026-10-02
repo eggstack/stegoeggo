@@ -1,22 +1,12 @@
 # Image Utilities
 
-**Source:** `src/util/image.rs` (328 lines)
+**Source:** `src/util/image.rs` (235 lines)
 
-Core image processing utilities: PRNG, encoding, hashing, and format detection.
+Core image processing utilities: encoding, hashing, and format detection.
 
-## PixelSelectionRng
+The retired `PixelSelectionRng` XorShift64 helper was removed in stego-library-evolution M001 after grep proved no in-crate consumer; the carrier-side `DctCoefficientRng` (`stegoeggo-stego/src/jpeg_transcoder/stego_f5.rs`) remains the only stego PRNG and its sequence is pinned by unit tests.
 
-General-purpose XorShift64 PRNG for pixel selection in steganography.
-
-```rust
-pub struct PixelSelectionRng { state: u64 }
-```
-
-- `new(seed: u64)` — Initializes with seed using `wrapping_add(XORSHIFT_SEED_OFFSET)` (not XOR)
-- `next_u64()` — Returns random u64
-- `gen_range_usize(range: Range<usize>)` — Returns usize in given range
-
-## Other Utilities
+## Utilities
 
 - `compute_image_hash(img) -> String` — SHA-256 hex hash of RGBA pixel data
 - `detect_image_format(bytes) -> Option<ImageFormat>` — PNG/JPEG/WebP detection via `ImageOutputFormat::from_magic_bytes`
