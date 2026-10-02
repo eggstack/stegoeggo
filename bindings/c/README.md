@@ -1,4 +1,4 @@
-# C language binding — implemented, pre-stable qualification
+# C language binding — ABI v1 stable
 
 This directory hosts the versioned C ABI leaf binding over the
 canonical `stegoeggo` Rust library.
@@ -65,7 +65,7 @@ exactly the 90 manifest symbols and no other `stegoeggo_*` symbol.
   discriminants or layout);
 - per-call explicit error handles (no last-error thread-local state);
 - versioned `stegoeggo_v1_*` operational symbols plus three unversioned
-  bootstrap symbols; ABI v1 is append-only after M010 closes;
+  bootstrap symbols; ABI v1 is append-only following the accepted M010 closure;
 - full-width `uint64_t` seeds; write-only MAC keys, zeroized on request
   destruction, never in errors/reports/getters/JSON;
 - `NotFound` vs `Invalid` verification evidence projected verbatim;
