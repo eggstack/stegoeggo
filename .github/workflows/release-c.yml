@@ -110,7 +110,7 @@ jobs:
 
       - name: Pin Rust 1.89 over rust-toolchain.toml
         shell: bash
-        run: echo "RUSTUP_TOOLCHAIN=1.89" >> "$GITHUB_ENV"
+        run: echo "RUSTUP_TOOLCHAIN=1.89.0" >> "$GITHUB_ENV"
 
       - name: Set up MSVC (dumpbin/cl/link on Windows)
         if: matrix.id == 'windows-x86_64'

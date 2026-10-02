@@ -55,7 +55,7 @@ jobs:
           components: clippy
 
       - name: Pin Rust 1.89 over rust-toolchain.toml
-        run: echo "RUSTUP_TOOLCHAIN=1.89" >> "$GITHUB_ENV"
+        run: echo "RUSTUP_TOOLCHAIN=1.89.0" >> "$GITHUB_ENV"
 
       - name: Install cbindgen 0.29.4
         run: cargo install cbindgen --version 0.29.4 --locked
