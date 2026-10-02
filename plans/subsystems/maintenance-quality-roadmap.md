@@ -125,4 +125,4 @@ optional future polish and does not block roadmap closure.
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
 | M001 workflow consolidation/pinning | ready | `plans/implementation/maintenance-quality/001-release-workflow-consolidation.md` | pending | none |
-| M002 drift linting | proposed future | none | none | M001 + maintainer decision on CI placement |
+| M002 drift linting | proposed | none | none | M001 + maintainer decision on CI placement |
