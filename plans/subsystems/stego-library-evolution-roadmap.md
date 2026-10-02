@@ -227,9 +227,9 @@ direction.
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
 | M001 boundary/metadata convergence | ready | `plans/implementation/stego-library-evolution/001-boundary-and-metadata-convergence.md` | pending | none |
-| M002 API normalization | ready after M001 | `plans/implementation/stego-library-evolution/002-generic-carrier-api-normalization.md` | pending | M001 hard |
-| M003 limits/prepared parity | ready after M002 | `plans/implementation/stego-library-evolution/003-carrier-resource-and-prepared-hardening.md` | pending | M002 hard |
-| M004 in-place allocation hardening | ready after M003 | `plans/implementation/stego-library-evolution/004-transactional-in-place-allocation-hardening.md` | pending | M003 hard |
-| M005 lossless WebP byte facade | ready after M003 | `plans/implementation/stego-library-evolution/005-lossless-webp-byte-carrier.md` | pending | M003 interface |
+| M002 API normalization | blocked | `plans/implementation/stego-library-evolution/002-generic-carrier-api-normalization.md` | pending | M001 hard |
+| M003 limits/prepared parity | blocked | `plans/implementation/stego-library-evolution/003-carrier-resource-and-prepared-hardening.md` | pending | M002 hard |
+| M004 in-place allocation hardening | blocked | `plans/implementation/stego-library-evolution/004-transactional-in-place-allocation-hardening.md` | pending | M003 hard |
+| M005 lossless WebP byte facade | blocked | `plans/implementation/stego-library-evolution/005-lossless-webp-byte-carrier.md` | pending | M003 interface |
 | M006 keyed placement | blocked | `plans/implementation/stego-library-evolution/006-keyed-carrier-placement.md` | pending | ADR-0007 acceptance + M002/M003 |
-| M007 adaptive/robust experiment | proposed future | none | none | explicit maintainer authorization after M001–M005 |
+| M007 adaptive/robust experiment | proposed | none | none | explicit maintainer authorization after M001–M005 |
