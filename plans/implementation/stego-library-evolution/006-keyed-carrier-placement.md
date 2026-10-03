@@ -7,7 +7,7 @@ Long-term requirements: `plans/000-long-term-specification.md#2-canonical-api-in
 Applicable ADRs: `plans/adrs/ADR-0007-keyed-carrier-selection.md`  
 Primary class: capability
 
-Blockers: ADR-0007 must be accepted; M002 and M003 must be closed.
+Blockers: ADR-0007 must be accepted; M008 compatibility corrective must be closed.
 
 ## 1. Objective
 
@@ -18,8 +18,10 @@ payload encryption/authentication.
 ## 2. Why this milestone is blocked
 
 The public scheme is a durable compatibility protocol. ADR-0007 is deliberately
-proposed, not accepted. No implementation may freeze algorithm identifiers, key
-derivation, or dependency choices before that decision.
+proposed, not accepted. M002/M003 are closed, but the post-M003 compatibility audit
+opened M008 to restore the pre-0.4.2 one-shot input/error contract before more carrier
+surface is frozen. No implementation may freeze algorithm identifiers, key derivation,
+dependency choices, or placement configuration before both blockers close.
 
 ## 3. Current implementation evidence
 
@@ -102,8 +104,9 @@ legacy vectors are unchanged; API/docs make clear this is position secrecy only.
 
 ## 14. Stop conditions
 
-Stop if ADR remains proposed, selected primitive cannot meet MSRV/portability/no-unsafe
-requirements, or implementation requires changing existing default placement.
+Stop if ADR remains proposed, M008 remains open, selected primitive cannot meet
+MSRV/portability/no-unsafe requirements, or implementation requires changing existing
+default placement.
 
 ## 15. Closure evidence required
 
