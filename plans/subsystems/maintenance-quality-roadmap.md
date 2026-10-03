@@ -2,7 +2,7 @@
 
 Status: closed
 
-Repository baseline reviewed: `d5425d3c73e634fd2276d44507fa94728a18784f`
+Repository baseline reviewed: `0a8b356a056bdab2f9d1996be78578cb3f6bc724`
 
 Long-term references:
 
@@ -50,28 +50,18 @@ organization-wide GitHub policy changes.
 
 ## 4. Current state
 
-The repo has strong dedicated workflows for CI, assurance, fuzzing, external
-verification, binary release staging, and Python/Node/C binding qualification.
+M001 is closed. The affected Python/Node/C release workflows now pin third-party
+actions to full commit SHAs, and verified Zig 0.14.1 plus cargo-zigbuild 0.23.3 setup
+used by the C release flow is centralized in local composite actions. The qualified
+`release-c` run recorded 11/11 green jobs, and no publication behavior changed.
 
-Maintenance debt remains:
+`release-binaries.yml` remains intentionally large and was not refactored: its
+Eggpack-produced byte/workflow shape is owned by the release-distribution contract, so
+M001 stopped rather than obscuring or duplicating that ownership.
 
-- `release-binaries.yml` is very large and carries reusable build/bootstrap logic.
-- Python/Node/C release workflows repeat checkout/toolchain/artifact patterns and Linux
-  platform setup.
-- Some workflows use moving action tags such as `actions/checkout@v4`,
-  `actions/setup-python@v5`, `actions/setup-node@v4`, and
-  `actions/upload-artifact@v4`, while the Eggpack workflow already demonstrates
-  immutable SHA pinning for several actions.
-- The same five platform identities recur across binary, binding, and C ABI
-  qualification but are expressed independently.
-
-GitHub's current Actions documentation recommends reusable workflows/composite actions
-to avoid duplication and states that full-length commit SHA pinning is the immutable
-reference form.
-
-Research reviewed 2026-10-02:
-- https://docs.github.com/en/actions/concepts/workflows-and-actions/reusing-workflow-configurations
-- https://docs.github.com/en/actions/reference/security/secure-use
+The only remaining item in this workstream is optional M002 workflow-contract/drift
+linting. It is proposed, not required for closure, and requires a maintainer decision
+before any new check is placed in required CI.
 
 ## 5. Target architecture
 
