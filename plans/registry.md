@@ -32,7 +32,7 @@ predecessor history, indexed by the roadmaps below.
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M001 blocked operationally; M002 conditionally closed; M003 closed | M003 closed the consumer-owned nested-runtime panic; M001/M002 still wait for the same ordinary stable B > 0.4.2 |
 | language-bindings | closed | `plans/subsystems/language-bindings-roadmap.md` | all milestones closed; initial Python -> Node -> C sequence complete | none |
-| stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M001–M005 closed; M006 proposed implementation | ADR-0007 acceptance |
+| stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M008 compatibility corrective ready; M001–M005 closed | M006 waits for ADR-0007 acceptance + M008 closure |
 | maintenance-quality | closed | `plans/subsystems/maintenance-quality-roadmap.md` | M001 closed; M002 proposed optional polish | none |
 
 ## Dependency-ready implementation plans
@@ -40,6 +40,7 @@ predecessor history, indexed by the roadmaps below.
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); live B > 0.4.2 evidence remains outstanding, shared with M001 |
+| stego-library-evolution | M008 M003 default-limit compatibility corrective | ready | `plans/implementation/stego-library-evolution/008-m003-default-limit-compatibility-corrective.md` | restore v0.4.2 one-shot input/error behavior while retaining explicit bounded APIs |
 
 ## Active closure work
 
@@ -51,7 +52,7 @@ None.
 |---|---|---|
 | release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | No stable B newer than 0.4.2 published; plan forbids throwaway versions. Evidence recorded in `plans/106-status.md`. |
 | release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | Missing ordinary stable B > 0.4.2. The updater-runtime code blocker is resolved by closed M003; cutover/closure remains `plans/closure/release-distribution/002-status.md`. |
-| stego-library-evolution | M006 keyed carrier placement | ADR-0007 acceptance (M001–M005 closed). |
+| stego-library-evolution | M006 keyed carrier placement | ADR-0007 acceptance + M008 compatibility corrective closure. |
 
 ## Recently closed work
 
@@ -78,8 +79,9 @@ None.
   `jpeg_parser` 1,531,200 runs + `tiled_round_trip` 1,323,044 runs clean,
   focused suites 195 + 13 + 35 carrier, 56 public API, 10 known-answer,
   71 robustness green, `./scripts/check.sh` green with 2054 passed /
-  0 failed). M004 and M005 promoted blocked → ready; M006 stays blocked
-  on ADR-0007 acceptance.
+  0 failed). M004 and M005 subsequently closed. A post-closure audit found
+  that pre-existing one-shot JPEG APIs inherited new M003 input/dimension
+  policy caps and error mapping; ready corrective M008 owns that discrepancy.
 - Stego Library Evolution M002 generic carrier API normalization: closure
   recorded at `plans/closure/stego-library-evolution/002-status.md`
   (implementation `beb4145`; explicit `embed_best_effort` /
