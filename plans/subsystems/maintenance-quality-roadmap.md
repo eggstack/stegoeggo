@@ -74,11 +74,12 @@ full commit SHA with an adjacent human-readable version comment or update record
 
 ## 6. Dependency graph
 
-M001 is dependency-ready and independent of release-distribution's operational stable-B
-blocker. It must not alter M001/M002 release-distribution evidence semantics.
+M001 is closed and remained independent of release-distribution's operational stable-B
+blocker; its implementation did not alter release-distribution evidence semantics.
 
-Future M002 may add automated drift linting after M001 proves the shared contract, but
-no implementation plan exists yet.
+M002 has its M001 precondition satisfied but remains proposed optional polish. No
+implementation plan exists, and no workflow-contract lint may be added to required CI
+without a maintainer decision.
 
 ## 7. Milestones
 
