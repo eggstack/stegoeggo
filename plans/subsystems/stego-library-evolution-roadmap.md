@@ -2,7 +2,7 @@
 
 Status: active
 
-Repository baseline reviewed: `d5425d3c73e634fd2276d44507fa94728a18784f`
+Repository baseline reviewed: `245fc94767c3fddb0e41c72de162aac3c1eaeb96`
 
 Long-term references:
 
@@ -43,7 +43,7 @@ The parent owns those semantics.
 - `stegoeggo-stego` remains application-neutral and `#![forbid(unsafe_code)]`.
 - Strict operations remain exact-or-fail and never emit partial carrier output.
 - CRC32 framing is corruption detection, never authentication.
-- Every untrusted-input parser/search path is explicitly bounded.
+- Explicit bounded APIs cover untrusted-input parsing/search; pre-v0.4.2 one-shot APIs preserve their historical effective input/error contract through 0.x.
 - Output-domain routing and root byte-vs-pixel semantics do not change.
 
 ### Capabilities
@@ -80,28 +80,31 @@ The parent owns those semantics.
 
 ## 4. Current state
 
-At baseline `d5425d3c73e634fd2276d44507fa94728a18784f`, the generic crate already exposes raw, in-place, framed,
-tiled, borrowed-view, strict/best-effort JPEG, seed-hint, and prepared-JPEG operations.
-The parent correctly documents `EmbedOutcome`/`EmbedPath` as application vocabulary,
-but those types still physically live in the generic crate for 0.x compatibility.
+At current main after M001–M005:
 
-Concrete debt:
+1. M001 removed canonical-path `ProtectionContext` reconstruction, centralized
+   metadata-write dispatch, preserved six golden output hashes, and removed the dead
+   root `PixelSelectionRng`.
+2. M002 added explicit JPEG best-effort names and report accessors without changing
+   carrier bytes or removing compatibility names.
+3. M003 added carrier-owned `CarrierLimits`, explicit `*_with_limits` JPEG APIs,
+   `PreparedJpeg::new_with_limits`, and prepared tiled parity.
+4. M004 replaced tiled in-place full-image rollback cloning with checked preflight,
+   reducing measured auxiliary allocation from 1,053,952 to 5,376 bytes on the recorded
+   1 MiB fixture with byte-compatible behavior.
+5. M005 added the opt-in still-lossless WebP byte facade with explicit bounded and
+   metadata-drop semantics.
+6. A post-M003 compatibility audit found one unresolved defect: existing v0.4.2 JPEG
+   one-shot APIs and `PreparedJpeg::new` now inherit M003's new 100 MiB input and
+   16,384-dimension policy caps, and pre-existing parser-limit errors can map to
+   `ResourceLimitExceeded` instead of their historical `MalformedInput`. This is
+   tracked by ready corrective M008 and has not shipped in a release newer than v0.4.2.
+7. M006 keyed placement remains blocked on ADR-0007 acceptance and M008 closure.
+   M007 adaptive/robust work remains research-only.
 
-1. `RightsMetadataProtector::inject_bytes` and `inject_bytes_from_plan` duplicate
-   update-policy/format dispatch, and the canonical plan path constructs a temporary
-   legacy `ProtectionContext` for JPEG metadata rendering.
-2. `jpeg::embed` has historical best-effort semantics while `embed_strict` is the
-   less-surprising generic contract.
-3. Generic JPEG operations do not expose a carrier-owned resource-limit object
-   comparable to the parent's bounded parsers.
-4. `lsb::embed_tiled_in_place` snapshots the full image for rollback, so the in-place
-   API still has image-sized auxiliary memory.
-5. `PreparedJpeg` amortizes decode for many reads/strict embedding but does not cover
-   the full useful repeated-operation surface.
-6. Generic encoded-WebP callers must manually decode, call the LSB carrier, and encode.
-7. Existing `u64 seed` placement is deterministic but is not secret-key placement.
-8. Release/binding workflows duplicate platform/bootstrap machinery; tracked
-   separately under `maintenance-quality`.
+The generic carrier boundary is otherwise coherent: arbitrary payload carriers and
+resource controls stay below; rights policy, application degradation, metadata,
+authentication interpretation, and warnings stay in the parent crate.
 
 ## 5. Target architecture
 
@@ -132,11 +135,15 @@ M003 → M004 transactional in-place allocation hardening.
 
 M003 → M005 direct lossless-WebP byte facade.
 
-M002 + M003 + accepted ADR-0007 → M006 keyed carrier placement.
+M003 closure → M008 default-limit compatibility corrective. M008 is dependency-ready
+and gates the next carrier release because it corrects a behavioral discrepancy found
+after M003 closure.
+
+M002 + M003 + M008 closure + accepted ADR-0007 → M006 keyed carrier placement.
 
 M007 adaptive/robust algorithm experiment is future research only and has no
-implementation handoff until M001–M005 close and a maintainer explicitly authorizes
-the algorithm/threat-model expansion.
+implementation handoff until M008 closes and a maintainer explicitly authorizes the
+algorithm/threat-model expansion.
 
 ## 7. Milestones
 
@@ -163,6 +170,10 @@ the algorithm/threat-model expansion.
   Class: infrastructure research. Future only; evaluate HILL/STC for lossless images
   and JPEG J-UNIWARD/STC versus robust STDM/ECC-style approaches without promising a
   stable API.
+- **M008 — M003 default-limit compatibility corrective.**
+  Class: invariant. Restore the v0.4.2 effective acceptance/error contract for
+  pre-existing JPEG one-shot APIs and `PreparedJpeg::new` while retaining M003's
+  explicit bounded APIs and conservative `CarrierLimits::default()`.
 
 ## 8. Cross-cutting requirements
 
@@ -211,13 +222,16 @@ No new specialist check becomes required CI without maintainer direction.
 - M006 creates a permanent algorithm compatibility obligation after release.
 - M007 algorithms have fundamentally different threat models; one "robust stego" mode
   must not blur stealth and recompression-survival claims.
+- M008 must distinguish published 0.x compatibility from new bounded safety policy:
+  raising defaults globally or weakening root resource limits are both incorrect fixes.
 
 ## 11. Completion definition
 
-The workstream closes when M001–M005 have closure evidence, M006 is either closed after
-ADR acceptance or explicitly deferred, generic docs no longer recommend ambiguous
-best-effort names for new code, all generic untrusted-input paths have a bounded contract,
-and the parent no longer reconstructs legacy configuration in canonical execution.
+The workstream cannot close until M008 has closure evidence resolving the M003
+behavioral-compatibility discrepancy. After M008, M006 may either close after ADR-0007
+acceptance or be explicitly deferred. Generic docs must distinguish legacy 0.x
+compatibility entry points from explicit bounded untrusted-input APIs, and the parent
+must continue enforcing its own resource policy.
 
 M007 is not required for workstream closure unless separately promoted by maintainer
 direction.
@@ -231,5 +245,6 @@ direction.
 | M003 limits/prepared parity | closed | `plans/implementation/stego-library-evolution/003-carrier-resource-and-prepared-hardening.md` | `plans/closure/stego-library-evolution/003-status.md` | none |
 | M004 in-place allocation hardening | closed | `plans/implementation/stego-library-evolution/004-transactional-in-place-allocation-hardening.md` | `plans/closure/stego-library-evolution/004-status.md` | none |
 | M005 lossless WebP byte facade | closed | `plans/implementation/stego-library-evolution/005-lossless-webp-byte-carrier.md` | `plans/closure/stego-library-evolution/005-status.md` | none |
-| M006 keyed placement | blocked | `plans/implementation/stego-library-evolution/006-keyed-carrier-placement.md` | pending | ADR-0007 acceptance (M001–M005 closed) |
-| M007 adaptive/robust experiment | proposed | none | none | explicit maintainer authorization after M001–M005 |
+| M006 keyed placement | blocked | `plans/implementation/stego-library-evolution/006-keyed-carrier-placement.md` | pending | ADR-0007 acceptance + M008 closure |
+| M007 adaptive/robust experiment | proposed | none | none | M008 closure + explicit maintainer authorization |
+| M008 M003 default-limit compatibility corrective | ready | `plans/implementation/stego-library-evolution/008-m003-default-limit-compatibility-corrective.md` | pending | none |
