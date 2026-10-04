@@ -8,9 +8,9 @@ Encoded-JPEG DCT carrier with container-preserving encode. Operates on baseline 
 
 | Group | Functions |
 |-------|-----------|
-| Probe | `inspect(bytes, max_segments, max_segment_bytes) -> JpegInfo { width, height }` (delegates through `CarrierLimits`), `inspect_with_limits` / `probe_support_with_limits`, `probe_support(bytes) -> JpegSupport::{Supported, Unsupported(reason)}`, `is_progressive_jpeg(bytes)` |
+| Probe | `inspect(bytes, max_segments, max_segment_bytes) -> JpegInfo { width, height }` (caller segment limits; historical dimension/input domain), `inspect_with_limits` / `probe_support_with_limits`, `probe_support(bytes) -> JpegSupport::{Supported, Unsupported(reason)}`, `is_progressive_jpeg(bytes)` |
 | Capacity | `capacity(bytes, payload_len, &JpegConfig) -> CapacityReport` + `capacity_with_limits` — units are eligible AC coefficients with `\|coef\| >= 2` after canonicalization |
-| Bounded | `*_with_limits` variants for `embed_best_effort`, `embed_strict`, `embed_framed_best_effort`, `embed_framed_strict`, `extract`, `extract_framed`, `embed_tiled`, `embed_tiled_framed`, `extract_tiled`, `extract_tiled_framed` — share the single decode path; defaults preserve behavior |
+| Bounded | `*_with_limits` variants for `embed_best_effort`, `embed_strict`, `embed_framed_best_effort`, `embed_framed_strict`, `extract`, `extract_framed`, `embed_tiled`, `embed_tiled_framed`, `extract_tiled`, `extract_tiled_framed` — share the single decode path; explicit bounded variants enforce `CarrierLimits` |
 | Raw | `embed_best_effort` (explicit) / `embed` (byte-identical compat): auto-downgrade redundancy, seed-only fallback / `extract(bytes, len, &config, actual_redundancy)` — pass `report.actual_redundancy` to `extract` |
 | Strict | `embed_strict` / `embed_framed_strict` — exact requested redundancy or `InsufficientCapacity`, no output |
 | Framed | `embed_framed_best_effort` (explicit) / `embed_framed` (compat) / `extract_framed` — `frame::{encode,decode}` wrapper; length self-describing |

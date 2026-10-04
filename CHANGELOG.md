@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Restored the historical 0.x JPEG input/dimension domain for legacy one-shot operations and `PreparedJpeg::new`; explicit `CarrierLimits` variants continue enforcing their configured bounds and error classification
+
 ## [0.4.2] - 2026-09-22
 
 ### Changed

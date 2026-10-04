@@ -53,13 +53,14 @@ contract (private fields, getters, builder): input bytes (100 MiB),
 JPEG segments (256 × 65535 bytes), dimensions/pixels (16384 × 16384),
 framed totals (16 MiB + 11-byte header), and tiled-search extent
 (`MAX_TILED_ORIGINS`). Bounded `*_with_limits` JPEG one-shot variants
-share the single decode path with the defaults, so default and bounded
-results agree exactly; limit failures map to
-`StegoError::ResourceLimitExceeded` with no secret/input dump.
-`jpeg::inspect` keeps its signature and delegates through the same
-bounded header path. The carrier never depends on the root crate's
-`ResourceLimits`; the root may later translate its policy into carrier
-limits privately.
+share the single decode path with explicit caller limits; limit failures
+map to `StegoError::ResourceLimitExceeded` with no secret/input dump.
+Legacy 0.x one-shot JPEG operations and `PreparedJpeg::new` retain their
+historical input/dimension domain while preserving JPEG segment, frame,
+and tiled bounds. `jpeg::inspect` keeps its signature and applies the
+caller's segment limits without the later dimension/input policy caps.
+The root checks its own `ResourceLimits` before carrier work; the carrier
+never depends on the root crate's limits type.
 
 ### Borrowed pixel buffers
 

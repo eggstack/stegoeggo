@@ -54,6 +54,19 @@ impl Default for CarrierLimits {
 }
 
 impl CarrierLimits {
+    pub(crate) fn legacy_compatibility() -> Self {
+        let structural_max = u64::from(u16::MAX)
+            .checked_mul(u64::from(u16::MAX))
+            .expect("JPEG structural pixel maximum fits in u64");
+        Self {
+            max_input_bytes: usize::MAX,
+            max_width: u32::from(u16::MAX),
+            max_height: u32::from(u16::MAX),
+            max_pixels: structural_max,
+            ..Self::default()
+        }
+    }
+
     pub fn builder() -> CarrierLimitsBuilder {
         CarrierLimitsBuilder(CarrierLimits::default())
     }
@@ -231,6 +244,29 @@ mod tests {
             crate::frame::MAX_FRAME_PAYLOAD + crate::frame::FRAME_HEADER_SIZE
         );
         assert_eq!(limits.max_tiled_origins(), crate::types::MAX_TILED_ORIGINS);
+    }
+
+    #[test]
+    fn legacy_profile_keeps_parser_and_structural_bounds() {
+        let limits = CarrierLimits::legacy_compatibility();
+        assert_eq!(limits.max_input_bytes(), usize::MAX);
+        assert_eq!(limits.max_width(), u32::from(u16::MAX));
+        assert_eq!(limits.max_height(), u32::from(u16::MAX));
+        assert_eq!(
+            limits.max_pixels(),
+            u64::from(u16::MAX)
+                .checked_mul(u64::from(u16::MAX))
+                .unwrap()
+        );
+        assert_eq!(limits.max_jpeg_segments(), DEFAULT_MAX_JPEG_SEGMENTS);
+        assert_eq!(
+            limits.max_jpeg_segment_bytes(),
+            DEFAULT_MAX_JPEG_SEGMENT_BYTES
+        );
+        assert_eq!(limits.max_tiled_origins(), DEFAULT_MAX_TILED_ORIGINS);
+        assert!(limits
+            .check_dimensions(u32::from(u16::MAX), u32::from(u16::MAX))
+            .is_ok());
     }
 
     #[test]

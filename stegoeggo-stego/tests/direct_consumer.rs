@@ -613,6 +613,72 @@ fn direct_consumer_carrier_limits_bound_adversarial_inputs() {
 }
 
 #[test]
+fn legacy_jpeg_surface_preserves_structural_dimension_domain() {
+    let wide = encode_jpeg(&textured_rgb(20_000, 1), 90);
+    let config = JpegConfig::new(2048);
+    assert!(wide.len() < 100 * 1024 * 1024);
+    assert_eq!(jpeg::inspect(&wide, 256, 65_535).unwrap().width, 20_000);
+    assert_eq!(
+        jpeg::probe_support(&wide).unwrap(),
+        jpeg::JpegSupport::Supported
+    );
+    assert!(jpeg::capacity(&wide, 1, &config).is_ok());
+    assert_eq!(
+        PreparedJpeg::new(&wide).unwrap().support(),
+        jpeg::JpegSupport::Supported
+    );
+
+    let limits = CarrierLimits::default();
+    assert!(matches!(
+        jpeg::inspect_with_limits(&wide, &limits),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+    assert!(matches!(
+        jpeg::probe_support_with_limits(&wide, &limits),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+    assert!(matches!(
+        jpeg::capacity_with_limits(&wide, 1, &config, &limits),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+    assert!(matches!(
+        PreparedJpeg::new_with_limits(&wide, &limits),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+}
+
+#[test]
+fn legacy_and_bounded_jpeg_parser_limit_errors_keep_separate_contracts() {
+    let base = encode_jpeg(&textured_rgb(32, 32), 90);
+    let mut over_segment_limit = vec![0xFF, 0xD8];
+    for _ in 0..256 {
+        over_segment_limit.extend_from_slice(&[0xFF, 0xFE, 0x00, 0x02]);
+    }
+    over_segment_limit.extend_from_slice(&base[2..]);
+    let config = JpegConfig::new(9);
+
+    assert!(matches!(
+        jpeg::capacity(&over_segment_limit, 1, &config),
+        Err(StegoError::MalformedInput(_))
+    ));
+    assert!(matches!(
+        jpeg::capacity_with_limits(&over_segment_limit, 1, &config, &CarrierLimits::default()),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+    assert!(matches!(
+        jpeg::inspect(&base, 1, 65_535),
+        Err(StegoError::MalformedInput(_))
+    ));
+    assert!(matches!(
+        jpeg::inspect_with_limits(
+            &base,
+            &CarrierLimits::builder().max_jpeg_segments(1).build()
+        ),
+        Err(StegoError::ResourceLimitExceeded(_))
+    ));
+}
+
+#[test]
 fn direct_consumer_prepared_tiled_embed_matches_one_shot_and_reuses() {
     let jpeg_bytes = encode_jpeg(&textured_rgb(256, 256), 90);
     let tile = TileConfig::try_new(31337, 64).unwrap();

@@ -59,6 +59,13 @@
 //! [`StegoError::UnsupportedJpeg`]; only the seed hint may be embedded
 //! in those inputs.
 //!
+//! # Resource limits
+//!
+//! Legacy 0.x one-shot operations preserve the historical JPEG input and
+//! dimension domain, subject to the existing JPEG segment, frame, and tiled
+//! structural bounds. Use explicit `*_with_limits` variants to apply
+//! [`crate::CarrierLimits`] to untrusted input.
+//!
 //! # Container preservation
 //!
 //! Successful embedding uses the original-JPEG byte-preserving encode
@@ -101,11 +108,16 @@ pub fn inspect(
     max_segments: usize,
     max_segment_bytes: usize,
 ) -> std::result::Result<JpegInfo, StegoError> {
+    let limits = crate::CarrierLimits::legacy_compatibility();
     let limits = crate::CarrierLimits::builder()
         .max_jpeg_segments(max_segments)
         .max_jpeg_segment_bytes(max_segment_bytes)
+        .max_input_bytes(limits.max_input_bytes())
+        .max_width(limits.max_width())
+        .max_height(limits.max_height())
+        .max_pixels(limits.max_pixels())
         .build();
-    inspect_with_limits(jpeg_bytes, &limits)
+    inspect_header(jpeg_bytes, &limits, true)
 }
 
 /// Inspect a JPEG header under a carrier-owned [`crate::CarrierLimits`].
@@ -116,11 +128,19 @@ pub fn inspect_with_limits(
     jpeg_bytes: &[u8],
     limits: &crate::CarrierLimits,
 ) -> std::result::Result<JpegInfo, StegoError> {
+    inspect_header(jpeg_bytes, limits, false)
+}
+
+fn inspect_header(
+    jpeg_bytes: &[u8],
+    limits: &crate::CarrierLimits,
+    legacy_error_mapping: bool,
+) -> std::result::Result<JpegInfo, StegoError> {
     limits.check_input_bytes(jpeg_bytes.len())?;
     let header =
         JpegHeader::parse_with_limits(jpeg_bytes, &limits.parse_limits()).map_err(|e| {
             let message = e.to_string();
-            if message.contains("exceeds limit") {
+            if !legacy_error_mapping && message.contains("exceeds limit") {
                 StegoError::ResourceLimitExceeded(message)
             } else {
                 StegoError::MalformedInput(message)
@@ -217,12 +237,24 @@ pub(crate) fn checked_required_capacity(
 pub(crate) fn decode_supported_carrier(
     jpeg_bytes: &[u8],
 ) -> std::result::Result<DecodedJpegCarrier, StegoError> {
-    decode_supported_carrier_with_limits(jpeg_bytes, &crate::CarrierLimits::default())
+    decode_supported_carrier_profile(
+        jpeg_bytes,
+        &crate::CarrierLimits::legacy_compatibility(),
+        true,
+    )
 }
 
 pub(crate) fn decode_supported_carrier_with_limits(
     jpeg_bytes: &[u8],
     limits: &crate::CarrierLimits,
+) -> std::result::Result<DecodedJpegCarrier, StegoError> {
+    decode_supported_carrier_profile(jpeg_bytes, limits, false)
+}
+
+fn decode_supported_carrier_profile(
+    jpeg_bytes: &[u8],
+    limits: &crate::CarrierLimits,
+    legacy_error_mapping: bool,
 ) -> std::result::Result<DecodedJpegCarrier, StegoError> {
     if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
         return Err(StegoError::MalformedInput("not a valid JPEG".to_string()));
@@ -238,7 +270,7 @@ pub(crate) fn decode_supported_carrier_with_limits(
     )
     .map_err(|e| {
         let message = e.to_string();
-        if message.contains("exceeds limit") {
+        if !legacy_error_mapping && message.contains("exceeds limit") {
             StegoError::ResourceLimitExceeded(message)
         } else {
             StegoError::MalformedInput(message)
@@ -730,7 +762,11 @@ pub enum JpegSupport {
 /// }
 /// ```
 pub fn probe_support(jpeg_bytes: &[u8]) -> std::result::Result<JpegSupport, StegoError> {
-    probe_support_with_limits(jpeg_bytes, &crate::CarrierLimits::default())
+    probe_support_profile(
+        jpeg_bytes,
+        &crate::CarrierLimits::legacy_compatibility(),
+        true,
+    )
 }
 
 /// Probe DCT support under a carrier-owned [`crate::CarrierLimits`].
@@ -741,6 +777,14 @@ pub fn probe_support_with_limits(
     jpeg_bytes: &[u8],
     limits: &crate::CarrierLimits,
 ) -> std::result::Result<JpegSupport, StegoError> {
+    probe_support_profile(jpeg_bytes, limits, false)
+}
+
+fn probe_support_profile(
+    jpeg_bytes: &[u8],
+    limits: &crate::CarrierLimits,
+    legacy_error_mapping: bool,
+) -> std::result::Result<JpegSupport, StegoError> {
     if !jpeg_bytes.starts_with(&[0xFF, 0xD8]) {
         return Err(StegoError::MalformedInput("not a valid JPEG".to_string()));
     }
@@ -749,7 +793,7 @@ pub fn probe_support_with_limits(
     let header =
         JpegHeader::parse_with_limits(jpeg_bytes, &limits.parse_limits()).map_err(|e| {
             let message = e.to_string();
-            if message.contains("exceeds limit") {
+            if !legacy_error_mapping && message.contains("exceeds limit") {
                 StegoError::ResourceLimitExceeded(message)
             } else {
                 StegoError::MalformedInput(message)
@@ -836,12 +880,13 @@ pub fn capacity(
     payload_len: usize,
     config: &JpegConfig,
 ) -> std::result::Result<super::CapacityReport, StegoError> {
-    capacity_with_limits(
-        jpeg_bytes,
-        payload_len,
-        config,
-        &crate::CarrierLimits::default(),
-    )
+    crate::constants::validate_redundancy(config.redundancy())?;
+    let required = checked_required_capacity(payload_len, config.redundancy())?;
+    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    Ok(super::CapacityReport {
+        required,
+        available: decoded.available_capacity,
+    })
 }
 
 /// Query DCT capacity under a carrier-owned [`crate::CarrierLimits`].
@@ -905,11 +950,12 @@ pub fn embed(
     payload: &[u8],
     config: &JpegConfig,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
-    embed_best_effort_with_limits(
+    embed_best_effort_with_profile(
         jpeg_bytes,
         payload,
         config,
-        &crate::CarrierLimits::default(),
+        &crate::CarrierLimits::legacy_compatibility(),
+        true,
     )
 }
 
@@ -924,6 +970,16 @@ pub fn embed_best_effort_with_limits(
     config: &JpegConfig,
     limits: &crate::CarrierLimits,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
+    embed_best_effort_with_profile(jpeg_bytes, payload, config, limits, false)
+}
+
+fn embed_best_effort_with_profile(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &JpegConfig,
+    limits: &crate::CarrierLimits,
+    legacy_error_mapping: bool,
+) -> std::result::Result<super::EmbedReport, StegoError> {
     crate::constants::validate_redundancy(config.redundancy())?;
     if payload.is_empty() {
         return Err(StegoError::InvalidConfig(
@@ -933,7 +989,11 @@ pub fn embed_best_effort_with_limits(
     let payload_bits = checked_payload_bits(payload.len())?;
     let required = checked_required_capacity(payload.len(), config.redundancy())?;
 
-    let decoded = decode_supported_carrier_with_limits(jpeg_bytes, limits)?;
+    let decoded = if legacy_error_mapping {
+        decode_supported_carrier(jpeg_bytes)?
+    } else {
+        decode_supported_carrier_with_limits(jpeg_bytes, limits)?
+    };
     let header = decoded.header.as_ref().clone();
     let coefficients = decoded.coefficients.clone();
 
@@ -1049,11 +1109,12 @@ pub fn embed_strict(
     payload: &[u8],
     config: &JpegConfig,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
-    embed_strict_with_limits(
+    embed_strict_with_profile(
         jpeg_bytes,
         payload,
         config,
-        &crate::CarrierLimits::default(),
+        &crate::CarrierLimits::legacy_compatibility(),
+        true,
     )
 }
 
@@ -1077,6 +1138,28 @@ pub fn embed_strict_with_limits(
     }
     checked_required_capacity(payload.len(), config.redundancy())?;
     let decoded = decode_supported_carrier_with_limits(jpeg_bytes, limits)?;
+    embed_strict_from_decoded(&decoded, jpeg_bytes, payload, config)
+}
+
+fn embed_strict_with_profile(
+    jpeg_bytes: &[u8],
+    payload: &[u8],
+    config: &JpegConfig,
+    limits: &crate::CarrierLimits,
+    legacy_error_mapping: bool,
+) -> std::result::Result<super::EmbedReport, StegoError> {
+    crate::constants::validate_redundancy(config.redundancy())?;
+    if payload.is_empty() {
+        return Err(StegoError::InvalidConfig(
+            "strict JPEG embedding requires a non-empty payload".to_string(),
+        ));
+    }
+    checked_required_capacity(payload.len(), config.redundancy())?;
+    let decoded = if legacy_error_mapping {
+        decode_supported_carrier(jpeg_bytes)?
+    } else {
+        decode_supported_carrier_with_limits(jpeg_bytes, limits)?
+    };
     embed_strict_from_decoded(&decoded, jpeg_bytes, payload, config)
 }
 
@@ -1203,11 +1286,14 @@ pub fn embed_framed_strict(
     payload: &[u8],
     config: &JpegConfig,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
-    embed_framed_strict_with_limits(
+    let framed = crate::frame::encode(payload)?;
+    crate::CarrierLimits::default().check_frame_bytes(framed.len())?;
+    embed_strict_with_profile(
         jpeg_bytes,
-        payload,
+        &framed,
         config,
-        &crate::CarrierLimits::default(),
+        &crate::CarrierLimits::legacy_compatibility(),
+        true,
     )
 }
 
@@ -1223,7 +1309,7 @@ pub fn embed_framed_strict_with_limits(
 ) -> std::result::Result<super::EmbedReport, StegoError> {
     let framed = crate::frame::encode(payload)?;
     limits.check_frame_bytes(framed.len())?;
-    embed_strict_with_limits(jpeg_bytes, &framed, config, limits)
+    embed_strict_with_profile(jpeg_bytes, &framed, config, limits, false)
 }
 
 /// Extract arbitrary bytes from a JPEG using F5-style DCT coefficient
@@ -1259,13 +1345,10 @@ pub fn extract(
     config: &JpegConfig,
     actual_redundancy: usize,
 ) -> std::result::Result<Vec<u8>, StegoError> {
-    extract_with_limits(
-        jpeg_bytes,
-        payload_len,
-        config,
-        actual_redundancy,
-        &crate::CarrierLimits::default(),
-    )
+    crate::constants::validate_redundancy(actual_redundancy)?;
+    checked_payload_bits(payload_len)?;
+    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    extract_from_decoded(&decoded, payload_len, config.seed(), actual_redundancy)
 }
 
 /// Raw extract under a carrier-owned [`crate::CarrierLimits`].
@@ -1307,7 +1390,9 @@ pub fn extract_framed(
     jpeg_bytes: &[u8],
     config: &JpegConfig,
 ) -> std::result::Result<Vec<u8>, StegoError> {
-    extract_framed_with_limits(jpeg_bytes, config, &crate::CarrierLimits::default())
+    crate::constants::validate_redundancy(config.redundancy())?;
+    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    extract_framed_from_decoded_with_limits(&decoded, config, &crate::CarrierLimits::default())
 }
 
 /// Framed extract under a carrier-owned [`crate::CarrierLimits`].
@@ -1532,12 +1617,14 @@ pub fn embed_tiled(
     payload: &[u8],
     config: &TileConfig,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
-    embed_tiled_with_limits(
-        jpeg_bytes,
-        payload,
-        config,
-        &crate::CarrierLimits::default(),
-    )
+    validate_jpeg_tile_size(config.tile_size())?;
+    if payload.is_empty() {
+        return Err(StegoError::InvalidConfig(
+            "empty payload requires no carrier".to_string(),
+        ));
+    }
+    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    embed_tiled_from_decoded(&decoded, jpeg_bytes, payload, config)
 }
 
 /// Tiled exact embed under a carrier-owned [`crate::CarrierLimits`].
@@ -1686,13 +1773,10 @@ pub fn extract_tiled(
     config: &TileConfig,
     max_origins: u32,
 ) -> std::result::Result<Vec<u8>, StegoError> {
-    extract_tiled_with_limits(
-        jpeg_bytes,
-        payload_len,
-        config,
-        max_origins,
-        &crate::CarrierLimits::default(),
-    )
+    let limits = crate::CarrierLimits::legacy_compatibility();
+    limits.check_tiled_origins(max_origins)?;
+    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    extract_tiled_from_decoded_with_limits(&decoded, payload_len, config, max_origins, &limits)
 }
 
 /// Tiled raw extract under a carrier-owned [`crate::CarrierLimits`].
@@ -1787,12 +1871,9 @@ pub fn embed_tiled_framed(
     payload: &[u8],
     config: &TileConfig,
 ) -> std::result::Result<super::EmbedReport, StegoError> {
-    embed_tiled_framed_with_limits(
-        jpeg_bytes,
-        payload,
-        config,
-        &crate::CarrierLimits::default(),
-    )
+    let framed = crate::frame::encode(payload)?;
+    crate::CarrierLimits::default().check_frame_bytes(framed.len())?;
+    embed_tiled(jpeg_bytes, &framed, config)
 }
 
 /// Framed tiled embed under a carrier-owned [`crate::CarrierLimits`].
@@ -1830,12 +1911,10 @@ pub fn extract_tiled_framed(
     config: &TileConfig,
     max_origins: u32,
 ) -> std::result::Result<Vec<u8>, StegoError> {
-    extract_tiled_framed_with_limits(
-        jpeg_bytes,
-        config,
-        max_origins,
-        &crate::CarrierLimits::default(),
-    )
+    let limits = crate::CarrierLimits::legacy_compatibility();
+    limits.check_tiled_origins(max_origins)?;
+    let decoded = decode_supported_carrier(jpeg_bytes)?;
+    extract_tiled_framed_from_decoded_with_limits(&decoded, config, max_origins, &limits)
 }
 
 /// Framed tiled extract under a carrier-owned [`crate::CarrierLimits`].

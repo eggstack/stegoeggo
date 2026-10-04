@@ -57,9 +57,11 @@ over LSB and JPEG carriers, with `Redundancy`, `LsbConfig`, `JpegConfig`,
  degradation); new code uses the explicit best-effort names or the strict
  operations. Bounded `*_with_limits` JPEG variants, `inspect_with_limits`,
  `probe_support_with_limits`, `CarrierLimits`/`CarrierLimitsBuilder`, and
- `PreparedJpeg::new_with_limits`/`embed_tiled`/`embed_tiled_framed` are
- additive stable APIs sharing the single decode path with identical
- results under default limits. The opt-in `webp` feature adds the
+`PreparedJpeg::new_with_limits`/`embed_tiled`/`embed_tiled_framed` are
+additive stable APIs for bounded untrusted-input use. Legacy 0.x
+one-shot JPEG operations and `PreparedJpeg::new` preserve their historical
+input/dimension domain; explicit bounded variants enforce `CarrierLimits`.
+The opt-in `webp` feature adds the
  still-lossless WebP byte facade (`probe_support`, `capacity`,
  raw/framed/tiled embed/extract over the LSB carrier with explicit
  `CarrierLimits` on every operation) with the same additive-stability

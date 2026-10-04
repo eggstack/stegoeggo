@@ -143,15 +143,16 @@ if report.is_sufficient() {
 
 ## Bounded parsing with `CarrierLimits`
 
-Network-facing generic consumers bound untrusted-input parsing through
+Network-facing generic consumers should bound untrusted-input parsing through
 `limits::CarrierLimits` (private fields with getters and a builder):
 input bytes, JPEG segment count/segment bytes, decoded
-dimensions/pixels, framed totals, and tiled-search extent. Bounded
+dimensions/pixels, framed totals, and tiled-search extent. Explicit
 `*_with_limits` one-shot variants and `PreparedJpeg::new_with_limits`
-share the single decode path with the default one-shot API, so
-default-limit and bounded results agree exactly. Limit failures return
-`StegoError::ResourceLimitExceeded` without dumping secret or input
-bytes:
+enforce those caller-selected bounds and return
+`StegoError::ResourceLimitExceeded` on budget exhaustion. Legacy 0.x
+one-shot JPEG operations and `PreparedJpeg::new` preserve their historical
+input/dimension domain; their segment, frame, and tiled structural bounds
+remain in force. Use explicit bounded APIs for untrusted input:
 
 ```rust
 use stegoeggo_stego::{CarrierLimits, jpeg::JpegConfig};
@@ -163,9 +164,10 @@ let prepared = stegoeggo_stego::PreparedJpeg::new_with_limits(&jpeg_bytes, &limi
 ```
 
 `jpeg::inspect` keeps its `(bytes, max_segments, max_segment_bytes)`
-signature and delegates through the same bounded header path. The root
-application crate keeps its own `ResourceLimits` parser policy; the
-carrier never depends on the root type.
+signature and preserves the historical structural dimension/input domain
+while applying the caller's segment limits. The root application crate
+checks its own `ResourceLimits` before carrier work; the carrier never
+depends on the root type.
 
 ## Borrowed pixel buffers (no `RgbaImage` conversion)
 

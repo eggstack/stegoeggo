@@ -67,9 +67,11 @@ The generic carrier owns a separate bounded-input contract
 `PreparedJpeg::new_with_limits`; see `carrier-surface.md`): input bytes,
 JPEG segments, dimensions/pixels, framed totals, and tiled-search extent,
 all checked before allocation with `StegoError::ResourceLimitExceeded`
-and no secret/input dump. The carrier never depends on the root
-`ResourceLimits`; the root may later translate its policy into carrier
-limits privately.
+and no secret/input dump. Legacy 0.x JPEG one-shot operations and
+`PreparedJpeg::new` preserve their historical input/dimension domain. The
+root checks its own `ResourceLimits` before entering those carrier paths and
+continues to enforce its policy independently. The carrier never depends on
+the root `ResourceLimits` type.
 
 Note the disposition split: `check_metadata_field_count()` reports field-count overflow as `Error::ContainerLimitExceeded { kind: "metadata fields", .. }`, not `MetadataLimitExceeded` — only byte-size overflow yields `MetadataLimitExceeded`. The observer records the first violation stickily (`limit_error`) and surfaces it via `check_limits()`.
 

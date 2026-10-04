@@ -6,8 +6,10 @@
 //! implementation objects stay private; only operation-level methods are
 //! exposed.
 //!
-//! One-shot functions in [`crate::jpeg`] delegate to the same
-//! decoded-state helpers, so prepared and one-shot results agree exactly.
+//! `PreparedJpeg::new` preserves the historical 0.x JPEG input and dimension
+//! domain. Use [`PreparedJpeg::new_with_limits`] for untrusted input. One-shot
+//! functions in [`crate::jpeg`] delegate to the same decoded-state helpers,
+//! so prepared and one-shot results agree exactly.
 //!
 //! # Capacity units
 //!
@@ -65,7 +67,7 @@ impl<'a> PreparedJpeg<'a> {
     /// coefficient operations on them return
     /// [`StegoError::UnsupportedJpeg`].
     pub fn new(encoded: &'a [u8]) -> Result<Self, StegoError> {
-        Self::new_with_limits(encoded, &crate::CarrierLimits::default())
+        Self::new_with_profile(encoded, &crate::CarrierLimits::legacy_compatibility(), true)
     }
 
     /// Prepare a JPEG under a carrier-owned [`crate::CarrierLimits`].
@@ -79,7 +81,20 @@ impl<'a> PreparedJpeg<'a> {
         encoded: &'a [u8],
         limits: &crate::CarrierLimits,
     ) -> Result<Self, StegoError> {
-        let (support, decoded) = match decode_supported_carrier_with_limits(encoded, limits) {
+        Self::new_with_profile(encoded, limits, false)
+    }
+
+    fn new_with_profile(
+        encoded: &'a [u8],
+        limits: &crate::CarrierLimits,
+        legacy: bool,
+    ) -> Result<Self, StegoError> {
+        let decoded_result = if legacy {
+            crate::jpeg::decode_supported_carrier(encoded)
+        } else {
+            decode_supported_carrier_with_limits(encoded, limits)
+        };
+        let (support, decoded) = match decoded_result {
             Ok(decoded) => (JpegSupport::Supported, Some(decoded)),
             Err(StegoError::UnsupportedJpeg(reason)) => (JpegSupport::Unsupported(reason), None),
             Err(other) => return Err(other),
