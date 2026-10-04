@@ -2,7 +2,7 @@
 
 ## Stable API
 
-The following API surfaces are stable and follow semantic versioning guarantees. Breaking changes will only occur in a semver-major release.
+The following API surfaces are stable and follow semantic versioning guarantees. During 0.x, breaking changes are reserved for a minor-version increment (for example, 0.4 to 0.5); patch releases remain API compatible. At 1.0 and later, breaking changes require a major-version increment.
 
 ### Library Functions
 

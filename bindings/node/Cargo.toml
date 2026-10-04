@@ -2,7 +2,7 @@
 
 [package]
 name = "stegoeggo-node"
-version = "0.4.3"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.89"
 description = "Node.js bindings for the stegoeggo rights-reservation and steganography library"
@@ -16,7 +16,7 @@ name = "stegoeggo"
 crate-type = ["cdylib"]
 
 [dependencies]
-stegoeggo = { path = "../..", version = "=0.4.3", default-features = false }
+stegoeggo = { path = "../..", version = "=0.5.0", default-features = false }
 napi = { version = "3.13.0", default-features = false, features = ["napi6", "dyn-symbols"] }
 napi-derive = "3.6.9"
 

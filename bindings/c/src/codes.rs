@@ -314,7 +314,7 @@ mod tests {
             .to_str()
             .expect("source version is ASCII");
         assert_eq!(version, env!("CARGO_PKG_VERSION"));
-        assert_eq!(env!("CARGO_PKG_VERSION"), "0.4.3");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "0.5.0");
     }
 
     #[test]

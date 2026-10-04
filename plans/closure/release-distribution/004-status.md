@@ -118,3 +118,13 @@ Library M006 remains blocked only on ADR-0007 acceptance; M007 remains proposed.
 semver blocker. The release-distribution roadmap records M004 as blocked. Plan
 106 and the M002 conditional closure remain unchanged because no public B or
 updater evidence exists.
+
+
+## 13. Superseded by Release-Distribution M005
+
+On 2026-10-04 the maintainer selected 0.5.0 as the release version that may carry
+the stable enum additions identified by the failed 0.4.3 patch semver check. The
+M004 stop remains historically accurate: no 0.4.3 crate, tag, draft, or release
+was published. New execution is registered separately in
+`plans/implementation/release-distribution/005-0.5.0-release-and-planning-reconciliation.md`;
+M004 is superseded, not reopened or rewritten as a successful release.

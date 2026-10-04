@@ -1,6 +1,6 @@
 {
   "name": "@eggstack/stegoeggo",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "Node.js bindings for the stegoeggo rights-reservation and steganography library",
   "license": "MIT",
   "author": "David Bowman <dbowman91@proton.me>",

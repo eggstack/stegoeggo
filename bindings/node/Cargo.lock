@@ -535,7 +535,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "stegoeggo"
-version = "0.4.3"
+version = "0.5.0"
 dependencies = [
  "crc32fast",
  "digest",
@@ -556,7 +556,7 @@ dependencies = [
 
 [[package]]
 name = "stegoeggo-node"
-version = "0.4.3"
+version = "0.5.0"
 dependencies = [
  "napi",
  "napi-build",
@@ -566,7 +566,7 @@ dependencies = [
 
 [[package]]
 name = "stegoeggo-stego"
-version = "0.4.3"
+version = "0.5.0"
 dependencies = [
  "crc32fast",
  "image",

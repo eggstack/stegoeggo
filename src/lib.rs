@@ -1137,7 +1137,7 @@ pub fn process_request_bytes_with_report(
 
 /// Verify that image bytes contain a protection payload whose integrity can be proved.
 ///
-/// Compatibility projection of the canonical [`VerificationReport`] (see
+/// Compatibility projection of the canonical [`verification::VerificationReport`] (see
 /// [`verify_image_bytes_report`]). Reports hidden-marker integrity only;
 /// use `summary_status` on the report for rights-fallback semantics.
 /// Stable and not deprecated.
@@ -1275,7 +1275,7 @@ pub fn verify_legal_notice_with_limits(
     crate::verification::canonical::project_notice_from_canonical(&facts)
 }
 
-/// Verify image bytes and return the canonical structured [`VerificationReport`].
+/// Verify image bytes and return the canonical structured [`verification::VerificationReport`].
 ///
 /// This is the canonical verification operation for rich integrations. It performs
 /// the single expensive rights-parse plus hidden-marker search once, then builds

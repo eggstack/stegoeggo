@@ -10,11 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Opt-in lossless still-WebP byte-carrier facade in `stegoeggo-stego`, with explicit carrier limits and structured rejection of lossy or animated inputs
 - Explicit bounded JPEG carrier APIs for operations on untrusted generic input, alongside the historical legacy entry points
 - Generic carrier API normalization with explicitly named best-effort JPEG operations and public result/report helpers
+- Verification reports now distinguish unavailable fields and invalid steganographic evidence; exhaustive matches on `FieldSource` or `VerificationResult` need new arms
 
 ### Changed
 - Restored the historical 0.x JPEG input and dimension domain for legacy one-shot operations and `PreparedJpeg::new`; explicit `CarrierLimits` variants continue enforcing configured bounds and error classification
 - Converged metadata writes on resolved specifications and removed legacy context reconstruction from the canonical path
-- Python, Node, and C binding source metadata now tracks 0.4.3; the C ABI remains 1.0 and no binding registry publication is included
+- Python, Node, and C binding source metadata now tracks 0.5.0; the C ABI remains 1.0 and no binding registry publication is included
 - Release binary production now uses the Eggpack-generated five-target workflow, with draft staging and the unchanged 15-file asset contract
 
 ### Fixed
