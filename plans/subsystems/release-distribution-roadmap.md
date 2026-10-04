@@ -58,13 +58,12 @@ ordinary stable B for the real public A→B self-update proof. M002 cutover is
 landed and conditionally closed (`plans/closure/release-distribution/002-status.md`):
 Eggpack is now the producer authority for the same five native CLI targets.
 
-M004 is ready and selects 0.4.3 as the next ordinary stable release. That one
-release event is intended to supply both M002's first live Eggpack-produced
-stable-release evidence and, after publication, M001's real public
-0.4.2→0.4.3 updater proof. This is ordinary product release work, not a
-throwaway evidence-only version. The updater rehearsal panic is resolved by
-closed M003, so there is no remaining known code blocker to the shared live
-release event.
+M004 selected 0.4.3, but release qualification found two unaccepted stable-API
+breaks in the root crate against crates.io 0.4.2. Publication is stopped under
+M004 §14 until maintainers decide whether to restore patch compatibility or
+select a new release version through a corrective plan. No crates.io package,
+tag, draft, or public release has been created. M001 and M002 therefore remain
+blocked on the first qualified ordinary stable B newer than 0.4.2.
 
 ## 5. Target architecture
 
@@ -85,7 +84,7 @@ CI/release gates (008, 032-037, closed)
                                   +--> M001 real A->B transition
                                   |       (blocked until public 0.4.3)
                                   |
-                                  `--> M004 0.4.3 release + reconciliation [READY]
+                                  `--> M004 0.4.3 release + reconciliation [BLOCKED: semver decision]
                                            |
                                            +--> first live Eggpack stable B
                                            |       closes M002 condition
@@ -100,8 +99,8 @@ Eggpack Ecosystem M001/M003h [CLOSED]
              `--> M004 public 0.4.3 event supplies live evidence
 ```
 
-M001's current blocker is operational rather than code-level. M004 is the
-dependency-ready work that intentionally produces the missing public event.
+M001's live-evidence blocker remains the missing public stable B. M004 is blocked
+because its semver qualification does not permit publishing 0.4.3 as planned.
 
 ## 7. Milestones
 
@@ -184,9 +183,10 @@ shared M001/M002 operational evidence without an updater-runtime code blocker.
 
 Class: capability
 
-Objective: prepare, qualify, and manually publish 0.4.3 as the next ordinary
-stable release, reconcile the post-M008 planning state, then use the public
-0.4.2→0.4.3 transition to complete the outstanding M001/M002 live evidence.
+Objective: prepare and qualify 0.4.3 as the next ordinary stable release, reconcile
+the post-M008 planning state, then use the public 0.4.2→0.4.3 transition to
+complete the outstanding M001/M002 live evidence. Current status: blocked by the
+unaccepted root-crate API breaks recorded in `plans/closure/release-distribution/004-status.md`.
 
 Dependencies: current mainline carrier/release correctness, closed Stego Library
 M008, closed Release M003, and maintainer selection of 0.4.3. It does not depend
@@ -200,6 +200,9 @@ closure reconciliation.
 
 Implementation plan:
 `plans/implementation/release-distribution/004-0.4.3-release-and-planning-reconciliation.md`.
+
+Current blocker: semver-checks identified an unaccepted patch-level public API break;
+maintainer disposition is required before a release version or corrective handoff is selected.
 
 Exit conditions: M004 plan acceptance criteria, closure record at
 `plans/closure/release-distribution/004-status.md`, and successful live evidence
@@ -243,8 +246,8 @@ but their closure records remain separate.
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
-| M001 real A→B update | blocked | flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md` | flat `plans/106-status.md` (pending B) | public 0.4.3 not yet published; M004 is the ready release handoff |
-| M002 Eggpack producer adoption | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | `plans/closure/release-distribution/002-status.md` | live 0.4.3 Eggpack evidence outstanding; M004 owns the shared release event |
+| M001 real A→B update | blocked | flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md` | flat `plans/106-status.md` (pending B) | no qualified public B newer than 0.4.2; M004 is blocked on semver disposition |
+| M002 Eggpack producer adoption | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | `plans/closure/release-distribution/002-status.md` | live Eggpack-produced B evidence outstanding; M004 is blocked on semver disposition |
 | M003 synchronous Eggup updater bridge corrective | closed | `plans/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md` | `plans/closure/release-distribution/003-status.md` | none |
-| M004 0.4.3 release and planning reconciliation | ready | `plans/implementation/release-distribution/004-0.4.3-release-and-planning-reconciliation.md` | pending | none |
+| M004 0.4.3 release and planning reconciliation | blocked | `plans/implementation/release-distribution/004-0.4.3-release-and-planning-reconciliation.md` | `plans/closure/release-distribution/004-status.md` | root semver findings need maintainer disposition |
 | prior gates/binary/eggfetch/0.4.2 | closed | flat `008`, `024`–`025`, `032`–`037`, `086`, `089`, `099`–`105` | `*.status.md` companions as present | — |

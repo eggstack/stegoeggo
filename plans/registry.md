@@ -30,7 +30,7 @@ predecessor history, indexed by the roadmaps below.
 | stego-carrier | closed | `plans/subsystems/stego-carrier-roadmap.md` | all milestones closed | none |
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
-| release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M004 0.4.3 release ready; M001 blocked pending public B; M002 conditionally closed; M003 closed | M004 is the ordinary stable B handoff intended to supply both M001 and M002 live evidence |
+| release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M004 0.4.3 release blocked on an unaccepted root-crate API break; M001 blocked pending public B; M002 conditionally closed; M003 closed | M004 cannot produce the shared B until the semver blocker is resolved |
 | language-bindings | closed | `plans/subsystems/language-bindings-roadmap.md` | all milestones closed; initial Python -> Node -> C sequence complete | none |
 | stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M001–M005 and M008 closed; M006 blocked; M007 proposed | M006 waits only for ADR-0007 acceptance |
 | maintenance-quality | closed | `plans/subsystems/maintenance-quality-roadmap.md` | M001 closed; M002 proposed optional polish | none |
@@ -40,7 +40,6 @@ predecessor history, indexed by the roadmaps below.
 | Subsystem | Milestone | Status | Plan | Notes |
 |---|---|---|---|---|
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); live B > 0.4.2 evidence remains outstanding, shared with M001 |
-| release-distribution | M004 0.4.3 release and planning reconciliation | ready | `plans/implementation/release-distribution/004-0.4.3-release-and-planning-reconciliation.md` | ordinary stable release; produces first live Eggpack B and public 0.4.2→0.4.3 updater evidence |
 
 ## Active closure work
 
@@ -50,8 +49,9 @@ None.
 
 | Subsystem | Milestone | Blocker |
 |---|---|---|
-| release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | Public 0.4.3 not yet published; ready M004 is the authorized ordinary stable B release. Evidence remains in `plans/106-status.md` until the live transition runs. |
-| release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | Live 0.4.3 Eggpack publication/update evidence not yet recorded; ready M004 owns that shared release event. |
+| release-distribution | M001 real eggfetch-to-eggfetch A→B transition (flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md`) | Public stable B newer than 0.4.2 not yet published; M004 is blocked by semver evidence pending maintainer disposition. Evidence remains in `plans/106-status.md` until a qualified live transition runs. |
+| release-distribution | M002 live second-consumer proof (WP9 first Eggpack-produced B + WP10 shared A→B) | No newer stable Eggpack-produced B exists; M004 is blocked by semver evidence pending maintainer disposition. |
+| release-distribution | M004 0.4.3 release and planning reconciliation | Root-crate semver checks found two unaccepted stable-API breaks relative to crates.io 0.4.2; maintainer disposition or a corrective plan/release version is required before publication. See `plans/closure/release-distribution/004-status.md`. |
 | stego-library-evolution | M006 keyed carrier placement | ADR-0007 acceptance only. |
 
 ## Recently closed work
