@@ -1,6 +1,6 @@
 # Stego Library Evolution Milestone 008 — M003 Default-Limit Compatibility Corrective
 
-Status: ready for handoff  
+Status: closed
 Repository baseline: `0a8b356a056bdab2f9d1996be78578cb3f6bc724`  
 Source roadmap: `plans/subsystems/stego-library-evolution-roadmap.md#7-milestones`  
 Corrects: `plans/implementation/stego-library-evolution/003-carrier-resource-and-prepared-hardening.md` and `plans/closure/stego-library-evolution/003-status.md`  

@@ -94,13 +94,15 @@ At current main after M001–M005:
    1 MiB fixture with byte-compatible behavior.
 5. M005 added the opt-in still-lossless WebP byte facade with explicit bounded and
    metadata-drop semantics.
-6. A post-M003 compatibility audit found one unresolved defect: existing v0.4.2 JPEG
-   one-shot APIs and `PreparedJpeg::new` now inherit M003's new 100 MiB input and
-   16,384-dimension policy caps, and pre-existing parser-limit errors can map to
-   `ResourceLimitExceeded` instead of their historical `MalformedInput`. This is
-   tracked by ready corrective M008 and has not shipped in a release newer than v0.4.2.
-7. M006 keyed placement remains blocked on ADR-0007 acceptance and M008 closure.
-   M007 adaptive/robust work remains research-only.
+6. M008 corrected the default-limit compatibility gap: legacy 0.x JPEG entry points
+   use a private structural-domain profile and preserve historical parser-error
+   classification; explicit bounded variants retain `CarrierLimits`. The corrective
+   landed before any post-v0.4.2 stable release. The history audit found `inspect` and
+   `PreparedJpeg` were public in v0.4.2; several current one-shot functions were
+   introduced later and are also routed through the compatibility profile for a
+   consistent legacy contract.
+7. M006 keyed placement remains blocked only on ADR-0007 acceptance. M007 adaptive/
+   robust work remains research-only pending explicit maintainer authorization.
 
 The generic carrier boundary is otherwise coherent: arbitrary payload carriers and
 resource controls stay below; rights policy, application degradation, metadata,
@@ -135,15 +137,14 @@ M003 → M004 transactional in-place allocation hardening.
 
 M003 → M005 direct lossless-WebP byte facade.
 
-M003 closure → M008 default-limit compatibility corrective. M008 is dependency-ready
-and gates the next carrier release because it corrects a behavioral discrepancy found
-after M003 closure.
+M003 closure → M008 default-limit compatibility corrective. M008 is closed and its
+behavioral correction gates the next carrier release.
 
-M002 + M003 + M008 closure + accepted ADR-0007 → M006 keyed carrier placement.
+M002 + M003 + M008 closure + accepted ADR-0007 → M006 keyed carrier placement. M008 is closed; ADR-0007 acceptance remains M006's only blocker.
 
-M007 adaptive/robust algorithm experiment is future research only and has no
-implementation handoff until M008 closes and a maintainer explicitly authorizes the
-algorithm/threat-model expansion.
+M007 adaptive/robust algorithm experiment remains future research only. M008 is
+closed; M007 still has no implementation handoff until a maintainer explicitly
+authorizes the algorithm/threat-model expansion.
 
 ## 7. Milestones
 
@@ -245,6 +246,6 @@ direction.
 | M003 limits/prepared parity | closed | `plans/implementation/stego-library-evolution/003-carrier-resource-and-prepared-hardening.md` | `plans/closure/stego-library-evolution/003-status.md` | none |
 | M004 in-place allocation hardening | closed | `plans/implementation/stego-library-evolution/004-transactional-in-place-allocation-hardening.md` | `plans/closure/stego-library-evolution/004-status.md` | none |
 | M005 lossless WebP byte facade | closed | `plans/implementation/stego-library-evolution/005-lossless-webp-byte-carrier.md` | `plans/closure/stego-library-evolution/005-status.md` | none |
-| M006 keyed placement | blocked | `plans/implementation/stego-library-evolution/006-keyed-carrier-placement.md` | pending | ADR-0007 acceptance + M008 closure |
-| M007 adaptive/robust experiment | proposed | none | none | M008 closure + explicit maintainer authorization |
-| M008 M003 default-limit compatibility corrective | ready | `plans/implementation/stego-library-evolution/008-m003-default-limit-compatibility-corrective.md` | pending | none |
+| M006 keyed placement | blocked | `plans/implementation/stego-library-evolution/006-keyed-carrier-placement.md` | pending | ADR-0007 acceptance |
+| M007 adaptive/robust experiment | proposed | none | none | explicit maintainer authorization |
+| M008 M003 default-limit compatibility corrective | closed | `plans/implementation/stego-library-evolution/008-m003-default-limit-compatibility-corrective.md` | `plans/closure/stego-library-evolution/008-status.md` | none |
