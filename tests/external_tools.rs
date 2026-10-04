@@ -52,25 +52,6 @@ fn process_and_write(format: ImageOutputFormat, output_path: &std::path::Path) {
     std::fs::write(output_path, &output).unwrap();
 }
 
-fn exiftool_extract(file: &std::path::Path, tag: &str) -> Option<String> {
-    let output = Command::new("exiftool")
-        .arg("-s3")
-        .arg(tag)
-        .arg(file)
-        .output()
-        .ok()?;
-    if output.status.success() {
-        let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if val.is_empty() {
-            None
-        } else {
-            Some(val)
-        }
-    } else {
-        None
-    }
-}
-
 fn exiftool_extract_all(file: &std::path::Path) -> String {
     let output = Command::new("exiftool")
         .arg("-G")
@@ -152,9 +133,11 @@ mod exiftool_png {
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
 
-        let val = exiftool_extract(&path, "-Copyright");
-        assert!(val.is_some(), "ExifTool should find Copyright in PNG");
-        assert!(val.unwrap().contains("Test Holder"));
+        let tags = exiftool_extract_all(&path);
+        assert!(
+            tags.contains("Stego Eggo Copyright") && tags.contains("Copyright (c) Test Holder"),
+            "ExifTool should report the project PNG copyright text field:\n{tags}"
+        );
     }
 
     #[test]
@@ -165,9 +148,11 @@ mod exiftool_png {
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
 
-        let val = exiftool_extract(&path, "-Creator");
-        assert!(val.is_some(), "ExifTool should find Creator in PNG");
-        assert_eq!(val.unwrap(), "Test Creator");
+        let tags = exiftool_extract_all(&path);
+        assert!(
+            tags.contains("Stego Eggo Creator") && tags.contains("Test Creator"),
+            "ExifTool should report the project PNG creator text field:\n{tags}"
+        );
     }
 
     #[test]
