@@ -33,7 +33,7 @@ jobs:
         run: cargo test --test external_tools -- --ignored
 
       - name: Build conformance harness
-        run: cargo build --release --bin stegoeggo-conformance
+        run: cargo build --release --bin stegoeggo-conformance --features conformance
 
       - name: Run conformance checks
         run: |
