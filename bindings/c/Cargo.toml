@@ -2,7 +2,7 @@
 
 [package]
 name = "stegoeggo-c"
-version = "0.4.2"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.89"
 description = "Versioned C ABI leaf binding over the stegoeggo rights-reservation library"
@@ -16,7 +16,7 @@ name = "stegoeggo_c"
 crate-type = ["cdylib"]
 
 [dependencies]
-stegoeggo = { path = "../..", version = "=0.4.2", default-features = false }
+stegoeggo = { path = "../..", version = "=0.5.0", default-features = false }
 serde_json = "1.0"
 zeroize = "1"
 

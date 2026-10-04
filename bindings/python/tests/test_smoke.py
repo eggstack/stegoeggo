@@ -4,8 +4,8 @@ import stegoeggo
 
 
 def test_import():
-    assert stegoeggo.__version__ == "0.4.2"
-    assert stegoeggo.__stegoeggo_version__ == "0.4.2"
+    assert stegoeggo.__version__ == "0.5.0"
+    assert stegoeggo.__stegoeggo_version__ == "0.5.0"
 
 
 def test_exceptions_are_subclasses_of_stegoeggo_error():

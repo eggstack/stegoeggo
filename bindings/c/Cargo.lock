@@ -328,7 +328,7 @@ checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
 name = "stegoeggo"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "crc32fast",
  "digest",
@@ -349,7 +349,7 @@ dependencies = [
 
 [[package]]
 name = "stegoeggo-c"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "image",
  "serde_json",
@@ -359,7 +359,7 @@ dependencies = [
 
 [[package]]
 name = "stegoeggo-stego"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "crc32fast",
  "image",

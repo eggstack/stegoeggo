@@ -44,7 +44,7 @@ single-source-build artefact that does not require `maturin` to be present
 on the install machine:
 
 ```bash
-python -m pip install stegoeggo-0.4.2.tar.gz
+python -m pip install stegoeggo-${VERSION}.tar.gz
 ```
 
 ## Usage
