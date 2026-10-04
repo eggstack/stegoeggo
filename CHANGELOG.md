@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-04
+
 ### Added
 - Opt-in lossless still-WebP byte-carrier facade in `stegoeggo-stego`, with explicit carrier limits and structured rejection of lossy or animated inputs
 - Explicit bounded JPEG carrier APIs for operations on untrusted generic input, alongside the historical legacy entry points
