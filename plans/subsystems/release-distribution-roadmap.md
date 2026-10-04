@@ -1,6 +1,6 @@
 # Release and Distribution Roadmap
 
-Status: active
+Status: closed
 
 Long-term references:
 
@@ -52,18 +52,16 @@ Protection algorithms, verification semantics, automated publication.
 
 ## 4. Current state
 
-Active. 0.4.2 is the first eggfetch-enabled release, five-target
-qualified (`105-status.md`). M001 remains operationally blocked on a newer
-ordinary stable B for the real public A→B self-update proof. M002 cutover is
-landed and conditionally closed (`plans/closure/release-distribution/002-status.md`):
-Eggpack is now the producer authority for the same five native CLI targets.
+Closed on 2026-10-04 with public 0.5.0. M001's public A→B proof and M002's
+first live Eggpack-produced release evidence are recorded in
+`plans/106-status.md` and `plans/closure/release-distribution/002-status.md`.
 
 M004 selected 0.4.3 but stopped before publication when root-crate semver checks
 found additions to stable enums relative to crates.io 0.4.2. No 0.4.3 package,
 tag, draft, or release was created. Per the maintainer decision, M004 is
 superseded by M005, which selects 0.5.0 as the next 0.x minor compatibility
-boundary and records the enum-match migration. M001 and M002 remain blocked
-until that ordinary stable B is publicly qualified.
+boundary and records the enum-match migration. M005 completed that release;
+M004 remains superseded with its pre-publication stop evidence retained.
 
 ## 5. Target architecture
 
@@ -82,11 +80,11 @@ CI/release gates (008, 032-037, closed)
                         +--> first eggfetch release 0.4.2 (105, closed)
                                   |
                                   +--> M001 real A->B transition
-                                  |       (blocked until public stable B > 0.4.2)
+                                  |       (closed by public 0.4.2→0.5.0 proof)
                                   |
                                   `--> M004 0.4.3 release preparation [SUPERSEDED before publication]
                                            |
-                                           `--> M005 0.5.0 release + reconciliation [ACTIVE]
+                                           `--> M005 0.5.0 release + reconciliation [CLOSED]
                                            |
                                            +--> first live Eggpack stable B
                                            |       closes M002 condition
@@ -96,14 +94,14 @@ CI/release gates (008, 032-037, closed)
 
 Eggpack Ecosystem M001/M003h [CLOSED]
     |
-    `--> M002 Eggpack producer adoption [CONDITIONALLY CLOSED]
+    `--> M002 Eggpack producer adoption [CLOSED]
              |
-             `--> M005 public 0.5.0 event supplies live evidence
+             `--> M005 public 0.5.0 event supplies live evidence [CLOSED]
 ```
 
-M001's live-evidence blocker remains the missing public stable B. M005 owns the
-maintainer-selected 0.5.0 release event; M004 remains superseded with its stop
-evidence at `plans/closure/release-distribution/004-status.md`.
+The public 0.5.0 release and updater transition complete the shared M001/M002
+live evidence. M004 remains superseded with its pre-publication stop evidence at
+`plans/closure/release-distribution/004-status.md`.
 
 ## 7. Milestones
 
@@ -217,10 +215,9 @@ real public 0.4.2→0.5.0 updater proof → M001/M002 closure reconciliation.
 
 Implementation plan: `plans/implementation/release-distribution/005-0.5.0-release-and-planning-reconciliation.md`.
 
-Exit conditions: M005 acceptance criteria and closure record at
-`plans/closure/release-distribution/005-status.md`, plus successful live evidence
-promoting M001 and M002 to closed. A named environmental blocker may justify
-conditional closure; published evidence must never be invented.
+Exit conditions met: the M005 acceptance criteria, closure record at
+`plans/closure/release-distribution/005-status.md`, and live evidence promoting
+M001 and M002 to closed.
 
 
 ## 8. Cross-cutting requirements
@@ -259,9 +256,9 @@ but their closure records remain separate.
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
-| M001 real A→B update | blocked | flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md` | flat `plans/106-status.md` (pending B) | no qualified public B newer than 0.4.2; active M005 prepares 0.5.0 |
-| M002 Eggpack producer adoption | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | `plans/closure/release-distribution/002-status.md` | live Eggpack-produced B evidence outstanding; active M005 prepares 0.5.0 |
+| M001 real A→B update | closed | flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md` | flat `plans/106-status.md` | none; public 0.4.2→0.5.0 proof on macOS x86_64 |
+| M002 Eggpack producer adoption | closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | `plans/closure/release-distribution/002-status.md` | none; first live Eggpack release completed |
 | M003 synchronous Eggup updater bridge corrective | closed | `plans/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md` | `plans/closure/release-distribution/003-status.md` | none |
 | M004 0.4.3 release preparation | superseded | `plans/implementation/release-distribution/004-0.4.3-release-and-planning-reconciliation.md` | `plans/closure/release-distribution/004-status.md` | stopped before publication; superseded by maintainer-selected M005 0.5.0 |
-| M005 0.5.0 release and planning reconciliation | active | `plans/implementation/release-distribution/005-0.5.0-release-and-planning-reconciliation.md` | pending | crates.io/GitHub state is unused; qualification in progress |
+| M005 0.5.0 release and planning reconciliation | closed | `plans/implementation/release-distribution/005-0.5.0-release-and-planning-reconciliation.md` | `plans/closure/release-distribution/005-status.md` | none |
 | prior gates/binary/eggfetch/0.4.2 | closed | flat `008`, `024`–`025`, `032`–`037`, `086`, `089`, `099`–`105` | `*.status.md` companions as present | — |
