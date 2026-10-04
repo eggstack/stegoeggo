@@ -94,6 +94,8 @@ jobs:
 
       - name: Install Rust toolchain (matches binding MSRV)
         uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable-action-pin (shared with release-binaries.yml)
+        with:
+          toolchain: 1.89
 
       - name: Set up pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4

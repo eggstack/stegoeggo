@@ -220,7 +220,7 @@ carrier → library → CLI crates.io chain and is published independently
 
 1. Confirm the binding version in `bindings/python/pyproject.toml`,
    `bindings/python/Cargo.toml`, and `bindings/python/Cargo.lock` matches
-   the StegoEggo source release version (0.4.2 by default).
+   the StegoEggo source release version (the current source release version).
 2. Dispatch `.github/workflows/release-python.yml` manually with the
    source ref. The workflow:
    - Builds `cp311-abi3` wheels on native runners for the documented
@@ -270,7 +270,7 @@ has registry and release side effects). The end-to-end process is:
 
 1. Confirm the binding version in `bindings/node/package.json`,
    `bindings/node/Cargo.toml`, and `bindings/node/Cargo.lock` matches
-   the StegoEggo source release version (0.4.2 by default).
+   the StegoEggo source release version (the current source release version).
 2. Dispatch `.github/workflows/release-node.yml` manually with the
    source ref. The workflow:
    - Builds release addons on native runners for the documented
@@ -325,7 +325,7 @@ workflow. The end-to-end process is:
 
 1. Confirm the binding version in `bindings/c/Cargo.toml` and
    `bindings/c/Cargo.lock` matches the StegoEggo source release
-   version (0.4.2 by default). The ABI major/minor (`1`/`0`) is
+   version (the current source release version). The ABI major/minor (`1`/`0`) is
    independent of the source version.
 2. Dispatch `.github/workflows/release-c.yml` manually with an
    immutable source SHA for final qualification. The workflow:

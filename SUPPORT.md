@@ -223,7 +223,7 @@ builds one sdist and the sdist job installs it through a literal
 `pip install <tarball>` in a clean venv outside the source checkout.
 
 The sdist is a self-contained PEP 517 build artefact: `pip install
-stegoeggo-0.4.2.tar.gz` resolves the binding's path dependencies from
+stegoeggo-${VERSION}.tar.gz` resolves the binding's path dependencies from
 the tarball itself rather than the source checkout.
 
 ## Node Binding

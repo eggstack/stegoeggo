@@ -21,7 +21,7 @@
   and `plans/closure/language-bindings/010-status.md` (M010; five-target
   qualification and stability activation).
 - ABI major: `1`. ABI minor: `0`. Source package version is independent
-  (currently `0.4.2`; query at runtime via `stegoeggo_source_version`).
+  (the current source release; query at runtime via `stegoeggo_source_version`).
 - Qualified cbindgen header-generation pin: `0.29.4`.
 - Language targets: C11 consumer-compatible, C++17 include-compatible.
 - First qualification matrix: Linux x86_64 GNU, Linux aarch64 GNU,
@@ -60,7 +60,7 @@ const char *stegoeggo_source_version(void);
 - `stegoeggo_abi_version_minor` returns `0`.
 - `stegoeggo_source_version` returns a library-owned, NUL-terminated ASCII
   string (the `stegoeggo` package version the library was built from, e.g.
-  `"0.4.2"`). The pointer is valid for process lifetime and MUST NOT be
+  the source release version). The pointer is valid for process lifetime and MUST NOT be
   freed by the caller. It is never NULL.
 - All three are infallible, reentrant, thread-safe, and never allocate,
   never set an error, and never unwind.

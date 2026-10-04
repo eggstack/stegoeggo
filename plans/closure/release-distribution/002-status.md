@@ -1,6 +1,6 @@
 # Release and Distribution Milestone 002 — Closure Status
 
-Status: conditionally closed
+Status: closed
 Source implementation plan: `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md`
 Source subsystem roadmap: `plans/subsystems/release-distribution-roadmap.md#milestone-2--eggpack-producer-adoption-and-second-consumer-qualification`
 Repository baseline reviewed: `a8d20ce`
@@ -16,13 +16,12 @@ authority for the five-target native CLI release via checked-in
 qualification is green: zero drift, contract parity, 15 new
 `release_eggpack` tests, `check.sh`, CLI tests, installer rehearsal,
 MSRV checks, deny, release smoke on the release-profile binary, and a
-mock 15-asset audit (accept/reject paths). The remaining evidence is
-operational, not code: no ordinary stable B newer than 0.4.2 has been
-published (latest tag `v0.4.2`, crates.io `stegoeggo-cli 0.4.2`), and the
-plan forbids throwaway versions. WP9 (first live Eggpack-produced stable
-release) and WP10 (shared A-to-B updater proof) therefore remain
-outstanding, shared with the existing M001/Plan 106 blocker. M002 is
-conditionally closed on that named live evidence.
+mock 15-asset audit (accept/reject paths). The live evidence completed on
+2026-10-04 with the ordinary 0.5.0 release. Eggpack built, qualified,
+aggregated, and staged the five-target release; the exact 15-file set was
+audited and the GitHub draft was manually published. The same public release
+supplied Plan 106 / M001's real 0.4.2→0.5.0 updater proof on macOS x86_64.
+M002 is closed.
 
 ## 2. Requirement-to-evidence matrix
 
@@ -38,8 +37,8 @@ conditionally closed on that named live evidence.
 | Preflight/asset audit consume Eggpack authority; 15-asset inventory | `release-binary-preflight.sh` derives targets from `distribution.toml`; `release-check-assets.sh` enforces 5 binaries + 5 sidecars + 2 wrappers + 2 exact installers + manifest; mock audit accepts 15, rejects extra/missing |
 | Immutable drift guard | `.github/workflows/release-drift.yml` installs the exact pinned Eggpack revision and runs `eggpack ci check` + `check-release-contract.py` |
 | Release docs describe draft-first sequence | `RELEASING.md`, `docs/installation.md`, `architecture/cli.md`, `STABILITY.md`, `AGENTS.md`, conventions skill updated |
-| First normal post-cutover stable release (WP9) | OUTSTANDING — no B newer than 0.4.2 exists; throwaway versions forbidden |
-| Shared B with Plan 106 A-to-B proof (WP10) | OUTSTANDING — same operational blocker as M001 |
+| First normal post-cutover stable release (WP9) | Closed — public v0.5.0, source `57ca94c910269e080b06aa8cb34c3767b3bf669d`; hosted run `37181914252` passed five builds, native qualification, aggregation, and staging |
+| Shared B with Plan 106 A-to-B proof (WP10) | Closed — public 0.4.2→0.5.0 update succeeded on macOS x86_64; details in `plans/106-status.md` |
 
 ## 3. Production implementation evidence
 
@@ -185,21 +184,16 @@ wrapper policy vs human publication.
 
 ## 11. Roadmap disposition
 
-M002 implementation/cutover is done; live operational evidence (WP9/WP10)
-is outstanding and shares one release event with M001/Plan 106: the next
-ordinary stable B newer than 0.4.2 serves as both M002's first live
-Eggpack-produced release and, after publication, M001's real public
-A-to-B self-update proof. No throwaway version may be cut for either.
-M001 stays blocked on that same event; M002 is conditionally closed.
-Subsystem remains active until both closures complete.
+M002 implementation/cutover and live operational evidence are closed.
+Public v0.5.0 is the first live Eggpack-produced release and supplied the
+shared public A-to-B update proof. Release-Distribution M001, M002, M003,
+and M005 are closed; M004 is superseded by M005. The subsystem is closed.
 
 ## 12. Registry updates
 
-`plans/registry.md`: M002 moved to conditionally closed with this
-closure record; M001/Plan 106 blocker unchanged (stable B newer than
-0.4.2). `plans/subsystems/release-distribution-roadmap.md`: M002 status
-table and current state updated to conditionally closed with live
-evidence outstanding.
+`plans/registry.md`: M002 and M001/Plan 106 are closed with the live
+release evidence. `plans/subsystems/release-distribution-roadmap.md`: M002
+status table and subsystem state updated to closed.
 ## 13. Post-closure updater corrective resolution — 2026-10-01
 
 The medium consumer-owned updater-runtime finding recorded in §10 is resolved.

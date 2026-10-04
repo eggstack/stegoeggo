@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "stegoeggo"
-version = "0.4.2"
+version = "0.5.0"
 description = "Python bindings for the stegoeggo rights-reservation and steganography library"
 requires-python = ">=3.11"
 license = { text = "MIT" }
