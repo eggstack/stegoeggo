@@ -9,9 +9,9 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 
 ## Quick Reference
 
-- Architecture docs live in `architecture/` (39 files)
+- Architecture docs live in `architecture/` (42 files: this overview + `review_plan.md` (historical, gitignored) + 40 component deep-dives)
 - Review outputs go to `plans/`
-- Source code is in `src/` (root crate) and `stegoeggo-stego/src/` (carrier crate)
+- Source code is in `src/` (root crate), `stegoeggo-stego/src/` (carrier crate), and `bindings/{c,node,python}/src/` (FFI leaves, outside the workspace)
 - Use `rg` (ripgrep) for fast content search, `glob` for file patterns
 
 ## Review Workflow
@@ -108,4 +108,6 @@ These have been fixed in documentation — if the code hasn't changed, these are
 - **Verification types are all real** — do not flag these as fabricated: `NoticeVerification` (`src/types/verification.rs`, notice-level evidence), `VerificationResult` (`src/types/verification.rs`, enum), `VerificationReport` + `TrustEvaluation` + `TrustEvaluationBuilder` (`src/verification/report.rs`). `architecture/verification.md` documents them correctly
 - **`VerificationStatus` is live** — not deprecated; it is the return type of `verify_image_bytes`. Do not mark it deprecated or suggest migrating away from it
 - **Steganography adapter** is split into 5 modules: `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs` behind `SteganographyProtector` facade
-- **Generic carrier crate** public API: `constants`, `error`, `frame`, `jpeg`, `lsb`, `pixels`, `prepared`, `types` modules; `jpeg_transcoder` and `lsb_internal` are `pub(crate)`; `application_support` is `pub` behind the `application-support` feature but `#[doc(hidden)]`
+- **Generic carrier crate** public API: `constants`, `error`, `frame`, `jpeg`, `limits`, `lsb`, `pixels`, `prepared`, `types`, and `webp` (feature `webp`) modules; `jpeg_transcoder` and `lsb_internal` are `pub(crate)`; `application_support` is `pub` behind the `application-support` feature but `#[doc(hidden)]`. `limits.rs` and `webp.rs` are `pub mod` — do not report them as private or undocumented
+- **`bindings/` is EXCLUDED from the Cargo workspace** (`exclude = ["bindings"]` in the root `Cargo.toml`). Three leaf crates — `bindings/c` (cdylib + committed cbindgen header, ABI-V1, 90-symbol export manifest), `bindings/node` (napi-rs), `bindings/python` (PyO3 + maturin) — each a nested `[workspace]`, `publish = false`, pinning `stegoeggo = "=0.4.2"` with `default-features = false`, and each forcing `panic = "unwind"` in dev and release so panics can be caught at the FFI boundary. They are covered by `architecture/bindings-c.md`, `bindings-node.md`, `bindings-python.md`, and validated by path-filtered CI (`c-binding.yml`, `node-binding.yml`, `python-binding.yml`, all on push **and** PR to `main`) that is NOT part of `check.sh`
+- **12 CI workflows exist**, not 5: `ci`, `assurance`, `external-verification`, `fuzz`, `release-binaries`, `release-drift`, `c-binding`, `node-binding`, `python-binding`, `release-c`, `release-node`, `release-python`

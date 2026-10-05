@@ -1,10 +1,10 @@
 # Testing (Integration Tests, Fuzz, Examples)
 
-**Sources:** `tests/` (35 files) · `fuzz/fuzz_targets/` (12 harnesses, `cargo-fuzz` + nightly only, excluded from workspace tests) · `examples/` (4) · `stegoeggo-stego/tests/direct_consumer.rs`.
+**Sources:** `tests/` (36 files) · `fuzz/fuzz_targets/` (12 harnesses, `cargo-fuzz` + nightly only, excluded from workspace tests) · `examples/` (4) · `stegoeggo-stego/tests/direct_consumer.rs`.
 
 ## Integration tests (`tests/`)
 
-Grouped by area; run with `cargo test --workspace --exclude stegoeggo-fuzz --all-features`, single test via `-- <name>`. `tests/external_tools.rs` is `#[ignore]` (run with `--ignored`); `tests/async_integration.rs` needs `async`; conformance harness tests need `conformance`.
+Grouped by area; run with `cargo test --workspace --exclude stegoeggo-fuzz --all-features`, single test via `-- <name>`. `tests/external_tools.rs` is `#[ignore]` (run with `--ignored`); `tests/async_integration.rs` needs `async`; conformance harness tests need `conformance`. `bindings/` is excluded from the Cargo workspace, so no binding suite runs here; see [tooling.md](tooling.md), [bindings-c.md](bindings-c.md), [bindings-node.md](bindings-node.md), [bindings-python.md](bindings-python.md).
 
 | Group | Files |
 |-------|-------|
@@ -15,6 +15,7 @@ Grouped by area; run with `cargo test --workspace --exclude stegoeggo-fuzz --all
 | Conformance | `conformance_parser_tests.rs`, `conformance_negative.rs`, `conformance_container_tests.rs`, `conformance_harness_tests.rs` (`conformance`), `generate_conformance_fixtures.rs` |
 | Robustness & soak | `robustness.rs` (fuzz regression tests — add new findings here), `soak_tests.rs` |
 | Gates & compat | `plan026_gate1_2_3_tests.rs`, `plan065_legacy_compat.rs`, `async_integration.rs` (`async`), `external_tools.rs` (`#[ignore]`) |
+| Release contract | `release_eggpack.rs` (Eggpack distribution contract: five-target resolution, asset-name parity across installers/updater/docs/`architecture/cli.md`, CLI default `signatures` feature, generated-workflow drift shape, qualification and consumer-validator coverage, cross-toolchain GLIBC pins, and `scripts/smoke-release-binary.py` behaviour via fake candidates) |
 
 Conformance harness exit codes: 0 pass / 1 fail / 2 config / 3 digest / 4 coverage / 5 internal.
 

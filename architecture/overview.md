@@ -6,75 +6,143 @@
 
 ## What This Document Is
 
-This is the top-level index. It gives you a bird's-eye view of every module, its role in the system, and where to find the deep-dive for each component. All deep-dive docs live in `architecture/`. Treat each row in the Component Index below as a discrete review entry point: read the general overview here, then follow the link for the focused deep dive.
+This is the top-level index. It gives you a bird's-eye view of every module, its role in
+the system, and where to find the deep-dive for each component. All deep-dive docs live
+in `architecture/`. Treat each row in the Component Index below as a discrete review
+entry point: read the general overview here, then follow the link for the focused deep
+dive.
+
+**How to use this for review.** Work top-down in three passes:
+
+1. **Orient** — Repository Layout and Module Map at a Glance, to learn the crate graph
+   and the two front doors (CLI, bindings) into one canonical API layer.
+2. **Choose a component** — the Component Index groups every discrete module by
+   subsystem: core pipeline, protection strategies, JPEG DCT, payload/encoding,
+   authentication, utilities, carrier surface, bindings, testing/ops, design records.
+3. **Deep dive** — follow the component's link for signatures, invariants, contracts,
+   and known review risks. Deep dives are written to be read without re-reading source.
+
+`plans/` holds milestone plans and `registry.md`; `architecture/review_plan.md` is a
+completed historical review, not a component doc.
+
+**Verification status.** Claims here were checked against source at 0.4.2. Where a
+number or inventory is stated (file counts, workflow counts, public module lists), it was
+diffed against the tree rather than carried forward. Load
+`.skills/architecture-review/SKILL.md` before editing anything in this directory; it
+records the recurring doc-vs-code discrepancy patterns.
 
 ## Repository Layout
 
 ```
-stegoeggo/                          Workspace root (4 crates)
+stegoeggo/                     Cargo workspace: 4 members + 3 excluded binding crates
 │
-├── src/                            Root library crate (stegoeggo)
-│   ├── lib.rs                      Public API + plan orchestration
-│   ├── pipeline.rs                 Canonical plan executors (private)
-│   ├── container_walk.rs           Bounded container traversal for accounting (private)
-│   ├── types.rs                    Core-type facade (re-exports `types/`)
-│   ├── types/                      Core types by domain (rights, compat, legal,
-│   │                               context, verification, warnings, request)
-│   ├── traits.rs                   Protector trait
-│   ├── error.rs                    Error enum (21 variants: 20 + async-only `Task`)
-│   ├── protected/                  Protection strategies (all implement Protector)
-│   ├── payload_v3/                 V3 payload wire format
-│   ├── provenance/                 Provenance claim model
-│   ├── signing/                    Ed25519 signing (feature: signatures)
-│   ├── detached/                   Detached manifests (feature: detached-manifest)
-│   ├── verification/               Structured verification reports
-│   ├── util/                       Internal utilities (image, seed, ISCC)
-│   ├── bin/                        Conformance harness binary
-│   ├── xmp.rs                      XMP namespace-aware filtering
-│   ├── webp_container.rs           WebP RIFF container parsing
-│   ├── resource_limits.rs          Parser hardening / DoS prevention
-│   ├── conformance.rs              Conformance types (feature: conformance)
-│   └── async_api.rs                Async wrappers (feature: async)
+├── src/                       Root library crate (stegoeggo)
+│   ├── lib.rs                  Public API + plan orchestration
+│   ├── pipeline.rs             Canonical plan executors (private)
+│   ├── container_walk.rs       Bounded container traversal for accounting (private)
+│   ├── types.rs                Core-type facade (re-exports `types/`)
+│   ├── types/                  Core types by domain (rights, compat, legal,
+│   │                           context, verification, warnings, request)
+│   ├── traits.rs               Protector trait
+│   ├── error.rs                Error enum (21 variants: 20 + async-only `Task`)
+│   ├── protected/              Protection strategies (all implement Protector)
+│   ├── payload_v3/             V3 payload wire format
+│   ├── provenance/             Provenance claim model
+│   ├── signing/                Ed25519 signing (feature: signatures)
+│   ├── detached/               Detached manifests (feature: detached-manifest)
+│   ├── verification/           Structured verification reports
+│   ├── util/                   Internal utilities (image, seed, ISCC)
+│   ├── bin/                    Conformance harness binary
+│   ├── xmp.rs                  XMP namespace-aware filtering
+│   ├── webp_container.rs       WebP RIFF container parsing
+│   ├── resource_limits.rs      Parser hardening / DoS prevention
+│   ├── conformance.rs          Conformance types (feature: conformance)
+│   └── async_api.rs            Async wrappers (feature: async)
 │
-├── stegoeggo-stego/                Generic carrier crate (LSB, JPEG DCT)
-│   ├── lsb.rs                      Pixel-domain LSB carrier (public)
-│   ├── pixels.rs                   Borrowed packed/strided views (public)
-│   ├── jpeg.rs                     JPEG DCT carrier (public)
-│   ├── prepared.rs                 Prepared JPEG reuse (public)
-│   ├── frame.rs                    Self-describing framed payload (public)
-│   ├── application_support.rs      Parent-crate bridge (feature-gated, hidden)
-│   ├── lsb_internal.rs             Permutation / slot mapping (private)
-│   └── jpeg_transcoder/            JPEG DCT internals (private)
+├── stegoeggo-stego/            Generic carrier crate (LSB, JPEG DCT)
+│   ├── lsb.rs                  Pixel-domain LSB carrier (public)
+│   ├── pixels.rs               Borrowed packed/strided views (public)
+│   ├── jpeg.rs                 JPEG DCT carrier (public)
+│   ├── prepared.rs             Prepared JPEG reuse (public)
+│   ├── frame.rs                Self-describing framed payload (public)
+│   ├── limits.rs               CarrierLimits bounded-input contract (public)
+│   ├── webp.rs                 Still-lossless WebP facade (public, feature `webp`)
+│   ├── application_support.rs  Parent-crate bridge (feature-gated, hidden)
+│   ├── lsb_internal.rs         Permutation / slot mapping (private)
+│   └── jpeg_transcoder/        JPEG DCT internals (private)
 │
-├── stegoeggo-cli/                  CLI binary (stegoeggo)
-│   └── src/                        Orchestration (`main.rs`) plus private
-│                                   `args`, `request`, `protect`, `verify`,
-│                                   `update`, `output`, `keys`, `manifest` modules
+├── stegoeggo-cli/              CLI binary (stegoeggo)
+│   └── src/                    Orchestration (`main.rs`) plus private
+│                               `args`, `request`, `protect`, `verify`,
+│                               `update`, `output`, `keys`, `manifest` modules
 │
-├── fuzz/                           12 fuzz targets (libfuzzer-sys)
-├── tests/                          35 integration test files (see testing.md)
-├── examples/                       4 usage examples (see testing.md)
-├── benches/                        Criterion benchmarks (see tooling.md)
-├── packaging/                      Unix and Windows bootstrap installers
-├── scripts/                        validation, release, and installer-test scripts
-├── architecture/                   39 files: this overview + review_plan.md (historical) + 37 component deep-dives
-└── .github/workflows/              CI (5 workflows: check, assurance, and manual release assets)
+├── bindings/                   FFI bindings — EXCLUDED from the Cargo workspace
+│   ├── c/                      cdylib + committed cbindgen header (ABI-V1)
+│   ├── node/                   napi-rs addon + generated .d.ts
+│   └── python/                 PyO3 module + maturin wheel/sdist
+│
+├── fuzz/                       12 fuzz targets (libfuzzer-sys)
+├── tests/                      36 integration test files (see testing.md)
+├── examples/                   4 usage examples (see testing.md)
+├── benches/                    Criterion benchmarks (see tooling.md)
+├── packaging/                  Unix and Windows bootstrap installers
+├── release/                    Eggpack release contract (10 TOML/JSON configs)
+├── scripts/                    validation, release, and installer-test scripts
+├── docs/                       user guides (CLI, Rust API, carrier, formats)
+├── plans/                      milestone plans + registry (gitignored)
+├── architecture/               42 files: this overview + review_plan.md (historical) + 40 component deep-dives
+└── .github/workflows/          CI: 12 workflows (see tooling.md)
 ```
 
-**Crate dependency direction:** `cli → root → carrier`. The carrier crate knows nothing about rights-protection. The root crate re-exports the carrier's public API through `stegoeggo::stego`.
+**Crate dependency direction:** `bindings/* → cli → root → carrier`. The carrier crate
+knows nothing about rights-protection. The root crate re-exports the carrier's public API
+through `stegoeggo::stego`.
+
+**Workspace membership is not uniform, and this matters when reading CI.** The root
+`Cargo.toml` declares `members = [".", "stegoeggo-stego", "stegoeggo-cli", "fuzz"]` and
+`exclude = ["bindings"]`. So `./scripts/check.sh` — which runs
+`cargo test --workspace` — builds and tests the three library/binary crates and never
+touches a binding. Each binding is a leaf crate that pins `stegoeggo` by exact version
+and is validated by its own path-filtered CI workflow instead
+([tooling.md](tooling.md)).
+
+**Naming trap in `release/eggpack/`.** `build-bindings.toml` and
+`qualification-bindings.toml` do **not** describe the FFI bindings. In eggpack's schema,
+a "binding" is the mapping from a target triple to a Cargo output and a smoke command,
+and both files map the five canonical targets to `package = "stegoeggo-cli"`,
+`binary = "stegoeggo"` — the CLI only. The FFI bindings ship through the separate manual
+`release-c.yml` / `release-node.yml` / `release-python.yml` workflows
+([bindings-c.md](bindings-c.md), [bindings-node.md](bindings-node.md),
+[bindings-python.md](bindings-python.md)). `scripts/check-release-contract.py` enforces
+parity between these configs, the workflows, the installers, and the docs, and runs from
+`release-drift.yml` on push and PR.
 
 ## Module Map at a Glance
 
 Every component below links to a dedicated deep-dive in `architecture/`. Use this as your starting point.
 
 ```
-                        ┌─────────────────────┐
-                        │   stegoeggo-cli     │  CLI binary: protect/
-                        │                    │  inspect/verify/update commands,
-                        │   main.rs           │  command router, 5 exit codes
-                        └─────────┬───────────┘
-                                  │
-                                  ▼
+Two independent front doors reach the same canonical API layer: the CLI binary and the
+three FFI leaves. The bindings are the *only* consumers outside the Cargo workspace,
+which is why their CI is path-filtered and separate rather than folded into `check.sh`.
+
+```
+   ┌──────────────┐   ┌───────────────┐   ┌────────────────┐
+   │ bindings/c   │   │ bindings/node │   │ bindings/python │  FFI leaves: cdylib /
+   │ (ABI-V1)     │   │ (napi-rs)     │   │ (PyO3)          │  addon / wheel
+   └───────┬──────┘   └───────┬───────┘   └────────┬───────┘
+           │                  │                    │
+           └──────────┬───────┴────────────────────┘
+                      │  all three are OUTSIDE the
+                      │  workspace; each pins stegoeggo
+                      ▼
+  ┌──────────────────────┐
+  │   stegoeggo-cli      │  CLI binary: protect/
+  │  protect/inspect/    │  inspect/verify/update,
+  │  verify/update       │  command router, 5 exit codes
+  └──────────┬───────────┘
+             │
+             ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        PUBLIC API LAYER                                  │
 │  process_request_bytes*() (canonical, incl. parallel/async batch)       │
@@ -117,6 +185,8 @@ Every component below links to a dedicated deep-dive in `architecture/`. Use thi
 
 ## Feature Flags
 
+Root crate — all default-off:
+
 | Feature | Description | Default |
 |---------|-------------|---------|
 | `async` | Tokio-based async API wrappers | No |
@@ -125,10 +195,13 @@ Every component below links to a dedicated deep-dive in `architecture/`. Use thi
 | `iscc` | ISCC content identifier computation | No |
 | `conformance` | Conformance harness binary + manifest parsing (TOML) | No |
 | `parallel` | Rayon-based parallel batch processing | No |
+| `webp` | Enables the carrier's still-lossless WebP facade | No |
 | `test-seeds` | Fallback seed guessing (test infra only, never production) | No |
 | `fuzz` | Bounded JPEG dimension inspection for fuzz harnesses | No |
 
-Carrier crate: `application-support` exposes internal bridge for parent crate (`#[doc(hidden)]`).
+Carrier crate: `application-support` exposes the internal bridge for the parent crate
+(`#[doc(hidden)]`); `webp` adds `image/webp` for the lossless WebP carrier facade. Both
+default-off.
 
 ## Protection Levels
 
@@ -287,7 +360,7 @@ preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 
 | Component | Deep Dive | What It Covers |
 |-----------|-----------|----------------|
-| **Carrier Surface** | [carrier-surface.md](carrier-surface.md) | Shared `CapacityReport`/`EmbedReport`/`EmbedOutcome`, validated `Redundancy`/`TileConfig`, self-describing `frame`, `StegoError`, hidden `application-support` bridge; operation-style matrix |
+| **Carrier Surface** | [carrier-surface.md](carrier-surface.md) | Shared `CapacityReport`/`EmbedReport`/`EmbedOutcome`, validated `Redundancy`/`TileConfig`, self-describing `frame`, `StegoError`, hidden `application-support` bridge, bounded `CarrierLimits` (`limits.rs`), still-lossless WebP facade (`webp.rs`, feature `webp`); operation-style matrix |
 | **Carrier LSB** | [carrier-lsb.md](carrier-lsb.md) | Pixel-domain V2 engine (`lsb_internal`), public `lsb` facade, borrowed `PixelView{,Mut}`, tiled/framed/in-place styles |
 | **Carrier JPEG API** | [carrier-jpeg.md](carrier-jpeg.md) | Public DCT carrier (`jpeg::` probe/capacity/raw/strict/framed/tiled/seed-hint), `PreparedJpeg` single-decode reuse, container preservation |
 
@@ -297,8 +370,20 @@ preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 |-----------|-----------|----------------|
 | **Conformance** | [conformance.md](conformance.md) | External tool integration (ExifTool, xmllint), fixture manifest, strict mode, exit codes |
 | **CLI** | [cli.md](cli.md) | Command-oriented CLI, compatibility routing, batch processing, inspection and verification |
-| **Tooling** | [tooling.md](tooling.md) | `scripts/` validation suite, CI workflows (`ci`/`assurance`/`external-verification`/`fuzz`), Criterion benchmarks |
-| **Testing** | [testing.md](testing.md) | `tests/` groups (35 files), `fuzz/` targets (12 harnesses), `examples/` contracts, carrier consumer tests |
+| **Tooling** | [tooling.md](tooling.md) | `scripts/` validation suite, all 12 CI workflows (including binding and release qualification), Criterion benchmarks |
+| **Testing** | [testing.md](testing.md) | `tests/` groups (36 files), `fuzz/` targets (12 harnesses), `examples/` contracts, carrier consumer tests, binding test suites |
+
+### Bindings & FFI
+
+Leaf crates under `bindings/`, all **excluded from the Cargo workspace**. Each pins
+`stegoeggo` by exact version, exposes the same canonical byte API, and is validated by
+its own path-filtered CI workflow rather than by `check.sh`.
+
+| Component | Deep Dive | What It Covers |
+|-----------|-----------|----------------|
+| **C Binding** | [bindings-c.md](bindings-c.md) | `cdylib` + committed cbindgen header, versioned ABI-V1, handle/ownership model, buffer marshalling, error-code mapping, panic containment, 90-symbol export manifest, native C11/C++17 consumer suite |
+| **Node Binding** | [bindings-node.md](bindings-node.md) | napi-rs addon, `#[napi]` surface, JS type marshalling (enums/numeric/report flattening), threadpool task model, generated `.d.ts` drift check, TypeScript consumer contract |
+| **Python Binding** | [bindings-python.md](bindings-python.md) | PyO3 module, `#[pyfunction]` surface, GIL release around library calls, pure-Python convenience layer, maturin wheel/sdist packaging, cross-binding parity tests |
 
 ### Design Records
 
@@ -337,6 +422,7 @@ src/
 │   ├── metadata_trap.rs       Facade: RightsMetadataProtector re-exports
 │   ├── metadata_trap/         Format-split metadata operations
 │   │   ├── notice.rs          Shared notice rendering + markers
+│   │   ├── spec.rs            Write-spec / render-param plumbing (private)
 │   │   ├── png.rs             PNG tEXt/iTXt operations
 │   │   ├── jpeg.rs            JPEG COM/XMP/EXIF/IPTC operations
 │   │   ├── webp.rs            WebP XMP/EXIF operations
@@ -395,7 +481,7 @@ src/
 stegoeggo-stego/src/
 ├── lib.rs                     Public API surface, carrier reports
 ├── constants.rs               Carrier-level tuning constants
-├── error.rs                   StegoError, JpegUnsupportedReason
+├── error.rs                   StegoError, JpegUnsupportedReason, WebpUnsupportedReason
 ├── types.rs                   Redundancy, TileConfig, MAX_TILED_ORIGINS, EmbedOutcome,
 │                              EmbedPath, EmbedStatus, in-place report
 ├── frame.rs                   Self-describing frame (magic, version, CRC32)
@@ -403,6 +489,8 @@ stegoeggo-stego/src/
 ├── pixels.rs                  Borrowed packed/strided views sharing the LSB core (public)
 ├── jpeg.rs                    JPEG carrier: raw/strict/framed/tiled DCT operations, seed hint
 ├── prepared.rs                Opaque PreparedJpeg (one decode across repeated ops, public)
+├── limits.rs                  CarrierLimits bounded untrusted-input contract (public)
+├── webp.rs                    Still-lossless WebP facade (public, feature `webp`)
 ├── lsb_internal.rs            Permutations, V2 carrier, slot mapping (private)
 ├── application_support.rs     Parent-crate operation layer (feature: application-support, hidden, 18 symbols retained per plans/096-status.md)
 └── jpeg_transcoder/           JPEG DCT internals (private)
@@ -411,7 +499,24 @@ stegoeggo-stego/src/
     └── stego_f5.rs            DctStegoF5, DctCoefficientRng
 ```
 
-`jpeg_transcoder/` and `lsb_internal.rs` are private implementation modules. The root crate uses the narrow `application-support` feature internally and adopts the in-place operation when it already owns a mutable decoded RGBA image.
+`jpeg_transcoder/` and `lsb_internal.rs` are private implementation modules. The public
+surface is `constants`, `error`, `frame`, `jpeg`, `limits`, `lsb`, `pixels`, `prepared`,
+`types`, and `webp` (feature-gated); `application_support` is public but `#[doc(hidden)]`
+behind `application-support`. The root crate uses the narrow `application-support`
+feature internally and adopts the in-place operation when it already owns a mutable
+decoded RGBA image.
+
+`limits.rs` is the carrier's own bounded-input contract (`CarrierLimits` +
+`CarrierLimitsBuilder`, 100 MiB input / 16384² pixels / 256 JPEG segments / bounded
+framed and tiled-search sizes). It is independent of the root crate's
+`ResourceLimits` — see [resource-limits.md](resource-limits.md) for the relationship.
+
+`webp.rs` is a convenience facade that decodes a still lossless (VP8L) WebP to RGBA,
+routes through the existing LSB pixel carrier, and re-encodes losslessly. Lossy VP8 and
+animated input are rejected with `StegoError::UnsupportedWebP` rather than silently
+transcoded, and no unrelated container metadata is preserved. The root crate's own byte
+paths never switch to this facade implicitly — rights-metadata rendering stays in the
+root crate.
 
 ## Fuzz Targets
 
@@ -445,7 +550,7 @@ artifacts uploaded. Scheduled fuzz failures are informational signal only.
 
 ## Integration Test Coverage
 
-35 test files in `tests/` (grouped reference: [testing.md](testing.md)):
+36 test files in `tests/` (grouped reference: [testing.md](testing.md)):
 
 | File | Coverage Area |
 |------|---------------|
@@ -484,6 +589,7 @@ artifacts uploaded. Scheduled fuzz failures are informational signal only.
 | `async_integration.rs` | Async API (feature: async) |
 | `plan026_gate1_2_3_tests.rs` | Plan-gate regression tests |
 | `plan065_legacy_compat.rs` | Legacy API compatibility |
+| `release_eggpack.rs` | Eggpack release-contract assertions |
 
 ## Validation Scripts
 
@@ -506,15 +612,33 @@ Full script/CI/bench reference: [tooling.md](tooling.md).
 
 ### Continuous assurance
 
-Required PR CI is the single `Check` job (`ci.yml`: stable Rust, Linux
-x86_64, `./scripts/check.sh`). `assurance.yml` (weekly schedule plus manual
-dispatch) proves the MSRV 1.89 matrix and stable compile+tests on Linux
-aarch64, macOS aarch64, and Windows x86_64. `external-verification.yml` runs
-monthly; `fuzz.yml` adds a weekly rotating smoke subset. Scheduled workflows
-are informational signal only: they never gate merges, publish crates, or
-react automatically to tags. The manual `release-binaries.yml` workflow
-attaches the complete checked CLI asset matrix to an existing GitHub Release;
-see `SUPPORT.md` and `RELEASING.md` for the evidence and release contracts.
+`.github/workflows/` holds **12 workflows**. Required PR CI is the single `Check` job
+(`ci.yml`: stable Rust, Linux x86_64, `./scripts/check.sh`). `assurance.yml` (weekly
+schedule plus manual dispatch) proves the MSRV 1.89 matrix and stable compile+tests on
+Linux aarch64, macOS aarch64, and Windows x86_64. `external-verification.yml` runs
+monthly; `fuzz.yml` adds a weekly rotating smoke subset. Scheduled workflows are
+informational signal only: they never gate merges, publish crates, or react
+automatically to tags. The manual `release-binaries.yml` workflow attaches the complete
+checked CLI asset matrix to an existing GitHub Release; see `SUPPORT.md` and
+`RELEASING.md` for the evidence and release contracts.
+
+The seven remaining workflows cover the bindings and the release contract, and are
+worth knowing about because `check.sh` does **not** cover them:
+
+| Workflow | Trigger | Role |
+|----------|---------|------|
+| `c-binding.yml` | push **and PR** to `main`, path-filtered on `bindings/c/**`, `src/**`, `stegoeggo-stego/**`, `Cargo.toml`, `Cargo.lock`, `tests/fixtures/**` | C ABI check: cbindgen header drift, 90-symbol export manifest vs. built cdylib, native C11/C++17 consumer suite, Rust↔C parity |
+| `node-binding.yml` | push and PR to `main`, path-filtered on `bindings/node/**`, `src/**`, `stegoeggo-stego/**`, `Cargo.toml`, `Cargo.lock`, canonical conformance fixtures | napi-rs addon build (Rust 1.89 + Node 24), `.d.ts` drift check, Node test suite, TypeScript consumer contract, Node 22/24/26 runtime smoke |
+| `python-binding.yml` | push and PR to `main`, path-filtered on `bindings/python/**`, `src/**`, `stegoeggo-stego/**`, `Cargo.toml`, `Cargo.lock` | Builds and installs a real maturin wheel on Linux x86_64 / Python 3.11, then runs the Python suite |
+| `release-drift.yml` | push and PR to `main`, plus manual | Eggpack drift and release-contract guard |
+| `release-c.yml` | manual dispatch | Five-platform native C qualification |
+| `release-node.yml` | manual dispatch | Five-target Node native qualification |
+| `release-python.yml` | manual dispatch | Cross-platform wheel qualification |
+
+All binding workflows are explicitly independent signals: they never publish, and they
+do not add their language toolchain to `./scripts/check.sh`. They do run on pull
+requests, so a change under `src/` that breaks a binding surface is caught by the
+binding workflow even though `check.sh` cannot see it.
 
 ### Examples, benches, user guides
 
@@ -600,6 +724,30 @@ Three-state control (`Option<bool>`) for metadata injection:
 | `thiserror` | 1.0 | Error enum derive | — |
 | `iscc-lib` | 0.4 | ISCC content identifier computation | `iscc` |
 | `toml` | 1.0 | Conformance manifest parsing | `conformance` |
+
+### Binding dependencies
+
+The three FFI leaves are separate nested workspaces (`[workspace]` in each
+`Cargo.toml`), all version 0.4.2, all `publish = false`, all pinning
+`stegoeggo = { version = "=0.4.2", default-features = false }`.
+
+| Crate | Type | FFI dependency |
+|-------|------|----------------|
+| `stegoeggo-c` | `cdylib` (`stegoeggo_c`) | — (raw C ABI, cbindgen-generated header) |
+| `stegoeggo-node` | `cdylib` (`stegoeggo`) | `napi` 3.13 (`napi6`, `dyn-symbols`) + `napi-derive` 3.6.9, `napi-build` 2.5.0 |
+| `stegoeggo-python` | `cdylib` (`_stegoeggo_native`) | `pyo3` 0.27 (`abi3-py311`, `extension-module`) |
+
+Two consequences worth flagging for review:
+
+- **`panic = "unwind"` is mandatory in all three binding profiles.** The root crate
+  builds with `panic = "abort"`; every binding overrides it in both `dev` and `release`
+  so a panic can be caught at the FFI boundary instead of aborting the host process.
+  Changing a binding profile to `abort` silently removes that containment.
+- **`default-features = false` means the FFI surface is the base library only.** None of
+  the root crate's optional capabilities (`signatures`, `detached-manifest`, `iscc`,
+  `parallel`, `async`, `conformance`, `webp`) are compiled into a binding. Any binding
+  feature that needs them must add the feature to its own manifest, and the path-filtered
+  binding workflows are the only CI that would notice.
 
 ## Security Notes
 
