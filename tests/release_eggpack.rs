@@ -271,14 +271,39 @@ fn write_fake_candidate(dir: &std::path::Path, version: &str, mode: &str) -> Pat
 }
 
 fn run_validator(candidate: &std::path::Path) -> (bool, String) {
-    let output = std::process::Command::new("python3")
+    run_validator_with_temp_root(candidate, None)
+}
+
+fn run_validator_with_temp_root(
+    candidate: &std::path::Path,
+    temp_root: Option<&std::path::Path>,
+) -> (bool, String) {
+    let mut command = std::process::Command::new("python3");
+    command
         .arg(root().join("scripts/smoke-release-binary.py"))
-        .arg(candidate)
-        .output()
-        .expect("python3");
+        .arg(candidate);
+    if let Some(temp_root) = temp_root {
+        command
+            .env("TMPDIR", temp_root)
+            .env("TEMP", temp_root)
+            .env("TMP", temp_root);
+    }
+    let output = command.output().expect("python3");
     let mut combined = String::from_utf8_lossy(&output.stdout).into_owned();
     combined.push_str(&String::from_utf8_lossy(&output.stderr));
     (output.status.success(), combined)
+}
+
+fn smoke_temp_entries(root: &std::path::Path) -> Vec<PathBuf> {
+    std::fs::read_dir(root)
+        .expect("scratch")
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("stegoeggo-release-smoke-"))
+        })
+        .collect()
 }
 
 #[test]
@@ -313,28 +338,14 @@ fn validator_nonzero_help_fails() {
 #[test]
 fn validator_temp_state_is_cleaned() {
     let dir = tempfile::tempdir().expect("tempdir");
+    let scratch = dir.path().join("scratch");
+    std::fs::create_dir_all(&scratch).expect("scratch");
     let version = workspace_version();
     let candidate = write_fake_candidate(dir.path(), &version, "happy");
-    let before: Vec<_> = std::fs::read_dir(std::env::temp_dir())
-        .expect("tmp")
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("stegoeggo-release-smoke-"))
-        })
-        .collect();
-    let (ok, _) = run_validator(&candidate);
-    assert!(ok);
-    let after: Vec<_> = std::fs::read_dir(std::env::temp_dir())
-        .expect("tmp")
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("stegoeggo-release-smoke-"))
-        })
-        .collect();
+    let before = smoke_temp_entries(&scratch);
+    let (ok, output) = run_validator_with_temp_root(&candidate, Some(&scratch));
+    assert!(ok, "{output}");
+    let after = smoke_temp_entries(&scratch);
     assert_eq!(before.len(), after.len());
 }
 

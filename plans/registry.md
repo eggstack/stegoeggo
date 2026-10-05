@@ -33,7 +33,7 @@ predecessor history, indexed by the roadmaps below.
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M004 0.4.3 release ready; M001 blocked pending public B; M002 conditionally closed; M003 closed | M004 is the ordinary stable B handoff intended to supply both M001 and M002 live evidence |
 | language-bindings | closed | `plans/subsystems/language-bindings-roadmap.md` | all milestones closed; initial Python -> Node -> C sequence complete | none |
 | stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M001–M005 and M008 closed; M006 blocked; M007 proposed | M006 waits only for ADR-0007 acceptance |
-| maintenance-quality | closed | `plans/subsystems/maintenance-quality-roadmap.md` | M001, M003, M004 closed; M002 proposed optional polish | none |
+| maintenance-quality | closed | `plans/subsystems/maintenance-quality-roadmap.md` | M001, M003, M004, M005 closed; M002 proposed optional polish | none |
 
 ## Dependency-ready implementation plans
 
@@ -58,6 +58,10 @@ None.
 
 - Maintenance Quality M004 CLI relative-path fix and README quickstart
   verification: closure recorded at `plans/closure/maintenance-quality/004-status.md`.
+- Maintenance Quality M005 release-contract test isolation and README
+  re-verification: closure recorded at
+  `plans/closure/maintenance-quality/005-status.md`. Closes the
+  `validator_temp_state_is_cleaned` required-CI flake first reported in M003.
   Executing the README quickstart instead of only reading it exposed a real
   user-facing bug — `stegoeggo protect image.png -o out.png` failed on every bare
   relative output path, because `Path::parent()` returns `Some("")` for a bare

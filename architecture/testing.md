@@ -15,7 +15,7 @@ Grouped by area; run with `cargo test --workspace --exclude stegoeggo-fuzz --all
 | Conformance | `conformance_parser_tests.rs`, `conformance_negative.rs`, `conformance_container_tests.rs`, `conformance_harness_tests.rs` (`conformance`), `generate_conformance_fixtures.rs` |
 | Robustness & soak | `robustness.rs` (fuzz regression tests — add new findings here), `soak_tests.rs` |
 | Gates & compat | `plan026_gate1_2_3_tests.rs`, `plan065_legacy_compat.rs`, `async_integration.rs` (`async`), `external_tools.rs` (`#[ignore]`) |
-| Release contract | `release_eggpack.rs` (Eggpack distribution contract: five-target resolution, asset-name parity across installers/updater/docs/`architecture/cli.md`, CLI default `signatures` feature, generated-workflow drift shape, qualification and consumer-validator coverage, cross-toolchain GLIBC pins, and `scripts/smoke-release-binary.py` behaviour via fake candidates) |
+| Release contract | `release_eggpack.rs` (Eggpack distribution contract: five-target resolution, asset-name parity across installers/updater/docs/`architecture/cli.md`, CLI default `signatures` feature, generated-workflow drift shape, qualification and consumer-validator coverage, cross-toolchain GLIBC pins, and `scripts/smoke-release-binary.py` behaviour via fake candidates, including validator temp-state cleanup observed through a per-test `TMPDIR` so concurrently running tests cannot perturb the count) |
 
 Conformance harness exit codes: 0 pass / 1 fail / 2 config / 3 digest / 4 coverage / 5 internal.
 

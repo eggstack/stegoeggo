@@ -78,6 +78,16 @@ fallback in `check_input_output_disjoint`. The CLI test suite only used absolute
 confirmed to fail against the pre-fix code), and the README was restructured
 quickstart-first with detail delegated to `docs/`.
 
+M005 is closed. It removed the release-contract temp-state flake that M003 first
+reported and M004 re-deferred. The test asserted on the shared system temp
+directory, so a concurrently running sibling validator's live `stegoeggo-release-smoke-*`
+directory was counted as this test's residue; the racer was proven by per-sibling
+pairing, and the pre-fix failure rate was 8/60 at default harness parallelism.
+The test now observes a private temp root through `TMPDIR` redirection, which
+needed no change to the production validator and left the count assertion intact.
+Re-verifying the M004 README by execution produced one example fix and confirmed
+the rest, including the preset table.
+
 ## 5. Target architecture
 
 Keep top-level workflows separate by evidence purpose, but factor repeated step-level
@@ -110,6 +120,11 @@ without a maintainer decision.
   Class: bug fix + documentation; closed. Running the documented quickstart
   exposed a bare-relative-output-path failure in the CLI; fixed with regression
   tests, and the README was restructured quickstart-first.
+- **M005 — Release-contract test isolation and README re-verification.**
+  Class: bug fix (test isolation) + documentation; closed. The
+  `validator_temp_state_is_cleaned` flake on the required gate was diagnosed to
+  a shared-temp-directory assertion, fixed by observing a private temp root, and
+  proven both race-free and still sensitive to a real leak.
 
 ## 8. Cross-cutting requirements
 
@@ -141,3 +156,4 @@ optional future polish and does not block roadmap closure.
 | M002 drift linting | proposed | none | none | maintainer decision on CI placement (M001 precondition satisfied) |
 | M003 agent guidance and doc currency | closed | `plans/implementation/maintenance-quality/003-agent-guidance-and-doc-currency.md` | `plans/closure/maintenance-quality/003-status.md` | none |
 | M004 CLI relative-path fix + README verification | closed | `plans/implementation/maintenance-quality/004-cli-relative-path-and-readme-verification.md` | `plans/closure/maintenance-quality/004-status.md` | none |
+| M005 release-contract test isolation + README re-verification | closed | `plans/implementation/maintenance-quality/005-release-contract-test-isolation-and-readme-reverification.md` | `plans/closure/maintenance-quality/005-status.md` | none |

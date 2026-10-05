@@ -108,6 +108,8 @@ let request = ProtectionRequest::metadata_only(
 );
 
 let output = process_request_bytes(&input, &request)?;
+
+std::fs::write("protected.png", &output)?;
 ```
 
 Use the byte APIs above when metadata must survive. The `DynamicImage`-based
