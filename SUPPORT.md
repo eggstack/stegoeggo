@@ -97,6 +97,7 @@ Write output always uses payload v3. Older payload versions are read for backwar
 | `iscc` | No | ISCC content identifier computation |
 | `conformance` | No | Conformance harness binary and manifest parsing |
 | `parallel` | No | Rayon-based parallel batch processing |
+| `webp` | No | Still-lossless WebP carrier facade (carrier crate; root forwards it) |
 | `test-seeds` | No | Deterministic seeds for testing |
 | `fuzz` | No | Fuzzing harness support |
 

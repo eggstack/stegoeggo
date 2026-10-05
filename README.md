@@ -2,139 +2,92 @@
 
 [![CI](https://github.com/eggstack/stegoeggo/actions/workflows/ci.yml/badge.svg)](https://github.com/eggstack/stegoeggo/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/stegoeggo)](https://crates.io/crates/stegoeggo)
-[![Crates.io downloads](https://img.shields.io/crates/d/stegoeggo)](https://crates.io/crates/stegoeggo)
 [![Documentation](https://docs.rs/stegoeggo/badge.svg)](https://docs.rs/stegoeggo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MSRV](https://img.shields.io/badge/MSRV-1.89-blue.svg)](https://blog.rust-lang.org/)
 
-Embed machine-readable rights-reservation metadata and AI-training restriction notices in images, with optional best-effort steganographic markers for redundant evidence.
+Embed machine-readable rights-reservation metadata and AI-training restriction
+notices in PNG, JPEG, and WebP images, with an optional best-effort
+steganographic marker as a second evidence channel.
 
-`stegoeggo` is primarily a **rights-notice metadata tool**. It writes explicit rights policy and copyright information into PNG, JPEG, and WebP files. A hidden marker can also be added as a second, best-effort evidence channel.
+`stegoeggo` is primarily a **rights-notice metadata tool**. It writes explicit
+rights policy and copyright information into the file. It is not DRM, a forensic
+watermark, a data-poisoning system, or proof that a particular model trained on
+an image — metadata can be stripped, and hidden markers can be damaged by
+transformations such as screenshots, cropping, resizing, or re-encoding.
 
-It is not DRM, a forensic watermark, a data-poisoning system, or proof that a particular model trained on an image. Metadata can be stripped, and hidden markers can be damaged or removed by transformations such as screenshots, cropping, resizing, or re-encoding.
+## Quick start
 
-## Installation
-
-Install a prebuilt CLI without Rust on supported Unix platforms:
+Install a prebuilt CLI (Unix):
 
 ```bash
 curl -fsSL https://github.com/eggstack/stegoeggo/releases/latest/download/install.sh | bash
 ```
 
-Windows PowerShell users can run:
-
-```powershell
-irm https://github.com/eggstack/stegoeggo/releases/latest/download/install.ps1 | iex
-```
-
-Cargo remains the source-install fallback:
+Write an AI/ML training prohibition plus copyright metadata:
 
 ```bash
-cargo install stegoeggo-cli --locked
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/eggstack/stegoeggo.git
-cd stegoeggo
-cargo build --release --bin stegoeggo
-```
-
-For the Rust library:
-
-```toml
-[dependencies]
-stegoeggo = "0.4"
-```
-
-The minimum supported Rust version is **1.89**. Required CI runs stable Rust on
-Linux x86_64; MSRV 1.89 and Linux aarch64, macOS aarch64, and Windows x86_64
-are covered by scheduled non-blocking assurance. See [SUPPORT.md](SUPPORT.md)
-for the maintained platform and feature matrix. The non-blocking fuzz
-assurance uses a pinned nightly/cargo-fuzz tuple; see [fuzz/README.md](fuzz/README.md)
-for the local command and compatibility policy.
-
-See [docs/installation.md](docs/installation.md) for target coverage, pinned
-versions, checksum behavior, PATH setup, and source-install details.
-GitHub binary releases attach the complete five-target CLI matrix to an
-existing release; they do not publish crates automatically.
-
-A typed Python frontend lives at `bindings/python/` (PyO3 + maturin, abi3-py311).
-It is **experimental / local source build** today; see
-[`bindings/python/README.md`](bindings/python/README.md) and [SUPPORT.md](SUPPORT.md#python-binding)
-for the interpreter range and platform matrix. The binding does not require
-a Python install of the CLI binary or the Rust toolchain when installed from a
-future prebuilt wheel.
-
-## Quick start
-
-Write a metadata-only AI/ML training prohibition:
-
-```bash
-stegoeggo protect image.png -o image_protected.png \
+stegoeggo protect image.png -o protected.png \
   --rights-policy prohibited-ai-ml-training \
   --preset legal-notice \
   --copyright-notice "© 2026 Example Artist. All rights reserved." \
   --creator "Example Artist" \
-  --rights-url "https://example.com/rights" \
-  --usage-terms "No AI/ML training."
+  --rights-url "https://example.com/rights"
 ```
 
-Add the best-effort hidden marker as a redundant channel:
+Read it back, then assert it is intact:
 
 ```bash
-stegoeggo protect image.png -o image_protected.png \
+stegoeggo inspect protected.png
+stegoeggo verify protected.png
+```
+
+`inspect` is read-only and exits `0` even for an unprotected file. `verify`
+exits `3` when protection evidence is missing or invalid, which makes it usable
+in scripts.
+
+Add the best-effort hidden marker, or HMAC-authenticated provenance, by
+switching `--preset`:
+
+```bash
+# metadata + best-effort hidden marker
+stegoeggo protect image.png -o protected.png \
   --rights-policy prohibited-ai-ml-training \
   --preset legal-notice-with-stego
+
+# metadata + hidden marker + HMAC authentication (key required)
+stegoeggo protect image.png -o protected.png \
+  --rights-policy prohibited-ai-ml-training \
+  --preset authenticated-provenance \
+  --key 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
 ```
 
-Inspect an existing file:
+A **policy** says what use is allowed or prohibited. A **preset** says which
+technical evidence channels to use.
 
-```bash
-stegoeggo inspect image_protected.png
-```
-
-For assertion-oriented verification, use `stegoeggo verify image_protected.png`.
-The 0.x-compatible root form and all CLI flags are documented in
-[docs/cli-usage.md](docs/cli-usage.md).
-
-Show the installed version or update a supported installation:
-
-```bash
-stegoeggo version
-stegoeggo update
-```
-
-Updates use the stable `stegoeggo-cli` crates.io version as their authority and
-replace the executable only after verifying the matching GitHub Release asset
-and SHA-256 sidecar through the embedded eggfetch transport. See [docs/installation.md](docs/installation.md) for
-permissions, fallback, and Cargo-managed installation behavior.
-
-## Rights policies
-
-| CLI value | Meaning |
+| `--rights-policy` | Meaning |
 |---|---|
-| `unspecified` | Do not emit a `plus:DataMining` policy value |
+| `unspecified` | Emit no `plus:DataMining` policy value |
 | `allowed` | Data mining allowed |
 | `prohibited-ai-ml-training` | AI/ML training prohibited |
 | `prohibited-generative-ai-training` | Generative-AI training prohibited |
-| `prohibited-except-search-indexing` | Data mining prohibited except search-engine indexing |
+| `prohibited-except-search-indexing` | Prohibited except search-engine indexing |
 | `prohibited-all-data-mining` | All data mining prohibited |
 | `prohibited-see-constraints` | Prohibited; consult the supplied constraints |
 
-## Evidence presets
-
-A policy says **what use is allowed or prohibited**. A preset says **which technical evidence channels to use**.
-
-| Preset | Rights metadata | Hidden marker | Authentication |
+| `--preset` | Rights metadata | Hidden marker | Authentication |
 |---|---:|---:|---:|
 | `legal-notice` | Yes | No | No |
 | `legal-notice-with-stego` | Yes | Best effort | No |
 | `authenticated-provenance` | Yes | Best effort | HMAC (key required) |
 | `maximal` | Yes | Best effort | HMAC (key required) |
 
-## Rust API
+## Rust library
+
+```toml
+[dependencies]
+stegoeggo = "0.4"
+```
 
 ```rust
 use stegoeggo::{
@@ -157,59 +110,40 @@ let request = ProtectionRequest::metadata_only(
 let output = process_request_bytes(&input, &request)?;
 ```
 
-For byte-identical output across repeated canonical calls, provide both an explicit seed and
-`with_timestamp_override(...)`; this controls timestamp-bearing rights metadata, including the
-structured JPEG COM marker.
+Use the byte APIs above when metadata must survive. The `DynamicImage`-based
+`process_image` only embeds a hidden marker — PNG `tEXt`, JPEG `COM`/XMP, and
+WebP XMP do not survive that path.
 
-For byte APIs vs `DynamicImage`, verification, and the deprecated compatibility surface, see [docs/rust-api.md](docs/rust-api.md).
-
-## Generic carrier (`stegoeggo-stego`)
-
-For arbitrary-payload steganography without the rights/policy layer, depend on
-[`stegoeggo-stego`](https://crates.io/crates/stegoeggo-stego) directly — it is
-the canonical generic package. `stegoeggo::stego` re-exports the same carrier
-surface as a convenience; no generic API exists only through the facade. See
-[docs/carrier-crate.md](docs/carrier-crate.md).
-
-Progressive-JPEG seed-only degradation, best-effort redundancy reduction, and
-hidden-marker warning policy are StegoEggo application decisions owned by this
-crate, not generic carrier semantics.
-
-## Feature flags
-
-| Feature | Purpose |
-|---|---|
-| `async` | Tokio-based async wrappers (canonical: `process_request_bytes_async`, `..._with_warnings_async`, `..._with_report_async`) |
-| `signatures` | Ed25519 signing support |
-| `detached-manifest` | Detached signed-manifest support |
-| `iscc` | Content identifier helpers |
-| `parallel` | Rayon-based parallel processing (canonical: `process_request_bytes_parallel`, `..._with_warnings_parallel`, `..._with_report_parallel`; one shared request, order-preserving) |
-| `conformance` | Conformance harness and manifest parsing |
-
-No optional feature is enabled by default. See [SUPPORT.md](SUPPORT.md) for the full feature matrix.
+For arbitrary-payload steganography without the rights layer, depend on
+[`stegoeggo-stego`](https://crates.io/crates/stegoeggo-stego) directly.
 
 ## Documentation
 
 | Document | Description |
 |---|---|
-| [docs/cli-usage.md](docs/cli-usage.md) | CLI flags, batch processing, exit codes |
-| [docs/installation.md](docs/installation.md) | Prebuilt CLI installers, updates, targets, and Cargo fallback |
-| [docs/rust-api.md](docs/rust-api.md) | Rust API examples, byte vs DynamicImage |
-| [docs/formats.md](docs/formats.md) | Format support, steganography details, transformation effects |
+| [docs/cli-usage.md](docs/cli-usage.md) | Every CLI command, flag, batch mode, and exit code |
+| [docs/installation.md](docs/installation.md) | Installers, updates, targets, Cargo and source installs |
+| [docs/rust-api.md](docs/rust-api.md) | Rust API: byte vs `DynamicImage`, verification, compatibility |
+| [docs/formats.md](docs/formats.md) | Per-format support and what survives transformation |
 | [docs/carrier-crate.md](docs/carrier-crate.md) | `stegoeggo-stego` generic carrier crate |
 | [docs/legal_notice_model.md](docs/legal_notice_model.md) | Rights-notice and evidence model |
 | [docs/migration-v0.3.md](docs/migration-v0.3.md) | Migration guide from v0.2.x |
-| [SUPPORT.md](SUPPORT.md) | MSRV, platforms, formats, feature surface |
+| [SUPPORT.md](SUPPORT.md) | MSRV, platforms, formats, feature matrix |
 | [STABILITY.md](STABILITY.md) | Stability tiers and retention promises |
 | [DEPRECATIONS.md](DEPRECATIONS.md) | Deprecated APIs and replacements |
 | [SECURITY.md](SECURITY.md) | Security policy and reporting |
-| [architecture/](https://github.com/eggstack/stegoeggo/tree/main/architecture) | Implementation and protocol documentation |
+| [architecture/](architecture/overview.md) | Implementation and protocol documentation |
 
 ## Safety and legal scope
 
-Only assert copyright, licensing, or usage restrictions that you are entitled to assert. StegoEggo records a notice and optional technical evidence; it does not create rights you do not already have and is not legal advice.
+Only assert copyright, licensing, or usage restrictions that you are entitled to
+assert. StegoEggo records a notice and optional technical evidence; it does not
+create rights you do not already have and is not legal advice.
 
-For security-sensitive deployments, treat unauthenticated hidden markers as forgeable. Use HMAC-authenticated provenance when origin authentication is required, protect the key outside the image, and keep the original source material and independent provenance records.
+For security-sensitive deployments, treat unauthenticated hidden markers as
+forgeable. Use HMAC-authenticated provenance when origin authentication is
+required, keep the key outside the image, and retain the original source
+material and independent provenance records.
 
 ## License
 

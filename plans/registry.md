@@ -33,7 +33,7 @@ predecessor history, indexed by the roadmaps below.
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M004 0.4.3 release ready; M001 blocked pending public B; M002 conditionally closed; M003 closed | M004 is the ordinary stable B handoff intended to supply both M001 and M002 live evidence |
 | language-bindings | closed | `plans/subsystems/language-bindings-roadmap.md` | all milestones closed; initial Python -> Node -> C sequence complete | none |
 | stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M001–M005 and M008 closed; M006 blocked; M007 proposed | M006 waits only for ADR-0007 acceptance |
-| maintenance-quality | closed | `plans/subsystems/maintenance-quality-roadmap.md` | M001 and M003 closed; M002 proposed optional polish | none |
+| maintenance-quality | closed | `plans/subsystems/maintenance-quality-roadmap.md` | M001, M003, M004 closed; M002 proposed optional polish | none |
 
 ## Dependency-ready implementation plans
 
@@ -56,6 +56,23 @@ None.
 
 ## Recently closed work
 
+- Maintenance Quality M004 CLI relative-path fix and README quickstart
+  verification: closure recorded at `plans/closure/maintenance-quality/004-status.md`.
+  Executing the README quickstart instead of only reading it exposed a real
+  user-facing bug — `stegoeggo protect image.png -o out.png` failed on every bare
+  relative output path, because `Path::parent()` returns `Some("")` for a bare
+  name so the `unwrap_or_else(|| Path::new("."))` fallback in
+  `check_input_output_disjoint` never fired and the empty path failed to
+  canonicalize. Absolute and directory-qualified paths worked, and the CLI test
+  suite only ever used absolute `tempfile` paths, so CI could not see it. Fixed in
+  `stegoeggo-cli/src/protect.rs` (both `parent()` sites) with three regression
+  tests, one of which was confirmed to fail against the pre-fix code. README
+  rewritten quickstart-first with detail delegated to `docs/` and `SUPPORT.md`;
+  every command and the Rust example were re-executed and all 13 links verified.
+  Two documentation inaccuracies corrected (missing `webp` row in the SUPPORT.md
+  feature table; `image-webp` dependency attribution in `docs/carrier-crate.md`).
+  `check.sh` green. The pre-existing `release_eggpack` temp-dir flake remains
+  open.
 - Maintenance Quality M003 agent guidance and documentation currency: closure
   recorded at `plans/closure/maintenance-quality/003-status.md` (new
   `.skills/bindings/SKILL.md` for the previously undocumented FFI subsystem;

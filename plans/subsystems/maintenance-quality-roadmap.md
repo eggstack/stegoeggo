@@ -70,6 +70,14 @@ the previously undocumented FFI subsystem, corrected `AGENTS.md`'s CI topology (
 workflows run on push/PR than the old text claimed), corrected drifted counts, and added a
 change-area → deep-dive index. No product code, public API, or CI placement changed.
 
+M004 is closed. Executing the README quickstart — rather than only reading it —
+exposed a user-facing CLI bug: every bare relative `-o` output path failed because
+`Path::parent()` returns `Some("")` for a bare name, defeating the `unwrap_or_else`
+fallback in `check_input_output_disjoint`. The CLI test suite only used absolute
+`tempfile` paths, so CI could not see it. Fixed with three regression tests (one
+confirmed to fail against the pre-fix code), and the README was restructured
+quickstart-first with detail delegated to `docs/`.
+
 ## 5. Target architecture
 
 Keep top-level workflows separate by evidence purpose, but factor repeated step-level
@@ -98,6 +106,10 @@ without a maintainer decision.
 - **M003 — Agent guidance and documentation currency.**
   Class: infrastructure; closed. Keeps `AGENTS.md`, `.skills/`, and the
   `architecture/` index accurate as subsystems are added.
+- **M004 — CLI relative-path fix and README quickstart verification.**
+  Class: bug fix + documentation; closed. Running the documented quickstart
+  exposed a bare-relative-output-path failure in the CLI; fixed with regression
+  tests, and the README was restructured quickstart-first.
 
 ## 8. Cross-cutting requirements
 
@@ -128,3 +140,4 @@ optional future polish and does not block roadmap closure.
 | M001 workflow consolidation/pinning | closed | `plans/implementation/maintenance-quality/001-release-workflow-consolidation.md` | `plans/closure/maintenance-quality/001-status.md` | none |
 | M002 drift linting | proposed | none | none | maintainer decision on CI placement (M001 precondition satisfied) |
 | M003 agent guidance and doc currency | closed | `plans/implementation/maintenance-quality/003-agent-guidance-and-doc-currency.md` | `plans/closure/maintenance-quality/003-status.md` | none |
+| M004 CLI relative-path fix + README verification | closed | `plans/implementation/maintenance-quality/004-cli-relative-path-and-readme-verification.md` | `plans/closure/maintenance-quality/004-status.md` | none |

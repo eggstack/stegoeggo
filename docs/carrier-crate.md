@@ -91,8 +91,8 @@ animated inputs return structured `UnsupportedWebP` (`LossyVp8` /
 flag is re-checked after probing as defense in depth. Output is a newly
 encoded carrier: ICC/EXIF/XMP chunks are dropped and no preservation is
 claimed. Rights metadata rendering stays with the parent crate. Enable
-with `stegoeggo-stego = { features = ["webp"] }` (off by default; the
-codec is pure Rust via `image-webp`, no native dependency).
+with `stegoeggo-stego = { features = ["webp"] }` (off by default; the codec is
+pure Rust via the `image` crate's `webp` feature, no native dependency).
 
 ## Configuration
 

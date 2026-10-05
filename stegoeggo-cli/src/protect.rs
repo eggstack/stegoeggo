@@ -41,7 +41,10 @@ pub(crate) fn is_image_file(path: &Path) -> bool {
 }
 
 pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> Result<(), Error> {
-    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let dir = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
     let mut temp = tempfile::NamedTempFile::new_in(dir).map_err(|e| {
         Error::Io(std::io::Error::new(
             e.kind(),
@@ -73,7 +76,10 @@ pub(crate) fn check_input_output_disjoint(input: &Path, output: &Path) -> Result
     let output_canonical = match output.canonicalize() {
         Ok(path) => path,
         Err(_) => {
-            let output_parent = output.parent().unwrap_or_else(|| Path::new("."));
+            let output_parent = match output.parent() {
+                Some(parent) if !parent.as_os_str().is_empty() => parent,
+                _ => Path::new("."),
+            };
             let parent = output_parent.canonicalize().map_err(|e| {
                 Error::Io(std::io::Error::new(
                     e.kind(),
@@ -304,6 +310,48 @@ mod tests {
         let directory = temp.path().join("output.png");
         fs::create_dir(&directory).unwrap();
         assert!(!output_looks_like_file(&directory));
+    }
+
+    #[test]
+    fn bare_relative_output_path_resolves_against_the_current_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("photo.png");
+        fs::write(&input, b"\x89PNG\r\n\x1a\n").unwrap();
+
+        // A bare relative output name has an empty parent; it must resolve against
+        // the current directory instead of failing to canonicalize.
+        assert!(check_input_output_disjoint(&input, Path::new("photo_protected.png")).is_ok());
+        assert!(check_input_output_disjoint(&input, Path::new("./photo_protected.png")).is_ok());
+
+        // An absolute path in a missing directory must still surface the real error.
+        let missing_dir = temp.path().join("no-such-dir").join("out.png");
+        assert!(check_input_output_disjoint(&input, &missing_dir).is_err());
+    }
+
+    #[test]
+    fn write_atomic_writes_bare_relative_names_into_the_current_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let previous = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp.path()).unwrap();
+
+        let result = write_atomic(Path::new("out.bin"), b"payload");
+
+        std::env::set_current_dir(previous).unwrap();
+        result.unwrap();
+
+        assert_eq!(
+            fs::read(temp.path().join("out.bin")).unwrap(),
+            b"payload".to_vec()
+        );
+    }
+
+    #[test]
+    fn same_file_input_and_output_is_rejected() {
+        let temp = tempfile::tempdir().unwrap();
+        let image = temp.path().join("photo.png");
+        fs::write(&image, b"\x89PNG\r\n\x1a\n").unwrap();
+
+        assert!(check_input_output_disjoint(&image, &image).is_err());
     }
 
     #[test]
