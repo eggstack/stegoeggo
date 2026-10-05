@@ -33,7 +33,7 @@ predecessor history, indexed by the roadmaps below.
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M004 0.4.3 release ready; M001 blocked pending public B; M002 conditionally closed; M003 closed | M004 is the ordinary stable B handoff intended to supply both M001 and M002 live evidence |
 | language-bindings | closed | `plans/subsystems/language-bindings-roadmap.md` | all milestones closed; initial Python -> Node -> C sequence complete | none |
 | stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M001–M005 and M008 closed; M006 blocked; M007 proposed | M006 waits only for ADR-0007 acceptance |
-| maintenance-quality | closed | `plans/subsystems/maintenance-quality-roadmap.md` | M001 closed; M002 proposed optional polish | none |
+| maintenance-quality | closed | `plans/subsystems/maintenance-quality-roadmap.md` | M001 and M003 closed; M002 proposed optional polish | none |
 
 ## Dependency-ready implementation plans
 
@@ -55,6 +55,21 @@ None.
 | stego-library-evolution | M006 keyed carrier placement | ADR-0007 acceptance only. |
 
 ## Recently closed work
+
+- Maintenance Quality M003 agent guidance and documentation currency: closure
+  recorded at `plans/closure/maintenance-quality/003-status.md` (new
+  `.skills/bindings/SKILL.md` for the previously undocumented FFI subsystem;
+  `AGENTS.md` CI topology corrected from "everything else is scheduled/manual" to
+  the four additional push/PR workflows, architecture count 39 → 42, bindings
+  subsection and change-area → deep-dive index added; stale counts, carrier
+  `limits`/`webp` modules, and `metadata_trap/spec.rs` corrected across the
+  remaining skills; re-verification table added so future agents re-derive counts
+  from the tree; no product code changed, `./scripts/check.sh` green). M002
+  remains proposed and still needs a maintainer decision on CI placement. M003
+  verification also surfaced a pre-existing required-CI flake —
+  `tests/release_eggpack.rs::validator_temp_state_is_cleaned` races sibling
+  validator tests over the shared temp directory — recorded as an unresolved
+  finding, not fixed in this milestone.
 
 - Stego Library Evolution M008 M003 default-limit compatibility corrective:
   closure recorded at `plans/closure/stego-library-evolution/008-status.md`

@@ -20,7 +20,8 @@ writing an ADR, or archiving interim docs.
 
 For worktree-parallel execution mechanics, also load
 `.skills/plan-execution/SKILL.md`. For Rust conventions, load
-`.skills/stegoeggo-conventions/SKILL.md`.
+`.skills/stegoeggo-conventions/SKILL.md`; for anything touching `bindings/` or
+a function an FFI binding calls, also load `.skills/bindings/SKILL.md`.
 
 ## Document Hierarchy
 
@@ -80,16 +81,16 @@ presented as completed capability without a consumer path), **polish**
 
 1. Identify canonical sections in `000`/`001`/`002`.
 2. Record open architecture decisions as ADRs.
-3. Create/update the subsystem roadmap (12 sections; index flat
+3. Create/update the subsystem roadmap (12 `##` sections; index flat
    predecessors, don't duplicate them).
 4. Select one dependency-ready milestone (hard deps closed, interface
    deps contracted).
-5. Write a bounded handoff plan (16 sections per
+5. Write a bounded handoff plan (16 numbered sections per
    `implementation/README.md`).
 6. Register it in `registry.md` (`ready` → `active` on start).
 7. Implement + verify (`./scripts/check.sh` minimum; exact commands
    recorded).
-8. Write the closure record (12 sections per `closure/README.md`).
+8. Write the closure record (12 numbered sections per `closure/README.md`).
 9. Update `registry.md` + roadmap status; audit blocked work for
    newly-satisfied blockers in the same commit.
 10. Archive superseded interim docs when inactive.

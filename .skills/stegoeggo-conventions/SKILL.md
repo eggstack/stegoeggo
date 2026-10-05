@@ -95,9 +95,15 @@ pub enum HiddenMarkerMode {
 - **`pub(crate)`**: `protected`, `util`, `webp_container`, `container_walk`, `xmp`, `pipeline`
 
 ### Carrier crate (`stegoeggo-stego/src/`)
-- **Public**: `constants`, `error`, `frame`, `jpeg`, `lsb`, `pixels`, `prepared`, `types`
+- **Public**: `constants`, `error`, `frame`, `jpeg`, `limits`, `lsb`, `pixels`, `prepared`, `types`
+- **Public (feature-gated)**: `webp` (feature: `webp`, still-lossless WebP facade)
 - **`pub(crate)`**: `jpeg_transcoder`, `lsb_internal`
 - **`pub` behind `application-support`, `#[doc(hidden)]`**: `application_support` (parent-only legacy/search compat, never ordinary embed/extract)
+
+### FFI leaves (`bindings/{c,node,python}/`)
+- Separate nested workspaces, `publish = false`, **excluded from the root Cargo workspace**
+- Pin `stegoeggo = "=0.4.2"` with `default-features = false`, and force `panic = "unwind"` in dev and release
+- Never built or tested by `./scripts/check.sh` — see `.skills/bindings/SKILL.md`
 
 ## Function Signatures
 
@@ -263,7 +269,7 @@ frame::decode_prefix(data) -> Result<(FrameHeader, usize)>
 10. **JPEG DCT one-pass embed** — Supported DCT embedding computes max feasible redundancy from capacity, then embeds+encodes once. No retry loop.
 11. **Generic carrier operation styles** — The `stegoeggo::stego` facade exposes raw (`lsb::embed`/`extract`, `jpeg::embed`/`extract`, caller knows payload length and JPEG `actual_redundancy`); strict JPEG (`jpeg::embed_strict`/`embed_framed_strict`, exact redundancy or `InsufficientCapacity` with no output); in-place (`lsb::embed_in_place` mutates the caller's `RgbaImage` and shares the corrected V2 mutation core with the cloning `lsb::embed`); borrowed views (`PixelView`/`PixelViewMut` for packed/strided RGB8/RGBA8, same core, alpha/padding never carriers); prepared JPEG (`PreparedJpeg` borrows encoded bytes, one decode across repeated ops); framed (`lsb::embed_framed`/`extract_framed`, `jpeg::embed_framed`/`extract_framed` over `frame::{encode, decode_prefix, decode}`); and tiled (`embed_tiled`/`embed_tiled_in_place`/`extract_tiled`/`embed_tiled_framed`/`extract_tiled_framed` over shared `TileConfig` with explicit `max_origins` in `1..=MAX_TILED_ORIGINS`). Best-effort `jpeg::embed` (auto-downgrade + seed-only fallback) is the parent's explicit application policy, not generic carrier semantics. Framed extraction keeps the seed/config explicit, validates capacity before full extraction, and treats CRC32 as corruption detection rather than authentication. Raw tiled recovery returns the first candidate and cannot authenticate; prefer framed tiled for crops. Tiled JPEG uses redundancy 1 per tile and rejects non-multiple-of-8 sizes.
 12. **Validated configuration** — `Redundancy::new`/`from_usize` (identical debug/release semantics) with `from_redundancy`/`with_redundancy_value`/`redundancy_value` on both configs is the recommended primitive for runtime values. `LsbConfig::try_new`, `LsbConfig::try_with_redundancy`, `JpegConfig::try_new`, and `JpegConfig::try_with_redundancy` all return `StegoError::InvalidConfig` for out-of-range redundancy. The infallible `with_redundancy` builder is a compatibility adapter for compile-time constants only (debug-assert/release-clamp); never pass runtime values through it. Zero seeds are valid. JPEG capacity units are eligible AC coefficients with `|coef| >= 2`, not all non-zero AC coefficients. The V2 LSB mapping is byte-frozen with injectivity verified for documented domains only — never claim a full-domain bijection.
-13. **Decomposed application stego adapter** — `src/protected/steganography/` is split into five responsibility modules behind `SteganographyProtector`: `marker.rs` (V3 payload construction), `embed.rs` (plan-based dispatch with shared private helpers — `outcome_from_report`, `embed_dct_payload`/`embed_dct_tiled_payload` with progressive fallback, `inplace_summary`, `embed_raster_with_seed_fallback`; context-based wrappers delegate to the same helpers and PNG/WebP share one raster path), `extract.rs` (seed discovery and bounded search, including hidden `JpegSearchContext` reuse), `verify.rs` (integrity and authentication classification), and `legacy.rs` (V1/V2 compatibility). `mod.rs` is a thin facade + shared types + tests; no carrier algorithm is reimplemented there. Hidden `application_support` holds only legacy/seed-fallback/search compat, never ordinary current embed/extract. `src/types/` (rights/compat/legal/context/verification/warnings/request behind `src/types.rs` re-exports), `src/protected/metadata_trap/` (notice/png/jpeg/webp/common behind `RightsMetadataProtector`), and `src/pipeline.rs` (canonical executors) follow the same facade pattern: stable public paths, private submodules.
+13. **Decomposed application stego adapter** — `src/protected/steganography/` is split into five responsibility modules behind `SteganographyProtector`: `marker.rs` (V3 payload construction), `embed.rs` (plan-based dispatch with shared private helpers — `outcome_from_report`, `embed_dct_payload`/`embed_dct_tiled_payload` with progressive fallback, `inplace_summary`, `embed_raster_with_seed_fallback`; context-based wrappers delegate to the same helpers and PNG/WebP share one raster path), `extract.rs` (seed discovery and bounded search, including hidden `JpegSearchContext` reuse), `verify.rs` (integrity and authentication classification), and `legacy.rs` (V1/V2 compatibility). `mod.rs` is a thin facade + shared types + tests; no carrier algorithm is reimplemented there. Hidden `application_support` holds only legacy/seed-fallback/search compat, never ordinary current embed/extract. `src/types/` (rights/compat/legal/context/verification/warnings/request behind `src/types.rs` re-exports), `src/protected/metadata_trap/` (notice/spec/png/jpeg/webp/common behind `RightsMetadataProtector`), and `src/pipeline.rs` (canonical executors) follow the same facade pattern: stable public paths, private submodules.
 14. **JPEG extraction is single-decode per operation** — `jpeg::extract_framed` retains private decoded coefficients for its bounded redundancy search; application verification shares one hidden `JpegSearchContext` across standard probing and tiled fallback. Do not recompose either from public `capacity`/`extract` calls, add per-redundancy `jpeg_extract` calls in `dct_candidates`, expose coefficient/header types, or reduce the configured search domain.
 15. **Tiled LSB has one in-place core** — `lsb_internal::embed_lsb_tiled_in_place` is the shared algorithm; the cloning `embed_lsb_tiled` delegates to it and the parent raster path mutates its owned RGBA directly. Insufficient capacity leaves the caller's buffer unchanged.
 16. **Raster preflight is header-only** — non-JPEG dimension gating uses `into_dimensions()` only; the executor owns the single full decode and re-checks dimensions defensively. Same-format metadata-only performs zero pixel decodes.
@@ -273,6 +279,8 @@ frame::decode_prefix(data) -> Result<(FrameHeader, usize)>
 20. **Output-domain carrier routing** — Carrier family is selected from the final output format (`output_format == JPEG ? DCT : LSB`); input format controls fast-path reuse only. `execute_full_marker_and_metadata()` in `src/pipeline.rs` is the sole current-carrier router; `apply_lsb_to_image_with_summary_from_plan()` in `src/protected/steganography/embed.rs` is explicitly raster-domain and must never branch on `plan.input_format()`. JPEG→PNG/WebP is one pixel decode plus LSB, never a transient DCT step. `EmbedPath` follows the operation actually executed (`Lsb`/`LsbTiled` for raster output, `DctF5`/`DctF5Tiled` for JPEG output).
 21. **Timestamp provenance** — Canonical metadata writers consume the resolved `RightsNotice`; JPEG structured COM rendering must receive `notice_applied_at` from that same notice. An explicit `ProtectionRequest::with_timestamp_override(...)` must not be replaced by a lower-level `SystemTime::now()` read, while requests without an override retain wall-clock defaults.
 22. **`Error` has 21 variants** — 20 always-available plus async-only `Task` (`#[cfg(feature = "async")]`). Count `InsufficientCapacity` and `ResourceLimitExceeded` (the `StegoError::ResourceLimitExceeded` carrier conversion) among the 20; docs claiming 17/18/19/20 total are stale.
+23. **Carrier `limits.rs` and `webp.rs` are public, not internal** — `CarrierLimits`/`CarrierLimitsBuilder` are the carrier's own bounded-input contract (independent of the root `ResourceLimits`); `webp` is a still-lossless facade behind feature `webp` that rejects lossy/animated input with `StegoError::UnsupportedWebP` and does not preserve unrelated container metadata. The root crate's byte paths never switch to the carrier WebP facade implicitly — rights-metadata rendering stays in the root crate.
+24. **`bindings/` is outside the workspace** — Three FFI leaves are excluded from `cargo test --workspace`, so `check.sh` is blind to them. Their path-filtered workflows do run on push/PR to `main`, so a `src/` change that breaks a binding export fails there, not in required CI. Load `.skills/bindings/SKILL.md` before touching that boundary.
 
 ## Build & Test
 ```bash
@@ -290,18 +298,41 @@ and binary-release policy wording aligned across the user and maintainer docs.
 
 ## Testing Patterns
 - Unit tests live in each source file as `#[cfg(test)] mod tests`
-- Integration tests in `tests/` directory (35 test files, including `container_accounting.rs` for Plan 085 resource-accounting regression)
+- Integration tests in `tests/` directory (36 test files, including `container_accounting.rs` for Plan 085 resource-accounting regression)
 - Test with `ProtectionContext::new(intensity, seed)` for deterministic results
 - `ProtectionContext::default()` uses CSPRNG-backed seed (via `getrandom`) — safe for production; use `ProtectionContext::new(intensity, seed)` for reproducibility
 - Feature-gated tests: `tests/async_integration.rs` requires `async` feature
 - Public generic carrier tests belong in `tests/public_stego_api.rs`; framed tests must verify recovery without retaining the original payload length, and JPEG tests must cover auto-downgraded redundancy
 
 ## Where Documentation Lives
-- User-facing guides: `docs/` (`cli-usage.md`, `rust-api.md`, `formats.md`, `carrier-crate.md`, `legal_notice_model.md`, `migration-v0.3.md`)
-- Architecture deep-dives: `architecture/` (39 files), indexed by `architecture/overview.md`
-- Agent conventions: this file plus `AGENTS.md` gotchas (CLI flags, exit codes, container correctness)
+- User-facing guides: `docs/` (7 guides: `cli-usage.md`, `installation.md`, `rust-api.md`, `carrier-crate.md`, `formats.md`, `legal_notice_model.md`, `migration-v0.3.md`)
+- Architecture deep-dives: `architecture/` (42 files: `overview.md` + `review_plan.md` (historical) + 40 component deep-dives), indexed by `architecture/overview.md`
+- Agent conventions: this file plus `AGENTS.md` gotchas (CLI flags, exit codes, container correctness). Load `.skills/bindings/SKILL.md` before any change that could break an FFI surface.
 - Fuzz assurance: `fuzz/README.md` (pinned nightly/cargo-fuzz tuple, LTO compatibility boundary, and update policy)
-- Runnable examples: `examples/` (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) — keep these compiling when changing public APIs
+- Runnable examples: `examples/` (`protect_and_verify.rs`, `verify_saved.rs`, `legal_metadata.rs`, `generic_stego.rs`) — all 4 are Cargo-registered targets and must keep compiling
+
+## Cross-Cutting Facts (verify before editing docs)
+
+Counts drift easily. Current verified values:
+
+| Thing | Count | How to re-verify |
+|---|---|---|
+| `architecture/` files | 42 | `ls -1 architecture \| wc -l` |
+| `tests/*.rs` | 36 | `ls -1 tests/*.rs \| wc -l` |
+| `.github/workflows/*.yml` | 12 | `ls -1 .github/workflows/*.yml \| wc -l` |
+| `fuzz/fuzz_targets/*.rs` | 12 | `ls -1 fuzz/fuzz_targets/*.rs \| wc -l` |
+| `docs/*.md` | 7 | `ls -1 docs/*.md \| wc -l` |
+| `Error` variants | 21 (20 + async-only `Task`) | `sed -n '/pub enum Error/,/^}/p' src/error.rs` |
+| `ProtectionWarning` variants | 8 | `sed -n '/pub enum ProtectionWarning/,/^}/p' src/types/warnings.rs` |
+| C ABI exported functions | 90 | `grep -c '^[a-zA-Z_]' bindings/c/abi-v1-symbols.txt` |
+
+**CI reality check.** `ci.yml` is the only *required* gate, but it is not the
+only workflow that runs on pull requests. `c-binding.yml`, `node-binding.yml`,
+`python-binding.yml`, and `release-drift.yml` all trigger on push **and** PR to
+`main` (path-filtered). `assurance.yml`, `external-verification.yml`, and
+`fuzz.yml` are the genuinely scheduled/manual ones. Because `bindings/` is
+excluded from the Cargo workspace, `check.sh` cannot see a binding at all — a
+`src/` change that breaks a binding export is caught only by those workflows.
 
 ## CLI Release Conventions
 - The `stegoeggo-cli` package defaults to `signatures`, so Cargo-installed and prebuilt binaries expose the same `keygen`, `sign`, and `verify-manifest` command surface. The CLI still leaves root `iscc`, `conformance`, and `parallel` features off.

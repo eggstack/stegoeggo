@@ -9,10 +9,11 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 
 ## Quick Reference
 
-- Architecture docs live in `architecture/` (42 files: this overview + `review_plan.md` (historical, gitignored) + 40 component deep-dives)
+- Architecture docs live in `architecture/` (42 files: `overview.md` + `review_plan.md` (historical, gitignored) + 40 component deep-dives)
 - Review outputs go to `plans/`
-- Source code is in `src/` (root crate), `stegoeggo-stego/src/` (carrier crate), and `bindings/{c,node,python}/src/` (FFI leaves, outside the workspace)
+- Source code is in `src/` (root crate), `stegoeggo-stego/src/` (carrier crate), `stegoeggo-cli/src/` (CLI), and `bindings/{c,node,python}/src/` (FFI leaves, each a nested workspace outside the main one)
 - Use `rg` (ripgrep) for fast content search, `glob` for file patterns
+- If the work touches an FFI surface, also load `.skills/bindings/SKILL.md`
 
 ## Review Workflow
 
@@ -45,6 +46,10 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 | 7 ProtectionWarning variants | 8 ProtectionWarning variants | `types.rs` |
 | `Option<bool>` returns | `VerificationStatus` returns | `verify_payload_from_bytes_with_key` |
 | `src/protected/steganography.rs` | Split into 5 modules under `src/protected/steganography/` | `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs` |
+| "all CI except `ci.yml` is scheduled" | 4 workflows also run on push/PR (path-filtered) | `c-binding.yml`, `node-binding.yml`, `python-binding.yml`, `release-drift.yml` |
+| "3 or 4 crates in the workspace" | 4 members + 3 **excluded** binding crates | root `Cargo.toml` `exclude = ["bindings"]` |
+| `metadata_trap/{notice,png,jpeg,webp,common}.rs` | 6 modules — `spec.rs` also exists | `src/protected/metadata_trap/` |
+| "examples must keep compiling" (some are unused) | All 4 are Cargo-registered example targets | `cargo metadata` shows 4 examples |
 
 ### 4. Key source files to always check
 
@@ -54,7 +59,7 @@ Systematic workflow for verifying architecture documents against the stegoeggo c
 - `src/error.rs` — Error variants (21 total: 20 always-available + 1 async-only `Task`)
 - `src/verification/report.rs` — `VerificationReport`, `TrustEvaluation`, sub-verification types
 - `src/protected/steganography/mod.rs` — Facade + shared types; algorithm modules are `marker.rs`, `embed.rs`, `extract.rs`, `verify.rs`, `legacy.rs`
-- `src/protected/metadata_trap.rs` — Facade; format modules are `metadata_trap/notice.rs`, `png.rs`, `jpeg.rs`, `webp.rs`, `common.rs`
+- `src/protected/metadata_trap.rs` — Facade; format modules are `metadata_trap/notice.rs`, `spec.rs`, `png.rs`, `jpeg.rs`, `webp.rs`, `common.rs`
 - `src/pipeline.rs` — Canonical plan executors (`process_plan_bytes`, `execute_*`, `warnings_from_embed_outcome`)
 - `stegoeggo-stego/src/jpeg_transcoder/` — JPEG DCT internals (private to carrier)
 - `src/payload_v3/types.rs` — V3 payload constants and types

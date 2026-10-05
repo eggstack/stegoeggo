@@ -18,8 +18,9 @@ Related ADRs:
 ## 1. Purpose and ownership boundary
 
 Owns cross-cutting repository maintenance that is not product capability: workflow
-duplication, build/bootstrap consistency, immutable third-party action references, and
-drift guards. It does not change release authority, supported platforms, public API,
+duplication, build/bootstrap consistency, immutable third-party action references,
+drift guards, and agent guidance (`AGENTS.md`, `.skills/`, `architecture/` index)
+currency. It does not change release authority, supported platforms, public API,
 or publication policy.
 
 ## 2. Work classification
@@ -63,6 +64,12 @@ The only remaining item in this workstream is optional M002 workflow-contract/dr
 linting. It is proposed, not required for closure, and requires a maintainer decision
 before any new check is placed in required CI.
 
+M003 is closed. It restored agent-guidance accuracy after the language-bindings and
+carrier-surface work outgrew `AGENTS.md` and `.skills/`: it added a `bindings` skill for
+the previously undocumented FFI subsystem, corrected `AGENTS.md`'s CI topology (four more
+workflows run on push/PR than the old text claimed), corrected drifted counts, and added a
+change-area → deep-dive index. No product code, public API, or CI placement changed.
+
 ## 5. Target architecture
 
 Keep top-level workflows separate by evidence purpose, but factor repeated step-level
@@ -88,6 +95,9 @@ without a maintainer decision.
 - **M002 — Workflow contract/drift linting.**
   Class: polish, future; only after M001 closure and maintainer review of whether any
   lint belongs in required CI.
+- **M003 — Agent guidance and documentation currency.**
+  Class: infrastructure; closed. Keeps `AGENTS.md`, `.skills/`, and the
+  `architecture/` index accurate as subsystems are added.
 
 ## 8. Cross-cutting requirements
 
@@ -117,3 +127,4 @@ optional future polish and does not block roadmap closure.
 |---|---|---|---|---|
 | M001 workflow consolidation/pinning | closed | `plans/implementation/maintenance-quality/001-release-workflow-consolidation.md` | `plans/closure/maintenance-quality/001-status.md` | none |
 | M002 drift linting | proposed | none | none | maintainer decision on CI placement (M001 precondition satisfied) |
+| M003 agent guidance and doc currency | closed | `plans/implementation/maintenance-quality/003-agent-guidance-and-doc-currency.md` | `plans/closure/maintenance-quality/003-status.md` | none |

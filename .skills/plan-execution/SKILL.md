@@ -14,7 +14,7 @@ Workflow for executing multi-wave parallel tasks in the stegoeggo codebase using
 - Worktrees go in a temporary directory outside the workspace (e.g., `/tmp/stegoeggo-wt-taskN`)
 - Each task gets its own branch: `fix/taskN-description`
 - Branch naming: `fix/` prefix for bug fixes, `feat/` for features
-- The workspace has four crates: root (`stegoeggo`), carrier (`stegoeggo-stego`), CLI (`stegoeggo-cli`), fuzz (`fuzz`)
+- Workspace members: root (`stegoeggo`), carrier (`stegoeggo-stego`), CLI (`stegoeggo-cli`), fuzz (`fuzz`). The three `bindings/*` crates are **excluded** from the workspace and need their own build/CI — see `.skills/bindings/SKILL.md`
 
 ## Workflow
 
@@ -35,12 +35,16 @@ For independent items within the same wave, a single worktree can implement mult
 
 ### 3. Launch parallel agents
 
-Use the Task tool with `subagent_type: general` for each task. Each agent must:
+Launch one `worker` subagent per task. Each agent must:
 - Work in its own worktree directory
 - Read the relevant source files
 - Implement the fix per the plan's steps
 - Run `./scripts/check.sh` to verify
 - Commit changes with a descriptive message
+
+Do not launch two writers over the same file — overlapping writes make agents
+revert each other. Use `verifier` for independent review of a deliverable and
+`explore` for read-only codebase investigation.
 
 ### 4. Review worktree diffs
 
