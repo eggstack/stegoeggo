@@ -174,14 +174,16 @@ fn written_output_follows_the_process_umask() {
     );
 
     // A plain create in the same directory is the reference for the umask.
+    // Under a restrictive umask (0077) the correct answer really is 0600, so
+    // only the comparison is asserted; an absolute 0600 check would fail on
+    // any machine whose umask makes owner-only correct.
     fs::File::create(&reference).unwrap();
     let expected = fs::metadata(&reference).unwrap().permissions().mode() & 0o777;
     let actual = fs::metadata(&written).unwrap().permissions().mode() & 0o777;
     assert_eq!(
         actual, expected,
-        "protected output must be as readable as a normally created file"
+        "protected output must carry the mode a normally created file would"
     );
-    assert_ne!(actual, 0o600, "output must not be forced to owner-only");
 }
 
 #[cfg(unix)]

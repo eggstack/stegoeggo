@@ -510,6 +510,16 @@ mod tests {
         let protector = SteganographyProtector::new();
         let outcome = protector.verify_extract_with_redundancy(&img, seed, &[]);
         assert!(matches!(outcome, CandidateOutcome::Valid(_)));
+
+        // The v2 envelope carries only an unkeyed CRC32, so supplying a key
+        // must not be able to authenticate it through the legacy ECC shortcut.
+        for key in [&b"correct-key"[..], &b"wrong-key"[..]] {
+            let keyed = protector.verify_extract_with_redundancy(&img, seed, key);
+            assert!(
+                !matches!(keyed, CandidateOutcome::Valid(_)),
+                "a legacy v2 ECC payload must not verify as Valid when a key is supplied"
+            );
+        }
     }
 
     // ── HMAC ──────────────────────────────────────────────────────────
