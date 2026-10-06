@@ -63,6 +63,13 @@ jobs:
       - name: Install maturin and pytest
         run: python -m pip install -U pip "maturin>=1.5,<2.0" pytest
 
+      # `extension-module` is off here so the crate's own `#[cfg(test)]` unit
+      # tests link against libpython; the wheel build below uses it via the
+      # default feature set.
+      - name: Run the crate unit tests
+        working-directory: bindings/python
+        run: cargo test --no-default-features
+
       - name: Build the binding wheel
         working-directory: bindings/python
         run: maturin build --release --out dist-ci

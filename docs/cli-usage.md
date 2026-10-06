@@ -132,8 +132,10 @@ The compatibility root form remains accepted during 0.x:
 stegoeggo image_protected.png --verify
 ```
 
-It keeps the historical always-zero exit behavior. Use `inspect` for the
-interactive replacement and `verify` when process status matters.
+It keeps the historical always-zero exit behavior. It inspects the file it is
+given and never protects anything, so `--verify` combined with `--output` is
+rejected as a configuration error (exit 2). Use `inspect` for the interactive
+replacement and `verify` when process status matters.
 
 ## Canonical policy and evidence options
 
@@ -222,5 +224,6 @@ take precedence over a same-named first positional token. Use `./verify` or
 | 4 | `verify-manifest`: cryptographically verified but untrusted |
 | 5 | Unexpected/internal failure |
 
-The `--verify` compatibility flag always exits 0; read its output to determine
-the reported protection state.
+The `--verify` compatibility flag always exits 0 (invalid combinations such as
+`--verify --output` exit 2 before verification runs); read its output to
+determine the reported protection state.

@@ -179,8 +179,10 @@ hidden marker. Runtime/I/O errors use exit 1, invalid configuration uses exit 2,
 and unexpected failures use exit 5. JSON output is emitted before the non-zero
 verification result, with `status: "failed"`.
 
-The compatibility root `--verify` path keeps its historical always-zero exit
-behavior and may read an explicit output file supplied with `--output`.
+The compatibility root `--verify` path is verify-only: it inspects the file it is
+given and never protects anything. It keeps its historical always-zero exit
+behavior. Because it cannot write a file, combining it with `--output` is
+rejected as a configuration error (exit 2) rather than attempted.
 
 ## Input and output handling
 

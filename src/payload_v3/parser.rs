@@ -252,6 +252,19 @@ fn parse_extensions(
         let ext_type = u16::from_le_bytes([data[offset], data[offset + 1]]);
         let ext_len = u16::from_le_bytes([data[offset + 2], data[offset + 3]]);
 
+        // The end-of-extensions sentinel and its padding must be handled
+        // before the unknown-critical policy: `0xFFFF` is the terminator, not
+        // an unknown critical extension, so a payload that pads with the
+        // sentinel stays valid under the strict policy too.
+        if ext_type == 0xFFFF {
+            for &b in &data[offset..] {
+                if b != 0xFF {
+                    return Err(PayloadV3ParseError::ExtensionsTooLarge);
+                }
+            }
+            break;
+        }
+
         // Private-use extensions (0x0100-0x01FF) are always non-critical;
         // other unknown types are rejected when the critical-extension
         // policy flag is set.
@@ -260,15 +273,6 @@ fn parse_extensions(
             && crate::payload_v3::types::ExtensionType::from_u16(ext_type).is_none()
         {
             return Err(PayloadV3ParseError::UnknownCriticalExtension(ext_type));
-        }
-
-        if ext_type == 0xFFFF {
-            for &b in &data[offset..] {
-                if b != 0xFF {
-                    return Err(PayloadV3ParseError::ExtensionsTooLarge);
-                }
-            }
-            break;
         }
 
         let ext_len = ext_len as usize;
@@ -390,6 +394,30 @@ mod tests {
             }
             _ => panic!("Expected V2"),
         }
+    }
+
+    #[test]
+    fn end_of_extensions_sentinel_survives_the_strict_critical_policy() {
+        // `0xFFFF` is the terminator, not an unknown critical extension.
+        // Under the strict policy it must terminate the parse rather than be
+        // rejected, so a padded payload stays readable.
+        let padded = vec![0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
+
+        assert_eq!(parse_extensions(&padded, false).unwrap(), Vec::new());
+        assert_eq!(parse_extensions(&padded, true).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn strict_policy_still_rejects_genuinely_unknown_extensions() {
+        let mut unknown = Vec::new();
+        unknown.extend_from_slice(&0xBEEFu16.to_le_bytes());
+        unknown.extend_from_slice(&0u16.to_le_bytes());
+
+        assert_eq!(parse_extensions(&unknown, false).unwrap().len(), 1);
+        assert!(matches!(
+            parse_extensions(&unknown, true),
+            Err(PayloadV3ParseError::UnknownCriticalExtension(0xBEEF))
+        ));
     }
 
     #[test]

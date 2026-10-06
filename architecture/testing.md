@@ -1,6 +1,6 @@
 # Testing (Integration Tests, Fuzz, Examples)
 
-**Sources:** `tests/` (36 files) · `fuzz/fuzz_targets/` (12 harnesses, `cargo-fuzz` + nightly only, excluded from workspace tests) · `examples/` (4) · `stegoeggo-stego/tests/direct_consumer.rs`.
+**Sources:** `tests/` (37 files) · `fuzz/fuzz_targets/` (12 harnesses, `cargo-fuzz` + nightly only, excluded from workspace tests) · `examples/` (4) · `stegoeggo-stego/tests/direct_consumer.rs`.
 
 ## Integration tests (`tests/`)
 

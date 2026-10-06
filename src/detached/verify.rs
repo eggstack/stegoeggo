@@ -1,4 +1,3 @@
-use image::GenericImageView;
 use sha2::{Digest, Sha256};
 
 use crate::detached::manifest::DetachedManifest;
@@ -339,7 +338,29 @@ pub fn verify_detached_manifest_with_limits_and_mac(
         }
     }
 
-    verify_detached_manifest_inner(image_bytes, manifest, trust, payload_mac_key, &[])
+    let effective_limits = limits.cloned().unwrap_or_default();
+    verify_detached_manifest_inner(
+        image_bytes,
+        manifest,
+        trust,
+        payload_mac_key,
+        &[],
+        &effective_limits,
+    )
+}
+
+/// Read an image's dimensions from its header only, rejecting images whose
+/// dimensions exceed the caller's [`ResourceLimits`].
+fn image_dimensions_within_limits(
+    image_bytes: &[u8],
+    limits: &ResourceLimits,
+) -> Option<(u32, u32)> {
+    let reader = image::ImageReader::new(std::io::Cursor::new(image_bytes))
+        .with_guessed_format()
+        .ok()?;
+    let (width, height) = reader.into_dimensions().ok()?;
+    limits.check_dimensions(width, height).ok()?;
+    Some((width, height))
 }
 
 #[cfg_attr(not(feature = "signatures"), allow(unused_variables))]
@@ -350,6 +371,7 @@ fn verify_detached_manifest_inner(
     payload_mac_key: Option<&[u8]>,
     #[cfg(feature = "signatures")] caller_verifying_keys: &[TrustedVerifyingKey],
     #[cfg(not(feature = "signatures"))] caller_verifying_keys: &[()],
+    limits: &ResourceLimits,
 ) -> ManifestVerification {
     let mut builder = VerificationReport::builder();
 
@@ -579,11 +601,12 @@ fn verify_detached_manifest_inner(
         .unwrap_or_default();
     let format_valid = actual_format == manifest.claim.format;
 
-    let (actual_width, actual_height) = match crate::util::image::load_image_from_bytes(image_bytes)
-    {
-        Ok(img) => img.dimensions(),
-        Err(_) => (0, 0),
-    };
+    // Header-only dimension read under the caller's limits: a full raster
+    // decode here would allocate for a comparison that needs two integers,
+    // and an over-limit image must fail the binding check rather than be
+    // silently reported as `(0, 0)`.
+    let (actual_width, actual_height) =
+        image_dimensions_within_limits(image_bytes, limits).unwrap_or_default();
     let dimensions_valid =
         actual_width == manifest.claim.width && actual_height == manifest.claim.height;
 
@@ -604,7 +627,10 @@ fn verify_detached_manifest_inner(
     let embedded_reference_status = match &manifest.embedded_reference {
         None => EmbeddedReferenceStatus::NotProvided,
         Some(reference) => {
-            let extractor = crate::protected::steganography::SteganographyProtector::new();
+            let extractor =
+                crate::protected::steganography::SteganographyProtector::with_resource_limits(
+                    limits.clone(),
+                );
             let mac_key = payload_mac_key.unwrap_or(&[]);
             let (status, raw_bytes) =
                 extractor.verify_and_extract_raw_for_detailed(image_bytes, mac_key);
@@ -798,10 +824,18 @@ pub fn verify_detached_manifest_with_options(
             trust,
             options.payload_mac_key,
             options.caller_verifying_keys,
+            limits,
         )
     }
     #[cfg(not(feature = "signatures"))]
     {
-        verify_detached_manifest_inner(image_bytes, manifest, trust, options.payload_mac_key, &[])
+        verify_detached_manifest_inner(
+            image_bytes,
+            manifest,
+            trust,
+            options.payload_mac_key,
+            &[],
+            limits,
+        )
     }
 }

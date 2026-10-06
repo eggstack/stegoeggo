@@ -260,30 +260,26 @@ fn run_protect(
         }
     }
 
+    // `--verify` is the compatibility verify-only form: it inspects the file it
+    // is given and never protects anything. Combination errors are reported
+    // here rather than deferred into an I/O failure with a misleading exit
+    // code, because the documented contract is that this path exits 0.
     if args.verify {
         if is_batch {
-            if args.json {
-                let json_output = JsonOutput {
-                    schema_version: 1,
-                    status: "failed".to_string(),
-                    output_path: None,
-                    warnings: Vec::new(),
-                    report: None,
-                    files: None,
-                };
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&json_output).unwrap_or_else(|_| "{}".to_string())
-                );
-            }
-            eprintln!("Error: Verify mode only works with single files");
-            std::process::exit(EXIT_CONFIG);
+            emit_verify_config_error(args.json, "Verify mode only works with single files");
+        }
+        if args.output.is_some() {
+            emit_verify_config_error(
+                args.json,
+                "--verify inspects an existing file and cannot write one; \
+                 drop --output or use `stegoeggo verify`",
+            );
         }
 
         let input_path = &input_files[0];
         return verify::run_legacy_verify(
             input_path,
-            &args.output,
+            args.output.as_deref(),
             &args.key,
             args.json,
             args.verbose,
@@ -676,4 +672,25 @@ fn run_protect(
     }
 
     Ok(())
+}
+
+/// Report a `--verify` combination rejection as a config error (exit 2)
+/// instead of letting it surface later as an I/O failure with exit 1.
+fn emit_verify_config_error(json: bool, message: &str) -> ! {
+    if json {
+        let json_output = JsonOutput {
+            schema_version: 1,
+            status: "failed".to_string(),
+            output_path: None,
+            warnings: Vec::new(),
+            report: None,
+            files: None,
+        };
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json_output).unwrap_or_else(|_| "{}".to_string())
+        );
+    }
+    eprintln!("Error: {message}");
+    std::process::exit(EXIT_CONFIG);
 }

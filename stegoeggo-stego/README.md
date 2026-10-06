@@ -85,12 +85,16 @@ let config = JpegConfig::new(42);
 
 if jpeg::probe_support(&jpeg_bytes)? == jpeg::JpegSupport::Supported {
     let report = jpeg::embed_best_effort(&jpeg_bytes, payload, &config)?;
-    let recovered = jpeg::extract(
-        &report.output,
-        payload.len(),
-        &config,
-        report.actual_redundancy,
-    )?;
+    if report.is_embedded() {
+        // `actual_redundancy` is the round-trip token for raw extraction and
+        // is only meaningful when the report says the payload was embedded.
+        let recovered = jpeg::extract(
+            &report.output,
+            payload.len(),
+            &config,
+            report.actual_redundancy,
+        )?;
+    }
 }
 ```
 

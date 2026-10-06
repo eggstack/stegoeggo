@@ -123,7 +123,7 @@ syntax remains a 0.x compatibility alias for `protect`.
 | `stegoeggo version` | (default) | Print the CLI version |
 | `stegoeggo update` | (default) | Updates from a verified matching GitHub Release asset; Cargo fallback is limited to unsupported targets or an asset HTTP 404 |
 | `stegoeggo <input>...` | (default, compatibility) | Implicit `protect` alias retained through 0.x |
-| `stegoeggo <image> --verify` | (default, compatibility) | Legacy inspection report; always exits 0 |
+| `stegoeggo <image> --verify` | (default, compatibility) | Legacy inspection report; verify-only, so `--output` is rejected as a config error (exit 2); always exits 0 |
 | `stegoeggo keygen` | `signatures` | Generate an Ed25519 key pair |
 | `stegoeggo sign --manifest <path> --key <path>` | `signatures` | Sign a detached manifest |
 | `stegoeggo verify-manifest --manifest <path> --image <path>` | `signatures` | Verify a detached manifest against an image |

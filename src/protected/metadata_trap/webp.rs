@@ -7,15 +7,16 @@ impl super::RightsMetadataProtector {
         &self,
         webp_data: &[u8],
         notice: &RightsNotice,
+        dmi: Option<DmiValue>,
     ) -> Result<Vec<u8>> {
         notice.validate()?;
-        if !notice.has_legal_content() && notice.dmi().is_none() {
+        if !notice.has_legal_content() && dmi.is_none() {
             return Ok(webp_data.to_vec());
         }
 
         let parsed = crate::webp_container::parse_webp(webp_data, None)?;
 
-        let dmi_val = notice.dmi().unwrap_or(DmiValue::Unspecified);
+        let dmi_val = dmi.unwrap_or(DmiValue::Unspecified);
         let xmp_data = Self::generate_xmp_notice_from_notice(dmi_val, notice);
         if xmp_data.is_empty() {
             return Ok(webp_data.to_vec());

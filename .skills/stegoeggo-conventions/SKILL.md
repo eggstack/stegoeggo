@@ -298,7 +298,7 @@ and binary-release policy wording aligned across the user and maintainer docs.
 
 ## Testing Patterns
 - Unit tests live in each source file as `#[cfg(test)] mod tests`
-- Integration tests in `tests/` directory (36 test files, including `container_accounting.rs` for Plan 085 resource-accounting regression)
+- Integration tests in `tests/` directory (37 test files, including `container_accounting.rs` for Plan 085 resource-accounting regression)
 - Test with `ProtectionContext::new(intensity, seed)` for deterministic results
 - `ProtectionContext::default()` uses CSPRNG-backed seed (via `getrandom`) — safe for production; use `ProtectionContext::new(intensity, seed)` for reproducibility
 - Feature-gated tests: `tests/async_integration.rs` requires `async` feature
@@ -318,7 +318,7 @@ Counts drift easily. Current verified values:
 | Thing | Count | How to re-verify |
 |---|---|---|
 | `architecture/` files | 42 | `ls -1 architecture \| wc -l` |
-| `tests/*.rs` | 36 | `ls -1 tests/*.rs \| wc -l` |
+| `tests/*.rs` | 37 | `ls -1 tests/*.rs \| wc -l` |
 | `.github/workflows/*.yml` | 12 | `ls -1 .github/workflows/*.yml \| wc -l` |
 | `fuzz/fuzz_targets/*.rs` | 12 | `ls -1 fuzz/fuzz_targets/*.rs \| wc -l` |
 | `docs/*.md` | 7 | `ls -1 docs/*.md \| wc -l` |

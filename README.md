@@ -24,6 +24,12 @@ Install a prebuilt CLI (Unix):
 curl -fsSL https://github.com/eggstack/stegoeggo/releases/latest/download/install.sh | bash
 ```
 
+Or on Windows PowerShell:
+
+```powershell
+irm https://github.com/eggstack/stegoeggo/releases/latest/download/install.ps1 | iex
+```
+
 Write an AI/ML training prohibition plus copyright metadata:
 
 ```bash

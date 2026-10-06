@@ -549,6 +549,39 @@ fn test_verify_unprotected_image() {
 }
 
 #[test]
+fn test_verify_with_output_is_a_config_error_not_a_verify_result() {
+    // `--verify` never protects anything, so an `--output` path could only
+    // ever name a file that was never written. Reject the combination up
+    // front (exit 2) instead of dying later with a misleading exit 1.
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input.png");
+    let output = tmp.path().join("out.png");
+    create_test_png(&input);
+
+    let result = Command::new(cli_bin())
+        .arg("protect")
+        .arg(&input)
+        .args(["--rights-policy", "prohibited-ai-ml-training"])
+        .arg("--output")
+        .arg(&output)
+        .arg("--verify")
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "expected a config error, stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(
+        !output.exists(),
+        "--verify must not claim to have written an output file"
+    );
+    assert!(String::from_utf8_lossy(&result.stdout).is_empty());
+}
+
+#[test]
 fn test_verify_metadata_only_does_not_report_verified() {
     use stegoeggo::{ProtectionContext, RightsMetadataProtector};
 

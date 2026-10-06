@@ -1,8 +1,9 @@
 #![allow(deprecated)]
 
 use stegoeggo::{
-    process_image_bytes_with_warnings, verify_legal_notice, DmiValue, EvidenceChannel,
-    ImageOutputFormat, LegalMetadata, ProtectionContext, ProtectionLevel,
+    process_image_bytes_with_warnings, process_request_bytes, verify_legal_notice, DmiValue,
+    EvidenceChannel, ImageOutputFormat, LegalMetadata, ProtectionContext, ProtectionLevel,
+    ProtectionRequest, RightsNotice, RightsPolicy,
 };
 
 fn make_test_image_png(width: u32, height: u32) -> Vec<u8> {
@@ -1222,4 +1223,46 @@ fn negative_unknown_origin_uri_ending_in_dmi_key() {
         image::load_from_memory(&output).is_ok(),
         "output with overridden fake URI should decode"
     );
+}
+
+#[test]
+fn a_resolved_policy_reaches_every_output_format_including_webp() {
+    // The resolved DMI is the one the caller asked for via `--rights-policy`
+    // / `RightsPolicy`. It is not implied by the notice body, so every output
+    // format must receive it — a format that silently drops it turns a
+    // protection request into a no-op that still exits 0.
+    let png = make_test_image_png(64, 64);
+
+    for (policy, expected) in [
+        (
+            RightsPolicy::ProhibitedAiMlTraining,
+            DmiValue::ProhibitedAiMlTraining,
+        ),
+        (RightsPolicy::Allowed, DmiValue::Allowed),
+    ] {
+        for (fmt, label) in [
+            (ImageOutputFormat::Png, "PNG"),
+            (ImageOutputFormat::Jpeg, "JPEG"),
+            (ImageOutputFormat::WebP, "WebP"),
+        ] {
+            let request = ProtectionRequest::metadata_only(
+                RightsNotice::new().with_copyright_holder("Jane Doe"),
+                policy,
+            )
+            .with_output_format(fmt);
+            let output = process_request_bytes(&png, &request)
+                .unwrap_or_else(|e| panic!("{label}/{policy:?} protect failed: {e}"));
+
+            let notice = verify_legal_notice(&output, b"");
+            assert!(
+                notice.has_notice(),
+                "{label}/{policy:?}: output carries no rights notice"
+            );
+            assert_eq!(
+                notice.dmi(),
+                Some(expected),
+                "{label}/{policy:?}: the resolved policy did not reach the container"
+            );
+        }
+    }
 }

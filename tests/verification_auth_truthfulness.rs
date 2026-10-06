@@ -185,3 +185,54 @@ fn coarse_and_detailed_status_projections_never_contradict() {
         }
     }
 }
+
+#[test]
+fn an_unprotected_image_reports_no_integrity_algorithm() {
+    let plain = encode_image(&test_image(), image::ImageFormat::Png).unwrap();
+    let report = verify_image_bytes_report(&plain, b"any-key");
+
+    assert_eq!(
+        report.hidden_marker().status(),
+        VerificationStatus::NotFound,
+        "the fixture must be genuinely unprotected"
+    );
+    assert!(!report.authentication().attempted());
+    assert_eq!(report.authentication().hmac_status(), None);
+    assert!(
+        report.authentication().algorithm().is_empty(),
+        "no integrity check ran, so no algorithm may be named (got {:?})",
+        report.authentication().algorithm()
+    );
+    assert_eq!(report.evidence_strength(), EvidenceStrength::NoNoticeFound);
+}
+
+#[test]
+fn legacy_notice_projection_never_overstates_its_own_facts() {
+    // A caller-built notice can claim any evidence tier. The structured
+    // report derived from it must recompute the tier from the facts it holds
+    // rather than copying the claim.
+    let overstated = stegoeggo::NoticeVerification::builder()
+        .copyright_holder(Some("Jane Artist".to_string()))
+        .stego_status(VerificationStatus::NotFound)
+        .authenticated(true)
+        .evidence_strength(EvidenceStrength::MetadataNoticeAndAuthenticatedProvenance)
+        .build();
+
+    let report = stegoeggo::verification::VerificationReport::from_notice_verification(&overstated);
+
+    assert!(report.authentication().key_matched());
+    assert_eq!(
+        report.evidence_strength(),
+        report.compute_evidence_strength(),
+        "the projected tier must match the projected facts"
+    );
+    assert_ne!(
+        report.evidence_strength(),
+        EvidenceStrength::MetadataNoticeAndAuthenticatedProvenance,
+        "no hidden marker was verified, so the authenticated tier is unreachable"
+    );
+    assert_eq!(
+        report.evidence_strength(),
+        EvidenceStrength::MetadataNoticeOnly
+    );
+}

@@ -16,6 +16,19 @@ pub(crate) fn handle_keygen(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use stegoeggo::signing::SigningKey;
 
+    // The key id is written into both PEM files and later handed back to
+    // `SigningKey::from_bytes`, which rejects anything longer. Refuse here
+    // rather than emitting a key pair that `sign` cannot load.
+    if let Some(id) = key_id.as_deref() {
+        if id.len() > stegoeggo::signing::MAX_KEY_ID_LENGTH {
+            return Err(config_err(format!(
+                "key id length {} exceeds maximum {}",
+                id.len(),
+                stegoeggo::signing::MAX_KEY_ID_LENGTH
+            )));
+        }
+    }
+
     let private_path = output_dir.join("key_private.pem");
     let public_path = output_dir.join("key_public.pem");
     for path in [&private_path, &public_path] {
@@ -347,7 +360,10 @@ pub(crate) fn handle_verify_manifest(
         println!("{}", serde_json::to_string_pretty(&json)?);
     } else {
         println!("Manifest schema version: {}", manifest.schema_version);
-        println!("Claim ID: {}", hex::encode(manifest.claim.claim_id));
+        println!(
+            "Claim ID (unsigned label, not covered by the signature): {}",
+            hex::encode(manifest.claim.claim_id)
+        );
         println!("Instance digest: {}", manifest.claim.instance_digest);
         println!("Format: {}", manifest.claim.format);
         println!(

@@ -135,8 +135,12 @@ pub struct EmbedReport<T = Vec<u8>> {
     /// Available capacity in carrier units.
     pub available_capacity: usize,
     /// The actual redundancy level used for embedding (may differ from
-    /// the requested level if capacity was insufficient). Zero when
-    /// nothing was embedded.
+    /// the requested level if capacity was insufficient).
+    ///
+    /// Only meaningful when [`EmbedReport::is_embedded`] is `true`; zero is
+    /// the sentinel for "nothing was embedded" and is not a valid
+    /// [`Redundancy`](crate::Redundancy), so it must not be passed to an
+    /// extraction call.
     pub actual_redundancy: usize,
 }
 

@@ -82,7 +82,7 @@ stegoeggo/                     Cargo workspace: 4 members + 3 excluded binding c
 │   └── python/                 PyO3 module + maturin wheel/sdist
 │
 ├── fuzz/                       12 fuzz targets (libfuzzer-sys)
-├── tests/                      36 integration test files (see testing.md)
+├── tests/                      37 integration test files (see testing.md)
 ├── examples/                   4 usage examples (see testing.md)
 ├── benches/                    Criterion benchmarks (see tooling.md)
 ├── packaging/                  Unix and Windows bootstrap installers
@@ -371,7 +371,7 @@ preserving-encode path (DQT/SOS only) has no direct WebP equivalent.
 | **Conformance** | [conformance.md](conformance.md) | External tool integration (ExifTool, xmllint), fixture manifest, strict mode, exit codes |
 | **CLI** | [cli.md](cli.md) | Command-oriented CLI, compatibility routing, batch processing, inspection and verification |
 | **Tooling** | [tooling.md](tooling.md) | `scripts/` validation suite, all 12 CI workflows (including binding and release qualification), Criterion benchmarks |
-| **Testing** | [testing.md](testing.md) | `tests/` groups (36 files), `fuzz/` targets (12 harnesses), `examples/` contracts, carrier consumer tests, binding test suites |
+| **Testing** | [testing.md](testing.md) | `tests/` groups (37 files), `fuzz/` targets (12 harnesses), `examples/` contracts, carrier consumer tests, binding test suites |
 
 ### Bindings & FFI
 
@@ -550,7 +550,7 @@ artifacts uploaded. Scheduled fuzz failures are informational signal only.
 
 ## Integration Test Coverage
 
-36 test files in `tests/` (grouped reference: [testing.md](testing.md)):
+37 test files in `tests/` (grouped reference: [testing.md](testing.md)):
 
 | File | Coverage Area |
 |------|---------------|

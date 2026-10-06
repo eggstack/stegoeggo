@@ -13,12 +13,20 @@ publish = false
 
 [lib]
 name = "_stegoeggo_native"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 stegoeggo = { path = "../..", version = "=0.4.2", default-features = false }
-pyo3 = { version = "0.27", features = ["abi3-py311", "extension-module"] }
+pyo3 = { version = "0.27", features = ["abi3-py311"] }
 serde_json = "1.0"
+
+# `extension-module` tells pyo3 not to link libpython, which is correct for a
+# shipped wheel but leaves the `#[cfg(test)]` harness unlinkable. Keeping it
+# behind a default-on feature lets `cargo test --no-default-features` build and
+# run the crate's unit tests against the interpreter.
+[features]
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
 
 [profile.release]
 lto = true

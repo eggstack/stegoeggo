@@ -104,8 +104,13 @@ impl SigningKey {
     }
 
     /// Erase key material from memory (best-effort).
+    ///
+    /// Retires the key: both the retained secret bytes and the live signing
+    /// key are replaced with an all-zero key, so `sign()`,
+    /// `public_key_bytes()` and `to_bytes()` agree that this key is gone.
     pub fn zeroize(&mut self) {
         self.secret_bytes.zeroize();
+        self.signing_key = ed25519_dalek::SigningKey::from_bytes(&[0u8; 32]);
     }
 }
 
@@ -410,9 +415,34 @@ mod tests {
     #[test]
     fn zeroize_clears_key_material() {
         let mut key = SigningKey::from_bytes([99u8; 32], vec![1]).unwrap();
+        let public_before = key.public_key_bytes();
+        let signature_before = key.sign(b"message");
+
         key.zeroize();
+
         let zeroed = [0u8; 32];
         assert_eq!(key.secret_bytes, zeroed);
+        assert_eq!(
+            key.to_bytes(),
+            zeroed,
+            "to_bytes must report the retired key"
+        );
+        assert_ne!(
+            key.public_key_bytes(),
+            public_before,
+            "the live signing key must no longer derive the original public key"
+        );
+        assert_ne!(
+            key.sign(b"message"),
+            signature_before,
+            "a retired key must not reproduce its original signatures"
+        );
+        let retired = ed25519_dalek::SigningKey::from_bytes(&zeroed);
+        assert_eq!(
+            key.public_key_bytes(),
+            *retired.verifying_key().as_bytes(),
+            "re-importing the zeroed secret must yield the same retired key"
+        );
     }
 
     #[test]

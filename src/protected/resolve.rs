@@ -116,16 +116,16 @@ fn apply_timestamp_override(
     override_ts: Option<&str>,
     auto_compute: bool,
 ) -> RightsNotice {
-    if !auto_compute && !notice.has_legal_content() {
-        return notice;
-    }
+    // An explicit override always wins: it is the caller's reproducibility
+    // contract and must never be dropped or replaced by a clock read,
+    // regardless of whether any legal content is present.
     if let Some(ts) = override_ts {
         return notice.with_notice_applied_at(ts.to_string());
     }
     if notice.notice_applied_at().is_some() {
         return notice;
     }
-    if auto_compute {
+    if auto_compute || notice.has_legal_content() {
         if let Some(ts) = crate::protected::metadata_trap::current_timestamp_iso8601() {
             return notice.with_notice_applied_at(ts);
         }

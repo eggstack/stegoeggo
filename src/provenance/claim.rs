@@ -195,6 +195,12 @@ impl ProvenanceClaim {
     /// Produces deterministic JSON with sorted keys, no whitespace,
     /// null omission, and the `claim_id` field excluded. This is the
     /// form used for hashing and signing.
+    ///
+    /// `claim_id` is an unsigned label, not an integrity binding: it is
+    /// deliberately outside the signed bytes, so it can be rewritten in a
+    /// manifest whose signature still verifies. Do not present it as an
+    /// authenticated identifier, and do not use it for a trust decision —
+    /// [`Self::digest`] and the signature cover the content fields.
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
         let mut map = serde_json::Map::new();

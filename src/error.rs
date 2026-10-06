@@ -21,12 +21,18 @@ impl From<StegoError> for Error {
                 available: *available,
             },
             StegoError::MalformedInput(msg) => Error::InvalidFormat(msg.clone()),
-            StegoError::UnsupportedJpeg(_) => Error::InvalidFormat(e.to_string()),
+            StegoError::UnsupportedJpeg(_) | StegoError::UnsupportedWebP(_) => {
+                Error::InvalidFormat(e.to_string())
+            }
             StegoError::FrameNotFound => Error::Steganography(e.to_string()),
             StegoError::MalformedFrame(_) => Error::Steganography(e.to_string()),
             StegoError::FrameChecksumMismatch => Error::PayloadVerification(e.to_string()),
             StegoError::ResourceLimitExceeded(msg) => Error::ResourceLimitExceeded(msg.clone()),
             StegoError::EmptyCarrier => Error::Steganography(e.to_string()),
+            // `StegoError` is `#[non_exhaustive]`, so a wildcard arm is
+            // required across the crate boundary. Variants added by the
+            // carrier in a later 0.x release degrade to `Steganography`
+            // until this mapping is updated.
             _ => Error::Steganography(e.to_string()),
         }
     }
@@ -186,6 +192,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use stegoeggo_stego::error::{JpegUnsupportedReason, StegoError, WebpUnsupportedReason};
 
     #[test]
     fn error_image_decode_display() {
@@ -201,6 +208,23 @@ mod tests {
         let s = err.to_string();
         assert!(s.contains("Image encoding error"));
         assert!(s.contains("encoding failed"));
+    }
+
+    #[test]
+    fn unsupported_container_variants_map_to_invalid_format() {
+        // "This container cannot be embedded into" is a format problem, not
+        // a steganography problem. Reporting it as `Steganography` sent
+        // callers down the wrong error path.
+        for stego_err in [
+            StegoError::UnsupportedJpeg(JpegUnsupportedReason::Progressive),
+            StegoError::UnsupportedWebP(WebpUnsupportedReason::Animated),
+        ] {
+            let mapped: Error = stego_err.into();
+            assert!(
+                matches!(mapped, Error::InvalidFormat(_)),
+                "expected InvalidFormat, got {mapped:?}"
+            );
+        }
     }
 
     #[test]

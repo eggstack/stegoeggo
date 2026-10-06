@@ -166,8 +166,12 @@ impl super::RightsMetadataProtector {
             let chunk_type = &png_data[pos + 4..pos + 8];
 
             if chunk_type == b"IEND" {
-                let injected_field_count =
-                    metadata.len() + usize::from(dmi.is_some()) + usize::from(seed.is_some());
+                // The seed reaches the file through the XMP chunk and the
+                // `X-Protection-Seed` text chunk in `metadata`. It is not
+                // duplicated into `Description`: that key belongs to the image
+                // author, and a second copy accumulated on every re-protection
+                // while letting `extract_seed_from_png` read a superseded seed.
+                let injected_field_count = metadata.len() + usize::from(dmi.is_some());
                 if let Some(lim) = limits {
                     lim.check_metadata_field_count(injected_field_count)?;
                 }
@@ -188,12 +192,6 @@ impl super::RightsMetadataProtector {
                     };
                     let text_chunk = Self::create_png_text_chunk(&namespaced_key, value, limits)?;
                     output.extend_from_slice(&text_chunk);
-                }
-                if let Some(s) = seed {
-                    let desc_value = format!("Protected image. Seed: {}", s);
-                    let desc_chunk =
-                        Self::create_png_text_chunk(b"Description", desc_value.as_bytes(), limits)?;
-                    output.extend_from_slice(&desc_chunk);
                 }
             }
 

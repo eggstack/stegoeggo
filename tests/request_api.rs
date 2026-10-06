@@ -261,6 +261,25 @@ mod resolve_request_validation {
     }
 
     #[test]
+    fn timestamp_override_survives_without_any_legal_metadata() {
+        // `rights_metadata()` builds a request with no `LegalMetadata` at all.
+        // An explicit timestamp is still the caller's reproducibility contract
+        // and must reach the effective notice regardless of what else is set.
+        let request = ProtectionRequest::metadata_only(RightsNotice::new(), RightsPolicy::Allowed)
+            .with_timestamp_override("2025-02-02T00:00:00Z");
+        assert!(request.legal_metadata().is_none());
+        assert!(!request.notice().has_legal_content());
+
+        let plan = resolve_request(&request, ImageOutputFormat::Png).unwrap();
+        assert_eq!(
+            plan.effective_notice().notice_applied_at(),
+            Some("2025-02-02T00:00:00Z"),
+            "an explicit timestamp_override must never be dropped"
+        );
+        assert_eq!(plan.effective_policy(), RightsPolicy::Allowed);
+    }
+
+    #[test]
     fn unspecified_policy_yields_no_dmi() {
         let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Unspecified);
         let plan = resolve_request(&request, ImageOutputFormat::Png).unwrap();

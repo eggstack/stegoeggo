@@ -45,9 +45,9 @@ Other traps: `inject_metadata`/`inject_legal_claims` are `Option<bool>` (`None` 
 
 - Public `stego` module uses `StegoError`, not crate `Error` (convert via `From`).
 - Carrier follows the **output** format (`JPEG ? DCT : LSB`); JPEG→JPEG uses a byte-only fast path (no pixel decode). JPEG→PNG/WebP is one pixel decode + raster LSB, never transient DCT.
-- `jpeg::embed`/`embed_framed` are best-effort (auto-downgrade redundancy, seed-only fallback — application policy); `*_strict` variants embed at exactly the requested redundancy or return `InsufficientCapacity`. Capacity units are AC coefficients with `|coef| >= 2`. Pass `report.actual_redundancy` to `extract`.
+- `jpeg::embed`/`embed_framed` are best-effort (auto-downgrade redundancy, seed-only fallback — application policy); `*_strict` variants embed at exactly the requested redundancy or return `InsufficientCapacity`. Capacity units are AC coefficients with `|coef| >= 2`. Pass `report.actual_redundancy` to `extract`, guarded on `report.is_embedded()`.
 - Use validated `Redundancy` + `from_redundancy`/`with_redundancy_value` for runtime values; legacy `with_redundancy` is constants-only (debug-assert vs release-clamp). Zero seeds are valid. Max redundancy 10. V3 payloads are written; V1/V2 extract-only.
-- Two unrelated XorShiftRngs: `PixelSelectionRng` (`src/util/image.rs`) vs `DctCoefficientRng` (`stegoeggo-stego/.../stego_f5.rs`) — do not interchange.
+- One stego PRNG exists: `DctCoefficientRng` (`stegoeggo-stego/.../stego_f5.rs`). The former root-crate `PixelSelectionRng` was removed — do not reintroduce a second shuffling PRNG.
 - `limits.rs` (`CarrierLimits`) is the carrier's own bounded-input contract, independent of the root `ResourceLimits`. `webp.rs` is a still-lossless facade behind feature `webp`; it rejects lossy/animated input and preserves no container metadata. The root byte paths never route to it implicitly.
 - Container/format edge cases (Q-table hints, VP8X flags, XMP shape, preserving JPEG encoding) live in `architecture/jpeg-*.md` and `architecture/protected-*.md` — read those before touching those paths.
 
@@ -78,8 +78,9 @@ and shorthand policy flags are translation-only compatibility syntax.
 for an unprotected image; `verify` exits 3 for missing or invalid protection
 evidence. Exit codes are 0 ok, 1 error, 2 config, 3 integrity, 4
 verified-but-untrusted manifest (`verify-manifest` only), and 5 internal.
-`--verify` always exits 0 — read the output text. Full contract:
-`docs/cli-usage.md` and `architecture/cli.md`.
+`--verify` is verify-only and never protects anything, so `--verify --output` is
+a config error (exit 2); otherwise it always exits 0 — read the output text.
+Full contract: `docs/cli-usage.md` and `architecture/cli.md`.
 
 ## Features
 

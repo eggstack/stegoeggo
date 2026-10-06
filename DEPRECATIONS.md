@@ -138,7 +138,9 @@ The flag-first root invocation is also compatibility syntax in 0.x:
 | `stegoeggo <input>... [options]` | `stegoeggo protect <input>... [options]` |
 | `stegoeggo <image> --verify` | `stegoeggo inspect <image>` for reporting, or `stegoeggo verify <image>` when process status matters |
 
-The `--verify` compatibility flag remains parseable and always exits 0. The
+The `--verify` compatibility flag remains parseable and always exits 0. It is
+verify-only and never protects anything, so combining it with `--output` is
+rejected as a configuration error (exit 2) before any verification runs. The
 new `verify` command exits 3 when protection evidence is missing or fails
 integrity/authentication verification. Exact command-name paths such as a file
 named `verify` require `./verify` or `-- ./verify`.

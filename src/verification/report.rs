@@ -1177,17 +1177,18 @@ impl VerificationReport {
 
         let hidden_marker = hidden_marker.build();
 
+        let authenticated = notice.authenticated();
+
         let authentication = AuthenticationVerification::builder()
-            .attempted(
-                notice.authenticated() || notice.stego_status() == VerificationStatus::Verified,
-            )
-            .hmac_status(if notice.authenticated() {
+            .attempted(authenticated || notice.stego_status() == VerificationStatus::Verified)
+            .hmac_status(if authenticated {
                 VerificationStatus::Verified
             } else if notice.stego_status() == VerificationStatus::Invalid {
                 VerificationStatus::Invalid
             } else {
                 VerificationStatus::NotFound
             })
+            .key_matched(authenticated)
             .build();
 
         let trust = TrustEvaluation::builder()
@@ -1196,15 +1197,20 @@ impl VerificationReport {
             .reason("Trust evaluation requires an explicit key/trust policy".to_string())
             .build();
 
-        Self {
+        let mut report = Self {
             rights,
             hidden_marker,
             authentication,
             signatures: Vec::new(),
             bindings: BindingVerification::builder().build(),
             trust,
-            evidence_strength: notice.evidence_strength(),
+            // Never carry the notice's own tier across: derive it from the
+            // facts this report actually holds so the strength can never
+            // claim more than `key_matched()`/`hmac_status()` support.
+            evidence_strength: EvidenceStrength::NoNoticeFound,
             diagnostics: Vec::new(),
-        }
+        };
+        report.evidence_strength = report.compute_evidence_strength();
+        report
     }
 }

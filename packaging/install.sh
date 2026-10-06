@@ -33,8 +33,19 @@ download() {
     local url="$1"
     local destination="$2"
     local status
+    local protocol_args=()
 
-    if ! status="$(curl --location --silent --show-error --output "$destination" --write-out '%{http_code}' "$url")"; then
+    # HTTPS only, and no downgrade on redirect, unless the releases base was
+    # overridden with a loopback `http://` URL (the regression harness in
+    # packaging/install_test.sh serves assets from a local plain-HTTP server).
+    # Any other non-HTTPS origin is refused rather than silently downgraded.
+    if [[ "$url" == http://127.0.0.1:* || "$url" == http://localhost:* || "$url" == http://\[::1\]:* ]]; then
+        protocol_args=(--proto '=http,https' --proto-redir '=https')
+    else
+        protocol_args=(--proto '=https' --proto-redir '=https' --tlsv1.2)
+    fi
+
+    if ! status="$(curl --location --silent --show-error "${protocol_args[@]}" --connect-timeout 30 --max-time 600 --output "$destination" --write-out '%{http_code}' "$url")"; then
         printf '%s\n' "000"
         return 0
     fi

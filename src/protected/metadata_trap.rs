@@ -236,9 +236,11 @@ impl RightsMetadataProtector {
                                 emit_structured_com,
                             )
                         }
-                        ImageOutputFormat::WebP => {
-                            self.inject_text_chunks_webp_from_notice(img_bytes, &spec.notice)
-                        }
+                        ImageOutputFormat::WebP => self.inject_text_chunks_webp_from_notice(
+                            img_bytes,
+                            &spec.notice,
+                            spec.effective_dmi,
+                        ),
                     };
                 }
             }
@@ -268,9 +270,11 @@ impl RightsMetadataProtector {
                 spec.notice.notice_applied_at(),
                 true,
             )?,
-            ImageOutputFormat::WebP => {
-                self.inject_text_chunks_webp_from_notice(&stripped, &spec.notice)?
-            }
+            ImageOutputFormat::WebP => self.inject_text_chunks_webp_from_notice(
+                &stripped,
+                &spec.notice,
+                spec.effective_dmi,
+            )?,
         };
 
         Ok(with_metadata)
@@ -1552,46 +1556,77 @@ mod tests {
         assert_eq!(intensity, 50);
     }
 
-    // ── Redundant metadata injection ─────────────────────────────────
+    // ── Seed placement ───────────────────────────────────────────────
+
+    fn png_text_keys(png: &[u8]) -> Vec<Vec<u8>> {
+        let mut keys = Vec::new();
+        let mut pos = 8usize;
+        while pos + 12 <= png.len() {
+            let chunk_len =
+                u32::from_be_bytes([png[pos], png[pos + 1], png[pos + 2], png[pos + 3]]) as usize;
+            let chunk_type = &png[pos + 4..pos + 8];
+            if chunk_type == b"IEND" {
+                break;
+            }
+            if chunk_type == b"tEXt" {
+                let data_start = pos + 8;
+                let data_end = (data_start + chunk_len).min(png.len());
+                let data = &png[data_start..data_end];
+                if let Some(null_pos) = data.iter().position(|&b| b == 0) {
+                    keys.push(data[..null_pos].to_vec());
+                }
+            }
+            pos += 12 + chunk_len;
+        }
+        keys
+    }
 
     #[test]
-    fn png_seed_extractable_from_description_chunk() {
+    fn png_seed_lives_only_in_the_stego_owned_seed_chunk() {
         let protector = RightsMetadataProtector::new();
         let img = make_test_image();
         let png = encode_png(&img);
         let ctx = ProtectionContext::new(0.5, 42);
         let injected = protector.inject_bytes(&png, &ctx).unwrap();
 
-        let mut pos = 8;
-        let mut found_description = false;
-        while pos + 12 <= injected.len() {
-            let chunk_len = u32::from_be_bytes([
-                injected[pos],
-                injected[pos + 1],
-                injected[pos + 2],
-                injected[pos + 3],
-            ]) as usize;
-            let chunk_type = &injected[pos + 4..pos + 8];
-            if chunk_type == b"IEND" {
-                break;
-            }
-            if chunk_type == b"tEXt" {
-                let data_start = pos + 8;
-                let data_end = (data_start + chunk_len).min(injected.len());
-                let data = &injected[data_start..data_end];
-                if let Some(null_pos) = data.iter().position(|&b| b == 0) {
-                    let key = &data[..null_pos];
-                    if key == b"Description" {
-                        found_description = true;
-                        let value = &data[null_pos + 1..];
-                        let value_str = String::from_utf8_lossy(value);
-                        assert!(value_str.contains("Protected image. Seed: 42"));
-                    }
-                }
-            }
-            pos += 12 + chunk_len;
+        let keys = png_text_keys(&injected);
+        assert!(
+            keys.contains(&b"X-Protection-Seed".to_vec()),
+            "the seed must be written to the stego-owned seed chunk: {keys:?}"
+        );
+        assert!(
+            !keys.contains(&b"Description".to_vec()),
+            "the author-owned Description keyword must not be used for the seed: {keys:?}"
+        );
+        assert_eq!(
+            RightsMetadataProtector::extract_seed_from_image(&injected),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn png_reprotection_does_not_accumulate_seed_chunks() {
+        let protector = RightsMetadataProtector::new();
+        let png = encode_png(&make_test_image());
+
+        let mut bytes = png;
+        for pass in 0..3u64 {
+            let ctx = ProtectionContext::new(0.5, 1000 + pass);
+            bytes = protector.inject_bytes(&bytes, &ctx).unwrap();
+            let keys = png_text_keys(&bytes);
+            assert_eq!(
+                keys.iter()
+                    .filter(|k| *k == b"X-Protection-Seed" || *k == b"Description")
+                    .count(),
+                1,
+                "pass {pass} must leave exactly one seed chunk: {keys:?}"
+            );
+            assert_eq!(
+                RightsMetadataProtector::extract_seed_from_image(&bytes),
+                Some(1000 + pass),
+                "pass {pass} must expose the live seed, not a superseded one"
+            );
         }
-        assert!(found_description, "Description chunk not found");
     }
 
     #[test]
@@ -1818,7 +1853,7 @@ mod tests {
         let webp = encode_webp(&make_test_image());
 
         assert!(protector
-            .inject_text_chunks_webp_from_notice(&webp, &notice)
+            .inject_text_chunks_webp_from_notice(&webp, &notice, notice.dmi())
             .is_err());
     }
 
@@ -2038,9 +2073,9 @@ mod tests {
     const GOLDEN_PLAN_JPEG: &str =
         "3b6567934e1dd71c8680727725924d778d0476bdeeeb7c837033902463fac95a";
     const GOLDEN_PLAN_WEBP: &str =
-        "3a1b3fc8065aa4e9fff0cd6c229a14062b8d1d07f3756451b98ee1bad128a6af";
+        "2b5884600ca12d45eebb092b414f34628bb46e7be45bb6a00714ebbb34ae0554";
     const GOLDEN_LEGACY_PNG: &str =
-        "9e388c6aa7647bb91c52537ec581877ab5b6f56e881821153ac7c1a3e5d9c476";
+        "0dcf2e796c9961e38d969a5339523762288e5840f205de510b53adc04e638f40";
     const GOLDEN_LEGACY_JPEG: &str =
         "e5f290832758d4b5d07aac2d311dc380c288f4dd821d1f062e49251d7b8a8b62";
     const GOLDEN_LEGACY_WEBP: &str =

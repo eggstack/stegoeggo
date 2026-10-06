@@ -1717,13 +1717,18 @@ pub(crate) fn embed_tiled_from_decoded(
         }
     }
 
+    // The tiled path never falls back to a seed hint: it returns the caller's
+    // bytes unchanged and reports the real carrier capacity so a caller can
+    // tell "no tile was large enough" from "no tile existed".
+    let tiled_available_capacity = decoded.available_capacity();
+
     let Some((tile_x, tile_y, local_seed)) = first_embedded else {
         return Ok(super::EmbedReport {
             embedded: false,
             output: source.to_vec(),
             payload_bytes: payload.len(),
             required_capacity: payload_bits,
-            available_capacity: 0,
+            available_capacity: tiled_available_capacity,
             actual_redundancy: 0,
         });
     };
@@ -1742,7 +1747,7 @@ pub(crate) fn embed_tiled_from_decoded(
             output: source.to_vec(),
             payload_bytes: payload.len(),
             required_capacity: payload_bits,
-            available_capacity: 0,
+            available_capacity: tiled_available_capacity,
             actual_redundancy: 0,
         });
     }
@@ -2367,6 +2372,30 @@ mod tests {
         assert_eq!(report.actual_redundancy, 1);
         let recovered = extract_tiled(&report.output, payload.len(), &config, 64).unwrap();
         assert_eq!(recovered, payload);
+    }
+
+    #[test]
+    fn tiled_capacity_failure_reports_the_real_carrier_capacity() {
+        // An impossible payload returns the caller's bytes unchanged. The
+        // report must still say how much room the carrier actually had,
+        // otherwise "no tile was big enough" is indistinguishable from
+        // "the carrier had no capacity at all".
+        let jpeg_bytes = make_test_jpeg(256, 256);
+        let payload = vec![0xA5; 1_000_000];
+        let config = TileConfig::try_new(42, 64).unwrap();
+
+        let report = embed_tiled(&jpeg_bytes, &payload, &config).unwrap();
+        assert!(!report.is_embedded());
+        assert!(report.required_capacity > report.available_capacity);
+        assert!(
+            report.available_capacity > 0,
+            "a real carrier must report non-zero capacity"
+        );
+        assert_eq!(report.output, jpeg_bytes, "output must be untouched");
+
+        let framed = embed_tiled_framed(&jpeg_bytes, &payload, &config).unwrap();
+        assert!(!framed.is_embedded());
+        assert!(framed.available_capacity > 0);
     }
 
     #[test]

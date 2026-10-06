@@ -251,12 +251,16 @@ pub(crate) fn verify_canonical_with_limits(
                 "hmac-sha256".to_string(),
                 true,
             ),
-            CanonicalOutcomeKind::Verified
-            | CanonicalOutcomeKind::InvalidCorrupted
-            | CanonicalOutcomeKind::MalformedV3
+            CanonicalOutcomeKind::Verified | CanonicalOutcomeKind::InvalidCorrupted => {
+                // The payload CRC-32 was evaluated for both outcomes.
+                (false, None, false, "crc32".to_string(), false)
+            }
+            // Nothing was authenticated and no integrity check ran, so no
+            // algorithm is reported rather than claiming one was evaluated.
+            CanonicalOutcomeKind::MalformedV3
             | CanonicalOutcomeKind::UnsupportedVersion
             | CanonicalOutcomeKind::ResourceLimitExceeded
-            | CanonicalOutcomeKind::NotFound => (false, None, false, "crc32".to_string(), false),
+            | CanonicalOutcomeKind::NotFound => (false, None, false, String::new(), false),
             CanonicalOutcomeKind::AuthKeyMissing => (
                 true,
                 Some(VerificationStatus::NotFound),

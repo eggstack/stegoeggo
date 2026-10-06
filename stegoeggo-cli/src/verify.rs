@@ -1,7 +1,7 @@
 use crate::keys::resolve_key_input;
 use crate::output::JsonVerifyOutput;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use stegoeggo::{verify_legal_notice, Error, ProtectionLevel, StegoPayload, VerificationStatus};
 
 pub(crate) fn print_payload_info(payload: &StegoPayload) {
@@ -16,7 +16,7 @@ pub(crate) fn print_payload_info(payload: &StegoPayload) {
 
 pub(crate) fn run_legacy_verify(
     input_path: &Path,
-    output: &Option<PathBuf>,
+    output: Option<&Path>,
     key: &Option<String>,
     json: bool,
     verbose: bool,
@@ -25,7 +25,7 @@ pub(crate) fn run_legacy_verify(
         "Note: legacy --verify always exits 0; read the output text. \
         Use `stegoeggo verify` (exits 3 on missing/invalid protection) for automation."
     );
-    run_report(input_path, output.as_deref(), key, json, verbose, false)
+    run_report(input_path, output, key, json, verbose, false)
 }
 
 pub(crate) fn run_inspect(

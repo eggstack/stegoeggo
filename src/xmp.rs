@@ -304,6 +304,10 @@ pub(crate) fn filter_xmp_packet_with_limits(
     let mut reader = NsReader::from_str(packet_str);
     reader.config_mut().expand_empty_elements = false;
     reader.config_mut().check_end_names = true;
+    // Preserved comments are re-emitted verbatim, so a comment carrying `--`
+    // would be copied into the output packet and make it unparseable XML.
+    // Reject such packets here rather than write metadata nobody can read.
+    reader.config_mut().check_comments = true;
 
     let mut buf = Vec::new();
     let mut descriptions: Vec<PreservedDescription> = Vec::new();
@@ -675,6 +679,9 @@ pub(crate) fn merge_preserved_descriptions(
     let mut reader = NsReader::from_str(packet_str);
     reader.config_mut().expand_empty_elements = false;
     reader.config_mut().check_end_names = true;
+    // Comments inside the canonical packet are copied through unchanged, so
+    // the same `--` rule applies to the packet being rewritten.
+    reader.config_mut().check_comments = true;
 
     let mut buf = Vec::new();
     let mut output = Vec::new();
@@ -1811,6 +1818,20 @@ dc:creator="Example"/>
             }
             buf.clear();
         }
+    }
+
+    #[test]
+    fn a_comment_containing_a_double_hyphen_is_rejected() {
+        // Comments are copied through verbatim, so a comment carrying `--`
+        // would be re-emitted and make the output packet unparseable XML.
+        // Reject the packet rather than write rights metadata nobody can read.
+        let packet = build_packet(
+            r#"<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"><!--a--b--><dc:title>t</dc:title></rdf:Description>"#,
+        );
+        assert!(
+            filter_xmp_packet(&packet).is_err(),
+            "an unrepresentable comment must not be preserved"
+        );
     }
 
     #[test]

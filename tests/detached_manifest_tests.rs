@@ -599,6 +599,56 @@ fn test_resource_limits_rejects_oversized_input() {
     assert!(!result.instance_digest_match);
 }
 
+#[test]
+fn test_caller_dimension_limits_reach_the_binding_check() {
+    // The caller's `ResourceLimits` used to be checked for input size and then
+    // dropped, so an image over the caller's own dimension limit was decoded
+    // and its dimensions still bound successfully.
+    use stegoeggo::ResourceLimits;
+
+    let mut image_bytes = Vec::new();
+    image::DynamicImage::new_rgb8(32, 32)
+        .write_to(
+            &mut std::io::Cursor::new(&mut image_bytes),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+
+    let claim = ProvenanceClaim::new(1)
+        .with_content_code("iscc:dimension-limits-test".to_string())
+        .with_creation_time(1700000000)
+        .with_source_facts("png", 32, 32, image_bytes.len() as u64)
+        .with_software("stegoeggo/0.2.2");
+    let manifest = DetachedManifest::new(claim);
+
+    let tight = ResourceLimits::builder()
+        .max_width(16)
+        .max_height(16)
+        .build();
+    let result = verify_detached_manifest_with_limits(
+        &image_bytes,
+        &manifest,
+        &TrustPolicy::TrustNone,
+        Some(&tight),
+    );
+    assert!(
+        !result.report.bindings().dimensions_valid(),
+        "an over-limit image must not pass the dimension binding check"
+    );
+
+    let roomy = ResourceLimits::builder()
+        .max_width(64)
+        .max_height(64)
+        .build();
+    let result = verify_detached_manifest_with_limits(
+        &image_bytes,
+        &manifest,
+        &TrustPolicy::TrustNone,
+        Some(&roomy),
+    );
+    assert!(result.report.bindings().dimensions_valid());
+}
+
 #[cfg(feature = "signatures")]
 #[test]
 fn test_embedded_reference_stripped_when_no_payload() {
