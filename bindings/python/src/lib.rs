@@ -986,85 +986,171 @@ pub struct PyResourceLimitsBuilder {
     inner: Option<RustLimitsBuilder>,
 }
 
+const SPENT_BUILDER_MESSAGE: &str =
+    "ResourceLimitsBuilder is consumed by build(); create a new builder with \
+     ResourceLimits.builder()";
+
+fn take_limits_builder(slf: &mut PyResourceLimitsBuilder) -> PyResult<RustLimitsBuilder> {
+    slf.inner
+        .take()
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err(SPENT_BUILDER_MESSAGE))
+}
+
 #[pymethods]
 impl PyResourceLimitsBuilder {
-    fn with_max_input_bytes(mut slf: PyRefMut<'_, Self>, val: usize) -> PyRefMut<'_, Self> {
-        let b = slf.inner.take().expect("builder initialized");
+    fn with_max_input_bytes(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
         slf.inner = Some(b.max_input_bytes(val));
-        slf
+        Ok(slf)
     }
 
-    fn with_max_width(mut slf: PyRefMut<'_, Self>, val: u32) -> PyRefMut<'_, Self> {
-        let b = slf.inner.take().expect("builder initialized");
+    fn with_max_width(mut slf: PyRefMut<'_, Self>, val: u32) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
         slf.inner = Some(b.max_width(val));
-        slf
+        Ok(slf)
     }
 
-    fn with_max_height(mut slf: PyRefMut<'_, Self>, val: u32) -> PyRefMut<'_, Self> {
-        let b = slf.inner.take().expect("builder initialized");
+    fn with_max_height(mut slf: PyRefMut<'_, Self>, val: u32) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
         slf.inner = Some(b.max_height(val));
-        slf
+        Ok(slf)
     }
 
-    fn with_max_png_chunks(mut slf: PyRefMut<'_, Self>, val: usize) -> PyRefMut<'_, Self> {
-        let b = slf.inner.take().expect("builder initialized");
+    fn with_max_png_chunks(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
         slf.inner = Some(b.max_png_chunks(val));
-        slf
+        Ok(slf)
     }
 
-    fn with_max_jpeg_segments(mut slf: PyRefMut<'_, Self>, val: usize) -> PyRefMut<'_, Self> {
-        let b = slf.inner.take().expect("builder initialized");
+    fn with_max_png_chunk_bytes(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
+        slf.inner = Some(b.max_png_chunk_bytes(val));
+        Ok(slf)
+    }
+
+    fn with_max_jpeg_segments(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
         slf.inner = Some(b.max_jpeg_segments(val));
-        slf
+        Ok(slf)
     }
 
-    fn with_max_webp_riff_chunks(mut slf: PyRefMut<'_, Self>, val: usize) -> PyRefMut<'_, Self> {
-        let b = slf.inner.take().expect("builder initialized");
+    fn with_max_jpeg_segment_bytes(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
+        slf.inner = Some(b.max_jpeg_segment_bytes(val));
+        Ok(slf)
+    }
+
+    fn with_max_webp_riff_chunks(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
         slf.inner = Some(b.max_webp_riff_chunks(val));
-        slf
+        Ok(slf)
     }
 
-    fn with_max_xmp_bytes(mut slf: PyRefMut<'_, Self>, val: usize) -> PyRefMut<'_, Self> {
-        let b = slf.inner.take().expect("builder initialized");
+    fn with_max_webp_riff_bytes(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
+        slf.inner = Some(b.max_webp_riff_bytes(val));
+        Ok(slf)
+    }
+
+    fn with_max_xmp_bytes(mut slf: PyRefMut<'_, Self>, val: usize) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
         slf.inner = Some(b.max_xmp_bytes(val));
-        slf
+        Ok(slf)
     }
 
-    fn with_max_metadata_fields(mut slf: PyRefMut<'_, Self>, val: usize) -> PyRefMut<'_, Self> {
-        let b = slf.inner.take().expect("builder initialized");
+    fn with_max_xml_depth(mut slf: PyRefMut<'_, Self>, val: usize) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
+        slf.inner = Some(b.max_xml_depth(val));
+        Ok(slf)
+    }
+
+    fn with_max_xml_properties(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
+        slf.inner = Some(b.max_xml_properties(val));
+        Ok(slf)
+    }
+
+    fn with_max_metadata_fields(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
         slf.inner = Some(b.max_metadata_fields(val));
-        slf
+        Ok(slf)
     }
 
-    fn with_max_metadata_field_bytes(mut slf: PyRefMut<'_, Self>, val: usize) -> PyRefMut<'_, Self> {
-        let b = slf.inner.take().expect("builder initialized");
+    fn with_max_metadata_field_bytes(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
         slf.inner = Some(b.max_metadata_field_bytes(val));
-        slf
+        Ok(slf)
     }
 
-    fn with_max_payload_bytes(mut slf: PyRefMut<'_, Self>, val: usize) -> PyRefMut<'_, Self> {
-        let b = slf.inner.take().expect("builder initialized");
+    fn with_max_payload_bytes(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
         slf.inner = Some(b.max_payload_bytes(val));
-        slf
+        Ok(slf)
     }
 
-    fn with_max_tile_extraction_origins(mut slf: PyRefMut<'_, Self>, val: usize) -> PyRefMut<'_, Self> {
-        let b = slf.inner.take().expect("builder initialized");
+    fn with_max_detached_manifest_bytes(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
+        slf.inner = Some(b.max_detached_manifest_bytes(val));
+        Ok(slf)
+    }
+
+    fn with_max_tile_extraction_origins(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
         slf.inner = Some(b.max_tile_extraction_origins(val));
-        slf
+        Ok(slf)
     }
 
-    fn with_max_verification_seeds(mut slf: PyRefMut<'_, Self>, val: usize) -> PyRefMut<'_, Self> {
-        let b = slf.inner.take().expect("builder initialized");
+    fn with_max_verification_seeds(
+        mut slf: PyRefMut<'_, Self>,
+        val: usize,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        let b = take_limits_builder(&mut slf)?;
         slf.inner = Some(b.max_verification_seeds(val));
-        slf
+        Ok(slf)
     }
 
-    fn build(&mut self) -> PyResourceLimits {
-        let b = self.inner.take().expect("builder initialized");
-        PyResourceLimits {
-            inner: b.build(),
-        }
+    fn build(&mut self) -> PyResult<PyResourceLimits> {
+        let b = take_limits_builder(self)?;
+        Ok(PyResourceLimits { inner: b.build() })
     }
 }
 

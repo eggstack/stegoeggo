@@ -11,8 +11,8 @@ use args::{Args, Command, RootArgs};
 use clap::parser::ValueSource;
 use clap::{ArgMatches, CommandFactory, FromArgMatches};
 use output::{
-    classify_error, embed_path_label, JsonEmbedOutcomeSummary, JsonExecutionReport, JsonOutput,
-    JsonResourceUsage, EXIT_CONFIG, EXIT_OK,
+    classify_error, embed_path_label, JsonBatchFile, JsonEmbedOutcomeSummary, JsonExecutionReport,
+    JsonOutput, JsonResourceUsage, EXIT_CONFIG, EXIT_OK,
 };
 use protect::{
     batch_output_for_file, check_input_output_disjoint, collect_input_files, compute_output_path,
@@ -236,6 +236,7 @@ fn run_protect(
                 output_path: None,
                 warnings: Vec::new(),
                 report: None,
+                files: None,
             };
             println!(
                 "{}",
@@ -268,6 +269,7 @@ fn run_protect(
                     output_path: None,
                     warnings: Vec::new(),
                     report: None,
+                    files: None,
                 };
                 println!(
                     "{}",
@@ -407,32 +409,40 @@ fn run_protect(
                 }
             }
 
-            batch_inputs
-                .par_iter()
-                .with_max_len(1)
-                .map(|(input_path, maybe_bytes, override_output, maybe_err)| {
-                    if let Some(err) = maybe_err {
-                        return Err((input_path.clone(), err.clone()));
-                    }
-                    let Some(input_bytes) = maybe_bytes.as_ref() else {
-                        return Err((
-                            input_path.clone(),
-                            "internal error: batch input has neither bytes nor error".to_string(),
-                        ));
-                    };
-                    process_single_file_with_bytes(
-                        input_path,
-                        input_bytes,
-                        &args.output,
-                        output_format,
-                        &request,
-                        args.verbose,
-                        Some(override_output.clone()),
-                    )
-                    .map(|(output, warnings)| (input_path.clone(), output, warnings))
-                    .map_err(|e| (input_path.clone(), e.to_string()))
-                })
-                .collect()
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(args.jobs)
+                .build()
+                .map_err(|e| format!("cannot build a {}-thread worker pool: {e}", args.jobs))?;
+
+            pool.install(|| {
+                batch_inputs
+                    .par_iter()
+                    .with_max_len(1)
+                    .map(|(input_path, maybe_bytes, override_output, maybe_err)| {
+                        if let Some(err) = maybe_err {
+                            return Err((input_path.clone(), err.clone()));
+                        }
+                        let Some(input_bytes) = maybe_bytes.as_ref() else {
+                            return Err((
+                                input_path.clone(),
+                                "internal error: batch input has neither bytes nor error"
+                                    .to_string(),
+                            ));
+                        };
+                        process_single_file_with_bytes(
+                            input_path,
+                            input_bytes,
+                            &args.output,
+                            output_format,
+                            &request,
+                            args.verbose,
+                            Some(override_output.clone()),
+                        )
+                        .map(|(output, warnings)| (input_path.clone(), output, warnings))
+                        .map_err(|e| (input_path.clone(), e.to_string()))
+                    })
+                    .collect::<Vec<_>>()
+            })
         } else {
             let mut seen: HashMap<PathBuf, usize> = HashMap::new();
 
@@ -466,6 +476,7 @@ fn run_protect(
         let mut success_count = 0;
         let mut failed_files: Vec<PathBuf> = Vec::new();
         let mut has_errors = false;
+        let mut json_files: Vec<JsonBatchFile> = Vec::with_capacity(results.len());
 
         for result in results {
             match result {
@@ -479,25 +490,63 @@ fn run_protect(
                     {
                         has_errors = true;
                     }
-                    if args.verbose {
+                    if args.json {
+                        json_files.push(JsonBatchFile {
+                            input_path: input_path.display().to_string(),
+                            status: "ok".to_string(),
+                            output_path: Some(output_path.display().to_string()),
+                            error: None,
+                            warnings: warnings.iter().map(|w| w.to_string()).collect(),
+                        });
+                    } else if args.verbose {
                         println!("  {} -> {}", input_path.display(), output_path.display());
                     } else {
                         println!("{}", output_path.display());
                     }
                 }
                 Err((path, msg)) => {
-                    failed_files.push(path);
+                    failed_files.push(path.clone());
+                    if args.json {
+                        json_files.push(JsonBatchFile {
+                            input_path: path.display().to_string(),
+                            status: "error".to_string(),
+                            output_path: None,
+                            error: Some(msg.clone()),
+                            warnings: Vec::new(),
+                        });
+                    }
                     eprintln!("Error: {}", msg);
                 }
             }
         }
 
+        if args.json {
+            let json_output = JsonOutput {
+                schema_version: 1,
+                status: if failed_files.is_empty() && !has_errors {
+                    "ok".to_string()
+                } else {
+                    "error".to_string()
+                },
+                output_path: None,
+                warnings: Vec::new(),
+                report: None,
+                files: Some(json_files),
+            };
+            println!("{}", serde_json::to_string_pretty(&json_output)?);
+        }
+
         if args.verbose || !failed_files.is_empty() {
-            println!(
+            let summary = format!(
                 "\nCompleted: {} succeeded, {} failed",
                 success_count,
                 failed_files.len()
             );
+            if args.json {
+                eprintln!("{}", summary);
+            } else {
+                println!("{}", summary);
+            }
         }
 
         if !failed_files.is_empty() {
@@ -594,6 +643,7 @@ fn run_protect(
                     peak_allocations_bytes: u.peak_allocations_bytes,
                 }),
             }),
+            files: None,
         };
         println!("{}", serde_json::to_string_pretty(&json_output)?);
     } else {

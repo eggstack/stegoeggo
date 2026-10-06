@@ -272,10 +272,9 @@ impl RightsNotice {
             ("notice_applied_at", self.notice_applied_at.as_deref()),
         ] {
             if let Some(value) = value {
+                validate_legal_field(name, value)?;
                 if name == "usage_terms_lang" {
                     validate_language_tag(name, value)?;
-                } else {
-                    validate_legal_field(name, value)?;
                 }
             }
         }
@@ -1002,7 +1001,17 @@ fn validate_legal_field(name: &str, value: &str) -> crate::Result<()> {
     Ok(())
 }
 
+const MAX_LANGUAGE_SUBTAGS: usize = 16;
+
 fn validate_language_tag(name: &str, value: &str) -> crate::Result<()> {
+    if value.len() > LegalMetadata::MAX_FIELD_LEN {
+        return Err(crate::Error::Config(format!(
+            "Legal metadata field '{}' exceeds maximum length of {} bytes (got {})",
+            name,
+            LegalMetadata::MAX_FIELD_LEN,
+            value.len()
+        )));
+    }
     if value.is_empty() {
         return Err(crate::Error::Config(format!(
             "Legal metadata field '{}' must be a valid BCP 47 language tag",
@@ -1017,6 +1026,13 @@ fn validate_language_tag(name: &str, value: &str) -> crate::Result<()> {
             name
         )));
     };
+
+    if value.split('-').count() > MAX_LANGUAGE_SUBTAGS {
+        return Err(crate::Error::Config(format!(
+            "Legal metadata field '{}' must be a valid BCP 47 language tag",
+            name
+        )));
+    }
 
     let valid_subtag = |subtag: &str, min_len: usize| {
         (min_len..=8).contains(&subtag.len())
@@ -1098,4 +1114,61 @@ pub(crate) fn validate_intensity(intensity: f32) -> crate::Result<()> {
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn with_lang(lang: &str) -> LegalMetadata {
+        LegalMetadata::new()
+            .with_usage_terms_localized(LocalizedText::with_lang("All rights reserved", lang))
+    }
+
+    #[test]
+    fn usage_terms_lang_obeys_max_field_len() {
+        let oversized = format!("en-{}", "a-".repeat(5000));
+        assert!(oversized.len() > LegalMetadata::MAX_FIELD_LEN);
+
+        let error = with_lang(&oversized).validate().unwrap_err();
+        assert!(
+            error.to_string().contains("exceeds maximum length"),
+            "expected MAX_FIELD_LEN rejection, got {error}"
+        );
+        assert!(
+            validate_language_tag("usage_terms_lang", &oversized).is_err(),
+            "language tag helper must bound total length on its own"
+        );
+    }
+
+    #[test]
+    fn usage_terms_lang_accepts_realistic_tags() {
+        for tag in ["en", "en-US", "fr-CA", "fr-FR", "x-default", "zh-Hans-CN"] {
+            assert!(
+                with_lang(tag).validate().is_ok(),
+                "tag '{tag}' must remain valid"
+            );
+        }
+    }
+
+    #[test]
+    fn usage_terms_lang_rejects_unbounded_subtag_count() {
+        let tag = format!("en-{}", vec!["abc"; MAX_LANGUAGE_SUBTAGS + 1].join("-"));
+        assert!(
+            tag.len() <= LegalMetadata::MAX_FIELD_LEN,
+            "length alone is not the bound"
+        );
+
+        let error = with_lang(&tag).validate().unwrap_err();
+        assert!(
+            error.to_string().contains("BCP 47"),
+            "expected BCP 47 rejection, got {error}"
+        );
+    }
+
+    #[test]
+    fn usage_terms_lang_rejects_invalid_tag() {
+        assert!(with_lang("not a tag!!!").validate().is_err());
+        assert!(with_lang("").validate().is_err());
+    }
 }

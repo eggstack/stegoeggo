@@ -428,18 +428,25 @@ impl super::RightsMetadataProtector {
                 return Err(Error::Metadata("RIFF chunk size overflow".to_string()));
             };
 
-            if data_end <= webp_data.len() {
-                let is_legacy_exif_seed = chunk_id == b"EXIF"
-                    && webp_data[data_start..data_end]
-                        .windows(b"Protection seed: ".len())
-                        .any(|w| w == b"Protection seed: ");
-                if is_legacy_exif_seed {
-                    removed_exif = true;
-                } else {
-                    output.extend_from_slice(&webp_data[pos..data_end]);
-                    if chunk_size & 1 != 0 {
-                        output.push(0);
-                    }
+            if data_end > webp_data.len() {
+                return Err(Error::ImageTruncated(format!(
+                    "WebP chunk at offset {} claims length {} but only {} bytes remain",
+                    pos,
+                    chunk_size,
+                    webp_data.len().saturating_sub(pos + 8)
+                )));
+            }
+
+            let is_legacy_exif_seed = chunk_id == b"EXIF"
+                && webp_data[data_start..data_end]
+                    .windows(b"Protection seed: ".len())
+                    .any(|w| w == b"Protection seed: ");
+            if is_legacy_exif_seed {
+                removed_exif = true;
+            } else {
+                output.extend_from_slice(&webp_data[pos..data_end]);
+                if chunk_size & 1 != 0 {
+                    output.push(0);
                 }
             }
 
@@ -502,5 +509,95 @@ impl super::RightsMetadataProtector {
             pos = next_pos;
         }
         keys
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protected::metadata_trap::RightsMetadataProtector;
+
+    fn push_chunk(out: &mut Vec<u8>, id: &[u8; 4], payload: &[u8]) {
+        out.extend_from_slice(id);
+        out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        out.extend_from_slice(payload);
+        if payload.len() % 2 == 1 {
+            out.push(0);
+        }
+    }
+
+    fn webp_with(chunks: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
+        let mut body = b"WEBP".to_vec();
+        for (id, payload) in chunks {
+            push_chunk(&mut body, id, payload);
+        }
+        let mut out = b"RIFF".to_vec();
+        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        out.extend_from_slice(&body);
+        out
+    }
+
+    fn riff_size(data: &[u8]) -> usize {
+        u32::from_le_bytes([data[4], data[5], data[6], data[7]]) as usize
+    }
+
+    #[test]
+    fn strip_rejects_chunk_overrunning_end_of_buffer() {
+        let mut webp = webp_with(&[(b"VP8X", vec![0; 10])]);
+        webp.extend_from_slice(b"XMP ");
+        webp.extend_from_slice(&0x00FF_FF00u32.to_le_bytes());
+        webp.extend_from_slice(b"<x:xmpmeta/>");
+
+        let err = RightsMetadataProtector::strip_stego_owned_webp(&webp).unwrap_err();
+        assert!(
+            matches!(err, Error::ImageTruncated(_)),
+            "expected ImageTruncated, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn strip_keeps_well_formed_webp_intact() {
+        let webp = webp_with(&[
+            (b"VP8X", vec![0; 10]),
+            (b"VP8 ", b"body".to_vec()),
+            (b"XMP ", b"<x:xmpmeta/>".to_vec()),
+        ]);
+
+        let stripped =
+            RightsMetadataProtector::strip_stego_owned_webp(&webp).expect("should strip");
+
+        assert!(stripped.len() > 12, "chunks survive");
+        assert_eq!(
+            stripped.len() - 8,
+            riff_size(&stripped),
+            "RIFF size rewritten"
+        );
+        assert!(
+            stripped.windows(4).any(|w| w == b"XMP "),
+            "XMP chunk retained: {stripped:?}"
+        );
+    }
+
+    #[test]
+    fn strip_removes_legacy_exif_seed_chunk() {
+        let webp = webp_with(&[
+            (b"VP8X", vec![0x08, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            (b"EXIF", b"Protection seed: 12345\0".to_vec()),
+            (b"VP8 ", b"body".to_vec()),
+        ]);
+
+        let stripped =
+            RightsMetadataProtector::strip_stego_owned_webp(&webp).expect("should strip");
+
+        assert!(
+            !stripped.windows(4).any(|w| w == b"EXIF"),
+            "legacy seed chunk removed: {stripped:?}"
+        );
+        assert_eq!(
+            stripped.len() - 8,
+            riff_size(&stripped),
+            "RIFF size rewritten"
+        );
+        assert_eq!(stripped[20] & 0x08, 0, "EXIF flag cleared in VP8X");
     }
 }

@@ -16,6 +16,17 @@ pub(crate) fn handle_keygen(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use stegoeggo::signing::SigningKey;
 
+    let private_path = output_dir.join("key_private.pem");
+    let public_path = output_dir.join("key_public.pem");
+    for path in [&private_path, &public_path] {
+        if path.exists() {
+            return Err(config_err(format!(
+                "refusing to overwrite existing key {}; move or delete it before running keygen",
+                path.display()
+            )));
+        }
+    }
+
     let key = SigningKey::generate()?;
     let verifying_key = key.verifying_key();
 
@@ -23,9 +34,6 @@ pub(crate) fn handle_keygen(
         .as_deref()
         .map(|id| id.to_string())
         .unwrap_or_else(|| hex::encode(key.key_id()));
-
-    let private_path = output_dir.join("key_private.pem");
-    let public_path = output_dir.join("key_public.pem");
 
     fs::create_dir_all(output_dir)?;
 
@@ -40,8 +48,7 @@ pub(crate) fn handle_keygen(
         use std::os::unix::fs::OpenOptionsExt;
         let mut file = fs::OpenOptions::new()
             .write(true)
-            .create(true)
-            .truncate(true)
+            .create_new(true)
             .mode(0o600)
             .open(&private_path)?;
         file.write_all(private_pem.as_bytes())?;

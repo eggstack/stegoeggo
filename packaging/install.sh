@@ -66,6 +66,8 @@ target_for_platform() {
         Linux:aarch64|Linux:arm64) printf '%s\n' "aarch64-unknown-linux-gnu" ;;
         Darwin:x86_64) printf '%s\n' "x86_64-apple-darwin" ;;
         Darwin:arm64|Darwin:aarch64) printf '%s\n' "aarch64-apple-darwin" ;;
+        MINGW64_NT-*:x86_64|MSYS_NT-*:x86_64|CYGWIN_NT-*:x86_64|Windows_NT:x86_64) printf '%s\n' "x86_64-pc-windows-msvc" ;;
+        MINGW64_NT-*:amd64|MSYS_NT-*:amd64|CYGWIN_NT-*:amd64|Windows_NT:amd64) printf '%s\n' "x86_64-pc-windows-msvc" ;;
         *) return 1 ;;
     esac
 }
@@ -93,6 +95,7 @@ main() {
     local requested_version=""
     local target=""
     local asset=""
+    local installed_name=""
     local base_url=""
     local binary_path=""
     local checksum_path=""
@@ -133,6 +136,8 @@ main() {
     fi
     asset="stegoeggo-$target"
     [[ "$target" == *-pc-windows-msvc ]] && asset+=".exe"
+    installed_name="stegoeggo"
+    [[ "$target" == *-pc-windows-msvc ]] && installed_name+=".exe"
     if [[ -n "$requested_version" ]]; then
         base_url="$REPOSITORY_RELEASES_URL/download/v$requested_version"
     else
@@ -170,8 +175,8 @@ main() {
 
     destination="$(install_destination)"
     mkdir -p "$destination"
-    install -m 0755 "$binary_path" "$destination/stegoeggo"
-    echo "Installed stegoeggo $candidate_version to $destination/stegoeggo"
+    install -m 0755 "$binary_path" "$destination/$installed_name"
+    echo "Installed stegoeggo $candidate_version to $destination/$installed_name"
     case ":${PATH:-}:" in
         *":$destination:"*) ;;
         *) echo "Warning: $destination is not on PATH; add it for direct use." >&2 ;;

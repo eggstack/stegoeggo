@@ -1,8 +1,16 @@
 """Tests for the canonical ProtectionRequest and RightsNotice DTOs."""
 
+from pathlib import Path
+
 import pytest
 
 import stegoeggo
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "conformance" / "canonical"
+
+
+def _fixture(name: str) -> bytes:
+    return (FIXTURE_DIR / name).read_bytes()
 
 
 def test_rights_notice_builder_chain():
@@ -125,6 +133,115 @@ def test_resource_limits_builder():
         .build()
     )
     assert "8192x8192" in repr(limits)
+
+
+def test_resource_limits_builder_is_single_use():
+    """The canonical builder consumes itself; reuse must be a ValueError, not a panic.
+
+    A ``PanicException`` derives from ``PyBaseException``, so it escapes
+    ``except Exception``; the binding must raise a normal ``ValueError``.
+    """
+    builder = stegoeggo.ResourceLimits.builder()
+    first = builder.build()
+    assert isinstance(first, stegoeggo.ResourceLimits)
+
+    with pytest.raises(Exception) as excinfo:
+        builder.build()
+    assert type(excinfo.value) is ValueError
+    assert "consumed by build()" in str(excinfo.value)
+    assert isinstance(excinfo.value, Exception)
+
+
+def test_resource_limits_builder_setter_after_build_raises_value_error():
+    builder = stegoeggo.ResourceLimits.builder()
+    builder.build()
+    with pytest.raises(Exception) as excinfo:
+        builder.with_max_input_bytes(4096)
+    assert type(excinfo.value) is ValueError
+    assert "consumed by build()" in str(excinfo.value)
+
+
+def test_resource_limits_builder_exposes_all_eighteen_limits():
+    """Parity with the 18 canonical Rust setters (C ABI and Node expose all 18)."""
+    setters = (
+        "with_max_input_bytes",
+        "with_max_width",
+        "with_max_height",
+        "with_max_png_chunks",
+        "with_max_png_chunk_bytes",
+        "with_max_jpeg_segments",
+        "with_max_jpeg_segment_bytes",
+        "with_max_webp_riff_chunks",
+        "with_max_webp_riff_bytes",
+        "with_max_xmp_bytes",
+        "with_max_xml_depth",
+        "with_max_xml_properties",
+        "with_max_metadata_fields",
+        "with_max_metadata_field_bytes",
+        "with_max_payload_bytes",
+        "with_max_detached_manifest_bytes",
+        "with_max_tile_extraction_origins",
+        "with_max_verification_seeds",
+    )
+    builder = stegoeggo.ResourceLimits.builder()
+    for name in setters:
+        assert callable(getattr(builder, name)), name
+    limits = (
+        stegoeggo.ResourceLimits.builder()
+        .with_max_input_bytes(50 * 1024 * 1024)
+        .with_max_width(8192)
+        .with_max_height(8192)
+        .with_max_png_chunks(256)
+        .with_max_png_chunk_bytes(4096)
+        .with_max_jpeg_segments(64)
+        .with_max_jpeg_segment_bytes(1024)
+        .with_max_webp_riff_chunks(128)
+        .with_max_webp_riff_bytes(2048)
+        .with_max_xmp_bytes(512)
+        .with_max_xml_depth(8)
+        .with_max_xml_properties(32)
+        .with_max_metadata_fields(16)
+        .with_max_metadata_field_bytes(512)
+        .with_max_payload_bytes(256)
+        .with_max_detached_manifest_bytes(4096)
+        .with_max_tile_extraction_origins(8)
+        .with_max_verification_seeds(4)
+        .build()
+    )
+    assert isinstance(limits, stegoeggo.ResourceLimits)
+    assert "8192x8192" in repr(limits)
+
+
+def test_resource_limits_new_setters_are_accepted_by_verify():
+    """The six previously unreachable limits must reach the verification path."""
+    data = _fixture("canonical_complete.png")
+    limits = (
+        stegoeggo.ResourceLimits.builder()
+        .with_max_png_chunk_bytes(1024 * 1024)
+        .with_max_jpeg_segment_bytes(1024 * 1024)
+        .with_max_webp_riff_bytes(1024 * 1024)
+        .with_max_xml_depth(32)
+        .with_max_xml_properties(256)
+        .with_max_detached_manifest_bytes(1024 * 1024)
+        .build()
+    )
+    report = stegoeggo.verify(data, resource_limits=limits)
+    assert isinstance(report, stegoeggo.VerificationReport)
+
+
+def test_resource_limits_max_png_chunk_bytes_is_enforced():
+    limits = stegoeggo.ResourceLimits.builder().with_max_png_chunk_bytes(1).build()
+    request = (
+        stegoeggo.ProtectionRequest.metadata_only(
+            stegoeggo.RightsNotice().with_copyright_holder("Acme"),
+            stegoeggo.RightsPolicy.ProhibitedAiMlTraining,
+        )
+        .with_resource_limits(limits)
+    )
+    with pytest.raises(stegoeggo.ResourceLimitError) as excinfo:
+        stegoeggo.protect(_fixture("canonical_independent.png"), request)
+    assert excinfo.value.resource == "metadata"
+    assert excinfo.value.kind == "PNG chunk"
 
 
 def test_hidden_marker_modes():

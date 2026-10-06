@@ -58,6 +58,10 @@ They require the `signatures` feature.
 The published CLI package enables `signatures` by default, so these commands
 are also present in Cargo-installed and prebuilt binaries.
 
+`keygen` refuses to overwrite an existing `key_private.pem` or
+`key_public.pem`; move or delete the key first, because a private key cannot be
+recovered once it is replaced.
+
 ## Version and updates
 
 `version` prints exactly `stegoeggo X.Y.Z` on its first line and does not access
@@ -93,6 +97,15 @@ Input format is detected from the image data. Unless `--format` is supplied,
 the CLI preserves the input format. With no explicit output path, protected
 files use a `_protected` suffix. A directory or multiple inputs enables flat
 batch processing; `-j` controls the worker count.
+
+`--output` is treated as a file when the path carries an extension or already
+exists as a file, and as a directory otherwise. A batch run writes one file per
+input, so it rejects a file-valued `--output` instead of creating a directory
+named after it.
+
+`protect --json` prints a single JSON document. On a batch run that document
+carries a `files` array with one entry per input instead of the plain per-file
+path lines.
 
 ## Inspecting and verifying files
 

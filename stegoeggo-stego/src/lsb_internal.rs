@@ -891,8 +891,24 @@ pub(crate) fn embed_tiled_carrier<C: PixelCarrierMut>(
                         actual_redundancy: TILED_REDUNDANCY,
                     };
                 };
-                let lx = pixel_index as u32 % plan.sub_w;
-                let ly = pixel_index as u32 / plan.sub_w;
+                let Ok(lx) = u32::try_from(pixel_index % plan.sub_w as usize) else {
+                    return InPlaceEmbedReport {
+                        embedded: false,
+                        payload_bytes: payload.len(),
+                        required_capacity: run_required,
+                        available_capacity: run_available,
+                        actual_redundancy: TILED_REDUNDANCY,
+                    };
+                };
+                let Ok(ly) = u32::try_from(pixel_index / plan.sub_w as usize) else {
+                    return InPlaceEmbedReport {
+                        embedded: false,
+                        payload_bytes: payload.len(),
+                        required_capacity: run_required,
+                        available_capacity: run_available,
+                        actual_redundancy: TILED_REDUNDANCY,
+                    };
+                };
                 if window
                     .write_channel_bit(lx, ly, slot_channel, bit)
                     .is_none()
@@ -1665,6 +1681,37 @@ mod tests {
             }
             assert_eq!(*x as usize, expected_x);
             assert_eq!(*y as usize, expected_y);
+        }
+        assert!(
+            oversized_seen > 0,
+            "fixture must exercise oversized pixel indices"
+        );
+    }
+
+    #[test]
+    fn embed_tiled_uses_untruncated_pixel_index_for_coordinates() {
+        let (width, height) = HUGE_CARRIER;
+        let tile_size = width;
+        let tile_available = lsb_available_slots(width, height).unwrap();
+        assert!(
+            width as usize * height as usize > u32::MAX as usize,
+            "tile must exceed u32::MAX pixels"
+        );
+        let seed_for_embed =
+            tile_seed(42, 0, 0).wrapping_mul(crate::constants::STEGO_OFFSET_SEED_1);
+        let mut carrier = RecordingCarrier::new(width, height);
+        let report = embed_tiled_carrier(&mut carrier, &vec![0xA5u8; 4096], 42, tile_size);
+        assert!(report.embedded);
+        assert!(!carrier.writes.is_empty());
+        let mut oversized_seen = 0usize;
+        for (k, (x, y, _channel)) in carrier.writes.iter().enumerate() {
+            let slot = stego_permutation_v2(k, tile_available, seed_for_embed).unwrap();
+            let (pixel_index, _) = carrier_v2_slot_to_pixel_channel(slot, width, height).unwrap();
+            if pixel_index > u32::MAX as usize {
+                oversized_seen += 1;
+            }
+            assert_eq!(*x as usize, pixel_index % width as usize);
+            assert_eq!(*y as usize, pixel_index / width as usize);
         }
         assert!(
             oversized_seen > 0,

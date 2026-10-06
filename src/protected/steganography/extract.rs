@@ -90,7 +90,7 @@ impl SteganographyProtector {
                         let Some(payload) = extract(candidate, bits) else {
                             continue;
                         };
-                        if Self::try_ecc_decode(&payload).is_some() {
+                        if Self::try_ecc_decode_unkeyed(&payload, mac_key).is_some() {
                             return CandidateOutcome::Valid(payload);
                         }
                         if legacy_outcome.is_none() {
@@ -362,7 +362,7 @@ impl SteganographyProtector {
                     for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
                         if let Some(payload) = self.extract_lsb_v2(img, ecc_bits, seed, redundancy)
                         {
-                            if Self::try_ecc_decode(&payload).is_some() {
+                            if Self::try_ecc_decode_unkeyed(&payload, mac_key).is_some() {
                                 return CandidateOutcome::Valid(payload);
                             }
                             if Self::verify_payload_integrity(&payload, mac_key) {
@@ -419,7 +419,7 @@ impl SteganographyProtector {
                 V3ProbeResult::NotV3 => {
                     for &ecc_bits in &[ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
                         if let Some(payload) = self.extract_lsb(img, ecc_bits, seed) {
-                            if Self::try_ecc_decode(&payload).is_some() {
+                            if Self::try_ecc_decode_unkeyed(&payload, mac_key).is_some() {
                                 return CandidateOutcome::Valid(payload);
                             }
                             if Self::verify_payload_integrity(&payload, mac_key) {
@@ -606,7 +606,7 @@ impl SteganographyProtector {
                 V3ProbeResult::NotV3 => {
                     for bits in [ECC_PAYLOAD_BITS_V2, ECC_PAYLOAD_BITS] {
                         for payload in self.dct_candidates(context, seed, bits) {
-                            if Self::try_ecc_decode(&payload).is_some() {
+                            if Self::try_ecc_decode_unkeyed(&payload, mac_key).is_some() {
                                 return CandidateOutcome::Valid(payload);
                             }
                             if Self::verify_payload_integrity(&payload, mac_key) {
@@ -1037,7 +1037,7 @@ impl SteganographyProtector {
                     } else {
                         continue;
                     };
-                    if Self::try_ecc_decode(&payload).is_some() {
+                    if Self::try_ecc_decode_unkeyed(&payload, mac_key).is_some() {
                         return CandidateOutcome::Valid(payload);
                     }
                     if Self::verify_payload_integrity(&payload, mac_key) {
@@ -1276,7 +1276,8 @@ impl SteganographyProtector {
                                                 None => continue,
                                             }
                                         };
-                                        if Self::try_ecc_decode(&payload).is_some() {
+                                        if Self::try_ecc_decode_unkeyed(&payload, mac_key).is_some()
+                                        {
                                             return CandidateOutcome::Valid(payload);
                                         }
                                         if last_outcome.is_none() {

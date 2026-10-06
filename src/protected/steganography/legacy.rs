@@ -78,6 +78,19 @@ impl SteganographyProtector {
         })
     }
 
+    /// Decode a legacy ECC payload only when no MAC key was supplied.
+    ///
+    /// The v1/v2 ECC envelope carries an unkeyed CRC32 over the replicated
+    /// bytes, so it can never satisfy a keyed verification request. Returns
+    /// `None` when `mac_key` is non-empty so the caller falls through to the
+    /// keyed integrity check instead of accepting an unauthenticated payload.
+    pub(crate) fn try_ecc_decode_unkeyed(payload: &[u8], mac_key: &[u8]) -> Option<Vec<u8>> {
+        if !mac_key.is_empty() {
+            return None;
+        }
+        Self::try_ecc_decode(payload)
+    }
+
     pub(crate) fn try_ecc_decode(payload: &[u8]) -> Option<Vec<u8>> {
         // Try v2 data length first (32 bytes), then v1 (24 bytes)
         for &data_len in &[V2_HEADER_SIZE, 24usize] {
@@ -112,5 +125,30 @@ mod tests {
         assert!(SteganographyProtector::try_ecc_decode(&exact_v2).is_none());
         let exact_v1 = vec![0u8; 24 * ecc::REPLICATION_FACTOR];
         assert!(SteganographyProtector::try_ecc_decode(&exact_v1).is_none());
+    }
+
+    fn legacy_ecc_payload(data_len: usize, version: u8) -> Vec<u8> {
+        let mut data = vec![0u8; data_len];
+        data[0] = version;
+        data[1] = 2;
+        let mut payload = ecc::ecc_encode(&data);
+        let checksum = SteganographyProtector::compute_checksum(&payload);
+        payload.extend_from_slice(&checksum);
+        payload
+    }
+
+    #[test]
+    fn legacy_ecc_payload_is_accepted_only_when_no_key_is_supplied() {
+        for (data_len, version) in [(V2_HEADER_SIZE, 2u8), (24, 1u8)] {
+            let payload = legacy_ecc_payload(data_len, version);
+            assert!(SteganographyProtector::try_ecc_decode(&payload).is_some());
+            assert!(SteganographyProtector::try_ecc_decode_unkeyed(&payload, &[]).is_some());
+            for key in [&b"correct-key"[..], &b"wrong-key"[..]] {
+                assert!(
+                    SteganographyProtector::try_ecc_decode_unkeyed(&payload, key).is_none(),
+                    "legacy v{version} ECC payload must not satisfy a keyed verification request"
+                );
+            }
+        }
     }
 }

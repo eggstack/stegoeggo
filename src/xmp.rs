@@ -107,6 +107,10 @@ impl NsStack {
         }
     }
 
+    fn set_base_frame(&mut self, bindings: Vec<(Vec<u8>, Vec<u8>)>) {
+        self.frames[0] = bindings.into_iter().rev().collect();
+    }
+
     fn declare(&mut self, prefix: &[u8], uri: &[u8]) {
         if let Some(frame) = self.frames.last_mut() {
             frame.retain(|(p, _)| p.as_slice() != prefix);
@@ -376,9 +380,7 @@ pub(crate) fn filter_xmp_packet_with_limits(
                     owned_depth = 0;
 
                     let inherited = capture_resolver_bindings(&reader);
-                    for (prefix, uri) in inherited {
-                        ns_stack.frames[0].insert(0, (prefix, uri));
-                    }
+                    ns_stack.set_base_frame(inherited);
                     ns_stack.push_frame();
 
                     for attr_res in start.attributes() {
@@ -477,9 +479,7 @@ pub(crate) fn filter_xmp_packet_with_limits(
 
                 if !in_description {
                     let inherited = capture_resolver_bindings(&reader);
-                    for (prefix, uri) in inherited {
-                        ns_stack.frames[0].insert(0, (prefix, uri));
-                    }
+                    ns_stack.set_base_frame(inherited);
                 }
 
                 ns_stack.push_frame();
@@ -1124,6 +1124,42 @@ mod tests {
         let xml = std::str::from_utf8(&result[0].xml).expect("utf8");
         assert!(xml.contains("RdfNsCreator"));
         assert!(xml.contains("xmlns:dc"));
+    }
+
+    #[test]
+    fn sibling_description_does_not_inherit_prefix_from_earlier_description() {
+        let packet = build_packet(
+            r#"<rdf:Description xmlns:ext="urn:ext:first"><ext:alpha>A</ext:alpha></rdf:Description><rdf:Description><ext:beta>B</ext:beta></rdf:Description>"#,
+        );
+        let result = filter_xmp_packet(&packet).expect("should parse");
+        assert_eq!(result.len(), 2, "both descriptions preserved");
+        let second = std::str::from_utf8(&result[1].xml).expect("utf8");
+        assert!(
+            !second.contains("urn:ext:first"),
+            "sibling must not inherit the first description's binding: {second}"
+        );
+        assert!(
+            second.contains("B"),
+            "unrelated content must survive: {second}"
+        );
+    }
+
+    #[test]
+    fn sibling_description_redeclared_prefix_still_resolves() {
+        let packet = build_packet(
+            r#"<rdf:Description xmlns:ext="urn:ext:first"><ext:alpha>A</ext:alpha></rdf:Description><rdf:Description xmlns:ext="urn:ext:second"><ext:beta>B</ext:beta></rdf:Description>"#,
+        );
+        let result = filter_xmp_packet(&packet).expect("should parse");
+        assert_eq!(result.len(), 2, "both descriptions preserved");
+        let second = std::str::from_utf8(&result[1].xml).expect("utf8");
+        assert!(
+            second.contains("xmlns:ext=\"urn:ext:second\""),
+            "redeclared binding must win: {second}"
+        );
+        assert!(
+            !second.contains("urn:ext:first"),
+            "stale sibling binding must not survive: {second}"
+        );
     }
 
     #[test]

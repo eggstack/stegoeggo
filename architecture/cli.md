@@ -188,11 +188,17 @@ behavior and may read an explicit output file supplied with `--output`.
   `--output`.
 - Multiple inputs or a directory use batch processing and a flat output
   directory; duplicate stems receive `_protected_N` suffixes.
+- `--output` is read as a directory when the path has no extension or already
+  exists as a directory, and as a file otherwise. A batch run requires a
+  directory `--output` and rejects a file-valued one.
 - Input format is detected from magic bytes. `--format` overrides it; otherwise
   the input format is preserved.
 - `--dry-run` resolves and prints the protection plan without writing files.
 - `--json` on `protect` reports the existing execution schema. `--json` on
   `inspect`/`verify` reports the compatibility verification schema.
+- `protect --json` on a batch run emits one document whose `files` array carries
+  the per-input `input_path`, `status`, `output_path`, `error`, and `warnings`;
+  the per-file path lines are not printed on stdout.
 
 ## Exit codes
 

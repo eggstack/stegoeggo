@@ -1,5 +1,5 @@
 use crate::output::config_err;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use stegoeggo::{process_request_bytes_with_warnings, Error, ImageOutputFormat, ProtectionWarning};
@@ -40,11 +40,71 @@ pub(crate) fn is_image_file(path: &Path) -> bool {
             .is_some()
 }
 
+#[cfg(unix)]
+fn existing_mode(path: &Path) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt as _;
+    fs::metadata(path)
+        .ok()
+        .map(|meta| meta.permissions().mode() & 0o777)
+}
+
+#[cfg(not(unix))]
+fn existing_mode(_path: &Path) -> Option<u32> {
+    None
+}
+
+/// Mode a plain `File::create` would produce under the current umask.
+///
+/// `tempfile::NamedTempFile` always creates `0600`, so the atomic staging file
+/// is re-permissioned to this value after it is renamed into place.
+#[cfg(unix)]
+fn default_output_mode() -> Option<u32> {
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+    use std::sync::OnceLock;
+
+    static MODE: OnceLock<Option<u32>> = OnceLock::new();
+    *MODE.get_or_init(|| {
+        let directory = std::env::temp_dir();
+        (0..8).find_map(|attempt| {
+            let probe =
+                directory.join(format!(".stegoeggo-umask-{}-{attempt}", std::process::id()));
+            let file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o666)
+                .open(&probe)
+                .ok()?;
+            let mode = file.metadata().ok()?.permissions().mode() & 0o777;
+            drop(file);
+            let _ = fs::remove_file(&probe);
+            Some(mode)
+        })
+    })
+}
+
+#[cfg(not(unix))]
+fn default_output_mode() -> Option<u32> {
+    None
+}
+
+fn apply_output_mode(path: &Path, previous_mode: Option<u32>) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        if let Some(mode) = previous_mode.or_else(default_output_mode) {
+            let _ = fs::set_permissions(path, fs::Permissions::from_mode(mode));
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (path, previous_mode);
+}
+
 pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> Result<(), Error> {
     let dir = match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent,
         _ => Path::new("."),
     };
+    let previous_mode = existing_mode(path);
     let mut temp = tempfile::NamedTempFile::new_in(dir).map_err(|e| {
         Error::Io(std::io::Error::new(
             e.kind(),
@@ -63,6 +123,7 @@ pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> Result<(), Error> {
             format!("persist temp file: {}", e.error),
         ))
     })?;
+    apply_output_mode(path, previous_mode);
     Ok(())
 }
 
@@ -146,23 +207,8 @@ pub(crate) fn compute_output_path(
     }
 }
 
-pub(crate) fn has_duplicate_stems(files: &[PathBuf]) -> bool {
-    let mut seen = HashSet::new();
-    files.iter().any(|f| {
-        let stem = f.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
-        !seen.insert(stem.to_string())
-    })
-}
-
 pub(crate) fn output_looks_like_file(out: &Path) -> bool {
-    out.is_file()
-        || (!out.is_dir()
-            && out.extension().is_some_and(|ext| {
-                matches!(
-                    ext.to_string_lossy().to_ascii_lowercase().as_str(),
-                    "png" | "jpg" | "jpeg" | "webp"
-                )
-            }))
+    out.is_file() || (!out.is_dir() && out.extension().is_some())
 }
 
 #[allow(dead_code)]
@@ -256,14 +302,15 @@ pub(crate) fn process_single_file_with_bytes(
 
 pub(crate) fn batch_output_for_file(
     out: &Option<PathBuf>,
-    files: &[PathBuf],
+    _files: &[PathBuf],
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref out_path) = out {
-        if output_looks_like_file(out_path) && has_duplicate_stems(files) {
-            return Err(config_err(
-                "--output names a file but the batch input contains duplicate file stems; \
-                 use a directory --output or rename inputs",
-            ));
+        if output_looks_like_file(out_path) {
+            return Err(config_err(format!(
+                "--output names a file but a batch run writes one file per input; \
+                 use a directory --output such as '{}'",
+                out_path.display()
+            )));
         }
     }
     Ok(())

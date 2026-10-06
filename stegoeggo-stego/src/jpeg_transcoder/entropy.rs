@@ -329,18 +329,18 @@ fn read_magnitude(bit_reader: &mut BitReader<'_>, size: usize) -> Option<i16> {
         return None;
     }
 
-    let mut magnitude: i16 = 0;
+    let mut magnitude: i32 = 0;
     for _ in 0..size {
-        magnitude = (magnitude << 1) | bit_reader.read_bit()? as i16;
+        magnitude = (magnitude << 1) | i32::from(bit_reader.read_bit()?);
     }
 
-    let threshold = 1i16 << (size - 1);
-    let adjustment = (1i16 << size) - 1;
+    let threshold = 1i32 << (size - 1);
+    let adjustment = (1i32 << size) - 1;
     if magnitude < threshold {
         magnitude -= adjustment;
     }
 
-    Some(magnitude)
+    i16::try_from(magnitude).ok()
 }
 
 pub struct CoefficientDecoder {
@@ -971,6 +971,29 @@ mod tests {
                 assert_eq!(bucket.len(), 0);
             }
         }
+    }
+
+    #[test]
+    fn read_magnitude_handles_max_ac_size_nibble() {
+        let all_ones = [0xFFu8, 0x00, 0xFF, 0x00];
+        let mut reader = BitReader::new(&all_ones);
+        assert_eq!(read_magnitude(&mut reader, 15), Some(i16::MAX));
+
+        let all_zeros = [0x00u8, 0x00];
+        let mut reader = BitReader::new(&all_zeros);
+        assert_eq!(read_magnitude(&mut reader, 15), Some(-32767));
+
+        let mixed = [0b0111_1111u8, 0xFF];
+        let mut reader = BitReader::new(&mixed);
+        assert_eq!(read_magnitude(&mut reader, 15), Some(-16384));
+    }
+
+    #[test]
+    fn read_magnitude_rejects_oversized_and_zero_sizes() {
+        let data = [0xFFu8, 0x00, 0xFF, 0x00];
+        let mut reader = BitReader::new(&data);
+        assert_eq!(read_magnitude(&mut reader, 0), Some(0));
+        assert_eq!(read_magnitude(&mut reader, 16), None);
     }
 
     #[test]

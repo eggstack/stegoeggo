@@ -241,7 +241,8 @@ fn current_executable() -> Result<PathBuf, UpdateError> {
 }
 
 /// Retained for the compatibility test harness; production relies on Eggup
-/// ownership and parent-containment checks under lock.
+/// ownership and parent-containment checks under lock, and never preflights
+/// writability itself before downloading.
 #[cfg(test)]
 fn ensure_replaceable(path: &Path) -> Result<(), UpdateError> {
     let metadata = fs::metadata(path).map_err(|error| UpdateError::Destination {
@@ -658,8 +659,9 @@ fn update_to(current: StableVersion, latest: StableVersion) -> Result<(), Update
     }
 
     let executable = current_executable()?;
-    // No writability preflight here: Eggup proves ownership and parent
-    // containment under lock; failures are actionable errors, not panics.
+    // Eggup owns destination mechanics: ownership and parent containment are
+    // proven under lock at commit time, so production never preflights
+    // writability itself before downloading.
     let Some(target) = release_target() else {
         return cargo_fallback(latest);
     };
@@ -1041,7 +1043,7 @@ mod tests {
     }
 
     #[test]
-    fn unwritable_executable_fails_before_download() {
+    fn retained_destination_preflight_helper_reports_unwritable_paths() {
         let directory = tempfile::tempdir().unwrap();
         let executable = directory.path().join("missing-parent").join("stegoeggo");
         let error = ensure_replaceable(&executable).unwrap_err();

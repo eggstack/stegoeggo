@@ -316,6 +316,13 @@ pub(crate) fn extract_from_decoded(
     actual_redundancy: usize,
 ) -> std::result::Result<Vec<u8>, StegoError> {
     crate::constants::validate_redundancy(actual_redundancy)?;
+    let capacity = capacity_from_decoded(decoded, payload_len, actual_redundancy)?;
+    if !capacity.is_sufficient() {
+        return Err(StegoError::InsufficientCapacity {
+            required: capacity.required,
+            available: capacity.available,
+        });
+    }
     let payload_bits = checked_payload_bits(payload_len)?;
     let extracted_bits = DctStegoF5::with_redundancy(actual_redundancy).extract_f5(
         &decoded.coefficients,
@@ -2547,6 +2554,60 @@ mod tests {
         assert!(matches!(
             embed_seed_hint(&progressive_buf, 42),
             Ok(_) | Err(StegoError::InsufficientCapacity { .. })
+        ));
+    }
+
+    fn ac_size_15_jpeg() -> Vec<u8> {
+        let mut data = vec![0xFF, 0xD8];
+        data.extend_from_slice(&[
+            0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x08, 0x00, 0x08, 0x01, 0x01, 0x11, 0x00,
+        ]);
+        let mut dc_dht = vec![0xFF, 0xC4, 0x00, 0x15, 0x00, 0x02];
+        dc_dht.extend_from_slice(&[0u8; 15]);
+        dc_dht.extend_from_slice(&[0x00, 0x01]);
+        data.extend_from_slice(&dc_dht);
+        let mut ac_dht = vec![0xFF, 0xC4, 0x00, 0x15, 0x10, 0x02];
+        ac_dht.extend_from_slice(&[0u8; 15]);
+        ac_dht.extend_from_slice(&[0x0F, 0x00]);
+        data.extend_from_slice(&ac_dht);
+        data.extend_from_slice(&[0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00]);
+        data.extend_from_slice(&[0x00, 0x00, 0x7F]);
+        data.extend_from_slice(&[0xFF, 0xD9]);
+        data
+    }
+
+    #[test]
+    fn capacity_decodes_ac_coefficient_with_size_nibble_15() {
+        let jpeg_bytes = ac_size_15_jpeg();
+        let config = JpegConfig::new(42);
+        let report = capacity(&jpeg_bytes, 1, &config).unwrap();
+        assert_eq!(
+            report.available, 1,
+            "crafted scan must yield exactly one eligible AC coefficient"
+        );
+    }
+
+    #[test]
+    fn raw_extract_rejects_payload_len_beyond_capacity() {
+        let jpeg_bytes = make_test_jpeg(64, 64);
+        let payload = b"carrier payload";
+        let config = JpegConfig::new(42);
+        let report = embed(&jpeg_bytes, payload, &config).unwrap();
+        assert!(report.embedded);
+
+        let recovered = extract(
+            &report.output,
+            payload.len(),
+            &config,
+            report.actual_redundancy,
+        )
+        .unwrap();
+        assert_eq!(&recovered, payload);
+
+        let available = capacity(&report.output, 1, &config).unwrap().available;
+        assert!(matches!(
+            extract(&report.output, available, &config, report.actual_redundancy),
+            Err(StegoError::InsufficientCapacity { .. })
         ));
     }
 

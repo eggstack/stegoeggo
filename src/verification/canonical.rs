@@ -241,10 +241,6 @@ pub(crate) fn verify_canonical_with_limits(
     }
 
     let hmac_expected = raw_payload.as_ref().is_some_and(|raw| is_hmac_payload(raw));
-    let legacy_hmac_attempt = !hmac_expected
-        && !mac_key.is_empty()
-        && raw_payload.is_some()
-        && stego_status != VerificationStatus::NotFound;
 
     let (auth_attempted, hmac_status, key_matched, auth_algorithm, authenticated) =
         match outcome_kind {
@@ -255,19 +251,12 @@ pub(crate) fn verify_canonical_with_limits(
                 "hmac-sha256".to_string(),
                 true,
             ),
-            CanonicalOutcomeKind::Verified => {
-                if legacy_hmac_attempt {
-                    (
-                        true,
-                        Some(VerificationStatus::Verified),
-                        true,
-                        "hmac-sha256".to_string(),
-                        true,
-                    )
-                } else {
-                    (false, None, false, "crc32".to_string(), false)
-                }
-            }
+            CanonicalOutcomeKind::Verified
+            | CanonicalOutcomeKind::InvalidCorrupted
+            | CanonicalOutcomeKind::MalformedV3
+            | CanonicalOutcomeKind::UnsupportedVersion
+            | CanonicalOutcomeKind::ResourceLimitExceeded
+            | CanonicalOutcomeKind::NotFound => (false, None, false, "crc32".to_string(), false),
             CanonicalOutcomeKind::AuthKeyMissing => (
                 true,
                 Some(VerificationStatus::NotFound),
@@ -282,25 +271,6 @@ pub(crate) fn verify_canonical_with_limits(
                 "hmac-sha256".to_string(),
                 false,
             ),
-            CanonicalOutcomeKind::InvalidCorrupted if hmac_expected => (
-                true,
-                Some(VerificationStatus::Invalid),
-                false,
-                "hmac-sha256".to_string(),
-                false,
-            ),
-            CanonicalOutcomeKind::InvalidCorrupted if legacy_hmac_attempt => (
-                true,
-                Some(VerificationStatus::Invalid),
-                false,
-                "hmac-sha256".to_string(),
-                false,
-            ),
-            CanonicalOutcomeKind::InvalidCorrupted
-            | CanonicalOutcomeKind::MalformedV3
-            | CanonicalOutcomeKind::UnsupportedVersion
-            | CanonicalOutcomeKind::ResourceLimitExceeded
-            | CanonicalOutcomeKind::NotFound => (false, None, false, "crc32".to_string(), false),
         };
 
     let has_stego = stego_status == VerificationStatus::Verified;
@@ -714,7 +684,9 @@ pub(crate) fn project_result_from_canonical(facts: &CanonicalFacts) -> Verificat
         (VerificationStatus::Invalid, Some(payload)) => VerificationResult::Corrupted {
             payload: payload.clone(),
         },
-        (VerificationStatus::Invalid, None) => VerificationResult::Invalid,
+        (VerificationStatus::Verified, None) | (VerificationStatus::Invalid, None) => {
+            VerificationResult::Invalid
+        }
         _ => {
             if let Some(s) = facts.protection_seed {
                 VerificationResult::MetadataOnly { seed: s }

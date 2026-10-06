@@ -101,16 +101,20 @@ candidate identity before installation; Cargo fallback is allowed only for an
 unsupported target or a missing (404) binary asset, never for checksum,
 identity, or network failure.
 
-Updater invariants: query the crates.io stable version first, then check the
-current executable's destination before downloading any update artifact (an
-already-current installation reports current without requiring destination
-replaceability); use the embedded eggup acquisition over eggfetch transport with bounded response limits plus
-bounded Cargo/candidate subprocesses with argument arrays; honor conventional
-proxy environment variables explicitly; deny HTTPS-downgrade redirects; ignore
-prereleases; allow Cargo fallback only for unsupported targets or the exact
-asset HTTP 404; never invoke `sudo`; and leave the current executable untouched
-when staging or validation fails. A Cargo-installed path becomes binary-managed
-after successful self-replacement until Cargo installs it again.
+Updater invariants: query the crates.io stable version first and report an
+already-current installation as current before touching the network (an
+already-current installation never needs destination replaceability); leave
+destination ownership and parent-containment proof to Eggup under lock at
+commit time rather than preflighting writability in the CLI (production must
+not probe writability itself — `ensure_replaceable` stays `#[cfg(test)]`); use
+the embedded eggup acquisition over eggfetch transport with bounded response
+limits plus bounded Cargo/candidate subprocesses with argument arrays; honor
+conventional proxy environment variables explicitly; deny HTTPS-downgrade
+redirects; ignore prereleases; allow Cargo fallback only for unsupported
+targets or the exact asset HTTP 404; never invoke `sudo`; and leave the current
+executable untouched when staging or validation fails. A Cargo-installed path
+becomes binary-managed after successful self-replacement until Cargo installs
+it again.
 
 ## Where things live
 

@@ -47,6 +47,18 @@ pub(crate) struct JsonOutput {
     pub(crate) warnings: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) report: Option<JsonExecutionReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) files: Option<Vec<JsonBatchFile>>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct JsonBatchFile {
+    pub(crate) input_path: String,
+    pub(crate) status: String,
+    pub(crate) output_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) error: Option<String>,
+    pub(crate) warnings: Vec<String>,
 }
 
 #[derive(serde::Serialize)]
