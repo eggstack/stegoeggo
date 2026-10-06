@@ -664,6 +664,65 @@ mod byte_preservation_tests {
         );
     }
 
+    fn png_chunk_order(bytes: &[u8]) -> Vec<String> {
+        let mut order = Vec::new();
+        let mut i = 8;
+        while i + 8 <= bytes.len() {
+            let length =
+                u32::from_be_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]) as usize;
+            let chunk_type = String::from_utf8_lossy(&bytes[i + 4..i + 8]).into_owned();
+            let is_iend = chunk_type == "IEND";
+            order.push(chunk_type);
+            i += 12 + length;
+            if is_iend {
+                break;
+            }
+        }
+        order
+    }
+
+    #[test]
+    fn png_metadata_chunks_are_written_before_idat() {
+        let img = create_test_image(32, 32);
+        let png_bytes = image_to_png_bytes(&img);
+
+        let request = ProtectionRequest::metadata_only(simple_notice(), RightsPolicy::Allowed)
+            .with_seed(4242);
+        let output = process_request_bytes(&png_bytes, &request).unwrap();
+
+        let order = png_chunk_order(&output);
+        let first_idat = order
+            .iter()
+            .position(|c| c == "IDAT")
+            .expect("protected PNG must keep its IDAT chunk");
+        assert_eq!(order.first().map(String::as_str), Some("IHDR"));
+        assert_eq!(order.last().map(String::as_str), Some("IEND"));
+        assert!(
+            order.iter().any(|c| c == "tEXt"),
+            "expected at least one tEXt chunk: {:?}",
+            order
+        );
+        for (index, chunk_type) in order.iter().enumerate() {
+            if chunk_type == "tEXt" || chunk_type == "iTXt" {
+                assert!(
+                    index < first_idat,
+                    "{} at {} must precede IDAT at {}: {:?}",
+                    chunk_type,
+                    index,
+                    first_idat,
+                    order
+                );
+            }
+        }
+
+        let output_img = image::load_from_memory(&output).expect("output must still decode");
+        assert_eq!(output_img.to_rgb8(), img.to_rgb8());
+        assert_eq!(
+            stegoeggo::verify_legal_notice(&output, b"").copyright_holder(),
+            Some("Test Author")
+        );
+    }
+
     fn extract_png_idat(bytes: &[u8]) -> Vec<u8> {
         let mut idat_data = Vec::new();
         let mut i = 8;

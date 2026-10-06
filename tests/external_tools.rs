@@ -152,8 +152,11 @@ mod exiftool_png {
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
 
-        let val = exiftool_extract(&path, "-Copyright");
-        assert!(val.is_some(), "ExifTool should find Copyright in PNG");
+        let val = exiftool_extract(&path, "-StegoEggoCopyright");
+        assert!(
+            val.is_some(),
+            "ExifTool should find StegoEggoCopyright in PNG"
+        );
         assert!(val.unwrap().contains("Test Holder"));
     }
 
@@ -165,8 +168,11 @@ mod exiftool_png {
         let path = dir.path().join("test.png");
         process_and_write(ImageOutputFormat::Png, &path);
 
-        let val = exiftool_extract(&path, "-Creator");
-        assert!(val.is_some(), "ExifTool should find Creator in PNG");
+        let val = exiftool_extract(&path, "-StegoEggoCreator");
+        assert!(
+            val.is_some(),
+            "ExifTool should find StegoEggoCreator in PNG"
+        );
         assert_eq!(val.unwrap(), "Test Creator");
     }
 

@@ -167,8 +167,9 @@ a v1 candidate. HMAC authentication shows that the marker was produced with
 the supplied secret. It does not prove copyright ownership or authorship.
 
 Canonical channel flags are `--hidden-marker disabled|best-effort` and
-`--authentication none|hmac`. HMAC requires `--key` (hex, `@file`, stdin `-`,
-or `STEGOEGGO_KEY`).
+`--authentication none|hmac`. HMAC requires both `--key` (hex, `@file`, stdin `-`,
+or `STEGOEGGO_KEY`) and a non-disabled `--hidden-marker`, because the
+authenticated tag is written into the hidden marker.
 
 ## Rights metadata fields
 

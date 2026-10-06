@@ -746,6 +746,243 @@ mod tests {
         assert!(result.len() > png.len());
     }
 
+    fn png_chunk_order(bytes: &[u8]) -> Vec<String> {
+        let mut order = Vec::new();
+        let mut pos = 8;
+        while pos + 12 <= bytes.len() {
+            let length =
+                u32::from_be_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
+                    as usize;
+            let chunk_type = String::from_utf8_lossy(&bytes[pos + 4..pos + 8]).into_owned();
+            let is_iend = chunk_type == "IEND";
+            order.push(chunk_type);
+            pos += 12 + length;
+            if is_iend {
+                break;
+            }
+        }
+        order
+    }
+
+    fn png_insert_before_iend(png: &[u8], chunks: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(png.len() + chunks.len());
+        out.extend_from_slice(&png[..8]);
+        let mut pos = 8;
+        while pos + 12 <= png.len() {
+            let length =
+                u32::from_be_bytes([png[pos], png[pos + 1], png[pos + 2], png[pos + 3]]) as usize;
+            let end = pos + 12 + length;
+            if &png[pos + 4..pos + 8] == b"IEND" {
+                out.extend_from_slice(chunks);
+            }
+            out.extend_from_slice(&png[pos..end]);
+            pos = end;
+        }
+        out
+    }
+
+    fn png_splice_after_ihdr(png: &[u8], chunks: &[u8]) -> Vec<u8> {
+        let ihdr_end = 8 + 12 + 13;
+        let mut out = Vec::with_capacity(png.len() + chunks.len());
+        out.extend_from_slice(&png[..ihdr_end]);
+        out.extend_from_slice(chunks);
+        out.extend_from_slice(&png[ihdr_end..]);
+        out
+    }
+
+    fn png_test_chunk(chunk_type: &[u8; 4], data: &[u8]) -> Vec<u8> {
+        let mut chunk = Vec::new();
+        chunk.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        chunk.extend_from_slice(chunk_type);
+        chunk.extend_from_slice(data);
+        chunk.extend_from_slice(&RightsMetadataProtector::crc32(chunk_type, data).to_be_bytes());
+        chunk
+    }
+
+    #[test]
+    fn png_injection_keeps_ancillary_chunks_and_plte_before_idat() {
+        let protector = RightsMetadataProtector::new();
+        let png = encode_png(&make_test_image());
+        let source = png_splice_after_ihdr(
+            &png,
+            &[
+                png_test_chunk(b"gAMA", &312_000u32.to_be_bytes()),
+                png_test_chunk(b"PLTE", &[0xFF, 0, 0, 0, 0, 0xFF]),
+                png_test_chunk(b"tIME", &[7; 7]),
+                png_test_chunk(b"tEXt", b"Author\0jdoe"),
+            ]
+            .concat(),
+        );
+        assert_eq!(
+            png_chunk_order(&source),
+            vec!["IHDR", "gAMA", "PLTE", "tIME", "tEXt", "IDAT", "IEND"]
+        );
+
+        let result = protector
+            .inject_text_chunks_png(
+                &source,
+                &[(b"Copyright".to_vec(), b"Test Holder".to_vec())],
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(
+            png_chunk_order(&result),
+            vec!["IHDR", "gAMA", "PLTE", "tIME", "tEXt", "tEXt", "IDAT", "IEND"]
+        );
+        let plte = png_chunk_order(&result)
+            .iter()
+            .position(|c| c == "PLTE")
+            .unwrap();
+        let idat = png_chunk_order(&result)
+            .iter()
+            .position(|c| c == "IDAT")
+            .unwrap();
+        assert!(plte < idat, "PLTE must stay before IDAT");
+        assert!(
+            result.windows(11).any(|w| w == b"Author\0jdoe"),
+            "author-owned tEXt must survive untouched"
+        );
+        image::load_from_memory(&result).expect("output must still decode");
+    }
+
+    #[test]
+    fn png_text_chunks_are_written_before_first_idat() {
+        let protector = RightsMetadataProtector::new();
+        let png = encode_png(&make_test_image());
+        let metadata = vec![
+            (b"X-Protection-Seed".to_vec(), b"4242".to_vec()),
+            (b"Copyright".to_vec(), b"Test Holder".to_vec()),
+        ];
+
+        let result = protector
+            .inject_text_chunks_png(
+                &png,
+                &metadata,
+                Some(DmiValue::ProhibitedAiMlTraining),
+                Some(4242),
+                None,
+            )
+            .unwrap();
+
+        let order = png_chunk_order(&result);
+        let first_idat = order
+            .iter()
+            .position(|c| c == "IDAT")
+            .expect("protected PNG must keep its IDAT chunk");
+        assert_eq!(order[0], "IHDR", "IHDR must remain the first chunk");
+        assert_eq!(order.last().map(String::as_str), Some("IEND"));
+        let text_chunk_count = order
+            .iter()
+            .filter(|c| *c == "tEXt" || *c == "iTXt")
+            .count();
+        assert_eq!(text_chunk_count, 3, "unexpected chunk order: {:?}", order);
+        for (index, chunk_type) in order.iter().enumerate() {
+            if chunk_type == "tEXt" || chunk_type == "iTXt" {
+                assert!(
+                    index < first_idat,
+                    "text chunk {:?} at {} must precede IDAT at {}",
+                    chunk_type,
+                    index,
+                    first_idat
+                );
+            }
+        }
+
+        let decoded = image::load_from_memory(&result).expect("output must still decode");
+        assert_eq!(decoded.to_rgb8(), make_test_image().to_rgb8());
+        assert_eq!(
+            RightsMetadataProtector::extract_seed_from_png(&result, None),
+            Some(4242)
+        );
+        let keys = RightsMetadataProtector::collect_stego_owned_png_keys(&result);
+        assert!(keys.iter().any(|k| k == b"Copyright"));
+        assert!(keys.iter().any(|k| k == b"X-Protection-Seed"));
+    }
+
+    #[test]
+    fn png_strip_and_reinject_handles_metadata_written_after_idat() {
+        let protector = RightsMetadataProtector::new();
+        let png = encode_png(&make_test_image());
+
+        let stale_xmp = RightsMetadataProtector::create_png_xmp_chunk(
+            &RightsMetadataProtector::generate_xmp_dmi(DmiValue::Allowed, Some(7)),
+        )
+        .unwrap();
+        let stale_text = RightsMetadataProtector::create_png_text_chunk(
+            b"StegoEggo:Copyright",
+            b"Stale Holder",
+            None,
+        )
+        .unwrap();
+        let stale = png_insert_before_iend(&png, &[stale_xmp, stale_text].concat());
+
+        let stale_order = png_chunk_order(&stale);
+        let first_idat = stale_order
+            .iter()
+            .position(|c| c == "IDAT")
+            .expect("stale file must keep its IDAT chunk");
+        assert!(
+            stale_order
+                .iter()
+                .skip(first_idat)
+                .any(|c| c == "tEXt" || c == "iTXt"),
+            "fixture must carry text chunks after IDAT: {:?}",
+            stale_order
+        );
+        assert!(protector.png_has_stego_metadata(&stale));
+        assert!(
+            RightsMetadataProtector::collect_stego_owned_png_keys(&stale)
+                .iter()
+                .any(|k| k == b"Copyright")
+        );
+
+        let stripped = RightsMetadataProtector::strip_stego_owned_png(&stale).unwrap();
+        assert!(!protector.png_has_stego_metadata(&stripped));
+        assert!(RightsMetadataProtector::collect_stego_owned_png_keys(&stripped).is_empty());
+        assert!(!stripped.windows(11).any(|w| w == b"Stale Holder"));
+
+        let reinjected = protector
+            .inject_text_chunks_png(
+                &stripped,
+                &[
+                    (b"X-Protection-Seed".to_vec(), b"99".to_vec()),
+                    (b"Copyright".to_vec(), b"Fresh Holder".to_vec()),
+                ],
+                Some(DmiValue::ProhibitedAiMlTraining),
+                Some(99),
+                None,
+            )
+            .unwrap();
+
+        let order = png_chunk_order(&reinjected);
+        let first_idat = order.iter().position(|c| c == "IDAT").unwrap();
+        assert!(
+            order
+                .iter()
+                .enumerate()
+                .all(|(i, c)| (*c != "tEXt" && *c != "iTXt") || i < first_idat),
+            "re-injected text chunks must precede IDAT: {:?}",
+            order
+        );
+        assert_eq!(
+            RightsMetadataProtector::collect_stego_owned_png_keys(&reinjected),
+            vec![
+                b"XML:com.adobe.xmp".to_vec(),
+                b"X-Protection-Seed".to_vec(),
+                b"Copyright".to_vec(),
+            ]
+        );
+        assert_eq!(
+            RightsMetadataProtector::extract_seed_from_png(&reinjected, None),
+            Some(99)
+        );
+        let decoded = image::load_from_memory(&reinjected).expect("output must still decode");
+        assert_eq!(decoded.to_rgb8(), make_test_image().to_rgb8());
+    }
+
     // ── JPEG injection + extraction ───────────────────────────────────
 
     #[test]
@@ -2069,13 +2306,13 @@ mod tests {
     }
 
     const GOLDEN_PLAN_PNG: &str =
-        "6e1592208fd4f214e0dbfa351ea4e2e9d1a8f713440fdea2c36251bb08f6153b";
+        "85077e0498f4941df8454d2298114574dfbf88319c7d0be0ba6e319be409d27a";
     const GOLDEN_PLAN_JPEG: &str =
         "3b6567934e1dd71c8680727725924d778d0476bdeeeb7c837033902463fac95a";
     const GOLDEN_PLAN_WEBP: &str =
         "2b5884600ca12d45eebb092b414f34628bb46e7be45bb6a00714ebbb34ae0554";
     const GOLDEN_LEGACY_PNG: &str =
-        "0dcf2e796c9961e38d969a5339523762288e5840f205de510b53adc04e638f40";
+        "1c134cda4bc434cbd0cfa197e8aaa9d2afed0a7b76818278e54ae1d9d48d8230";
     const GOLDEN_LEGACY_JPEG: &str =
         "e5f290832758d4b5d07aac2d311dc380c288f4dd821d1f062e49251d7b8a8b62";
     const GOLDEN_LEGACY_WEBP: &str =

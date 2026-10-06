@@ -1047,12 +1047,19 @@ fn negative_malformed_truncated_png_metadata_handled() {
     let (output, _) =
         process_image_bytes_with_warnings(&png_bytes, ProtectionLevel::Standard, &ctx).unwrap();
 
-    let truncated = &output[..output.len().saturating_sub(20)];
-    let report = verify_legal_notice(truncated, b"");
+    let head_truncated = &output[20..];
+    let report = verify_legal_notice(head_truncated, b"");
 
     assert!(
-        image::load_from_memory(truncated).is_ok() || !report.has_notice(),
+        image::load_from_memory(head_truncated).is_ok() || !report.has_notice(),
         "truncated PNG should either fail to decode or have no notice"
+    );
+
+    let tail_truncated = &output[..output.len().saturating_sub(20)];
+    assert!(image::load_from_memory(tail_truncated).is_err());
+    assert!(
+        verify_legal_notice(tail_truncated, b"").has_notice(),
+        "tail truncation must not destroy rights metadata written before IDAT"
     );
 }
 

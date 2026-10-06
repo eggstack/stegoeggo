@@ -16,7 +16,7 @@ use output::{
 };
 use protect::{
     batch_output_for_file, check_input_output_disjoint, collect_input_files, compute_output_path,
-    output_looks_like_file, process_single_file_with_bytes, write_atomic,
+    output_looks_like_file, process_single_file_with_bytes, read_magic_prefix, write_atomic,
 };
 use request::{
     build_protection_request_with_explicit_options, display_warnings, evidence_profile_for_display,
@@ -24,7 +24,7 @@ use request::{
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use stegoeggo::{ImageOutputFormat, ProtectionLevel, WarningSeverity, DEFAULT_OUTPUT_FORMAT};
+use stegoeggo::{ImageOutputFormat, WarningSeverity, DEFAULT_OUTPUT_FORMAT};
 
 fn main() {
     match run() {
@@ -59,54 +59,72 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     )
 }
 
+/// Options that consume a following value token.
+///
+/// The command router must skip a value-taking option's argument, otherwise the
+/// value is evaluated as a candidate command name and a later `verify` is
+/// re-parsed as a legacy `protect` input path. `every_value_taking_option_is_routable`
+/// pins this list against the clap definition so it cannot drift again.
+const VALUE_OPTIONS: &[&str] = &[
+    "-o",
+    "--output",
+    "-l",
+    "--level",
+    "-p",
+    "--profile",
+    "-i",
+    "--intensity",
+    "-s",
+    "--seed",
+    "-f",
+    "--format",
+    "-d",
+    "--dmi",
+    "--metadata",
+    "--copyright-notice",
+    "--copyright-holder",
+    "--creator",
+    "--contact",
+    "--rights-url",
+    "--usage-terms",
+    "--ai-constraints",
+    "--credit-line",
+    "--copyright-owner",
+    "--licensor-name",
+    "--licensor-email",
+    "--licensor-url",
+    "--content-created-at",
+    "--key",
+    "-j",
+    "--jobs",
+    "--stego-redundancy",
+    "--jpeg-quality",
+    "--rights-policy",
+    "--preset",
+    "--hidden-marker",
+    "--authentication",
+];
+
+/// Command names that must dispatch to the root parser.
+///
+/// `help` is clap's generated help subcommand on `RootArgs`; without it the
+/// router falls through to the legacy parser and treats `help` as an input path.
+const COMMANDS: &[&str] = &[
+    "protect",
+    "inspect",
+    "verify",
+    "version",
+    "update",
+    "keygen",
+    "sign",
+    "verify-manifest",
+    "help",
+];
+
+const STRICT_ERROR: &str =
+    "Strict mode: one or more warnings with error severity (see warnings above)";
+
 fn uses_command_parser(argv: &[std::ffi::OsString]) -> bool {
-    let value_options = [
-        "-o",
-        "--output",
-        "-l",
-        "--level",
-        "-p",
-        "--profile",
-        "-i",
-        "--intensity",
-        "-s",
-        "--seed",
-        "-f",
-        "--format",
-        "-d",
-        "--dmi",
-        "--metadata",
-        "--copyright-notice",
-        "--copyright-holder",
-        "--creator",
-        "--contact",
-        "--rights-url",
-        "--usage-terms",
-        "--ai-constraints",
-        "--credit-line",
-        "--copyright-owner",
-        "--licensor-name",
-        "--licensor-email",
-        "--licensor-url",
-        "--content-created-at",
-        "--key",
-        "-j",
-        "--jobs",
-        "--rights-policy",
-        "--preset",
-        "--hidden-marker",
-        "--authentication",
-    ];
-    let commands = [
-        "protect",
-        "inspect",
-        "verify",
-        "version",
-        "update",
-        "keygen",
-        "sign",
-        "verify-manifest",
-    ];
     let mut expects_value = false;
     for arg in argv.iter().skip(1) {
         let Some(value) = arg.to_str() else {
@@ -123,7 +141,7 @@ fn uses_command_parser(argv: &[std::ffi::OsString]) -> bool {
             return true;
         }
         let option = value.split_once('=').map_or(value, |(name, _)| name);
-        if value_options.contains(&option) {
+        if VALUE_OPTIONS.contains(&option) {
             if !value.contains('=') {
                 expects_value = true;
             }
@@ -132,7 +150,7 @@ fn uses_command_parser(argv: &[std::ffi::OsString]) -> bool {
         if value.starts_with('-') {
             continue;
         }
-        return commands.contains(&value);
+        return COMMANDS.contains(&value);
     }
     false
 }
@@ -292,10 +310,6 @@ fn run_protect(
     let evidence_profile = evidence_profile_for_display(args);
 
     if args.verbose {
-        println!(
-            "Protection level: {:?}",
-            ProtectionLevel::from(args.level.clone())
-        );
         println!("Evidence profile: {:?}", evidence_profile);
         println!("Intensity: {}", request.intensity());
         println!("Seed: {:?}", request.seed());
@@ -328,9 +342,7 @@ fn run_protect(
 
     if args.dry_run {
         for input_path in &input_files {
-            let input_bytes = fs::read(input_path)?;
-            let input_format = stegoeggo::ImageOutputFormat::from_magic_bytes(&input_bytes)
-                .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+            let input_format = detect_input_format(input_path)?;
             let plan = stegoeggo::resolve_request(&request, input_format)?;
             if input_files.len() > 1 {
                 println!("File: {}", input_path.display());
@@ -550,9 +562,7 @@ fn run_protect(
         }
 
         if args.strict && has_errors {
-            return Err(
-                "Strict mode: one or more warnings with error severity (see warnings above)".into(),
-            );
+            return Err(STRICT_ERROR.into());
         }
 
         return Ok(());
@@ -607,9 +617,15 @@ fn run_protect(
         check_input_output_disjoint(input_path, &output_path)?;
         write_atomic(&output_path, &output_bytes)?;
 
+        let strict_failed = args.strict
+            && report
+                .warnings()
+                .iter()
+                .any(|w| w.severity_for_profile(evidence_profile) == WarningSeverity::Error);
+
         let json_output = JsonOutput {
             schema_version: 1,
-            status: "ok".to_string(),
+            status: if strict_failed { "error" } else { "ok" }.to_string(),
             output_path: Some(output_path.display().to_string()),
             warnings: report.warnings().iter().map(|w| w.to_string()).collect(),
             report: Some(JsonExecutionReport {
@@ -642,6 +658,10 @@ fn run_protect(
             files: None,
         };
         println!("{}", serde_json::to_string_pretty(&json_output)?);
+
+        if strict_failed {
+            return Err(STRICT_ERROR.into());
+        }
     } else {
         let (output_bytes, warnings) =
             stegoeggo::process_request_bytes_with_warnings(&input_bytes, &request)?;
@@ -665,13 +685,21 @@ fn run_protect(
                 .iter()
                 .any(|w| w.severity_for_profile(evidence_profile) == WarningSeverity::Error)
         {
-            return Err(
-                "Strict mode: one or more warnings with error severity (see warnings above)".into(),
-            );
+            return Err(STRICT_ERROR.into());
         }
     }
 
     Ok(())
+}
+
+/// Classify an input file from its magic prefix alone.
+///
+/// `--dry-run` only needs the format, so it must not buffer the whole image.
+fn detect_input_format(
+    input_path: &std::path::Path,
+) -> Result<ImageOutputFormat, stegoeggo::Error> {
+    let prefix = read_magic_prefix(input_path)?;
+    Ok(ImageOutputFormat::from_magic_bytes(&prefix).unwrap_or(DEFAULT_OUTPUT_FORMAT))
 }
 
 /// Report a `--verify` combination rejection as a config error (exit 2)
@@ -693,4 +721,90 @@ fn emit_verify_config_error(json: bool, message: &str) -> ! {
     }
     eprintln!("Error: {message}");
     std::process::exit(EXIT_CONFIG);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    fn argv(args: &[&str]) -> Vec<OsString> {
+        std::iter::once("stegoeggo")
+            .chain(args.iter().copied())
+            .map(OsString::from)
+            .collect()
+    }
+
+    /// Every value-taking non-positional option must be listed, otherwise the
+    /// router reads its value as a candidate command name and re-parses a later
+    /// `verify` as a legacy `protect` input path.
+    #[test]
+    fn every_value_taking_option_is_routable() {
+        for arg in Args::command().get_arguments() {
+            if arg.is_positional() || !arg.get_num_args().is_some_and(|r| r.takes_values()) {
+                continue;
+            }
+            let mut names = Vec::new();
+            if let Some(long) = arg.get_long() {
+                names.push(format!("--{long}"));
+            }
+            if let Some(short) = arg.get_short() {
+                names.push(format!("-{short}"));
+            }
+            names.extend(
+                arg.get_all_aliases()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|alias| format!("--{alias}")),
+            );
+            for name in names {
+                assert!(
+                    VALUE_OPTIONS.contains(&name.as_str()),
+                    "{name} takes a value but is missing from VALUE_OPTIONS"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn router_skips_option_values_before_a_command_name() {
+        for prefix in [
+            vec![],
+            vec!["--stego-redundancy", "5"],
+            vec!["--jpeg-quality", "90"],
+            vec!["--stego-redundancy=5"],
+            vec!["--jpeg-quality=90"],
+            vec!["--key", "abcd"],
+            vec!["--rights-policy", "prohibited-ai-ml-training"],
+        ] {
+            let mut args = prefix.clone();
+            args.extend(["verify", "plain.png"]);
+            assert!(
+                uses_command_parser(&argv(&args)),
+                "router misrouted {args:?} to the legacy protect parser"
+            );
+        }
+    }
+
+    #[test]
+    fn router_recognizes_every_command_including_help() {
+        for command in COMMANDS {
+            assert!(
+                uses_command_parser(&argv(&[command])),
+                "router does not recognize the {command} command"
+            );
+        }
+    }
+
+    /// A positional token that is not a command name stays on the legacy path.
+    #[test]
+    fn router_ignores_non_command_positionals() {
+        assert!(!uses_command_parser(&argv(&["plain.png"])));
+        assert!(!uses_command_parser(&argv(&[
+            "--intensity",
+            "0.5",
+            "plain.png"
+        ])));
+        assert!(!uses_command_parser(&argv(&["--", "plain.png"])));
+    }
 }

@@ -593,14 +593,6 @@ fn candidate_version(path: &Path) -> Result<StableVersion, UpdateError> {
     })
 }
 
-fn release_base_url() -> String {
-    std::env::var("STEGOEGGO_RELEASES_URL").unwrap_or_else(|_| RELEASES_URL.to_string())
-}
-
-fn registry_url() -> String {
-    std::env::var("STEGOEGGO_CRATES_API_URL").unwrap_or_else(|_| CRATES_API_URL.to_string())
-}
-
 fn cargo_fallback(version: StableVersion) -> Result<(), UpdateError> {
     let mut probe = Command::new("cargo");
     probe.arg("--version");
@@ -670,7 +662,7 @@ fn update_to(current: StableVersion, latest: StableVersion) -> Result<(), Update
     let sidecar = checksum_name(&asset);
     let temp_dir = tempfile::tempdir()?;
     let candidate = temp_dir.path().join(&asset);
-    let base = release_base_url().trim_end_matches('/').to_string();
+    let base = RELEASES_URL.trim_end_matches('/').to_string();
     let asset_url = format!("{base}/download/v{latest}/{asset}");
     let checksum_url = format!("{base}/download/v{latest}/{sidecar}");
 
@@ -813,7 +805,7 @@ fn update_to(current: StableVersion, latest: StableVersion) -> Result<(), Update
 
 pub(crate) fn run_update() -> Result<(), Box<dyn std::error::Error>> {
     let current = parse_stable_version(env!("CARGO_PKG_VERSION"))?;
-    let registry = eggup_get_bytes(&registry_url(), REGISTRY_BODY_LIMIT)?;
+    let registry = eggup_get_bytes(CRATES_API_URL, REGISTRY_BODY_LIMIT)?;
     let latest = latest_stable_version_from_json(&registry)?;
     update_to(current, latest).map_err(Into::into)
 }
@@ -1370,7 +1362,20 @@ mod tests {
                 "HTTP {status} must never fall back to Cargo"
             );
         }
-        assert!(release_target().is_some() || release_target().is_none());
+        let host_mapped = TARGETS
+            .iter()
+            .any(|t| t.os == std::env::consts::OS && t.arch == std::env::consts::ARCH);
+        assert_eq!(
+            release_target().is_some(),
+            host_mapped,
+            "release_target must resolve exactly when the host has a mapped release target"
+        );
+        if let Some(triple) = release_target() {
+            assert!(
+                TARGETS.iter().any(|t| t.triple == triple),
+                "release_target returned an unmapped triple: {triple}"
+            );
+        }
     }
 
     #[test]

@@ -133,6 +133,7 @@ impl super::RightsMetadataProtector {
 
         let mut pos = 8;
         let mut chunk_count: usize = 0;
+        let mut text_chunks_written = false;
 
         while pos + 12 <= png_data.len() {
             chunk_count += 1;
@@ -165,34 +166,10 @@ impl super::RightsMetadataProtector {
 
             let chunk_type = &png_data[pos + 4..pos + 8];
 
-            if chunk_type == b"IEND" {
-                // The seed reaches the file through the XMP chunk and the
-                // `X-Protection-Seed` text chunk in `metadata`. It is not
-                // duplicated into `Description`: that key belongs to the image
-                // author, and a second copy accumulated on every re-protection
-                // while letting `extract_seed_from_png` read a superseded seed.
-                let injected_field_count = metadata.len() + usize::from(dmi.is_some());
-                if let Some(lim) = limits {
-                    lim.check_metadata_field_count(injected_field_count)?;
-                }
-
-                if let Some(dmi_val) = dmi {
-                    let xmp_bytes = Self::generate_xmp_dmi(dmi_val, seed);
-                    if let Some(lim) = limits {
-                        lim.check_metadata_size("XMP", xmp_bytes.len(), lim.max_xmp_bytes())?;
-                    }
-                    let xmp_chunk = Self::create_png_xmp_chunk(&xmp_bytes)?;
-                    output.extend_from_slice(&xmp_chunk);
-                }
-                for (key, value) in metadata {
-                    let namespaced_key = if Self::is_legal_png_key(key) {
-                        [b"StegoEggo:".as_slice(), key.as_slice()].concat()
-                    } else {
-                        key.clone()
-                    };
-                    let text_chunk = Self::create_png_text_chunk(&namespaced_key, value, limits)?;
-                    output.extend_from_slice(&text_chunk);
-                }
+            if !text_chunks_written && (chunk_type == b"IDAT" || chunk_type == b"IEND") {
+                let text_chunks = Self::build_png_metadata_chunks(metadata, dmi, seed, limits)?;
+                output.extend_from_slice(&text_chunks);
+                text_chunks_written = true;
             }
 
             let chunk_end = pos
@@ -212,6 +189,43 @@ impl super::RightsMetadataProtector {
         }
 
         Ok(output)
+    }
+
+    fn build_png_metadata_chunks(
+        metadata: &[(Vec<u8>, Vec<u8>)],
+        dmi: Option<DmiValue>,
+        seed: Option<u64>,
+        limits: Option<&crate::ResourceLimits>,
+    ) -> Result<Vec<u8>> {
+        // The seed reaches the file through the XMP chunk and the
+        // `X-Protection-Seed` text chunk in `metadata`. It is not
+        // duplicated into `Description`: that key belongs to the image
+        // author, and a second copy accumulated on every re-protection
+        // while letting `extract_seed_from_png` read a superseded seed.
+        let injected_field_count = metadata.len() + usize::from(dmi.is_some());
+        if let Some(lim) = limits {
+            lim.check_metadata_field_count(injected_field_count)?;
+        }
+
+        let mut chunks = Vec::with_capacity(1000 * metadata.len() + 500);
+        if let Some(dmi_val) = dmi {
+            let xmp_bytes = Self::generate_xmp_dmi(dmi_val, seed);
+            if let Some(lim) = limits {
+                lim.check_metadata_size("XMP", xmp_bytes.len(), lim.max_xmp_bytes())?;
+            }
+            let xmp_chunk = Self::create_png_xmp_chunk(&xmp_bytes)?;
+            chunks.extend_from_slice(&xmp_chunk);
+        }
+        for (key, value) in metadata {
+            let namespaced_key = if Self::is_legal_png_key(key) {
+                [b"StegoEggo:".as_slice(), key.as_slice()].concat()
+            } else {
+                key.clone()
+            };
+            let text_chunk = Self::create_png_text_chunk(&namespaced_key, value, limits)?;
+            chunks.extend_from_slice(&text_chunk);
+        }
+        Ok(chunks)
     }
 
     pub(super) fn create_png_xmp_chunk(xmp_data: &[u8]) -> Result<Vec<u8>> {

@@ -323,11 +323,29 @@ pub(crate) fn extract_from_decoded(
             available: capacity.available,
         });
     }
-    let payload_bits = checked_payload_bits(payload_len)?;
-    let extracted_bits = DctStegoF5::with_redundancy(actual_redundancy).extract_f5(
-        &decoded.coefficients,
-        payload_bits,
+    let carrier_positions = DctStegoF5::carrier_positions(&decoded.coefficients);
+    extract_from_carrier_positions(
+        decoded,
+        &carrier_positions,
+        payload_len,
         seed,
+        actual_redundancy,
+    )
+}
+
+fn extract_from_carrier_positions(
+    decoded: &DecodedJpegCarrier,
+    carrier_positions: &[(u8, usize, usize)],
+    payload_len: usize,
+    seed: u64,
+    actual_redundancy: usize,
+) -> std::result::Result<Vec<u8>, StegoError> {
+    let payload_bits = checked_payload_bits(payload_len)?;
+    let positions = DctStegoF5::shuffled_positions(carrier_positions, seed);
+    let extracted_bits = DctStegoF5::with_redundancy(actual_redundancy).extract_f5_at_positions(
+        &decoded.coefficients,
+        &positions,
+        payload_bits,
     );
 
     if extracted_bits.is_empty() {
@@ -1424,6 +1442,7 @@ pub(crate) fn extract_framed_from_decoded_with_limits(
 ) -> std::result::Result<Vec<u8>, StegoError> {
     crate::constants::validate_redundancy(config.redundancy())?;
     let mut failures = FramedFailure::default();
+    let carrier_positions = DctStegoF5::carrier_positions(&decoded.coefficients);
 
     for redundancy in (1..=config.redundancy()).rev() {
         let prefix_capacity =
@@ -1433,8 +1452,9 @@ pub(crate) fn extract_framed_from_decoded_with_limits(
             continue;
         }
 
-        let prefix = match extract_from_decoded(
+        let prefix = match extract_from_carrier_positions(
             decoded,
+            &carrier_positions,
             crate::frame::FRAME_HEADER_SIZE,
             config.seed(),
             redundancy,
@@ -1462,7 +1482,13 @@ pub(crate) fn extract_framed_from_decoded_with_limits(
             continue;
         }
 
-        let framed = match extract_from_decoded(decoded, total_len, config.seed(), redundancy) {
+        let framed = match extract_from_carrier_positions(
+            decoded,
+            &carrier_positions,
+            total_len,
+            config.seed(),
+            redundancy,
+        ) {
             Ok(framed) => framed,
             Err(error) => {
                 failures.record_full_frame(error);
@@ -1693,13 +1719,16 @@ pub(crate) fn embed_tiled_from_decoded(
     let tiles_y = luma_blocks_y / blocks_per_tile;
     let mut first_embedded: Option<(u32, u32, u64)> = None;
 
+    let tile_stego = DctStegoF5::with_redundancy(1);
+    tile_stego.canonicalize_ac_coefficients(&mut coefficients);
+
     for ty in 0..tiles_y {
         for tx in 0..tiles_x {
             let tile_blocks = DctStegoF5::tile_block_set(&header, &coefficients, tx, ty, tile_size);
             if tile_blocks.is_empty() {
                 continue;
             }
-            if DctStegoF5::with_redundancy(1)
+            if tile_stego
                 .embed_f5_in_blocks(
                     &mut coefficients,
                     payload,
@@ -1758,7 +1787,7 @@ pub(crate) fn embed_tiled_from_decoded(
         output,
         payload_bytes: payload.len(),
         required_capacity: payload_bits,
-        available_capacity: payload_bits,
+        available_capacity: tiled_available_capacity,
         actual_redundancy: 1,
     })
 }
@@ -2445,6 +2474,54 @@ mod tests {
         reset_decode_count();
         assert!(extract_tiled_framed(&report.output, &config, 64).is_ok());
         assert_eq!(decode_count(), 1);
+    }
+
+    #[test]
+    fn tiled_embed_reports_the_real_carrier_capacity_on_success() {
+        let jpeg_bytes = make_test_jpeg(256, 256);
+        let payload = vec![0xA5; 36];
+        let config = TileConfig::try_new(42, 64).unwrap();
+
+        let carrier_capacity = capacity(&jpeg_bytes, payload.len(), &JpegConfig::new(42))
+            .unwrap()
+            .available;
+
+        let report = embed_tiled(&jpeg_bytes, &payload, &config).unwrap();
+        assert!(report.is_embedded());
+        assert_eq!(
+            report.available_capacity, carrier_capacity,
+            "success must report the carrier capacity, not the consumed payload bits"
+        );
+        assert!(
+            report.available_capacity > report.required_capacity,
+            "a small payload must leave real carrier capacity above the payload bits"
+        );
+
+        let framed = embed_tiled_framed(&jpeg_bytes, &payload, &config).unwrap();
+        assert!(framed.is_embedded());
+        assert_eq!(framed.available_capacity, carrier_capacity);
+    }
+
+    #[test]
+    fn tiled_embed_output_bytes_are_stable() {
+        let jpeg_bytes = make_test_jpeg(256, 256);
+        let payload: Vec<u8> = (0..37u8).map(|b| b.wrapping_mul(7)).collect();
+        let config = TileConfig::try_new(42, 64).unwrap();
+
+        let report = embed_tiled(&jpeg_bytes, &payload, &config).unwrap();
+        assert!(report.is_embedded());
+        assert_eq!(report.output.len(), 80_667);
+
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for byte in &report.output {
+            hash ^= *byte as u64;
+            hash = hash.wrapping_mul(0x100_0000_01b3);
+        }
+        assert_eq!(
+            hash, 0x0755_90cd_5617_0fd9,
+            "tiled embed bytes must stay byte-identical: the per-tile carrier set, the \
+             canonicalization pass, and the single shuffling PRNG are all part of the format"
+        );
     }
 
     #[test]

@@ -38,6 +38,22 @@ pub(crate) fn run_inspect(
     run_report(input_path, None, key, json, verbose, assert_protected)
 }
 
+/// `inspect` and `verify` are read-only, so an unusable ambient key must not
+/// turn them into a config failure.
+///
+/// An explicitly passed `--key` is still rejected when malformed; only
+/// `STEGOEGGO_KEY` may be ignored, and only with a warning.
+fn resolve_optional_key(key: &Option<String>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    match resolve_key_input(key, "STEGOEGGO_KEY") {
+        Ok(resolved) => Ok(resolved.unwrap_or_default()),
+        Err(e) if key.is_none() => {
+            eprintln!("Warning: ignoring unusable STEGOEGGO_KEY: {e}");
+            Ok(Vec::new())
+        }
+        Err(e) => Err(e),
+    }
+}
+
 fn run_report(
     input_path: &Path,
     output: Option<&Path>,
@@ -58,7 +74,7 @@ fn run_report(
         fs::read(input_path)?
     };
 
-    let mac_key = resolve_key_input(key, "STEGOEGGO_KEY")?.unwrap_or_default();
+    let mac_key = resolve_optional_key(key)?;
 
     let notice = verify_legal_notice(&bytes_to_verify, &mac_key);
 

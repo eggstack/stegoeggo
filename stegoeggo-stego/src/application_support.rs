@@ -417,6 +417,8 @@ mod tests {
             TILE_SIZE,
         );
         crate::jpeg_transcoder::DctStegoF5::with_redundancy(1)
+            .canonicalize_ac_coefficients(&mut coefficients);
+        crate::jpeg_transcoder::DctStegoF5::with_redundancy(1)
             .embed_f5_in_blocks(
                 &mut coefficients,
                 payload,

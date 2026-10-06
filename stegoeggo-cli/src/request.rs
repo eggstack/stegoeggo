@@ -250,6 +250,12 @@ pub(crate) fn build_protection_request_with_explicit_options(
     }
     request = request.with_jpeg_quality(args.jpeg_quality);
 
+    if args.jobs == 0 {
+        return Err(config_err(
+            "--jobs must be at least 1; 0 would silently fall back to sequential processing",
+        ));
+    }
+
     if let Some(fmt) = output_format {
         request = request.with_output_format(fmt);
     }
@@ -432,9 +438,6 @@ pub(crate) fn evidence_profile_for_display(args: &ProtectArgs) -> stegoeggo::Evi
             }
             PresetArg::Maximal => stegoeggo::EvidenceProfile::Maximal,
         };
-    }
-    if args.dry_run {
-        return stegoeggo::EvidenceProfile::LegalNotice;
     }
     if args.authentication.is_some() || args.hidden_marker.is_some() || args.rights_policy.is_some()
     {

@@ -38,6 +38,17 @@ pub fn stego_permutation(index: usize, total_pixels: usize, seed: u64) -> usize 
     a.wrapping_mul(index as u64).wrapping_add(b) as usize % total_pixels
 }
 
+/// Convert a legacy flat pixel index to coordinates without truncation.
+///
+/// Returns `None` once the index leaves the `u32` coordinate domain, which
+/// only happens for carriers larger than `u32::MAX` pixels.
+#[inline(always)]
+fn legacy_pixel_coordinates(pixel_index: usize, width: u32) -> Option<(u32, u32)> {
+    let x = u32::try_from(pixel_index % width as usize).ok()?;
+    let y = u32::try_from(pixel_index / width as usize).ok()?;
+    Some((x, y))
+}
+
 /// Cycle-walking permutation over `0..slot_count`.
 ///
 /// Maps `index` through a linear congruential step modulo the next power
@@ -398,8 +409,15 @@ pub fn embed_lsb(img: &RgbaImage, payload: &[u8], seed: u64) -> EmbedOutcome<Rgb
             let logical = i * STEGO_SPREAD_FACTOR + s;
             let idx = stego_permutation(logical, total_pixels, seed);
 
-            let x = idx as u32 % width;
-            let y = idx as u32 / width;
+            let Some((x, y)) = legacy_pixel_coordinates(idx, width) else {
+                return EmbedOutcome::SkippedCapacity {
+                    output,
+                    payload_bytes: payload.len(),
+                    required_capacity: required_slots,
+                    available_capacity: available_slots,
+                    path: crate::types::EmbedPath::Lsb,
+                };
+            };
 
             embed_bit_in_pixel(&mut output, x, y, channel, bit);
         }
@@ -434,8 +452,7 @@ pub fn extract_lsb(img: &RgbaImage, expected_bits: usize, seed: u64) -> Option<V
             let logical = i * STEGO_SPREAD_FACTOR + s;
             let idx = stego_permutation(logical, total_pixels, seed);
 
-            let x = idx as u32 % width;
-            let y = idx as u32 / width;
+            let (x, y) = legacy_pixel_coordinates(idx, width)?;
             let pixel = img.get_pixel(x, y);
 
             let bit = match channel {
@@ -482,8 +499,7 @@ pub fn extract_lsb_range(
             let logical = i * STEGO_SPREAD_FACTOR + s;
             let idx = stego_permutation(logical, total_pixels, seed);
 
-            let x = idx as u32 % width;
-            let y = idx as u32 / width;
+            let (x, y) = legacy_pixel_coordinates(idx, width)?;
             let pixel = img.get_pixel(x, y);
 
             let bit = match channel {
@@ -799,14 +815,14 @@ pub(crate) fn embed_tiled_carrier<C: PixelCarrierMut>(
     let mut total_available = 0usize;
 
     let mut tile_y: u32 = 0;
-    while tile_y * tile_size < height {
-        let y0 = tile_y * tile_size;
+    while tile_y.saturating_mul(tile_size) < height {
+        let y0 = tile_y.saturating_mul(tile_size);
 
         let mut tile_x: u32 = 0;
-        while tile_x * tile_size < width {
-            let x0 = tile_x * tile_size;
-            let x1 = (x0 + tile_size).min(width);
-            let y1 = (y0 + tile_size).min(height);
+        while tile_x.saturating_mul(tile_size) < width {
+            let x0 = tile_x.saturating_mul(tile_size);
+            let x1 = x0.saturating_add(tile_size).min(width);
+            let y1 = y0.saturating_add(tile_size).min(height);
             let sub_w = x1 - x0;
             let sub_h = y1 - y0;
 
@@ -1716,6 +1732,41 @@ mod tests {
         assert!(
             oversized_seen > 0,
             "fixture must exercise oversized pixel indices"
+        );
+    }
+
+    #[test]
+    fn embed_tiled_saturates_the_tile_grid_multiplication() {
+        // A tile size whose second grid product leaves the u32 range: the grid
+        // walk must saturate instead of overflowing (debug panic) or wrapping
+        // back into a regressed origin (non-terminating release scan).
+        let tile_size = 2_200_000_000u32;
+        let width = tile_size;
+        let height = 2_300_000_000u32;
+        assert!(tile_size as u64 * 2 > u64::from(u32::MAX));
+        assert!(height > tile_size);
+        assert!(lsb_available_slots(tile_size, tile_size).is_some());
+
+        let mut carrier = RecordingCarrier::new(width, height);
+        let report = embed_tiled_carrier(&mut carrier, &[0xA5; 8], 42, tile_size);
+        assert!(!report.embedded);
+    }
+
+    #[test]
+    fn legacy_pixel_coordinates_reject_oversized_indices() {
+        assert_eq!(legacy_pixel_coordinates(0, 64), Some((0, 0)));
+        assert_eq!(legacy_pixel_coordinates(64 * 10 + 5, 64), Some((5, 10)));
+        assert_eq!(
+            legacy_pixel_coordinates(u32::MAX as usize, 1),
+            Some((0, u32::MAX))
+        );
+
+        let oversized = u32::MAX as usize + 1;
+        assert_eq!(legacy_pixel_coordinates(oversized, 1), None);
+        assert_eq!(
+            legacy_pixel_coordinates(oversized * 70_000, 70_000),
+            None,
+            "a truncating cast would silently return a wrapped coordinate here"
         );
     }
 

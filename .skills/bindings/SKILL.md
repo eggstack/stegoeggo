@@ -66,9 +66,13 @@ binding calls.
 
 - napi-rs 3.13 (`napi6`, `dyn-symbols`) + `napi-derive`; `cdylib` named
   `stegoeggo`.
-- **`index.d.ts` and `stegoeggo.d.ts` are generated and drift-checked.** After
-  changing any `#[napi]` signature, regenerate and commit them; CI fails on
-  drift.
+- **Only `index.js` and `index.d.ts` are generated and drift-checked.** napi-rs
+  emits them during `pnpm build`; CI fails on drift via
+  `git diff --exit-code -- index.js index.d.ts stegoeggo.d.ts`. `stegoeggo.d.ts`
+  hand-declares the JS wrapper layer over the generated addon (it references
+  `@types/node` `Buffer`, which napi never emits) and is tracked by that diff
+  rather than emitted by it. `stegoeggo.js` and `stegoeggo.mjs` are likewise
+  hand-written and are **not** drift-checked.
 - **Threadpool model:** blocking library calls go through `src/tasks.rs` so the
   JS event loop is not blocked.
 - **Marshalling is lossy — flatten deliberately.** Rust enums

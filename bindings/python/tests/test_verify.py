@@ -64,7 +64,7 @@ def test_verify_metadata_only_protected_image():
     report = stegoeggo.verify(protected)
     assert report.rights_found is True
     assert report.copyright_holder == "Acme Corp"
-    assert report.license_url == "https://example.com/license"
+    assert report.rights_url == "https://example.com/license"
     assert report.evidence_strength == stegoeggo.EvidenceStrength.MetadataNoticeOnly
 
 

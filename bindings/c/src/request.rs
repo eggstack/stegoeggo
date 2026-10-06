@@ -75,6 +75,7 @@ pub extern "C" fn stegoeggo_v1_request_from_preset(
         Some(value) => value.to_channels(),
         None => {
             return invoke(out_error, || {
+                require_out(out_request, "out_request must be non-NULL")?;
                 Err(crate::error::ErrorDto::invalid_argument("unknown preset"))
             });
         }

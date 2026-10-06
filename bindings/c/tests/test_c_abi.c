@@ -441,10 +441,15 @@ static void test_invalid_arguments(void) {
     CHECK(req == NULL);
     CHECK(stegoeggo_v1_request_metadata_only(notice, 99, &req, &err) ==
           STEGOEGGO_V1_ERR_INVALID_ARGUMENT);
+    CHECK(stegoeggo_v1_request_metadata_only(
+              notice, STEGOEGGO_V1_POLICY_ALLOWED, &req, &err) ==
+          STEGOEGGO_V1_OK);
+    CHECK(req != NULL);
     CHECK(stegoeggo_v1_request_from_preset(99, notice,
                                            STEGOEGGO_V1_POLICY_ALLOWED, &req,
                                            &err) ==
           STEGOEGGO_V1_ERR_INVALID_ARGUMENT);
+    CHECK(req == NULL);
     CHECK(stegoeggo_v1_request_metadata_only(
               notice, STEGOEGGO_V1_POLICY_ALLOWED, NULL, &err) ==
           STEGOEGGO_V1_ERR_INVALID_ARGUMENT);

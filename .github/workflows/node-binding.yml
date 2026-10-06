@@ -77,7 +77,7 @@ jobs:
 
       - name: Check generated-file drift
         working-directory: bindings/node
-        run: git diff --exit-code -- index.js index.d.ts
+        run: git diff --exit-code -- index.js index.d.ts stegoeggo.d.ts
 
       - name: Run the binding test suite
         working-directory: bindings/node

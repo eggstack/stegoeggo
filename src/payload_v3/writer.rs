@@ -29,7 +29,7 @@ use crate::payload_v3::types::{
 ///
 /// let payload = PayloadBuilder::new()
 ///     .seed(42)
-///     .intensity(5000)
+///     .intensity(50)
 ///     .dmi_policy(2)
 ///     .channels(ProtectionChannels {
 ///         rights_metadata: true,
@@ -94,7 +94,15 @@ impl PayloadBuilder {
         self
     }
 
-    /// Set the embedding intensity (0–10000, where 10000 = 100.0%).
+    /// Set the embedding intensity as a whole percentage (0–100, where 100 =
+    /// 100.0%).
+    ///
+    /// The on-wire field is the application intensity (`f32` in 0.0–1.0)
+    /// multiplied by 100 and rounded, which is what
+    /// [`PayloadV3Header::intensity_f32`](crate::payload_v3::header::PayloadV3Header::intensity_f32)
+    /// divides back out. Passing 5000 therefore stores 5000 and reads back as
+    /// 50.0, not 0.5 — this scale has never changed and cannot, because every
+    /// payload ever written uses it.
     #[must_use]
     pub fn intensity(mut self, intensity: u16) -> Self {
         self.intensity = intensity;
@@ -431,7 +439,7 @@ mod tests {
 
         let payload = PayloadBuilder::new()
             .seed(42)
-            .intensity(5000)
+            .intensity(50)
             .dmi_policy(2)
             .channels(ProtectionChannels {
                 rights_metadata: true,
@@ -446,7 +454,7 @@ mod tests {
         match parsed {
             crate::payload_v3::parser::ParsedPayload::V3(v3) => {
                 assert_eq!(v3.header.seed, 42);
-                assert_eq!(v3.header.intensity, 5000);
+                assert_eq!(v3.header.intensity, 50);
                 assert_eq!(v3.header.dmi_policy, 2);
                 assert_eq!(v3.key_id, vec![0xAA; 8]);
                 assert!(v3.auth_tag.is_empty());
@@ -496,9 +504,27 @@ mod tests {
 
     #[test]
     fn test_intensity_float_roundtrip() {
-        let payload = PayloadBuilder::new().intensity(5000).build().unwrap();
+        let payload = PayloadBuilder::new().intensity(50).build().unwrap();
         let parsed = crate::payload_v3::header::PayloadV3Header::from_bytes(&payload).unwrap();
-        assert!((parsed.intensity_f32() - 50.0).abs() < f32::EPSILON);
+        assert_eq!(parsed.intensity, 50);
+        assert!((parsed.intensity_f32() - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_intensity_scale_is_percent_not_basis_points() {
+        for percent in [0u16, 1, 50, 75, 100] {
+            let payload = PayloadBuilder::new().intensity(percent).build().unwrap();
+            let parsed = crate::payload_v3::header::PayloadV3Header::from_bytes(&payload).unwrap();
+            assert_eq!(
+                parsed.intensity, percent,
+                "builder must store the percentage verbatim"
+            );
+            assert!(
+                (parsed.intensity_f32() - percent as f32 / 100.0).abs() < f32::EPSILON,
+                "reader must map percent to 0.0-1.0, got {}",
+                parsed.intensity_f32()
+            );
+        }
     }
 
     #[cfg(feature = "signatures")]
@@ -512,7 +538,7 @@ mod tests {
 
         let payload = PayloadBuilder::new()
             .seed(99)
-            .intensity(7500)
+            .intensity(75)
             .dmi_policy(3)
             .channels(ProtectionChannels {
                 rights_metadata: true,
@@ -529,7 +555,7 @@ mod tests {
         match parsed {
             crate::payload_v3::parser::ParsedPayload::V3(v3) => {
                 assert_eq!(v3.header.seed, 99);
-                assert_eq!(v3.header.intensity, 7500);
+                assert_eq!(v3.header.intensity, 75);
                 assert_eq!(v3.header.auth_algorithm, AuthAlgorithm::Ed25519 as u8);
                 assert_eq!(v3.header.auth_tag_len, 64);
                 assert!(v3.header.flags & PayloadFlags::SIGNED != 0);

@@ -232,6 +232,22 @@ impl DctStegoF5 {
         Some(u64::from_le_bytes(seed_bytes))
     }
 
+    /// Canonicalize every AC coefficient into the encoder's representable
+    /// range before an embedding pass selects carriers.
+    ///
+    /// Idempotent, so tiled callers run it once up front instead of once per
+    /// tile. Carrier eligibility is unaffected: clamping never moves a
+    /// coefficient across the `|coef| >= 2` threshold.
+    pub fn canonicalize_ac_coefficients(&self, coefficients: &mut HashMap<u8, Vec<[i16; 64]>>) {
+        for blocks in coefficients.values_mut() {
+            for block in blocks.iter_mut() {
+                for coef in block.iter_mut().skip(1) {
+                    *coef = Self::normalize_ac_coefficient(*coef);
+                }
+            }
+        }
+    }
+
     /// F5-style DCT embedding
     ///
     /// Algorithm:
@@ -377,6 +393,42 @@ impl DctStegoF5 {
         Ok(original_bit_count)
     }
 
+    /// Sorted eligible AC positions for a whole coefficient set.
+    ///
+    /// Callers that attempt the same coefficients with more than one
+    /// redundancy build this once instead of rescanning and resorting per
+    /// attempt.
+    pub fn carrier_positions(
+        coefficients: &HashMap<u8, Vec<[i16; 64]>>,
+    ) -> Vec<(u8, usize, usize)> {
+        let mut positions: Vec<(u8, usize, usize)> = Vec::new();
+        for (comp_id, blocks) in coefficients.iter() {
+            for (block_idx, block) in blocks.iter().enumerate() {
+                for (pos, &coef) in block.iter().enumerate().skip(1) {
+                    if coef.abs() >= 2 {
+                        positions.push((*comp_id, block_idx, pos));
+                    }
+                }
+            }
+        }
+        positions.sort();
+        positions
+    }
+
+    /// Shuffled copy of a sorted position list.
+    ///
+    /// Each attempt reshuffles its own copy, so a reused base list yields the
+    /// same ordering as [`extract_f5`](Self::extract_f5) rebuilds internally.
+    pub fn shuffled_positions(base: &[(u8, usize, usize)], seed: u64) -> Vec<(u8, usize, usize)> {
+        let mut positions = base.to_vec();
+        let mut rng = DctCoefficientRng::new(seed);
+        for i in (1..positions.len()).rev() {
+            let j = rng.gen_range(i + 1);
+            positions.swap(i, j);
+        }
+        positions
+    }
+
     /// F5-style DCT extraction.
     ///
     /// `expected_bits` is the original payload bit count before redundancy
@@ -397,35 +449,28 @@ impl DctStegoF5 {
     /// expected_bits` will misinterpret the sentinel; prefer odd redundancy
     /// (1,3,5…) or check for the empty sentinel explicitly before
     /// interpreting the result.
+    #[allow(dead_code)]
     pub fn extract_f5(
         &self,
         coefficients: &HashMap<u8, Vec<[i16; 64]>>,
         expected_bits: usize,
         seed: u64,
     ) -> Vec<u8> {
-        // Collect AC positions with magnitude >= 2 in the same deterministic
-        // order as embedding.
-        let mut positions: Vec<(u8, usize, usize)> = Vec::new();
-        for (comp_id, blocks) in coefficients.iter() {
-            for (block_idx, block) in blocks.iter().enumerate() {
-                for (pos, &coef) in block.iter().enumerate().skip(1) {
-                    if coef.abs() >= 2 {
-                        positions.push((*comp_id, block_idx, pos));
-                    }
-                }
-            }
-        }
+        let base = Self::carrier_positions(coefficients);
+        let positions = Self::shuffled_positions(&base, seed);
+        self.extract_f5_at_positions(coefficients, &positions, expected_bits)
+    }
 
-        positions.sort();
-
-        // Shuffle with same seed
-        let mut rng = DctCoefficientRng::new(seed);
-        for i in (1..positions.len()).rev() {
-            let j = rng.gen_range(i + 1);
-            positions.swap(i, j);
-        }
-
-        // Extract LSBs
+    /// F5-style extraction from an already-shuffled position list.
+    ///
+    /// Same redundancy reduction and tie sentinel as
+    /// [`extract_f5`](Self::extract_f5).
+    pub fn extract_f5_at_positions(
+        &self,
+        coefficients: &HashMap<u8, Vec<[i16; 64]>>,
+        positions: &[(u8, usize, usize)],
+        expected_bits: usize,
+    ) -> Vec<u8> {
         let required_bits = if self.redundancy > 1 {
             expected_bits.saturating_mul(self.redundancy)
         } else {
@@ -442,7 +487,6 @@ impl DctStegoF5 {
             }
         }
 
-        // Remove redundancy by majority voting per bit position
         if self.redundancy > 1 && bits.len() >= required_bits {
             let mut decoded_bits = Vec::with_capacity(expected_bits);
             for i in 0..expected_bits {
@@ -558,6 +602,10 @@ impl DctStegoF5 {
     ///
     /// Same algorithm as [`embed_f5`](Self::embed_f5) but the carrier set is
     /// limited to the specified `(comp_id, block_idx)` pairs.
+    ///
+    /// Canonicalization is the caller's responsibility: run
+    /// [`canonicalize_ac_coefficients`](Self::canonicalize_ac_coefficients)
+    /// once before an embedding sequence instead of once per call.
     pub fn embed_f5_in_blocks(
         &self,
         coefficients: &mut HashMap<u8, Vec<[i16; 64]>>,
@@ -567,14 +615,6 @@ impl DctStegoF5 {
     ) -> Result<usize> {
         if payload.is_empty() {
             return Ok(0);
-        }
-
-        for blocks in coefficients.values_mut() {
-            for block in blocks.iter_mut() {
-                for coef in block.iter_mut().skip(1) {
-                    *coef = Self::normalize_ac_coefficient(*coef);
-                }
-            }
         }
 
         let mut bits: Vec<u8> = payload
@@ -592,15 +632,13 @@ impl DctStegoF5 {
         }
 
         let mut positions: Vec<(u8, usize, usize)> = Vec::new();
-        for (comp_id, blocks) in coefficients.iter() {
-            for (block_idx, block) in blocks.iter().enumerate() {
-                if !tile_blocks.contains(&(*comp_id, block_idx)) {
-                    continue;
-                }
-                for (pos, &coef) in block.iter().enumerate().skip(1) {
-                    if coef.abs() >= 2 {
-                        positions.push((*comp_id, block_idx, pos));
-                    }
+        for &(comp_id, block_idx) in tile_blocks {
+            let Some(block) = coefficients.get(&comp_id).and_then(|b| b.get(block_idx)) else {
+                continue;
+            };
+            for (pos, &coef) in block.iter().enumerate().skip(1) {
+                if coef.abs() >= 2 {
+                    positions.push((comp_id, block_idx, pos));
                 }
             }
         }
@@ -870,6 +908,32 @@ mod tests {
             .extract_seed_from_quantization_tables(&header)
             .unwrap();
         assert_eq!(extracted, seed);
+    }
+
+    #[test]
+    fn hoisted_positions_reproduce_the_monolithic_extract() {
+        let mut coefficients = make_coefficients(8);
+        let payload = b"ABCD";
+        DctStegoF5::with_redundancy(3)
+            .embed_f5(&mut coefficients, payload, 42)
+            .unwrap();
+
+        let base = DctStegoF5::carrier_positions(&coefficients);
+        for redundancy in [1usize, 2, 3, 5, 10] {
+            let stego = DctStegoF5::with_redundancy(redundancy);
+            for seed in [0u64, 42, 99] {
+                let positions = DctStegoF5::shuffled_positions(&base, seed);
+                assert_eq!(
+                    positions,
+                    shuffled_positions(&coefficients, seed),
+                    "a reused base list must shuffle exactly like the per-attempt rebuild"
+                );
+                assert_eq!(
+                    stego.extract_f5_at_positions(&coefficients, &positions, payload.len() * 8),
+                    stego.extract_f5(&coefficients, payload.len() * 8, seed)
+                );
+            }
+        }
     }
 
     #[test]
@@ -1280,6 +1344,7 @@ mod tests {
 
         let tile_blocks = DctStegoF5::tile_block_set(&header, &coefficients, 0, 0, 64);
         let stego = DctStegoF5::with_redundancy(1);
+        stego.canonicalize_ac_coefficients(&mut coefficients);
         stego
             .embed_f5_in_blocks(&mut coefficients, payload, 42, &tile_blocks)
             .unwrap();
@@ -1300,6 +1365,7 @@ mod tests {
         let set_b = DctStegoF5::tile_block_set(&header, &coefficients, 1, 0, 64);
 
         let stego = DctStegoF5::with_redundancy(1);
+        stego.canonicalize_ac_coefficients(&mut coefficients);
         stego
             .embed_f5_in_blocks(&mut coefficients, payload_a, 42, &set_a)
             .unwrap();

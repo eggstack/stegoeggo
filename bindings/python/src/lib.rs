@@ -81,7 +81,9 @@ fn map_error(py: Python<'_>, err: RustError) -> PyErr {
         | RustError::ImageEncode(_)
         | RustError::Image(_)
         | RustError::ImageTruncated(_) => PyErr::new::<EncodeDecodeError, _>(message),
-        RustError::Metadata(_) => PyErr::new::<MetadataError, _>(message),
+        RustError::Metadata(_) | RustError::Serialization(_) => {
+            PyErr::new::<MetadataError, _>(message)
+        }
         RustError::Steganography(_) => PyErr::new::<SteganographyError, _>(message),
         RustError::InsufficientCapacity { required, available } => {
             let exc = PyErr::new::<InsufficientCapacityError, _>(message);
@@ -1699,11 +1701,6 @@ impl PyVerificationReport {
 
     #[getter]
     fn rights_url(&self) -> Option<String> {
-        opt_string(self.inner.rights().rights_url())
-    }
-
-    #[getter]
-    fn license_url(&self) -> Option<String> {
         opt_string(self.inner.rights().rights_url())
     }
 

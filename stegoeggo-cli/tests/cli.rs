@@ -2492,3 +2492,152 @@ fn test_authenticated_preset_with_key_reports_hmac() {
         "Authenticated preset must succeed stego on 64x64"
     );
 }
+
+#[test]
+fn strict_json_reports_error_status_and_nonzero_exit() {
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("plain.png");
+    create_test_png(&input);
+
+    let output = Command::new(cli_bin())
+        .current_dir(temp.path())
+        .args([
+            "protect",
+            "plain.png",
+            "--rights-policy",
+            "prohibited-see-constraints",
+            "--strict",
+            "--json",
+        ])
+        .output()
+        .expect("Failed to execute CLI");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        json.get("status").unwrap(),
+        "error",
+        "--strict --json must not report ok while carrying error-severity warnings"
+    );
+    assert!(
+        !output.status.success(),
+        "--strict --json must exit non-zero, got {:?}",
+        output.status
+    );
+}
+
+#[test]
+fn strict_without_json_still_fails_the_same_input() {
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("plain.png");
+    create_test_png(&input);
+
+    let output = Command::new(cli_bin())
+        .current_dir(temp.path())
+        .args([
+            "protect",
+            "plain.png",
+            "--rights-policy",
+            "prohibited-see-constraints",
+            "--strict",
+        ])
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert!(
+        !output.status.success(),
+        "--strict must exit non-zero without --json too"
+    );
+}
+
+#[test]
+fn jobs_zero_is_rejected_instead_of_silently_sequential() {
+    let temp = tempfile::tempdir().unwrap();
+    create_test_png(&temp.path().join("a.png"));
+    create_test_png(&temp.path().join("b.png"));
+
+    let output = Command::new(cli_bin())
+        .current_dir(temp.path())
+        .args(["protect", "a.png", "b.png", "--jobs", "0"])
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "--jobs 0 must be a config error; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn inspect_ignores_an_unusable_ambient_key() {
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("plain.png");
+    create_test_png(&input);
+
+    let output = Command::new(cli_bin())
+        .current_dir(temp.path())
+        .env("STEGOEGGO_KEY", "not-hex-at-all")
+        .args(["inspect", "plain.png"])
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "inspect is read-only and must not exit on an unusable STEGOEGGO_KEY; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("STEGOEGGO_KEY"),
+        "the ignored ambient key must be reported"
+    );
+}
+
+#[test]
+fn value_option_before_a_command_never_protects_the_command_token() {
+    let temp = tempfile::tempdir().unwrap();
+    create_test_png(&temp.path().join("plain.png"));
+    // A real file named `verify` is what previously turned the command token
+    // into a second protect input and exited 0 after writing both outputs.
+    create_test_png(&temp.path().join("verify"));
+
+    for args in [
+        vec!["--jpeg-quality", "90", "verify", "plain.png"],
+        vec!["--stego-redundancy", "5", "verify", "plain.png"],
+    ] {
+        let output = Command::new(cli_bin())
+            .current_dir(temp.path())
+            .args(&args)
+            .output()
+            .expect("Failed to execute CLI");
+
+        assert!(!output.status.success(), "{args:?} must not report success");
+        for suffix in ["plain_protected.png", "verify_protected.png"] {
+            assert!(
+                !temp.path().join(suffix).exists(),
+                "{args:?} wrote {suffix}; the router treated `verify` as an input path"
+            );
+        }
+    }
+}
+
+#[test]
+fn help_is_not_treated_as_an_input_path() {
+    let temp = tempfile::tempdir().unwrap();
+    create_test_png(&temp.path().join("help"));
+
+    let output = Command::new(cli_bin())
+        .current_dir(temp.path())
+        .arg("help")
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("protect") && stdout.contains("verify"),
+        "`help` should print command help, got: {stdout}"
+    );
+}

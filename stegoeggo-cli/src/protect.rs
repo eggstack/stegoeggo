@@ -32,9 +32,34 @@ pub(crate) fn collect_input_files(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, Er
     Ok(files)
 }
 
+/// Longest prefix any supported magic signature needs.
+const MAGIC_PREFIX_LEN: usize = 16;
+
+/// Read just enough leading bytes to classify a file.
+///
+/// `ImageOutputFormat::from_magic_bytes` only inspects a short signature, so a
+/// full `fs::read` here would buffer an entire large non-image (video, archive,
+/// sparse file) just to reject it.
+pub(crate) fn read_magic_prefix(path: &Path) -> Result<Vec<u8>, Error> {
+    use std::io::Read as _;
+    let mut file = fs::File::open(path)?;
+    let mut buf = vec![0u8; MAGIC_PREFIX_LEN];
+    let mut filled = 0;
+    while filled < MAGIC_PREFIX_LEN {
+        match file.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(Error::Io(e)),
+        }
+    }
+    buf.truncate(filled);
+    Ok(buf)
+}
+
 pub(crate) fn is_image_file(path: &Path) -> bool {
     path.is_file()
-        && fs::read(path)
+        && read_magic_prefix(path)
             .ok()
             .and_then(|bytes| ImageOutputFormat::from_magic_bytes(&bytes))
             .is_some()
