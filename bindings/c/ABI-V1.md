@@ -654,6 +654,13 @@ void stegoeggo_v1_error_free(stegoeggo_v1_error_t *error);
 - `error_code` on NULL returns `STEGOEGGO_V1_ERR_INVALID_ARGUMENT`;
   `error_resource` on NULL returns `STEGOEGGO_V1_RESOURCE_NONE`;
   message accessors on NULL return NULL / 0.
+- The caller owns every handle written through `out_error`. The library never
+  frees a previously returned handle, because it cannot tell whether the caller
+  already released it. Reusing one `error_t *` slot across calls therefore leaks
+  unless the caller frees the previous handle first and resets its own variable
+  to NULL. The free function takes the handle by value and cannot clear the
+  caller's variable, so that reset is the caller's responsibility: treat a slot
+  as owned until it has been freed *and* nulled.
 - The message is UTF-8, borrowed from the error handle (valid until free),
   and never contains MAC key bytes or other secret material.
 - Strategy decision (frozen): stable category/resource/message accessors

@@ -1733,6 +1733,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
+ "zeroize",
 ]
 
 [[package]]

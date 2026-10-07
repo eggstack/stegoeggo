@@ -106,6 +106,9 @@ therefore command names when used as the first positional token. A file or
 directory with one of those names must be written as an unambiguous path such
 as `./verify` or `-- ./verify`. The router skips values for known value-taking
 options, so a value such as `--key version` is not mistaken for a command.
+A token that is not valid UTF-8 can never name a command; the router skips it
+and keeps scanning rather than abandoning the scan, so a non-UTF-8 option value
+cannot demote a later `verify` into a legacy `protect` input.
 
 ## Protection arguments
 
@@ -145,6 +148,11 @@ Modern fields are `--rights-policy`, `--preset`, `--hidden-marker`, and
 `--level` and `--profile`.
 
 Explicit modern fields take precedence over translated legacy defaults.
+A channel field is not a policy expression: `--hidden-marker`,
+`--authentication`, and `--preset` never clear the resolved policy. When no
+explicit policy source is present (`--rights-policy`, `--dmi`, or an AI/TDM
+shorthand), the policy still comes from the legacy level default, so adding
+stego to the bare default cannot silently drop the rights notice.
 Contradictory explicit combinations return exit code 2. In particular, the
 builder rejects:
 
@@ -194,8 +202,11 @@ rejected as a configuration error (exit 2) rather than attempted.
   exists as a directory, and as a file otherwise. A batch run requires a
   directory `--output` and rejects a file-valued one.
 - Input format is detected from magic bytes. `--format` overrides it; otherwise
-  the input format is preserved.
+  the input format is preserved. Batch workers read their own input, so peak
+  memory is bounded by the worker count rather than the total input size.
 - `--dry-run` resolves and prints the protection plan without writing files.
+  `--strict` is still evaluated on this path, so a plan carrying an
+  error-severity warning exits non-zero exactly as it would when processing.
 - `--json` on `protect` reports the existing execution schema. `--json` on
   `inspect`/`verify` reports the compatibility verification schema.
 - `protect --json` on a batch run emits one document whose `files` array carries
@@ -229,7 +240,8 @@ rejected as a configuration error (exit 2) rather than attempted.
 
 Production dependencies are clap 4, the `stegoeggo` library, rayon for
 error-tolerant CLI batches, hex, serde/serde_json, sha2, self-replace,
-tempfile, and eggup-acquisition/eggup-eggfetch over eggfetch-core for the
+tempfile, zeroize for CLI-held key material, and
+eggup-acquisition/eggup-eggfetch over eggfetch-core for the
 embedded updater transport. The updater calls the synchronous Eggup
 acquisition seam directly from synchronous CLI code; `tokio` remains only as
 a CLI dev-dependency for the retained test-only direct-`eggfetch_core`

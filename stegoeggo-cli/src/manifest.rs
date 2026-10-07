@@ -7,7 +7,27 @@ use crate::protect::write_atomic;
 #[cfg(feature = "signatures")]
 use std::fs;
 #[cfg(feature = "signatures")]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Create a key file without ever following an existing filesystem entry.
+///
+/// `create_new` fails on an existing file *and* on a dangling symlink, so the
+/// write itself is the authoritative guard: a separate existence pre-check cannot
+/// be raced between the check and the write, and a planted `key_public.pem`
+/// cannot be truncated through the link.
+#[cfg(feature = "signatures")]
+fn create_key_file(path: &Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(contents.as_bytes())
+}
 
 #[cfg(feature = "signatures")]
 pub(crate) fn handle_keygen(
@@ -55,26 +75,26 @@ pub(crate) fn handle_keygen(
         key_id_hex,
         hex::encode(key.to_bytes())
     );
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&private_path)?;
-        file.write_all(private_pem.as_bytes())?;
+    if let Err(error) = create_key_file(&private_path, &private_pem) {
+        // Only clean up a file this call created: `AlreadyExists` means the key
+        // was already there and must not be touched.
+        if error.kind() != std::io::ErrorKind::AlreadyExists {
+            let _ = fs::remove_file(&private_path);
+        }
+        return Err(error.into());
     }
-    #[cfg(not(unix))]
-    fs::write(&private_path, private_pem.as_bytes())?;
 
     let public_pem = format!(
         "-----BEGIN STEGOEGGO PUBLIC KEY-----\nkey_id:{}\n{}\n-----END STEGOEGGO PUBLIC KEY-----\n",
         key_id_hex,
         hex::encode(verifying_key.as_bytes())
     );
-    fs::write(&public_path, public_pem.as_bytes())?;
+    if let Err(error) = create_key_file(&public_path, &public_pem) {
+        // Never leave a private key behind that the existence guard would then
+        // refuse to overwrite: the user could not simply retry.
+        let _ = fs::remove_file(&private_path);
+        return Err(error.into());
+    }
 
     println!("Key pair generated:");
     println!("  Private key: {}", private_path.display());
@@ -93,8 +113,9 @@ pub(crate) fn handle_sign(
     use stegoeggo::detached::{DetachedManifest, PublicKeyEntry, SignatureRecord};
     use stegoeggo::resource_limits::ResourceLimits;
     use stegoeggo::signing::SigningKey;
+    use zeroize::Zeroize as _;
 
-    let key_bytes = fs::read(key_path)?;
+    let mut key_bytes = fs::read(key_path)?;
     let key_str = String::from_utf8_lossy(&key_bytes);
 
     let hex_key = extract_pem_field(&key_str, "BEGIN STEGOEGGO PRIVATE KEY")
@@ -123,7 +144,13 @@ pub(crate) fn handle_sign(
             )
         });
 
-    let key_bytes_vec = hex::decode(&hex_key.0).map_err(|e| {
+    // The key file text is private key material; the CLI is the only layer that
+    // holds a raw copy of it, so clear it before continuing.
+    drop(key_str);
+    key_bytes.zeroize();
+
+    let (mut key_body, key_id_line) = hex_key;
+    let mut key_bytes_vec = hex::decode(&key_body).map_err(|e| {
         config_err(format!(
             "Invalid hex key data in {}: {}",
             key_path.display(),
@@ -131,6 +158,8 @@ pub(crate) fn handle_sign(
         ))
     })?;
     if key_bytes_vec.len() != 32 {
+        key_body.zeroize();
+        key_bytes_vec.zeroize();
         return Err(config_err(format!(
             "Private key must be 32 bytes, got {}",
             key_bytes_vec.len()
@@ -138,9 +167,15 @@ pub(crate) fn handle_sign(
     }
     let mut raw_key = [0u8; 32];
     raw_key.copy_from_slice(&key_bytes_vec);
+    key_bytes_vec.zeroize();
+    key_body.zeroize();
 
-    let signing_key = SigningKey::from_bytes(raw_key, hex_key.1.into_bytes())
-        .map_err(|e| config_err(format!("Invalid signing key: {}", e)))?;
+    // `from_bytes` takes the array by value, so it receives its own copy; clear
+    // this stack slot too once the call has returned.
+    let signing_result = SigningKey::from_bytes(raw_key, key_id_line.into_bytes());
+    raw_key.zeroize();
+    let signing_key =
+        signing_result.map_err(|e| config_err(format!("Invalid signing key: {}", e)))?;
 
     let manifest_bytes = fs::read(manifest_path)?;
     let limits = ResourceLimits::default();

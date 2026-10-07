@@ -28,6 +28,7 @@ hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3"
+zeroize = "1"
 eggup-acquisition = "0.1.0"
 eggup-core = "0.1.0"
 eggup-eggfetch = "0.1.0"

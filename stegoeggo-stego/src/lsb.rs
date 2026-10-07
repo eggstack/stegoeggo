@@ -198,7 +198,11 @@ pub fn embed_tiled(
         payload_bytes,
         required_capacity,
         available_capacity,
-        actual_redundancy: u8::from(embedded) as usize,
+        actual_redundancy: if embedded {
+            crate::lsb_internal::TILED_REDUNDANCY
+        } else {
+            0
+        },
     })
 }
 
@@ -344,6 +348,31 @@ mod tests {
         assert!(report.embedded);
         let recovered = extract_tiled(&report.output, payload.len(), &config, 64).unwrap();
         assert_eq!(recovered, payload);
+    }
+
+    #[test]
+    fn tiled_actual_redundancy_tracks_the_tiled_constant() {
+        let img = uniform_image(128, 128);
+        let payload = vec![0xA5; 36];
+        let config = TileConfig::try_new(42, 64).unwrap();
+        let report = embed_tiled(&img, &payload, &config).unwrap();
+        assert_eq!(
+            report.actual_redundancy,
+            crate::lsb_internal::TILED_REDUNDANCY
+        );
+        assert!(crate::Redundancy::try_from(report.actual_redundancy).is_ok());
+    }
+
+    #[test]
+    fn actual_redundancy_is_zero_when_nothing_was_embedded() {
+        // Below one tile the tiled path cannot embed; the documented sentinel
+        // for "nothing embedded" must survive.
+        let img = uniform_image(16, 16);
+        let payload = vec![0xA5; 36];
+        let config = TileConfig::try_new(42, 64).unwrap();
+        let report = embed_tiled(&img, &payload, &config).unwrap();
+        assert!(!report.embedded);
+        assert_eq!(report.actual_redundancy, 0);
     }
 
     #[test]

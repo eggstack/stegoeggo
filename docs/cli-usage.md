@@ -60,7 +60,9 @@ are also present in Cargo-installed and prebuilt binaries.
 
 `keygen` refuses to overwrite an existing `key_private.pem` or
 `key_public.pem`; move or delete the key first, because a private key cannot be
-recovered once it is replaced.
+recovered once it is replaced. The refusal is enforced by the write itself, so
+it also holds for a symlink planted at either path, and a `keygen` that fails
+part-way removes the private key it just created so the command can be retried.
 
 ## Version and updates
 
@@ -169,7 +171,14 @@ the supplied secret. It does not prove copyright ownership or authorship.
 Canonical channel flags are `--hidden-marker disabled|best-effort` and
 `--authentication none|hmac`. HMAC requires both `--key` (hex, `@file`, stdin `-`,
 or `STEGOEGGO_KEY`) and a non-disabled `--hidden-marker`, because the
-authenticated tag is written into the hidden marker.
+authenticated tag is written into the hidden marker. Key material read from
+stdin or `@file` is bounded; oversized input is rejected rather than truncated,
+so a truncated read can never decode into a different key.
+
+Channel flags select channels, not policy. `--hidden-marker`,
+`--authentication`, and `--preset` do not change the resolved rights policy:
+without an explicit `--rights-policy`, `--dmi`, or an AI/TDM shorthand, the
+policy stays at the `standard` level default.
 
 ## Rights metadata fields
 

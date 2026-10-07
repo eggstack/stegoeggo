@@ -98,9 +98,8 @@ impl stegoeggo_v1_notice_t {
         if let Some(value) = self.seed {
             notice = notice.with_seed(value);
         }
-        if let Some(lang) = &self.usage_terms_lang {
-            let terms = self.usage_terms.clone().unwrap_or_default();
-            let localized = stegoeggo::LocalizedText::with_lang(terms, lang.clone());
+        if let (Some(terms), Some(lang)) = (&self.usage_terms, &self.usage_terms_lang) {
+            let localized = stegoeggo::LocalizedText::with_lang(terms.clone(), lang.clone());
             let legal = stegoeggo::LegalMetadata::new().with_usage_terms_localized(localized);
             notice = notice.with_legal_metadata_fields(&legal);
         }
@@ -242,10 +241,21 @@ mod tests {
     }
 
     #[test]
-    fn notice_lang_without_terms_materializes_lang() {
+    fn notice_lang_without_terms_does_not_invent_usage_terms() {
         let mut handle = stegoeggo_v1_notice_t::new();
         handle.usage_terms_lang = Some("fr".to_string());
         let notice = handle.to_notice();
+        assert_eq!(notice.usage_terms(), None);
+        assert_eq!(notice.usage_terms_lang(), None);
+    }
+
+    #[test]
+    fn notice_lang_with_terms_is_applied() {
+        let mut handle = stegoeggo_v1_notice_t::new();
+        handle.usage_terms = Some("Tous droits reserves".to_string());
+        handle.usage_terms_lang = Some("fr".to_string());
+        let notice = handle.to_notice();
+        assert_eq!(notice.usage_terms(), Some("Tous droits reserves"));
         assert_eq!(notice.usage_terms_lang(), Some("fr"));
     }
 

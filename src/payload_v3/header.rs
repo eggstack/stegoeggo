@@ -1,7 +1,7 @@
 use crate::payload_v3::errors::PayloadV3ParseError;
 use crate::payload_v3::types::{
-    AuthAlgorithm, PayloadFlags, V3_CORE_SIZE, V3_MAGIC, V3_MAX_EMBEDDED_SIZE, V3_MAX_KEY_ID_LEN,
-    V3_PAYLOAD_VERSION,
+    AuthAlgorithm, PayloadFlags, V3_CORE_SIZE, V3_MAGIC, V3_MAX_DMI_POLICY, V3_MAX_EMBEDDED_SIZE,
+    V3_MAX_KEY_ID_LEN, V3_PAYLOAD_VERSION,
 };
 
 /// V3 payload header with parsed fields.
@@ -100,7 +100,7 @@ impl PayloadV3Header {
         let channels = u16::from_le_bytes([data[8], data[9]]);
         let dmi_policy = data[10];
 
-        if dmi_policy > 6 {
+        if dmi_policy > V3_MAX_DMI_POLICY {
             return Err(PayloadV3ParseError::InvalidDmiPolicy(dmi_policy));
         }
 

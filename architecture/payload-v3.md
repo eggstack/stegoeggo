@@ -138,6 +138,10 @@ policy copy — the authoritative policy lives in metadata channels. The
 `dmi_policy` byte is used for fast stego-only verification without metadata
 extraction.
 
+`PayloadBuilder::build` enforces the same `V3_MAX_DMI_POLICY` (= 6) bound the
+parser applies, so every payload a successful `build` produces is one
+`parse_payload` accepts.
+
 ### 5.2. Seed
 
 8-byte little-endian unsigned integer. Used to derive:

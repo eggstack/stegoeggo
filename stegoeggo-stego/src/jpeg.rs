@@ -324,27 +324,20 @@ pub(crate) fn extract_from_decoded(
         });
     }
     let carrier_positions = DctStegoF5::carrier_positions(&decoded.coefficients);
-    extract_from_carrier_positions(
-        decoded,
-        &carrier_positions,
-        payload_len,
-        seed,
-        actual_redundancy,
-    )
+    let positions = DctStegoF5::shuffled_positions(&carrier_positions, seed);
+    extract_from_shuffled_positions(decoded, &positions, payload_len, actual_redundancy)
 }
 
-fn extract_from_carrier_positions(
+fn extract_from_shuffled_positions(
     decoded: &DecodedJpegCarrier,
-    carrier_positions: &[(u8, usize, usize)],
+    positions: &[(u8, usize, usize)],
     payload_len: usize,
-    seed: u64,
     actual_redundancy: usize,
 ) -> std::result::Result<Vec<u8>, StegoError> {
     let payload_bits = checked_payload_bits(payload_len)?;
-    let positions = DctStegoF5::shuffled_positions(carrier_positions, seed);
     let extracted_bits = DctStegoF5::with_redundancy(actual_redundancy).extract_f5_at_positions(
         &decoded.coefficients,
-        &positions,
+        positions,
         payload_bits,
     );
 
@@ -1443,6 +1436,7 @@ pub(crate) fn extract_framed_from_decoded_with_limits(
     crate::constants::validate_redundancy(config.redundancy())?;
     let mut failures = FramedFailure::default();
     let carrier_positions = DctStegoF5::carrier_positions(&decoded.coefficients);
+    let shuffled = DctStegoF5::shuffled_positions(&carrier_positions, config.seed());
 
     for redundancy in (1..=config.redundancy()).rev() {
         let prefix_capacity =
@@ -1452,11 +1446,10 @@ pub(crate) fn extract_framed_from_decoded_with_limits(
             continue;
         }
 
-        let prefix = match extract_from_carrier_positions(
+        let prefix = match extract_from_shuffled_positions(
             decoded,
-            &carrier_positions,
+            &shuffled,
             crate::frame::FRAME_HEADER_SIZE,
-            config.seed(),
             redundancy,
         ) {
             Ok(prefix) => prefix,
@@ -1482,19 +1475,14 @@ pub(crate) fn extract_framed_from_decoded_with_limits(
             continue;
         }
 
-        let framed = match extract_from_carrier_positions(
-            decoded,
-            &carrier_positions,
-            total_len,
-            config.seed(),
-            redundancy,
-        ) {
-            Ok(framed) => framed,
-            Err(error) => {
-                failures.record_full_frame(error);
-                continue;
-            }
-        };
+        let framed =
+            match extract_from_shuffled_positions(decoded, &shuffled, total_len, redundancy) {
+                Ok(framed) => framed,
+                Err(error) => {
+                    failures.record_full_frame(error);
+                    continue;
+                }
+            };
 
         match crate::frame::decode(&framed) {
             Ok((_, payload)) => return Ok(payload),

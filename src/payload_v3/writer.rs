@@ -3,8 +3,8 @@ use crate::payload_v3::errors::PayloadV3ParseError;
 use crate::payload_v3::types::ExtensionType;
 use crate::payload_v3::types::{
     AuthAlgorithm, ExtensionEntry, PayloadFlags, ProtectionChannels, V3_CORE_SIZE, V3_MAGIC,
-    V3_MAX_EMBEDDED_SIZE, V3_MAX_EXTENSION_COUNT, V3_MAX_EXTENSION_SIZE, V3_MAX_KEY_ID_LEN,
-    V3_PAYLOAD_VERSION,
+    V3_MAX_DMI_POLICY, V3_MAX_EMBEDDED_SIZE, V3_MAX_EXTENSION_COUNT, V3_MAX_EXTENSION_SIZE,
+    V3_MAX_KEY_ID_LEN, V3_PAYLOAD_VERSION,
 };
 
 /// Builder for constructing a V3 payload.
@@ -272,6 +272,10 @@ impl PayloadBuilder {
     /// Returns [`PayloadV3ParseError`] if the payload exceeds size limits
     /// or contains invalid field combinations.
     pub fn build(self) -> Result<Vec<u8>, PayloadV3ParseError> {
+        if self.dmi_policy > V3_MAX_DMI_POLICY {
+            return Err(PayloadV3ParseError::InvalidDmiPolicy(self.dmi_policy));
+        }
+
         if self.key_id.len() > V3_MAX_KEY_ID_LEN {
             return Err(PayloadV3ParseError::Oversized {
                 size: self.key_id.len(),
@@ -421,6 +425,29 @@ mod tests {
             .build()
             .unwrap();
         assert_eq!(payload.len(), V3_CORE_SIZE + 4);
+    }
+
+    #[test]
+    fn test_build_rejects_dmi_policy_the_parser_would_reject() {
+        assert_eq!(V3_MAX_DMI_POLICY, 6);
+        assert!(PayloadBuilder::new()
+            .dmi_policy(V3_MAX_DMI_POLICY)
+            .build()
+            .is_ok());
+        assert!(matches!(
+            PayloadBuilder::new()
+                .dmi_policy(V3_MAX_DMI_POLICY + 1)
+                .build(),
+            Err(PayloadV3ParseError::InvalidDmiPolicy(7))
+        ));
+    }
+
+    #[test]
+    fn test_build_rejects_extreme_dmi_policy() {
+        assert!(matches!(
+            PayloadBuilder::new().dmi_policy(200).build(),
+            Err(PayloadV3ParseError::InvalidDmiPolicy(200))
+        ));
     }
 
     #[test]

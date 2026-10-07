@@ -36,15 +36,12 @@ pub(crate) fn borrow_bytes<'a>(
     name: &'static str,
 ) -> Result<&'a [u8], ErrorDto> {
     if len == 0 {
-        if data.is_null() {
-            return Ok(&[]);
-        }
-        return Ok(unsafe { core::slice::from_raw_parts(data, 0) });
+        return Ok(&[]);
     }
     if data.is_null() {
         return Err(ErrorDto::invalid_argument(name));
     }
-    if len == usize::MAX {
+    if len > isize::MAX as usize {
         return Err(ErrorDto::invalid_argument(name));
     }
     Ok(unsafe { core::slice::from_raw_parts(data, len) })

@@ -405,6 +405,12 @@ impl JpegHeader {
             let mut values = [0u16; 64];
 
             if precision == 8 {
+                // 8-bit precision reads data[pos + 1..=pos + 64]
+                if pos + 65 > data.len() {
+                    return Err(TranscoderError::InvalidFormat(
+                        "Truncated 8-bit DQT segment".into(),
+                    ));
+                }
                 for i in 0..64 {
                     values[i] = data[pos + 1 + i] as u16;
                 }
@@ -896,6 +902,32 @@ mod tests {
     fn parse_empty_input_returns_error() {
         let result = JpegHeader::parse(&[]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_dqt_requires_the_full_65_byte_8bit_table() {
+        fn dqt_segment(payload_len: usize) -> Vec<u8> {
+            let mut payload = vec![0x00u8; payload_len];
+            payload[0] = 0x00; // precision 8, table_id 0
+            let mut data = vec![0xFF, 0xD8, 0xFF, 0xDB];
+            data.extend_from_slice(&((payload.len() + 2) as u16).to_be_bytes());
+            data.extend_from_slice(&payload);
+            data.extend_from_slice(&[0xFF, 0xD9]);
+            data
+        }
+
+        // 65 bytes is exactly one info byte plus the 64 table bytes the 8-bit
+        // branch reads through index `pos + 64`.
+        assert!(
+            JpegHeader::parse(&dqt_segment(65)).is_ok(),
+            "a complete 8-bit DQT table must parse"
+        );
+        // One byte short must not be indexed past the segment, whatever the
+        // caller does with the resulting header.
+        assert!(
+            JpegHeader::parse(&dqt_segment(64)).is_ok(),
+            "an incomplete trailing table is ignored, not read out of bounds"
+        );
     }
 
     #[test]

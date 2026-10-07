@@ -24,6 +24,9 @@ pub const V3_CORE_SIZE: usize = 32;
 /// Maximum number of extension entries allowed.
 pub const V3_MAX_EXTENSION_COUNT: usize = 32;
 
+/// Largest DMI policy discriminant representable in the V3 header.
+pub const V3_MAX_DMI_POLICY: u8 = 6;
+
 /// Sentinel value marking the end of the extension section.
 pub const END_OF_EXTENSIONS: u16 = 0xFFFF;
 

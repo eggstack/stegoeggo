@@ -1881,6 +1881,13 @@ fn verify<'py>(
     mac_key: Option<Vec<u8>>,
     resource_limits: Option<&PyResourceLimits>,
 ) -> PyResult<PyVerificationReport> {
+    if let Some(key) = mac_key.as_ref() {
+        if key.is_empty() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "mac_key must be omitted or non-empty; an empty key cannot authenticate",
+            ));
+        }
+    }
     let key_slice: &[u8] = mac_key.as_deref().unwrap_or(&[]);
     let lim_owned = resource_limits.map(|l| l.inner.clone());
     let report = py.detach(|| {

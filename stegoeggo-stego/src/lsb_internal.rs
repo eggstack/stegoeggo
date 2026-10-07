@@ -9,6 +9,12 @@ pub const DEFAULT_TILE_SIZE: u32 = 64;
 #[allow(dead_code)]
 pub const MIN_TILE_SIZE: u32 = 32;
 
+/// Redundancy applied by the tiled LSB embedding path.
+///
+/// Tiled embedding writes each payload bit exactly once, so this is the single
+/// source of truth for the value reported by [`EmbedReport::actual_redundancy`].
+pub const TILED_REDUNDANCY: usize = 1;
+
 /// Derive a per-tile seed from a master seed and tile grid coordinates.
 ///
 /// Uses splitmix64 mixing to produce a deterministic, independent seed
@@ -484,14 +490,15 @@ pub fn extract_lsb_range(
     if expected_bits.checked_mul(STEGO_SPREAD_FACTOR)? > available {
         return None;
     }
-    if offset + count > expected_bits {
+    let end = offset.checked_add(count)?;
+    if end > expected_bits {
         return None;
     }
 
     let mut bits = Vec::with_capacity(count);
     let threshold = (STEGO_SPREAD_FACTOR / 2) as u32;
 
-    for i in offset..offset + count {
+    for i in offset..end {
         let channel = i % 3;
         let mut ones = 0u32;
 
@@ -779,7 +786,6 @@ pub(crate) fn embed_tiled_carrier<C: PixelCarrierMut>(
     master_seed: u64,
     tile_size: u32,
 ) -> InPlaceEmbedReport {
-    const TILED_REDUNDANCY: usize = 1;
     let (width, height) = (carrier.carrier_width(), carrier.carrier_height());
     if tile_size == 0 || width < tile_size || height < tile_size {
         return InPlaceEmbedReport {
@@ -1587,6 +1593,33 @@ mod tests {
     #[test]
     fn lsb_available_slots_rejects_overflow() {
         assert_eq!(lsb_available_slots(u32::MAX, u32::MAX), None);
+    }
+
+    #[test]
+    fn extract_lsb_range_rejects_offset_count_overflow() {
+        let img = uniform_image(64, 64, 128);
+        assert_eq!(extract_lsb_range(&img, 16, usize::MAX, 2, 42), None);
+        assert_eq!(extract_lsb_range(&img, 16, 8, usize::MAX, 42), None);
+        assert_eq!(
+            extract_lsb_range(&img, 16, usize::MAX, usize::MAX, 42),
+            None
+        );
+    }
+
+    #[test]
+    fn extract_lsb_range_still_accepts_an_in_bounds_slice() {
+        let img = uniform_image(64, 64, 128);
+        // 8 bits is one packed byte; `offset + count == expected_bits` is the
+        // last in-bounds slice, anything past it is rejected.
+        assert_eq!(
+            extract_lsb_range(&img, 16, 0, 8, 42).map(|v| v.len()),
+            Some(1)
+        );
+        assert_eq!(
+            extract_lsb_range(&img, 16, 8, 8, 42).map(|v| v.len()),
+            Some(1)
+        );
+        assert_eq!(extract_lsb_range(&img, 16, 8, 9, 42), None);
     }
 
     #[test]

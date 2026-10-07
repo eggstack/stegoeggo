@@ -127,13 +127,13 @@ const STRICT_ERROR: &str =
 fn uses_command_parser(argv: &[std::ffi::OsString]) -> bool {
     let mut expects_value = false;
     for arg in argv.iter().skip(1) {
-        let Some(value) = arg.to_str() else {
-            return false;
-        };
         if expects_value {
             expects_value = false;
             continue;
         }
+        let Some(value) = arg.to_str() else {
+            continue;
+        };
         if value == "--" {
             return false;
         }
@@ -341,6 +341,7 @@ fn run_protect(
     }
 
     if args.dry_run {
+        let mut strict_failed = false;
         for input_path in &input_files {
             let input_format = detect_input_format(input_path)?;
             let plan = stegoeggo::resolve_request(&request, input_format)?;
@@ -365,8 +366,16 @@ fn run_protect(
                 println!("  Warnings:");
                 for w in plan.warnings() {
                     println!("    - {}", w);
+                    if args.strict
+                        && w.severity_for_profile(evidence_profile) == WarningSeverity::Error
+                    {
+                        strict_failed = true;
+                    }
                 }
             }
+        }
+        if strict_failed {
+            return Err(STRICT_ERROR.into());
         }
         return Ok(());
     }
@@ -383,38 +392,19 @@ fn run_protect(
             Result<(PathBuf, PathBuf, Vec<stegoeggo::ProtectionWarning>), (PathBuf, String)>,
         > = if args.jobs > 1 {
             let mut seen: HashMap<PathBuf, usize> = HashMap::new();
-            let mut batch_inputs: Vec<(PathBuf, Option<Vec<u8>>, PathBuf, Option<String>)> =
-                Vec::new();
+            // Only the output path is resolved up front, and it needs just a magic
+            // prefix. The full bytes are read inside the worker so peak memory is
+            // bounded by the pool size rather than the total size of every input.
+            let mut batch_inputs: Vec<(PathBuf, PathBuf)> = Vec::with_capacity(input_files.len());
             for input_path in &input_files {
-                match fs::read(input_path) {
-                    Ok(bytes) => {
-                        let detected = ImageOutputFormat::from_magic_bytes(&bytes)
-                            .unwrap_or(DEFAULT_OUTPUT_FORMAT);
-                        let effective_format = output_format.unwrap_or(detected);
-                        let out_path = compute_output_path(
-                            input_path,
-                            &args.output,
-                            effective_format,
-                            &mut seen,
-                        );
-                        batch_inputs.push((input_path.clone(), Some(bytes), out_path, None));
-                    }
-                    Err(e) => {
-                        let effective_format = output_format.unwrap_or(DEFAULT_OUTPUT_FORMAT);
-                        let out_path = compute_output_path(
-                            input_path,
-                            &args.output,
-                            effective_format,
-                            &mut seen,
-                        );
-                        batch_inputs.push((
-                            input_path.clone(),
-                            None,
-                            out_path,
-                            Some(e.to_string()),
-                        ));
-                    }
-                }
+                let detected = read_magic_prefix(input_path)
+                    .ok()
+                    .and_then(|prefix| ImageOutputFormat::from_magic_bytes(&prefix))
+                    .unwrap_or(DEFAULT_OUTPUT_FORMAT);
+                let effective_format = output_format.unwrap_or(detected);
+                let out_path =
+                    compute_output_path(input_path, &args.output, effective_format, &mut seen);
+                batch_inputs.push((input_path.clone(), out_path));
             }
 
             let pool = rayon::ThreadPoolBuilder::new()
@@ -426,20 +416,14 @@ fn run_protect(
                 batch_inputs
                     .par_iter()
                     .with_max_len(1)
-                    .map(|(input_path, maybe_bytes, override_output, maybe_err)| {
-                        if let Some(err) = maybe_err {
-                            return Err((input_path.clone(), err.clone()));
-                        }
-                        let Some(input_bytes) = maybe_bytes.as_ref() else {
-                            return Err((
-                                input_path.clone(),
-                                "internal error: batch input has neither bytes nor error"
-                                    .to_string(),
-                            ));
+                    .map(|(input_path, override_output)| {
+                        let input_bytes = match fs::read(input_path) {
+                            Ok(bytes) => bytes,
+                            Err(e) => return Err((input_path.clone(), e.to_string())),
                         };
                         process_single_file_with_bytes(
                             input_path,
-                            input_bytes,
+                            &input_bytes,
                             &args.output,
                             output_format,
                             &request,

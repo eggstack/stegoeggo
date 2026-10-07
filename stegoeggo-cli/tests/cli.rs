@@ -1404,7 +1404,7 @@ fn test_batch_stems_produce_unique_outputs() {
 }
 
 #[test]
-fn test_pixel_only_preset_does_not_claim_metadata() {
+fn test_legal_notice_preset_injects_metadata_without_stego() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("input.png");
     let output = tmp.path().join("out");
@@ -1427,10 +1427,13 @@ fn test_pixel_only_preset_does_not_claim_metadata() {
     let stdout = String::from_utf8_lossy(&result.stdout);
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let report = json.get("report").expect("Should have report");
+    // `docs/cli-usage.md` documents `--preset legal-notice` as rights metadata
+    // with no hidden marker. Selecting a channel preset must not drop the
+    // default rights policy and silently degrade the output to pixel-only.
     assert_eq!(
         report.get("metadata_injected").unwrap(),
-        false,
-        "pixel-only preset should not inject metadata"
+        true,
+        "legal-notice preset must inject the rights notice"
     );
     assert!(
         report.get("stego_attempted").unwrap() == false,
@@ -2640,4 +2643,324 @@ fn help_is_not_treated_as_an_input_path() {
         stdout.contains("protect") && stdout.contains("verify"),
         "`help` should print command help, got: {stdout}"
     );
+}
+
+#[test]
+fn channel_flags_keep_the_default_rights_policy_end_to_end() {
+    let temp = tempfile::tempdir().unwrap();
+
+    for (name, args) in [
+        ("hidden.png", vec!["--hidden-marker", "best-effort"]),
+        ("hidden_off.png", vec!["--hidden-marker", "disabled"]),
+        ("preset.png", vec!["--preset", "legal-notice"]),
+        (
+            "auth.png",
+            vec![
+                "--hidden-marker",
+                "best-effort",
+                "--authentication",
+                "hmac",
+                "--key",
+                "0a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+            ],
+        ),
+    ] {
+        let input = temp.path().join(format!("{name}.png"));
+        create_test_png(&input);
+        let output = temp.path().join(name);
+
+        let mut full = vec!["protect".to_string()];
+        full.push(input.display().to_string());
+        full.push("-o".to_string());
+        full.push(output.display().to_string());
+        full.push("-s".to_string());
+        full.push("42".to_string());
+        full.extend(args.iter().map(|a| a.to_string()));
+
+        let protect = Command::new(cli_bin())
+            .current_dir(temp.path())
+            .args(&full)
+            .output()
+            .expect("Failed to execute CLI");
+        assert!(
+            protect.status.success(),
+            "{name} protect failed: {}",
+            String::from_utf8_lossy(&protect.stderr)
+        );
+
+        let verify = Command::new(cli_bin())
+            .current_dir(temp.path())
+            .arg("verify")
+            .arg(&output)
+            .output()
+            .expect("Failed to execute CLI");
+        let stdout = String::from_utf8_lossy(&verify.stdout);
+        assert!(
+            stdout.contains("Rights notice: Found"),
+            "{name} lost the rights notice after adding a channel flag: {stdout}"
+        );
+    }
+}
+
+#[test]
+fn channel_flags_keep_the_policy_visible_in_the_dry_run_plan() {
+    let temp = tempfile::tempdir().unwrap();
+    create_test_png(&temp.path().join("plain.png"));
+
+    let output = Command::new(cli_bin())
+        .current_dir(temp.path())
+        .args([
+            "protect",
+            "plain.png",
+            "--hidden-marker",
+            "best-effort",
+            "--dry-run",
+        ])
+        .output()
+        .expect("Failed to execute CLI");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("ProhibitedAiMlTraining"),
+        "the dry-run plan must not report a silently cleared policy: {stdout}"
+    );
+}
+
+#[test]
+fn non_utf8_option_value_before_a_command_never_protects_the_command_token() {
+    let temp = tempfile::tempdir().unwrap();
+    create_test_png(&temp.path().join("plain.png"));
+    // A real file named `verify` is what turns the command token into a second
+    // protect input and exits 0 after writing both outputs.
+    create_test_png(&temp.path().join("verify"));
+
+    #[cfg(unix)]
+    let non_utf8 = {
+        use std::os::unix::ffi::OsStrExt;
+        std::ffi::OsStr::from_bytes(b"\xff\xfe")
+    };
+
+    let output = Command::new(cli_bin())
+        .current_dir(temp.path())
+        .arg("-o")
+        .arg(non_utf8)
+        .arg("verify")
+        .arg("plain.png")
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert!(!output.status.success());
+    for suffix in ["plain_protected.png", "verify_protected.png"] {
+        assert!(
+            !temp.path().join(suffix).exists(),
+            "wrote {suffix}; a non-UTF-8 option value aborted command routing"
+        );
+    }
+}
+
+#[test]
+fn dry_run_still_honors_strict_on_error_severity_warnings() {
+    let temp = tempfile::tempdir().unwrap();
+    create_test_png(&temp.path().join("plain.png"));
+
+    // prohibited-see-constraints with no constraints is always an
+    // error-severity MissingRightsConstraints warning.
+    let base = [
+        "protect",
+        "plain.png",
+        "--rights-policy",
+        "prohibited-see-constraints",
+        "-s",
+        "42",
+    ];
+
+    let without_strict = Command::new(cli_bin())
+        .current_dir(temp.path())
+        .args(base)
+        .arg("--dry-run")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        without_strict.status.success(),
+        "a dry run without --strict must exit 0"
+    );
+    assert!(
+        String::from_utf8_lossy(&without_strict.stdout)
+            .contains("ProhibitedSeeConstraints policy selected without constraints"),
+        "the error-severity warning must be shown"
+    );
+
+    let with_strict = Command::new(cli_bin())
+        .current_dir(temp.path())
+        .args(base)
+        .arg("--dry-run")
+        .arg("--strict")
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        !with_strict.status.success(),
+        "--dry-run must not discard --strict"
+    );
+    assert!(
+        !temp.path().join("plain_protected.png").exists(),
+        "--dry-run must not write an output file"
+    );
+}
+
+#[test]
+fn key_file_and_stdin_reads_are_bounded() {
+    let temp = tempfile::tempdir().unwrap();
+    create_test_png(&temp.path().join("plain.png"));
+
+    let key_file = temp.path().join("huge.key");
+    fs::write(&key_file, "ab".repeat(64 * 1024)).unwrap();
+
+    let output = Command::new(cli_bin())
+        .current_dir(temp.path())
+        .arg("protect")
+        .arg("plain.png")
+        .arg("--key")
+        .arg(format!("@{}", key_file.display()))
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "an oversized key file must be a bounded config error, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !temp.path().join("plain_protected.png").exists(),
+        "a rejected key must not protect anything"
+    );
+}
+
+#[test]
+fn parallel_batch_matches_sequential_batch() {
+    let temp = tempfile::tempdir().unwrap();
+    for name in ["a.png", "b.png", "c.png"] {
+        create_test_png(&temp.path().join(name));
+    }
+
+    let sequential = temp.path().join("seq");
+    let parallel = temp.path().join("par");
+    fs::create_dir_all(&sequential).unwrap();
+    fs::create_dir_all(&parallel).unwrap();
+
+    for (label, out_dir, jobs) in [("seq", &sequential, "1"), ("par", &parallel, "4")] {
+        let output = Command::new(cli_bin())
+            .current_dir(temp.path())
+            .arg("protect")
+            .arg(".")
+            .arg("-o")
+            .arg(out_dir)
+            .arg("-j")
+            .arg(jobs)
+            .arg("-s")
+            .arg("42")
+            .output()
+            .expect("Failed to execute CLI");
+        assert!(
+            output.status.success(),
+            "{label} batch failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let mut seq_files: Vec<_> = fs::read_dir(&sequential)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    let mut par_files: Vec<_> = fs::read_dir(&parallel)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    seq_files.sort();
+    par_files.sort();
+    let seq_names: Vec<_> = seq_files.iter().map(|p| p.file_name().unwrap()).collect();
+    let par_names: Vec<_> = par_files.iter().map(|p| p.file_name().unwrap()).collect();
+    assert_eq!(seq_names, par_names, "batch output names must match");
+    assert_eq!(seq_files.len(), 3);
+    for path in seq_files {
+        let twin = par_files
+            .iter()
+            .find(|p| p.file_name() == path.file_name())
+            .expect("matching output in the parallel run");
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            fs::read(twin).unwrap(),
+            "{} must be byte-identical between -j 1 and -j 4",
+            path.display()
+        );
+    }
+}
+
+#[test]
+fn keygen_refuses_to_follow_a_symlinked_public_key() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = temp.path().join("victim.txt");
+    fs::write(&target, b"do not truncate me").unwrap();
+
+    let key_dir = temp.path().join("keys");
+    fs::create_dir_all(&key_dir).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&target, key_dir.join("key_public.pem")).unwrap();
+
+    let output = Command::new(cli_bin())
+        .arg("keygen")
+        .arg("--output-dir")
+        .arg(&key_dir)
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert!(!output.status.success());
+    assert_eq!(
+        fs::read(&target).unwrap(),
+        b"do not truncate me",
+        "keygen must not truncate through a planted symlink"
+    );
+    assert!(
+        !key_dir.join("key_private.pem").exists(),
+        "a refused keygen must not leave a private key behind"
+    );
+}
+
+#[test]
+fn keygen_does_not_orphan_a_private_key_when_the_public_key_write_fails() {
+    let temp = tempfile::tempdir().unwrap();
+    let key_dir = temp.path().join("keys");
+    fs::create_dir_all(&key_dir).unwrap();
+
+    // A directory at the public key path cannot be opened for writing, so the
+    // public key write fails after the private key was already created.
+    fs::create_dir_all(key_dir.join("key_public.pem")).unwrap();
+
+    let output = Command::new(cli_bin())
+        .arg("keygen")
+        .arg("--output-dir")
+        .arg(&key_dir)
+        .output()
+        .expect("Failed to execute CLI");
+
+    assert!(!output.status.success());
+    assert!(
+        !key_dir.join("key_private.pem").exists(),
+        "a failed keygen must not orphan a private key that blocks retry"
+    );
+
+    // Removing the obstruction lets keygen succeed immediately.
+    fs::remove_dir(key_dir.join("key_public.pem")).unwrap();
+    let retry = Command::new(cli_bin())
+        .arg("keygen")
+        .arg("--output-dir")
+        .arg(&key_dir)
+        .output()
+        .expect("Failed to execute CLI");
+    assert!(
+        retry.status.success(),
+        "retry after a failed keygen must succeed: {}",
+        String::from_utf8_lossy(&retry.stderr)
+    );
+    assert!(key_dir.join("key_public.pem").exists());
 }

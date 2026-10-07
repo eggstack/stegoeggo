@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 import stegoeggo
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "conformance" / "canonical"
@@ -148,3 +150,19 @@ def test_verify_with_resource_limits():
     limits = stegoeggo.ResourceLimits.defaults()
     report = stegoeggo.verify(protected, mac_key=b"shared-verification-key", resource_limits=limits)
     assert isinstance(report, stegoeggo.VerificationReport)
+
+
+def test_verify_rejects_an_empty_mac_key():
+    # An empty key must not silently behave like "no key supplied", which would
+    # degrade an authenticated verification into an unauthenticated one.
+    data = _fixture("canonical_complete.png")
+    protected = stegoeggo.protect(data, _stego_request())
+    with pytest.raises(ValueError):
+        stegoeggo.verify(protected, mac_key=b"")
+
+
+def test_verify_still_accepts_an_omitted_mac_key():
+    data = _fixture("canonical_complete.png")
+    protected = stegoeggo.protect(data, _stego_request())
+    report = stegoeggo.verify(protected)
+    assert report.hidden_marker_status == stegoeggo.VerificationStatus.Invalid

@@ -1,6 +1,29 @@
 use crate::output::config_err;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
+
+/// Upper bound on key material accepted from stdin or a key file.
+///
+/// A MAC key is a short hex token, so this is far above any legitimate value
+/// while keeping an external read from growing the heap without limit. Oversized
+/// input is rejected rather than truncated, because a truncated read would decode
+/// into a *different* key instead of failing.
+const MAX_KEY_INPUT_BYTES: u64 = 4096;
+
+fn read_key_text(reader: impl Read, source: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut buf = Vec::new();
+    reader
+        .take(MAX_KEY_INPUT_BYTES + 1)
+        .read_to_end(&mut buf)
+        .map_err(|e| config_err(format!("Failed to read key from {source}: {e}")))?;
+    if buf.len() as u64 > MAX_KEY_INPUT_BYTES {
+        return Err(config_err(format!(
+            "Key from {source} exceeds the {MAX_KEY_INPUT_BYTES}-byte limit"
+        )));
+    }
+    String::from_utf8(buf).map_err(|_| config_err(format!("Key from {source} is not valid UTF-8")))
+}
 
 pub(crate) fn resolve_key_input(
     key_arg: &Option<String>,
@@ -16,9 +39,7 @@ pub(crate) fn resolve_key_input(
     }
     if let Some(ref key_str) = key_arg {
         if key_str == "-" {
-            use std::io::Read as _;
-            let mut input = String::new();
-            std::io::stdin().read_to_string(&mut input)?;
+            let input = read_key_text(std::io::stdin().lock(), "stdin")?;
             let hex_key = normalize_hex_key(&input);
             let decoded = hex::decode(hex_key)
                 .map_err(|e| config_err(format!("Invalid hex key from stdin: {e}")))?;
@@ -29,8 +50,9 @@ pub(crate) fn resolve_key_input(
             if !path.exists() {
                 return Err(config_err(format!("Key file not found: {path_str}")));
             }
-            let contents = fs::read_to_string(path)
+            let file = fs::File::open(path)
                 .map_err(|e| config_err(format!("Failed to read key file '{path_str}': {e}")))?;
+            let contents = read_key_text(file, &format!("file '{path_str}'"))?;
             let hex_key = normalize_hex_key(&contents);
             let decoded = hex::decode(&hex_key)
                 .map_err(|e| config_err(format!("Invalid hex key in file: {e}")))?;

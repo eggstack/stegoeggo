@@ -67,7 +67,7 @@ boundary — not in `DctStegoF5` itself.
 ### F5 Algorithm
 
 1. Canonicalize AC coefficients into the encoder's representable range (±1023), skipping DC (position 0). The canonicalization is embed-side only: extraction collects `|coef| >= 2` positions from the coefficients as decoded, without re-clamping.
-2. Collect eligible carrier positions — AC coefficients with `|coef| >= 2` — in deterministic component/block order, then shuffle with `DctCoefficientRng` (private tuple struct with pinned unit-test sequence)
+2. Collect eligible carrier positions — AC coefficients with `|coef| >= 2` — in deterministic component/block order, then shuffle with `DctCoefficientRng` (private tuple struct with pinned unit-test sequence). The shuffle is a pure function of `(positions, seed)`, so callers that sweep several redundancies against one carrier shuffle once and reuse the result rather than re-cloning the position list per attempt.
 3. For each payload bit (repeated `redundancy` times):
    - If LSB matches target, keep the coefficient
    - If LSB mismatches, flip it without creating zero (see no-zero variant below)

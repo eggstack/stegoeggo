@@ -278,10 +278,15 @@ fn build_new_style_request(
     _legal_metadata: &Option<stegoeggo::LegalMetadata>,
     legal_dmi_override: Option<DmiValue>,
 ) -> Result<(RightsPolicy, ProtectionChannels), Box<dyn std::error::Error>> {
-    let mut policy = args
-        .rights_policy
-        .map(RightsPolicy::from)
-        .unwrap_or(RightsPolicy::Unspecified);
+    let mut policy = args.rights_policy.map(RightsPolicy::from);
+    if policy.is_none() && legal_dmi_override.is_none() {
+        // A channel flag is not a policy expression. With no explicit policy
+        // source, fall back to the documented level default so adding stego or
+        // selecting a preset can never silently clear the rights policy.
+        policy = resolve_legacy_dmi(args, ProtectionLevel::from(args.level.clone()))
+            .map(RightsPolicy::from_dmi_value);
+    }
+    let mut policy = policy.unwrap_or(RightsPolicy::Unspecified);
     let rights_policy_set = args.rights_policy.is_some();
     let shorthand_set = legal_dmi_override.is_some();
 
@@ -766,6 +771,44 @@ mod tests {
         args.hidden_marker = Some(HiddenMarkerArg::BestEffort);
         let req = build_protection_request_with_explicit_options(&args, false, false).unwrap();
         assert_eq!(req.channels().hidden_marker, HiddenMarkerMode::BestEffort);
+    }
+
+    #[test]
+    fn test_channel_flag_keeps_the_legacy_default_policy() {
+        let legacy = default_args();
+        let legacy_req = build_protection_request(&legacy).unwrap();
+
+        for marker in [HiddenMarkerArg::BestEffort, HiddenMarkerArg::Disabled] {
+            let mut args = default_args();
+            args.hidden_marker = Some(marker);
+            let req = build_protection_request(&args).unwrap();
+            assert_eq!(
+                req.policy(),
+                legacy_req.policy(),
+                "a channel flag must not clear the default policy for {marker:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_preset_keeps_the_legacy_default_policy() {
+        let legacy = default_args();
+        let legacy_req = build_protection_request(&legacy).unwrap();
+
+        let mut args = default_args();
+        args.preset = Some(PresetArg::LegalNotice);
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), legacy_req.policy());
+        assert!(req.channels().rights_metadata);
+    }
+
+    #[test]
+    fn test_explicit_unspecified_policy_still_wins_over_the_level_default() {
+        let mut args = default_args();
+        args.rights_policy = Some(RightsPolicyArg::Unspecified);
+        args.hidden_marker = Some(HiddenMarkerArg::BestEffort);
+        let req = build_protection_request(&args).unwrap();
+        assert_eq!(req.policy(), RightsPolicy::Unspecified);
     }
 
     #[test]
