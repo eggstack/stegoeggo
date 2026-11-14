@@ -14,5 +14,3 @@ pub(crate) mod resolve;
 pub mod steganography;
 #[cfg(feature = "fuzz")]
 pub(crate) mod stego_cost;
-
-// Re-exports are handled at the crate root level in lib.rs

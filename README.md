@@ -13,7 +13,7 @@ steganographic marker as a second evidence channel.
 `stegoeggo` is primarily a **rights-notice metadata tool**. It writes explicit
 rights policy and copyright information into the file. It is not DRM, a forensic
 watermark, a data-poisoning system, or proof that a particular model trained on
-an image — metadata can be stripped, and hidden markers can be damaged by
+an image. Metadata can be stripped, and hidden markers can be damaged by
 transformations such as screenshots, cropping, resizing, or re-encoding.
 
 ## Quick start
@@ -119,8 +119,8 @@ std::fs::write("protected.png", &output)?;
 ```
 
 Use the byte APIs above when metadata must survive. The `DynamicImage`-based
-`process_image` only embeds a hidden marker — PNG `tEXt`, JPEG `COM`/XMP, and
-WebP XMP do not survive that path.
+`process_image` only embeds a hidden marker. It does not preserve PNG `tEXt`,
+JPEG `COM`/XMP, or WebP XMP metadata.
 
 For arbitrary-payload steganography without the rights layer, depend on
 [`stegoeggo-stego`](https://crates.io/crates/stegoeggo-stego) directly.

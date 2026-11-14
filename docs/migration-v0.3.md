@@ -1,5 +1,7 @@
 # Migration Guide: v0.2.x to v0.3.0
 
+> Historical guide for v0.3.0. For current usage, see the [Rust API guide](rust-api.md) and [CLI guide](cli-usage.md).
+
 ## Overview
 
 v0.3.0 introduces semantic correctness for legal metadata across all formats (PNG, JPEG, WebP). The same `LegalMetadata` input now produces semantically equivalent output regardless of output format.
@@ -28,11 +30,11 @@ Calling `with_legal_claims(false)` while legal metadata is present now emits a `
 ### New fields on `LegalMetadata`
 
 Seven new fields were added:
-- `credit_line` — Maps to `photoshop:Credit` (was incorrectly mapped from `contact_email`)
-- `copyright_owner` — Distinct from `copyright_holder` (the notice text)
-- `licensor_name`, `licensor_email`, `licensor_url` — Structured licensor records
-- `metadata_date` — `xmp:MetadataDate` timestamp
-- `notice_applied_at` — Auto-computed RFC 3339 timestamp when not provided
+- `credit_line`: Maps to `photoshop:Credit` (was incorrectly mapped from `contact_email`)
+- `copyright_owner`: Distinct from `copyright_holder` (the notice text)
+- `licensor_name`, `licensor_email`, `licensor_url`: Structured licensor records
+- `metadata_date`: `xmp:MetadataDate` timestamp
+- `notice_applied_at`: Auto-computed RFC 3339 timestamp when not provided
 
 ### `photoshop:Credit` semantic fix
 
@@ -76,16 +78,16 @@ stegoeggo image.png --copyright-notice "Jane Doe"
 
 ### New flags
 
-- `--credit-line` — Required credit line text
-- `--copyright-owner` — Copyright owner name (distinct from notice text)
-- `--licensor-name`, `--licensor-email`, `--licensor-url` — Structured licensor records
-- `--content-created-at` — Content creation date (ISO 8601)
+- `--credit-line`: Required credit line text
+- `--copyright-owner`: Copyright owner name (distinct from notice text)
+- `--licensor-name`, `--licensor-email`, `--licensor-url`: Structured licensor records
+- `--content-created-at`: Content creation date (ISO 8601)
 
 ## New Types
 
-- `RightsNotice` — Normalized rights notice (public, for advanced use)
-- `LocalizedText` — Text with language tag (already public since v0.2.2)
-- `ProtectionWarning::ContradictoryLegalClaims` — Warning variant
+- `RightsNotice`: Normalized rights notice (public, for advanced use)
+- `LocalizedText`: Text with language tag (already public since v0.2.2)
+- `ProtectionWarning::ContradictoryLegalClaims`: Warning variant
 
 ## Verification API
 

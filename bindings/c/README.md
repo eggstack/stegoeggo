@@ -1,77 +1,28 @@
-# C language binding — ABI v1 stable
+# C binding: ABI v1
 
-This directory hosts the versioned C ABI leaf binding over the
-canonical `stegoeggo` Rust library.
+The C binding is a versioned `cdylib` interface to the `stegoeggo` Rust library.
+ABI v1 is stable and append-only within major version 1. The C header is
+[`include/stegoeggo.h`](include/stegoeggo.h), and the normative function,
+ownership, and error contract is [`ABI-V1.md`](ABI-V1.md).
 
-Status: **implemented and qualified; ABI v1 is stable**.
-The normative contract is `ABI-V1.md` (ABI major `1`, minor `0`;
-90 symbols: 3 bootstrap + 87 `stegoeggo_v1_*`), materialized from
-accepted `plans/adrs/ADR-0006-versioned-c-abi.md` by language-bindings
-M007 and corrected by M008. M009 implements all 90 symbols as an
-isolated Rust `cdylib` with a committed cbindgen-generated header, and
-M010 qualifies it on all five native targets. ABI v1 stability holds
-per `STABILITY.md` (append-only within major 1).
+The ABI exports 90 symbols and is intended for C11 consumers. It does not
+provide a C++ wrapper. Static-library distribution is not currently provided.
 
-## Layout
+## Build from source
 
-- `Cargo.toml` — isolated `stegoeggo-c` crate (own workspace, own
-  lockfile; never added to the root workspace). Exact path/version
-  dependency on `stegoeggo` with `panic = "unwind"`. All `unsafe`
-  required by the boundary lives here; root and carrier crates keep
-  `#![forbid(unsafe_code)]`.
-- `src/` — `codes` (frozen scalar tables + conversions), `handles`
-  (opaque staged builders), `input` (pointer/length/UTF-8 validation),
-  `error` (ABI error DTO + details JSON), `panic` (common
-  `catch_unwind` wrapper), `notice`/`request`/`limits` (builders),
-  `operations` (detect/protect/verify), `report` (execution +
-  verification getters + JSON), `buffer` (owned bytes).
-- `cbindgen.toml` — pinned cbindgen `0.29.4` generation config.
-- `include/stegoeggo.h` — committed generated header (drift is failure).
-- `abi-v1-symbols.txt` — checked 90-line export manifest (M008 oracle).
-- `scripts/` — `check-contract.py` (document↔manifest gate),
-  `generate-header.sh` (regenerate or `--check` the header),
-  `check-exports.sh` (dynamic export audit),
-  `run-c-tests.sh` (build + C11/C++17 consumer suite),
-  `parity.sh` (Rust↔C two-way parity via the CLI).
-- `tests/` — `test_c_abi.c` (lifecycle/error/report suite over a
-  dependency-free synthesized PNG), `c_parity_protect.c` /
-  `c_parity_verify.c` (parity tools), `cxx_smoke.cpp` (C++17 include
-  smoke), `minipng.h` (tiny PNG synthesizer, no third-party code).
-
-## Build and test
+The binding is a separate Cargo workspace and is not included in the root
+workspace checks. From the repository root:
 
 ```bash
-cargo check --manifest-path bindings/c/Cargo.toml --locked
-cargo clippy --manifest-path bindings/c/Cargo.toml --locked --all-targets -- -D warnings
-cargo test --manifest-path bindings/c/Cargo.toml --locked
-cargo build --manifest-path bindings/c/Cargo.toml --locked --release
-cargo install cbindgen --version 0.29.4 --locked
-bindings/c/scripts/generate-header.sh --check
-python3 bindings/c/scripts/check-contract.py
-bindings/c/scripts/check-exports.sh bindings/c/target/release/libstegoeggo_c.so
-bindings/c/scripts/run-c-tests.sh
-bindings/c/scripts/parity.sh
+cargo build --locked --release --manifest-path bindings/c/Cargo.toml
 ```
 
-Linux exports are audited with `nm -D --defined-only`; macOS uses
-`nm -gU`; Windows uses `dumpbin /EXPORTS`. Every target must export
-exactly the 90 manifest symbols and no other `stegoeggo_*` symbol.
+Use the generated header and platform-specific shared library when linking a
+consumer. Consult `ABI-V1.md` for handle lifetimes, buffer ownership, error
+codes, and thread-safety rules. The project does not publish the binding through
+a package manager; its manual qualification workflows produce build artifacts
+only.
 
-## Design rules that bind consumers
+## License
 
-- Opaque handles with explicit Rust frees; C never calls `free()` on
-  Rust memory; freeing NULL is a no-op;
-- fixed-width scalar codes with frozen numeric values (never Rust enum
-  discriminants or layout);
-- per-call explicit error handles (no last-error thread-local state);
-- versioned `stegoeggo_v1_*` operational symbols plus three unversioned
-  bootstrap symbols; ABI v1 is append-only following the accepted M010 closure;
-- full-width `uint64_t` seeds; write-only MAC keys, zeroized on request
-  destruction, never in errors/reports/getters/JSON;
-- `NotFound` vs `Invalid` verification evidence projected verbatim;
-- panics contained by `catch_unwind` at every `extern "C"` export;
-- Python and Node stay direct Rust bindings and are not moved onto C.
-
-The C ABI surface described here is stable per `STABILITY.md`
-(append-only within ABI major 1). Static-library distribution remains
-deferred; the qualified artifact contract is `cdylib` only.
+MIT, same as the Rust library.

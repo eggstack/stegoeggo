@@ -27,10 +27,8 @@ pub fn create_manifest_from_image(
     image_bytes: &[u8],
     mut claim: ProvenanceClaim,
 ) -> Result<DetachedManifest, crate::Error> {
-    // Compute instance digest
     claim = claim.with_instance_digest(image_bytes);
 
-    // Detect format and get dimensions
     let format = crate::types::ImageOutputFormat::from_magic_bytes(image_bytes)
         .map(|f| format!("{:?}", f).to_lowercase())
         .unwrap_or_else(|| "unknown".to_string());

@@ -102,13 +102,12 @@ let report = verify_image_bytes_report(&output_bytes, &[]);
 println!("{:?}", report.hidden_marker().status());
 ```
 
-`verify_image_bytes` (`VerificationStatus`), `verify_image_bytes_detailed`
-(`VerificationResult`), and `verify_legal_notice` (`NoticeVerification`) are
-compatibility projections derived from the same canonical facts.
-`VerificationStatus` remains stable and is not deprecated: it reports
-hidden-marker integrity only (`Verified`/`Invalid`/`NotFound`), while
-`VerificationReport::summary_status` upgrades metadata-only evidence to
-`Verified` for overall assessment.
+`verify_image_bytes`, `verify_image_bytes_detailed`, and
+`verify_legal_notice` return simpler projections from the same canonical facts.
+`VerificationStatus` is supported and is not deprecated. It reports
+hidden-marker integrity only (`Verified`, `Invalid`, or `NotFound`).
+`VerificationReport::summary_status` includes metadata-only evidence in the
+overall result and can report `Verified` when no hidden marker is present.
 
 The report distinguishes metadata-only notices, best-effort steganographic evidence, and HMAC-authenticated provenance when a matching key is supplied.
 
@@ -116,13 +115,13 @@ Verification should be interpreted as evidence about what is present in the file
 
 ## Compatibility surface
 
-The older `ProtectionContext`, `ProtectionLevel`, `EvidenceProfile`, `with_dmi()`, and related level/context sync, async, and parallel wrappers remain functional compatibility adapters but are deprecated for new code. They translate once into `ProtectionRequest` and delegate to the canonical path, adding only compatibility presentation warnings (`MissingMacKey`, `ContradictoryLegalClaims`, `JpegReencodeFragile`) where applicable. `ProtectionPipeline` (stateless adapter) and the context/level-based `Protector` trait are likewise retained through 0.x with removal at the v1 boundary (no mechanical rename). See [DEPRECATIONS.md](../DEPRECATIONS.md), [migration-v0.3.md](migration-v0.3.md), and [096-status.md](../plans/096-status.md).
+The older `ProtectionContext`, `ProtectionLevel`, `EvidenceProfile`, `with_dmi()`, and related level/context sync, async, and parallel wrappers remain functional compatibility adapters but are deprecated for new code. They translate once into `ProtectionRequest` and delegate to the canonical path, adding only compatibility presentation warnings (`MissingMacKey`, `ContradictoryLegalClaims`, `JpegReencodeFragile`) where applicable. `ProtectionPipeline` (stateless adapter) and the context/level-based `Protector` trait are likewise retained through 0.x with removal at the v1 boundary (no mechanical rename). See [DEPRECATIONS.md](../DEPRECATIONS.md) and [migration-v0.3.md](migration-v0.3.md) for migration details.
 
 ## Examples
 
 See [`examples/`](https://github.com/eggstack/stegoeggo/blob/main/examples) for complete working examples:
 
-- `protect_and_verify.rs` — Full pipeline: protect an image and verify the protection
-- `legal_metadata.rs` — Legal metadata injection with copyright and usage terms
-- `generic_stego.rs` — Raw, in-place, framed, tiled, strict-JPEG, prepared-JPEG, and borrowed-view carrier operations via `stegoeggo_stego` directly
-- `verify_saved.rs` — Verify an already-protected image file
+- `protect_and_verify.rs`: Full pipeline: protect an image and verify the protection
+- `legal_metadata.rs`: Legal metadata injection with copyright and usage terms
+- `generic_stego.rs`: Raw, in-place, framed, tiled, strict-JPEG, prepared-JPEG, and borrowed-view carrier operations via `stegoeggo_stego` directly
+- `verify_saved.rs`: Verify an already-protected image file

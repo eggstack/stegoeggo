@@ -80,9 +80,9 @@ for seed hints.
 ### Still-lossless WebP byte carrier (optional `webp` feature)
 
 `webp::embed`/`extract` (plus `capacity`, framed, tiled, and
-`probe_support` convenience) accept a still VP8L file — plain or
-extended-container still — decode it to RGBA, run the LSB carrier, and
-re-encode losslessly with `WebPEncoder::new_lossless`. Every operation
+`probe_support` convenience) accept a still VP8L file, either plain or in
+an extended container. The API decodes it to RGBA, runs the LSB carrier, and
+re-encodes losslessly with `WebPEncoder::new_lossless`. Every operation
 takes a `CarrierLimits` bounding input bytes, decoded dimensions,
 framed sizes, and tiled-search extent before any large allocation, and
 every operation is all-or-error with no partial output. Lossy VP8 and
@@ -150,7 +150,3 @@ let recovered = lsb::extract_tiled_framed(&framed.output, &tile, 64)?;
 let jtiled = jpeg::embed_tiled(&jpeg_bytes, secret, &tile)?;
 let recovered = jpeg::extract_tiled_framed(&jtiled.output, &tile, 64)?;
 ```
-
-## Internal architecture
-
-The rights-aware hidden-marker adapter is organized by responsibility under `src/protected/steganography/`: marker construction, carrier embedding, extraction/search, verification, and legacy compatibility are separate modules behind the `SteganographyProtector` facade.

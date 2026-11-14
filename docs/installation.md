@@ -131,13 +131,13 @@ TLS verification, and finite response bounds (4 MiB registry JSON, 8 KiB
 sidecar, 64 MiB executable). Bootstrap installers still use curl/PowerShell;
 only the installed `stegoeggo update` path is native.
 
-The updater queries crates.io first; when the installed version is already the
-latest stable version it reports current without requiring destination
-writability and without downloading any update artifact. When a newer stable
-version exists, the current executable's destination must be replaceable
-before downloading any update artifact. The
-updater never invokes `sudo`; for a root-owned `/usr/local/bin/stegoeggo`, run
-the update with appropriate privileges or use the bootstrap installer.
+The updater queries crates.io first. If the installed version is already the
+latest stable release, it reports current without checking destination
+writability or downloading an artifact. For a newer version, it stages and
+validates the candidate, then Eggup checks destination ownership and parent
+containment under lock at commit time. The updater never invokes `sudo`; a
+root-owned `/usr/local/bin/stegoeggo` requires appropriate privileges or the
+bootstrap installer.
 
 An update replaces the executable at its current path. If that path came from
 Cargo, it becomes binary-managed until a later `cargo install` replaces it
@@ -172,28 +172,3 @@ rm "$HOME/.local/bin/stegoeggo"
 For a root Unix install, remove `/usr/local/bin/stegoeggo`. On Windows, remove
 `%LOCALAPPDATA%\StegoEggo\bin\stegoeggo.exe`. These are ordinary files; the
 installer does not register a package-manager uninstall entry.
-
-## Release verification
-
-Maintainers can validate a tagged checkout before dispatching the Eggpack
-binary workflow:
-
-```bash
-./scripts/release-binary-preflight.sh --tag=vX.Y.Z
-```
-
-After downloading or assembling release assets, validate all executables and
-sidecars with:
-
-```bash
-./scripts/release-check-assets.sh --dir=release-assets --version=X.Y.Z
-```
-
-The asset audit expects the 15-file Eggpack inventory: five executables, five
-`.sha256` sidecars, `install.sh`, `install.ps1`, the generated
-`install-exact.sh`/`install-exact.ps1`, and `release-manifest.json`.
-
-The release workflow stages a draft GitHub Release only; a maintainer reviews
-and publishes it. It does not publish
-crates.io packages; crate publication remains the manual carrier → library →
-CLI sequence described in [`RELEASING.md`](../RELEASING.md).

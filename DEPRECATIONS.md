@@ -16,7 +16,7 @@ This document tracks all deprecated public API surfaces, their replacements, and
 | `compute_iscc_from_bytes()` | `compute_content_identifiers_from_bytes()` | v0.2.2 | v1.0.0 |
 | `NoticeVerification::new()` (positional) | `NoticeVerification::builder()` | v0.2.2 | v1.0.0 |
 
-Note: `VerificationStatus` is **not** deprecated — it remains the return type of
+Note: `VerificationStatus` is **not** deprecated. It remains the return type of
 `verify_image_bytes`. The structured reports (`VerificationReport`,
 `VerificationResult`, `NoticeVerification`) are richer alternatives for callers
 who need per-channel detail, not replacements for a removed API.
@@ -100,7 +100,7 @@ let iscc = compute_content_identifiers(&img);
 
 `process_image` and `process_images_parallel` accept `DynamicImage` and return `DynamicImage`. The `DynamicImage` roundtrip **does not preserve file-level metadata** (PNG tEXt, JPEG COM/XMP, WebP XMP). These functions embed steganographic markers in pixel data only. For full metadata injection, use the byte-path APIs (`process_image_bytes`, `process_request_bytes`).
 
-The CLI now always routes through `ProtectionRequest` — there are no dual legacy/request code paths.
+The CLI now always routes through `ProtectionRequest`; there are no dual legacy/request code paths.
 
 ## Legacy Auxiliary APIs (Plan 082)
 

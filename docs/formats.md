@@ -33,10 +33,10 @@ The carrier is selected from the final output format: JPEG output uses the DCT d
 | File copy / re-hosting | Survives | Survives |
 | Social media upload | Usually stripped | Usually destroyed |
 | Screenshot | Lost | Lost |
-| Generic JPEG re-encode | Stripped | Destroyed (unless using stegoeggo fast path) |
+| JPEG re-encode by another tool | Often stripped | Usually destroyed; same-format StegoEggo processing avoids pixel re-encoding |
 | Resize | Resampled | Destroyed |
 | Crop | Clipped | Destroyed (unless tiled) |
-| Metadata stripping tools | Stripped | Survives (still extractable) |
+| Metadata stripping tools | Removed | Usually survives if image data is unchanged |
 
 ## Payload versions
 

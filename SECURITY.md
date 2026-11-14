@@ -1,86 +1,55 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.4.x   | :white_check_mark: |
-| 0.3.x   | :white_check_mark: |
-| 0.2.x   | :white_check_mark: |
-| < 0.2   | :x:                |
+| Version | Supported |
+|---|---|
+| 0.4.x | Yes |
+| 0.3.x | Yes |
+| 0.2.x | Yes |
+| Earlier than 0.2 | No |
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-If you discover a security vulnerability within stegoeggo, please report it responsibly.
+Do not open a public GitHub issue for a security vulnerability. Contact the
+maintainer using the email address in the crate metadata or GitHub profile.
+Include a description, reproduction steps, and potential impact. A suggested
+fix is welcome but optional.
 
-Do NOT open a public GitHub issue. Instead, contact the maintainer directly at the email address listed in the crate metadata or GitHub profile.
+## CLI downloads
 
-Please include:
-- A description of the vulnerability
-- Steps to reproduce
-- Potential impact assessment
-- Optional: suggested fix
+Release binaries are not code-signed. Installers download over HTTPS and check
+the SHA-256 sidecar and candidate version before installation. The sidecar is
+served by the same GitHub Release as the binary, so this detects corruption or
+mismatched assets but does not independently authenticate the publisher.
 
-## Security Considerations
+The updater uses the stable `stegoeggo-cli` version on crates.io to select the
+matching release asset. It verifies the sidecar and candidate before replacing
+the installed executable. Checksum, identity, or network failures do not trigger
+a Cargo fallback. See the [installation guide](docs/installation.md) for the
+full update contract.
 
-### Prebuilt CLI binaries
+## Image protection limits
 
-Release binaries are currently unsigned. The installers use HTTPS GitHub
-Releases as the transport and source boundary, verify the SHA-256 sidecar
-fetched from that same release before executing or installing a candidate, and
-verify that its `version` output matches the requested release (or is a valid
-StegoEggo version for an unpinned latest install). This protects against
-accidental corruption and mismatched assets, but the checksum and binary
-remain inside the GitHub Release trust boundary; it is not publisher
-authentication or a substitute for an independent signature or separately
-trusted distribution channel. macOS and Windows artifacts may therefore prompt
-for local unsigned-binary handling. The installers never fall back to Cargo
-after a checksum, identity, or network failure.
+Rights metadata can be copied, edited, or removed. Hidden markers are optional
+and best effort; image transformations can damage or remove them. Neither
+channel prevents scraping or proves that a model used an image.
 
-The `update` command follows the same binary contract. It first resolves the
-latest non-yanked, stable `stegoeggo-cli` version from crates.io, then fetches
-only the matching GitHub Release tag and target asset through the embedded
-eggfetch transport with TLS verification, a 10-second connect deadline, a
-60-second total deadline, strict HTTPS-downgrade denial, explicit proxy
-environment handling, and finite response bounds. It verifies the sidecar,
-candidate program identity, and candidate version before replacement. SHA-256
-is an integrity check, not a digital signature: the crates.io response, GitHub
-Release, sidecar, and executable remain within their respective registry or
-repository trust boundaries. The updater never invokes `sudo`, never invokes
-external curl, and it does not fall back to Cargo for checksum, candidate, or
-generic network failures.
+A payload protected only by CRC32 has corruption detection, not cryptographic
+authentication. HMAC can verify a marker against a shared secret, but anyone
+who knows that secret can create a valid marker. HMAC does not establish
+copyright ownership, signer identity, or publication time.
 
-On unsupported targets, or when the exact target asset returns HTTP 404, the
-installer/updater may build through Cargo instead. That fallback changes the
-trust path to the Rust toolchain, crates.io, and resolved source dependencies;
-it is not equivalent to running a release binary.
+Use the byte-processing APIs when metadata must be written or preserved. A
+`DynamicImage` round-trip works on pixels and does not preserve file-level
+metadata. Same-format JPEG processing uses a byte-preserving path when the JPEG
+structure is supported; generic image re-encoding can alter coefficients or
+strip metadata.
 
-### Without a MAC key
-Steganographic payload verification uses a non-cryptographic CRC32 checksum. An attacker who can read the image bytes can forge valid-looking payloads. For production deployments (e.g., CDN protection against malicious scrapers), **always set a MAC key** via `.with_mac_key()`.
+## Signed manifests
 
-### Metadata stripping
-All image metadata (XMP, IPTC, EXIF, tEXt chunks) can be stripped by any image processing tool. The steganographic layer provides a secondary evidence channel. For maximum legal deterrence, serve protected images byte-identical and reference their ISCC code.
-
-### JPEG re-encoding
-The JPEG fast path (JPEG-in/JPEG-out through `process_image_bytes`) preserves DCT coefficients and quantization tables. Re-encoding through standard image libraries (e.g., the `image` crate's encoder) rebuilds Q-tables from scratch and discards COM/APP1 markers, destroying the protection evidence. Always use `process_image_bytes` for JPEG processing to preserve protection data.
-
-### Ed25519 signing (experimental)
-
-The `signatures` feature provides Ed25519 signing via `ed25519-dalek`, a well-audited crate implementing the standard Ed25519 elliptic-curve signature scheme. This is real Ed25519 — not a custom or homegrown construction.
-
-Key security properties:
-- **Deterministic signatures**: Same key + same message always produces the same signature (RFC 8032 compliant).
-- **Private key zeroization**: `SigningKey` zeroizes secret bytes on drop and exposes a `zeroize()` method.
-- **No private key serialization**: `SigningKey` intentionally does not implement `Serialize` to prevent accidental key material leakage.
-- **Constant-time verification**: Signature verification uses `ed25519_dalek::Verifier`, which is constant-time.
-
-What a valid signature proves:
-- The holder of the private key that corresponds to the embedded public key signed the canonical claim bytes.
-- The claim bytes have not been altered since signing.
-
-What a valid signature does **not** prove:
-- Copyright ownership or authorship.
-- That the signer is a trusted party.
-- That the image has not been tampered with since signing (signatures bind claim bytes, not the image pixel data).
-
-The `signatures` feature is **experimental**. API surfaces within the signing module may change without notice between minor releases. Trust evaluation is caller-owned — the library ships no implicit trust store.
+The `signatures` feature is experimental. Ed25519 signatures authenticate the
+signed manifest bytes, including any image digest recorded in the manifest.
+They do not establish who controls a public key unless the application trusts
+that key independently, and they do not establish legal ownership. Trust
+evaluation is caller-owned; the library provides no implicit trust store.
