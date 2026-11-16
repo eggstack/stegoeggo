@@ -137,22 +137,20 @@ impl DctStegoF5 {
         debug_assert_eq!(bits.len(), SEED_HINT_BITS);
 
         let mut bit_idx = 0;
-        for table_idx in 0..2 {
-            if let Some(ref mut quant) = header.quantization_tables[table_idx] {
-                for pos in 0..64 {
-                    if bit_idx >= bits.len() {
-                        break;
-                    }
-                    if quant.values[pos] < 2 {
-                        continue;
-                    }
-                    if bits[bit_idx] == 1 {
-                        quant.values[pos] |= 1;
-                    } else {
-                        quant.values[pos] &= 0xFE;
-                    }
-                    bit_idx += 1;
+        for quant in header.quantization_tables.iter_mut().take(2).flatten() {
+            for value in quant.values.iter_mut().take(64) {
+                if bit_idx >= bits.len() {
+                    break;
                 }
+                if *value < 2 {
+                    continue;
+                }
+                if bits[bit_idx] == 1 {
+                    *value |= 1;
+                } else {
+                    *value &= 0xFE;
+                }
+                bit_idx += 1;
             }
         }
         debug_assert_eq!(bit_idx, SEED_HINT_BITS);
@@ -167,12 +165,10 @@ impl DctStegoF5 {
     /// recoverable by the paired extractor.
     pub fn qtable_hint_capacity(&self, header: &JpegHeader) -> usize {
         let mut eligible = 0usize;
-        for table_idx in 0..2 {
-            if let Some(ref quant) = header.quantization_tables[table_idx] {
-                for pos in 0..64 {
-                    if quant.values[pos] >= 2 {
-                        eligible += 1;
-                    }
+        for quant in header.quantization_tables.iter().take(2).flatten() {
+            for &value in quant.values.iter().take(64) {
+                if value >= 2 {
+                    eligible += 1;
                 }
             }
         }
@@ -187,14 +183,12 @@ impl DctStegoF5 {
         // value is less than 2 exactly as embedding does (they carry no
         // embedded bit). Read from both tables since we embed 96 bits
         // across 2 tables
-        for table_idx in 0..2 {
-            if let Some(ref quant) = header.quantization_tables[table_idx] {
-                for &val in quant.values.iter().take(64) {
-                    if val < 2 {
-                        continue;
-                    }
-                    bits.push((val & 1) as u8);
+        for quant in header.quantization_tables.iter().take(2).flatten() {
+            for &val in quant.values.iter().take(64) {
+                if val < 2 {
+                    continue;
                 }
+                bits.push((val & 1) as u8);
             }
         }
 

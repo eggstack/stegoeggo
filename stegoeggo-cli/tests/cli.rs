@@ -2727,7 +2727,7 @@ fn channel_flags_keep_the_policy_visible_in_the_dry_run_plan() {
 }
 
 #[test]
-fn non_utf8_option_value_before_a_command_never_protects_the_command_token() {
+fn non_unicode_option_value_before_a_command_never_protects_the_command_token() {
     let temp = tempfile::tempdir().unwrap();
     create_test_png(&temp.path().join("plain.png"));
     // A real file named `verify` is what turns the command token into a second
@@ -2735,15 +2735,20 @@ fn non_utf8_option_value_before_a_command_never_protects_the_command_token() {
     create_test_png(&temp.path().join("verify"));
 
     #[cfg(unix)]
-    let non_utf8 = {
-        use std::os::unix::ffi::OsStrExt;
-        std::ffi::OsStr::from_bytes(b"\xff\xfe")
+    let non_unicode = {
+        use std::os::unix::ffi::OsStringExt;
+        std::ffi::OsString::from_vec(vec![0xff, 0xfe])
+    };
+    #[cfg(windows)]
+    let non_unicode = {
+        use std::os::windows::ffi::OsStringExt;
+        std::ffi::OsString::from_wide(&[0xD800])
     };
 
     let output = Command::new(cli_bin())
         .current_dir(temp.path())
         .arg("-o")
-        .arg(non_utf8)
+        .arg(non_unicode)
         .arg("verify")
         .arg("plain.png")
         .output()
