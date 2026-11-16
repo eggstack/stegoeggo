@@ -274,17 +274,13 @@ impl SteganographyProtector {
         // Crop-resistant path: try tiled extraction as a final fallback.
         // Tiled embedding produces multiple full copies of the payload, so a
         // crop that destroys most pixels can still leave one intact tile.
-        if self.try_tiled_extraction_verify(
+        self.try_tiled_extraction_verify(
             &rgba,
             seed,
             DEFAULT_TILE_SIZE,
             self.limits.max_tile_extraction_origins_u32(),
             &[],
-        ) {
-            return true;
-        }
-
-        false
+        )
     }
 
     /// Check if bytes begin with v3 magic `[0x53, 0x45, 0x03]`.

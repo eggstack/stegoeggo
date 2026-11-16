@@ -191,10 +191,9 @@ impl HuffmanDecoder {
 
     fn decode_symbol(&self, bit_reader: &mut BitReader) -> Option<u8> {
         let mut code: u16 = 0;
-        for i in 0..16 {
+        for bucket in &self.by_len {
             let bit = bit_reader.read_bit()?;
             code = (code << 1) | (bit as u16);
-            let bucket = &self.by_len[i];
             if let Ok(pos) = bucket.binary_search_by_key(&code, |&(c, _)| c) {
                 return Some(bucket[pos].1);
             }

@@ -238,6 +238,7 @@ fn validator_script_enforces_product_semantics() {
     }
 }
 
+#[cfg(unix)]
 fn workspace_version() -> String {
     let text = read("Cargo.toml");
     for line in text.lines() {
@@ -249,6 +250,7 @@ fn workspace_version() -> String {
     panic!("workspace version not found");
 }
 
+#[cfg(unix)]
 fn write_fake_candidate(dir: &std::path::Path, version: &str, mode: &str) -> PathBuf {
     let path = dir.join("fake-candidate");
     let script = match mode {
@@ -270,10 +272,12 @@ fn write_fake_candidate(dir: &std::path::Path, version: &str, mode: &str) -> Pat
     path
 }
 
+#[cfg(unix)]
 fn run_validator(candidate: &std::path::Path) -> (bool, String) {
     run_validator_with_temp_root(candidate, None)
 }
 
+#[cfg(unix)]
 fn run_validator_with_temp_root(
     candidate: &std::path::Path,
     temp_root: Option<&std::path::Path>,
@@ -294,6 +298,7 @@ fn run_validator_with_temp_root(
     (output.status.success(), combined)
 }
 
+#[cfg(unix)]
 fn smoke_temp_entries(root: &std::path::Path) -> Vec<PathBuf> {
     std::fs::read_dir(root)
         .expect("scratch")
@@ -306,6 +311,7 @@ fn smoke_temp_entries(root: &std::path::Path) -> Vec<PathBuf> {
         .collect()
 }
 
+#[cfg(unix)]
 #[test]
 fn validator_happy_path_with_fake_candidate() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -316,6 +322,7 @@ fn validator_happy_path_with_fake_candidate() {
     assert!(output.contains(&format!("stegoeggo {version}")));
 }
 
+#[cfg(unix)]
 #[test]
 fn validator_wrong_version_fails() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -326,6 +333,7 @@ fn validator_wrong_version_fails() {
     assert!(output.contains("mismatch"));
 }
 
+#[cfg(unix)]
 #[test]
 fn validator_nonzero_help_fails() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -335,6 +343,7 @@ fn validator_nonzero_help_fails() {
     assert!(!ok, "nonzero help must fail: {output}");
 }
 
+#[cfg(unix)]
 #[test]
 fn validator_temp_state_is_cleaned() {
     let dir = tempfile::tempdir().expect("tempdir");

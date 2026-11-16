@@ -878,7 +878,7 @@ mod tests {
     fn test_seed_embed_extract() {
         let mut header = JpegHeader::default();
         // Initialize quantization tables with non-zero values
-        for i in 0..2 {
+        for (i, table_slot) in header.quantization_tables.iter_mut().take(2).enumerate() {
             let mut table = crate::jpeg_transcoder::header::QuantizationTable {
                 table_id: i as u8,
                 precision: 8,
@@ -888,7 +888,7 @@ mod tests {
             for (j, val) in table.values.iter_mut().enumerate() {
                 *val = 16 + j as u16;
             }
-            header.quantization_tables[i] = Some(table);
+            *table_slot = Some(table);
         }
 
         let seed = 0x12345678DEADBEEFu64;
@@ -1020,13 +1020,13 @@ mod tests {
         let mut header = JpegHeader::default();
         // Use value 2 which can embed both 0-bit (2 & 0xFE = 2) and 1-bit (2 | 1 = 3).
         // This also tests that values never drop below 1 after embedding.
-        for i in 0..2 {
+        for (i, table_slot) in header.quantization_tables.iter_mut().take(2).enumerate() {
             let table = crate::jpeg_transcoder::header::QuantizationTable {
                 table_id: i as u8,
                 precision: 8,
                 values: [2; 64],
             };
-            header.quantization_tables[i] = Some(table);
+            *table_slot = Some(table);
         }
 
         let seed = 0xCAFEBABEu64;
@@ -1095,13 +1095,13 @@ mod tests {
     #[test]
     fn test_seed_embed_all_ones_quant_skips_positions() {
         let mut header = JpegHeader::default();
-        for i in 0..2 {
+        for (i, table_slot) in header.quantization_tables.iter_mut().take(2).enumerate() {
             let table = crate::jpeg_transcoder::header::QuantizationTable {
                 table_id: i as u8,
                 precision: 8,
                 values: [1; 64],
             };
-            header.quantization_tables[i] = Some(table);
+            *table_slot = Some(table);
         }
 
         let stego = DctStegoF5::new();
@@ -1129,7 +1129,7 @@ mod tests {
         // quantization tables.
         let mut header = JpegHeader::default();
         // Initialize quantization tables with non-zero values
-        for i in 0..2 {
+        for (i, table_slot) in header.quantization_tables.iter_mut().take(2).enumerate() {
             let mut table = crate::jpeg_transcoder::header::QuantizationTable {
                 table_id: i as u8,
                 precision: 8,
@@ -1138,7 +1138,7 @@ mod tests {
             for (j, val) in table.values.iter_mut().enumerate() {
                 *val = 16 + j as u16;
             }
-            header.quantization_tables[i] = Some(table);
+            *table_slot = Some(table);
         }
 
         let seed = 0xABCDEF1234567890u64;
@@ -1192,7 +1192,7 @@ mod tests {
     #[test]
     fn test_seed_roundtrip_with_sparse_unit_quant_values() {
         let mut header = JpegHeader::default();
-        for i in 0..2 {
+        for (i, table_slot) in header.quantization_tables.iter_mut().take(2).enumerate() {
             let mut table = crate::jpeg_transcoder::header::QuantizationTable {
                 table_id: i as u8,
                 precision: 8,
@@ -1201,7 +1201,7 @@ mod tests {
             for k in (3..64).step_by(7) {
                 table.values[k] = 1;
             }
-            header.quantization_tables[i] = Some(table);
+            *table_slot = Some(table);
         }
 
         let seed = 0x1234567890ABCDEFu64;
@@ -1219,7 +1219,7 @@ mod tests {
     #[test]
     fn test_seed_roundtrip_with_zero_quant_values() {
         let mut header = JpegHeader::default();
-        for i in 0..2 {
+        for (i, table_slot) in header.quantization_tables.iter_mut().take(2).enumerate() {
             let mut table = crate::jpeg_transcoder::header::QuantizationTable {
                 table_id: i as u8,
                 precision: 8,
@@ -1228,7 +1228,7 @@ mod tests {
             for k in (2..64).step_by(5) {
                 table.values[k] = 0;
             }
-            header.quantization_tables[i] = Some(table);
+            *table_slot = Some(table);
         }
 
         let seed = 0x0FEDCBA987654321u64;
@@ -1254,21 +1254,20 @@ mod tests {
     fn header_with_hint_eligible_tables(eligible: usize) -> JpegHeader {
         let mut header = JpegHeader::default();
         let mut remaining = eligible;
-        for i in 0..2 {
+        for (i, table_slot) in header.quantization_tables.iter_mut().take(2).enumerate() {
             let mut values = [1u16; 64];
-            for val in values.iter_mut() {
+            for val in &mut values {
                 if remaining == 0 {
                     break;
                 }
                 *val = 16;
                 remaining -= 1;
             }
-            header.quantization_tables[i] =
-                Some(crate::jpeg_transcoder::header::QuantizationTable {
-                    table_id: i as u8,
-                    precision: 8,
-                    values,
-                });
+            *table_slot = Some(crate::jpeg_transcoder::header::QuantizationTable {
+                table_id: i as u8,
+                precision: 8,
+                values,
+            });
         }
         header
     }
