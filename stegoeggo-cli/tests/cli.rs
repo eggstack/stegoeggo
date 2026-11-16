@@ -2901,6 +2901,7 @@ fn parallel_batch_matches_sequential_batch() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn keygen_refuses_to_follow_a_symlinked_public_key() {
     let temp = tempfile::tempdir().unwrap();
@@ -2909,7 +2910,6 @@ fn keygen_refuses_to_follow_a_symlinked_public_key() {
 
     let key_dir = temp.path().join("keys");
     fs::create_dir_all(&key_dir).unwrap();
-    #[cfg(unix)]
     std::os::unix::fs::symlink(&target, key_dir.join("key_public.pem")).unwrap();
 
     let output = Command::new(cli_bin())
