@@ -4,13 +4,13 @@ Status: conditionally closed
 Source implementation plan: `plans/implementation/language-bindings/011-binding-dependency-security-refresh.md`
 Source subsystem roadmap: `plans/subsystems/language-bindings-roadmap.md#12-milestone-status-table`
 Repository baseline reviewed: `3d2388638b0d5ed3fb01b76f9b80b2a3f25746cb`
-Implementation commits: none; candidate changes remain uncommitted in the working tree at the baseline HEAD, so there is no candidate SHA.
+Implementation commit: `0b400cf20780e394f3a43d45987208dce4fd3eb8` — `security: refresh workspace and binding dependencies`.
 
 ## 1. Executive finding
 
 All three excluded binding lockfiles have been refreshed and audited using RustSec data fetched on 2026-11-17. Python now requires PyO3 `0.29` and resolves to `0.29.3`; the Python Rust tests, native CPython 3.11 abi3 wheel build/install, and pytest suite pass. Local C and Node compatibility checks also pass, including the 90-symbol C contract and generated Node declaration drift check. The PyO3 architecture and binding guidance now describe the 0.29 line.
 
-This milestone is **conditionally closed**, not fully closed. The path-filtered `.github/workflows/c-binding.yml`, `node-binding.yml`, and `python-binding.yml` workflows and the manual five-target `.github/workflows/release-python.yml` qualification have not run for an immutable candidate SHA. Local macOS arm64 evidence is not cross-platform qualification. No commit, push, PR, workflow dispatch, or publication was authorized or performed. Preserve this status until those candidate-specific workflow results are recorded.
+This milestone remains **conditionally closed**, not fully closed. On PR #3/SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8`, the path-filtered C, Node, and Python workflows passed, but the manual five-target `.github/workflows/release-python.yml` run failed before builds because its two `dtolnay/rust-toolchain` steps omitted the required `toolchain` input (run [44166332867](https://github.com/eggstack/stegoeggo/actions/runs/44166332867)). The follow-up candidate now pins Rust 1.89.0 in both steps; wheel/sdist requalification is pending. No merge, release, or publication has occurred; preserve conditional status until the rerun passes.
 
 ## 2. Requirement-to-evidence matrix
 
@@ -21,7 +21,7 @@ This milestone is **conditionally closed**, not fully closed. The path-filtered 
 | Preserve C ABI and generated header | C Rust checks/tests pass; header drift check passes; export check confirms exactly 90 symbols; native C/C++ test script reports 174 checks and 0 failures; parity passes (§4–5). |
 | Preserve Node behavior and declarations | Frozen install, build, 65 tests, typecheck, generated declaration diff check, and Node 26.10.0 smoke pass (§4). Node 22/24 local smoke was not run. |
 | Preserve Python 3.11 abi3 behavior and GIL detachment | Rust tests pass on Rust 1.89; arm64 CPython 3.11 abi3 wheel builds and installs; pytest reports 77 passed and 1 intentionally skipped; existing `py.detach` calls are unchanged (§3–5). |
-| Run path-filtered and five-target remote qualification | Not run: candidate SHA/PR ref was not authorized or created. `.github/workflows/c-binding.yml`, `node-binding.yml`, and `python-binding.yml`, plus manual five-target `.github/workflows/release-python.yml`, remain the explicit closure condition (§10). |
+| Run path-filtered and five-target remote qualification | On PR #3/SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8`, C/Node/Python workflows passed; `release-python.yml` run `44166332867` failed during Rust toolchain setup before any wheel/sdist build (§4, §10). |
 
 ## 3. Production implementation evidence
 
@@ -87,7 +87,7 @@ PATH="../../target/m011-py311-venv/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
 
 Results: Rust tests and wheel build/install passed; pytest reported **77 passed, 1 intentionally skipped**.
 
-The actual install used the exact arm64 wheel path and the final pytest run used a CI-like clean `PATH`. The root `./scripts/check.sh` also passed for the shared root-source adaptation; detailed root evidence is in M006. No GitHub workflow run links exist yet because no candidate ref was created.
+The actual install used the exact arm64 wheel path and the final pytest run used a CI-like clean `PATH`. The root `./scripts/check.sh` also passed for the shared root-source adaptation; detailed root evidence is in M006. Remote qualification on PR #3/SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8`: [C binding job](https://github.com/eggstack/stegoeggo/actions/runs/44165868979/job/134331629270), [Node binding job](https://github.com/eggstack/stegoeggo/actions/runs/44165868995/job/134331628649), [Python binding job](https://github.com/eggstack/stegoeggo/actions/runs/44165869735/job/134331634005), [required Check job](https://github.com/eggstack/stegoeggo/actions/runs/44165868955/job/134331630837), and [Eggpack drift/contract job](https://github.com/eggstack/stegoeggo/actions/runs/44165870536/job/134331634353) all passed. Node smoke jobs for Node 22, 24, and 26 also passed ([workflow run](https://github.com/eggstack/stegoeggo/actions/runs/44165868995)). The manual [five-target `release-python` run](https://github.com/eggstack/stegoeggo/actions/runs/44166332867) failed before builds: each started matrix job received an empty `toolchain` input at the pinned `dtolnay/rust-toolchain` action; the sdist job failed at the same setup step. The macOS arm64 wheel job was cancelled and dependent smoke jobs were skipped. Thus this run provides no wheel or sdist qualification evidence.
 
 ## 5. Invariant review
 
@@ -118,8 +118,7 @@ Fresh RustSec audits for all three binding lockfiles exited successfully on 2026
 
 ## 10. Unresolved findings (critical/high/medium/low)
 
-- **Medium — remote candidate qualification outstanding.** `.github/workflows/c-binding.yml`, `node-binding.yml`, and `python-binding.yml` have not run on an immutable candidate SHA. The Node 22/24 smoke rows are also not represented by the local Node 26.10.0 smoke.
-- **Medium — Python five-target wheel qualification outstanding.** The manual `.github/workflows/release-python.yml` matrix was not dispatched. Local evidence is one macOS arm64 CPython 3.11 abi3 wheel only; no cross-platform claim is made.
+- **Medium — manual Python qualification rerun pending.** C, Node, and Python path-filtered workflows all passed on PR #3/SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8`, including Node 22/24/26 smoke jobs. The prior `.github/workflows/release-python.yml` run `44166332867` failed before builds because both `dtolnay/rust-toolchain` steps supplied an empty required `toolchain` input. The follow-up candidate now pins `toolchain: 1.89.0` in both steps; no five-target wheel or sdist qualification evidence exists yet. No cross-platform claim is made.
 - **Low — 17 PyO3 deprecation warnings.** They concern automatic `FromPyObject` for `Clone` pyclasses and are non-fatal; they were not broadened into wrapper/API changes in this security refresh.
 - **Low — optional Python CLI round-trip skipped.** It was skipped in the clean CI-like environment because the relevant optional CLI was not present; the full Python test result is 77 passed, 1 skipped.
 
@@ -127,8 +126,8 @@ No unresolved binding RustSec vulnerability is known from the final audits.
 
 ## 11. Roadmap disposition
 
-Language-bindings M011 is conditionally closed pending candidate-specific C/Node/Python GitHub workflows and the manual five-target Python wheel qualification. M001–M010 remain closed and the completed Python → Node → C capability sequence is not reopened. The language-bindings roadmap remains active only for M011's outstanding evidence.
+Language-bindings M011 remains conditionally closed. Candidate-specific C/Node/Python GitHub workflows passed, but the prior manual five-target Python qualification failed during toolchain setup before building artifacts. The follow-up candidate now pins Rust 1.89.0 in both setup steps; a successful wheel/sdist qualification rerun is still required. M001–M010 remain closed and the completed Python → Node → C capability sequence is not reopened.
 
 ## 12. Registry updates
 
-`plans/registry.md` records M011 as conditionally closed, links this record, and names the remote workflows and five-target Python qualification as the remaining evidence. The language-bindings roadmap status table and current-state summary match. M011 is not listed as fully closed or as a recent unconditional closure. M006 remains an independent maintenance-quality milestone; no other subsystem status or blocker changed.
+`plans/registry.md` records M011 as conditionally closed, links this record, and notes that C/Node/Python workflows passed, the prior five-target Python run failed at toolchain setup, and the follow-up candidate has the Rust 1.89.0 fix with qualification pending. The language-bindings roadmap status table and current-state summary match. M011 is not listed as fully closed or as a recent unconditional closure. M006 remains an independent maintenance-quality milestone; no other subsystem status or blocker changed.

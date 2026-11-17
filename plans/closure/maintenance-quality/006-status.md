@@ -4,13 +4,13 @@ Status: conditionally closed
 Source implementation plan: `plans/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md`
 Source subsystem roadmap: `plans/subsystems/maintenance-quality-roadmap.md#7-milestones`
 Repository baseline reviewed: `3d2388638b0d5ed3fb01b76f9b80b2a3f25746cb`
-Implementation commits: none; candidate changes remain uncommitted in the working tree at the baseline HEAD, so there is no candidate SHA.
+Implementation commit: `0b400cf20780e394f3a43d45987208dce4fd3eb8` — `security: refresh workspace and binding dependencies`.
 
 ## 1. Executive finding
 
 The root workspace dependency refresh is implemented and passes the local security, updater, and required Rust checks. The fresh RustSec audit was run on 2026-11-17. The six baseline vulnerabilities and the yanked baseline release were remediated; the final root audit and `cargo deny check advisories` succeed. The only production-code adaptation is a narrow update for Eggup's refreshed `FetchLimits` API; the updater's executable response ceiling remains 64 MiB and focused updater coverage passes (43 tests).
 
-This milestone is **conditionally closed**, not fully closed: the required GitHub `.github/workflows/ci.yml` Check job has not run against an immutable candidate ref. The candidate is still an uncommitted working-tree diff, and no commit, push, PR, or remote workflow run was authorized or created. Run the required gate on the exact candidate SHA before changing this record to `closed`.
+This milestone remains **conditionally closed** because M011's workflow-fix follow-up creates a new shared PR head. The required `.github/workflows/ci.yml` Check job passed on the prior candidate SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8` ([run](https://github.com/eggstack/stegoeggo/actions/runs/44165868955/job/134331630837)); a passing Check on the follow-up head is still required before unconditional closure. No merge, release, or publication has occurred.
 
 ## 2. Requirement-to-evidence matrix
 
@@ -21,7 +21,7 @@ This milestone is **conditionally closed**, not fully closed: the required GitHu
 | Remediate root advisories | Final `cargo audit --file Cargo.lock` and `cargo deny check advisories` both exited 0; no unresolved root vulnerability or yanked-package finding was reported (§4). |
 | Review CLI graph and updater behavior | Locked CLI dependency tree inspected; updater tests: 43 passed. The Eggup `FetchLimits` adaptation preserves the 64 MiB artifact limit and uses the registry metadata bound (§3–5). |
 | Run the required local suite | `./scripts/check.sh` exited 0 (§4). |
-| Candidate-specific required CI | Not run: no immutable candidate SHA or authorized GitHub PR ref exists. This is the remaining closure condition (§10). |
+| Candidate-specific required CI | Required Check passed on PR #3 at `0b400cf20780e394f3a43d45987208dce4fd3eb8` (run `44165868955`). A follow-up commit for M011 would need its own required-gate result (§4, §10). |
 
 ## 3. Production implementation evidence
 
@@ -47,7 +47,7 @@ git diff --check                                     PASS
 git diff --cached --check                            PASS
 ```
 
-The root dry-run was performed with `--manifest-path Cargo.toml`; binding dry-runs and audits are recorded separately in M011. The required GitHub `.github/workflows/ci.yml` Check job has no run link because it was not dispatched on a candidate ref.
+The root dry-run was performed with `--manifest-path Cargo.toml`; binding dry-runs and audits are recorded separately in M011. Candidate-specific remote evidence: required Check job on PR #3, SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8`, **passed** — [workflow run](https://github.com/eggstack/stegoeggo/actions/runs/44165868955/job/134331630837).
 
 ## 5. Invariant review
 
@@ -74,15 +74,15 @@ No user-facing documentation or updater contract changed. `plans/implementation/
 
 ## 10. Unresolved findings (critical/high/medium/low)
 
-- **Medium — candidate-specific required CI is outstanding.** `.github/workflows/ci.yml`'s required Check job must pass on an immutable candidate SHA. It cannot run against this uncommitted working-tree diff; creating and pushing a validation branch/PR requires maintainer authorization. Until then this record remains conditionally closed.
+- **Medium — follow-up-head required Check pending.** `.github/workflows/ci.yml`'s Check passed on candidate SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8` in [PR #3](https://github.com/eggstack/stegoeggo/pull/3) ([job](https://github.com/eggstack/stegoeggo/actions/runs/44165868955/job/134331630837)). M011's workflow-fix follow-up creates a new candidate head; require a passing Check on that final SHA before unconditional closure.
 - **Low — four unused license allowances.** `cargo deny check licenses` exits 0 and reported four allowances that are unused by the current graph. They were not removed because allowance cleanup is outside this security refresh.
 
 No unresolved root vulnerability or yanked-package finding is known from the final audit.
 
 ## 11. Roadmap disposition
 
-Maintenance-quality M006 is conditionally closed: the implementation and local evidence are complete, but the exact candidate still needs the required remote Check job. The maintenance-quality roadmap remains active for this pending evidence and proposed optional M002; M006 does not change CI placement or depend on M002.
+Maintenance-quality M006's required Check passed on prior SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8`. It remains conditionally closed until the required Check passes on M011's workflow-fix follow-up head; M006 does not change CI placement or depend on optional M002.
 
 ## 12. Registry updates
 
-`plans/registry.md` records M006 as conditionally closed, links this closure record, and names the candidate-specific required Check job as the remaining evidence. The maintenance-quality roadmap status table and current-state summary match. M006 is not listed as fully closed or as a recent unconditional closure. No other subsystem status or blocker changed.
+`plans/registry.md` records M006 as conditionally closed, links this record, and notes that required Check passed on prior SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8`; the updated PR head needs a fresh required Check before unconditional closure. The maintenance-quality roadmap status table and current-state summary match. No other subsystem status or blocker changed.
