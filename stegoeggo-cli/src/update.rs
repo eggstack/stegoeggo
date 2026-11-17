@@ -395,10 +395,10 @@ fn eggup_transport() -> Result<EggfetchTransport, UpdateError> {
     .map_err(|e| UpdateError::Transport(e.to_string()))
 }
 
-fn eggup_limits(max_bytes: usize) -> FetchLimits {
+fn eggup_limits(max_metadata_bytes: usize) -> FetchLimits {
     FetchLimits {
-        max_metadata_bytes: max_bytes,
-        max_artifact_bytes: Some(EXECUTABLE_BODY_LIMIT as u64),
+        max_metadata_bytes,
+        max_artifact_bytes: EXECUTABLE_BODY_LIMIT as u64,
         connect_timeout: CONNECT_TIMEOUT,
         total_timeout: TOTAL_TIMEOUT,
     }
@@ -634,7 +634,7 @@ fn seam_download(url: &str, destination: &Path) -> Result<u16, UpdateError> {
         .fetch_artifact(
             &request,
             destination,
-            eggup_limits(EXECUTABLE_BODY_LIMIT),
+            eggup_limits(REGISTRY_BODY_LIMIT),
             &CancelFlag::new(),
         )
         .map_err(|e| map_eggup_error(e, url, EXECUTABLE_BODY_LIMIT))?
@@ -1522,7 +1522,7 @@ mod tests {
         let request = eggup_acquisition::AcquisitionRequest::new(format!("{base}/slow")).unwrap();
         let limits = eggup_acquisition::FetchLimits {
             max_metadata_bytes: REGISTRY_BODY_LIMIT,
-            max_artifact_bytes: Some(EXECUTABLE_BODY_LIMIT as u64),
+            max_artifact_bytes: EXECUTABLE_BODY_LIMIT as u64,
             connect_timeout: Duration::from_millis(50),
             total_timeout: Duration::from_millis(100),
         };

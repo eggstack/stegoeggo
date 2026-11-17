@@ -1,8 +1,8 @@
 # Maintenance Quality Roadmap
 
-Status: closed
+Status: active
 
-Repository baseline reviewed: `0a8b356a056bdab2f9d1996be78578cb3f6bc724`
+Repository baseline reviewed: `3d2388638b0d5ed3fb01b76f9b80b2a3f25746cb`
 
 Long-term references:
 
@@ -88,6 +88,14 @@ needed no change to the production validator and left the count assertion intact
 Re-verifying the M004 README by execution produced one example fix and confirmed
 the rest, including the preset table.
 
+M006 is conditionally closed. The root-workspace dependency audit at baseline
+`3d2388638b0d5ed3fb01b76f9b80b2a3f25746cb` identified six vulnerabilities and
+four warnings, including a yanked dependency release. The root graph has been
+refreshed and the final local audit and required Rust checks pass. Candidate-specific
+required GitHub CI remains outstanding because no candidate ref has been authorized
+or created; see `plans/closure/maintenance-quality/006-status.md`. Excluded binding
+lockfiles and the PyO3 migration remain separately tracked by language-bindings M011.
+
 ## 5. Target architecture
 
 Keep top-level workflows separate by evidence purpose, but factor repeated step-level
@@ -105,6 +113,11 @@ blocker; its implementation did not alter release-distribution evidence semantic
 M002 has its M001 precondition satisfied but remains proposed optional polish. No
 implementation plan exists, and no workflow-contract lint may be added to required CI
 without a maintainer decision.
+
+M006 is a separate dependency-security refresh with no hard dependencies. It owns
+only the root workspace graph; excluded binding lockfiles and the PyO3 migration
+are tracked in language-bindings M011. M006 does not depend on optional M002 or
+change required CI.
 
 ## 7. Milestones
 
@@ -125,6 +138,11 @@ without a maintainer decision.
   `validator_temp_state_is_cleaned` flake on the required gate was diagnosed to
   a shared-temp-directory assertion, fixed by observing a private temp root, and
   proven both race-free and still sensitive to a real leak.
+- **M006 — Root workspace dependency security refresh.**
+  Class: infrastructure; conditionally closed. The root `Cargo.lock` is refreshed
+  and local advisory, updater, and required Rust checks pass without changing
+  binding lockfiles or required CI placement. Candidate-specific required GitHub
+  CI remains outstanding; see `plans/closure/maintenance-quality/006-status.md`.
 
 ## 8. Cross-cutting requirements
 
@@ -146,7 +164,9 @@ for whole jobs; composite actions for repeated steps.
 ## 11. Completion definition
 
 M001 closed with equivalent matrices/smokes and immutable action references. M002 is
-optional future polish and does not block roadmap closure.
+optional future polish and does not gate M006. The roadmap remains active while M006
+is conditionally closed pending its candidate-specific required Check job; it may
+return to closed after that evidence is accepted.
 
 ## 12. Milestone status table
 
@@ -157,3 +177,4 @@ optional future polish and does not block roadmap closure.
 | M003 agent guidance and doc currency | closed | `plans/implementation/maintenance-quality/003-agent-guidance-and-doc-currency.md` | `plans/closure/maintenance-quality/003-status.md` | none |
 | M004 CLI relative-path fix + README verification | closed | `plans/implementation/maintenance-quality/004-cli-relative-path-and-readme-verification.md` | `plans/closure/maintenance-quality/004-status.md` | none |
 | M005 release-contract test isolation + README re-verification | closed | `plans/implementation/maintenance-quality/005-release-contract-test-isolation-and-readme-reverification.md` | `plans/closure/maintenance-quality/005-status.md` | none |
+| M006 root workspace dependency security refresh | conditionally closed | `plans/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md` | `plans/closure/maintenance-quality/006-status.md` | candidate-specific required `.github/workflows/ci.yml` Check job pending; excludes binding lockfiles (language-bindings M011) |

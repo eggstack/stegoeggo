@@ -85,10 +85,10 @@ binding calls.
 
 ## Python binding (`bindings/python/`)
 
-- PyO3 0.27 with `abi3-py311` + `extension-module`; `cdylib` named
+- PyO3 0.29 with `abi3-py311` + `extension-module`; `cdylib` named
   `_stegoeggo_native`.
 - **The GIL must be released** around every library call that does not touch
-  Python objects: PyO3 0.27 spells this `py.detach(|| process_request_bytes(...))`
+  Python objects: PyO3 0.29 uses `py.detach(|| process_request_bytes(...))`
   (not the older `allow_threads`). Holding the GIL across a large image
   operation serializes the whole interpreter. Every `#[pyfunction]` wrapping a
   library call must detach; a missing `py.detach` is a real concurrency
