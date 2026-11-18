@@ -2,7 +2,7 @@
 
 **Source:** `bindings/python/src/lib.rs` (~1895 lines, `cdylib` `_stegoeggo_native`, not a workspace member) · `bindings/python/python/stegoeggo/{__init__.py,_files.py,_native.pyi}` (40 / 74 / 408 lines) · `bindings/python/tests/*.py` (7 files, 976 lines).
 
-PyO3 0.27 projection of the canonical Rust **byte** API. It wraps `process_request_bytes*` and `verify_image_bytes_report*` and nothing else — no pixel/`DynamicImage` path, no reimplementation of protection logic. The Rust crate is the single semantic source of truth; this crate is a transport and marshalling layer.
+PyO3 0.29 projection of the canonical Rust **byte** API. It wraps `process_request_bytes*` and `verify_image_bytes_report*` and nothing else — no pixel/`DynamicImage` path, no reimplementation of protection logic. The Rust crate is the single semantic source of truth; this crate is a transport and marshalling layer.
 
 ## Position and dependency direction
 
@@ -78,7 +78,7 @@ All native symbols are registered by one `#[pymodule]` function. There are 27 `m
 
 ## The GIL and threadpool
 
-PyO3 0.27 renamed the historical `py.allow_threads` to `py.detach`. All four blocking calls use it, and it is scoped to exactly the library call — no Python object is touched inside the closure:
+PyO3 0.29 uses `py.detach`; PyO3 0.27 replaced the historical `py.allow_threads` spelling with it. All four blocking calls use `py.detach`, and it is scoped to exactly the library call — no Python object is touched inside the closure:
 
 ```rust
 #[pyfunction]
