@@ -31,7 +31,7 @@ predecessor history, indexed by the roadmaps below.
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M004 0.4.3 release ready; M001 blocked pending public B; M002 conditionally closed; M003 closed | M004 is the ordinary stable B handoff intended to supply both M001 and M002 live evidence |
-| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M001–M010 complete; M011 conditionally closed | Candidate checks passed; four wheels and sdist built; macOS arm64 canceled because `macos-14` is unsupported; follow-up uses `macos-15` for arm64 and awaits five-target rerun; independent of root-workspace M006 |
+| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M001–M010 complete; M011 closed | All five Python wheel builds and smokes plus sdist build/install smoke passed in artifact run 44565805002; PR #4 remains open/unmerged to land macos-15 runner correction; independent of root-workspace M006 |
 | stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M001–M005 and M008 closed; M006 blocked; M007 proposed | M006 waits only for ADR-0007 acceptance |
 | maintenance-quality | active | `plans/subsystems/maintenance-quality-roadmap.md` | M001, M003–M006 closed; M002 proposed optional polish | M006 required `.github/workflows/ci.yml` Check passed on candidate SHA `7f5f6a1`; M002 remains optional behind maintainer CI-placement decision |
 
@@ -42,11 +42,11 @@ predecessor history, indexed by the roadmaps below.
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); live B > 0.4.2 evidence remains outstanding, shared with M001 |
 | release-distribution | M004 0.4.3 release and planning reconciliation | ready | `plans/implementation/release-distribution/004-0.4.3-release-and-planning-reconciliation.md` | ordinary stable release; produces first live Eggpack B and public 0.4.2→0.4.3 updater evidence |
 | maintenance-quality | M006 root workspace dependency security refresh | closed | `plans/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md` | `plans/closure/maintenance-quality/006-status.md`; required Check passed on candidate SHA `7f5f6a1` |
-| language-bindings | M011 binding dependency security refresh | conditionally closed | `plans/implementation/language-bindings/011-binding-dependency-security-refresh.md` | `plans/closure/language-bindings/011-status.md`; candidate checks passed; retry built four wheels and sdist, but macOS arm64 canceled on unsupported `macos-14`; follow-up uses `macos-15` for arm64; five-target rerun pending |
+| language-bindings | M011 binding dependency security refresh | closed | `plans/implementation/language-bindings/011-binding-dependency-security-refresh.md` | `plans/closure/language-bindings/011-status.md`; five-target artifact run 44565805002 and all wheel/sdist smokes passed; PR #4 open/unmerged; no package publication |
 
 ## Active closure work
 
-- **Language-bindings M011 — conditionally closed:** candidate checks passed; the retry built four wheels and sdist but macOS arm64 was canceled on unsupported `macos-14`; the follow-up uses `macos-15` for arm64 and awaits a complete five-target rerun; record: `plans/closure/language-bindings/011-status.md`.
+No active closure work.
 
 ## Blocked work
 
@@ -61,6 +61,7 @@ predecessor history, indexed by the roadmaps below.
 - Maintenance Quality M003–M005: `plans/closure/maintenance-quality/003-status.md`–`005-status.md`.
 - Stego Library Evolution M008: `plans/closure/stego-library-evolution/008-status.md`.
 - Language Bindings M010: `plans/closure/language-bindings/010-status.md`.
+- Language Bindings M011: `plans/closure/language-bindings/011-status.md`; five-target Python wheel and smoke qualification passed in run 44565805002.
 - Release Distribution M003: `plans/closure/release-distribution/003-status.md`.
 
 Older closure evidence remains in `plans/closure/`, subsystem roadmaps, and flat predecessor status records.
