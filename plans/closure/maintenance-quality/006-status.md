@@ -1,16 +1,17 @@
 # Maintenance Quality Milestone 006 — Closure Status
 
-Status: conditionally closed
+Status: closed
 Source implementation plan: `plans/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md`
 Source subsystem roadmap: `plans/subsystems/maintenance-quality-roadmap.md#7-milestones`
 Repository baseline reviewed: `3d2388638b0d5ed3fb01b76f9b80b2a3f25746cb`
 Implementation commit: `0b400cf20780e394f3a43d45987208dce4fd3eb8` — `security: refresh workspace and binding dependencies`.
+Validation follow-up: `7f5f6a1363ed78b05266f579467cb772e5fb05f7` — `ci(python): pin Rust toolchain for qualification`.
 
 ## 1. Executive finding
 
 The root workspace dependency refresh is implemented and passes the local security, updater, and required Rust checks. The fresh RustSec audit was run on 2026-11-17. The six baseline vulnerabilities and the yanked baseline release were remediated; the final root audit and `cargo deny check advisories` succeed. The only production-code adaptation is a narrow update for Eggup's refreshed `FetchLimits` API; the updater's executable response ceiling remains 64 MiB and focused updater coverage passes (43 tests).
 
-This milestone remains **conditionally closed** because M011's workflow-fix follow-up creates a new shared PR head. The required `.github/workflows/ci.yml` Check job passed on the prior candidate SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8` ([run](https://github.com/eggstack/stegoeggo/actions/runs/44165868955/job/134331630837)); a passing Check on the follow-up head is still required before unconditional closure. No merge, release, or publication has occurred.
+This milestone is **closed**. The required `.github/workflows/ci.yml` Check job passed on the follow-up candidate SHA `7f5f6a1363ed78b05266f579467cb772e5fb05f7` ([job](https://github.com/eggstack/stegoeggo/actions/runs/44174252164/job/134361229740)). No merge, release, or publication has occurred.
 
 ## 2. Requirement-to-evidence matrix
 
@@ -70,19 +71,19 @@ The refreshed root lockfile was audited against RustSec data fetched on 2026-11-
 
 ## 9. Documentation and operations
 
-No user-facing documentation or updater contract changed. `plans/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md`, this record, `plans/subsystems/maintenance-quality-roadmap.md`, and `plans/registry.md` now reflect the implementation and conditional status. Required CI was not expanded. The separate binding security result is in M011.
+No user-facing documentation or updater contract changed. `plans/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md`, this record, `plans/subsystems/maintenance-quality-roadmap.md`, and `plans/registry.md` now reflect the implementation and closed status. Required CI was not expanded. The separate binding security result is in M011.
 
 ## 10. Unresolved findings (critical/high/medium/low)
 
-- **Medium — follow-up-head required Check pending.** `.github/workflows/ci.yml`'s Check passed on candidate SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8` in [PR #3](https://github.com/eggstack/stegoeggo/pull/3) ([job](https://github.com/eggstack/stegoeggo/actions/runs/44165868955/job/134331630837)). M011's workflow-fix follow-up creates a new candidate head; require a passing Check on that final SHA before unconditional closure.
+No unresolved critical, high, or medium findings remain. The required Check passed on the updated candidate SHA `7f5f6a1363ed78b05266f579467cb772e5fb05f7` in [PR #3](https://github.com/eggstack/stegoeggo/pull/3) ([job](https://github.com/eggstack/stegoeggo/actions/runs/44174252164/job/134361229740)).
 - **Low — four unused license allowances.** `cargo deny check licenses` exits 0 and reported four allowances that are unused by the current graph. They were not removed because allowance cleanup is outside this security refresh.
 
 No unresolved root vulnerability or yanked-package finding is known from the final audit.
 
 ## 11. Roadmap disposition
 
-Maintenance-quality M006's required Check passed on prior SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8`. It remains conditionally closed until the required Check passes on M011's workflow-fix follow-up head; M006 does not change CI placement or depend on optional M002.
+Maintenance-quality M006 is closed after the required Check passed on candidate SHA `7f5f6a1363ed78b05266f579467cb772e5fb05f7`. M006 does not change CI placement or depend on optional M002.
 
 ## 12. Registry updates
 
-`plans/registry.md` records M006 as conditionally closed, links this record, and notes that required Check passed on prior SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8`; the updated PR head needs a fresh required Check before unconditional closure. The maintenance-quality roadmap status table and current-state summary match. No other subsystem status or blocker changed.
+`plans/registry.md` records M006 as closed, links this record, and notes that the required Check passed on candidate SHA `7f5f6a1363ed78b05266f579467cb772e5fb05f7`. The maintenance-quality roadmap status table and current-state summary match. No other subsystem status or blocker changed.

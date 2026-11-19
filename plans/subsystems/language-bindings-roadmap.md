@@ -105,11 +105,14 @@ subsequent 2026-11-17 dependency audit found PyO3 advisories in the Python
 lockfile and compatible lockfile refreshes available for all three isolated
 binding workspaces. M011 is conditionally closed following local verification; all three
 binding lockfiles are refreshed and the Python requirement is updated to PyO3 0.29.
-Local C, Node, and Python checks pass. The candidate C/Node/Python workflows passed
-on PR #3/SHA `0b400cf20780e394f3a43d45987208dce4fd3eb8`, but the prior manual
-five-target Python qualification failed before building because its Rust setup
-steps lacked the required `toolchain` input. The follow-up candidate now pins
-Rust 1.89.0 in both steps; qualification rerun is pending. See
+Local C, Node, and Python checks pass. The follow-up candidate C/Node/Python
+workflows, required Check, Eggpack drift/contract, and Node 22/24/26 smokes all
+passed on PR #3/SHA `7f5f6a1363ed78b05266f579467cb772e5fb05f7`. The first manual
+Python run's missing Rust toolchain inputs are fixed. Its retry built four wheel
+targets and the sdist, but GitHub canceled macOS arm64 because the `macos-14`
+runner configuration is unsupported; dependent wheel smokes were skipped. The
+follow-up workflow change now sets both macOS arm64 entries to `macos-15`; a
+complete qualification rerun remains pending. See
 `plans/closure/language-bindings/011-status.md`.
 
 The root release profile uses `panic = "abort"`, which is appropriate for
@@ -426,4 +429,4 @@ still active.
 | M008 M007 symbol-inventory corrective | closed | `implementation/language-bindings/008-m007-symbol-inventory-corrective.md` | `closure/language-bindings/008-status.md` | 90/87 arithmetic corrected with no signature change; checked manifest + checker landed |
 | M009 C ABI v1 implementation foundation | closed | `implementation/language-bindings/009-c-abi-v1-implementation-foundation.md` | `closure/language-bindings/009-status.md` | 90 exports, generated header, C/C++ tests, parity, c-binding green (pre-stable at closure; stabilized by M010) |
 | M010 C ABI cross-platform qualification | closed | `implementation/language-bindings/010-c-abi-v1-cross-platform-qualification.md` | `closure/language-bindings/010-status.md` | five-target qualification green; ABI v1 stable |
-| M011 binding dependency security refresh | conditionally closed | `implementation/language-bindings/011-binding-dependency-security-refresh.md` | `closure/language-bindings/011-status.md` | C/Node/Python candidate workflows passed; prior manual Python qualification failed at Rust toolchain setup; follow-up candidate pins 1.89.0, qualification rerun pending; separate from root workspace M006 |
+| M011 binding dependency security refresh | conditionally closed | `implementation/language-bindings/011-binding-dependency-security-refresh.md` | `closure/language-bindings/011-status.md` | Candidate checks passed; four wheels and sdist built; macOS arm64 canceled on unsupported `macos-14`; follow-up switches both arm64 entries to `macos-15`; five-target rerun pending; separate from root workspace M006 |

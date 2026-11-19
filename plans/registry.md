@@ -31,9 +31,9 @@ predecessor history, indexed by the roadmaps below.
 | verification-conformance | closed | `plans/subsystems/verification-conformance-roadmap.md` | all milestones closed | none |
 | api-cli-contract | closed | `plans/subsystems/api-cli-contract-roadmap.md` | all milestones closed | none |
 | release-distribution | active | `plans/subsystems/release-distribution-roadmap.md` | M004 0.4.3 release ready; M001 blocked pending public B; M002 conditionally closed; M003 closed | M004 is the ordinary stable B handoff intended to supply both M001 and M002 live evidence |
-| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M001–M010 complete; M011 conditionally closed | M011 C/Node/Python workflows passed; prior five-target Python run failed at toolchain setup; Rust 1.89.0 fix is in the follow-up candidate and qualification rerun is pending; independent of root-workspace M006 |
+| language-bindings | active | `plans/subsystems/language-bindings-roadmap.md` | M001–M010 complete; M011 conditionally closed | Candidate checks passed; four wheels and sdist built; macOS arm64 canceled because `macos-14` is unsupported; follow-up uses `macos-15` for arm64 and awaits five-target rerun; independent of root-workspace M006 |
 | stego-library-evolution | active | `plans/subsystems/stego-library-evolution-roadmap.md` | M001–M005 and M008 closed; M006 blocked; M007 proposed | M006 waits only for ADR-0007 acceptance |
-| maintenance-quality | active | `plans/subsystems/maintenance-quality-roadmap.md` | M001, M003–M005 closed; M006 conditionally closed; M002 proposed optional polish | M006 required `.github/workflows/ci.yml` Check passed on prior candidate; updated PR head requires a fresh Check; M002 remains optional behind maintainer CI-placement decision |
+| maintenance-quality | active | `plans/subsystems/maintenance-quality-roadmap.md` | M001, M003–M006 closed; M002 proposed optional polish | M006 required `.github/workflows/ci.yml` Check passed on candidate SHA `7f5f6a1`; M002 remains optional behind maintainer CI-placement decision |
 
 ## Dependency-ready implementation plans
 
@@ -41,13 +41,12 @@ predecessor history, indexed by the roadmaps below.
 |---|---|---|---|---|
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); live B > 0.4.2 evidence remains outstanding, shared with M001 |
 | release-distribution | M004 0.4.3 release and planning reconciliation | ready | `plans/implementation/release-distribution/004-0.4.3-release-and-planning-reconciliation.md` | ordinary stable release; produces first live Eggpack B and public 0.4.2→0.4.3 updater evidence |
-| maintenance-quality | M006 root workspace dependency security refresh | conditionally closed | `plans/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md` | `plans/closure/maintenance-quality/006-status.md`; required Check passed on SHA `0b400cf`; follow-up head needs Check before closure |
-| language-bindings | M011 binding dependency security refresh | conditionally closed | `plans/implementation/language-bindings/011-binding-dependency-security-refresh.md` | `plans/closure/language-bindings/011-status.md`; C/Node/Python passed; previous five-target Python run failed at toolchain setup; 1.89.0 fix added to follow-up candidate, qualification pending |
+| maintenance-quality | M006 root workspace dependency security refresh | closed | `plans/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md` | `plans/closure/maintenance-quality/006-status.md`; required Check passed on candidate SHA `7f5f6a1` |
+| language-bindings | M011 binding dependency security refresh | conditionally closed | `plans/implementation/language-bindings/011-binding-dependency-security-refresh.md` | `plans/closure/language-bindings/011-status.md`; candidate checks passed; retry built four wheels and sdist, but macOS arm64 canceled on unsupported `macos-14`; follow-up uses `macos-15` for arm64; five-target rerun pending |
 
 ## Active closure work
 
-- **Maintenance-quality M006 — conditionally closed:** required Check passed on candidate SHA `0b400cf`; the follow-up head needs a fresh Check before closure; record: `plans/closure/maintenance-quality/006-status.md`.
-- **Language-bindings M011 — conditionally closed:** C/Node/Python workflows passed; the prior manual five-target Python run failed at setup, and the 1.89.0 fix is now in the follow-up candidate with qualification pending; record: `plans/closure/language-bindings/011-status.md`.
+- **Language-bindings M011 — conditionally closed:** candidate checks passed; the retry built four wheels and sdist but macOS arm64 was canceled on unsupported `macos-14`; the follow-up uses `macos-15` for arm64 and awaits a complete five-target rerun; record: `plans/closure/language-bindings/011-status.md`.
 
 ## Blocked work
 

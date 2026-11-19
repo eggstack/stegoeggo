@@ -60,7 +60,7 @@ jobs:
             cibw_archs: x86_64
             cibw_build: cp311-macosx_x86_64
           - id: macos-arm64
-            os: macos-14
+            os: macos-15
             cibw_archs: arm64
             cibw_build: cp311-macosx_arm64
           - id: windows-x86_64
@@ -213,7 +213,7 @@ jobs:
             cibw_archs: x86_64
             python: "3.11"
           - id: macos-arm64
-            os: macos-14
+            os: macos-15
             cibw_archs: arm64
             python: "3.11"
           - id: windows-x86_64
