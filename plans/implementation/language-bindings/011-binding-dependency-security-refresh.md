@@ -1,6 +1,6 @@
 # Language Bindings Milestone 011 — Binding Dependency Security Refresh
 
-Status: conditionally closed
+Status: closed
 Repository baseline: `3d2388638b0d5ed3fb01b76f9b80b2a3f25746cb` (`main`)
 Source roadmap: `plans/subsystems/language-bindings-roadmap.md#12-milestone-status-table`
 Long-term requirements: `plans/000-long-term-specification.md#2-canonical-api-invariants`, `plans/000-long-term-specification.md#5-release-invariants`, `plans/001-terminology-and-domain-model.md#core-request-model`

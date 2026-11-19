@@ -88,13 +88,12 @@ needed no change to the production validator and left the count assertion intact
 Re-verifying the M004 README by execution produced one example fix and confirmed
 the rest, including the preset table.
 
-M006 is conditionally closed. The root-workspace dependency audit at baseline
+M006 is closed. The root-workspace dependency audit at baseline
 `3d2388638b0d5ed3fb01b76f9b80b2a3f25746cb` identified six vulnerabilities and
 four warnings, including a yanked dependency release. The root graph has been
 refreshed and the final local audit and required Rust checks pass. Candidate-specific
 required GitHub Check passed on PR #3 at candidate SHA
-`0b400cf20780e394f3a43d45987208dce4fd3eb8`; M011's workflow-fix follow-up
-requires a passing Check on its updated head before M006 can close. See
+`7f5f6a1363ed78b05266f579467cb772e5fb05f7`. See
 `plans/closure/maintenance-quality/006-status.md`. Excluded binding lockfiles and
 the PyO3 migration remain separately tracked by language-bindings M011.
 
@@ -166,9 +165,9 @@ for whole jobs; composite actions for repeated steps.
 ## 11. Completion definition
 
 M001 closed with equivalent matrices/smokes and immutable action references. M002 is
-optional future polish and does not gate M006. The roadmap remains active while M006
-is conditionally closed after its candidate-specific required Check passed on SHA
-`0b400cf`; it may return to closed after any final follow-up head is requalified.
+optional future polish and does not gate M006. The roadmap remains active for the
+optional M002 decision; M006 is closed after its candidate-specific required Check
+passed on SHA `7f5f6a1`.
 
 ## 12. Milestone status table
 
@@ -179,4 +178,4 @@ is conditionally closed after its candidate-specific required Check passed on SH
 | M003 agent guidance and doc currency | closed | `plans/implementation/maintenance-quality/003-agent-guidance-and-doc-currency.md` | `plans/closure/maintenance-quality/003-status.md` | none |
 | M004 CLI relative-path fix + README verification | closed | `plans/implementation/maintenance-quality/004-cli-relative-path-and-readme-verification.md` | `plans/closure/maintenance-quality/004-status.md` | none |
 | M005 release-contract test isolation + README re-verification | closed | `plans/implementation/maintenance-quality/005-release-contract-test-isolation-and-readme-reverification.md` | `plans/closure/maintenance-quality/005-status.md` | none |
-| M006 root workspace dependency security refresh | conditionally closed | `plans/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md` | `plans/closure/maintenance-quality/006-status.md` | required `.github/workflows/ci.yml` Check passed on prior SHA `0b400cf`; the M011 follow-up head needs a fresh Check; excludes binding lockfiles (language-bindings M011) |
+| M006 root workspace dependency security refresh | closed | `plans/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md` | `plans/closure/maintenance-quality/006-status.md` | required `.github/workflows/ci.yml` Check passed on candidate SHA `7f5f6a1`; excludes binding lockfiles (language-bindings M011) |
