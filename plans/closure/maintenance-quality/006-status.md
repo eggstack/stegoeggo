@@ -11,7 +11,7 @@ Validation follow-up: `7f5f6a1363ed78b05266f579467cb772e5fb05f7` — `ci(python)
 
 The root workspace dependency refresh is implemented and passes the local security, updater, and required Rust checks. The fresh RustSec audit was run on 2026-11-17. The six baseline vulnerabilities and the yanked baseline release were remediated; the final root audit and `cargo deny check advisories` succeed. The only production-code adaptation is a narrow update for Eggup's refreshed `FetchLimits` API; the updater's executable response ceiling remains 64 MiB and focused updater coverage passes (43 tests).
 
-This milestone is **closed**. The required `.github/workflows/ci.yml` Check job passed on the follow-up candidate SHA `7f5f6a1363ed78b05266f579467cb772e5fb05f7` ([job](https://github.com/eggstack/stegoeggo/actions/runs/44174252164/job/134361229740)). No merge, release, or publication has occurred.
+This milestone is **closed**. The required `.github/workflows/ci.yml` Check job passed on the follow-up candidate SHA `7f5f6a1363ed78b05266f579467cb772e5fb05f7` ([job](https://github.com/eggstack/stegoeggo/actions/runs/44174252164/job/134361229740)). PR #3 was merged on 2026-11-18 at this candidate SHA; no release or package publication has occurred.
 
 ## 2. Requirement-to-evidence matrix
 
