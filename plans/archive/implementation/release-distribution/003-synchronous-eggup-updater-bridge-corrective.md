@@ -1,5 +1,7 @@
 # Release and Distribution Milestone 003 — Synchronous Eggup Updater Bridge Corrective
 
+> Archived as closed. Completion evidence: `plans/closure/release-distribution/003-status.md`; current status: `plans/subsystems/release-distribution-roadmap.md`.
+
 Status: closed — implementation `e611c91`; see `plans/closure/release-distribution/003-status.md`
 
 Repository baseline: `c75132a09a0079c857a5b241dfbe254747ddb84d`

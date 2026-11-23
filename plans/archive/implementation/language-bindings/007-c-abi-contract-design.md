@@ -1,5 +1,7 @@
 # Language Bindings Milestone 007 — C ABI Contract Design
 
+> Archived as closed. Completion evidence: `plans/closure/language-bindings/007-status.md`; current status: `plans/subsystems/language-bindings-roadmap.md`.
+
 Status: ready for handoff
 
 Repository baseline: `a5b3dff84a3b83eecbca0ac3d44fe5ebf4951673`

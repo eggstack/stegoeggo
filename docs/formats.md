@@ -1,57 +1,62 @@
-# Format Support
+# Image Format Support
 
-## Image formats
+## Support at a glance
 
-| Format | Read | Write | Rights metadata | Hidden marker |
-|--------|------|-------|----------------|---------------|
-| PNG | Yes | Yes | Yes | Pixel-domain LSB, best effort |
-| JPEG | Yes | Yes | Yes | DCT-domain embedding on supported JPEG structures; fallback signals may be used when full embedding is unsupported |
-| WebP | Yes | Yes | Yes | Pixel-domain LSB for lossless WebP; lossy WebP stego is not supported |
+| Format | Rights metadata | Hidden marker |
+|---|---|---|
+| PNG | Supported | Pixel LSB, best effort |
+| JPEG | Supported | DCT embedding on supported JPEG structures, best effort |
+| WebP | Supported | Pixel LSB, best effort; output is encoded losslessly |
 
-Input format is detected from the image data. Unless `--format` is supplied, the CLI preserves the input format.
+The CLI detects the input format and keeps it unless `--format` requests a
+conversion. Marker carrier selection follows the output format: JPEG uses DCT;
+PNG and WebP use pixel-domain LSB.
 
-If hidden-marker recoverability matters, PNG is the most predictable output format. Do not treat any hidden marker as guaranteed to survive arbitrary image transformations.
+The main `stegoeggo` byte-processing path supports rights metadata for WebP.
+When a hidden marker is requested, it processes pixels and writes a losslessly
+encoded WebP. Later lossy re-encoding can destroy the marker. The optional
+`stegoeggo-stego` WebP carrier is a separate API: it accepts still lossless
+VP8L input and rejects lossy or animated WebP. The root pipeline does not route
+to that optional carrier implicitly.
 
 ## What is written
 
-Rights metadata is the primary signal. The byte-processing path builds one normalized rights notice and writes format-appropriate metadata. A specified `RightsPolicy` is represented with canonical PLUS `plus:DataMining` XMP metadata. Optional fields include copyright notice, creator, rights URL, usage terms, AI constraints, credit/licensor information, and relevant dates.
+Rights metadata is the primary signal. When a policy is specified, the library
+writes it as the PLUS `plus:DataMining` property. Supplied notice fields use
+format-specific metadata: PNG text and XMP, JPEG COM and XMP, or WebP XMP.
 
-Existing unrelated metadata is preserved where the format-specific update path supports it, while StegoEggo-owned fields are replaced by default when an image is processed again. The library also exposes metadata conflict/update policies for callers that need stricter behavior.
+When the format-specific byte update path supports it, unrelated container
+metadata is preserved. Raster processing, format conversion, or a later
+re-encode may remove metadata unrelated to the new rights notice. Same-format
+JPEG marker processing uses a byte path that avoids pixel re-encoding.
 
-Hidden markers are an optional secondary signal using:
+Hidden markers are optional and best effort:
 
-- **LSB embedding** (PNG/WebP output): Payload embedded in least-significant bits of pixel channels, with spread-spectrum and error-correcting codes for robustness.
-- **DCT embedding** (JPEG output): F5-style perturbation of DCT coefficients, with seed storage in quantization tables.
-- **Tiled embedding**: Crop-resistant mode that embeds the full payload in each tile of the image.
+- PNG and WebP output use pixel-domain LSB embedding.
+- JPEG output uses DCT-domain embedding. Some unsupported JPEG structures may
+  receive only a seed hint rather than a full marker.
+- Tiled mode repeats the payload in image tiles. It can improve recovery after
+  some crops, but it does not guarantee recovery.
 
-The carrier is selected from the final output format: JPEG output uses the DCT domain, PNG/WebP output uses the pixel LSB domain. Input format only determines whether original JPEG bytes can be reused; a JPEG input converted to PNG/WebP receives a raster LSB marker, never a transient DCT marker.
+## Transformations
 
-## Common transformations and their effects
+| Operation | Rights metadata | Hidden marker |
+|---|---|---|
+| Byte-for-byte copy | Preserved | Preserved |
+| Social-media upload or optimization | May be stripped or changed | May be removed or damaged |
+| Screenshot | Usually lost | Lost |
+| Resize or crop | Depends on the tool | Often damaged; tiled mode may help with some crops |
+| Metadata stripping | Removed | May remain if pixel data is unchanged |
+| Lossy re-encoding | Depends on the tool | Usually damaged or removed |
 
-| Transformation | Metadata | Stego |
-|---------------|----------|-------|
-| File copy / re-hosting | Survives | Survives |
-| Social media upload | Usually stripped | Usually destroyed |
-| Screenshot | Lost | Lost |
-| JPEG re-encode by another tool | Often stripped | Usually destroyed; same-format StegoEggo processing avoids pixel re-encoding |
-| Resize | Resampled | Destroyed |
-| Crop | Clipped | Destroyed (unless tiled) |
-| Metadata stripping tools | Removed | Usually survives if image data is unchanged |
+Do not assume another service preserves either channel. Test the actual delivery
+path if preservation matters.
 
-## Payload versions
+## Standards and compatibility
 
-| Version | Read | Write |
-|---------|------|-------|
-| v1 | Yes | No |
-| v2 | Yes | No |
-| v3 | Yes | Yes |
+Current policy output uses the PLUS License Data Format `plus:DataMining`
+property. Older policy metadata and legacy payload versions remain readable
+where supported. Current hidden payloads use version 3.
 
-Write output always uses payload v3. Older payload versions are read for backward compatibility.
-
-## Standards compatibility
-
-Current rights-policy output uses the PLUS License Data Format `plus:DataMining` property with the canonical controlled-vocabulary URI for the selected policy. The verifier also recognizes older bare PLUS values, legacy `Iptc4xmpExt:DMI-*` data, and legacy TDM reservation metadata so existing files can still be inspected.
-
-The current hidden payload writer emits V3 payloads. V1 and V2 payloads remain readable for compatibility. Detached manifests use their current V1 format when that feature is enabled.
-
-StegoEggo deliberately does not claim C2PA compatibility or robust forensic watermarking. Those are separate trust and provenance models.
+StegoEggo does not claim C2PA compatibility or robust forensic watermarking.
+Those are separate trust and provenance systems.

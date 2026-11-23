@@ -1,5 +1,7 @@
 # Language Bindings Milestone 004 — M003 Closure Corrective Pass
 
+> Archived as closed. Completion evidence: `plans/closure/language-bindings/004-status.md`; current status: `plans/subsystems/language-bindings-roadmap.md`.
+
 Status: ready for handoff
 
 Repository baseline: `26da599f699ceff0a9881a8c7a24297bbecf468a`

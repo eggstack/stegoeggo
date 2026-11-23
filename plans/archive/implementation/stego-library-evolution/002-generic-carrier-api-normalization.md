@@ -1,5 +1,7 @@
 # Stego Library Evolution Milestone 002 — Generic Carrier API Normalization
 
+> Archived as closed. Completion evidence: `plans/closure/stego-library-evolution/002-status.md`; current status: `plans/subsystems/stego-library-evolution-roadmap.md`.
+
 Status: blocked  
 Repository baseline: `d5425d3c73e634fd2276d44507fa94728a18784f`  
 Source roadmap: `plans/subsystems/stego-library-evolution-roadmap.md#7-milestones`  

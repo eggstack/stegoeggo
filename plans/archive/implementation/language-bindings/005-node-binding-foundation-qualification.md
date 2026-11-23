@@ -1,5 +1,7 @@
 # Language Bindings Milestone 005 — Node.js Binding Foundation and Qualification
 
+> Archived as closed. Completion evidence: `plans/closure/language-bindings/005-status.md`; current status: `plans/subsystems/language-bindings-roadmap.md`.
+
 Status: ready for handoff
 
 Repository baseline: `32f4f096d07849bba7b14cb72aff115239c7eb8f`

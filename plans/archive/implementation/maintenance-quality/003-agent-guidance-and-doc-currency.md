@@ -1,5 +1,7 @@
 # Maintenance Quality Milestone 003 — Agent Guidance and Documentation Currency
 
+> Archived as closed. Completion evidence: `plans/closure/maintenance-quality/003-status.md`; current status: `plans/subsystems/maintenance-quality-roadmap.md`.
+
 Status: implemented
 Repository baseline: `de69068a5d5c5da44671a97f1605fa970709a817`
 Source roadmap: `plans/subsystems/maintenance-quality-roadmap.md#7-milestones`

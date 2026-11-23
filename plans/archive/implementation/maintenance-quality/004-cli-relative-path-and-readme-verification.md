@@ -1,5 +1,7 @@
 # Maintenance Quality Milestone 004 — CLI relative-path fix and README quickstart verification
 
+> Archived as closed. Completion evidence: `plans/closure/maintenance-quality/004-status.md`; current status: `plans/subsystems/maintenance-quality-roadmap.md`.
+
 Status: implemented
 Repository baseline: `1f23b40f1861bcd2b70c78ade80714acae65aeed`
 Source roadmap: `plans/subsystems/maintenance-quality-roadmap.md#7-milestones`

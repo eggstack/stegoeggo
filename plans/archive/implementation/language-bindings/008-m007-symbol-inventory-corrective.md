@@ -1,5 +1,7 @@
 # Language Bindings Milestone 008 — M007 Symbol-Inventory Corrective
 
+> Archived as closed. Completion evidence: `plans/closure/language-bindings/008-status.md`; current status: `plans/subsystems/language-bindings-roadmap.md`.
+
 Status: ready for handoff
 
 Repository baseline: `c5fcbf5974ca2ac52ba6d071eaf4238335930c5a`

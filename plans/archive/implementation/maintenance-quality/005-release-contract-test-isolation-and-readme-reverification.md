@@ -1,5 +1,7 @@
 # Maintenance Quality Milestone 005 — Release-contract test isolation and README re-verification
 
+> Archived as closed. Completion evidence: `plans/closure/maintenance-quality/005-status.md`; current status: `plans/subsystems/maintenance-quality-roadmap.md`.
+
 Status: implemented
 Repository baseline: `f19985e58a609ae8714cda93ed17b1e08cd7c236`
 Source roadmap: `plans/subsystems/maintenance-quality-roadmap.md#7-milestones`

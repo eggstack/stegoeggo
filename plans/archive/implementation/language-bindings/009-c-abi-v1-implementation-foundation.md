@@ -1,5 +1,7 @@
 # Language Bindings Milestone 009 — C ABI v1 Implementation Foundation
 
+> Archived as closed. Completion evidence: `plans/closure/language-bindings/009-status.md`; current status: `plans/subsystems/language-bindings-roadmap.md`.
+
 Status: ready for handoff
 
 Repository baseline: `9cac8fcda81ecc3e9e491d28e166470a9e8a7d8c`

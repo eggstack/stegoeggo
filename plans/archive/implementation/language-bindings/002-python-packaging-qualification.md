@@ -1,5 +1,7 @@
 # Language Bindings Milestone 002 — Python Packaging and Qualification
 
+> Archived as closed. Completion evidence: `plans/closure/language-bindings/002-status.md`; current status: `plans/subsystems/language-bindings-roadmap.md`.
+
 Status: blocked
 Repository baseline: `fe86d7361ff9b4ac725e1b05ef915ac391803868`
 Source roadmap: `plans/subsystems/language-bindings-roadmap.md#7-milestones`
