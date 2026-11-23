@@ -41,8 +41,6 @@ predecessor history, indexed by the roadmaps below.
 |---|---|---|---|---|
 | release-distribution | M002 Eggpack producer adoption and second-consumer qualification | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | cutover landed at `3b96fae` (Eggpack pin `56ed7e7`); live B > 0.4.2 evidence remains outstanding, shared with M001 |
 | release-distribution | M004 0.4.3 release and planning reconciliation | ready | `plans/implementation/release-distribution/004-0.4.3-release-and-planning-reconciliation.md` | ordinary stable release; produces first live Eggpack B and public 0.4.2→0.4.3 updater evidence |
-| maintenance-quality | M006 root workspace dependency security refresh | closed | `plans/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md` | `plans/closure/maintenance-quality/006-status.md`; required Check passed on candidate SHA `7f5f6a1` |
-| language-bindings | M011 binding dependency security refresh | closed | `plans/implementation/language-bindings/011-binding-dependency-security-refresh.md` | `plans/closure/language-bindings/011-status.md`; five-target artifact run 44565805002 and all wheel/sdist smokes passed; PR #4 open/unmerged; no package publication |
 
 ## Active closure work
 
@@ -59,6 +57,7 @@ No active closure work.
 ## Recently closed work
 
 - Maintenance Quality M003–M005: `plans/closure/maintenance-quality/003-status.md`–`005-status.md`.
+- Maintenance Quality M006: `plans/closure/maintenance-quality/006-status.md`.
 - Stego Library Evolution M008: `plans/closure/stego-library-evolution/008-status.md`.
 - Language Bindings M010: `plans/closure/language-bindings/010-status.md`.
 - Language Bindings M011: `plans/closure/language-bindings/011-status.md`; five-target Python wheel and smoke qualification passed in run 44565805002.

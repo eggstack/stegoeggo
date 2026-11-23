@@ -1,5 +1,7 @@
 # Stego Library Evolution Milestone 001 — Boundary and Metadata Convergence
 
+> Archived as closed. Completion evidence: `plans/closure/stego-library-evolution/001-status.md`; current status: `plans/subsystems/stego-library-evolution-roadmap.md`.
+
 Status: ready for handoff  
 Repository baseline: `d5425d3c73e634fd2276d44507fa94728a18784f`  
 Source roadmap: `plans/subsystems/stego-library-evolution-roadmap.md#7-milestones`  

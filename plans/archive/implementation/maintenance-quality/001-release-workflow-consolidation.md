@@ -1,5 +1,7 @@
 # Maintenance Quality Milestone 001 — Release Workflow Consolidation
 
+> Archived as closed. Completion evidence: `plans/closure/maintenance-quality/001-status.md`; current status: `plans/subsystems/maintenance-quality-roadmap.md`.
+
 Status: ready for handoff  
 Repository baseline: `d5425d3c73e634fd2276d44507fa94728a18784f`  
 Source roadmap: `plans/subsystems/maintenance-quality-roadmap.md#7-milestones`  

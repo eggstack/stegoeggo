@@ -404,8 +404,6 @@ mod tests {
         ProtectionContext::new(0.5, seed).with_config(config)
     }
 
-    // ── Bit conversion ────────────────────────────────────────────────
-
     // ── Checksum ──────────────────────────────────────────────────────
 
     #[test]
@@ -745,10 +743,6 @@ mod tests {
         assert_ne!(a[11..19], b[11..19]); // seed bytes differ in v3
     }
 
-    // ── Permutation ───────────────────────────────────────────────────
-
-    // ── Pixel manipulation ────────────────────────────────────────────
-
     // ── Embed/extract via public API ───────────────────────────────────
     // Internal embed_lsb/extract_lsb use different seed derivation,
     // so we test through the public apply() + extract_payload() API
@@ -779,7 +773,6 @@ mod tests {
         let result_a = protector.apply(&dyn_img, &ctx_a).unwrap();
         let result_b = protector.apply(&dyn_img, &ctx_b).unwrap();
 
-        // Use extract_payload_with_seed with known seeds
         let payload_a = protector.extract_payload_with_seed(&result_a, 42).unwrap();
         let payload_b = protector.extract_payload_with_seed(&result_b, 99).unwrap();
         assert_eq!(payload_a.seed(), 42);
@@ -831,12 +824,10 @@ mod tests {
         let dyn_img = DynamicImage::ImageRgba8(img);
         let result = protector.apply(&dyn_img, &ctx).unwrap();
 
-        // Use extract_payload_with_seed_and_key with known seed
         let payload = protector.extract_payload_with_seed_and_key(&result, 42, key);
         assert!(payload.is_some());
         assert_eq!(payload.unwrap().seed(), 42);
 
-        // Wrong key returns None
         assert!(protector
             .extract_payload_with_seed_and_key(&result, 42, b"wrong-key")
             .is_none());
@@ -865,8 +856,6 @@ mod tests {
         let img = make_test_image(4, 4); // 16 pixels = 48 channels
         assert!(protector.extract_lsb(&img, 256, 42).is_none());
     }
-
-    // ── DCT capacity / verification ───────────────────────────────────
 
     // ── StegoPayload parsing ──────────────────────────────────────────
 
@@ -1041,7 +1030,6 @@ mod tests {
         let ctx = ctx_no_mac(42);
         let processed = p.apply_bytes(&png_bytes, &ctx).unwrap();
 
-        // Re-decode and verify
         let decoded = image::load_from_memory(&processed).unwrap();
         assert!(p.verify_payload(&decoded));
     }
@@ -1097,7 +1085,6 @@ mod tests {
         let dyn_img = DynamicImage::ImageRgba8(img);
         let result = protector.apply(&dyn_img, &ctx).unwrap();
 
-        // Extract payload
         let payload = protector.extract_payload_with_key(&result, key);
         assert!(payload.is_some());
         let p = payload.unwrap();

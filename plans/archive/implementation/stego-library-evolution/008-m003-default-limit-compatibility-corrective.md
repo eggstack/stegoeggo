@@ -1,5 +1,7 @@
 # Stego Library Evolution Milestone 008 — M003 Default-Limit Compatibility Corrective
 
+> Archived as closed. Completion evidence: `plans/closure/stego-library-evolution/008-status.md`; current status: `plans/subsystems/stego-library-evolution-roadmap.md`.
+
 Status: closed
 Repository baseline: `0a8b356a056bdab2f9d1996be78578cb3f6bc724`  
 Source roadmap: `plans/subsystems/stego-library-evolution-roadmap.md#7-milestones`  

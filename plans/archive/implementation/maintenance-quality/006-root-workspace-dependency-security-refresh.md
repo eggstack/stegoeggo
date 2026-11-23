@@ -1,5 +1,7 @@
 # Maintenance Quality Milestone 006 — Root Workspace Dependency Security Refresh
 
+> Archived as closed. Completion evidence: `plans/closure/maintenance-quality/006-status.md`; current status: `plans/subsystems/maintenance-quality-roadmap.md`.
+
 Status: conditionally closed
 Repository baseline: `3d2388638b0d5ed3fb01b76f9b80b2a3f25746cb` (`main`)
 Source roadmap: `plans/subsystems/maintenance-quality-roadmap.md#7-milestones`

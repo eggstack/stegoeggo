@@ -173,9 +173,9 @@ passed on SHA `7f5f6a1`.
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
-| M001 workflow consolidation/pinning | closed | `plans/implementation/maintenance-quality/001-release-workflow-consolidation.md` | `plans/closure/maintenance-quality/001-status.md` | none |
+| M001 workflow consolidation/pinning | closed | `plans/archive/implementation/maintenance-quality/001-release-workflow-consolidation.md` | `plans/closure/maintenance-quality/001-status.md` | none |
 | M002 drift linting | proposed | none | none | maintainer decision on CI placement (M001 precondition satisfied) |
-| M003 agent guidance and doc currency | closed | `plans/implementation/maintenance-quality/003-agent-guidance-and-doc-currency.md` | `plans/closure/maintenance-quality/003-status.md` | none |
-| M004 CLI relative-path fix + README verification | closed | `plans/implementation/maintenance-quality/004-cli-relative-path-and-readme-verification.md` | `plans/closure/maintenance-quality/004-status.md` | none |
-| M005 release-contract test isolation + README re-verification | closed | `plans/implementation/maintenance-quality/005-release-contract-test-isolation-and-readme-reverification.md` | `plans/closure/maintenance-quality/005-status.md` | none |
-| M006 root workspace dependency security refresh | closed | `plans/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md` | `plans/closure/maintenance-quality/006-status.md` | required `.github/workflows/ci.yml` Check passed on candidate SHA `7f5f6a1`; excludes binding lockfiles (language-bindings M011) |
+| M003 agent guidance and doc currency | closed | `plans/archive/implementation/maintenance-quality/003-agent-guidance-and-doc-currency.md` | `plans/closure/maintenance-quality/003-status.md` | none |
+| M004 CLI relative-path fix + README verification | closed | `plans/archive/implementation/maintenance-quality/004-cli-relative-path-and-readme-verification.md` | `plans/closure/maintenance-quality/004-status.md` | none |
+| M005 release-contract test isolation + README re-verification | closed | `plans/archive/implementation/maintenance-quality/005-release-contract-test-isolation-and-readme-reverification.md` | `plans/closure/maintenance-quality/005-status.md` | none |
+| M006 root workspace dependency security refresh | closed | `plans/archive/implementation/maintenance-quality/006-root-workspace-dependency-security-refresh.md` | `plans/closure/maintenance-quality/006-status.md` | required `.github/workflows/ci.yml` Check passed on candidate SHA `7f5f6a1`; excludes binding lockfiles (language-bindings M011) |

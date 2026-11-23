@@ -224,7 +224,6 @@ impl super::RightsMetadataProtector {
 
         let exif_chunk = seed.map(Self::create_webp_exif_chunk);
 
-        // Copy original data and append new chunks
         let extra_len = xmp_chunk.len() + exif_chunk.as_ref().map_or(0, |c| c.len());
         let new_len = webp_data.len() + extra_len;
         if new_len > u32::MAX as usize + 8 {

@@ -1,5 +1,7 @@
 # Stego Library Evolution Milestone 003 — Carrier Resource and Prepared Hardening
 
+> Archived as closed. Completion evidence: `plans/closure/stego-library-evolution/003-status.md`; current status: `plans/subsystems/stego-library-evolution-roadmap.md`.
+
 Status: blocked  
 Repository baseline: `d5425d3c73e634fd2276d44507fa94728a18784f`  
 Source roadmap: `plans/subsystems/stego-library-evolution-roadmap.md#7-milestones`  

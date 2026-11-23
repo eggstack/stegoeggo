@@ -6,74 +6,58 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MSRV](https://img.shields.io/badge/MSRV-1.89-blue.svg)](https://blog.rust-lang.org/)
 
-Embed machine-readable rights-reservation metadata and AI-training restriction
-notices in PNG, JPEG, and WebP images, with an optional best-effort
-steganographic marker as a second evidence channel.
+Write machine-readable rights notices and AI-training policies into PNG, JPEG,
+and WebP images. An optional hidden marker provides a second, best-effort
+evidence channel.
 
-`stegoeggo` is primarily a **rights-notice metadata tool**. It writes explicit
-rights policy and copyright information into the file. It is not DRM, a forensic
-watermark, a data-poisoning system, or proof that a particular model trained on
-an image. Metadata can be stripped, and hidden markers can be damaged by
-transformations such as screenshots, cropping, resizing, or re-encoding.
+StegoEggo records notices. It is not DRM, a forensic watermark, or proof that a
+model used an image. Metadata can be changed or removed, and image processing
+can damage hidden markers.
 
 ## Quick start
 
-Install a prebuilt CLI (Unix):
+Install a prebuilt CLI on a supported Unix target:
 
-```bash
+~~~bash
 curl -fsSL https://github.com/eggstack/stegoeggo/releases/latest/download/install.sh | bash
-```
+~~~
 
-Or on Windows PowerShell:
+On Windows PowerShell:
 
-```powershell
+~~~powershell
 irm https://github.com/eggstack/stegoeggo/releases/latest/download/install.ps1 | iex
-```
+~~~
 
-Write an AI/ML training prohibition plus copyright metadata:
+Write rights metadata and an AI/ML training prohibition:
 
-```bash
+~~~bash
 stegoeggo protect image.png -o protected.png \
   --rights-policy prohibited-ai-ml-training \
   --preset legal-notice \
   --copyright-notice "© 2026 Example Artist. All rights reserved." \
   --creator "Example Artist" \
   --rights-url "https://example.com/rights"
-```
+~~~
 
-Read it back, then assert it is intact:
+Read the notice and check the protection evidence:
 
-```bash
+~~~bash
 stegoeggo inspect protected.png
 stegoeggo verify protected.png
-```
+~~~
 
-`inspect` is read-only and exits `0` even for an unprotected file. `verify`
-exits `3` when protection evidence is missing or invalid, which makes it usable
-in scripts.
+`inspect` is read-only and exits successfully for a readable image even when it
+has no protection evidence. `verify` is intended for scripts and exits 3 when
+evidence is missing or invalid.
 
-Add the best-effort hidden marker, or HMAC-authenticated provenance, by
-switching `--preset`:
+## Policies and evidence
 
-```bash
-# metadata + best-effort hidden marker
-stegoeggo protect image.png -o protected.png \
-  --rights-policy prohibited-ai-ml-training \
-  --preset legal-notice-with-stego
-
-# metadata + hidden marker + HMAC authentication (key required)
-stegoeggo protect image.png -o protected.png \
-  --rights-policy prohibited-ai-ml-training \
-  --preset authenticated-provenance \
-  --key 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
-```
-
-A **policy** says what use is allowed or prohibited. A **preset** says which
-technical evidence channels to use.
+A **rights policy** states the policy recorded in metadata. A **preset** selects
+the technical evidence channels independently.
 
 | `--rights-policy` | Meaning |
 |---|---|
-| `unspecified` | Emit no `plus:DataMining` policy value |
+| `unspecified` | Do not write a PLUS data-mining policy value |
 | `allowed` | Data mining allowed |
 | `prohibited-ai-ml-training` | AI/ML training prohibited |
 | `prohibited-generative-ai-training` | Generative-AI training prohibited |
@@ -81,77 +65,77 @@ technical evidence channels to use.
 | `prohibited-all-data-mining` | All data mining prohibited |
 | `prohibited-see-constraints` | Prohibited; consult the supplied constraints |
 
+With the default `standard` level and no explicit policy, the CLI uses
+`prohibited-ai-ml-training`. To write no PLUS policy value, set
+`--rights-policy unspecified`. Choosing a preset does not change the policy.
+
 | `--preset` | Rights metadata | Hidden marker | Authentication |
 |---|---:|---:|---:|
 | `legal-notice` | Yes | No | No |
 | `legal-notice-with-stego` | Yes | Best effort | No |
-| `authenticated-provenance` | Yes | Best effort | HMAC (key required) |
-| `maximal` | Yes | Best effort | HMAC (key required) |
+| `authenticated-provenance`, `maximal` | Yes | Best effort | HMAC, key required |
+
+HMAC authenticates a marker for holders of the shared secret. It does not prove
+author identity or copyright ownership. Keep the key secret and outside the
+image. See the [CLI guide](docs/cli-usage.md) for key options.
 
 ## Rust library
 
-```toml
+~~~toml
 [dependencies]
 stegoeggo = "0.4"
-```
+~~~
 
-```rust
-use stegoeggo::{
-    process_request_bytes, ProtectionRequest, RightsNotice, RightsPolicy,
-};
+Use the byte API when metadata must be written to the encoded image:
 
-let input = std::fs::read("image.png")?;
+~~~rust
+use stegoeggo::{process_request_bytes, ProtectionRequest, RightsNotice, RightsPolicy};
 
-let notice = RightsNotice::new()
-    .with_copyright_holder("Example Artist")
-    .with_creator("Example Artist")
-    .with_usage_terms("No AI/ML training.")
-    .with_web_statement_of_rights("https://example.com/rights");
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let input = std::fs::read("image.png")?;
+    let notice = RightsNotice::new()
+        .with_copyright_holder("Example Artist")
+        .with_creator("Example Artist")
+        .with_usage_terms("No AI/ML training.")
+        .with_web_statement_of_rights("https://example.com/rights");
+    let request = ProtectionRequest::metadata_only(
+        notice,
+        RightsPolicy::ProhibitedAiMlTraining,
+    );
+    let output = process_request_bytes(&input, &request)?;
+    std::fs::write("protected.png", output)?;
+    Ok(())
+}
+~~~
 
-let request = ProtectionRequest::metadata_only(
-    notice,
-    RightsPolicy::ProhibitedAiMlTraining,
-);
-
-let output = process_request_bytes(&input, &request)?;
-
-std::fs::write("protected.png", &output)?;
-```
-
-Use the byte APIs above when metadata must survive. The `DynamicImage`-based
-`process_image` only embeds a hidden marker. It does not preserve PNG `tEXt`,
-JPEG `COM`/XMP, or WebP XMP metadata.
-
-For arbitrary-payload steganography without the rights layer, depend on
-[`stegoeggo-stego`](https://crates.io/crates/stegoeggo-stego) directly.
+The `DynamicImage`-based `process_image` API works on pixels and does not preserve
+file-level metadata. For generic payload embedding without the rights policy
+layer, use the separate
+[`stegoeggo-stego` crate](https://crates.io/crates/stegoeggo-stego).
 
 ## Documentation
 
-| Document | Description |
+| Guide | Covers |
 |---|---|
-| [docs/cli-usage.md](docs/cli-usage.md) | Every CLI command, flag, batch mode, and exit code |
-| [docs/installation.md](docs/installation.md) | Installers, updates, targets, Cargo and source installs |
-| [docs/rust-api.md](docs/rust-api.md) | Rust API: byte vs `DynamicImage`, verification, compatibility |
-| [docs/formats.md](docs/formats.md) | Per-format support and what survives transformation |
-| [docs/carrier-crate.md](docs/carrier-crate.md) | `stegoeggo-stego` generic carrier crate |
-| [docs/legal_notice_model.md](docs/legal_notice_model.md) | Rights-notice and evidence model |
-| [docs/migration-v0.3.md](docs/migration-v0.3.md) | Migration guide from v0.2.x |
-| [SUPPORT.md](SUPPORT.md) | MSRV, platforms, formats, feature matrix |
-| [STABILITY.md](STABILITY.md) | Stability tiers and retention promises |
-| [DEPRECATIONS.md](DEPRECATIONS.md) | Deprecated APIs and replacements |
-| [SECURITY.md](SECURITY.md) | Security policy and reporting |
-| [architecture/](architecture/overview.md) | Implementation and protocol documentation |
+| [CLI usage](docs/cli-usage.md) | Common commands, options, and exit codes |
+| [Installation](docs/installation.md) | Install, update, supported targets, and Cargo fallback |
+| [Rust API](docs/rust-api.md) | Byte APIs, verification, async, and batch processing |
+| [Format support](docs/formats.md) | Metadata and hidden-marker behavior by image format |
+| [Rights notice model](docs/legal_notice_model.md) | What notices and verification evidence mean |
+| [Carrier crate](docs/carrier-crate.md) | Generic LSB and JPEG DCT carrier API |
+| [Migration from v0.2.x](docs/migration-v0.3.md) | Historical changes introduced in v0.3.0 |
+| [Support matrix](SUPPORT.md) | Supported Rust, platforms, formats, and bindings |
+| [Stability](STABILITY.md) | Public API stability guarantees |
+| [Deprecations](DEPRECATIONS.md) | Deprecated APIs and compatibility syntax |
+| [Security policy](SECURITY.md) | Vulnerability reporting and security limits |
 
-## Safety and legal scope
+## Important limitations
 
-Only assert copyright, licensing, or usage restrictions that you are entitled to
-assert. StegoEggo records a notice and optional technical evidence; it does not
-create rights you do not already have and is not legal advice.
-
-For security-sensitive deployments, treat unauthenticated hidden markers as
-forgeable. Use HMAC-authenticated provenance when origin authentication is
-required, keep the key outside the image, and retain the original source
-material and independent provenance records.
+Only record claims you are entitled to make. StegoEggo does not create rights,
+enforce restrictions, or provide legal advice. Metadata may be copied, edited,
+or stripped. Hidden markers are best effort and may not survive re-encoding,
+resizing, or cropping. Keep original files and independent provenance records
+when those matter.
 
 ## License
 

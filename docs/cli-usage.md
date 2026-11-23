@@ -1,188 +1,102 @@
 # CLI Usage
 
-## Installation
+On supported Unix targets, install the prebuilt CLI with:
 
-Install the prebuilt CLI on supported platforms without Rust:
-
-```bash
+~~~bash
 curl -fsSL https://github.com/eggstack/stegoeggo/releases/latest/download/install.sh | bash
-```
+~~~
 
-Windows PowerShell:
-
-```powershell
-irm https://github.com/eggstack/stegoeggo/releases/latest/download/install.ps1 | iex
-```
-
-For pinned releases, pass `--version X.Y.Z` to the Unix installer. See
-[the installation guide](installation.md) for target coverage and checksum
-details.
-
-Cargo remains a supported fallback:
-
-```bash
-cargo install stegoeggo-cli --locked
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/eggstack/stegoeggo.git
-cd stegoeggo
-cargo build --release --bin stegoeggo
-./target/release/stegoeggo --help
-```
+Windows users and users who need Cargo installation or platform details can
+see the [installation guide](installation.md).
 
 ## Commands
 
-The command-oriented interface is canonical:
-
-```text
+~~~text
 stegoeggo protect <INPUT>...
 stegoeggo inspect <IMAGE>
 stegoeggo verify <IMAGE>
 stegoeggo version
 stegoeggo update
-```
+~~~
 
-Feature-gated signing commands remain flat:
+The published CLI also includes these signing commands:
 
-```text
+~~~text
 stegoeggo keygen
 stegoeggo sign --manifest <path> --key <path>
 stegoeggo verify-manifest --manifest <path> --image <path>
-```
+~~~
 
-They require the `signatures` feature.
+They are enabled by default in the published CLI package and prebuilt binaries.
+`keygen` writes `key_private.pem` and `key_public.pem` in the current directory
+by default. Use `--output-dir` to choose another location. It refuses to
+overwrite existing key files, so store the private key securely.
 
-The published CLI package enables `signatures` by default, so these commands
-are also present in Cargo-installed and prebuilt binaries.
+## Protect an image
 
-`keygen` refuses to overwrite an existing `key_private.pem` or
-`key_public.pem`; move or delete the key first, because a private key cannot be
-recovered once it is replaced. The refusal is enforced by the write itself, so
-it also holds for a symlink planted at either path, and a `keygen` that fails
-part-way removes the private key it just created so the command can be retried.
+Write rights metadata without a hidden marker:
 
-## Version and updates
-
-`version` prints exactly `stegoeggo X.Y.Z` on its first line and does not access
-the network or configuration. `update` resolves the latest stable CLI version
-from crates.io and updates from the matching verified GitHub Release asset
-through the embedded eggfetch transport; see [the installation guide](installation.md)
-for its fallback, proxy, timeout, redirect, body-limit, and permission rules.
-Update progress is written to stderr and its final result to stdout.
-
-## Protecting images
-
-Write a metadata-only AI/ML training prohibition:
-
-```bash
-stegoeggo protect image.png -o image_protected.png \
+~~~bash
+stegoeggo protect image.png -o protected.png \
   --rights-policy prohibited-ai-ml-training \
   --preset legal-notice \
   --copyright-notice "© 2026 Example Artist. All rights reserved." \
   --creator "Example Artist" \
   --rights-url "https://example.com/rights" \
   --usage-terms "No AI/ML training."
-```
+~~~
 
-Add a best-effort hidden marker as a redundant channel:
+Add an optional best-effort hidden marker:
 
-```bash
-stegoeggo protect image.png -o image_protected.png \
+~~~bash
+stegoeggo protect image.png -o protected.png \
   --rights-policy prohibited-ai-ml-training \
   --preset legal-notice-with-stego
-```
+~~~
 
-Input format is detected from the image data. Unless `--format` is supplied,
-the CLI preserves the input format. With no explicit output path, protected
-files use a `_protected` suffix. A directory or multiple inputs enables flat
-batch processing; `-j` controls the worker count.
+The input format is detected from the image. Unless `--format` is set, the CLI
+keeps that format. Without an explicit output path, it adds `_protected` to the
+filename.
 
-`--output` is treated as a file when the path carries an extension or already
-exists as a file, and as a directory otherwise. A batch run writes one file per
-input, so it rejects a file-valued `--output` instead of creating a directory
-named after it.
+## Choose policy and evidence
 
-`protect --json` prints a single JSON document. On a batch run that document
-carries a `files` array with one entry per input instead of the plain per-file
-path lines.
+`--rights-policy` selects the rights policy recorded in metadata:
 
-## Inspecting and verifying files
-
-`inspect` is read-only and exits 0 whenever the image can be parsed, including
-an unprotected image:
-
-```bash
-stegoeggo inspect image_protected.png
-stegoeggo inspect image_protected.png --json
-```
-
-`verify` is for scripts or release checks. It prints the same report but exits
-3 when a marker fails integrity/authentication verification or when no
-protection evidence is found. A valid metadata-only notice is sufficient:
-
-```bash
-stegoeggo verify image_protected.png --key @key.bin
-stegoeggo verify image_protected.png --json
-```
-
-The compatibility root form remains accepted during 0.x:
-
-```bash
-stegoeggo image_protected.png --verify
-```
-
-It keeps the historical always-zero exit behavior. It inspects the file it is
-given and never protects anything, so `--verify` combined with `--output` is
-rejected as a configuration error (exit 2). Use `inspect` for the interactive
-replacement and `verify` when process status matters.
-
-## Canonical policy and evidence options
-
-`--rights-policy` maps directly to the library's `RightsPolicy` enum and, when
-specified, to the corresponding PLUS `plus:DataMining` XMP value.
-
-| CLI value | Meaning |
+| Value | Meaning |
 |---|---|
-| `unspecified` | Do not emit a `plus:DataMining` policy value |
+| `unspecified` | Do not write a PLUS data-mining policy value |
 | `allowed` | Data mining allowed |
 | `prohibited-ai-ml-training` | AI/ML training prohibited |
 | `prohibited-generative-ai-training` | Generative-AI training prohibited |
-| `prohibited-except-search-indexing` | Data mining prohibited except search-engine indexing |
+| `prohibited-except-search-indexing` | Prohibited except search-engine indexing |
 | `prohibited-all-data-mining` | All data mining prohibited |
 | `prohibited-see-constraints` | Prohibited; consult the supplied constraints |
 
-`--preset` selects technical evidence channels independently of policy:
+With the default `standard` level and no explicit policy, the CLI uses
+`prohibited-ai-ml-training`. Choosing a preset does not change that policy. To
+write no PLUS policy value, set `--rights-policy unspecified`.
+
+`--preset` chooses the evidence channels independently of policy:
 
 | Preset | Rights metadata | Hidden marker | Authentication |
 |---|---:|---:|---:|
 | `legal-notice` | Yes | No | No |
 | `legal-notice-with-stego` | Yes | Best effort | No |
-| `authenticated-provenance` | Yes | Best effort | HMAC (key required) |
-| `maximal` | Yes | Best effort | HMAC (key required) |
+| `authenticated-provenance`, `maximal` | Yes | Best effort | HMAC (key required) |
 
-`authenticated-provenance` and `maximal` currently resolve to the same
-`ProtectionRequest` channel set. Both remain supported in 0.x; consolidation is
-a v1 candidate. HMAC authentication shows that the marker was produced with
-the supplied secret. It does not prove copyright ownership or authorship.
+For direct channel control, use `--hidden-marker disabled|best-effort` and
+`--authentication none|hmac` instead of `--preset`. Do not combine a preset
+with explicit channel flags. HMAC requires a non-disabled hidden marker and a
+key. HMAC verifies that a marker matches a shared secret; it does not establish
+a public identity, ownership, or authorship.
 
-Canonical channel flags are `--hidden-marker disabled|best-effort` and
-`--authentication none|hmac`. HMAC requires both `--key` (hex, `@file`, stdin `-`,
-or `STEGOEGGO_KEY`) and a non-disabled `--hidden-marker`, because the
-authenticated tag is written into the hidden marker. Key material read from
-stdin or `@file` is bounded; oversized input is rejected rather than truncated,
-so a truncated read can never decode into a different key.
-
-Channel flags select channels, not policy. `--hidden-marker`,
-`--authentication`, and `--preset` do not change the resolved rights policy:
-without an explicit `--rights-policy`, `--dmi`, or an AI/TDM shorthand, the
-policy stays at the `standard` level default.
+The `--key` option accepts a hex string, `@path` to a file containing hex,
+stdin with `-`, or the `STEGOEGGO_KEY` environment variable. Protect key files
+and do not store the secret in the image or source control.
 
 ## Rights metadata fields
 
-The common rights fields are supplied directly to `protect`:
+Use only claims you are entitled to make.
 
 | Flag | Purpose |
 |---|---|
@@ -197,31 +111,50 @@ The common rights fields are supplied directly to `protect`:
 | `--licensor-name`, `--licensor-email`, `--licensor-url` | Structured licensor details |
 | `--content-created-at` | ISO 8601 content creation date |
 
-Only provide claims you are entitled to assert. `--legal-claims` is a legacy
-compatibility flag; supplying canonical rights fields is the recommended path.
+## Batch processing and output
 
-## Compatibility syntax and precedence
+Pass multiple files or a directory to process a batch. Batch output is flat, and
+`-j` controls the worker count.
 
-The old root invocation remains a compatibility alias for `protect`. The
-legacy `--level`, `--profile`, `--dmi`, `--metadata`, `--legal-claims`, and
-AI/TDM shorthand options are still accepted but are not the recommended
-interface. They are translation-only inputs to the same canonical builder.
+`--output` is treated as a file when it has an extension or already exists as
+a file. Otherwise it is treated as an output directory. A batch writes one
+output per input and requires a directory output path, so a file-valued output
+path is rejected for batch processing.
 
-All protection modes share one `ProtectionRequest` builder:
+Use `--json` for machine-readable output. For `protect`, a batch produces one
+JSON document with a `files` array. `--dry-run` prints the plan without writing
+protected output.
 
-1. Modern fields win when they explicitly specify the same field.
-2. Legacy flags translate only when the modern field is absent.
-3. Contradictory explicit combinations fail with exit code 2.
-4. Defaults are applied once, after explicitness is known.
+## Inspect and verify
 
-Examples of rejected combinations include `--preset` with explicit
-`--level`/`--profile`, `--preset` with explicit channel flags, contradictory
-policy sources, `--metadata false` with legal fields or metadata-injecting
-channels, and HMAC without a key.
+`inspect` reads the image and reports any protection evidence. It exits `0`
+for a readable unprotected image:
 
-The exact command names `protect`, `inspect`, `verify`, `version`, and `update`
-take precedence over a same-named first positional token. Use `./verify` or
-`-- ./verify` for an image path with an ambiguous name.
+~~~bash
+stegoeggo inspect image.png
+stegoeggo inspect image.png --json
+~~~
+
+`verify` is intended for scripts. It exits `3` when protection evidence is
+missing or invalid. A valid metadata-only notice is sufficient evidence:
+
+~~~bash
+stegoeggo verify protected.png
+stegoeggo verify protected.png --key @mac-key.txt
+stegoeggo verify protected.png --json
+~~~
+
+Use `--key` when verifying an HMAC marker. Without the matching key, the
+report cannot authenticate that marker.
+
+## Compatibility syntax
+
+During 0.x, the old positional form `stegoeggo <input>...` remains an alias for
+`protect`. The legacy `--verify` flag is verify-only and always exits `0`;
+use the `verify` command when process status matters. Older flags such as
+`--level`, `--profile`, and `--dmi` remain for compatibility, but new
+scripts should use `--rights-policy`, `--preset`, and the channel options.
+See [DEPRECATIONS.md](../DEPRECATIONS.md) for the full compatibility inventory.
 
 ## Exit codes
 
@@ -230,10 +163,10 @@ take precedence over a same-named first positional token. Use `./verify` or
 | 0 | Success; `inspect` may report no protection |
 | 1 | I/O, image decode/encode, or general runtime error |
 | 2 | Invalid invocation or configuration |
-| 3 | `verify` assertion or payload/authentication failure |
-| 4 | `verify-manifest`: cryptographically verified but untrusted |
+| 3 | `verify` evidence or integrity assertion failed |
+| 4 | `verify-manifest`: valid signature, but signer is untrusted |
 | 5 | Unexpected/internal failure |
 
-The `--verify` compatibility flag always exits 0 (invalid combinations such as
-`--verify --output` exit 2 before verification runs); read its output to
-determine the reported protection state.
+The legacy `--verify` flag always exits `0`; read its output to determine
+the reported protection state. Invalid combinations, such as
+`--verify --output`, fail with exit code `2` before verification.

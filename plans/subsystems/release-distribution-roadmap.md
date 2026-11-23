@@ -172,7 +172,7 @@ regression coverage, green deterministic updater rehearsal, and no release or
 fallback policy change.
 
 Implementation plan:
-`plans/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md`.
+`plans/archive/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md`.
 
 Exit conditions:
 `plans/closure/release-distribution/003-status.md`.
@@ -245,6 +245,6 @@ but their closure records remain separate.
 |---|---|---|---|---|
 | M001 real A→B update | blocked | flat `plans/106-real-eggfetch-to-eggfetch-self-update-closure.md` | flat `plans/106-status.md` (pending B) | public 0.4.3 not yet published; M004 is the ready release handoff |
 | M002 Eggpack producer adoption | conditionally closed | `plans/implementation/release-distribution/002-eggpack-producer-adoption-and-second-consumer-qualification.md` | `plans/closure/release-distribution/002-status.md` | live 0.4.3 Eggpack evidence outstanding; M004 owns the shared release event |
-| M003 synchronous Eggup updater bridge corrective | closed | `plans/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md` | `plans/closure/release-distribution/003-status.md` | none |
+| M003 synchronous Eggup updater bridge corrective | closed | `plans/archive/implementation/release-distribution/003-synchronous-eggup-updater-bridge-corrective.md` | `plans/closure/release-distribution/003-status.md` | none |
 | M004 0.4.3 release and planning reconciliation | ready | `plans/implementation/release-distribution/004-0.4.3-release-and-planning-reconciliation.md` | pending | none |
 | prior gates/binary/eggfetch/0.4.2 | closed | flat `008`, `024`–`025`, `032`–`037`, `086`, `089`, `099`–`105` | `*.status.md` companions as present | — |

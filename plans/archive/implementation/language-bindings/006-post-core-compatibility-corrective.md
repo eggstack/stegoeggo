@@ -1,5 +1,7 @@
 # Language Bindings Milestone 006 — Post-Core Compatibility Corrective and Requalification
 
+> Archived as closed. Completion evidence: `plans/closure/language-bindings/006-status.md`; current status: `plans/subsystems/language-bindings-roadmap.md`.
+
 Status: ready for handoff
 
 Repository baseline: `f80eebe3fb983a5e8b13f7e082fe573636d65756`

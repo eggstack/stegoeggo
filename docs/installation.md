@@ -1,53 +1,34 @@
-# CLI Installation
+# Install the CLI
 
-## Choose an installation path
+Prebuilt binaries are the simplest way to install StegoEggo. Rust is not
+required on the supported targets.
 
-Prebuilt binaries are the preferred path for the five release targets listed
-below. The repository's assurance matrix is broader than its downloadable
-binary matrix: scheduled CI provides compile/test evidence for selected
-platforms, while unsupported targets remain source-only and can use Cargo when
-their Rust toolchain and dependencies support them.
+## Install a prebuilt binary
 
-## Prebuilt binaries
+On supported Unix systems:
 
-The preferred CLI installation does not require Rust on supported Unix
-platforms:
-
-```bash
+~~~bash
 curl -fsSL https://github.com/eggstack/stegoeggo/releases/latest/download/install.sh | bash
-```
+~~~
 
 The installer detects Linux x86_64/aarch64 and macOS x86_64/arm64, downloads
-the matching release asset, verifies its SHA-256 sidecar, validates the
-candidate's `stegoeggo X.Y.Z` identity, and then installs it.
+the matching asset, verifies its SHA-256 sidecar, checks the binary identity,
+and installs it. A root install uses `/usr/local/bin`; a user install uses
+`$HOME/.local/bin`. The installer does not edit shell startup files or invoke
+`sudo`. Add the install directory to `PATH` if needed.
 
-On Unix, a root install goes to `/usr/local/bin/stegoeggo`. A non-root install
-goes to `$HOME/.local/bin/stegoeggo`; the installer creates that directory but
-does not edit shell startup files. Add it to `PATH` yourself if the installer
-warns that it is absent. The installer never invokes `sudo`.
+On Windows PowerShell, install the x86_64 binary with:
 
-Windows PowerShell users can install the x86_64 binary with:
-
-```powershell
+~~~powershell
 irm https://github.com/eggstack/stegoeggo/releases/latest/download/install.ps1 | iex
-```
+~~~
 
-The Windows installer uses `%LOCALAPPDATA%\StegoEggo\bin\stegoeggo.exe`, does
-not edit `PATH`, and warns when that directory is not already on `PATH`.
-It installs per-user; a system-wide Windows installation is not provided by
-the bootstrap script.
+It installs to `%LOCALAPPDATA%\StegoEggo\bin` and does not edit `PATH`.
 
-To pin a PowerShell install without first saving the script, invoke the
-downloaded script block with its `-Version` parameter:
+## Supported release targets
 
-```powershell
-& ([scriptblock]::Create((irm https://github.com/eggstack/stegoeggo/releases/latest/download/install.ps1))) -Version 0.4.2
-```
-
-## Supported binary assets
-
-Every executable has a matching `<asset>.sha256` sidecar. The stable asset
-contract is maintained in [`release/eggpack/distribution.toml`](../release/eggpack/distribution.toml):
+Each executable has a matching `.sha256` sidecar. Release asset names are
+maintained in [`release/eggpack/distribution.toml`](../release/eggpack/distribution.toml).
 
 | Target | Asset |
 |---|---|
@@ -57,118 +38,81 @@ contract is maintained in [`release/eggpack/distribution.toml`](../release/eggpa
 | `aarch64-apple-darwin` | `stegoeggo-aarch64-apple-darwin` |
 | `x86_64-pc-windows-msvc` | `stegoeggo-x86_64-pc-windows-msvc.exe` |
 
-Linux GNU binaries use the cargo-zigbuild glibc 2.17 compatibility target.
-The distributed feature set is the CLI package default, `signatures`, so
-prebuilt and Cargo-installed binaries include `keygen`, `sign`, and
-`verify-manifest`.
+Linux binaries target glibc 2.17. The release feature set includes `signatures`,
+which provides `keygen`, `sign`, and `verify-manifest`. Release binaries are not
+code-signed, and macOS binaries are not notarized. Depending on local policy,
+Gatekeeper or SmartScreen may require an override.
 
-The macOS and Windows artifacts are checksummed but not code-signed or
-notarized. Gatekeeper or SmartScreen may therefore require an explicit user
-override according to local policy.
+The SHA-256 sidecar detects corruption or an asset mismatch. Because it is
+served from the same GitHub Release as the binary, it is not an independent
+publisher signature.
 
-## Pinned versions and fallback
+## Pin a version
 
-Pin a Unix install to an exact release version:
+The Unix installer accepts an exact release version:
 
-```bash
+~~~bash
 curl -fsSL https://github.com/eggstack/stegoeggo/releases/download/v0.4.2/install.sh | bash -s -- --version 0.4.2
-```
+~~~
 
-The pinned installer downloads from that exact tag. An unpinned installer uses
-the GitHub `releases/latest/download` endpoint. For either mode, checksum
-failure, candidate identity failure, and network failure stop the install;
-they never trigger a source fallback. Unsupported platforms and a missing
-binary asset (HTTP 404) may fall back to Cargo when it is installed.
+The PowerShell installer accepts `-Version`:
 
-To download an asset manually, select the matching name from the matrix and
-fetch both files from the same release tag. Verify the sidecar before running
-the executable:
+~~~powershell
+& ([scriptblock]::Create((irm https://github.com/eggstack/stegoeggo/releases/latest/download/install.ps1))) -Version 0.4.2
+~~~
 
-```bash
-asset=stegoeggo-x86_64-unknown-linux-gnu
-version=0.4.2
-curl -fL -o "$asset" "https://github.com/eggstack/stegoeggo/releases/download/v$version/$asset"
-curl -fL -o "$asset.sha256" "https://github.com/eggstack/stegoeggo/releases/download/v$version/$asset.sha256"
-expected="$(awk 'NF {print tolower($1); exit}' "$asset.sha256")"
-if command -v sha256sum >/dev/null 2>&1; then
-  actual="$(sha256sum "$asset" | awk '{print tolower($1)}')"
-else
-  actual="$(shasum -a 256 "$asset" | awk '{print tolower($1)}')"
-fi
-test "$actual" = "$expected"
-chmod 0755 "$asset"
-./"$asset" version
-```
+An unpinned install uses the latest stable release. Checksum, identity, and
+network failures stop installation. Unsupported targets and a missing release
+asset (HTTP 404) may fall back to Cargo when it is available.
 
-On systems without `sha256sum`, use `shasum -a 256 "$asset"` and compare the
-result with the first field in the sidecar. A sidecar fetched from the same
-GitHub Release is an integrity check, not an independent publisher signature.
+## Update
 
-## Updating an installation
+Check the installed version offline:
 
-Check the installed version without network access:
-
-```bash
+~~~bash
 stegoeggo version
-```
+~~~
 
-Update from the latest stable release:
+Update to the latest stable CLI release:
 
-```bash
+~~~bash
 stegoeggo update
-```
+~~~
 
-The updater treats the published `stegoeggo-cli` version on crates.io as the
-release authority. It ignores prereleases, downloads the exact matching
-version-tagged GitHub Release asset for the host target, verifies its SHA-256
-sidecar, and validates `stegoeggo X.Y.Z` before replacing the executable.
-Network, checksum, candidate identity, and server errors are fatal; Cargo is
-used only for an unsupported target or an HTTP 404 for the exact binary asset.
-The updater uses the embedded eggfetch Rust transport rather than external
-curl, with a 10-second connect deadline, a 60-second total deadline, strict
-HTTPS-downgrade denial, explicit `HTTP(S)_PROXY`/`ALL_PROXY`/`NO_PROXY` handling,
-TLS verification, and finite response bounds (4 MiB registry JSON, 8 KiB
-sidecar, 64 MiB executable). Bootstrap installers still use curl/PowerShell;
-only the installed `stegoeggo update` path is native.
+The updater selects the stable `stegoeggo-cli` version from crates.io, then
+checks the matching GitHub Release binary and checksum before replacing the
+installed executable. It ignores prereleases. Network, checksum, or binary
+validation failures do not trigger a Cargo fallback. Cargo is used only for an
+unsupported target or an HTTP 404 for the exact release asset. In that case,
+Cargo installs the selected stable CLI version. See the [security
+policy](../SECURITY.md) for the limits of the checksum check.
 
-The updater queries crates.io first. If the installed version is already the
-latest stable release, it reports current without checking destination
-writability or downloading an artifact. For a newer version, it stages and
-validates the candidate, then Eggup checks destination ownership and parent
-containment under lock at commit time. The updater never invokes `sudo`; a
-root-owned `/usr/local/bin/stegoeggo` requires appropriate privileges or the
-bootstrap installer.
+## Install with Cargo
 
-An update replaces the executable at its current path. If that path came from
-Cargo, it becomes binary-managed until a later `cargo install` replaces it
-again. On unsupported targets or a missing release asset, the Cargo fallback
-installs the exact stable CLI version through Cargo instead of changing Cargo's
-package metadata.
+Use Cargo when you are on an unsupported target or prefer a source build:
 
-## Cargo fallback
-
-Cargo is the supported source-install fallback:
-
-```bash
+~~~bash
 cargo install stegoeggo-cli --locked
-```
+~~~
 
-The CLI package enables `signatures` by default, matching the prebuilt
-feature set. Build directly from a checkout with:
+The CLI package enables `signatures` by default. To build from a checkout:
 
-```bash
+~~~bash
 cargo build --locked --release --package stegoeggo-cli --bin stegoeggo
-```
+~~~
+
+After a successful self-update, the executable path is binary-managed until
+Cargo installs it again.
 
 ## Uninstall
 
-Remove the installed executable and, if applicable, remove its directory from
-your shell `PATH`:
+Remove the executable at its install path:
 
-```bash
+~~~bash
 rm "$HOME/.local/bin/stegoeggo"
-```
+~~~
 
 For a root Unix install, remove `/usr/local/bin/stegoeggo`. On Windows, remove
-`%LOCALAPPDATA%\StegoEggo\bin\stegoeggo.exe`. These are ordinary files; the
-installer does not register a package-manager uninstall entry.
+`%LOCALAPPDATA%\StegoEggo\bin\stegoeggo.exe`. Remove the directory from
+`PATH` if you added it. The installer does not register a package-manager
+uninstall entry.

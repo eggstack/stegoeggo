@@ -1,5 +1,7 @@
 # Language Bindings Milestone 010 — C ABI v1 Cross-Platform Qualification and Stability Activation
 
+> Archived as closed. Completion evidence: `plans/closure/language-bindings/010-status.md`; current status: `plans/subsystems/language-bindings-roadmap.md`.
+
 Status: ready for handoff
 
 Repository baseline: `cfce18b3b7ab24832e7988201c981e49af96a9c7`

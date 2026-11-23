@@ -1,5 +1,7 @@
 # Language Bindings Milestone 003 — Python Corrective Qualification
 
+> Archived as closed. Completion evidence: `plans/closure/language-bindings/003-status.md`; current status: `plans/subsystems/language-bindings-roadmap.md`.
+
 Status: ready for handoff
 
 Repository baseline: `90c58d4f0df037319cc554a84c00245338491879`
