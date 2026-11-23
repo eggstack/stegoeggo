@@ -2,8 +2,8 @@
 //!
 //! Local mechanics (private staging, SHA-256 integrity, bounded `version`
 //! candidate validation, current-executable ownership proof, mutation locking,
-//! backup/rollback) are owned by `eggup-core 0.1.0`; acquisition by
-//! `eggup-eggfetch 0.1.0` (strict policy). Release selection, asset naming,
+//! backup/rollback) are owned by `eggup-core 0.2.2`; acquisition by
+//! `eggup-eggfetch 0.2.2` (strict policy). Release selection, asset naming,
 //! yanked-skipping version policy, and Cargo fallback stay here.
 
 use eggup_acquisition::{
@@ -421,7 +421,9 @@ fn map_eggup_error(
         E::Cancelled => UpdateError::Transport(format!("request cancelled for {url}")),
         E::InvalidInput(detail) => UpdateError::RequestBuild(detail),
         E::Transport(detail) => UpdateError::Transport(detail),
-        E::Io(detail) => UpdateError::Transport(detail),
+        E::Io { operation, .. } => {
+            UpdateError::Transport(format!("filesystem operation failed ({operation})"))
+        }
         _ => UpdateError::Transport(error.to_string()),
     }
 }
@@ -1329,6 +1331,23 @@ mod tests {
         assert_eq!(transport.config().total_timeout, TOTAL_TIMEOUT);
         assert_eq!(transport.config().max_redirects, REDIRECT_MAX);
         assert!(transport.config().user_agent.starts_with("stegoeggo-cli/"));
+    }
+
+    #[test]
+    fn eggup_io_error_mapping_excludes_source_details() {
+        let error = eggup_acquisition::AcquisitionError::__adapter_io(
+            "write artifact",
+            std::io::Error::other("private-path-secret"),
+        );
+        let mapped = map_eggup_error(error, "https://example.com/?token=private", 64);
+        match mapped {
+            UpdateError::Transport(detail) => {
+                assert_eq!(detail, "filesystem operation failed (write artifact)");
+                assert!(!detail.contains("private"));
+                assert!(!detail.contains("secret"));
+            }
+            _ => panic!("expected a transport error"),
+        }
     }
 
     #[test]
